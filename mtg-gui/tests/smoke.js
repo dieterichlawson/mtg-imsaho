@@ -46,6 +46,13 @@ async function main() {
     const clickHit = async (pred) => {
       const box = await page.evaluate((src) => {
         const f = new Function("h", "m", `return (${src})(h, m)`);
+        // Draw a frame for the decision that just arrived rather than
+        // reading whatever the last one left behind: the page paints on an
+        // animation frame, which a loaded machine can delay past this
+        // point, and then there is nothing to click. `widgets.js` has
+        // always done this; here it was the difference between passing and
+        // "nothing to click for …" on every third run under load.
+        window.mtgDebug.render();
         const h = window.mtg.hits.slice().reverse().find(h => f(h, window.mtg));
         return h ? [h.x + h.w / 2, h.y + h.h / 2] : null;
       }, pred);

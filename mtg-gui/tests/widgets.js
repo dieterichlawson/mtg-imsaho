@@ -446,6 +446,86 @@ async function main() {
         else ok(`artNames ${k} → ${want}`);
       }
     }
+    // 17. Everything printed fits. `docs/playtest/README.md`: "A row wider
+    // than its pane is wrapped or clipped deliberately, never printed over
+    // the border into the next pane." Swept over the whole card pool and
+    // every turn/step line the band can produce, because the failures were
+    // found one card and one step at a time (#522, #532).
+    {
+      const names = Object.keys(JSON.parse(fs.readFileSync(path.join(root, "data", "oracle_cache.json"), "utf8")).cards);
+      // The twelve steps, and the words the band prints for them. The words
+      // are duplicated here on purpose: the primary assertion measures what
+      // `bandLine` actually returns, and these are only used to show the
+      // sweep is exercising a line that really is too wide untreated.
+      const steps = [["Untap", "untap"], ["Upkeep", "upkeep"], ["Draw", "draw"], ["PrecombatMain", "main phase 1"],
+        ["BeginCombat", "begin combat"], ["DeclareAttackers", "declare attackers"], ["DeclareBlockers", "declare blockers"],
+        ["CombatDamage", "combat damage"], ["EndCombat", "end of combat"], ["PostcombatMain", "main phase 2"],
+        ["EndStep", "end step"], ["Cleanup", "cleanup"]];
+      const bad = await page.evaluate(({ names, steps }) => {
+        const f = window.mtgDebug.fit;
+        const out = { inspector: [], hand: [], band: [], unmarked: [] };
+        // The inspector's name block: panel 160 wide, art 64, padding 12.
+        const tw = 160 - (64 + 12);
+        for (const n of names) {
+          for (const l of f.wrapCapped(n, tw, "8px PressStart", 3)) {
+            if (f.width(l, "8px PressStart") > tw) out.inspector.push([n, l, f.width(l, "8px PressStart")]);
+          }
+          const hand = f.wrapCapped(n, 66 - 6, "8px Silkscreen", 2);
+          for (const l of hand) {
+            if (f.width(l, "8px Silkscreen") > 66 - 6) out.hand.push([n, l, f.width(l, "8px Silkscreen")]);
+          }
+          // A name that needed more lines than it got says so.
+          if (f.wrap(n, 66 - 6, "8px Silkscreen").length > 2 && !hand[hand.length - 1].endsWith("…")) out.unmarked.push([n, hand]);
+        }
+        // The band's turn/step line, as the renderer builds it.
+        const bandW = f.bandW;
+        let everOver = 0;
+        for (const mine of [true, false]) for (const [st, words] of steps) {
+          const drawn = f.bandLine(mine, st);
+          if (f.width(drawn, "7px Silkscreen") > bandW) out.band.push([mine, st, drawn, f.width(drawn, "7px Silkscreen")]);
+          const raw = `${mine ? "YOUR TURN" : "OPPONENT'S TURN"} · ${words}`;
+          if (f.width(raw, "7px Silkscreen") > bandW) everOver++;
+        }
+        // The sweep has to be exercising something: at least one step's
+        // untreated line really is wider than the block.
+        out.bandLive = everOver;
+        return out;
+      }, { names, steps });
+      const live = bad.bandLive; delete bad.bandLive;
+      for (const [what, rows] of Object.entries(bad)) {
+        if (rows.length) fail(`fit-${what}: ${rows.length} over the pane, e.g. ${JSON.stringify(rows.slice(0, 3))}`);
+        else ok(`fit-${what}: all ${what === "band" ? 24 : names.length} fit`);
+      }
+      if (!live) fail("fit-band-live: no untreated line is over the block — the sweep proves nothing");
+      else ok(`fit-band-live: ${live} of 24 untreated lines really are over the block`);
+    }
+    // 18. The log drawer's heading is not printed over by the log.
+    //
+    // A differential check rather than a colour one: if the heading and the
+    // log's first visible line share a row, the heading's row of pixels
+    // changes when the log's contents change. It must not (issue #521).
+    {
+      const same = await page.evaluate(() => {
+        const m = window.mtg;
+        const c = document.getElementById("game").getContext("2d");
+        const saved = m.view.display_log.slice();
+        const wasOpen = m.logOpen, wasScroll = m.logScroll;
+        m.logOpen = true; m.logScroll = 0;
+        const headingRow = () => {
+          window.mtgDebug.render();
+          return Array.from(c.getImageData(0, 360 - 119, 480, 9).data).join(",");
+        };
+        m.view.display_log = ["Game started (p1 on the play)"];
+        const withLog = headingRow();
+        m.view.display_log = [];
+        const empty = headingRow();
+        m.view.display_log = saved; m.logOpen = wasOpen; m.logScroll = wasScroll;
+        window.mtgDebug.render();
+        return { same: withLog === empty, len: withLog.length };
+      });
+      if (!same.same) fail("log-drawer-heading: the heading's row changes with the log's contents — they are drawn over each other");
+      else ok("log-drawer-heading: the heading has a row of its own");
+    }
     if (errors.length) fail("page errors:\n" + errors.join("\n"));
   } finally {
     await browser.close();

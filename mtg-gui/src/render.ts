@@ -51,7 +51,31 @@ export function wrap(ctx: Ctx, s: string, maxW: number, font = "8px Silkscreen")
     }
     lines.push(line);
   }
-  return lines;
+  // A word longer than the pane has nowhere to break, and `!line` above
+  // keeps it on a line of its own at full width. Canvas `fillText` does not
+  // clip, so that line was painted straight over whatever was to its right
+  // — for the inspector, which is flush with the canvas edge, over the edge
+  // itself: "Ghoulcaller's" lost its "'s" with no ellipsis, on 34 of the
+  // 279 cards in the set. Clipping here rather than at each of the fifteen
+  // call sites is what makes the rule hold for the next one (issue #532).
+  return lines.map(l => clip(ctx, l, maxW, font));
+}
+
+/**
+ * [`wrap`], capped at `maxLines`, with the cut marked.
+ *
+ * A bare `.slice(0, n)` over wrapped lines drops the rest silently: "Curse
+ * of the Bloody Tome" wraps to three lines in a hand card and rendered as
+ * "CURSE OF / THE BLOODY", with the word "Tome" simply gone. Clipping the
+ * surviving lines does not help, because each of them fits. The ellipsis
+ * has to go on the last line that is kept (issue #532).
+ */
+export function wrapCapped(ctx: Ctx, s: string, maxW: number, font: string, maxLines: number): string[] {
+  const lines = wrap(ctx, s, maxW, font);
+  if (lines.length <= maxLines) return lines;
+  const kept = lines.slice(0, maxLines);
+  kept[maxLines - 1] = clip(ctx, kept[maxLines - 1] + "…", maxW, font);
+  return kept;
 }
 
 function clip(ctx: Ctx, s: string, maxW: number, font = "8px Silkscreen"): string {
@@ -113,6 +137,31 @@ function manaDots(ctx: Ctx, cost: ManaCost | null | undefined, x: number, y: num
     x += 8;
   }
   return x;
+}
+
+/** The band's right-hand text block: where it starts and how wide it is. */
+export const BAND_X = 330;
+export const BAND_W = PANEL_X - BAND_X - 4;
+
+const STEP_WORDS: Record<Step, string> = { Untap: "untap", Upkeep: "upkeep", Draw: "draw", PrecombatMain: "main phase 1",
+  BeginCombat: "begin combat", DeclareAttackers: "declare attackers", DeclareBlockers: "declare blockers",
+  CombatDamage: "combat damage", EndCombat: "end of combat", PostcombatMain: "main phase 2", EndStep: "end step",
+  Cleanup: "cleanup" };
+
+/**
+ * The band's turn/step line, clipped to the block it is drawn in.
+ *
+ * It was the one string on the board drawn through neither `clip` nor
+ * `wrap`, while the two log lines beneath it went through `clip`. Canvas
+ * `fillText` does not clip, so "OPPONENT'S TURN · declare attackers" — 161px
+ * in a 150px block — was painted past the board/panel seam and then covered
+ * by the panel fill: amputated mid-glyph, with no ellipsis, at exactly the
+ * two steps where this line is what says why the game has stopped and is
+ * asking (issue #522). Named rather than inline so the sweep in the tests
+ * measures what is drawn.
+ */
+export function bandTurnLine(ctx: Ctx, mine: boolean, step: Step): string {
+  return clip(ctx, `${mine ? "YOUR TURN" : "OPPONENT'S TURN"} · ${STEP_WORDS[step]}`, BAND_W, "7px Silkscreen");
 }
 
 /** Status marks for a permanent: tapped, attacking, blocking, sick, counters, damage. */
@@ -236,8 +285,8 @@ function drawHandCard(ctx: Ctx, hits: Hit[], state: LiveState, card: CardView, x
   drawArt(ctx, x + 1, y + 3, ART_L.w, ART_L.h, card.name, colors, false);
   ctx.fillStyle = "rgba(0,0,0,0.35)"; ctx.fillRect(x + 1, y + 52, HAND.w - 2, HAND.h - 55);
   // Cards overlap to the right, so what matters sits on the left edge.
-  const lines = wrap(ctx, card.name, HAND.w - 6, "8px Silkscreen").slice(0, 2);
-  lines.forEach((l, i) => text(ctx, clip(ctx, l, HAND.w - 6, "8px Silkscreen"), x + 3, y + 54 + i * 9, { color: "#f4ecdc" }));
+  const lines = wrapCapped(ctx, card.name, HAND.w - 6, "8px Silkscreen", 2);
+  lines.forEach((l, i) => text(ctx, l, x + 3, y + 54 + i * 9, { color: "#f4ecdc" }));
   manaDots(ctx, card.cost, x + 3, y + 73);
   const types = card.card_types || [];
   if (card.power !== null && card.power !== undefined) {
@@ -359,13 +408,9 @@ function drawBand(ctx: Ctx, hits: Hit[], state: LiveState): void {
   text(ctx, view.stack.length ? "STACK →" : "stack empty", sx0, y + 2, { color: "#8a8090", font: "7px Silkscreen" });
   // Whose turn, which step, and the last two things that happened.
   const mine = view.active_player === view.you;
-  const stepName: Record<Step, string> = { Untap: "untap", Upkeep: "upkeep", Draw: "draw", PrecombatMain: "main phase 1", BeginCombat: "begin combat",
-    DeclareAttackers: "declare attackers", DeclareBlockers: "declare blockers", CombatDamage: "combat damage", EndCombat: "end of combat",
-    PostcombatMain: "main phase 2", EndStep: "end step", Cleanup: "cleanup" };
-  const bx0 = 330;
-  text(ctx, `${mine ? "YOUR TURN" : "OPPONENT'S TURN"} · ${stepName[view.step]}`, bx0, y + 2, { font: "7px Silkscreen", color: mine ? "#ffe080" : "#c0b0d0" });
+  text(ctx, bandTurnLine(ctx, mine, view.step), BAND_X, y + 2, { font: "7px Silkscreen", color: mine ? "#ffe080" : "#c0b0d0" });
   const recent = view.display_log.slice(-2);
-  recent.forEach((l, i) => text(ctx, clip(ctx, l, BOARD_W - bx0 - 4, "7px Silkscreen"), bx0, y + 12 + i * 8, { font: "7px Silkscreen", color: "#8a8898" }));
+  recent.forEach((l, i) => text(ctx, clip(ctx, l, BAND_W, "7px Silkscreen"), BAND_X, y + 12 + i * 8, { font: "7px Silkscreen", color: "#8a8898" }));
   view.stack.forEach((item, i) => {
     const key = `o${item.object_id}`;
     const x = sx0 + i * 28, sy = y + 9;
@@ -534,19 +579,19 @@ function inspector(ctx: Ctx, state: LiveState, x: number, y: number, w: number):
   drawArt(ctx, x + 4, y + 4, ART_L.w, ART_L.h, o.name, colors, !!o.is_token);
   let ty = y + 4;
   const tx = x + 4 + ART_L.w + 4, tw = w - (ART_L.w + 12);
-  for (const l of wrap(ctx, o.name, tw, "8px PressStart").slice(0, 3)) { text(ctx, l, tx, ty, { font: "8px PressStart", color: "#ffffff" }); ty += 10; }
+  for (const l of wrapCapped(ctx, o.name, tw, "8px PressStart", 3)) { text(ctx, l, tx, ty, { font: "8px PressStart", color: "#ffffff" }); ty += 10; }
   if (o.cost) { manaDots(ctx, o.cost, tx, ty); ty += 10; }
   const typeLine = [...(o.supertypes || []), ...(o.card_types || [])].join(" ") + ((o.subtypes && o.subtypes.length) ? " — " + o.subtypes.join(" ") : "");
-  for (const l of wrap(ctx, typeLine, tw, "7px Silkscreen").slice(0, 2)) { text(ctx, l, tx, ty, { font: "7px Silkscreen", color: "#b0b8c8" }); ty += 8; }
+  for (const l of wrapCapped(ctx, typeLine, tw, "7px Silkscreen", 2)) { text(ctx, l, tx, ty, { font: "7px Silkscreen", color: "#b0b8c8" }); ty += 8; }
   const pt = inspectorPt(o);
   if (pt.length) { text(ctx, pt[0], tx, ty, { font: "8px PressStart", color: "#e0f0ff" }); ty += 10; }
   if (pt.length > 1) { text(ctx, pt[1], tx, ty, { font: "7px Silkscreen", color: "#8a8090" }); ty += 8; }
   ty = Math.max(ty, y + 4 + ART_L.h + 4);
   const facts = inspectorFacts(state, e);
-  for (const f of facts) for (const l of wrap(ctx, f, w - 8, "7px Silkscreen").slice(0, 2)) { text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#d0c8a0" }); ty += 8; }
+  for (const f of facts) for (const l of wrapCapped(ctx, f, w - 8, "7px Silkscreen", 2)) { text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#d0c8a0" }); ty += 8; }
   const oracle = [o.oracle_text || "", ...(o.granted_abilities || [])].filter(Boolean).join("\n");
   const maxLines = Math.max(0, Math.floor((y + 200 - ty) / 9));
-  for (const l of wrap(ctx, oracle, w - 8, "8px Silkscreen").slice(0, maxLines)) { text(ctx, l, x + 4, ty, { color: "#e8e0d0" }); ty += 9; }
+  for (const l of wrapCapped(ctx, oracle, w - 8, "8px Silkscreen", maxLines)) { text(ctx, l, x + 4, ty, { color: "#e8e0d0" }); ty += 9; }
   return ty;
 }
 
@@ -556,7 +601,7 @@ function promptArea(ctx: Ctx, hits: Hit[], state: LiveState, x: number, y: numbe
   let ty = y + 6;
   x += 2; w -= 4;
   if (state.gameOver) {
-    for (const l of wrap(ctx, state.gameOver, w - 8, "8px Silkscreen").slice(0, 8)) { text(ctx, l, x + 4, ty, { color: "#ffe080" }); ty += 9; }
+    for (const l of wrapCapped(ctx, state.gameOver, w - 8, "8px Silkscreen", 8)) { text(ctx, l, x + 4, ty, { color: "#ffe080" }); ty += 9; }
     return;
   }
   if (!state.decision) {
@@ -567,13 +612,13 @@ function promptArea(ctx: Ctx, hits: Hit[], state: LiveState, x: number, y: numbe
   }
   if (state.autoPass) { text(ctx, "AUTO-PASS on (f to stop)", x + 4, ty, { font: "7px Silkscreen", color: "#ffe080" }); ty += 9; }
   const title = ui ? ui.title : "";
-  for (const l of wrap(ctx, title, w - 8, "8px Silkscreen").slice(0, 4)) { text(ctx, l, x + 4, ty, { color: "#ffe080" }); ty += 9; }
-  if (ui && ui.hint) for (const l of wrap(ctx, ui.hint, w - 8, "7px Silkscreen").slice(0, 3)) { text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#a098b0" }); ty += 8; }
+  for (const l of wrapCapped(ctx, title, w - 8, "8px Silkscreen", 4)) { text(ctx, l, x + 4, ty, { color: "#ffe080" }); ty += 9; }
+  if (ui && ui.hint) for (const l of wrapCapped(ctx, ui.hint, w - 8, "7px Silkscreen", 3)) { text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#a098b0" }); ty += 8; }
   if (ui && ui.mode === "mark") { text(ctx, `Marked ${ui.marked.length} of ${ui.max}`, x + 4, ty, { color: "#c0e0a0" }); ty += 9; }
   if (ui && ui.mode === "number") {
     for (const l of (ui.summary || []).slice(0, 4)) { text(ctx, clip(ctx, l, w - 8, "7px Silkscreen"), x + 4, ty, { font: "7px Silkscreen", color: "#c0c8d0" }); ty += 8; }
   }
-  if (state.notice) for (const l of wrap(ctx, state.notice, w - 8, "7px Silkscreen").slice(0, 3)) { text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#ff9080" }); ty += 8; }
+  if (state.notice) for (const l of wrapCapped(ctx, state.notice, w - 8, "7px Silkscreen", 3)) { text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#ff9080" }); ty += 8; }
   // Rows the board cannot show, then buttons. A modal has its own rows.
   const modal = ui && (ui.mode === "list" || ui.mode === "order" || ui.mode === "number");
   const rows: Row[] = modal ? [] : ((ui && ui.rows) || (ui && ui.looseRows) || []);
@@ -595,13 +640,24 @@ function promptArea(ctx: Ctx, hits: Hit[], state: LiveState, x: number, y: numbe
   }
 }
 
-function logArea(ctx: Ctx, hits: Hit[], state: LiveState, x: number, y: number, w: number, h: number): void {
+/**
+ * The log, newest at the bottom, scrolled by `state.logScroll`.
+ *
+ * `headRoom` is pixels at the top of the box the caller has already drawn
+ * something into. The drawer's heading used to be painted at the same y as
+ * the first visible line — `240 + 2` and `360 - 118` are the same pixel —
+ * so the oldest entry on screen came out as an unreadable two-colour mash,
+ * and scrolling only moved which entry that was (issue #521). The box, and
+ * the rectangle the wheel scrolls, still cover the whole drawer.
+ */
+function logArea(ctx: Ctx, hits: Hit[], state: LiveState, x: number, y: number, w: number, h: number, headRoom = 0): void {
   panel(ctx, x, y, w, h, "#100e14", "#3a3048");
   const lines: string[] = [];
   for (const entry of state.view.display_log.slice(-40)) for (const l of wrap(ctx, entry, w - 8, "7px Silkscreen")) lines.push(l);
-  const fit = Math.floor((h - 4) / 8);
+  const top = y + 2 + headRoom;
+  const fit = Math.floor((h - 4 - headRoom) / 8);
   const shown = lines.slice(Math.max(0, lines.length - fit - state.logScroll), lines.length - state.logScroll);
-  shown.forEach((l, i) => text(ctx, l, x + 4, y + 2 + i * 8, { font: "7px Silkscreen", color: "#a8a0b0" }));
+  shown.forEach((l, i) => text(ctx, l, x + 4, top + i * 8, { font: "7px Silkscreen", color: "#a8a0b0" }));
   hits.push({ x, y, w, h, kind: "log" });
 }
 
@@ -625,7 +681,7 @@ function modal(ctx: Ctx, hits: Hit[], state: LiveState): void {
   hits.push({ x, y, w, h, kind: "modal" });
   texturedPanel(ctx, x, y, w, h, "#1a1620", "#c9a84a");
   let ty = y + 6;
-  for (const l of wrap(ctx, ui.title, w - 12, "8px PressStart").slice(0, 2)) { text(ctx, l, x + 6, ty, { font: "8px PressStart", color: "#ffe080" }); ty += 10; }
+  for (const l of wrapCapped(ctx, ui.title, w - 12, "8px PressStart", 2)) { text(ctx, l, x + 6, ty, { font: "8px PressStart", color: "#ffe080" }); ty += 10; }
   if (ui.filter) { panel(ctx, x + 6, ty, w - 12, 12, "#0e0c12", "#6a5a7a"); text(ctx, ui.query || "type to filter…", x + 9, ty + 2, { color: ui.query ? "#fff" : "#7a7280" }); ty += 14; }
   if (ui.mode === "number") {
     panel(ctx, x + 6, ty, 80, 14, "#0e0c12", "#6a5a7a"); text(ctx, (ui.value ?? "") + "▏", x + 9, ty + 3, { font: "8px PressStart", color: "#fff" });
@@ -698,7 +754,7 @@ function zoneOverlay(ctx: Ctx, hits: Hit[], state: LiveState): void {
     ctx.fillStyle = hl ? HL[hl] : hovered ? "#d0c8e0" : "#4a4050"; ctx.fillRect(x - 1, y - 1, cw + 2, ch + 2);
     ctx.fillStyle = "#201828"; ctx.fillRect(x, y, cw, ch);
     drawArt(ctx, x + 6, y + 3, ART_S.w, ART_S.h, c.name, colorsOfCost(c.cost), false);
-    wrap(ctx, c.name, cw - 4, "6px Silkscreen").slice(0, 3).forEach((l, j) => text(ctx, l, x + 2, y + 30 + j * 7, { font: "6px Silkscreen" }));
+    wrapCapped(ctx, c.name, cw - 4, "6px Silkscreen", 3).forEach((l, j) => text(ctx, l, x + 2, y + 30 + j * 7, { font: "6px Silkscreen" }));
     hits.push({ x: x - 1, y: y - 1, w: cw + 2, h: ch + 2, kind: "card", key, id: c.object_id, onClick: clickFor(state, key) });
   });
   if (cards.length > perPage) {
@@ -766,7 +822,9 @@ export function render(ctx: Ctx, state: State): Hit[] {
   if (state.logOpen && !state.overlay) {
     // A wide log drawer over the board, for reading rather than glancing.
     ctx.fillStyle = "rgba(10,8,14,0.92)"; ctx.fillRect(0, H - 120, BOARD_W, 120);
-    logArea(ctx, hits, live, 0, H - 120, BOARD_W, 120);
+    // The heading gets a row of its own (issue #521); `logArea` starts
+    // below it and the drawer still had spare pixels at the bottom.
+    logArea(ctx, hits, live, 0, H - 120, BOARD_W, 120, 10);
     text(ctx, "LOG (l to close, wheel to scroll)", 4, H - 118, { font: "7px Silkscreen", color: "#ffe080" });
   }
   return hits;

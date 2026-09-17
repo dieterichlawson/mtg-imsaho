@@ -1,6 +1,6 @@
 // The page: one WebSocket to the seat, one canvas, one state object.
 import { loadManifest, fontsReady, artNames } from "./assets.js";
-import { render, inspecting, inspectorFacts, inspectorPt, W, H, PANEL_X } from "./render.js";
+import { render, inspecting, inspectorFacts, inspectorPt, wrap, wrapCapped, bandTurnLine, BAND_W, W, H, PANEL_X } from "./render.js";
 import { beginDecision, indexView, beginList } from "./prompts.js";
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -410,6 +410,13 @@ window.mtgDebug = {
         return e ? { name: e.obj.name, zone: e.zone, facts: inspectorFacts(l, e), pt: inspectorPt(e.obj) } : null;
     },
     artNames,
+    fit: {
+        wrap: (s, maxW, font) => wrap(ctx, s, maxW, font),
+        wrapCapped: (s, maxW, font, maxLines) => wrapCapped(ctx, s, maxW, font, maxLines),
+        width: (s, font) => { ctx.font = font; return ctx.measureText(s).width; },
+        bandLine: (mine, step) => bandTurnLine(ctx, mine, step),
+        bandW: BAND_W,
+    },
     sent: [],
     trace: [],
 };

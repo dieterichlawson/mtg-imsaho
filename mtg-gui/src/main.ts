@@ -1,7 +1,7 @@
 // The page: one WebSocket to the seat, one canvas, one state object.
 
 import { loadManifest, fontsReady, artNames } from "./assets.js";
-import { render, inspecting, inspectorFacts, inspectorPt, W, H, PANEL_X } from "./render.js";
+import { render, inspecting, inspectorFacts, inspectorPt, wrap, wrapCapped, bandTurnLine, BAND_W, W, H, PANEL_X } from "./render.js";
 import { beginDecision, indexView, beginList } from "./prompts.js";
 import type { Action, ClientMessage, Decision, GameView, ServerMessage } from "./protocol.js";
 import type { Hit, LiveState, Row, State } from "./state.js";
@@ -34,6 +34,14 @@ interface DebugHook {
   inspectHover(): Inspected | null;
   /** The card names a stack item's display name could be art for. */
   artNames(name: string): string[];
+  /** The page's own text fitting, for the sweep in the tests. */
+  fit: {
+    wrap(s: string, maxW: number, font: string): string[];
+    wrapCapped(s: string, maxW: number, font: string, maxLines: number): string[];
+    width(s: string, font: string): number;
+    bandLine(mine: boolean, step: string): string;
+    bandW: number;
+  };
   sent: { seq: number; action: Action }[];
   /** One line per decision received: what it was and how it was handled. */
   trace: string[];
@@ -356,6 +364,13 @@ window.mtgDebug = {
     return e ? { name: e.obj.name, zone: e.zone, facts: inspectorFacts(l, e), pt: inspectorPt(e.obj) } : null;
   },
   artNames,
+  fit: {
+    wrap: (s, maxW, font) => wrap(ctx, s, maxW, font),
+    wrapCapped: (s, maxW, font, maxLines) => wrapCapped(ctx, s, maxW, font, maxLines),
+    width: (s, font) => { ctx.font = font; return ctx.measureText(s).width; },
+    bandLine: (mine, step) => bandTurnLine(ctx, mine, step as never),
+    bandW: BAND_W,
+  },
   sent: [],
   trace: [],
 };
