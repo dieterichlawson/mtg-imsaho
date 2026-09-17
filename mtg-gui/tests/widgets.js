@@ -276,6 +276,65 @@ async function main() {
         await expectSent("menu-pass", a => a === "PassPriority");
       }
     }
+    // 14. Enter at a mark prompt: refuses out loud below the minimum, and
+    // never commits an empty answer nobody chose. Enter is the idle key —
+    // in menu mode it passes priority — so landing on an "up to N" mark
+    // with that habit used to throw the whole optional effect away in one
+    // keystroke, and below the minimum it did nothing and said nothing
+    // (issues #518, #520, #524).
+    const notice = () => page.evaluate(() => window.mtg.notice);
+    const expectNothingSent = async (name) => {
+      const s = await lastSent();
+      if (s && s.seq === seq) fail(`${name}: sent ${JSON.stringify(s.action)} — the prompt should have refused`);
+      else ok(`${name}: nothing sent`);
+    };
+    {
+      // (a) below the minimum — the DISCARD 1 CARD dead end.
+      if (await stage("mark-enter-below-min", legal({ context: "DISCARD 1 CARD", set_prompt: { kind: "DiscardToHandSize", player: ids.you, options: ids.hand, min: 1, max: 1 } }), null, "mark")) {
+        for (let i = 0; i < 3; i++) await page.keyboard.press("Enter");
+        await page.waitForTimeout(60);
+        await expectNothingSent("mark-enter-below-min");
+        const n = await notice();
+        if (!n || !/mark exactly 1 card/.test(n)) fail(`mark-enter-below-min: notice was ${JSON.stringify(n)}`);
+        else ok(`mark-enter-below-min: said "${n}"`);
+        // And it is still answerable by marking one.
+        await clickHit(`(h) => h.kind === 'hand' && h.id === ${ids.hand[0]}`);
+        await clickHit("(h) => h.kind === 'button' && h.label === 'Confirm'");
+        await expectSent("mark-enter-below-min recovers", a => a.DiscardCards && a.DiscardCards.cards.length === 1);
+      }
+      // (b) min 0 — the idle key must not be an answer (#262's rule).
+      const gy = ids.library.slice(0, 3);
+      if (await stage("mark-enter-at-min-zero", legal({ resolution_prompt: { ChooseExileFromGraveyard: { description: "Exile up to three cards", options: gy, min: 0, max: 3, source_id: ids.hand[0] } } }), null, "mark")) {
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(60);
+        await expectNothingSent("mark-enter-at-min-zero");
+        const n = await notice();
+        if (!n || !/nothing marked/.test(n)) fail(`mark-enter-at-min-zero: notice was ${JSON.stringify(n)}`);
+        else ok(`mark-enter-at-min-zero: said "${n}"`);
+        // Saying none on purpose still works, and says so on a button.
+        await clickHit("(h) => h.kind === 'button' && h.label === 'Confirm none'");
+        await expectSent("mark-confirm-none", a => a.ResolveChoice && a.ResolveChoice.choice.ChosenExileSet && a.ResolveChoice.choice.ChosenExileSet.length === 0);
+      }
+      // (c) once the player has marked something and unmarked it again,
+      // the empty answer IS theirs, and Enter takes it.
+      if (await stage("mark-enter-after-touching", legal({ resolution_prompt: { ChooseExileFromGraveyard: { description: "Exile up to three cards", options: gy, min: 0, max: 3, source_id: ids.hand[0] } } }), null, "mark")) {
+        await clickHit("(h, m) => h.kind === 'row' && h.y === Math.min(...m.hits.filter(x => x.kind === 'row').map(x => x.y))");
+        await clickHit("(h, m) => h.kind === 'row' && h.y === Math.min(...m.hits.filter(x => x.kind === 'row').map(x => x.y))");
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(60);
+        await expectSent("mark-enter-after-touching", a => a.ResolveChoice && a.ResolveChoice.choice.ChosenExileSet && a.ResolveChoice.choice.ChosenExileSet.length === 0);
+      }
+      // (d) the order widget: every arrangement is legal, so Enter answers.
+      {
+        const options = ["Doomed Traveler's trigger", "Mausoleum Guard's trigger"];
+        const actions = options.map((o, i) => rc({ ChosenIndex: [i, o] }));
+        if (await stage("order-enter", legal({ actions, resolution_prompt: { ChooseTriggerOrder: { description: "Order the triggers", options, ap_queue: true, indices: [0, 1], details: [] } } }), null, "order")) {
+          await page.keyboard.press("Enter");
+          await page.waitForTimeout(60);
+          await expectSent("order-enter", a => a.ResolveChoice && JSON.stringify(a.ResolveChoice.choice.ChosenOrder) === "[0,1]");
+        }
+      }
+    }
     if (errors.length) fail("page errors:\n" + errors.join("\n"));
   } finally {
     await browser.close();

@@ -27,3 +27,6 @@ __pycache__/
 *.pyc
 # Scryfall art crops the art script feeds Retro Diffusion: inputs, not ours.
 /logs/card-art-refs/
+# npm installs the GUI's TypeScript compiler locally; CI uses
+# `npm install --no-save typescript@5` and never commits it either.
+mtg-gui/node_modules/
