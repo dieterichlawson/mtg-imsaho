@@ -1,7 +1,7 @@
 // The page: one WebSocket to the seat, one canvas, one state object.
 
-import { loadManifest, fontsReady } from "./assets.js";
-import { render, W, H, PANEL_X } from "./render.js";
+import { loadManifest, fontsReady, artNames } from "./assets.js";
+import { render, inspecting, inspectorFacts, inspectorPt, W, H, PANEL_X } from "./render.js";
 import { beginDecision, indexView, beginList } from "./prompts.js";
 import type { Action, ClientMessage, Decision, GameView, ServerMessage } from "./protocol.js";
 import type { Hit, LiveState, Row, State } from "./state.js";
@@ -22,9 +22,18 @@ const state: State = {
 };
 
 /** What tests and the console see. */
+interface Inspected { name: string; zone: string; facts: string[]; pt: string[] }
 interface DebugHook {
   stage(decision: Decision): void;
   render(): number;
+  /** What the inspector would say about the thing at `key`, as text. */
+  inspect(key: string, kind?: string): Inspected | null;
+  /** The same, about whatever `state.hover` currently is. Two stack chips
+   *  share a key, so a key is not enough to tell them apart — which is the
+   *  thing being tested. */
+  inspectHover(): Inspected | null;
+  /** The card names a stack item's display name could be art for. */
+  artNames(name: string): string[];
   sent: { seq: number; action: Action }[];
   /** One line per decision received: what it was and how it was handled. */
   trace: string[];
@@ -325,6 +334,28 @@ window.mtgDebug = {
     state.hits = render(ctx, state);
   },
   render() { state.hits = render(ctx, state); return state.hits.length; },
+  inspect(key, kind) {
+    const l = live();
+    if (!l) return null;
+    // A test may have edited the view in place; the index is derived from
+    // it, so derive it again rather than reading a stale one.
+    state.index = indexView(l.view);
+    state.hits = render(ctx, state);
+    const hit = state.hits.slice().reverse().find(h => h.key === key && (!kind || h.kind === kind));
+    if (!hit) return null;
+    const was = state.hover;
+    state.hover = hit;
+    const out = this.inspectHover();
+    state.hover = was;
+    return out;
+  },
+  inspectHover() {
+    const l = live();
+    if (!l) return null;
+    const e = inspecting(l);
+    return e ? { name: e.obj.name, zone: e.zone, facts: inspectorFacts(l, e), pt: inspectorPt(e.obj) } : null;
+  },
+  artNames,
   sent: [],
   trace: [],
 };

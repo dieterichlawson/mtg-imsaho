@@ -18,6 +18,8 @@ export interface Hit {
   verbs?: { label: string; run: () => void }[];
   key?: string;
   id?: ObjectId;
+  /** For a stack chip: which slot of `view.stack` it was drawn for. */
+  stackIndex?: number;
   pid?: PlayerId;
   zone?: "graveyard" | "exile" | "library";
   label?: string;

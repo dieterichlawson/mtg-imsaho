@@ -20,8 +20,21 @@ export function indexView(view) {
             put(c, "graveyard", pid);
     for (const c of view.exile)
         put(c, "exile", c.owner);
+    // A stack item is not always an object of its own. `view.rs` gives an
+    // activated ability its SOURCE permanent's id and gives every trigger
+    // `ObjectId(0)`, and the stack is filled last — so an ability on the
+    // stack used to replace its own source here. Hovering the Ghoulcaller's
+    // Bell on the battlefield showed "Ghoulcaller's Bell ability / IN STACK"
+    // and none of the permanent, `nameOf` renamed it everywhere for the
+    // duration, and two triggers at once both resolved to whichever was
+    // indexed last (issue #527).
+    //
+    // A spell on the stack IS its own object and still belongs here. The
+    // others are read off the slot they were drawn for, which is the only
+    // thing that tells two triggers apart.
     for (const s of view.stack)
-        put(s, "stack", s.controller);
+        if (s.object_id !== 0 && !idx.has(s.object_id))
+            put(s, "stack", s.controller);
     for (const c of view.your_library_cards)
         put(c, "library", view.you);
     for (const [id, name] of Object.entries(view.revealed_names || {})) {

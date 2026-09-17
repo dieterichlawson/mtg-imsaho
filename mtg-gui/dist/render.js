@@ -448,7 +448,11 @@ function drawBand(ctx, hits, state) {
         ctx.fillRect(x, sy, 24, 20);
         drawArt(ctx, x + 2, sy + 2, 16, 12, item.name, [], false);
         text(ctx, String(i + 1), x + 20, sy + 12, { align: "center", font: "6px Silkscreen", color: "#ffe080" });
-        hits.push({ x: x - 1, y: sy - 1, w: 26, h: 22, kind: "stack", key, id: item.object_id, onClick: clickFor(state, key) });
+        // The key stays `o<id>` so a spell on the stack is still clickable as
+        // a target; the slot is what says WHICH stack item this chip is, since
+        // an ability's id names its source and a trigger's names nothing
+        // (issue #527).
+        hits.push({ x: x - 1, y: sy - 1, w: 26, h: 22, kind: "stack", key, id: item.object_id, stackIndex: i, onClick: clickFor(state, key) });
     });
 }
 /** Lines from each stack item to what it targets. */
@@ -457,8 +461,11 @@ function stackLines(ctx, hits, state) {
     if (!view.stack.length)
         return;
     const rectOf = (key) => hits.find(h => h.key === key && (h.kind === "perm" || h.kind === "stack" || h.kind === "player" || h.kind === "hand"));
-    view.stack.forEach((item) => {
-        const from = rectOf(`o${item.object_id}`);
+    view.stack.forEach((item, i) => {
+        // An ability's chip shares its key with the source permanent, so
+        // `rectOf` would draw the arrow from whichever was pushed first. The
+        // slot names the chip (issue #527).
+        const from = hits.find(h => h.kind === "stack" && h.stackIndex === i);
         if (!from)
             return;
         for (const t of item.targets) {
@@ -492,9 +499,127 @@ function gameOverScreen(ctx, state) {
     lines.forEach((l, i) => text(ctx, l, x + w / 2, y + 28 + i * 11, { align: "center" }));
 }
 // --------------------------------------------------------------- panel
+/**
+ * The inspector's power/toughness lines: the effective box, and the printed
+ * one under it when they differ.
+ *
+ * A star-P/T creature's printed box is filled in by a characteristic-
+ * defining ability (CR 604.3), and the `0` the card data carries for it is
+ * a sentinel the engine's own `prints_star_pt` says "must never be shown as
+ * one". Sturmgeist with four cards in hand used to read `4/4` over
+ * `(printed 0/0)`; `star_pt` was in the view the page was handed and was
+ * read nowhere on it. The CLI has printed the star form here since #267
+ * (issue #526).
+ */
+export function inspectorPt(o) {
+    if (o.effective_power !== undefined && o.effective_power !== null) {
+        const live = `${o.effective_power}/${o.effective_toughness}${o.damage_marked ? ` ${o.damage_marked} dmg` : ""}`;
+        if (o.star_pt)
+            return [live, "(printed */*)"];
+        if (o.printed_power === undefined || o.printed_power === null)
+            return [live];
+        if (o.printed_power === o.effective_power && o.printed_toughness === o.effective_toughness)
+            return [live];
+        return [live, `(printed ${o.printed_power}/${o.printed_toughness})`];
+    }
+    if (o.power !== undefined && o.power !== null)
+        return [`${o.power}/${o.toughness}`];
+    return [];
+}
+/**
+ * Every fact the inspector states about `e`, in the order it states
+ * them.
+ *
+ * Separated from the drawing so the contract can be read, and tested,
+ * without a canvas. The reference list of what a player is entitled to
+ * know about a permanent is `CliPlayer::paint_permanent_detail`; this is
+ * the same list on the fourth surface.
+ */
+export function inspectorFacts(state, e) {
+    const o = e.obj;
+    const out = [];
+    // Whether this is a token decides what can be done with it after it dies:
+    // CR 111.7 makes it cease to exist, so no recursion ever gets it back and
+    // a graveyard count that includes it is wrong. The board rows of both
+    // interactive surfaces carry it and neither detail view did — the page's
+    // only signal was a 2px stripe on the board card (issue #534).
+    if (o.is_token)
+        out.push("Token");
+    // Colour (CR 105.2) is what intimidate reads (CR 702.13a), and a
+    // transformed face has no mana cost, so without this line it is
+    // obtainable from nothing on screen. "Colorless" is the whole answer for
+    // Galvanic Juggernaut (CR 105.2c), so it is said out loud (issue #525,
+    // #357 on the fourth surface).
+    if (o.colors)
+        out.push(`Color: ${o.colors.length ? o.colors.join(", ") : "Colorless"}`);
+    if (o.keywords && o.keywords.length)
+        out.push(o.keywords.join(", "));
+    if (o.counters)
+        for (const [k, n] of Object.entries(o.counters))
+            if (n)
+                out.push(`${n} ${k} counter${n > 1 ? "s" : ""}`);
+    // The count, not just a badge. A shield is spent one per destruction
+    // (CR 701.15a), so six of them and one of them are different boards —
+    // and the board's `R` badge carries no number and is 8th of the badges
+    // `drawPerm` slices to three, so it is often not on screen at all
+    // (issue #525, #468 on the fourth surface).
+    if (o.regeneration_shields)
+        out.push(`${o.regeneration_shields} regeneration shield${o.regeneration_shields > 1 ? "s" : ""}`);
+    if (o.attached_to !== undefined && o.attached_to !== null)
+        out.push(`Attached to ${nameOf(state, o.attached_to)}`);
+    // And the other direction, which is the one #83 is about: hovering the
+    // Equipment said "Attached to Sturmgeist" while hovering the Sturmgeist
+    // said nothing about the Equipment.
+    const attachments = state.view.battlefield.filter(p => p.attached_to === o.object_id).map(p => p.name);
+    if (attachments.length)
+        out.push(`Equipped/enchanted with: ${attachments.join(", ")}`);
+    if (o.attached_to_player !== undefined && o.attached_to_player !== null)
+        out.push(`Enchants ${playerLabel(state, o.attached_to_player)}`);
+    if (o.attacking)
+        out.push("Attacking " + ("Player" in o.attacking ? playerLabel(state, o.attacking.Player) : nameOf(state, o.attacking.Planeswalker)));
+    if (o.blocking && o.blocking.length)
+        out.push("Blocking " + o.blocking.map(id => nameOf(state, id)).join(", "));
+    if (o.blocked_by && o.blocked_by.length)
+        out.push("Blocked by " + o.blocked_by.map(id => nameOf(state, id)).join(", "));
+    for (const p of o.protections || [])
+        out.push(p);
+    for (const r of o.restrictions || [])
+        out.push(r);
+    if (o.summoning_sick)
+        out.push("Summoning sick");
+    if (o.named_card)
+        out.push(`Named: ${o.named_card}`);
+    if (o.targets && o.targets.length)
+        out.push("Targets: " + o.targets.map(t => targetLabel(state, t)).join(", "));
+    if (o.x_value !== undefined && o.x_value !== null)
+        out.push(`X = ${o.x_value}`);
+    if (e.zone !== "battlefield" && e.zone !== "hand")
+        out.push(`In ${e.zone}`);
+    return out;
+}
+/**
+ * What the inspector is about: the thing hovered, else the thing selected.
+ *
+ * A stack chip is read off the slot it was drawn for rather than by id. An
+ * activated ability carries its SOURCE permanent's id and a trigger carries
+ * `ObjectId(0)`, so by id a chip resolves to the permanent on the
+ * battlefield or to nothing at all — which is how hovering a Ghoulcaller's
+ * Bell showed "Ghoulcaller's Bell ability / IN STACK" and none of the
+ * permanent (issue #527).
+ */
+export function inspecting(state) {
+    const h = state.hover;
+    if (h && h.kind === "stack" && h.stackIndex !== undefined) {
+        const item = state.view.stack[h.stackIndex];
+        return item ? { obj: item, zone: "stack", owner: item.controller } : undefined;
+    }
+    const hoverId = h && h.key ? Number(h.key.slice(1)) : null;
+    if (hoverId !== null)
+        return state.index.get(hoverId);
+    return state.selected !== null ? state.index.get(state.selected) : undefined;
+}
 function inspector(ctx, state, x, y, w) {
-    const hoverId = state.hover && state.hover.key ? Number(state.hover.key.slice(1)) : null;
-    const e = hoverId !== null ? state.index.get(hoverId) : (state.selected !== null ? state.index.get(state.selected) : undefined);
+    const e = inspecting(state);
     if (!e) {
         text(ctx, "Hover a card to read it.", x + 4, y + 4, { color: "#7a7280" });
         return y + 16;
@@ -517,51 +642,17 @@ function inspector(ctx, state, x, y, w) {
         text(ctx, l, tx, ty, { font: "7px Silkscreen", color: "#b0b8c8" });
         ty += 8;
     }
-    if (o.effective_power !== undefined && o.effective_power !== null) {
-        const printed = o.printed_power !== undefined && o.printed_power !== null ? ` (printed ${o.printed_power}/${o.printed_toughness})` : "";
-        text(ctx, `${o.effective_power}/${o.effective_toughness}${o.damage_marked ? ` ${o.damage_marked} dmg` : ""}`, tx, ty, { font: "8px PressStart", color: "#e0f0ff" });
+    const pt = inspectorPt(o);
+    if (pt.length) {
+        text(ctx, pt[0], tx, ty, { font: "8px PressStart", color: "#e0f0ff" });
         ty += 10;
-        if (printed && (o.printed_power !== o.effective_power || o.printed_toughness !== o.effective_toughness)) {
-            text(ctx, printed.trim(), tx, ty, { font: "7px Silkscreen", color: "#8a8090" });
-            ty += 8;
-        }
     }
-    else if (o.power !== undefined && o.power !== null) {
-        text(ctx, `${o.power}/${o.toughness}`, tx, ty, { font: "8px PressStart" });
-        ty += 10;
+    if (pt.length > 1) {
+        text(ctx, pt[1], tx, ty, { font: "7px Silkscreen", color: "#8a8090" });
+        ty += 8;
     }
     ty = Math.max(ty, y + 4 + ART_L.h + 4);
-    const facts = [];
-    if (o.keywords && o.keywords.length)
-        facts.push(o.keywords.join(", "));
-    if (o.counters)
-        for (const [k, n] of Object.entries(o.counters))
-            if (n)
-                facts.push(`${n} ${k} counter${n > 1 ? "s" : ""}`);
-    if (o.attached_to !== undefined && o.attached_to !== null)
-        facts.push(`Attached to ${nameOf(state, o.attached_to)}`);
-    if (o.attached_to_player !== undefined && o.attached_to_player !== null)
-        facts.push(`Enchants ${playerLabel(state, o.attached_to_player)}`);
-    if (o.attacking)
-        facts.push("Attacking " + ("Player" in o.attacking ? playerLabel(state, o.attacking.Player) : nameOf(state, o.attacking.Planeswalker)));
-    if (o.blocking && o.blocking.length)
-        facts.push("Blocking " + o.blocking.map(id => nameOf(state, id)).join(", "));
-    if (o.blocked_by && o.blocked_by.length)
-        facts.push("Blocked by " + o.blocked_by.map(id => nameOf(state, id)).join(", "));
-    for (const p of o.protections || [])
-        facts.push(p);
-    for (const r of o.restrictions || [])
-        facts.push(r);
-    if (o.summoning_sick)
-        facts.push("Summoning sick");
-    if (o.named_card)
-        facts.push(`Named: ${o.named_card}`);
-    if (o.targets && o.targets.length)
-        facts.push("Targets: " + o.targets.map(t => targetLabel(state, t)).join(", "));
-    if (o.x_value !== undefined && o.x_value !== null)
-        facts.push(`X = ${o.x_value}`);
-    if (e.zone !== "battlefield" && e.zone !== "hand")
-        facts.push(`In ${e.zone}`);
+    const facts = inspectorFacts(state, e);
     for (const f of facts)
         for (const l of wrap(ctx, f, w - 8, "7px Silkscreen").slice(0, 2)) {
             text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#d0c8a0" });

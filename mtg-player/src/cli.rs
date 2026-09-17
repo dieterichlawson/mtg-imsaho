@@ -4340,6 +4340,19 @@ impl CliPlayer {
             &perm.supertypes, &perm.card_types, &perm.subtypes);
         let _ = execute!(out, Print(format!("  Type: {type_line}\n")));
 
+        // Whether it is a token, which decides what can be done
+        // with it once it dies: CR 111.7 makes a token that
+        // leaves the battlefield cease to exist, so no recursion
+        // in the set can get it back and a graveyard count that
+        // includes it is wrong. The board row has said `[tok]`
+        // since #331/#334 and the detail page — the screen a
+        // player checks a permanent's characteristics on — did
+        // not, so a 1/1 Spirit token and a 1/1 Spirit card read
+        // identically here (issue #534).
+        if perm.is_token {
+            let _ = execute!(out, Print("  Token: true\n".to_string()));
+        }
+
         // Color (CR 105.2). Intimidate (CR 702.13a) is decided
         // entirely by it and no pane printed it: for most
         // permanents a player could infer it from the mana cost

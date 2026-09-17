@@ -39,16 +39,54 @@ function load(path) {
     return img;
 }
 /**
+ * The card names a stack item's display name could be art for, best first.
+ *
+ * The engine names a stack item for a person to read, not for a lookup.
+ * There are three shapes and it is worth naming them, because undoing them
+ * by guessing is what went wrong:
+ *
+ * - a spell is its card's name;
+ * - an activated ability is `"<card> ability"` (`view.rs`);
+ * - a trigger is `"<source>'s <phrase>"`, with an optional
+ *   `" (<description>)"` (`triggers.rs`, `named`), and the log form adds
+ *   `" (#12)"` after the source.
+ *
+ * The card name inside any of those may itself contain `'s ` — Ghoulcaller's
+ * Bell, Geistcatcher's Rig, Ludevic's Test Subject — and the strip this
+ * replaces took the FIRST one and everything after it. So every activated
+ * ability missed outright ("Ghoulcaller's Bell ability" looked up
+ * "Ghoulcaller"), and a trigger on a possessive card missed too, while
+ * "Doomed Traveler's dies trigger" happened to work and hid it (issue
+ * #528). A trigger's own possessive is the LAST `'s ` in the name, and the
+ * `" ability"` suffix has to come off before any of it.
+ */
+export function artNames(name) {
+    const out = [];
+    const push = (s) => { if (s && !out.includes(s))
+        out.push(s); };
+    push(name);
+    push(name.replace(/\s*\(#\d+\).*$/, ""));
+    for (const n of [...out]) {
+        if (n.endsWith(" ability"))
+            push(n.slice(0, -" ability".length));
+        const head = n.replace(/\s*\([^)]*\)\s*$/, "");
+        const cut = head.lastIndexOf("'s ");
+        if (cut > 0)
+            push(head.slice(0, cut));
+    }
+    return out;
+}
+/**
  * The loaded art image for a card or token name, or null. An ability on
  * the stack is named for its source ("Doomed Traveler's trigger", "Geist
  * of Saint Traft (#12)"), and shows that card's art.
  */
 export function artFor(name, isToken) {
-    let path = byName.get(name);
-    if (!path) {
-        const base = name.replace(/\s*\(#\d+\).*$/, "").replace(/'s\s.*$/, "");
-        if (base !== name)
-            path = byName.get(base);
+    let path;
+    for (const candidate of artNames(name)) {
+        path = byName.get(candidate);
+        if (path)
+            break;
     }
     if (!path && isToken)
         path = `assets/art/tokens/${slug(name)}.png`;

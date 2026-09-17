@@ -335,6 +335,117 @@ async function main() {
         }
       }
     }
+    // 15. The inspector: what it is about, and what it says.
+    //
+    // The facts and the P/T lines are read back through the page's own
+    // `mtgDebug.inspect`, which resolves the hovered thing exactly as the
+    // renderer does. The view is edited in place first, so a board these
+    // seeds do not reach can still be asked about.
+    {
+      const perm = ids.mine[0];
+      // (a) an activated ability on the stack carries its SOURCE
+      // permanent's id (view.rs), and the page indexed the stack last, so
+      // the ability replaced the permanent: hovering the Ghoulcaller's Bell
+      // on the battlefield showed the ability and none of the permanent.
+      const both = await page.evaluate((perm) => {
+        const m = window.mtg;
+        const p = m.view.battlefield.find(x => x.object_id === perm);
+        m.view.stack = [{ object_id: perm, card_id: 1, name: `${p.name} ability`, controller: m.view.you, targets: [], x_value: null }];
+        const chip = window.mtgDebug.inspect(`o${perm}`, "stack");
+        const board = window.mtgDebug.inspect(`o${perm}`, "perm");
+        m.view.stack = [];
+        return { chip, board, permName: p.name };
+      }, perm);
+      if (!both.chip || both.chip.zone !== "stack" || !/ ability$/.test(both.chip.name))
+        fail(`stack-chip-inspect: ${JSON.stringify(both.chip)}`);
+      else ok(`stack-chip-inspect → ${both.chip.name} (${both.chip.zone})`);
+      if (!both.board || both.board.zone !== "battlefield" || both.board.name !== both.permName)
+        fail(`source-permanent-inspect: an ability on the stack overwrote its source — ${JSON.stringify(both.board)}`);
+      else ok(`source-permanent-inspect → ${both.board.name} (${both.board.zone})`);
+
+      // (b) two triggers at once are two different things, though the view
+      // gives them both ObjectId(0).
+      const triggers = await page.evaluate(() => {
+        const m = window.mtg;
+        m.view.stack = [
+          { object_id: 0, card_id: 0, name: "Doomed Traveler's dies trigger (a)", controller: m.view.you, targets: [], x_value: null },
+          { object_id: 0, card_id: 0, name: "Elder Cathar's dies trigger (b)", controller: m.view.you, targets: [], x_value: null },
+        ];
+        window.mtgDebug.render();
+        const chips = window.mtg.hits.filter(h => h.kind === "stack");
+        const out = chips.map(h => { const was = m.hover; m.hover = h; const r = window.mtgDebug.inspectHover(); m.hover = was; return r && r.name; });
+        m.view.stack = [];
+        return out;
+      });
+      if (triggers.length !== 2 || triggers[0] === triggers[1])
+        fail(`two-triggers-inspect: both chips resolved to ${JSON.stringify(triggers)}`);
+      else ok(`two-triggers-inspect → ${JSON.stringify(triggers)}`);
+
+      // (c) the facts the CLI's detail page carries and the panel dropped.
+      const facts = await page.evaluate((perm) => {
+        const m = window.mtg;
+        const p = m.view.battlefield.find(x => x.object_id === perm);
+        const saved = JSON.stringify(p);
+        Object.assign(p, { is_token: true, colors: ["Blue"], regeneration_shields: 6,
+          star_pt: true, printed_power: 0, printed_toughness: 0,
+          effective_power: 4, effective_toughness: 4, card_types: ["Creature"] });
+        const aura = JSON.parse(JSON.stringify(p));
+        Object.assign(aura, { object_id: 99001, name: "Cobbled Wings", attached_to: perm,
+          is_token: false, regeneration_shields: 0, star_pt: false, card_types: ["Artifact"] });
+        m.view.battlefield.push(aura);
+        const r = window.mtgDebug.inspect(`o${perm}`, "perm");
+        const colorless = (() => { p.colors = []; const x = window.mtgDebug.inspect(`o${perm}`, "perm"); return x && x.facts; })();
+        m.view.battlefield.pop();
+        Object.assign(p, JSON.parse(saved));
+        return { r, colorless };
+      }, perm);
+      const want = [
+        ["Token", /^Token$/],
+        ["Color", /^Color: Blue$/],
+        ["regeneration shields", /^6 regeneration shields$/],
+        ["attachments", /^Equipped\/enchanted with: Cobbled Wings$/],
+      ];
+      for (const [what, re] of want) {
+        if (!facts.r || !facts.r.facts.some(f => re.test(f))) fail(`inspector-${what}: facts were ${JSON.stringify(facts.r && facts.r.facts)}`);
+        else ok(`inspector-${what}`);
+      }
+      if (!facts.colorless || !facts.colorless.some(f => f === "Color: Colorless")) fail(`inspector-colorless: ${JSON.stringify(facts.colorless)}`);
+      else ok("inspector-colorless");
+      // The star-P/T sentinel is never shown as a printed value.
+      if (!facts.r || facts.r.pt[1] !== "(printed */*)") fail(`inspector-star-pt: pt was ${JSON.stringify(facts.r && facts.r.pt)}`);
+      else ok(`inspector-star-pt → ${JSON.stringify(facts.r.pt)}`);
+    }
+    // 16. A stack item's art is its source's. The engine names a stack item
+    // for a person — "<card> ability", "<source>'s <phrase> (<desc>)" — and
+    // the lookup used to strip at the FIRST "'s ", so every activated
+    // ability and every possessive card missed (issue #528).
+    {
+      const cases = await page.evaluate(() => {
+        const probe = (n) => window.mtgDebug.artNames(n);
+        return {
+          ability: probe("Ghoulcaller's Bell ability"),
+          plain: probe("Cobbled Wings ability"),
+          possessiveTrigger: probe("Geistcatcher's Rig's enters-the-battlefield trigger (deal 4 damage)"),
+          simpleTrigger: probe("Doomed Traveler's dies trigger (create a 1/1 white Spirit token with flying)"),
+          possessiveAbility: probe("Ludevic's Test Subject ability"),
+          spell: probe("Ghoulcaller's Bell"),
+          withId: probe("Unruly Mob (#34)'s triggered ability"),
+        };
+      });
+      const expect = [
+        ["ability", "Ghoulcaller's Bell"],
+        ["plain", "Cobbled Wings"],
+        ["possessiveTrigger", "Geistcatcher's Rig"],
+        ["simpleTrigger", "Doomed Traveler"],
+        ["possessiveAbility", "Ludevic's Test Subject"],
+        ["spell", "Ghoulcaller's Bell"],
+        ["withId", "Unruly Mob"],
+      ];
+      for (const [k, want] of expect) {
+        if (!cases[k] || !cases[k].includes(want)) fail(`artNames ${k}: ${JSON.stringify(cases[k])} does not offer ${JSON.stringify(want)}`);
+        else ok(`artNames ${k} → ${want}`);
+      }
+    }
     if (errors.length) fail("page errors:\n" + errors.join("\n"));
   } finally {
     await browser.close();
