@@ -169,6 +169,16 @@ random game happened to reach.
 - G11 art and names: a card whose art file is missing renders a
   placeholder, never blank; a stack ability shows its source's art.
 
+- G20 [proposed 2026-09-17, from tonight's G10 screenshots] the stack as a
+  readable object: hover an opponent's Geistflame while it is on the stack,
+  then hover an ability. `StackItemView` (`mtg-engine/src/view.rs:231`) carries
+  name, controller, targets and X and nothing else — no oracle text, no type
+  line, no cost — and the page has no card reference to fall back on, unlike
+  the CLI's `c` pane and the LLM seat's `build_card_reference`. Ask whether a
+  person at the page can find out what a spell they cannot respond to is about
+  to do. If it is filed, it is an engine issue (the field is missing from the
+  view), not a page one.
+
 ## Filing
 
 As `docs/playtest/README.md` says, with `surface:gui` in the title. A
