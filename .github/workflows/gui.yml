@@ -58,6 +58,7 @@ jobs:
         run: |
           NODE_PATH=$(npm root -g) node mtg-gui/tests/smoke.js --shots gui-shots
           NODE_PATH=$(npm root -g) node mtg-gui/tests/widgets.js --shots gui-shots
+          NODE_PATH=$(npm root -g) node mtg-gui/tests/twotabs.js
           NODE_PATH=$(npm root -g) node mtg-gui/tests/autoplay.js --games 2 --seed 7 --decisions 200 --shots gui-shots
 
       - name: Screenshots

@@ -268,11 +268,19 @@ export type ServerMessage =
   | { type: "decision"; seq: number; seat: PlayerId; view: GameView; legal: LegalActions; combat: CombatPrompt | null }
   | { type: "view"; seat: PlayerId; view: GameView }
   | { type: "notice"; seq: number; text: string }
-  | { type: "game_over"; seat: PlayerId; view: GameView; summary: string };
+  | { type: "game_over"; seat: PlayerId; view: GameView; summary: string }
+  /** Decision `seq` has been answered — by this page or another one on the
+   *  same seat. Whoever still holds it must stop offering it (issue #516). */
+  | { type: "answered"; seq: number }
+  /** The seat's settings, which every page attached to it shares. A page
+   *  that decides for the seat — auto-passing a priority — cannot decide it
+   *  from settings only it can see (issue #515). */
+  | { type: "settings"; stop_at_pass: boolean; auto_pass_since_turn: number | null };
 
 export type ClientMessage =
   | { type: "hello" }
-  | { type: "action"; seq: number; action: Action };
+  | { type: "action"; seq: number; action: Action }
+  | { type: "settings"; stop_at_pass: boolean; auto_pass_since_turn: number | null };
 
 /** The one key of an externally tagged enum value. */
 export function tag(v: object): string {

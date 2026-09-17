@@ -6,7 +6,8 @@
     "build": "tsc -p .",
     "check": "tsc -p . --noEmit",
     "smoke": "node tests/smoke.js",
-    "widgets": "node tests/widgets.js"
+    "widgets": "node tests/widgets.js",
+    "twotabs": "node tests/twotabs.js"
   },
   "devDependencies": {
     "typescript": "^5.4"

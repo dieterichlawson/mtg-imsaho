@@ -93,6 +93,27 @@ function onMessage(msg) {
             syncField();
             break;
         }
+        case "answered":
+            // Another page on this seat answered the decision we are holding
+            // (or we did). Stop offering it: the board is about to move, and a
+            // click here would be dropped as stale and read as accepted
+            // (issue #516).
+            if (state.decision && state.decision.seq === msg.seq) {
+                const ours = !!(state.lastSent && state.lastSent.seq === msg.seq);
+                state.decision = null;
+                state.ui = null;
+                state.popover = null;
+                if (!ours)
+                    state.notice = "Answered in another tab.";
+                hideField();
+            }
+            break;
+        case "settings":
+            // The seat's settings, not this page's. Applied without echoing them
+            // back, or two tabs would bounce the message between them.
+            state.stopAtPass = msg.stop_at_pass;
+            state.autoPass = msg.auto_pass_since_turn === null ? null : { sinceTurn: msg.auto_pass_since_turn };
+            break;
         case "notice":
             state.notice = msg.text;
             // The decision stands; if we had cleared it on send, ask again.
@@ -131,6 +152,7 @@ function autoPassDecides() {
     if (stop) {
         state.autoPass = null;
         state.notice = ui.mode !== "menu" ? "Auto-pass off: you are asked something." : v.stack.length > 0 ? "Auto-pass off: something is on the stack." : "Auto-pass off: your main phase.";
+        pushSettings();
         return false;
     }
     send("PassPriority");
@@ -142,6 +164,7 @@ function toggleAutoPass() {
     if (state.autoPass) {
         state.autoPass = null;
         state.notice = "Auto-pass off.";
+        pushSettings();
         return;
     }
     if (!v)
@@ -152,7 +175,23 @@ function toggleAutoPass() {
     }
     state.autoPass = { sinceTurn: v.turn_number };
     state.notice = null;
+    pushSettings();
     send("PassPriority");
+}
+/**
+ * Tell the seat what this page just decided about how the seat behaves.
+ *
+ * `s` and `f` both govern whether a page answers a priority *for* the
+ * player. That is a decision on behalf of the seat, and a seat has one
+ * state however many pages are attached to it: a second tab used to
+ * auto-pass the priorities the first was deliberately holding, because its
+ * own `stopAtPass` was false and nothing told it otherwise (issue #515).
+ * The seat holds the setting and echoes it to every page, including this
+ * one, which is also what a page joining later is handed on `hello`.
+ */
+function pushSettings() {
+    sendRaw({ type: "settings", stop_at_pass: !!state.stopAtPass,
+        auto_pass_since_turn: state.autoPass ? state.autoPass.sinceTurn : null });
 }
 // ----------------------------------------------------------------- input
 function fitCanvas() {
@@ -314,6 +353,7 @@ window.addEventListener("keydown", (ev) => {
         case "s":
             state.stopAtPass = !state.stopAtPass;
             state.notice = state.stopAtPass ? "Stopping at every priority." : "Passing automatically when there is nothing to do.";
+            pushSettings();
             break;
         case "f":
             toggleAutoPass();
