@@ -130,6 +130,58 @@ impl LegalActions {
             && self.resolution_prompt.is_none()
             && self.set_prompt.is_none()
     }
+
+    /// Whether this offer admits `action` — the gate between what a seat
+    /// says and what the game does.
+    ///
+    /// The loop used to trust a seat to answer its own prompt, and a seat
+    /// that did not corrupted the state rather than being ignored. A
+    /// `PassPriority` sent at a declare-attackers prompt left the
+    /// declaration outstanding (right) and moved priority to the non-active
+    /// player anyway (wrong: CR 508.1 makes declaring attackers a turn-based
+    /// action of the active player, and no player has priority until it is
+    /// done). The same pass at a `ResolutionChoice` was executed while the
+    /// choice stood, so the step machinery advanced past it and carried
+    /// queued triggers into the declare-attackers step. Both are states
+    /// `invariants/prompts.rs` exists to say the rules never produce, and
+    /// both are reachable from any seat speaking the socket protocol
+    /// (issue #514).
+    ///
+    /// This asks about *shape*, not validity. A menu row has to be a row
+    /// that is on the menu. An answer a seat builds from a prompt rather
+    /// than picks from a list — a declaration, a set of cards, a
+    /// mid-resolution choice — is admitted by the prompt it answers, and
+    /// `submit_action` checks its contents, which is where that check has
+    /// always lived.
+    ///
+    /// `Action` has no `PartialEq`, so a row is matched the way
+    /// `invariants::legal`'s `distinct_offers` matches one: by its `Debug`
+    /// form.
+    #[must_use]
+    pub fn permits(&self, action: &Action) -> bool {
+        use crate::actions::{CombatPrompt, SetPromptKind};
+        match action {
+            // Not a game action at all: the harness is stopping, not the
+            // player (issue #233). The loop returns on it before asking.
+            Action::AbandonGame => true,
+            // CR 104.3a: a player may concede at any time. No prompt lists
+            // it, so no prompt may refuse it either.
+            Action::Concede => true,
+            Action::DeclareAttackers { .. } =>
+                matches!(self.combat_prompt, Some(CombatPrompt::ChooseAttackers { .. })),
+            Action::DeclareBlockers { .. } =>
+                matches!(self.combat_prompt, Some(CombatPrompt::ChooseBlockers { .. })),
+            Action::DiscardCards { .. } => matches!(&self.set_prompt,
+                Some(p) if p.kind == SetPromptKind::DiscardToHandSize),
+            Action::BottomCards { .. } => matches!(&self.set_prompt,
+                Some(p) if p.kind == SetPromptKind::BottomAfterMulligan),
+            Action::ResolveChoice { .. } => self.resolution_prompt.is_some(),
+            row => {
+                let row = format!("{row:?}");
+                self.actions.iter().any(|a| format!("{a:?}") == row)
+            }
+        }
+    }
 }
 
 
@@ -1134,6 +1186,16 @@ fn run_mulligan_phase_inner<F>(
         }
 
         let action = choose_action(state, acting_player, &legal);
+        // The same gate the main loop applies: a mulligan prompt takes a
+        // keep, a mull or a bottoming, and executing anything else here
+        // leaves the phase without advancing it (issue #514).
+        if !legal.permits(&action) {
+            state.log(LogLevel::Info, format!(
+                "mulligan: p{}'s answer was not one this prompt offers, and was \
+                 not played: {action:?}",
+                acting_player.0));
+            continue;
+        }
         *state = submit_action(state, &action, registry);
     }
 }
@@ -1385,13 +1447,30 @@ fn run_game_loop_inner<F>(
             continue;
         };
 
-        // CR 117.3c: a cast or activation completed through a cast-time
         // The harness is stopping, not the game: leave the state exactly as
         // it stands, decide nothing, record nothing (issue #233).
         if matches!(action, Action::AbandonGame) {
             return;
         }
 
+        // An answer the prompt never offered is not played. `legal` was
+        // computed above to build the prompt and then never consulted again,
+        // so a seat sending anything that deserialized had it executed: a
+        // `PassPriority` at a declare-attackers prompt moved priority to the
+        // non-active player while the declaration stood (CR 508.1), and the
+        // same pass at a `ResolutionChoice` walked the step machinery past
+        // an outstanding choice with its triggers still queued. Refuse it,
+        // say so where the seat can read it, and ask again — the decision
+        // is unchanged, so a seat that keeps answering this way is stopped
+        // by the progress watchdog rather than spinning (issue #514).
+        if !legal.permits(&action) {
+            state.log(LogLevel::Info, format!(
+                "p{}'s answer was not one this prompt offers, and was not played: {action:?}",
+                acting_player.0));
+            continue;
+        }
+
+        // CR 117.3c: a cast or activation completed through a cast-time
         // prompt (X funding, an exile cost) leaves priority with the player
         // who cast or activated — read off the prompt before it is consumed.
         let cast_prompt_player = cast_time_prompt_player(state);
