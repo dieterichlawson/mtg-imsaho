@@ -62,6 +62,14 @@ random game happened to reach.
 - G5 game over: a win, a loss, a draw, a concede, a decked opponent.
   Is the reason on screen? Is the last board still readable behind it?
 
+- G12 [proposed 2026-09-17, from tonight's G1 night and #523] auto-pass's
+  silence: `main.ts:96` answers every pass-only priority without drawing a
+  frame, so a run of them is time the player never sees. Instrument
+  `window.mtgDebug.trace`, count consecutive `only pass` runs across a whole
+  game, and for the longest run ask what the player is told happened in it.
+  Then press `s` (stop at every priority) and confirm the page stops, says so,
+  and that `f` and `s` compose sanely rather than fighting.
+
 **The Fumbler** clicks the wrong things.
 
 - G6 click everything that is not highlighted during a pick: the
