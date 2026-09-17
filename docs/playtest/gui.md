@@ -135,6 +135,31 @@ random game happened to reach.
   `beginOrder` without reordering, `beginPick`'s Decline. Compare each against
   the CLI's same prompt, which refuses out loud in both directions.
 
+- G17 [proposed 2026-09-17, from reading `mtg-player/src/gui.rs:190` during G9]
+  the seat that can never give up: `ask`'s
+  `let Ok(answer) = self.answers.recv() else { return Action::AbandonGame }`
+  looks unreachable — `Shared` holds a clone of the `Sender` for the life of
+  the `GuiPlayer`, so the receiver never disconnects. Start
+  `--p1 gui:PORT --p2 random`, answer one prompt, then close the browser
+  entirely. Verify whether the runner blocks for ever, whether `--max-actions`
+  and the progress watchdog can fire while `ask` blocks (neither runs), and
+  whether the "waiting for a browser at …" line is ever re-printed
+  (`said_waiting` latches, and `Shared::connected()` counts channels reaped
+  only on the next broadcast). Then decide whether a human seat *should* wait
+  for ever, and if so fix the comment rather than the code.
+
+- G18 [proposed 2026-09-17, from G9] a notice belongs to one tab but is sent to
+  all: `GuiPlayer::notice` broadcasts, while `main.ts`'s notice branch only
+  restores the decision when `lastSent.seq === msg.seq`. With two tabs open,
+  make tab A send `window.mtgSend({Nope: 1})` and read what tab B shows. Also
+  check the `seq: 0` "unreadable message" notice, which no tab can ever match.
+
+- G19 [proposed 2026-09-17, from G9] the typed field after a refusal:
+  `main.ts`'s notice branch calls `beginDecision` but not `syncField`, and
+  `send()` already called `hideField()`. At a `ChooseXFunding` (`number`) or a
+  filtered `list` prompt, send `window.mtgSend("AbandonGame")` and check
+  whether the DOM input comes back before the next canvas click.
+
 **The Reader** cares about what the inspector says.
 
 - G10 hover every kind of thing: a token, a transformed card, a copy, an
