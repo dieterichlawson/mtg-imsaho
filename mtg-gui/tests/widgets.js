@@ -643,6 +643,38 @@ async function main() {
         else ok(`seat-vocabulary ${k} → ${JSON.stringify(r[k])}`);
       }
     }
+    // 22. The band reports what happened since the page last stopped for
+    // the player, not the last two lines of the log (issue #523).
+    {
+      const r = await page.evaluate(() => {
+        const m = window.mtg;
+        const saved = m.view.display_log.slice();
+        const since = m.logSince, seen = m.logSeen;
+        const out = {};
+        const at = (log, from) => { m.view.display_log = log; m.logSince = from; return window.mtgDebug.band(); };
+        const eight = ["\u2500\u2500 Turn 5 (p1) \u2500\u2500", "p1 tapped Swamp (#51) for mana", "p1 tapped Plains (#41) for mana",
+          "p1 cast Doom Blade (#75) targeting Grizzly Bears (#27)", "Doom Blade (#75) resolved",
+          "Grizzly Bears (#27) died", "p1 drew a card", "p1 declared attackers: Walking Corpse (#66) -> p0"];
+        out.wholeTurn = at(["older", "lines"].concat(eight), 2);
+        out.two = at(["older"].concat(eight.slice(-2)), 1);
+        out.one = at(["older"].concat(eight.slice(-1)), 1);
+        out.none = at(["older"].concat(eight.slice(-2)), 3);
+        m.view.display_log = saved; m.logSince = since; m.logSeen = seen;
+        return out;
+      });
+      // Eight new lines in two rows: where the interval began, how much is
+      // missing, and where it ended.
+      if (r.wholeTurn.length !== 2 || !/Turn 5/.test(r.wholeTurn[0]) || !/^\+6 · /.test(r.wholeTurn[1]) || !/declared attackers/.test(r.wholeTurn[1]))
+        fail(`band-recap wholeTurn: ${JSON.stringify(r.wholeTurn)}`);
+      else ok(`band-recap wholeTurn → ${JSON.stringify(r.wholeTurn)}`);
+      if (r.two.length !== 2 || /^\+/.test(r.two[1])) fail(`band-recap two: ${JSON.stringify(r.two)}`);
+      else ok(`band-recap two: both shown, uncounted`);
+      if (r.one.length !== 1) fail(`band-recap one: ${JSON.stringify(r.one)}`);
+      else ok("band-recap one: the single new line");
+      // Nothing new since the last stop: the band is not left blank.
+      if (r.none.length === 0) fail("band-recap none: the band went blank while sitting at a prompt");
+      else ok(`band-recap none: falls back to the last lines (${r.none.length})`);
+    }
     if (errors.length) fail("page errors:\n" + errors.join("\n"));
   } finally {
     await browser.close();

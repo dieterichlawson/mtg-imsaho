@@ -112,6 +112,11 @@ export interface State {
   fieldRect?: { x: number; y: number; w: number; h: number } | null;
   logOpen: boolean;
   logScroll: number;
+  /** How long `display_log` was when the page last stopped for the player,
+   *  and how long it was at the stop before that — the band reports what
+   *  happened between them (issue #523). */
+  logSeen?: number;
+  logSince?: number;
   /** How far the prompt panel's row list is scrolled (issue #529). */
   rowScroll?: number;
   /** What the prompt panel's row list drew last frame. */

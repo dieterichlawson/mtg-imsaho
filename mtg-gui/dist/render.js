@@ -484,8 +484,7 @@ function drawBand(ctx, hits, state) {
     // Whose turn, which step, and the last two things that happened.
     const mine = view.active_player === view.you;
     text(ctx, bandTurnLine(ctx, mine, view.step), BAND_X, y + 2, { font: "7px Silkscreen", color: mine ? "#ffe080" : "#c0b0d0" });
-    const recent = view.display_log.slice(-2);
-    recent.forEach((l, i) => text(ctx, clip(ctx, inOurWords(state, l), BAND_W, "7px Silkscreen"), BAND_X, y + 12 + i * 8, { font: "7px Silkscreen", color: "#8a8898" }));
+    bandLogLines(state).forEach((l, i) => text(ctx, clip(ctx, inOurWords(state, l), BAND_W, "7px Silkscreen"), BAND_X, y + 12 + i * 8, { font: "7px Silkscreen", color: "#8a8898" }));
     view.stack.forEach((item, i) => {
         const key = `o${item.object_id}`;
         const x = sx0 + i * 28, sy = y + 9;
@@ -503,6 +502,34 @@ function drawBand(ctx, hits, state) {
         // (issue #527).
         hits.push({ x: x - 1, y: sy - 1, w: 26, h: 22, kind: "stack", key, id: item.object_id, stackIndex: i, onClick: clickFor(state, key) });
     });
+}
+/**
+ * The band's two log lines: what has happened since the page last stopped
+ * for the player, not simply the last two things in the log.
+ *
+ * The page answers by itself every decision whose only actions are a pass
+ * and a concede — rightly, there is nothing to decide — so the interval
+ * between two frames a person actually reads is not one priority but
+ * however many in a row they had no play for. A whole opposing turn fits
+ * inside one. Anchored to `slice(-2)`, the band then reported that
+ * interval as "the opponent drew a card and attacked", with the Doom Blade
+ * that killed your only creature three lines further back; across four
+ * driven games, 113 of 276 prompts (41%) arrived with more new lines than
+ * the band could show (issue #523).
+ *
+ * Two rows is what the 30px band has, so when the interval does not fit
+ * the band says where it started, how much of it is missing, and where it
+ * ended. The count is the signal that the `l` drawer is worth opening;
+ * there is no room on this line to say so in words.
+ */
+export function bandLogLines(state) {
+    const log = state.view.display_log;
+    const fresh = log.slice(state.logSince ?? 0);
+    if (fresh.length === 0)
+        return log.slice(-2);
+    if (fresh.length <= 2)
+        return fresh;
+    return [fresh[0], `+${fresh.length - 2} · ${fresh[fresh.length - 1]}`];
 }
 /** Lines from each stack item to what it targets. */
 function stackLines(ctx, hits, state) {

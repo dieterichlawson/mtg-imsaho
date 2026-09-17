@@ -1,6 +1,6 @@
 // The page: one WebSocket to the seat, one canvas, one state object.
 import { loadManifest, fontsReady, artNames } from "./assets.js";
-import { render, inspecting, inspectorFacts, inspectorPt, wrap, wrapCapped, bandTurnLine, clampScroll, outcomeHeadline, BAND_W, W, H, PANEL_X } from "./render.js";
+import { render, inspecting, inspectorFacts, inspectorPt, wrap, wrapCapped, bandTurnLine, bandLogLines, clampScroll, outcomeHeadline, BAND_W, W, H, PANEL_X } from "./render.js";
 import { beginDecision, indexView, beginList, inOurWords } from "./prompts.js";
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -89,6 +89,13 @@ function onMessage(msg) {
                 window.mtgDebug.trace.push(`${what}: auto-passed`);
                 return;
             }
+            // Past here the page is stopping and a person will read this frame.
+            // That is the point the band's recap is measured from: everything
+            // since the PREVIOUS stop is what they have not seen (issue #523).
+            // The two branches above return without touching these, which is how
+            // an interval of ten auto-answered priorities stays one interval.
+            state.logSince = state.logSeen ?? 0;
+            state.logSeen = v.display_log.length;
             window.mtgDebug.trace.push(`${what}: ${state.ui ? state.ui.mode : "?"}`);
             syncField();
             break;
@@ -484,6 +491,7 @@ window.mtgDebug = {
         return e ? { name: e.obj.name, zone: e.zone, facts: inspectorFacts(l, e), pt: inspectorPt(e.obj) } : null;
     },
     artNames,
+    band: () => { const l = live(); return l ? bandLogLines(l) : []; },
     words: (line) => { const l = live(); return l ? inOurWords(l, line) : line; },
     outcome: (summary) => { const l = live(); return l ? outcomeHeadline(l, summary) : null; },
     fit: {
