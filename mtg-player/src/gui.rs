@@ -217,6 +217,15 @@ impl GuiPlayer {
 
     /// Declare attackers or blockers.
     pub fn choose_combat(&mut self, view: &GameView, legal: &LegalActions, prompt: &CombatPrompt) -> Action {
+        // A combat prompt with one legal answer is never put to the page.
+        // The seat is deliberately the thinnest of the four and sends the
+        // engine's types as they are — but a prompt with nothing eligible is
+        // not a thin rendering of a question, it is a screen reading "CLICK
+        // CREATURES TO ATTACK WITH" over a board with nothing to click. One
+        // rule, shared with the other three seats (issue #517).
+        if let Some(forced) = crate::forced_combat_answer(prompt) {
+            return forced;
+        }
         self.ask(view, legal, Some(prompt))
     }
 }

@@ -4186,13 +4186,14 @@ from your hand to put on the bottom of your library.\n\
     }
 
     pub fn choose_combat(&mut self, view: &GameView, prompt: &CombatPrompt) -> Action {
+        // A combat prompt with one legal answer is not worth a round trip to
+        // the model. One rule, shared with the other three seats (#517).
+        if let Some(forced) = crate::forced_combat_answer(prompt) {
+            return forced;
+        }
         match prompt {
             CombatPrompt::ChooseAttackers { eligible, must_attack, defending_player,
                                             defending_planeswalkers } => {
-                if eligible.is_empty() {
-                    return Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] };
-                }
-
                 // Build disambiguated labels so the model can tell apart two
                 // creatures that would otherwise render with identical text.
                 let labels = Self::format_combat_creature_list(view, eligible);
@@ -4359,10 +4360,6 @@ from your hand to put on the bottom of your library.\n\
         legal_blocks: &std::collections::HashMap<ObjectId, Vec<ObjectId>>,
         min_blockers: &std::collections::HashMap<ObjectId, u32>,
     ) -> Action {
-        if eligible_blockers.is_empty() || attackers.is_empty() {
-            return Action::DeclareBlockers { assignments: vec![] };
-        }
-
         // Build per-blocker integer enum of legal attacker indices.
         // -1 means "don't block".
         let mut schema_properties = serde_json::json!({

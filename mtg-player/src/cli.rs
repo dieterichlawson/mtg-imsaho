@@ -5178,10 +5178,6 @@ impl CliPlayer {
         };
         let defending = *defending;
 
-        if eligible.is_empty() {
-            return Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] };
-        }
-
         // Layout is computed once; `draw` repaints the whole prompt screen,
         // so the info panes can be offered here and the view restored after
         // one is closed (issue #120).
@@ -7496,30 +7492,18 @@ impl CliPlayer {
     }
 
     pub fn choose_combat(&mut self, view: &GameView, prompt: &CombatPrompt) -> Action {
+        // A combat prompt with one legal answer never reaches the screen,
+        // and never breaks pass mode either — there is nothing to decide.
+        // One rule, shared with the other three seats (issue #517).
+        if let Some(forced) = crate::forced_combat_answer(prompt) {
+            return forced;
+        }
+        // Past here something is eligible, so the player is deciding: pass
+        // mode ends whichever half of combat this is.
+        self.pass_mode = None;
         match prompt {
-            CombatPrompt::ChooseAttackers { eligible, .. } => {
-                // In pass mode, skip attacking only if we have no eligible creatures.
-                // If we have creatures, break pass mode so the player can decide.
-                if self.pass_mode.is_some() {
-                    if eligible.is_empty() {
-                        return Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] };
-                    }
-                    // We have creatures to attack with — break pass mode.
-                    self.pass_mode = None;
-                }
-                Self::choose_attackers(view, prompt)
-            }
-            CombatPrompt::ChooseBlockers { eligible_blockers, .. } => {
-                // Always break pass mode for blockers if we have eligible blockers.
-                if !eligible_blockers.is_empty() {
-                    self.pass_mode = None;
-                }
-                // If no eligible blockers, auto-declare zero blockers.
-                if eligible_blockers.is_empty() {
-                    return Action::DeclareBlockers { assignments: vec![] };
-                }
-                Self::choose_blockers(view, prompt)
-            }
+            CombatPrompt::ChooseAttackers { .. } => Self::choose_attackers(view, prompt),
+            CombatPrompt::ChooseBlockers { .. } => Self::choose_blockers(view, prompt),
         }
     }
 }
