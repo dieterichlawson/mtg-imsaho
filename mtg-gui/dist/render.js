@@ -4,7 +4,7 @@
 // what each one is and what a click on it does. Input never looks at the
 // view; it looks at the last frame.
 import { drawArt, frameColor, darker, uiImage } from "./assets.js";
-import { nameOf, targetLabel, playerLabel } from "./prompts.js";
+import { nameOf, targetLabel, playerLabel, inOurWords } from "./prompts.js";
 export const W = 640, H = 360;
 export const PANEL_X = 480;
 const BOARD_W = PANEL_X;
@@ -427,7 +427,14 @@ function drawStrip(ctx, hits, state, y, pid, life, handSize, library, gy, exile,
     const active = state.view.active_player === pid;
     const priority = state.view.priority_player === pid;
     text(ctx, String(life), 18, y + 3, { font: "8px PressStart", color: life <= 5 ? "#ff7060" : "#ffffff" });
-    text(ctx, `${isYou ? "You" : "Opponent"}${active ? " ★" : ""}${priority ? " ●" : ""}`, 50, y + 3, { color: active ? "#ffe080" : "#c0b8c8" });
+    // Named with its seat number, so every `p0`/`p1` the engine's log and the
+    // runner's game-over line use has a definition somewhere on screen. This
+    // is #115's fix for the CLI's status bar, on the fourth surface — and the
+    // surface where it matters most, because this viewer never sees the
+    // runner's header line at all (issue #519).
+    // Clipped to the space before the zone counts at x=150, like everything
+    // else on the board.
+    text(ctx, clip(ctx, `${isYou ? "You" : "Opponent"} (p${pid})${active ? " ★" : ""}${priority ? " ●" : ""}`, 98), 50, y + 3, { color: active ? "#ffe080" : "#c0b8c8" });
     const parts = [`Hand ${handSize}`, `Lib ${library}`, `GY ${gy}`];
     if (exile)
         parts.push(`Exile ${exile}`);
@@ -478,7 +485,7 @@ function drawBand(ctx, hits, state) {
     const mine = view.active_player === view.you;
     text(ctx, bandTurnLine(ctx, mine, view.step), BAND_X, y + 2, { font: "7px Silkscreen", color: mine ? "#ffe080" : "#c0b0d0" });
     const recent = view.display_log.slice(-2);
-    recent.forEach((l, i) => text(ctx, clip(ctx, l, BAND_W, "7px Silkscreen"), BAND_X, y + 12 + i * 8, { font: "7px Silkscreen", color: "#8a8898" }));
+    recent.forEach((l, i) => text(ctx, clip(ctx, inOurWords(state, l), BAND_W, "7px Silkscreen"), BAND_X, y + 12 + i * 8, { font: "7px Silkscreen", color: "#8a8898" }));
     view.stack.forEach((item, i) => {
         const key = `o${item.object_id}`;
         const x = sx0 + i * 28, sy = y + 9;
@@ -528,17 +535,41 @@ function stackLines(ctx, hits, state) {
     });
 }
 /** The end of the game, over the board. */
+/**
+ * Who won, in the page's own words, from the runner's headline.
+ *
+ * `mtg-runner` builds "Game over! p0 (red-green) wins!" — deliberately, so
+ * a mirror match can say which seat did which (#251) — and a person who
+ * opened a URL has never been told which seat they are. A narrow parse of
+ * the one line whose shape the runner controls, with no headline at all
+ * when it does not match, rather than a rewrite that would turn "p0 wins!"
+ * into "you wins!" (issue #519).
+ */
+export function outcomeHeadline(state, summary) {
+    const won = /^Game over!\s+p(\d+)\b/.exec(summary);
+    if (won)
+        return Number(won[1]) === state.view.you ? "YOU WIN" : "OPPONENT WINS";
+    if (/^Game over! It's a draw!/.test(summary))
+        return "A DRAW";
+    return null;
+}
 function gameOverScreen(ctx, state) {
     if (!state.gameOver)
         return;
     ctx.fillStyle = "rgba(0,0,0,0.6)";
     ctx.fillRect(0, 0, BOARD_W, H);
     const w = 360, x = (BOARD_W - w) / 2;
-    const lines = state.gameOver.split("\n").flatMap(l => wrap(ctx, l, w - 24, "8px Silkscreen"));
-    const h = 44 + lines.length * 11, y = (H - h) / 2;
+    const headline = outcomeHeadline(state, state.gameOver);
+    const lines = inOurWords(state, state.gameOver).split("\n").flatMap(l => wrap(ctx, l, w - 24, "8px Silkscreen"));
+    const h = 44 + (headline ? 14 : 0) + lines.length * 11, y = (H - h) / 2;
     texturedPanel(ctx, x, y, w, h);
     text(ctx, "GAME OVER", x + w / 2, y + 10, { align: "center", font: "8px PressStart", color: "#ffe080" });
-    lines.forEach((l, i) => text(ctx, l, x + w / 2, y + 28 + i * 11, { align: "center" }));
+    let ly = y + 28;
+    if (headline) {
+        text(ctx, headline, x + w / 2, ly, { align: "center", font: "8px PressStart", color: "#ffffff" });
+        ly += 14;
+    }
+    lines.forEach((l, i) => text(ctx, l, x + w / 2, ly + i * 11, { align: "center" }));
 }
 // --------------------------------------------------------------- panel
 /**
@@ -715,7 +746,12 @@ function promptArea(ctx, hits, state, x, y, w, h) {
     x += 2;
     w -= 4;
     if (state.gameOver) {
-        for (const l of wrapCapped(ctx, state.gameOver, w - 8, "8px Silkscreen", 8)) {
+        const headline = outcomeHeadline(state, state.gameOver);
+        if (headline) {
+            text(ctx, headline, x + 4, ty, { font: "8px PressStart", color: "#ffffff" });
+            ty += 11;
+        }
+        for (const l of wrapCapped(ctx, inOurWords(state, state.gameOver), w - 8, "8px Silkscreen", 8)) {
             text(ctx, l, x + 4, ty, { color: "#ffe080" });
             ty += 9;
         }
@@ -819,7 +855,7 @@ function logArea(ctx, hits, state, x, y, w, h, headRoom = 0) {
     panel(ctx, x, y, w, h, "#100e14", "#3a3048");
     const lines = [];
     for (const entry of state.view.display_log.slice(-40))
-        for (const l of wrap(ctx, entry, w - 8, "7px Silkscreen"))
+        for (const l of wrap(ctx, inOurWords(state, entry), w - 8, "7px Silkscreen"))
             lines.push(l);
     const top = y + 2 + headRoom;
     const fit = Math.floor((h - 4 - headRoom) / 8);

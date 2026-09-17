@@ -606,6 +606,43 @@ async function main() {
         }
       } else fail(`only ${names.length} library rows to build a pageable list from`);
     }
+    // 21. The engine's p0/p1 in the page's vocabulary, and an outcome line
+    // a person who only ever saw the browser can read (issue #519).
+    {
+      const r = await page.evaluate(() => {
+        const you = window.mtg.view.you, opp = window.mtg.view.opponents[0].id;
+        const w = window.mtgDebug.words;
+        return {
+          you, opp,
+          started: w(`Game started (p${opp} on the play)`),
+          drew: w(`p${you} drew 7 cards`),
+          banner: w(`\u2500\u2500 Turn 5 (p${opp}) \u2500\u2500`),
+          attack: w(`p${opp} declared attackers: Walking Corpse (#66) -> p${you}`),
+          stranger: w("p7 did something"),
+          card: w("Doom Blade (#75) resolved"),
+          win: window.mtgDebug.outcome(`Game over! p${you} (red-green) wins! (p${opp} (white-black) lost the game: life total reached 0 (CR 704.5a))`),
+          lose: window.mtgDebug.outcome(`Game over! p${opp} (white-black) wins! (p${you} (red-green) conceded)`),
+          draw: window.mtgDebug.outcome("Game over! It's a draw! (both players lost)"),
+          odd: window.mtgDebug.outcome("Game ended without a result."),
+        };
+      });
+      const want = [
+        ["started", `Game started (opp on the play)`],
+        ["drew", "you drew 7 cards"],
+        ["banner", "\u2500\u2500 Turn 5 (opp) \u2500\u2500"],
+        ["attack", "opp declared attackers: Walking Corpse (#66) -> you"],
+        ["stranger", "p7 did something"],
+        ["card", "Doom Blade (#75) resolved"],
+        ["win", "YOU WIN"],
+        ["lose", "OPPONENT WINS"],
+        ["draw", "A DRAW"],
+        ["odd", null],
+      ];
+      for (const [k, v] of want) {
+        if (r[k] !== v) fail(`seat-vocabulary ${k}: got ${JSON.stringify(r[k])}, expected ${JSON.stringify(v)}`);
+        else ok(`seat-vocabulary ${k} → ${JSON.stringify(r[k])}`);
+      }
+    }
     if (errors.length) fail("page errors:\n" + errors.join("\n"));
   } finally {
     await browser.close();

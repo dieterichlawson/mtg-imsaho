@@ -55,6 +55,32 @@ export function playerLabel(state: LiveState, pid: PlayerId): string {
   return pid === state.view.you ? "You" : "Opponent";
 }
 
+/**
+ * The engine's own words for a player, in the page's vocabulary.
+ *
+ * Everything the page writes itself says You or Opponent; two strings it
+ * is handed do not. `GameView::display_log` is the engine's log verbatim
+ * ("p1 cast Doom Blade (#75)"), and the game-over summary is built by the
+ * runner ("Game over! p0 (red-green) wins!"). Nothing on the page ever
+ * mapped `p0` onto You, and the page's viewer — unlike the CLI's — never
+ * sees the runner's header line, so the one screen whose whole job is to
+ * say who won was written in a vocabulary the page never defined
+ * (issue #519).
+ *
+ * The CLI answered this by printing "you are p0" in its status bar (#115);
+ * the LLM seat answered it by rewriting the tokens out before the model
+ * reads them (#465). The page does both: the life strip names the seat, so
+ * the engine's own words stay decodable, and the lines the page quotes are
+ * rewritten so they do not have to be decoded.
+ */
+export function inOurWords(state: LiveState, line: string): string {
+  return line.replace(/\bp(\d+)\b/g, (whole, n) => {
+    const pid = Number(n);
+    if (pid === state.view.you) return "you";
+    return state.view.opponents.some(o => o.id === pid) ? "opp" : whole;
+  });
+}
+
 export function targetLabel(state: LiveState, t: Target | null | undefined): string {
   if (t === null || t === undefined) return "nothing";
   if (t === "Illegal") return "(illegal)";
