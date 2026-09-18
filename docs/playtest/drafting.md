@@ -343,3 +343,19 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   is either restated in the prompt or provably still in that seat's session. A
   configuration the runner supports and the prompt does not mention is a seat
   reasoning about a different draft than the one it is in
+
+- D21 [proposed 2026-09-18, from #537 and #538] every exit path, not just the
+  signal one: #206 killed in-flight `claude -p` trees on SIGINT/SIGTERM/SIGHUP,
+  and D17 found that the *fatal* exit (`die` → `process::exit`) sweeps nothing at
+  all, and that `LIVE_GROUPS`' four slots lose four of a default eight-seat
+  draft's calls even on the signal path that was fixed. Walk the remaining exits
+  the same way, with a `CLAUDE_CODE_BIN` stub that sleeps 600s in some seats and
+  an **absolute** path (a relative one silently fails every call after the first,
+  #540): `die` from an impossible replayed pick under `--resume`, `die` from a
+  bad `--seed`/`--guide`, a panic that is not a `FATAL_MARKER` (the default hook
+  runs — then what?), SIGQUIT and SIGPIPE (no handler is installed for either),
+  and the parent killed with SIGKILL. For each, record `ps -eo pid,ppid` for
+  surviving stubs and the count of `/tmp/mtg-draft-claude-code-*` left behind. An
+  exit that orphans a live metered call costs what #206 cost whatever caused it,
+  so the question underneath is whether the guard can be one place every exit
+  goes through rather than a signal handler plus three ad-hoc paths
