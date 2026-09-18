@@ -165,6 +165,27 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   matches in. Verify every log line and every prompt a seat is handed is
   identical between the two runs, and that anything which legitimately varies
   is recorded somewhere a reader can replay from
+  **Run 2026-09-18, and the `to_decklist` half is confirmed fixed.** Five seeded
+  pairs under a stub that is a pure function of (`--json-schema` argv, prompt):
+  the draft half, the decks, the games, the standings and every prompt in every
+  `claude -p` session are byte-identical (440 and 818 stub invocations per run,
+  empty multiset diff, every per-session stream matching), and all four named
+  ordering surfaces are deterministic — `serde_json` is built *without*
+  `preserve_order` (`Cargo.lock` lists no `indexmap` under it), so `Map` is a
+  `BTreeMap` and every request map is lexical for free, which also makes
+  `deck_schema_for`'s explicit sort redundant and `parse_deck_response`'s
+  expansion order lexical. What is *not* reproducible is the log, from
+  `DECK BUILDING` onward: `log_deck_building!` is called inside `s.spawn` and the
+  tournament's `PROMPT`/`RESPONSE` records are written inline from each match
+  thread, so the same seed diffs to 1,047 hunks at `--players 4` with an
+  identical sorted line multiset (#541); the session ids are the one genuinely
+  varying value and nothing records them (#542). Two methodological notes for
+  anyone re-probing determinism here. First, **`--players 2 --seed 41` passes by
+  luck** — it is a two-way race that fell the same way twice, and three of the
+  other four pairs failed, so a determinism claim needs at least three seeds and
+  one `--players 4`. Second, **`diff` alone cannot tell "different run" from
+  "same run, different line order"**: pair it with `diff <(sort a) <(sort b)`,
+  which is empty for an ordering defect and non-empty for a real one
 
 - D13 [proposed 2026-09-09, from #401] what else a resume launders: #401
   found the pick log, the substituted-pick counter and `--save` all skipped
