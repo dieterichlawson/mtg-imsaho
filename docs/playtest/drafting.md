@@ -12,6 +12,11 @@ Two setup rules, both about money and time:
 - **`--model` defaults to `claude`, a metered API seat.** Every draft
   run must pass `--model cc` explicitly. A mission that forgets is a
   mission that spent money.
+- **Point `CLAUDE_CODE_BIN` at an ABSOLUTE path.** The backend runs each call
+  in the seat's scratch `current_dir`, while the up-front "is the CLI runnable"
+  check runs in the invocation cwd — so a relative path passes the guard and then
+  fails every single call with `os error 2`, burning the whole wall-clock retry
+  budget before the run dies (#540). Both 2026-09-18 probes lost time to this.
 - **Draft runs are long.** Eight seats is 360 picks, eight deck builds
   and a full tournament. Use the smallest `--players` the question
   tolerates and `--best-of 1`, and prefer inspecting `--log` from a small
