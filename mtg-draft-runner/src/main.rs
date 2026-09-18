@@ -155,6 +155,33 @@ fn report_worker_failure(payload: &Box<dyn std::any::Any + Send>, context: &str)
     die(&format!("{context}: {msg}"));
 }
 
+/// Run one seat's work, reporting a fatal failure where and when it happens.
+///
+/// The join loop used to be what discovered a failure, and that made the
+/// run's account of what broke wrong in two ways (issue #539).
+///
+/// `handles.into_iter().enumerate()` walks seats 0, 1, 2, … and the first
+/// `Err` ends the process, so the operator was told about the
+/// *lowest-numbered* failed seat rather than the one that actually broke.
+/// That is frequently the derived failure and not the real one: a seat that
+/// merely timed out gets the headline while the seat that failed outright,
+/// first, and for a nameable reason is not mentioned at all.
+///
+/// And a fatal in seat N was not printed until seats 0..N-1 had returned, so
+/// a perfectly healthy but slow seat 0 held the whole run silent — with
+/// shipped defaults, up to ten minutes of a run that was already dead,
+/// showing nothing but `Pack 1 Pick 1/14`.
+///
+/// Reporting from the failing worker makes the first failure *by the clock*
+/// the one that is reported, and makes it arrive when it happens. The join
+/// arms stay as a backstop for a panic this never saw.
+fn in_seat<T>(context: &str, body: impl FnOnce() -> T) -> T {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
+        Ok(value) => value,
+        Err(payload) => report_worker_failure(&payload, context),
+    }
+}
+
 /// Spawn a scoped worker whose thread is named for the seat it is.
 ///
 /// Every line `game_log` writes carries the thread it came from, and for a
@@ -722,6 +749,12 @@ fn main() {
                         .map(|((seat, available, pool), client)| {
                             let seat = *seat;
                             spawn_seat(s, format!("seat {seat}"), move || {
+                                let context = format!(
+                                    "seat {seat} could not make pack {} pick {}",
+                                    round + 1,
+                                    pick_num + 1
+                                );
+                                in_seat(&context, move || {
                                     let prompt = crate::llm_client::DraftLlmClient::build_pick_prompt(
                                         table_for(seat),
                                         round + 1,
@@ -734,10 +767,14 @@ fn main() {
                                         client.send_pick_message(&prompt, available.len());
                                     let chosen = parse_pick_response(&response, available);
                                     (seat, chosen, prompt, response)
+                                })
                             })
                         })
                         .collect();
 
+                    // `in_seat` has already reported and exited for any
+                    // panic inside a worker's body, so this arm is a
+                    // backstop for one raised outside it.
                     handles
                         .into_iter()
                         .enumerate()
@@ -745,11 +782,7 @@ fn main() {
                             Ok(result) => result,
                             Err(payload) => report_worker_failure(
                                 &payload,
-                                &format!(
-                                    "seat {seat} could not make pack {} pick {}",
-                                    round + 1,
-                                    pick_num + 1
-                                ),
+                                &format!("seat {seat}'s pick worker failed"),
                             ),
                         })
                         .collect()
@@ -831,6 +864,8 @@ substituting {} (the first card). Response: {}",
             .zip(pools.iter())
             .enumerate()
             .map(|(seat, (client, pool))| spawn_seat(s, format!("seat {seat}"), move || {
+                let context = format!("seat {seat} could not build its deck");
+                in_seat(&context, move || {
                 let result = build_deck_with_llm(client, pool, registry_ref, card_lines_ref);
                 let attempts: Vec<(&str, &str, Option<&str>)> = result
                     .attempts
@@ -847,6 +882,7 @@ substituting {} (the first card). Response: {}",
                     result.fallback,
                 );
                 result
+                })
             }))
             .collect();
 
@@ -856,7 +892,7 @@ substituting {} (the first card). Response: {}",
             .map(|(seat, h)| match h.join() {
                 Ok(result) => result,
                 Err(payload) => {
-                    report_worker_failure(&payload, &format!("seat {seat} could not build its deck"))
+                    report_worker_failure(&payload, &format!("seat {seat}'s deck worker failed"))
                 }
             })
             .collect()
@@ -933,7 +969,9 @@ substituting {} (the first card). Response: {}",
                     // draw order would be whatever the scheduler chose.
                     let seed = match_seed(args.seed, round_num, a, b);
                     spawn_seat(s, format!("seat {a} v {b}"), move || {
-                        play_match(
+                        let context =
+                            format!("the match between seat {a} and seat {b} could not finish");
+                        in_seat(&context, move || play_match(
                             &PlayerSpec { seat: a, deck: deck_a, model_spec: model_a, guide: guide_a },
                             &PlayerSpec { seat: b, deck: deck_b, model_spec: model_b, guide: guide_b },
                             reg,
@@ -941,7 +979,7 @@ substituting {} (the first card). Response: {}",
                             quiet,
                             card_ref,
                             seed,
-                        )
+                        ))
                     })
                 })
                 .collect();
@@ -953,7 +991,7 @@ substituting {} (the first card). Response: {}",
                     Ok(result) => result,
                     Err(payload) => report_worker_failure(
                         &payload,
-                        &format!("the match between seat {a} and seat {b} could not finish"),
+                        &format!("the seat {a} v seat {b} match worker failed"),
                     ),
                 })
                 .collect()
