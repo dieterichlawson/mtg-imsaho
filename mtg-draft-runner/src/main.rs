@@ -140,6 +140,9 @@ fn report_worker_failure(payload: &Box<dyn std::any::Any + Send>, context: &str)
     // reads; the rest are about to be killed with the process and have
     // nothing to add. Without this, two seats failing at once would race
     // each other to stderr with two accounts of one stop.
+    // Whatever this worker was holding back for the deterministic flush is
+    // owed to the log now: `process::exit` will not come back for it.
+    mtg_player::game_log::flush_here();
     static REPORTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     if REPORTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
         loop {
@@ -853,6 +856,14 @@ substituting {} (the first card). Response: {}",
     // concurrent writes from different workers are safe. Per-seat
     // entries may interleave in wall-clock order; each entry carries a
     // `[Seat N]` label so grep-by-seat still works.
+    //
+    // That interleave is the run's record disagreeing with the run: two
+    // `--seed 41` runs replay the same packs, picks, decks and games and
+    // then write logs that differ in a thousand places, because the order
+    // is the scheduler's (issue #541). Each worker now holds its records
+    // and they are written back in seat order, the way the pick loop above
+    // has always done it. An `Error` record is not held — see
+    // `game_log::buffer_here`.
     let pools: Vec<Vec<String>> = draft.players.iter().map(|p| p.pool.clone()).collect();
 
     let deck_results: Vec<DeckBuildResult> = std::thread::scope(|s| {
@@ -866,6 +877,7 @@ substituting {} (the first card). Response: {}",
             .map(|(seat, (client, pool))| spawn_seat(s, format!("seat {seat}"), move || {
                 let context = format!("seat {seat} could not build its deck");
                 in_seat(&context, move || {
+                mtg_player::game_log::buffer_here();
                 let result = build_deck_with_llm(client, pool, registry_ref, card_lines_ref);
                 let attempts: Vec<(&str, &str, Option<&str>)> = result
                     .attempts
@@ -881,7 +893,7 @@ substituting {} (the first card). Response: {}",
                     result.retries,
                     result.fallback,
                 );
-                result
+                (result, mtg_player::game_log::take_buffered())
                 })
             }))
             .collect();
@@ -890,7 +902,10 @@ substituting {} (the first card). Response: {}",
             .into_iter()
             .enumerate()
             .map(|(seat, h)| match h.join() {
-                Ok(result) => result,
+                Ok((result, records)) => {
+                    mtg_player::game_log::write_block(&records);
+                    result
+                }
                 Err(payload) => {
                     report_worker_failure(&payload, &format!("seat {seat}'s deck worker failed"))
                 }
@@ -971,7 +986,13 @@ substituting {} (the first card). Response: {}",
                     spawn_seat(s, format!("seat {a} v {b}"), move || {
                         let context =
                             format!("the match between seat {a} and seat {b} could not finish");
-                        in_seat(&context, move || play_match(
+                        in_seat(&context, move || {
+                        // Held and written back in `real_matches` order, so
+                        // two runs of one seed record the round the same
+                        // way rather than as a scheduler-shuffled merge of
+                        // the concurrent matches (issue #541).
+                        mtg_player::game_log::buffer_here();
+                        let outcome = play_match(
                             &PlayerSpec { seat: a, deck: deck_a, model_spec: model_a, guide: guide_a },
                             &PlayerSpec { seat: b, deck: deck_b, model_spec: model_b, guide: guide_b },
                             reg,
@@ -979,7 +1000,9 @@ substituting {} (the first card). Response: {}",
                             quiet,
                             card_ref,
                             seed,
-                        ))
+                        );
+                        (outcome, mtg_player::game_log::take_buffered())
+                        })
                     })
                 })
                 .collect();
@@ -988,7 +1011,10 @@ substituting {} (the first card). Response: {}",
                 .into_iter()
                 .zip(real_matches.iter())
                 .map(|(h, (a, b))| match h.join() {
-                    Ok(result) => result,
+                    Ok((result, records)) => {
+                        mtg_player::game_log::write_block(&records);
+                        result
+                    }
                     Err(payload) => report_worker_failure(
                         &payload,
                         &format!("the seat {a} v seat {b} match worker failed"),
