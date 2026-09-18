@@ -359,3 +359,21 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   exit that orphans a live metered call costs what #206 cost whatever caused it,
   so the question underneath is whether the guard can be one place every exit
   goes through rather than a signal handler plus three ad-hoc paths
+
+- D22 [proposed 2026-09-18, from #541, #538 and the join loop in `main.rs:861`]
+  the tournament phase as a concurrency surface: every probe so far has run
+  `--players 2`, where the tournament is one match on one thread and nothing is
+  actually concurrent — which is exactly why D12's 2-seat pair passed and its
+  4-seat pairs did not. At `--players 8 --best-of 3` a round is four `play_match`
+  threads and eight simultaneous `claude -p` children, on top of the eight the
+  draft already spawns. Run a full 8-seat pod under a stub and check what the
+  tournament shares: does the process-group table cover the *game* backend's
+  children or only the draft's; does Ctrl-C mid-round orphan four matches' worth
+  of subprocesses (#538 says the table has four slots); do two matches in one
+  round ever interleave a `GAME` block or a `MATCH` line (those are emitted after
+  the join, so they should not — verify it, because the LLM round-trip records
+  demonstrably do, #541); and does one match's fatal reach the operator or does
+  the join order swallow it the way #539 describes for the pick loop. Anything a
+  `play_match` worker touches that is not its own `PlayerSpec` — the registry,
+  the card reference, the log mutex, the usage counters the summary adds up — is
+  where to look
