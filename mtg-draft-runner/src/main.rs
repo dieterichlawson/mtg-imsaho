@@ -96,6 +96,14 @@ draft and the games.";
 /// A user error: report it and exit without a Rust panic/backtrace.
 fn die(msg: &str) -> ! {
     eprintln!("Error: {msg}");
+    // `process::exit` runs no destructors and raises no signal, so nothing
+    // else takes this run's in-flight `claude -p` subprocesses down with
+    // it. Every other seat is mid-call when one seat fatals — all seats
+    // pick in parallel and the joins are walked in seat order — and each
+    // one kept its whole process tree, orphaned to init and still spending
+    // against a draft that had stopped (issue #537). Ctrl-C has swept them
+    // since #206; the fatal path now sweeps the same registry.
+    mtg_player::llm::claude_code_kill_live_calls();
     std::process::exit(1);
 }
 

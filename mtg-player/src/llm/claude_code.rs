@@ -165,6 +165,26 @@ extern "C" fn handle_fatal_signal(sig: libc::c_int) {
     }
 }
 
+/// Kill every in-flight `claude -p` group, for an exit that is not a signal.
+///
+/// `handle_fatal_signal` covers Ctrl-C, SIGTERM and SIGHUP. It does not
+/// cover the runner's *fatal* path: `die` is `eprintln!` + `process::exit`,
+/// which runs no destructors and raises no signal, so nothing swept this
+/// registry and every other seat still mid-call kept its whole `claude -p`
+/// process tree — reparented to init, running on against a draft that no
+/// longer exists (issue #537). That is the ordinary case, not an exotic
+/// one: all seats call in parallel, a real call takes tens of seconds, and
+/// a fatal in one seat always fires while the others are in flight.
+///
+/// Unlike the handler this is called from ordinary code, so it has no
+/// async-signal-safety constraint; it is the same loop so that the two exit
+/// paths cannot disagree about what "take the subprocesses with us" means.
+pub fn kill_live_calls() {
+    for slot in &LIVE_GROUPS {
+        kill_group(slot.swap(0, Ordering::SeqCst));
+    }
+}
+
 /// Take in-flight subprocesses down with the run on Ctrl-C or SIGTERM.
 ///
 /// Without this the runner exits and its `claude -p` child (and whatever
