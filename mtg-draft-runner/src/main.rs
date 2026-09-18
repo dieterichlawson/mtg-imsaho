@@ -136,6 +136,16 @@ fn install_panic_hook() {
 /// `context` says where the run stopped — the seat, and the pack and pick
 /// it was on — which the payload itself does not know.
 fn report_worker_failure(payload: &Box<dyn std::any::Any + Send>, context: &str) -> ! {
+    // The first seat to get here is the one whose account the operator
+    // reads; the rest are about to be killed with the process and have
+    // nothing to add. Without this, two seats failing at once would race
+    // each other to stderr with two accounts of one stop.
+    static REPORTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if REPORTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        }
+    }
     let msg = payload
         .downcast_ref::<String>()
         .map(String::as_str)
@@ -143,6 +153,26 @@ fn report_worker_failure(payload: &Box<dyn std::any::Any + Send>, context: &str)
         .unwrap_or("worker thread failed");
     let msg = msg.strip_prefix(llm_client::FATAL_MARKER).unwrap_or(msg);
     die(&format!("{context}: {msg}"));
+}
+
+/// Spawn a scoped worker whose thread is named for the seat it is.
+///
+/// Every line `game_log` writes carries the thread it came from, and for a
+/// seat's own records — `API_FATAL`, `API_ERROR`, and the tournament's
+/// whole LLM round trip — that was a bare `t5`, the one identifier that
+/// means nothing to anybody. After a real run stopped there was no way back
+/// from the log to the seat whose account or session was the broken one
+/// (issues #539, #542). Naming the thread labels every line it writes, at
+/// the one place a worker is created rather than at each call site.
+fn spawn_seat<'scope, 'env, T: Send + 'scope>(
+    s: &'scope std::thread::Scope<'scope, 'env>,
+    name: String,
+    body: impl FnOnce() -> T + Send + 'scope,
+) -> std::thread::ScopedJoinHandle<'scope, T> {
+    std::thread::Builder::new()
+        .name(name)
+        .spawn_scoped(s, body)
+        .expect("a worker thread")
 }
 
 struct Args {
@@ -691,18 +721,19 @@ fn main() {
                         .zip(clients.iter_mut())
                         .map(|((seat, available, pool), client)| {
                             let seat = *seat;
-                            s.spawn(move || {
-                                let prompt = crate::llm_client::DraftLlmClient::build_pick_prompt(
-                                    table_for(seat),
-                                    round + 1,
-                                    pick_num + 1,
-                                    available,
-                                    pool,
-                                    card_lines,
-                                );
-                                let response = client.send_pick_message(&prompt, available.len());
-                                let chosen = parse_pick_response(&response, available);
-                                (seat, chosen, prompt, response)
+                            spawn_seat(s, format!("seat {seat}"), move || {
+                                    let prompt = crate::llm_client::DraftLlmClient::build_pick_prompt(
+                                        table_for(seat),
+                                        round + 1,
+                                        pick_num + 1,
+                                        available,
+                                        pool,
+                                        card_lines,
+                                    );
+                                    let response =
+                                        client.send_pick_message(&prompt, available.len());
+                                    let chosen = parse_pick_response(&response, available);
+                                    (seat, chosen, prompt, response)
                             })
                         })
                         .collect();
@@ -799,7 +830,7 @@ substituting {} (the first card). Response: {}",
             .iter_mut()
             .zip(pools.iter())
             .enumerate()
-            .map(|(seat, (client, pool))| s.spawn(move || {
+            .map(|(seat, (client, pool))| spawn_seat(s, format!("seat {seat}"), move || {
                 let result = build_deck_with_llm(client, pool, registry_ref, card_lines_ref);
                 let attempts: Vec<(&str, &str, Option<&str>)> = result
                     .attempts
@@ -901,15 +932,17 @@ substituting {} (the first card). Response: {}",
                     // coordinates — not drawn inside the worker, where the
                     // draw order would be whatever the scheduler chose.
                     let seed = match_seed(args.seed, round_num, a, b);
-                    s.spawn(move || play_match(
-                        &PlayerSpec { seat: a, deck: deck_a, model_spec: model_a, guide: guide_a },
-                        &PlayerSpec { seat: b, deck: deck_b, model_spec: model_b, guide: guide_b },
-                        reg,
-                        best_of,
-                        quiet,
-                        card_ref,
-                        seed,
-                    ))
+                    spawn_seat(s, format!("seat {a} v {b}"), move || {
+                        play_match(
+                            &PlayerSpec { seat: a, deck: deck_a, model_spec: model_a, guide: guide_a },
+                            &PlayerSpec { seat: b, deck: deck_b, model_spec: model_b, guide: guide_b },
+                            reg,
+                            best_of,
+                            quiet,
+                            card_ref,
+                            seed,
+                        )
+                    })
                 })
                 .collect();
 

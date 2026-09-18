@@ -90,7 +90,7 @@ pub fn write_at(level: LogLevel, file: &str, line: u32, label: &str, content: &s
     };
     let Some(state) = guard.as_mut() else { return };
 
-    let tid = std::thread::current().id();
+    let thread = std::thread::current();
     let filename = file.rsplit('/').next().unwrap_or(file);
     // Wall-clock timestamp in the local timezone, ISO-8601-ish with
     // millisecond precision. Use a space between date and time so the
@@ -98,14 +98,25 @@ pub fn write_at(level: LogLevel, file: &str, line: u32, label: &str, content: &s
     let ts = Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
     let loc = format!("{filename}:{line}");
     let level_name = level.name();
-    // Thread id renders like `ThreadId(12)` from the Debug impl — strip the
-    // wrapper for a slightly terser field.
-    let tid_str = format!("{tid:?}");
-    let tid_field = tid_str
-        .strip_prefix("ThreadId(")
-        .and_then(|s| s.strip_suffix(')'))
-        .map(|n| format!("t{n}"))
-        .unwrap_or(tid_str);
+    // A named thread says who it is; only an unnamed one falls back to its
+    // id. `t5` is the one identifier in a log line that means nothing to
+    // anybody: two `API_FATAL` lines from a stopped run named `t5` and `t2`
+    // and there was no way back from either to the seat whose account or
+    // session was the broken one (issues #539, #542). The runners name
+    // their per-seat workers, so those lines now name the seat instead.
+    let tid_field = thread.name().map_or_else(
+        || {
+            // Thread id renders like `ThreadId(12)` from the Debug impl —
+            // strip the wrapper for a slightly terser field.
+            let tid_str = format!("{:?}", thread.id());
+            tid_str
+                .strip_prefix("ThreadId(")
+                .and_then(|s| s.strip_suffix(')'))
+                .map(|n| format!("t{n}"))
+                .unwrap_or(tid_str)
+        },
+        std::string::ToString::to_string,
+    );
 
     // Single-line content: everything on one tab-delimited header line.
     // Multi-line content: header line with no content field, followed by
