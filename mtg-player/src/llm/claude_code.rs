@@ -63,9 +63,39 @@ fn inherit_auth() -> bool {
 }
 
 /// The binary this process would run for a Claude Code seat.
+///
+/// A path with a separator in it is resolved against *this* process's
+/// working directory, because the seat's calls are not made from here:
+/// every call runs with `current_dir(workdir)`, the scratch directory that
+/// keeps a project `CLAUDE.md` out of the prompt. So a relative
+/// `CLAUDE_CODE_BIN` used to resolve during the up-front "is the CLI
+/// runnable" check — which runs in the process's own cwd — and then fail to
+/// resolve on every single call, which is the one thing that check exists
+/// to prevent. The operator got the full retry budget per seat and a
+/// message about a missing file rather than about their path being relative
+/// (issue #540).
+///
+/// A bare name stays a bare name: it is a `PATH` lookup, and `PATH` is
+/// searched the same wherever the child starts.
 #[must_use]
 pub fn binary() -> String {
-    std::env::var(BINARY_ENV).unwrap_or_else(|_| "claude".to_string())
+    resolve_binary(std::env::var(BINARY_ENV).unwrap_or_else(|_| "claude".to_string()))
+}
+
+fn resolve_binary(raw: String) -> String {
+    {
+        let path = std::path::Path::new(&raw);
+        if path.is_absolute() || path.components().count() < 2 {
+            return raw;
+        }
+    }
+    // Joined rather than canonicalised: a path that does not exist yet is
+    // still the path the operator named, and `available()` is what reports
+    // that it cannot be run.
+    match std::env::current_dir() {
+        Ok(cwd) => cwd.join(&raw).to_string_lossy().into_owned(),
+        Err(_) => raw,
+    }
 }
 
 /// Whether the Claude Code binary can be executed at all — the seat's
