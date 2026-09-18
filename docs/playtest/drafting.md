@@ -269,6 +269,27 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   failed, that a hang anywhere still reaches a fatal, and that the in-flight
   calls of the seats which did not fail are killed rather than orphaned when
   the run exits
+  **Run 2026-09-18: the blame is survivable, the cleanup is not.** Both of the
+  claims above are half wrong and worth correcting in place. `enumerate()`'s
+  index *does* equal the seat, because `pick_inputs` is built `(0..args.players)`
+  in order, so a lone failure is named correctly — the real defect is
+  first-`Err`-wins in seat order (seat 3 fails at t≈0.2s, the headline blames
+  seat 0) plus a report that waits on every lower seat, dead at t≈2.4s and silent
+  until t=45s, ~600s at shipped defaults, while `API_FATAL` carries a thread id
+  and no seat at all (#539). And a hang does *not* block forever: the per-call
+  watchdog and the retry budget bound every call. What the idea did not ask about
+  is where the night went — `die` → `process::exit(1)` runs no destructors, so a
+  fatal in one seat orphans every other seat's `claude -p` tree to init at
+  `PPID=1` (#537), and `LIVE_GROUPS`' four slots, commented "more seats than a
+  run has" because they were written for a 2-seat game, lose four of a default
+  8-seat draft's calls on the signal path too (#538). Setup notes for a re-probe:
+  the pick prompt states `You are seat N of M` (`llm_client.rs:1124`) and is the
+  reliable seat discriminator — a pool listing is *not*, since every pool is
+  empty at pack 1 pick 1 — the deck-build prompt states no seat, so memoise
+  seat→`--session-id` during the picks; and the two knobs that make a failure
+  arrive quickly are `MTG_DRAFT_RETRY_BUDGET_SECS` (`llm_client.rs:618`) and
+  `MTG_CLAUDE_CODE_TIMEOUT_SECS` (`mtg-player/src/llm/claude_code.rs:40`, default
+  300s)
 - D18 [proposed 2026-09-09, from #398 and #404] the draft's own copy of the
   harness contract. `mtg-draft-runner/src/llm_client.rs` builds its own
   prompts, its own schemas and its own `claude -p` invocation, and #404 is
