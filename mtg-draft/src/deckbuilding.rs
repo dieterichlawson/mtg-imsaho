@@ -196,6 +196,53 @@ pub fn fallback_deck(pool: &[String], registry: &CardRegistry) -> DraftDeck {
     DraftDeck { maindeck, lands, sideboard }
 }
 
+/// The largest count a deck answer may give for one card or one land.
+///
+/// No Comprehensive Rules clause caps basic lands, but a limited deck is
+/// built out of a pool of about 45 cards, so any count past this is a
+/// hallucinated number rather than a deck. The bound has to be enforced
+/// where the count is *read*, not only in `validate_deck`: the parser
+/// expands `{name: count}` into one `String` per copy, so an unbounded
+/// count is an unbounded allocation that happens before anything is in a
+/// position to judge it (issue #535 — a maindeck count of 4e9 aborted the
+/// whole run in the allocator, after every pick had been made).
+pub const MAX_CARD_COUNT: u32 = 200;
+
+/// Read one `{name: count}` entry of a deck answer.
+///
+/// A value that is not a JSON unsigned integer, or that is past
+/// `MAX_CARD_COUNT`, is an error naming the key and the value the seat
+/// actually sent. It is never silently rewritten: `count.as_u64()` returns
+/// `None` for `1.0`, for `"1"`, for `{...}` and for `-5`, and the two
+/// call sites used to turn that `None` into a zero and into a skipped
+/// entry respectively — so a maindecked card came out in the sideboard and
+/// the run logged `accepted` / `0 retries`, with no counter and no warning
+/// anywhere (issue #536). The pick parser next door has always propagated
+/// this rather than repairing it, and `build_deck_with_llm`'s retry loop
+/// already knows what to do with an `Err`: it quotes it back to the seat
+/// and asks again.
+///
+/// The value is quoted back verbatim rather than after coercion, which is
+/// the other half of the same habit — `{"Island": 1000000000000}` used to
+/// be refused with `Island count is 4294967295`, a number the seat never
+/// sent and cannot find in its own answer.
+fn card_count(name: &str, count: &serde_json::Value) -> Result<u32, String> {
+    let Some(n) = count.as_u64() else {
+        return Err(format!(
+            "'{name}' has a count of {count}, which is not a whole number of copies. \
+             Give every card a count like 1 or 2."
+        ));
+    };
+    let n = u32::try_from(n).unwrap_or(u32::MAX);
+    if n > MAX_CARD_COUNT {
+        return Err(format!(
+            "'{name}' has a count of {count} — that's clearly a hallucinated number. \
+             A typical limited deck is 23 spells and 16-18 lands."
+        ));
+    }
+    Ok(n)
+}
+
 /// Parse an LLM's deck building response.
 ///
 /// Preferred format (JSON — card-name → count mapping):
@@ -229,20 +276,27 @@ pub fn parse_deck_response(response: &str) -> Result<(Vec<String>, HashMap<Strin
 
     // Parse maindeck — either object {name: count} or legacy array [name, ...]
     let maindeck: Vec<String> = if let Some(obj) = v["maindeck"].as_object() {
-        // New format: expand {name: count} into repeated names
+        // New format: expand {name: count} into repeated names. The count
+        // is validated before it is used as a loop bound, not after.
         let mut cards = Vec::new();
         for (name, count) in obj {
-            let n = u32::try_from(count.as_u64().unwrap_or(0)).unwrap_or(u32::MAX);
+            let n = card_count(name, count)?;
             for _ in 0..n {
                 cards.push(name.clone());
             }
         }
         cards
     } else if let Some(arr) = v["maindeck"].as_array() {
-        // Legacy array format
+        // Legacy array format. An entry that is not a card name is
+        // refused for the same reason a bad count is: dropping it would
+        // build a deck the seat did not ask for and call it accepted.
         arr.iter()
-            .filter_map(|c| c.as_str().map(std::string::ToString::to_string))
-            .collect()
+            .map(|c| {
+                c.as_str().map(std::string::ToString::to_string).ok_or_else(|| {
+                    format!("The maindeck list has an entry that is not a card name: {c}.")
+                })
+            })
+            .collect::<Result<Vec<String>, String>>()?
     } else {
         return Err("JSON response missing \"maindeck\" (expected object or array).".to_string());
     };
@@ -251,10 +305,9 @@ pub fn parse_deck_response(response: &str) -> Result<(Vec<String>, HashMap<Strin
     let mut lands: HashMap<String, u32> = HashMap::new();
     if let Some(lmap) = v["lands"].as_object() {
         for (name, count) in lmap {
-            if let Some(n) = count.as_u64() {
-                if n > 0 {
-                    lands.insert(name.clone(), u32::try_from(n).unwrap_or(u32::MAX));
-                }
+            let n = card_count(name, count)?;
+            if n > 0 {
+                lands.insert(name.clone(), n);
             }
         }
     }
@@ -332,8 +385,11 @@ pub fn validate_deck<S: std::hash::BuildHasher>(
         // Sanity check: reject obviously hallucinated huge numbers.
         // There's no MTG rule capping basic lands, but a 40-card deck
         // can't have more lands than total cards, and pool size is the
-        // real upper bound. 200 is a generous hallucination guard.
-        if *count > 200 {
+        // real upper bound. `MAX_CARD_COUNT` is a generous hallucination
+        // guard, and is the same bound `parse_deck_response` reads counts
+        // under — this function is public and callable on a deck that
+        // never went through the parser, so it keeps its own check.
+        if *count > MAX_CARD_COUNT {
             return Err(format!(
                 "{name} count is {count} — that's clearly a hallucinated number. A typical limited deck has 16-18 total lands."
             ));
@@ -568,6 +624,89 @@ mod tests {
         let (maindeck, lands) = parse_deck_response(response).unwrap();
         assert_eq!(maindeck.len(), 1);
         assert!(!lands.contains_key("Swamp"));
+    }
+
+    // A deck answer's counts: every way one can be unreadable, and the
+    // one thing that must never happen to it — being quietly rewritten
+    // into a deck the seat did not ask for (issues #535, #536).
+
+    #[test]
+    fn parse_deck_response_refuses_a_count_it_cannot_expand() {
+        // 4e9 copies is ~103 GB of `Vec<String>` backing store. This used
+        // to be expanded before anything validated it, so the run died in
+        // the allocator with every pick of the draft already made.
+        let response = r#"{
+            "maindeck": {"Abbey Griffin": 4000000000},
+            "lands": {"Island": 17}
+        }"#;
+
+        let err = parse_deck_response(response).expect_err("a count of 4e9 is not a deck");
+        assert!(err.contains("Abbey Griffin"), "the message names the card: {err:?}");
+        assert!(
+            err.contains("4000000000"),
+            "the message quotes the count the seat sent, not a clamped one: {err:?}"
+        );
+    }
+
+    #[test]
+    fn parse_deck_response_bounds_a_count_at_max_card_count() {
+        let at_bound = format!(
+            r#"{{"maindeck": {{"Abbey Griffin": {MAX_CARD_COUNT}}}, "lands": {{"Island": 17}}}}"#
+        );
+        let (maindeck, _) = parse_deck_response(&at_bound).expect("the bound itself is legal");
+        assert_eq!(maindeck.len() as u32, MAX_CARD_COUNT);
+
+        let past_bound = format!(
+            r#"{{"maindeck": {{"Abbey Griffin": {}}}, "lands": {{"Island": 17}}}}"#,
+            MAX_CARD_COUNT + 1
+        );
+        assert!(
+            parse_deck_response(&past_bound).is_err(),
+            "one copy past the bound is refused, so the bound is enforced where counts are read"
+        );
+    }
+
+    #[test]
+    fn parse_deck_response_refuses_a_count_that_is_not_a_whole_number_of_copies() {
+        // `as_u64()` is `None` for every one of these. Each used to become
+        // a zero in the maindeck (the card silently moved to the
+        // sideboard) or a skipped entry in the lands, and the run logged
+        // `accepted` / `0 retries` either way.
+        for bad in ["1.0", "\"1\"", "{\"count\": 1}", "-5", "null", "true"] {
+            let md = format!(
+                r#"{{"maindeck": {{"Abbey Griffin": 1, "Nevermore": {bad}}}, "lands": {{"Island": 17}}}}"#
+            );
+            let err = parse_deck_response(&md)
+                .expect_err("a maindeck count of {bad} is not a number of copies");
+            assert!(err.contains("Nevermore"), "names the card ({bad}): {err:?}");
+
+            let lands = format!(
+                r#"{{"maindeck": {{"Abbey Griffin": 1}}, "lands": {{"Island": {bad}}}}}"#
+            );
+            let err = parse_deck_response(&lands)
+                .expect_err("a land count of {bad} is not a number of copies");
+            assert!(err.contains("Island"), "names the land ({bad}): {err:?}");
+        }
+    }
+
+    #[test]
+    fn parse_deck_response_quotes_the_count_the_seat_actually_sent() {
+        // The clamp to `u32::MAX` used to be quoted back as if the seat
+        // had asked for it, which is a number it cannot find in its own
+        // answer and cannot act on.
+        let response = r#"{"maindeck": {"Abbey Griffin": 1}, "lands": {"Island": 1000000000000}}"#;
+        let err = parse_deck_response(response).expect_err("1e12 Islands is not a deck");
+        assert!(err.contains("1000000000000"), "quotes what was sent: {err:?}");
+        assert!(!err.contains("4294967295"), "does not quote the clamp: {err:?}");
+    }
+
+    #[test]
+    fn parse_deck_response_refuses_a_maindeck_entry_that_is_not_a_card_name() {
+        let response = r#"{"maindeck": ["Abbey Griffin", 7], "lands": {"Island": 17}}"#;
+        assert!(
+            parse_deck_response(response).is_err(),
+            "the legacy array format drops nothing silently either"
+        );
     }
 
     #[test]
