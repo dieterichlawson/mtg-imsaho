@@ -12,9 +12,13 @@
 //!   draft that no longer existed (issue #537). That is the ordinary case:
 //!   all seats call in parallel and the joins are walked in seat order, so
 //!   a fatal always fires while the others are in flight.
+//! - The registry held four groups and `--players` defaults to **8**, so
+//!   half of an ordinary draft's calls ran outside the handler and survived
+//!   the interrupt — whichever four lost the CAS, so not even a
+//!   predictable set to clean up by hand (issue #538).
 //!
-//! It is checked here the way an operator would see it: real seats hanging
-//! in real subprocesses, a real exit, and nothing left alive.
+//! Both are checked here the way an operator would see them: real seats
+//! hanging in real subprocesses, a real exit, and nothing left alive.
 #![cfg(unix)]
 
 use std::path::{Path, PathBuf};
@@ -150,6 +154,76 @@ fn a_seats_fatal_takes_the_other_seats_calls_with_it() {
         "{} of {} in-flight `claude -p` calls outlived the run's fatal exit \
          (pids {left:?}) — with a real seat each is a billed call still \
          running against a draft that has stopped",
+        left.len(),
+        hung.len()
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn an_interrupt_takes_every_seats_call_with_it_at_the_default_player_count() {
+    if !have_python() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+
+    // 8 is `--players`' default, which is the whole point: the registry was
+    // sized for four and the shipped configuration runs eight.
+    const SEATS: usize = 8;
+
+    let dir = std::env::temp_dir().join(format!("mtg-draft-sigterm-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let pids = dir.join("pids");
+    std::fs::create_dir_all(&pids).unwrap();
+    let bin = hanging_seat(&dir);
+
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_mtg-draft-runner"))
+        .args(["--model", "cc", "--best-of", "1", "--seed", "7", "-q"])
+        .args(["--players", &SEATS.to_string()])
+        .args(["--log", dir.join("run.log").to_str().unwrap()])
+        .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
+        .env("CLAUDE_CODE_BIN", &bin)
+        .env("STUB_PIDS", &pids)
+        .env("MTG_CLAUDE_CODE_TIMEOUT_SECS", "900")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("the runner runs");
+
+    // Every seat picks at once, so all of them should be in flight before
+    // any of them returns. Wait for that rather than guessing at a sleep.
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let hung = loop {
+        let seen = recorded_pids(&pids);
+        if seen.len() >= SEATS {
+            break seen;
+        }
+        if Instant::now() > deadline {
+            let _ = child.kill();
+            reap(&seen);
+            panic!(
+                "only {} of {SEATS} seats reached a call in 60s — the fixture never \
+                 got the run into the state this is about",
+                seen.len()
+            );
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+
+    // What Ctrl-C does.
+    let killed = std::process::Command::new("kill")
+        .args(["-TERM", &child.id().to_string()])
+        .status()
+        .expect("kill runs");
+    assert!(killed.success(), "the runner could not be signalled");
+    let _ = child.wait();
+
+    let left = survivors(&hung, Duration::from_secs(10));
+    reap(&left);
+    assert!(
+        left.is_empty(),
+        "{} of {} in-flight `claude -p` calls survived SIGTERM (pids {left:?}) — \
+         the signal handler's registry does not cover a run of {SEATS} seats",
         left.len(),
         hung.len()
     );

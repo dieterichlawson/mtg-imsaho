@@ -14,7 +14,7 @@ use std::fmt::Write;
 
 mod claude_code;
 pub mod cost;
-pub use claude_code::{available as claude_code_available, binary as claude_code_binary, kill_live_calls as claude_code_kill_live_calls, BINARY_ENV as CLAUDE_CODE_BINARY_ENV};
+pub use claude_code::{available as claude_code_available, binary as claude_code_binary, kill_live_calls as claude_code_kill_live_calls, BINARY_ENV as CLAUDE_CODE_BINARY_ENV, MAX_LIVE_CALLS as CLAUDE_CODE_MAX_LIVE_CALLS};
 // The one `claude -p` subprocess driver, for both seats in the workspace
 // (#404).
 pub use claude_code::{prepare_seat as claude_code_prepare_seat, run_print_mode as claude_code_run};

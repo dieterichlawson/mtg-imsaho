@@ -82,6 +82,17 @@ pub fn available() -> bool {
         .is_ok_and(|s| s.success())
 }
 
+/// The most `claude -p` calls that can be in flight at once and still be
+/// covered by the signal handler — the size of [`LIVE_GROUPS`].
+///
+/// A run's concurrency is its seat count: `mtg-draft-runner` picks with
+/// every seat at once, builds every deck at once, and plays a tournament
+/// round as `players / 2` matches of two seats each. So this is the seat
+/// count the registry can cover, and the runners refuse a larger one up
+/// front rather than discovering it a signal too late. 64 is far past any
+/// real pod — a booster draft is 8 — and costs 256 bytes.
+pub const MAX_LIVE_CALLS: usize = 64;
+
 /// Process groups of `claude -p` children currently in flight, so a signal
 /// can take them down with the run.
 ///
@@ -89,13 +100,21 @@ pub fn available() -> bool {
 /// otherwise. Fixed size and lock-free because the SIGINT/SIGTERM handler
 /// reads it: everything a signal handler touches has to be
 /// async-signal-safe, which rules out allocating or taking a lock (issue
-/// #206). Four slots is more seats than a run has.
-static LIVE_GROUPS: [AtomicI32; 4] = [
-    AtomicI32::new(0),
-    AtomicI32::new(0),
-    AtomicI32::new(0),
-    AtomicI32::new(0),
-];
+/// #206).
+///
+/// This was four slots, with a comment asserting that four is more seats
+/// than a run has. `--players` defaults to **8** and all seats call at
+/// once, so the ordinary draft overran it by half: four calls registered,
+/// four got `Self(None)` and ran outside the handler, and Ctrl-C left them
+/// alive — each one, with a real seat, a billed call still running against
+/// a draft the operator had already abandoned (issue #538). Which four
+/// survived was whichever threads lost the CAS, so it was not even a
+/// predictable set to clean up by hand.
+///
+/// The size is a constant the runners check their seat count against, so
+/// "more seats than a run has" is enforced rather than asserted.
+static LIVE_GROUPS: [AtomicI32; MAX_LIVE_CALLS] =
+    [const { AtomicI32::new(0) }; MAX_LIVE_CALLS];
 
 /// Kill a child's whole process group.
 ///
@@ -291,7 +310,20 @@ impl LiveGroup {
             }
         }
         // More concurrent calls than slots: the call still runs, it just
-        // isn't covered by the signal handler.
+        // isn't covered by the signal handler. The runners size their seat
+        // count against `MAX_LIVE_CALLS` so this should be unreachable —
+        // but if it is ever reached it says so, because the whole cost of
+        // #538 was that it did not.
+        if pgid > 0 {
+            static WARNED: std::sync::Once = std::sync::Once::new();
+            WARNED.call_once(|| {
+                eprintln!(
+                    "Warning: more than {MAX_LIVE_CALLS} claude -p calls in flight at once; \
+                     the ones past that are not covered by the Ctrl-C handler and will be \
+                     orphaned if this run is interrupted."
+                );
+            });
+        }
         Self(None)
     }
 }

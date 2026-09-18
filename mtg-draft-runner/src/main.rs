@@ -401,6 +401,23 @@ fn validate_model_specs(models: &[String]) {
                         mtg_player::llm::CLAUDE_CODE_BINARY_ENV
                     ));
                 }
+                // Every seat calls at once — picks, deck builds, and a
+                // tournament round's `players / 2` matches of two seats —
+                // so the run's concurrency is its seat count, and the
+                // Ctrl-C handler's registry has to be able to hold all of
+                // it. A call that does not fit runs outside the handler and
+                // is orphaned by an interrupt, which is what #538 cost at
+                // the DEFAULT `--players 8` against a registry of 4. The
+                // bound is checked here, before anything is spent, for the
+                // same reason the binary is.
+                if models.len() > mtg_player::llm::CLAUDE_CODE_MAX_LIVE_CALLS {
+                    die(&format!(
+                        "--players {} is more claude-code seats than can be taken down on Ctrl-C (limit {}); \
+                         past that a seat's `claude -p` call would be orphaned by an interrupt",
+                        models.len(),
+                        mtg_player::llm::CLAUDE_CODE_MAX_LIVE_CALLS
+                    ));
+                }
                 continue;
             }
             "gemini" => {}
