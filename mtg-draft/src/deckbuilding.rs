@@ -356,12 +356,20 @@ pub fn validate_deck<S: std::hash::BuildHasher>(
         *pool_counts.entry(name).or_insert(0) += 1;
     }
 
-    // Check maindeck against pool (strip DFC back face names)
+    // Check maindeck against pool (strip DFC back face names).
+    //
+    // The whole maindeck is counted before any of it is judged. Counting
+    // and checking in one pass reported the count at the copy the loop
+    // happened to stop on rather than the count the seat asked for — a
+    // maindeck of `{"Abbey Griffin": 1000000}` was refused with "appears 2
+    // time(s)", which is a number found nowhere in the seat's answer and
+    // tells it nothing about the delta it has to fix (issue #536).
     let mut used_counts: HashMap<&str, u32> = HashMap::new();
     for card in maindeck {
+        *used_counts.entry(crate::front_face(card)).or_insert(0) += 1;
+    }
+    for card in maindeck {
         let name = crate::front_face(card);
-        *used_counts.entry(name).or_insert(0) += 1;
-
         let available = pool_counts.get(name).copied().unwrap_or(0);
         if used_counts[name] > available {
             if available == 0 {
@@ -707,6 +715,26 @@ mod tests {
             parse_deck_response(response).is_err(),
             "the legacy array format drops nothing silently either"
         );
+    }
+
+    #[test]
+    fn validate_deck_reports_the_copies_the_maindeck_asked_for() {
+        // Counting and checking in one pass reported the copy the loop
+        // stopped on — "appears 2 time(s)" for a request of four.
+        let mut pool: Vec<String> = (0..40).map(|i| format!("Filler {i}")).collect();
+        pool.push("Dearly Departed".into());
+        let mut maindeck: Vec<String> = (0..36).map(|i| format!("Filler {i}")).collect();
+        for _ in 0..4 {
+            maindeck.push("Dearly Departed".into());
+        }
+
+        let err = validate_deck(&pool, &maindeck, &HashMap::new())
+            .expect_err("four copies of a one-copy card is not a legal deck");
+        assert!(
+            err.contains("appears 4 time(s)"),
+            "the seat is told the count it sent, not where the check stopped: {err:?}"
+        );
+        assert!(err.contains("only drafted 1"), "and the count it may use: {err:?}");
     }
 
     #[test]
