@@ -772,6 +772,10 @@ trait LlmBackend {
     fn model_name(&self) -> &str;
     /// Return and clear the thinking text from the last API call, if any.
     fn take_thinking(&mut self) -> Option<String> { None }
+    /// The id of the conversation this backend is currently in, for a
+    /// backend that has one. `None` for a backend whose history it holds
+    /// itself, which is every backend but the `claude -p` CLI seat.
+    fn session_id(&self) -> Option<&str> { None }
 }
 
 /// The response intro for a backend whose reasoning the harness can only see
@@ -1393,6 +1397,9 @@ pub struct LlmPlayer {
     provider: Provider,
     /// Optional guide text injected into the game-play system prompt.
     guide: Option<String>,
+    /// The conversation id already written down, so a `SESSION` record is
+    /// one per conversation rather than one per call.
+    session_logged: Option<String>,
 }
 
 impl LlmPlayer {
@@ -1406,6 +1413,7 @@ impl LlmPlayer {
             backend: Box::new(AnthropicBackend::new("claude-sonnet-4-6")),
             provider: Provider::Anthropic,
             guide: None,
+            session_logged: None,
         }
     }
 
@@ -1424,6 +1432,7 @@ impl LlmPlayer {
             backend: Box::new(InertBackend::default()),
             provider: Provider::Anthropic,
             guide: None,
+            session_logged: None,
         }
     }
 
@@ -1437,6 +1446,7 @@ impl LlmPlayer {
             backend: Box::new(GeminiBackend::new("gemini-2.5-flash")),
             provider: Provider::Gemini,
             guide: None,
+            session_logged: None,
         }
     }
 
@@ -1454,6 +1464,7 @@ impl LlmPlayer {
             backend: Box::new(claude_code::ClaudeCodeBackend::new(None)),
             provider: Provider::ClaudeCode,
             guide: None,
+            session_logged: None,
         }
     }
 
@@ -1469,6 +1480,7 @@ impl LlmPlayer {
             backend: Box::new(claude_code::ClaudeCodeBackend::with_binary(binary, None)),
             provider: Provider::ClaudeCode,
             guide: None,
+            session_logged: None,
         }
     }
 
@@ -1755,6 +1767,28 @@ impl LlmPlayer {
     #[track_caller]
     fn log(&self, label: &str, content: &str) {
         self.log_at(crate::game_log::LogLevel::Info, label, content);
+    }
+
+    /// Write down a conversation's id the first time it is seen.
+    ///
+    /// A `claude -p` seat mints a fresh uuid per conversation, passes it as
+    /// `--session-id` and `--resume`s it after — and a 2-seat best-of-3 run
+    /// minted eight of them without one appearing in the `--log`, the
+    /// `--save` snapshot, or on stderr. That id is the only handle to the
+    /// CLI's own stored transcript of the conversation: after the run the
+    /// transcript exists and is unfindable. It is also the only way to
+    /// check, from a run that already happened, that a seat's calls really
+    /// were one session — the property #481 was about, which until now
+    /// could only be established by re-running the whole thing under a
+    /// wrapper (issue #542).
+    fn log_session(&mut self) {
+        let Some(sid) = self.backend.session_id() else { return };
+        if self.session_logged.as_deref() == Some(sid) {
+            return;
+        }
+        let sid = sid.to_string();
+        self.log("SESSION", &sid);
+        self.session_logged = Some(sid);
     }
 
     #[track_caller]
@@ -2736,6 +2770,7 @@ impl LlmPlayer {
                     .cloned().collect::<Vec<_>>()));
         self.log("PROMPT", user_message);
         let result = self.backend.send_with_schema(user_message, schema);
+        self.log_session();
         self.log_thinking();
         // Raw backend JSON is verbose and duplicates the THOUGHT line for
         // backends that put thoughts in the JSON — log it at debug level.
@@ -4789,6 +4824,7 @@ mod tests {
             backend: Box::new(ScriptedBackend { answers, prompts: std::rc::Rc::clone(&prompts) }),
             provider: Provider::Anthropic,
             guide: None,
+            session_logged: None,
         };
         (player, prompts)
     }

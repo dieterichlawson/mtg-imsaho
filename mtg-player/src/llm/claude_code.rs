@@ -745,6 +745,10 @@ impl LlmBackend for ClaudeCodeBackend {
         self.last_thinking.take()
     }
 
+    fn session_id(&self) -> Option<&str> {
+        self.session_id.as_deref()
+    }
+
     fn init(&mut self, deck_info: &str) {
         self.system_prompt = format!("{THOUGHTS_IN_JSON_FORMAT}{GAME_RULES}{deck_info}");
         self.session_id = None;
