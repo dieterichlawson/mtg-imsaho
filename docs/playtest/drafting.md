@@ -226,6 +226,24 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   — rather than allocated first. Check the same for a deck response whose
   JSON is valid and whose keys are not the schema's
 
+  **Run 2026-09-18, and the maindeck is the one number with no bound on it.**
+  A count of 4e9 takes the process down with an allocator abort (exit 134) after
+  every pick has been paid for, because the `{name: count}` expansion allocates
+  before `validate_deck` runs and the 200-card guard covers `lands` only (#535);
+  a count `as_u64()` cannot read — `1.0`, `"1"`, `{count: 1}`, `-5` — is
+  rewritten to zero and the card dropped under `accepted` / `DECK (40 cards, 0
+  retries)`, with the maindecked card sitting in the sideboard (#536). Non-schema
+  keys and a 1e12 *land* count are both refused correctly, so the retry loop
+  works where it is reached. The comparison that made the case is the one the
+  README's four-surfaces rule asks for: `parse_pick_response`, in the same crate,
+  takes identical malformed input and is safe and loud about it — `?` out rather
+  than `unwrap_or(0)`, bounds-checked, `Pick::Substituted` plus a WARN and a
+  counter (#195). What is left here is the other direction: sweep the rest of the
+  program for a number a seat supplies that is used before it is checked.
+  `deckbuilding.rs:236` was the only model-number-driven allocation in the three
+  crates tonight (`grep 'for _ in 0\.\.' mtg-player/src/llm.rs mtg-draft-runner/src
+  mtg-draft/src`), but the game harness takes only indices today and would not
+  stay safe if a prompt ever asked for a count
 - D16 [proposed 2026-09-09, from #403] one card, one name, all the way down:
   `fallback_deck` emits its maindeck as the raw pool names, so a DFC reaches
   the engine as `"Front // Back"` with no stub involved at all, and
