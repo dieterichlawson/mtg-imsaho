@@ -550,3 +550,23 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   `claude -p --json-schema` call settled that the CLI path accepts and
   answers a schema whose top-level properties are literally named `"0"` and
   `"1"` with `enum [0,-1]`, which is the blocker assignment shape
+- H18 [proposed 2026-09-19, from H12's read of `choose_action`] the legal
+  action that never becomes a row. `choose_action` does not render an
+  `ActivateAbility` with `format_single_action`; it looks the action up in
+  `legal.activatable_abilities` by `(object_id, ability_index)` and builds
+  the row from that entry — and when the lookup **misses**, nothing is
+  pushed at all: the action is not rendered, not offered, and not logged, so
+  a legal option silently leaves the seat's menu instead of falling through
+  to the `Display` fallback that exists for exactly this. The same shape sits
+  one arm above it for casts (`legal.castable_spells`, plus a
+  `seen_cast_labels` dedupe that drops any second row with an identical
+  label). Nothing asserts the two lists agree. Method: instrument the seat
+  (or a `CLAUDE_CODE_BIN` harvest plus `--log`) to count `legal.actions`
+  against the display entries at every decision and flag any decision where
+  rows < actions after the `Copies` grouping and the cast dedupe are
+  accounted for; then go looking for a board that makes them disagree —
+  an ability offered from a zone the ability list does not walk, a permanent
+  whose ability became activatable mid-priority, two abilities of one
+  permanent with the same index after a copy effect. Compare with the CLI,
+  which renders `legal.actions` directly and so cannot lose one. A row the
+  seat is never shown is the quietest way to take an option away
