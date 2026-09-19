@@ -486,7 +486,7 @@ Combat resolves in this order: declare attackers → declare blockers → first-
 
 **Ordering your own triggers.** When two or more of your abilities trigger at the same time (CR 603.3b), you are asked for their order the same way — one structured prompt listing each trigger with its source, its P/T, what it does and what set it off, answered with `order`. The first index you list goes on the stack first and therefore resolves LAST; the last you list resolves FIRST. Put the trigger you want to resolve first at the end of the list.
 
-**Choosing between replacement and prevention effects on damage.** When two or more such effects apply to one damage event and the order changes the result — Inquisitor's Flail (double it) and Undead Alchemist (mill instead) on one Zombie's combat damage, or Ghostly Possession (prevent it) and the Alchemist — the AFFECTED player chooses: the player being damaged, or the controller of the creature being damaged (CR 616.1). The context line names the event (`Walking Corpse (#30) would deal 2 combat damage to you`) and the numbered options say what each effect would do (`double it to 4`, `instead p1 mills 2 cards`, `prevent all of it`). Pick the effect you want to apply FIRST; it applies, and the others apply afterwards only if they still can — a prevention or a mill ends the damage, so nothing after it happens, while doubling leaves a bigger damage event for the rest. You are only asked when the choice matters; two Flails, or a Flail under a Ghostly Possession, apply on their own.
+**Choosing between replacement and prevention effects on damage.** When two or more such effects apply to one damage event and the order changes the result — Inquisitor's Flail (double it) and Undead Alchemist (mill instead) on one Zombie's combat damage, or Ghostly Possession (prevent it) and the Alchemist — the AFFECTED player chooses: the player being damaged, or the controller of the creature being damaged (CR 616.1). The context line names the event (`Walking Corpse (#30) would deal 2 combat damage to you`) and the numbered options say what each effect would do (`double it to 4`, `instead You mill 2 cards`, `prevent all of it`). Pick the effect you want to apply FIRST; it applies, and the others apply afterwards only if they still can — a prevention or a mill ends the damage, so nothing after it happens, while doubling leaves a bigger damage event for the rest. You are only asked when the choice matters; two Flails, or a Flail under a Ghostly Possession, apply on their own.
 
 Worked example. A 4/2 trample attacker is double-blocked by your 1/4 Bell-Ringer and your 2/2 Walking Corpse. The attacker has 4 damage to assign:
 - It can lethal-first the Walking Corpse (assign 2 → kills it), then assign the remaining 2 to Bell-Ringer (Bell-Ringer survives at 1/2). Walking Corpse dies, Bell-Ringer survives. With trample, no damage tramples through (4 was used up assigning lethal to one and partial to the other).
@@ -1380,6 +1380,15 @@ enum ActionRow {
     Copies { label: String, ids: Vec<ObjectId> },
 }
 
+impl ActionRow {
+    /// The row's text, whichever shape it is.
+    fn label(&self) -> &str {
+        match self {
+            ActionRow::One(label) | ActionRow::Copies { label, .. } => label,
+        }
+    }
+}
+
 pub struct LlmPlayer {
     name: String,
     /// Index into the game log — tracks which log entries have been sent.
@@ -1920,6 +1929,10 @@ impl LlmPlayer {
                 (" concedes", " concede"),
                 (" passes", " pass"),
                 (" wins", " win"),
+                // Action rows say what an effect *would* do, so they carry
+                // present-tense verbs the past-tense log never did: without
+                // this, `instead p1 mills 4 cards` became "You mills" (#543).
+                (" mills", " mill"),
             ];
             for (from, to) in VERBS {
                 if rest.starts_with(from) {
@@ -1980,16 +1993,29 @@ impl LlmPlayer {
     /// `game_rules_shows_the_action_list_it_actually_sends` builds the
     /// documented examples through this function, so the two cannot drift
     /// (issue #201).
-    fn format_action_prompt(context: Option<&str>, rows: &[ActionRow]) -> String {
+    ///
+    /// Everything printed here is rewritten into the reader's own
+    /// vocabulary. The engine labels players globally, and the harness
+    /// rewrites that at each place it surfaces: log entries, the resolution
+    /// description, the context line (#465). The rows were the one section
+    /// nothing touched, so `Undead Alchemist (#3): instead p1 mills 4 cards`
+    /// reached a seat whose system prompt never defines `p1` — while the
+    /// line above it said the damage was "to you". A seat reading `p1` as
+    /// its opponent picks the mill and empties its own library (#543).
+    /// Doing it here rather than at each caller means a row cannot be added
+    /// that skips it; the rewrite leaves text with no `p<N>` in it alone,
+    /// so the already-rewritten context line passes through unchanged.
+    fn format_action_prompt(context: Option<&str>, rows: &[ActionRow], you: mtg_engine::ids::PlayerId) -> String {
         let mut lines: Vec<String> = Vec::with_capacity(rows.len());
         let mut index = 0usize;
         for row in rows {
+            let label = Self::generic_player_rewrite(row.label(), you);
             match row {
-                ActionRow::One(label) => {
+                ActionRow::One(_) => {
                     lines.push(format!("{index}: {label}"));
                     index += 1;
                 }
-                ActionRow::Copies { label, ids } => {
+                ActionRow::Copies { ids, .. } => {
                     let first = index;
                     let last = index + ids.len() - 1;
                     let per_copy: Vec<String> = ids.iter().enumerate()
@@ -2004,7 +2030,7 @@ impl LlmPlayer {
             }
         }
         let context_line = context
-            .map(|c| format!("[{c}]\n"))
+            .map(|c| format!("[{}]\n", Self::generic_player_rewrite(c, you)))
             .unwrap_or_default();
         format!("{context_line}Available actions:\n{}\n", lines.join("\n"))
     }
@@ -3833,7 +3859,7 @@ impl Player for LlmPlayer {
             }
         }
 
-        let action_prompt = Self::format_action_prompt(context.as_deref(), &rows);
+        let action_prompt = Self::format_action_prompt(context.as_deref(), &rows, view.you);
 
         if display_entries.len() != legal_actions.len() {
             self.log_debug("COLLAPSED", &format!("{} actions → {} options", legal_actions.len(), display_entries.len()));
@@ -4639,7 +4665,7 @@ mod tests {
         .iter()
         .map(|s| ActionRow::One((*s).to_string()))
         .collect();
-        let actual = LlmPlayer::format_action_prompt(Some("MAIN PHASE 1"), &labels);
+        let actual = LlmPlayer::format_action_prompt(Some("MAIN PHASE 1"), &labels, mtg_engine::ids::PlayerId(0));
         assert!(
             GAME_RULES.contains(actual.trim_end()),
             "GAME_RULES must quote the action list the harness sends. It sends:\n{actual}"
@@ -4652,13 +4678,89 @@ mod tests {
             label: "Activate Ludevic's Test Subject ({1}{U}: Put a hatchling counter. At 5, transform.) (tap 2x Island)".to_string(),
             ids: vec![ObjectId(43), ObjectId(45), ObjectId(46)],
         });
-        let with_copies = LlmPlayer::format_action_prompt(Some("MAIN PHASE 1"), &rows);
+        let with_copies = LlmPlayer::format_action_prompt(Some("MAIN PHASE 1"), &rows, mtg_engine::ids::PlayerId(0));
         let copies_line = with_copies.lines().last().expect("the copies row is last");
         assert!(copies_line.starts_with("5-7: "), "{with_copies}");
         assert!(
             GAME_RULES.contains(copies_line),
             "GAME_RULES must quote the shared row the harness sends. It sends:\n{copies_line}"
         );
+    }
+
+    /// Any `p<N>` still in the text, which is the token this seat is never
+    /// taught: `GAME_RULES` defines neither `p0` nor `p1`, and no prompt
+    /// tells a seat which one it is (the CLI's header does, #115).
+    fn raw_player_tokens(text: &str) -> Vec<String> {
+        let b = text.as_bytes();
+        (0..b.len())
+            .filter(|&i| b[i] == b'p' && b.get(i + 1).is_some_and(u8::is_ascii_digit))
+            .filter(|&i| i == 0 || !(b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_'))
+            .map(|i| text[i..].chars().take(4).collect())
+            .collect()
+    }
+
+    /// Every engine-produced `p<N>` reaching this seat is rewritten to the
+    /// seat's own vocabulary — log entries, the resolution description, the
+    /// context line (#465) — and the action rows were the one section no
+    /// rewrite touched. The CR 616.1 prompt's own options said `instead p1
+    /// mills 4 cards` under a context line saying the damage was "to you",
+    /// so the one fact that inverts the decision was carried by a token
+    /// nothing defines: a seat reading `p1` as its opponent picks the mill
+    /// and empties its own library (#543).
+    #[test]
+    fn an_action_row_never_hands_the_seat_a_raw_player_token() {
+        // Verbatim as `Undead Alchemist::replacement_offer` builds it
+        // (`mtg-engine/src/cards/isd/undead_alchemist.rs`), and as a shared
+        // copies row, which is the other shape a row can take.
+        let rows = vec![
+            ActionRow::One("Inquisitor's Flail (#11) on Undead Alchemist (#3): double it to 8".to_string()),
+            ActionRow::One("Undead Alchemist (#3): instead p1 mills 4 cards".to_string()),
+            ActionRow::Copies {
+                label: "Undead Alchemist: instead p1 mills 4 cards".to_string(),
+                ids: vec![ObjectId(3), ObjectId(4)],
+            },
+        ];
+        for you in [0u8, 1] {
+            let prompt = LlmPlayer::format_action_prompt(
+                Some("Undead Alchemist (#3) would deal 4 combat damage to p1"),
+                &rows,
+                mtg_engine::ids::PlayerId(you),
+            );
+            assert!(raw_player_tokens(&prompt).is_empty(),
+                "p{you} is offered undefined tokens {:?} in:\n{prompt}",
+                raw_player_tokens(&prompt));
+        }
+
+        // And it is the right player, conjugated: the affected seat mills.
+        let mine = LlmPlayer::format_action_prompt(
+            None, &rows, mtg_engine::ids::PlayerId(1));
+        assert!(mine.contains("instead You mill 4 cards"), "{mine}");
+        let theirs = LlmPlayer::format_action_prompt(
+            None, &rows, mtg_engine::ids::PlayerId(0));
+        assert!(theirs.contains("instead Opp mills 4 cards"), "{theirs}");
+    }
+
+    /// The system prompt had been written around the leak rather than
+    /// against it — `GAME_RULES` documented the expected option as `instead
+    /// p1 mills 2 cards`, so the contract taught a token the same contract
+    /// never explains. It has to quote what the harness now sends (#201's
+    /// lesson, #543's line).
+    #[test]
+    fn game_rules_quotes_the_damage_option_as_the_harness_rewrites_it() {
+        let sent = LlmPlayer::format_action_prompt(
+            None,
+            &[ActionRow::One("Undead Alchemist (#3): instead p1 mills 2 cards".to_string())],
+            mtg_engine::ids::PlayerId(1),
+        );
+        let option = sent.lines()
+            .find_map(|l| l.strip_prefix("0: "))
+            .expect("the row is printed");
+        let effect = option.split_once(": ").expect("`Name (#id): what it does`").1;
+        assert!(GAME_RULES.contains(effect),
+            "GAME_RULES must quote the option the harness sends, {effect:?}");
+        assert!(raw_player_tokens(GAME_RULES).is_empty(),
+            "and must not teach a token it never defines: {:?}",
+            raw_player_tokens(GAME_RULES));
     }
 
     /// The header comes first and "Recent events" follows it, which is the
