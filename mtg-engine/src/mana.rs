@@ -767,6 +767,29 @@ mod tests {
         assert_eq!(residue(&pool), vec![(ManaType::Green, 1)]);
     }
 
+    /// The same for a reserved `{C}`: true colorless is as precious as a
+    /// colour, and for the same reason.
+    ///
+    /// `auto_pay_reserving`'s promise to its callers is that a cost paid
+    /// through it leaves the reserve payable — issue #252 is what happens
+    /// when it does not. The reserve scan reads two kinds of symbol and only
+    /// the coloured one was covered, so the colorless arm could stop counting
+    /// entirely and the suite stayed green (mutants issue #549). Nothing in
+    /// the pool costs `{C}` today, but this is the function's contract rather
+    /// than any card's, and it is the arm that decides it.
+    #[test]
+    fn a_reserved_colorless_cost_is_the_last_thing_a_generic_cost_spends() {
+        let mut pool = pool_of(&[(ManaType::Colorless, 1), (ManaType::Green, 1)]);
+        let one = ManaCost::new(vec![ManaSymbol::Generic(1)]);
+        let reserve_c = ManaCost::new(vec![ManaSymbol::Colorless(1)]);
+
+        assert!(auto_pay_reserving(&mut pool, &one, &reserve_c).is_ok());
+        assert_eq!(residue(&pool), vec![(ManaType::Colorless, 1)],
+            "the {{C}} the rest of the cost still needs is what is left");
+        assert!(auto_pay(&mut pool, &reserve_c).is_ok(),
+            "and so the reserved cost can still be paid, which is the promise");
+    }
+
     /// A generic symbol in the reserved cost reserves nothing — it can be paid
     /// with anything, so no colour is precious on its account.
     #[test]

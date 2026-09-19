@@ -257,3 +257,51 @@ fn a_funding_group_lists_every_colour_its_sources_make() {
         "both colours the land makes, each said once");
     assert_eq!(colours("Forest"), vec![Color::Green]);
 }
+
+/// Every source a funding group names is one the player can tap right now.
+///
+/// `max_x` is the ceiling the X prompt offers and the number a response is
+/// validated against, so a source listed here is mana the engine has
+/// promised on the player's behalf. A creature that has not been under its
+/// controller's control since their most recent turn began cannot pay a
+/// `{T}` cost (CR 302.6), and haste is the whole of the exception.
+///
+/// The gate that says so had no test at all — a cluster of mutants lived in
+/// its four conditions (issue #549) — so this asserts the property the gate
+/// serves rather than the shape of the gate: offered iff tappable.
+#[test]
+fn a_funding_source_is_one_that_can_be_tapped_for_mana_now() {
+    use mtg_engine::ids::ObjectId;
+
+    let registry = CardRegistry::with_all_cards();
+    // Avacyn's Pilgrim is `{T}: Add {W}` on a 1/1 body: the one kind of
+    // source where summoning sickness is the question at all.
+    let board = |sick: bool, haste: bool| -> Vec<ObjectId> {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let pilgrim = named_permanent(&mut state, &registry, "Avacyn's Pilgrim", P0);
+        state.get_object_mut(pilgrim).unwrap().summoning_sick = sick;
+        if haste {
+            state.get_object_mut(pilgrim).unwrap().instance_continuous_effects =
+                Some(vec![ContinuousEffect::GrantKeyword {
+                    keyword: Keyword::Haste, scope: EffectScope::OnSelf }]);
+        }
+        funding::build_options(&state, P0, &registry).groups
+            .into_iter().flat_map(|g| g.source_ids).collect()
+    };
+
+    assert_eq!(board(false, false).len(), 1,
+        "a creature that has been out since the turn began taps for its mana");
+    assert_eq!(board(true, false).len(), 0,
+        "a summoning-sick one cannot pay the {{T}} (CR 302.6), so promising \
+         its mana would let a seat announce an X it cannot fund");
+    assert_eq!(board(true, true).len(), 1,
+        "haste is the exception, and the only one");
+
+    // A land is never summoning-sick, whatever the flag on it says — the
+    // gate is about creatures and nothing else.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let forest = named_permanent(&mut state, &registry, "Forest", P0);
+    state.get_object_mut(forest).unwrap().summoning_sick = true;
+    assert_eq!(funding::build_options(&state, P0, &registry).max_x, 1,
+        "a Forest played this turn still taps for mana");
+}
