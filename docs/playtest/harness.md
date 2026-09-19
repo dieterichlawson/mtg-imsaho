@@ -505,3 +505,27 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   stale", the string-enum workaround can go with it; where it is "the schema is
   wrong", that is a defect in a seat this crew is forbidden to run, which is
   exactly why nobody has noticed
+  — **played 2026-09-19: the comment is enforced for one provider and not the
+  other, and 88% of requests ride on the half nobody enforces.** Eight
+  top-level shapes over 851 harvested requests (13 games, one-off and
+  coverage decks), 0 illegal top-level keys. `sanitize_schema` strips
+  `minimum`/`maximum` and both Anthropic-family backends call it, as do both
+  of the draft crate's non-Gemini backends via its own copy — while
+  `GeminiBackend::send_with_schema` (`llm.rs:1330`) and the draft's Gemini
+  backend put the caller's schema into `"response_format"` **verbatim**. And
+  **751 of 851 requests (88%) carry an integer `enum`**: every
+  `enum_action_schema` menu (732), both blocker shapes, `order`, `indices`,
+  and the draft's own `pick` and deck-count schemas. If the comment is right
+  the `gemini` seat 400s on all of them, and a 400 that is neither the
+  `previous_interaction_id` case nor a config error returns `{}` after ONE
+  attempt (400 is not in the 429/503/529 retry set) — index 0, `Pass
+  priority`, with six of ten callers logging nothing (#546). If it is stale,
+  the X-funding string-enum workaround is dead weight. Nothing in the repo
+  decides it: `llm_request_shape.rs` asserts only the #398 predicate and no
+  test mentions Gemini. Two method notes for the next harness night: a
+  `CLAUDE_CODE_BIN` harvest records the schema **after** `sanitize_schema`,
+  so the attackers shape arrives with its `minimum` already stripped and the
+  raw shape has to be read from the source; and one real
+  `claude -p --json-schema` call settled that the CLI path accepts and
+  answers a schema whose top-level properties are literally named `"0"` and
+  `"1"` with `enum [0,-1]`, which is the blocker assignment shape
