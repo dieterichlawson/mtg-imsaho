@@ -52,3 +52,22 @@ mtg-engine/src/engine.rs: replace == with != in run_game_loop_inner
 # ("resolving_spell #N is in Battlefield"), so this is an oracle gap rather
 # than a rules one. The other seven `!=` in the same function are killed.
 mtg-engine/src/state.rs: replace != with == in GameState::move_object_inner
+
+# ── 2026-09-19 run 35442583583, shard 0 (issue #548) ─────────────
+# `move_object_inner` is 383 lines with eighteen `&&` in it, and the
+# normalized mutant name strips line:col, so this entry names a site nobody
+# has identified yet. Five are eliminated — each was applied by hand and
+# watched failing:
+#   the three in the CR 614.12b entry-choice gate (1162, 1163, 1165) defer
+#     every ordinary ETB; 1162 hangs `state_based_actions` outright and the
+#     other two fail `harness_display`;
+#   `leaving` (1200) fails `log_attribution`;
+#   `is_creature` (1201) fails
+#     `zones_and_state::a_noncreature_permanent_leaving_the_battlefield_is_logged_too`
+#     with "Claustrophobia (#2) died".
+# The remaining thirteen are at 1233, 1236, 1255, 1271, 1284, 1304, 1418,
+# 1446, 1457, 1470, 1492 and 1507. The graveyard-order pair (1233/1236) and
+# the `resolving_spell` clear (1255) look likeliest: each makes a bookkeeping
+# write happen on moves that do not need it, which is the shape that leaves
+# no visible trace. Worth one sitting with the full suite per site.
+mtg-engine/src/state.rs: replace && with || in GameState::move_object_inner

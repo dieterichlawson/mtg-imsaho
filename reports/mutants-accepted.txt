@@ -573,3 +573,16 @@ mtg-engine/src/engine/actions/choices.rs: replace + with - in resolve_choice
 # guard IS killed, by the missing-object case beside it, and the
 # single-target copy of the clause is killed both ways.
 mtg-engine/src/invariants/prompts.rs: replace match guard !player_ok(state, *p) with true in check_choice
+
+# ── 2026-09-19 run 35442583583, shard 3 (issue #550) ─────────────
+# `CardBehavior::token_pt_text`'s default body is unreachable. Its only
+# consumer is `view.rs`'s `oracle_text`, which reaches it through
+# `token_pt_source` — `Some` only for a token carrying PT_DEFINED_BY, which
+# only `create_token_with_defined_pt` writes, which only Gutter Grime calls,
+# and Gutter Grime overrides `token_pt_text` itself. So no token in the pool
+# ever runs the default, and what it returns cannot be observed.
+# The `Some(String::new())` form is equivalent at that consumer regardless of
+# reachability: the chain ends in `.unwrap_or_default()`, where `Some("")`
+# and `None` are the same empty string.
+mtg-engine/src/cards/mod.rs: replace CardBehavior::token_pt_text -> Option<String> with Some("xyzzy".into())
+mtg-engine/src/cards/mod.rs: replace CardBehavior::token_pt_text -> Option<String> with Some(String::new())

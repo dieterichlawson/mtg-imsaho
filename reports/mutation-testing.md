@@ -950,3 +950,78 @@ by applying candidate mutations by hand until a test fell over, so "killed"
 here means the site I found and verified — if another site under the same
 name is still alive, the weekly run will re-file it, and that is the right
 outcome rather than a claim this file is finished.
+
+## 2026-09-19 run 35442583583 (issues #548, #549, #550)
+
+Twelve survivors over three shards. Nine killed by three tests, two accepted,
+one left in the backlog with its search narrowed.
+
+### Shard 0 (issue #548): six arms of `restrictions_of`, and a needle
+
+`restrictions_of` is the answer to #504: a continuous effect can delete a
+creature from the legal attacker or blocker set — or keep it tapped, or make
+it unblockable — and none of it is visible anywhere else, because these live
+in `ContinuousEffect` with a scope attached and no pane could render them
+even in principle. Six of its eight arms had no test, so deleting any one of
+them put that restriction back in the dark with a clean pane over it and
+nothing failed. That is #504 reintroduced one arm at a time, which makes this
+the productive kind of survivor.
+
+One property test, not six pinned strings: a restriction in force is never
+invisible. `every_restriction_the_pool_can_impose_is_visible` asserts the
+list is non-empty and says nothing about what is in it, so the wording stays
+free to change — the Bonds of Faith case beside it is where the phrasing of
+one line is nailed down, and that is enough. Five cases are real cards
+(Invisible Stalker, Orchard Spirit, Bloodcrazed Neonate, Claustrophobia,
+Ghostly Possession), which also records that those arms are reachable at all.
+
+The sixth, `MinimumBlockers`, has no card: `combat.rs`'s
+`minimum_blockers` names Terror of Kruin Pass as the example, but that card
+is Kruin Outlaw's back face and gets its two-blocker rule from
+`Keyword::Menace`. It is *not* on the accepted list anyway, because the
+engine already **enforces** `MinimumBlockers` beside menace — the rule is
+live and only its declaration is missing, so an arm that goes quiet is #504
+waiting for the first card that declares one. The test builds the effect
+directly on a permanent.
+
+The seventh survivor, `replace && with || in move_object_inner`, is in the
+backlog rather than killed or accepted. The function is 383 lines with
+eighteen `&&` in it and the normalized name strips line:col, so the name does
+not say which. Five sites are eliminated by hand (the three in the CR 614.12b
+entry-choice gate, `leaving`, and `is_creature` — one of them hangs
+`state_based_actions` outright, and `is_creature` produces the splendid
+"Claustrophobia (#2) died"). Thirteen remain, listed in the backlog with a
+guess at the likeliest three.
+
+### Shard 1 (issue #549): a gate and an arm, both unwatched
+
+Two survivors in `funding::build_options` — a deleted `!` and an `&&` — are
+both in the summoning-sickness gate, which had no test at all. `max_x` is the
+ceiling the X prompt offers and the number a response is validated against,
+so a source listed there is mana the engine has promised on the player's
+behalf; a summoning-sick creature cannot pay a `{T}` cost (CR 302.6) and
+haste is the whole of the exception. That is a contract, so
+`a_funding_source_is_one_that_can_be_tapped_for_mana_now` asserts *offered
+iff tappable* rather than the shape of the gate: sick, not sick, sick with
+haste, and a land whose flag is set anyway. It kills the deleted `!` and all
+four `&&` positions in that condition. (The other `!` in the function,
+`!colors.contains`, was already dead to
+`a_funding_group_lists_every_colour_its_sources_make`.)
+
+The third, `+= → *=` in `mana::generic_payment_order`, is the `Colorless`
+arm of the reserve scan; the `Colored` arm beside it was already dead to the
+#252 test. `auto_pay_reserving`'s promise is that a cost paid through it
+leaves the reserve payable, and that arm is where the promise is decided for
+`{C}`. Nothing in the pool costs `{C}` today — two cards make it, none spends
+it — so this is the function's contract rather than any card's, which is the
+case for testing it at three lines rather than accepting it.
+
+### Shard 3 (issue #550): both accepted
+
+`CardBehavior::token_pt_text`'s default body cannot be observed. Its only
+consumer reaches it through `token_pt_source`, which is `Some` only for a
+token carrying `PT_DEFINED_BY`, which only `create_token_with_defined_pt`
+writes, which only Gutter Grime calls — and Gutter Grime overrides the
+method. The `Some(String::new())` form is equivalent at that consumer in any
+case: the chain ends in `.unwrap_or_default()`, where `Some("")` and `None`
+are the same string. Reasons on the accepted list.
