@@ -347,6 +347,27 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   row, find the ones with no arm, and for each ask whether the variant carries a
   field (`targets`, `sacrifice`, `x_value`) that the row then cannot express. A
   duplicated row in a harvest is the cheapest way to spot it
+  — **played 2026-09-19: the fallback is unreachable and both known drifts
+  are fixed.** Six variants have no arm in `format_single_action` —
+  `AbandonGame`, `BottomCards`, `DeclareAttackers`, `DeclareBlockers`,
+  `MulliganKeep`, `MulliganMull` — and **none of them reaches a row**: 400
+  distinct labels over 851 harvested requests contain no `Display`-shaped
+  label, because each of those decisions has its own prompt (`mull`,
+  `card_indices`, the combat prompts) and never arrives through
+  `choose_action`. #460 and #494 are both live at runtime: the mana row names
+  its colour, and the loyalty row reads `Liliana of the Veil (#75) (your):
+  -2: Target player sacrifices a creature targeting Opponent` — name, cost,
+  effect and target, where it used to be `Activate loyalty ability 2 on
+  obj#1`. The one field gap left in the table is dead code:
+  `format_single_action`'s `ActivateAbility` arm is a bare `Activate <name>`
+  with neither the tap plan nor the targets the CLI's `format_action` names,
+  but `choose_action` intercepts every `ActivateAbility` and builds the row
+  from `legal.activatable_abilities` (`Activate Inquisitor's Flail (Equip
+  {2}) (tap 2x Island)`), asking the targets as a second question through
+  `choose_ability_targets` rather than a row per target — a deliberate
+  divergence from the CLI's enumeration, and the right one for a menu that
+  would otherwise be |abilities| x |targets|. So the remaining question is
+  not about fields at all but about the interception itself, which is H18
 - H13 [proposed 2026-09-10, from H8's harvest] the prompt kinds nothing
   reaches. `send_message_structured` has ten callers; 4,311 requests
   harvested from 38 games over fourteen decks reached nine shapes and never
