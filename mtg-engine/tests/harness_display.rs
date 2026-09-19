@@ -642,3 +642,57 @@ fn the_view_says_a_creature_cannot_block_this_turn() {
 
     assert_eq!(restrictions(&state), vec!["can't block this turn"]);
 }
+
+/// A restriction in force on a permanent is never invisible.
+///
+/// #504 is the defect `restrictions_of` exists to prevent: a continuous
+/// effect deletes a creature from the legal attacker or blocker set — or
+/// keeps it tapped, or makes it unblockable — and no surface says so, because
+/// these live in `ContinuousEffect` with a scope attached and no pane could
+/// render them even in principle. Two of the eight arms were covered by the
+/// Bonds of Faith case above; deleting any of the other six left that
+/// restriction back in the dark with a clean pane over it, and nothing failed.
+///
+/// This is the property and not the phrasing (mutants issue #548). Each case
+/// is a real card, so it also records that the arm is reachable at all; what
+/// the line *says* is free to change, and the Bonds of Faith case above is
+/// where the wording of one is nailed down.
+#[test]
+fn every_restriction_the_pool_can_impose_is_visible() {
+    let reg = registry();
+
+    // Self-scoped statics: the creature carries its own restriction.
+    for (card, why) in [
+        ("Invisible Stalker", "can't be blocked (CR 509.1b) — nothing can block it"),
+        ("Orchard Spirit", "can't be blocked except by fliers and reach"),
+        ("Bloodcrazed Neonate", "attacks each combat if able (CR 508.1a)"),
+    ] {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let id = named_permanent(&mut state, &reg, card, P0);
+        assert!(!state.restrictions_of(id, &reg).is_empty(),
+            "{card}: {why}, and the pane said nothing about it");
+    }
+
+    // Auras: the restriction is on the enchanted creature, and the only
+    // thing on the board pointing at it is the Aura's own name.
+    for (card, why) in [
+        ("Claustrophobia", "doesn't untap during its controller's untap step"),
+        ("Ghostly Possession", "its combat damage is prevented at both ends"),
+    ] {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+        assert!(state.restrictions_of(bear, &reg).is_empty(),
+            "test precondition: nothing on it yet");
+        let aura = named_permanent(&mut state, &reg, card, P1);
+        state.get_object_mut(aura).unwrap().attached_to = Some(bear);
+        assert!(!state.restrictions_of(bear, &reg).is_empty(),
+            "{card}: the enchanted creature {why}, and the pane said nothing about it");
+    }
+
+    // And every line is something a reader can act on.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let stalker = named_permanent(&mut state, &reg, "Invisible Stalker", P0);
+    for line in state.restrictions_of(stalker, &reg) {
+        assert!(!line.trim().is_empty(), "a blank line is not a restriction");
+    }
+}
