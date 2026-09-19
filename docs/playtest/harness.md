@@ -452,6 +452,37 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   row again (#323 says the remaining effects are asked about only while the
   order still matters), and that the effect the seat picked is the one applied.
   A prompt no game has ever raised is a prompt no night has ever read
+  — **played 2026-09-19: it is reachable, it resolves correctly, and the
+  words on it are what is wrong.** No pair in `decks/` raises it — 12 random
+  `ub-zombies` (2 Undead Alchemist) vs `wb-coverage` (Ghostly Possession)
+  games raised it zero times — and the reason is worth knowing before
+  building a deck for it: a *prevention* plus a doubling is never asked,
+  because `outcome_of` ends the event at the prevention in either order, so
+  the Possession and the Horde pairings the idea suggested are both dead
+  ends. The pairing that works is `Double` versus `Card`: an attacking Undead
+  Alchemist wearing an Inquisitor's Flail, damage to a player, where the mill
+  is 4 or 8 depending on which goes first. `6 Undead Alchemist / 12
+  Inquisitor's Flail / 22 Island` vs `60 Island`, seeds 7/11/23, with a stub
+  policy that casts the Alchemist first, then plays lands, then equips: 28
+  prompts over 5 games, 2-effect and 3-effect shapes both. All three
+  verifications pass — every row says what the effect would *do*
+  (`double it to 8`, `instead p1 mills 4 cards`), the pick is applied 28 of
+  28, and nothing is re-raised because one remaining effect is applied
+  unasked. The CLI screen is the same list under a header that defines the
+  seat, and the random seat rolls (31 Flail / 36 Alchemist over 8 seeds).
+  Two defects, both in the prompt rather than the rules: the action rows are
+  the one section `generic_player_rewrite` never touches, so `instead p1
+  mills 4 cards` names the reader with a token no prompt defines — 23 of 851
+  rows carry a raw `p<N>`, all of them this prompt, 0 prompts say `you are
+  p`, and `GAME_RULES`' own worked example is the leaked form (#543) — and
+  `applicable_effects` pushes one `Card` effect per *object* while
+  `Outcome::Replaced` is keyed per *card*, so N Alchemists are N rows that
+  are one answer (replaying a seed on row 1 and row 2 differs in 20 log
+  lines, all of them the name inside `applies first`; #545). The cheapest
+  instrument for the next prompt-reachability question is the pair
+  `applicable_effects` + `same_outcome_in_every_order`: read what the engine
+  would *collapse* before building a deck, or you will build a board that
+  raises nothing
 - H17 [proposed 2026-09-14, from H7 and the comment at
   `mtg-player/src/llm.rs:3178`] the same schema, two providers. The X-funding
   builder deliberately encodes integers as string enums, with a comment stating
