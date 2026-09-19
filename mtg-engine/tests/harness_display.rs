@@ -689,6 +689,19 @@ fn every_restriction_the_pool_can_impose_is_visible() {
             "{card}: the enchanted creature {why}, and the pane said nothing about it");
     }
 
+    // The one restriction the pool does not print on a card, and the reason
+    // it is here rather than on the accepted list: `combat.rs` already
+    // *enforces* `MinimumBlockers` beside menace (CR 509.1b), so the rule is
+    // live and only its declaration is missing. An arm that goes quiet is
+    // #504 all over again the moment a card declares one — a creature the
+    // blocker rules treat differently, with nothing anywhere saying so.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    state.get_object_mut(bear).unwrap().instance_continuous_effects =
+        Some(vec![ContinuousEffect::MinimumBlockers { count: 2, scope: EffectScope::OnSelf }]);
+    assert!(!state.restrictions_of(bear, &reg).is_empty(),
+        "can't be blocked except by two or more creatures, and the pane said nothing");
+
     // And every line is something a reader can act on.
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let stalker = named_permanent(&mut state, &reg, "Invisible Stalker", P0);
