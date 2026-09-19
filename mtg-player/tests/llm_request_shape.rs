@@ -52,3 +52,44 @@ fn no_schema_keys_a_top_level_property_by_a_card_name() {
     // from here: the builders need a live `GameView` and a backend.
 }
 
+
+/// An index-array prompt states its shape in the schema, where the API can
+/// enforce it, and not only in prose the client then has to police.
+///
+/// `choose_ordering` demands a permutation of `0..n`, and
+/// `parse_order_response` refuses anything else — but the schema carried no
+/// `minItems`/`maxItems`, so `[]`, `[0]` and `[0,0,0]` were all valid
+/// answers to a question that had already said they were not. The refusal
+/// substitutes the order as listed and writes one MALFORMED line, and a
+/// damage assignment order decides which blocker dies (CR 510.1c): that is
+/// a strategic decision made for the seat, in silence (issue #547).
+#[test]
+fn the_ordering_schema_bounds_the_permutation_it_demands() {
+    use mtg_player::llm::ordering_schema;
+
+    for n in 1..=5usize {
+        let schema = ordering_schema(n);
+        let order = &schema["properties"]["order"];
+
+        assert_eq!(order["minItems"].as_u64(), Some(n as u64),
+            "an answer shorter than the list is not an ordering of it: {order}");
+        assert_eq!(order["maxItems"].as_u64(), Some(n as u64),
+            "nor is one longer: {order}");
+
+        let offered: Vec<u64> = order["items"]["enum"].as_array()
+            .expect("the entries are an index enum")
+            .iter().map(|v| v.as_u64().expect("an index")).collect();
+        assert_eq!(offered, (0..n as u64).collect::<Vec<u64>>(),
+            "every index of the list is offered, and nothing else");
+
+        // The shape the stub seat answered with, and the one the harness
+        // then threw away, is no longer one the schema admits.
+        assert!(order["minItems"].as_u64() != Some(0),
+            "`[]` was schema-valid for a prompt that demanded {n} entries");
+    }
+
+    // Top-level keys stay inside what the API accepts (issue #398).
+    for key in ordering_schema(3)["properties"].as_object().expect("properties").keys() {
+        assert!(mtg_player::llm::schema_key_is_legal(key), "{key:?}");
+    }
+}

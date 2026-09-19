@@ -77,6 +77,44 @@ pub fn schema_key_is_legal(key: &str) -> bool {
         && key.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
 }
 
+/// The schema an ordering prompt is answered through: `order`, a
+/// permutation of `0..n`.
+///
+/// The requirement used to live only in the description, where no provider
+/// can enforce it. `[]`, `[0]` and `[0,0,0]` were all schema-valid, and
+/// `parse_order_response` — whose contract is a strict permutation —
+/// refused each of them and substituted the order as listed, leaving one
+/// MALFORMED line behind. That substitution is a strategic decision made
+/// for the seat: a damage assignment order decides which blocker dies
+/// (CR 510.1c), and the prompt's own rule text says to put the blocker you
+/// most want dead first (#547).
+///
+/// `minItems`/`maxItems` is how every other index-array prompt in the
+/// harness bounds itself — `mark_indices` and the mulligan-bottom prompt
+/// both emit them — so it is known to be accepted on the paths a seat
+/// runs on. `uniqueItems` would say the rest of it and is deliberately not
+/// added: nothing in the program uses it, and whether both providers
+/// enforce it is the open question of #546. The client-side check stays
+/// either way, since a length-bounded answer can still repeat an index.
+#[must_use]
+pub fn ordering_schema(n: usize) -> serde_json::Value {
+    let valid_indices: Vec<serde_json::Value> = (0..n).map(|i| serde_json::json!(i)).collect();
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+            "order": {
+                "type": "array",
+                "items": {"type": "integer", "enum": valid_indices},
+                "minItems": n,
+                "maxItems": n,
+                "description": format!("Every index 0..{} exactly once, first to last", n.saturating_sub(1))
+            }
+        },
+        "required": ["thoughts", "order"]
+    })
+}
+
 pub fn thinking_param(model: &str) -> serde_json::Value {
     let wants_budget = model.contains("-4-5") || model.contains("haiku") || model.contains("-3-");
     if wants_budget {
@@ -2993,19 +3031,7 @@ impl LlmPlayer {
              Respond with `order`: every index from 0 to {} exactly once, in the order you choose.",
             n.saturating_sub(1));
         let prompt = self.build_prompt(view, &action_text);
-        let valid_indices: Vec<serde_json::Value> = (0..n).map(|i| serde_json::json!(i)).collect();
-        let schema = serde_json::json!({
-            "type": "object",
-            "properties": {
-                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
-                "order": {
-                    "type": "array",
-                    "items": {"type": "integer", "enum": valid_indices},
-                    "description": format!("Every index 0..{} exactly once, first to last", n.saturating_sub(1))
-                }
-            },
-            "required": ["thoughts", "order"]
-        });
+        let schema = ordering_schema(n);
         let response = self.send_message_structured(&prompt, &schema);
         let order = match Self::parse_order_response(&response["order"], n) {
             Some(order) => order,
