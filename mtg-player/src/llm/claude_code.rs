@@ -63,9 +63,39 @@ fn inherit_auth() -> bool {
 }
 
 /// The binary this process would run for a Claude Code seat.
+///
+/// A path with a separator in it is resolved against *this* process's
+/// working directory, because the seat's calls are not made from here:
+/// every call runs with `current_dir(workdir)`, the scratch directory that
+/// keeps a project `CLAUDE.md` out of the prompt. So a relative
+/// `CLAUDE_CODE_BIN` used to resolve during the up-front "is the CLI
+/// runnable" check — which runs in the process's own cwd — and then fail to
+/// resolve on every single call, which is the one thing that check exists
+/// to prevent. The operator got the full retry budget per seat and a
+/// message about a missing file rather than about their path being relative
+/// (issue #540).
+///
+/// A bare name stays a bare name: it is a `PATH` lookup, and `PATH` is
+/// searched the same wherever the child starts.
 #[must_use]
 pub fn binary() -> String {
-    std::env::var(BINARY_ENV).unwrap_or_else(|_| "claude".to_string())
+    resolve_binary(std::env::var(BINARY_ENV).unwrap_or_else(|_| "claude".to_string()))
+}
+
+fn resolve_binary(raw: String) -> String {
+    {
+        let path = std::path::Path::new(&raw);
+        if path.is_absolute() || path.components().count() < 2 {
+            return raw;
+        }
+    }
+    // Joined rather than canonicalised: a path that does not exist yet is
+    // still the path the operator named, and `available()` is what reports
+    // that it cannot be run.
+    match std::env::current_dir() {
+        Ok(cwd) => cwd.join(&raw).to_string_lossy().into_owned(),
+        Err(_) => raw,
+    }
 }
 
 /// Whether the Claude Code binary can be executed at all — the seat's
@@ -82,6 +112,17 @@ pub fn available() -> bool {
         .is_ok_and(|s| s.success())
 }
 
+/// The most `claude -p` calls that can be in flight at once and still be
+/// covered by the signal handler — the size of [`LIVE_GROUPS`].
+///
+/// A run's concurrency is its seat count: `mtg-draft-runner` picks with
+/// every seat at once, builds every deck at once, and plays a tournament
+/// round as `players / 2` matches of two seats each. So this is the seat
+/// count the registry can cover, and the runners refuse a larger one up
+/// front rather than discovering it a signal too late. 64 is far past any
+/// real pod — a booster draft is 8 — and costs 256 bytes.
+pub const MAX_LIVE_CALLS: usize = 64;
+
 /// Process groups of `claude -p` children currently in flight, so a signal
 /// can take them down with the run.
 ///
@@ -89,13 +130,21 @@ pub fn available() -> bool {
 /// otherwise. Fixed size and lock-free because the SIGINT/SIGTERM handler
 /// reads it: everything a signal handler touches has to be
 /// async-signal-safe, which rules out allocating or taking a lock (issue
-/// #206). Four slots is more seats than a run has.
-static LIVE_GROUPS: [AtomicI32; 4] = [
-    AtomicI32::new(0),
-    AtomicI32::new(0),
-    AtomicI32::new(0),
-    AtomicI32::new(0),
-];
+/// #206).
+///
+/// This was four slots, with a comment asserting that four is more seats
+/// than a run has. `--players` defaults to **8** and all seats call at
+/// once, so the ordinary draft overran it by half: four calls registered,
+/// four got `Self(None)` and ran outside the handler, and Ctrl-C left them
+/// alive — each one, with a real seat, a billed call still running against
+/// a draft the operator had already abandoned (issue #538). Which four
+/// survived was whichever threads lost the CAS, so it was not even a
+/// predictable set to clean up by hand.
+///
+/// The size is a constant the runners check their seat count against, so
+/// "more seats than a run has" is enforced rather than asserted.
+static LIVE_GROUPS: [AtomicI32; MAX_LIVE_CALLS] =
+    [const { AtomicI32::new(0) }; MAX_LIVE_CALLS];
 
 /// Kill a child's whole process group.
 ///
@@ -162,6 +211,26 @@ extern "C" fn handle_fatal_signal(sig: libc::c_int) {
     unsafe {
         libc::signal(sig, libc::SIG_DFL);
         libc::raise(sig);
+    }
+}
+
+/// Kill every in-flight `claude -p` group, for an exit that is not a signal.
+///
+/// `handle_fatal_signal` covers Ctrl-C, SIGTERM and SIGHUP. It does not
+/// cover the runner's *fatal* path: `die` is `eprintln!` + `process::exit`,
+/// which runs no destructors and raises no signal, so nothing swept this
+/// registry and every other seat still mid-call kept its whole `claude -p`
+/// process tree — reparented to init, running on against a draft that no
+/// longer exists (issue #537). That is the ordinary case, not an exotic
+/// one: all seats call in parallel, a real call takes tens of seconds, and
+/// a fatal in one seat always fires while the others are in flight.
+///
+/// Unlike the handler this is called from ordinary code, so it has no
+/// async-signal-safety constraint; it is the same loop so that the two exit
+/// paths cannot disagree about what "take the subprocesses with us" means.
+pub fn kill_live_calls() {
+    for slot in &LIVE_GROUPS {
+        kill_group(slot.swap(0, Ordering::SeqCst));
     }
 }
 
@@ -271,7 +340,20 @@ impl LiveGroup {
             }
         }
         // More concurrent calls than slots: the call still runs, it just
-        // isn't covered by the signal handler.
+        // isn't covered by the signal handler. The runners size their seat
+        // count against `MAX_LIVE_CALLS` so this should be unreachable —
+        // but if it is ever reached it says so, because the whole cost of
+        // #538 was that it did not.
+        if pgid > 0 {
+            static WARNED: std::sync::Once = std::sync::Once::new();
+            WARNED.call_once(|| {
+                eprintln!(
+                    "Warning: more than {MAX_LIVE_CALLS} claude -p calls in flight at once; \
+                     the ones past that are not covered by the Ctrl-C handler and will be \
+                     orphaned if this run is interrupted."
+                );
+            });
+        }
         Self(None)
     }
 }
@@ -661,6 +743,10 @@ impl LlmBackend for ClaudeCodeBackend {
 
     fn take_thinking(&mut self) -> Option<String> {
         self.last_thinking.take()
+    }
+
+    fn session_id(&self) -> Option<&str> {
+        self.session_id.as_deref()
     }
 
     fn init(&mut self, deck_info: &str) {

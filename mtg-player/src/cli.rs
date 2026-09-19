@@ -4340,6 +4340,19 @@ impl CliPlayer {
             &perm.supertypes, &perm.card_types, &perm.subtypes);
         let _ = execute!(out, Print(format!("  Type: {type_line}\n")));
 
+        // Whether it is a token, which decides what can be done
+        // with it once it dies: CR 111.7 makes a token that
+        // leaves the battlefield cease to exist, so no recursion
+        // in the set can get it back and a graveyard count that
+        // includes it is wrong. The board row has said `[tok]`
+        // since #331/#334 and the detail page — the screen a
+        // player checks a permanent's characteristics on — did
+        // not, so a 1/1 Spirit token and a 1/1 Spirit card read
+        // identically here (issue #534).
+        if perm.is_token {
+            let _ = execute!(out, Print("  Token: true\n".to_string()));
+        }
+
         // Color (CR 105.2). Intimidate (CR 702.13a) is decided
         // entirely by it and no pane printed it: for most
         // permanents a player could infer it from the mana cost
@@ -5177,10 +5190,6 @@ impl CliPlayer {
             unreachable!()
         };
         let defending = *defending;
-
-        if eligible.is_empty() {
-            return Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] };
-        }
 
         // Layout is computed once; `draw` repaints the whole prompt screen,
         // so the info panes can be offered here and the view restored after
@@ -7496,30 +7505,18 @@ impl CliPlayer {
     }
 
     pub fn choose_combat(&mut self, view: &GameView, prompt: &CombatPrompt) -> Action {
+        // A combat prompt with one legal answer never reaches the screen,
+        // and never breaks pass mode either — there is nothing to decide.
+        // One rule, shared with the other three seats (issue #517).
+        if let Some(forced) = crate::forced_combat_answer(prompt) {
+            return forced;
+        }
+        // Past here something is eligible, so the player is deciding: pass
+        // mode ends whichever half of combat this is.
+        self.pass_mode = None;
         match prompt {
-            CombatPrompt::ChooseAttackers { eligible, .. } => {
-                // In pass mode, skip attacking only if we have no eligible creatures.
-                // If we have creatures, break pass mode so the player can decide.
-                if self.pass_mode.is_some() {
-                    if eligible.is_empty() {
-                        return Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] };
-                    }
-                    // We have creatures to attack with — break pass mode.
-                    self.pass_mode = None;
-                }
-                Self::choose_attackers(view, prompt)
-            }
-            CombatPrompt::ChooseBlockers { eligible_blockers, .. } => {
-                // Always break pass mode for blockers if we have eligible blockers.
-                if !eligible_blockers.is_empty() {
-                    self.pass_mode = None;
-                }
-                // If no eligible blockers, auto-declare zero blockers.
-                if eligible_blockers.is_empty() {
-                    return Action::DeclareBlockers { assignments: vec![] };
-                }
-                Self::choose_blockers(view, prompt)
-            }
+            CombatPrompt::ChooseAttackers { .. } => Self::choose_attackers(view, prompt),
+            CombatPrompt::ChooseBlockers { .. } => Self::choose_blockers(view, prompt),
         }
     }
 }

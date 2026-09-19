@@ -4,7 +4,7 @@
 // what each one is and what a click on it does. Input never looks at the
 // view; it looks at the last frame.
 import { drawArt, frameColor, darker, uiImage } from "./assets.js";
-import { nameOf, targetLabel, playerLabel } from "./prompts.js";
+import { nameOf, targetLabel, playerLabel, inOurWords } from "./prompts.js";
 export const W = 640, H = 360;
 export const PANEL_X = 480;
 const BOARD_W = PANEL_X;
@@ -48,7 +48,31 @@ export function wrap(ctx, s, maxW, font = "8px Silkscreen") {
         }
         lines.push(line);
     }
-    return lines;
+    // A word longer than the pane has nowhere to break, and `!line` above
+    // keeps it on a line of its own at full width. Canvas `fillText` does not
+    // clip, so that line was painted straight over whatever was to its right
+    // — for the inspector, which is flush with the canvas edge, over the edge
+    // itself: "Ghoulcaller's" lost its "'s" with no ellipsis, on 34 of the
+    // 279 cards in the set. Clipping here rather than at each of the fifteen
+    // call sites is what makes the rule hold for the next one (issue #532).
+    return lines.map(l => clip(ctx, l, maxW, font));
+}
+/**
+ * [`wrap`], capped at `maxLines`, with the cut marked.
+ *
+ * A bare `.slice(0, n)` over wrapped lines drops the rest silently: "Curse
+ * of the Bloody Tome" wraps to three lines in a hand card and rendered as
+ * "CURSE OF / THE BLOODY", with the word "Tome" simply gone. Clipping the
+ * surviving lines does not help, because each of them fits. The ellipsis
+ * has to go on the last line that is kept (issue #532).
+ */
+export function wrapCapped(ctx, s, maxW, font, maxLines) {
+    const lines = wrap(ctx, s, maxW, font);
+    if (lines.length <= maxLines)
+        return lines;
+    const kept = lines.slice(0, maxLines);
+    kept[maxLines - 1] = clip(ctx, kept[maxLines - 1] + "…", maxW, font);
+    return kept;
 }
 function clip(ctx, s, maxW, font = "8px Silkscreen") {
     ctx.font = font;
@@ -119,6 +143,28 @@ function manaDots(ctx, cost, x, y) {
         x += 8;
     }
     return x;
+}
+/** The band's right-hand text block: where it starts and how wide it is. */
+export const BAND_X = 330;
+export const BAND_W = PANEL_X - BAND_X - 4;
+const STEP_WORDS = { Untap: "untap", Upkeep: "upkeep", Draw: "draw", PrecombatMain: "main phase 1",
+    BeginCombat: "begin combat", DeclareAttackers: "declare attackers", DeclareBlockers: "declare blockers",
+    CombatDamage: "combat damage", EndCombat: "end of combat", PostcombatMain: "main phase 2", EndStep: "end step",
+    Cleanup: "cleanup" };
+/**
+ * The band's turn/step line, clipped to the block it is drawn in.
+ *
+ * It was the one string on the board drawn through neither `clip` nor
+ * `wrap`, while the two log lines beneath it went through `clip`. Canvas
+ * `fillText` does not clip, so "OPPONENT'S TURN · declare attackers" — 161px
+ * in a 150px block — was painted past the board/panel seam and then covered
+ * by the panel fill: amputated mid-glyph, with no ellipsis, at exactly the
+ * two steps where this line is what says why the game has stopped and is
+ * asking (issue #522). Named rather than inline so the sweep in the tests
+ * measures what is drawn.
+ */
+export function bandTurnLine(ctx, mine, step) {
+    return clip(ctx, `${mine ? "YOUR TURN" : "OPPONENT'S TURN"} · ${STEP_WORDS[step]}`, BAND_W, "7px Silkscreen");
 }
 /** Status marks for a permanent: tapped, attacking, blocking, sick, counters, damage. */
 function permBadges(p, state) {
@@ -273,8 +319,8 @@ function drawHandCard(ctx, hits, state, card, x, y, raised) {
     ctx.fillStyle = "rgba(0,0,0,0.35)";
     ctx.fillRect(x + 1, y + 52, HAND.w - 2, HAND.h - 55);
     // Cards overlap to the right, so what matters sits on the left edge.
-    const lines = wrap(ctx, card.name, HAND.w - 6, "8px Silkscreen").slice(0, 2);
-    lines.forEach((l, i) => text(ctx, clip(ctx, l, HAND.w - 6, "8px Silkscreen"), x + 3, y + 54 + i * 9, { color: "#f4ecdc" }));
+    const lines = wrapCapped(ctx, card.name, HAND.w - 6, "8px Silkscreen", 2);
+    lines.forEach((l, i) => text(ctx, l, x + 3, y + 54 + i * 9, { color: "#f4ecdc" }));
     manaDots(ctx, card.cost, x + 3, y + 73);
     const types = card.card_types || [];
     if (card.power !== null && card.power !== undefined) {
@@ -315,33 +361,91 @@ function rowLayout(n, cardW, x0, width, gap = 3) {
     const stride = Math.max(10, Math.min(cardW + gap, Math.floor((width - cardW) / Math.max(1, n - 1))));
     return { stride, x0 };
 }
+/**
+ * What makes two permanents the same row of the board, or `null` when this
+ * one is its own card.
+ *
+ * The rule used to be "an untapped basic land with no counters", and
+ * creatures never reached it at all — they were passed to `drawRow` one to
+ * a group. So the one class of permanent that actually reaches large
+ * counts, identical tokens, was the one class that never collapsed: 108
+ * Zombies drew as 108 slivers 10px wide (issue #513).
+ *
+ * The key is everything the board can show about a permanent, so two cards
+ * that share it are genuinely interchangeable to look at: anything with a
+ * counter, damage, a shield, an attachment either way, a combat role or a
+ * named card is its own card, and the rest group by what `drawPerm` and
+ * `permBadges` would paint. That is the same rule the old one was a
+ * special case of, so basic lands still stack exactly as before.
+ */
+function stackKey(p, attachedTo) {
+    if (p.attached_to !== null && p.attached_to !== undefined)
+        return null;
+    if (attachedTo.has(p.object_id))
+        return null;
+    if (p.counters && Object.values(p.counters).some(n => n))
+        return null;
+    if (p.damage_marked || p.regeneration_shields)
+        return null;
+    if (p.attacking || (p.blocking && p.blocking.length) || (p.blocked_by && p.blocked_by.length))
+        return null;
+    if (p.named_card)
+        return null;
+    const isCreature = p.card_types.includes("Creature");
+    return [
+        p.name, p.tapped, p.is_token,
+        // Summoning sickness is only painted on a creature, so it only tells
+        // two permanents apart when they are creatures.
+        isCreature ? p.summoning_sick : false,
+        p.effective_power, p.effective_toughness, p.star_pt,
+        (p.keywords || []).join(","), (p.protections || []).join(","), (p.restrictions || []).join(","),
+        (p.card_types || []).join(","), (p.subtypes || []).join(","), (p.supertypes || []).join(","),
+    ].join("|");
+}
 /** Battlefield permanents of one controller, grouped into the two rows. */
 function splitBoard(view, controller) {
     const mine = view.battlefield.filter(p => p.controller === controller);
-    const creatures = mine.filter(p => p.card_types.includes("Creature"));
-    const others = mine.filter(p => !p.card_types.includes("Creature"));
-    // Identical untapped basic lands stack; everything else is one card.
-    const groups = [];
-    const byKey = new Map();
-    for (const p of others) {
-        const stackable = p.card_types.includes("Land") && (p.supertypes || []).includes("Basic") && p.attached_to === null
-            && (p.counters === undefined || Object.keys(p.counters).length === 0);
-        const k = stackable ? `${p.name}|${p.tapped}` : `id${p.object_id}`;
-        const g = byKey.get(k);
-        if (g)
-            g.push(p);
-        else {
-            const ng = [p];
-            byKey.set(k, ng);
-            groups.push(ng);
+    const attachedTo = new Set();
+    for (const p of view.battlefield)
+        if (p.attached_to !== null && p.attached_to !== undefined)
+            attachedTo.add(p.attached_to);
+    const group = (list) => {
+        const out = [];
+        const byKey = new Map();
+        for (const p of list) {
+            const k = stackKey(p, attachedTo);
+            const g = k === null ? undefined : byKey.get(k);
+            if (g)
+                g.push(p);
+            else {
+                const ng = [p];
+                if (k !== null)
+                    byKey.set(k, ng);
+                out.push(ng);
+            }
         }
-    }
+        return out;
+    };
+    const creatures = group(mine.filter(p => p.card_types.includes("Creature")));
+    const groups = group(mine.filter(p => !p.card_types.includes("Creature")));
     // Non-lands first, then lands.
     groups.sort((a, b) => Number(a[0].card_types.includes("Land")) - Number(b[0].card_types.includes("Land")));
     return { creatures, groups };
 }
-function drawRow(ctx, hits, state, items, y) {
-    const { stride, x0 } = rowLayout(items.length, CARD.w, 6, BOARD_W - 12);
+function drawRow(ctx, hits, state, all, y) {
+    const width = BOARD_W - 12;
+    const { stride, x0 } = rowLayout(all.length, CARD.w, 6, width);
+    // The stride bottoms out at 10px and nothing used to cap the row, so past
+    // that point cards were simply drawn at ever-larger x: at 108 tokens the
+    // last one reached x=1117 in a 640px frame, 60 of them painted and then
+    // covered by the side panel — invisible, and still answering clicks,
+    // because the hit rectangles went in all the same (issue #513).
+    //
+    // What fits, fits; the rest are counted in the last slot. Nothing is
+    // drawn past the pane and nothing off the pane pushes a hit.
+    const fits = Math.floor((width - CARD.w) / stride) + 1;
+    const overflow = all.length > fits;
+    const items = overflow ? all.slice(0, Math.max(0, fits - 1)) : all;
     const draw = (item, i) => {
         const group = item.length > 1 ? item.map(q => q.object_id) : null;
         // In a pick or mark, a stack whose members are options should offer
@@ -367,6 +471,12 @@ function drawRow(ctx, hits, state, items, y) {
     });
     if (hovered >= 0)
         draw(items[hovered], hovered);
+    if (overflow) {
+        const hidden = all.slice(items.length).reduce((n, g) => n + g.length, 0);
+        const mx = x0 + items.length * stride;
+        panel(ctx, mx, y, Math.min(CARD.w, BOARD_W - 6 - mx), CARD.h, "#241d2c", "#6a5a7a");
+        text(ctx, `+${hidden}`, mx + 3, y + CARD.h / 2 - 4, { font: "8px PressStart", color: "#ffe080" });
+    }
 }
 function drawStrip(ctx, hits, state, y, pid, life, handSize, library, gy, exile, pool, isYou) {
     const key = `p${pid}`;
@@ -381,7 +491,14 @@ function drawStrip(ctx, hits, state, y, pid, life, handSize, library, gy, exile,
     const active = state.view.active_player === pid;
     const priority = state.view.priority_player === pid;
     text(ctx, String(life), 18, y + 3, { font: "8px PressStart", color: life <= 5 ? "#ff7060" : "#ffffff" });
-    text(ctx, `${isYou ? "You" : "Opponent"}${active ? " ★" : ""}${priority ? " ●" : ""}`, 50, y + 3, { color: active ? "#ffe080" : "#c0b8c8" });
+    // Named with its seat number, so every `p0`/`p1` the engine's log and the
+    // runner's game-over line use has a definition somewhere on screen. This
+    // is #115's fix for the CLI's status bar, on the fourth surface — and the
+    // surface where it matters most, because this viewer never sees the
+    // runner's header line at all (issue #519).
+    // Clipped to the space before the zone counts at x=150, like everything
+    // else on the board.
+    text(ctx, clip(ctx, `${isYou ? "You" : "Opponent"} (p${pid})${active ? " ★" : ""}${priority ? " ●" : ""}`, 98), 50, y + 3, { color: active ? "#ffe080" : "#c0b8c8" });
     const parts = [`Hand ${handSize}`, `Lib ${library}`, `GY ${gy}`];
     if (exile)
         parts.push(`Exile ${exile}`);
@@ -430,13 +547,8 @@ function drawBand(ctx, hits, state) {
     text(ctx, view.stack.length ? "STACK →" : "stack empty", sx0, y + 2, { color: "#8a8090", font: "7px Silkscreen" });
     // Whose turn, which step, and the last two things that happened.
     const mine = view.active_player === view.you;
-    const stepName = { Untap: "untap", Upkeep: "upkeep", Draw: "draw", PrecombatMain: "main phase 1", BeginCombat: "begin combat",
-        DeclareAttackers: "declare attackers", DeclareBlockers: "declare blockers", CombatDamage: "combat damage", EndCombat: "end of combat",
-        PostcombatMain: "main phase 2", EndStep: "end step", Cleanup: "cleanup" };
-    const bx0 = 330;
-    text(ctx, `${mine ? "YOUR TURN" : "OPPONENT'S TURN"} · ${stepName[view.step]}`, bx0, y + 2, { font: "7px Silkscreen", color: mine ? "#ffe080" : "#c0b0d0" });
-    const recent = view.display_log.slice(-2);
-    recent.forEach((l, i) => text(ctx, clip(ctx, l, BOARD_W - bx0 - 4, "7px Silkscreen"), bx0, y + 12 + i * 8, { font: "7px Silkscreen", color: "#8a8898" }));
+    text(ctx, bandTurnLine(ctx, mine, view.step), BAND_X, y + 2, { font: "7px Silkscreen", color: mine ? "#ffe080" : "#c0b0d0" });
+    bandLogLines(state).forEach((l, i) => text(ctx, clip(ctx, inOurWords(state, l), BAND_W, "7px Silkscreen"), BAND_X, y + 12 + i * 8, { font: "7px Silkscreen", color: "#8a8898" }));
     view.stack.forEach((item, i) => {
         const key = `o${item.object_id}`;
         const x = sx0 + i * 28, sy = y + 9;
@@ -448,8 +560,40 @@ function drawBand(ctx, hits, state) {
         ctx.fillRect(x, sy, 24, 20);
         drawArt(ctx, x + 2, sy + 2, 16, 12, item.name, [], false);
         text(ctx, String(i + 1), x + 20, sy + 12, { align: "center", font: "6px Silkscreen", color: "#ffe080" });
-        hits.push({ x: x - 1, y: sy - 1, w: 26, h: 22, kind: "stack", key, id: item.object_id, onClick: clickFor(state, key) });
+        // The key stays `o<id>` so a spell on the stack is still clickable as
+        // a target; the slot is what says WHICH stack item this chip is, since
+        // an ability's id names its source and a trigger's names nothing
+        // (issue #527).
+        hits.push({ x: x - 1, y: sy - 1, w: 26, h: 22, kind: "stack", key, id: item.object_id, stackIndex: i, onClick: clickFor(state, key) });
     });
+}
+/**
+ * The band's two log lines: what has happened since the page last stopped
+ * for the player, not simply the last two things in the log.
+ *
+ * The page answers by itself every decision whose only actions are a pass
+ * and a concede — rightly, there is nothing to decide — so the interval
+ * between two frames a person actually reads is not one priority but
+ * however many in a row they had no play for. A whole opposing turn fits
+ * inside one. Anchored to `slice(-2)`, the band then reported that
+ * interval as "the opponent drew a card and attacked", with the Doom Blade
+ * that killed your only creature three lines further back; across four
+ * driven games, 113 of 276 prompts (41%) arrived with more new lines than
+ * the band could show (issue #523).
+ *
+ * Two rows is what the 30px band has, so when the interval does not fit
+ * the band says where it started, how much of it is missing, and where it
+ * ended. The count is the signal that the `l` drawer is worth opening;
+ * there is no room on this line to say so in words.
+ */
+export function bandLogLines(state) {
+    const log = state.view.display_log;
+    const fresh = log.slice(state.logSince ?? 0);
+    if (fresh.length === 0)
+        return log.slice(-2);
+    if (fresh.length <= 2)
+        return fresh;
+    return [fresh[0], `+${fresh.length - 2} · ${fresh[fresh.length - 1]}`];
 }
 /** Lines from each stack item to what it targets. */
 function stackLines(ctx, hits, state) {
@@ -457,8 +601,11 @@ function stackLines(ctx, hits, state) {
     if (!view.stack.length)
         return;
     const rectOf = (key) => hits.find(h => h.key === key && (h.kind === "perm" || h.kind === "stack" || h.kind === "player" || h.kind === "hand"));
-    view.stack.forEach((item) => {
-        const from = rectOf(`o${item.object_id}`);
+    view.stack.forEach((item, i) => {
+        // An ability's chip shares its key with the source permanent, so
+        // `rectOf` would draw the arrow from whichever was pushed first. The
+        // slot names the chip (issue #527).
+        const from = hits.find(h => h.kind === "stack" && h.stackIndex === i);
         if (!from)
             return;
         for (const t of item.targets) {
@@ -479,22 +626,164 @@ function stackLines(ctx, hits, state) {
     });
 }
 /** The end of the game, over the board. */
+/**
+ * Who won, in the page's own words, from the runner's headline.
+ *
+ * `mtg-runner` builds "Game over! p0 (red-green) wins!" — deliberately, so
+ * a mirror match can say which seat did which (#251) — and a person who
+ * opened a URL has never been told which seat they are. A narrow parse of
+ * the one line whose shape the runner controls, with no headline at all
+ * when it does not match, rather than a rewrite that would turn "p0 wins!"
+ * into "you wins!" (issue #519).
+ */
+export function outcomeHeadline(state, summary) {
+    const won = /^Game over!\s+p(\d+)\b/.exec(summary);
+    if (won)
+        return Number(won[1]) === state.view.you ? "YOU WIN" : "OPPONENT WINS";
+    if (/^Game over! It's a draw!/.test(summary))
+        return "A DRAW";
+    return null;
+}
 function gameOverScreen(ctx, state) {
     if (!state.gameOver)
         return;
     ctx.fillStyle = "rgba(0,0,0,0.6)";
     ctx.fillRect(0, 0, BOARD_W, H);
     const w = 360, x = (BOARD_W - w) / 2;
-    const lines = state.gameOver.split("\n").flatMap(l => wrap(ctx, l, w - 24, "8px Silkscreen"));
-    const h = 44 + lines.length * 11, y = (H - h) / 2;
+    const headline = outcomeHeadline(state, state.gameOver);
+    const lines = inOurWords(state, state.gameOver).split("\n").flatMap(l => wrap(ctx, l, w - 24, "8px Silkscreen"));
+    const h = 44 + (headline ? 14 : 0) + lines.length * 11, y = (H - h) / 2;
     texturedPanel(ctx, x, y, w, h);
     text(ctx, "GAME OVER", x + w / 2, y + 10, { align: "center", font: "8px PressStart", color: "#ffe080" });
-    lines.forEach((l, i) => text(ctx, l, x + w / 2, y + 28 + i * 11, { align: "center" }));
+    let ly = y + 28;
+    if (headline) {
+        text(ctx, headline, x + w / 2, ly, { align: "center", font: "8px PressStart", color: "#ffffff" });
+        ly += 14;
+    }
+    lines.forEach((l, i) => text(ctx, l, x + w / 2, ly + i * 11, { align: "center" }));
 }
 // --------------------------------------------------------------- panel
+/**
+ * The inspector's power/toughness lines: the effective box, and the printed
+ * one under it when they differ.
+ *
+ * A star-P/T creature's printed box is filled in by a characteristic-
+ * defining ability (CR 604.3), and the `0` the card data carries for it is
+ * a sentinel the engine's own `prints_star_pt` says "must never be shown as
+ * one". Sturmgeist with four cards in hand used to read `4/4` over
+ * `(printed 0/0)`; `star_pt` was in the view the page was handed and was
+ * read nowhere on it. The CLI has printed the star form here since #267
+ * (issue #526).
+ */
+export function inspectorPt(o) {
+    if (o.effective_power !== undefined && o.effective_power !== null) {
+        const live = `${o.effective_power}/${o.effective_toughness}${o.damage_marked ? ` ${o.damage_marked} dmg` : ""}`;
+        if (o.star_pt)
+            return [live, "(printed */*)"];
+        if (o.printed_power === undefined || o.printed_power === null)
+            return [live];
+        if (o.printed_power === o.effective_power && o.printed_toughness === o.effective_toughness)
+            return [live];
+        return [live, `(printed ${o.printed_power}/${o.printed_toughness})`];
+    }
+    if (o.power !== undefined && o.power !== null)
+        return [`${o.power}/${o.toughness}`];
+    return [];
+}
+/**
+ * Every fact the inspector states about `e`, in the order it states
+ * them.
+ *
+ * Separated from the drawing so the contract can be read, and tested,
+ * without a canvas. The reference list of what a player is entitled to
+ * know about a permanent is `CliPlayer::paint_permanent_detail`; this is
+ * the same list on the fourth surface.
+ */
+export function inspectorFacts(state, e) {
+    const o = e.obj;
+    const out = [];
+    // Whether this is a token decides what can be done with it after it dies:
+    // CR 111.7 makes it cease to exist, so no recursion ever gets it back and
+    // a graveyard count that includes it is wrong. The board rows of both
+    // interactive surfaces carry it and neither detail view did — the page's
+    // only signal was a 2px stripe on the board card (issue #534).
+    if (o.is_token)
+        out.push("Token");
+    // Colour (CR 105.2) is what intimidate reads (CR 702.13a), and a
+    // transformed face has no mana cost, so without this line it is
+    // obtainable from nothing on screen. "Colorless" is the whole answer for
+    // Galvanic Juggernaut (CR 105.2c), so it is said out loud (issue #525,
+    // #357 on the fourth surface).
+    if (o.colors)
+        out.push(`Color: ${o.colors.length ? o.colors.join(", ") : "Colorless"}`);
+    if (o.keywords && o.keywords.length)
+        out.push(o.keywords.join(", "));
+    if (o.counters)
+        for (const [k, n] of Object.entries(o.counters))
+            if (n)
+                out.push(`${n} ${k} counter${n > 1 ? "s" : ""}`);
+    // The count, not just a badge. A shield is spent one per destruction
+    // (CR 701.15a), so six of them and one of them are different boards —
+    // and the board's `R` badge carries no number and is 8th of the badges
+    // `drawPerm` slices to three, so it is often not on screen at all
+    // (issue #525, #468 on the fourth surface).
+    if (o.regeneration_shields)
+        out.push(`${o.regeneration_shields} regeneration shield${o.regeneration_shields > 1 ? "s" : ""}`);
+    if (o.attached_to !== undefined && o.attached_to !== null)
+        out.push(`Attached to ${nameOf(state, o.attached_to)}`);
+    // And the other direction, which is the one #83 is about: hovering the
+    // Equipment said "Attached to Sturmgeist" while hovering the Sturmgeist
+    // said nothing about the Equipment.
+    const attachments = state.view.battlefield.filter(p => p.attached_to === o.object_id).map(p => p.name);
+    if (attachments.length)
+        out.push(`Equipped/enchanted with: ${attachments.join(", ")}`);
+    if (o.attached_to_player !== undefined && o.attached_to_player !== null)
+        out.push(`Enchants ${playerLabel(state, o.attached_to_player)}`);
+    if (o.attacking)
+        out.push("Attacking " + ("Player" in o.attacking ? playerLabel(state, o.attacking.Player) : nameOf(state, o.attacking.Planeswalker)));
+    if (o.blocking && o.blocking.length)
+        out.push("Blocking " + o.blocking.map(id => nameOf(state, id)).join(", "));
+    if (o.blocked_by && o.blocked_by.length)
+        out.push("Blocked by " + o.blocked_by.map(id => nameOf(state, id)).join(", "));
+    for (const p of o.protections || [])
+        out.push(p);
+    for (const r of o.restrictions || [])
+        out.push(r);
+    if (o.summoning_sick)
+        out.push("Summoning sick");
+    if (o.named_card)
+        out.push(`Named: ${o.named_card}`);
+    if (o.targets && o.targets.length)
+        out.push("Targets: " + o.targets.map(t => targetLabel(state, t)).join(", "));
+    if (o.x_value !== undefined && o.x_value !== null)
+        out.push(`X = ${o.x_value}`);
+    if (e.zone !== "battlefield" && e.zone !== "hand")
+        out.push(`In ${e.zone}`);
+    return out;
+}
+/**
+ * What the inspector is about: the thing hovered, else the thing selected.
+ *
+ * A stack chip is read off the slot it was drawn for rather than by id. An
+ * activated ability carries its SOURCE permanent's id and a trigger carries
+ * `ObjectId(0)`, so by id a chip resolves to the permanent on the
+ * battlefield or to nothing at all — which is how hovering a Ghoulcaller's
+ * Bell showed "Ghoulcaller's Bell ability / IN STACK" and none of the
+ * permanent (issue #527).
+ */
+export function inspecting(state) {
+    const h = state.hover;
+    if (h && h.kind === "stack" && h.stackIndex !== undefined) {
+        const item = state.view.stack[h.stackIndex];
+        return item ? { obj: item, zone: "stack", owner: item.controller } : undefined;
+    }
+    const hoverId = h && h.key ? Number(h.key.slice(1)) : null;
+    if (hoverId !== null)
+        return state.index.get(hoverId);
+    return state.selected !== null ? state.index.get(state.selected) : undefined;
+}
 function inspector(ctx, state, x, y, w) {
-    const hoverId = state.hover && state.hover.key ? Number(state.hover.key.slice(1)) : null;
-    const e = hoverId !== null ? state.index.get(hoverId) : (state.selected !== null ? state.index.get(state.selected) : undefined);
+    const e = inspecting(state);
     if (!e) {
         text(ctx, "Hover a card to read it.", x + 4, y + 4, { color: "#7a7280" });
         return y + 16;
@@ -504,7 +793,7 @@ function inspector(ctx, state, x, y, w) {
     drawArt(ctx, x + 4, y + 4, ART_L.w, ART_L.h, o.name, colors, !!o.is_token);
     let ty = y + 4;
     const tx = x + 4 + ART_L.w + 4, tw = w - (ART_L.w + 12);
-    for (const l of wrap(ctx, o.name, tw, "8px PressStart").slice(0, 3)) {
+    for (const l of wrapCapped(ctx, o.name, tw, "8px PressStart", 3)) {
         text(ctx, l, tx, ty, { font: "8px PressStart", color: "#ffffff" });
         ty += 10;
     }
@@ -513,63 +802,29 @@ function inspector(ctx, state, x, y, w) {
         ty += 10;
     }
     const typeLine = [...(o.supertypes || []), ...(o.card_types || [])].join(" ") + ((o.subtypes && o.subtypes.length) ? " — " + o.subtypes.join(" ") : "");
-    for (const l of wrap(ctx, typeLine, tw, "7px Silkscreen").slice(0, 2)) {
+    for (const l of wrapCapped(ctx, typeLine, tw, "7px Silkscreen", 2)) {
         text(ctx, l, tx, ty, { font: "7px Silkscreen", color: "#b0b8c8" });
         ty += 8;
     }
-    if (o.effective_power !== undefined && o.effective_power !== null) {
-        const printed = o.printed_power !== undefined && o.printed_power !== null ? ` (printed ${o.printed_power}/${o.printed_toughness})` : "";
-        text(ctx, `${o.effective_power}/${o.effective_toughness}${o.damage_marked ? ` ${o.damage_marked} dmg` : ""}`, tx, ty, { font: "8px PressStart", color: "#e0f0ff" });
+    const pt = inspectorPt(o);
+    if (pt.length) {
+        text(ctx, pt[0], tx, ty, { font: "8px PressStart", color: "#e0f0ff" });
         ty += 10;
-        if (printed && (o.printed_power !== o.effective_power || o.printed_toughness !== o.effective_toughness)) {
-            text(ctx, printed.trim(), tx, ty, { font: "7px Silkscreen", color: "#8a8090" });
-            ty += 8;
-        }
     }
-    else if (o.power !== undefined && o.power !== null) {
-        text(ctx, `${o.power}/${o.toughness}`, tx, ty, { font: "8px PressStart" });
-        ty += 10;
+    if (pt.length > 1) {
+        text(ctx, pt[1], tx, ty, { font: "7px Silkscreen", color: "#8a8090" });
+        ty += 8;
     }
     ty = Math.max(ty, y + 4 + ART_L.h + 4);
-    const facts = [];
-    if (o.keywords && o.keywords.length)
-        facts.push(o.keywords.join(", "));
-    if (o.counters)
-        for (const [k, n] of Object.entries(o.counters))
-            if (n)
-                facts.push(`${n} ${k} counter${n > 1 ? "s" : ""}`);
-    if (o.attached_to !== undefined && o.attached_to !== null)
-        facts.push(`Attached to ${nameOf(state, o.attached_to)}`);
-    if (o.attached_to_player !== undefined && o.attached_to_player !== null)
-        facts.push(`Enchants ${playerLabel(state, o.attached_to_player)}`);
-    if (o.attacking)
-        facts.push("Attacking " + ("Player" in o.attacking ? playerLabel(state, o.attacking.Player) : nameOf(state, o.attacking.Planeswalker)));
-    if (o.blocking && o.blocking.length)
-        facts.push("Blocking " + o.blocking.map(id => nameOf(state, id)).join(", "));
-    if (o.blocked_by && o.blocked_by.length)
-        facts.push("Blocked by " + o.blocked_by.map(id => nameOf(state, id)).join(", "));
-    for (const p of o.protections || [])
-        facts.push(p);
-    for (const r of o.restrictions || [])
-        facts.push(r);
-    if (o.summoning_sick)
-        facts.push("Summoning sick");
-    if (o.named_card)
-        facts.push(`Named: ${o.named_card}`);
-    if (o.targets && o.targets.length)
-        facts.push("Targets: " + o.targets.map(t => targetLabel(state, t)).join(", "));
-    if (o.x_value !== undefined && o.x_value !== null)
-        facts.push(`X = ${o.x_value}`);
-    if (e.zone !== "battlefield" && e.zone !== "hand")
-        facts.push(`In ${e.zone}`);
+    const facts = inspectorFacts(state, e);
     for (const f of facts)
-        for (const l of wrap(ctx, f, w - 8, "7px Silkscreen").slice(0, 2)) {
+        for (const l of wrapCapped(ctx, f, w - 8, "7px Silkscreen", 2)) {
             text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#d0c8a0" });
             ty += 8;
         }
     const oracle = [o.oracle_text || "", ...(o.granted_abilities || [])].filter(Boolean).join("\n");
     const maxLines = Math.max(0, Math.floor((y + 200 - ty) / 9));
-    for (const l of wrap(ctx, oracle, w - 8, "8px Silkscreen").slice(0, maxLines)) {
+    for (const l of wrapCapped(ctx, oracle, w - 8, "8px Silkscreen", maxLines)) {
         text(ctx, l, x + 4, ty, { color: "#e8e0d0" });
         ty += 9;
     }
@@ -582,7 +837,12 @@ function promptArea(ctx, hits, state, x, y, w, h) {
     x += 2;
     w -= 4;
     if (state.gameOver) {
-        for (const l of wrap(ctx, state.gameOver, w - 8, "8px Silkscreen").slice(0, 8)) {
+        const headline = outcomeHeadline(state, state.gameOver);
+        if (headline) {
+            text(ctx, headline, x + 4, ty, { font: "8px PressStart", color: "#ffffff" });
+            ty += 11;
+        }
+        for (const l of wrapCapped(ctx, inOurWords(state, state.gameOver), w - 8, "8px Silkscreen", 8)) {
             text(ctx, l, x + 4, ty, { color: "#ffe080" });
             ty += 9;
         }
@@ -600,12 +860,12 @@ function promptArea(ctx, hits, state, x, y, w, h) {
         ty += 9;
     }
     const title = ui ? ui.title : "";
-    for (const l of wrap(ctx, title, w - 8, "8px Silkscreen").slice(0, 4)) {
+    for (const l of wrapCapped(ctx, title, w - 8, "8px Silkscreen", 4)) {
         text(ctx, l, x + 4, ty, { color: "#ffe080" });
         ty += 9;
     }
     if (ui && ui.hint)
-        for (const l of wrap(ctx, ui.hint, w - 8, "7px Silkscreen").slice(0, 3)) {
+        for (const l of wrapCapped(ctx, ui.hint, w - 8, "7px Silkscreen", 3)) {
             text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#a098b0" });
             ty += 8;
         }
@@ -620,7 +880,7 @@ function promptArea(ctx, hits, state, x, y, w, h) {
         }
     }
     if (state.notice)
-        for (const l of wrap(ctx, state.notice, w - 8, "7px Silkscreen").slice(0, 3)) {
+        for (const l of wrapCapped(ctx, state.notice, w - 8, "7px Silkscreen", 3)) {
             text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#ff9080" });
             ty += 8;
         }
@@ -636,26 +896,89 @@ function promptArea(ctx, hits, state, x, y, w, h) {
         by -= 15;
     });
     let ry = ty + 2;
-    for (const r of rows.slice(0, Math.max(0, Math.floor((by - ry) / 11)))) {
+    // The panel's rows page. They used to be sliced from the front to
+    // whatever fitted and the rest were neither drawn nor mentioned: a
+    // 30-card library search drew eleven rows and the other nineteen were
+    // legal answers the engine had offered that a person could not send
+    // (issue #529). A library option has no second surface to fall back on
+    // either — graveyard and exile options open their zone overlay, which
+    // pages, and `library` is not in that branch.
+    //
+    // The last row's worth of space goes to the "N–M of K" line whenever
+    // there is more than one page, so the pager can always reach the end.
+    const fits = Math.max(0, Math.floor((by - ry) / 11));
+    const paged = rows.length > fits;
+    const perPage = paged ? Math.max(1, fits - 1) : fits;
+    const scroll = state.rowScroll = clampRowScroll(rows.length, perPage, state.rowScroll || 0);
+    const drawn = rows.slice(scroll, scroll + perPage);
+    // What the panel actually drew, published the way `hits` is: the pager's
+    // contract is that its last page reaches the last row, and that is not
+    // checkable from the outside otherwise.
+    state.rowPage = { total: rows.length, scroll, drawn: drawn.length };
+    for (const r of drawn) {
         const marked = !!(ui && r.key && ui.marked.includes(r.key));
         panel(ctx, x + 4, ry, w - 8, 10, marked ? "#3a5a3a" : "#2a2430", marked ? "#60e060" : "#4a4a5a");
         text(ctx, clip(ctx, r.label, w - 14, "7px Silkscreen"), x + 7, ry + 1, { font: "7px Silkscreen" });
         hits.push({ x: x + 4, y: ry, w: w - 8, h: 10, kind: "row", onClick: r.run, cardName: r.cardName });
         ry += 11;
     }
+    if (paged) {
+        text(ctx, clip(ctx, `${scroll + 1}–${Math.min(rows.length, scroll + perPage)} of ${rows.length} (scroll)`, w - 8, "7px Silkscreen"), x + 4, ry + 1, { font: "7px Silkscreen", color: "#8a8090" });
+    }
 }
-function logArea(ctx, hits, state, x, y, w, h) {
+/** `scroll` for a panel row list, clamped so the last page is reachable. */
+export function clampRowScroll(total, perPage, scroll) {
+    if (perPage <= 0)
+        return 0;
+    return Math.max(0, Math.min(Math.max(0, total - perPage), scroll));
+}
+/**
+ * The log, newest at the bottom, scrolled by `state.logScroll`.
+ *
+ * `headRoom` is pixels at the top of the box the caller has already drawn
+ * something into. The drawer's heading used to be painted at the same y as
+ * the first visible line — `240 + 2` and `360 - 118` are the same pixel —
+ * so the oldest entry on screen came out as an unreadable two-colour mash,
+ * and scrolling only moved which entry that was (issue #521). The box, and
+ * the rectangle the wheel scrolls, still cover the whole drawer.
+ */
+function logArea(ctx, hits, state, x, y, w, h, headRoom = 0) {
     panel(ctx, x, y, w, h, "#100e14", "#3a3048");
     const lines = [];
     for (const entry of state.view.display_log.slice(-40))
-        for (const l of wrap(ctx, entry, w - 8, "7px Silkscreen"))
+        for (const l of wrap(ctx, inOurWords(state, entry), w - 8, "7px Silkscreen"))
             lines.push(l);
-    const fit = Math.floor((h - 4) / 8);
+    const top = y + 2 + headRoom;
+    const fit = Math.floor((h - 4 - headRoom) / 8);
     const shown = lines.slice(Math.max(0, lines.length - fit - state.logScroll), lines.length - state.logScroll);
-    shown.forEach((l, i) => text(ctx, l, x + 4, y + 2 + i * 8, { font: "7px Silkscreen", color: "#a8a0b0" }));
+    shown.forEach((l, i) => text(ctx, l, x + 4, top + i * 8, { font: "7px Silkscreen", color: "#a8a0b0" }));
     hits.push({ x, y, w, h, kind: "log" });
 }
 // -------------------------------------------------------------- overlays
+/** How many rows the modal shows at once. */
+export const MODAL_ROWS = 20;
+/**
+ * The rows the modal will actually draw, filter applied.
+ *
+ * The filtering lived inside `modal()` while the wheel handler clamped
+ * `ui.scroll` against `ui.rows.length` — the UNfiltered count. Scroll a
+ * 30-row list to 10, then type a filter matching six, and `slice(10, 30)`
+ * of six rows is nothing: the modal drew its title and an empty box, with
+ * the "of 30" footer suppressed because the filtered list is shorter than a
+ * page, so nothing said that scrolling up would bring the matches back
+ * (issue #530). One function, so the two cannot disagree again.
+ */
+export function modalRows(ui) {
+    const rows = ui.rows ?? (ui.order ? ui.order.map((o, pos) => ({ label: o.label, pos })) : []);
+    if (ui.mode !== "list" || !ui.query)
+        return rows;
+    const q = ui.query.toLowerCase();
+    return rows.filter(r => r.label.toLowerCase().includes(q));
+}
+/** `ui.scroll`, clamped to what `modalRows` can actually show. */
+export function clampScroll(ui, scroll) {
+    return Math.max(0, Math.min(Math.max(0, modalRows(ui).length - MODAL_ROWS), scroll));
+}
 function modal(ctx, hits, state) {
     const ui = state.ui;
     if (!ui || (ui.mode !== "list" && ui.mode !== "order" && ui.mode !== "number"))
@@ -665,14 +988,13 @@ function modal(ctx, hits, state) {
         ctx.fillRect(0, 0, BOARD_W, H);
     }
     const w = 300, x = (BOARD_W - w) / 2;
-    let rows = ui.rows ?? (ui.order ? ui.order.map((o, pos) => ({ label: o.label, pos })) : []);
-    if (ui.mode === "list" && ui.query) {
-        const q = ui.query.toLowerCase();
-        rows = rows.filter(r => r.label.toLowerCase().includes(q));
-    }
+    const rows = modalRows(ui);
     const rowH = 12;
-    const maxRows = 20;
-    const scroll = ui.scroll || 0;
+    const maxRows = MODAL_ROWS;
+    // Clamped here as well as in the wheel handler: typing a filter narrows
+    // the list under a scroll position the wheel set legitimately.
+    const scroll = clampScroll(ui, ui.scroll || 0);
+    ui.scroll = scroll;
     const shown = rows.slice(scroll, scroll + maxRows);
     const h = 30 + shown.length * rowH + (ui.mode === "number" ? 30 : 0) + (ui.filter ? 14 : 0) + 18;
     const y = Math.max(8, (H - h) / 2);
@@ -680,18 +1002,25 @@ function modal(ctx, hits, state) {
     hits.push({ x, y, w, h, kind: "modal" });
     texturedPanel(ctx, x, y, w, h, "#1a1620", "#c9a84a");
     let ty = y + 6;
-    for (const l of wrap(ctx, ui.title, w - 12, "8px PressStart").slice(0, 2)) {
+    for (const l of wrapCapped(ctx, ui.title, w - 12, "8px PressStart", 2)) {
         text(ctx, l, x + 6, ty, { font: "8px PressStart", color: "#ffe080" });
         ty += 10;
     }
     if (ui.filter) {
+        // Where the real <input> goes. The modal used to paint a field here and
+        // `syncField` parked the DOM control at a fixed spot near the top of the
+        // canvas, so the screen showed two filter boxes: one over the
+        // opponent's life strip that took the typing, and one in the middle of
+        // the modal that looked like the thing to click and never filled in
+        // (issue #531). The frame is still drawn here; the input is placed over
+        // it, the way hit rectangles are published for the mouse.
         panel(ctx, x + 6, ty, w - 12, 12, "#0e0c12", "#6a5a7a");
-        text(ctx, ui.query || "type to filter…", x + 9, ty + 2, { color: ui.query ? "#fff" : "#7a7280" });
+        state.fieldRect = { x: x + 6, y: ty, w: w - 12, h: 12 };
         ty += 14;
     }
     if (ui.mode === "number") {
         panel(ctx, x + 6, ty, 80, 14, "#0e0c12", "#6a5a7a");
-        text(ctx, (ui.value ?? "") + "▏", x + 9, ty + 3, { font: "8px PressStart", color: "#fff" });
+        state.fieldRect = { x: x + 6, y: ty, w: 80, h: 14 };
         text(ctx, `0 – ${ui.max}`, x + 92, ty + 3, { color: "#b0b0c0" });
         ty += 18;
         for (const l of (ui.summary || []).slice(0, 4)) {
@@ -715,8 +1044,16 @@ function modal(ctx, hits, state) {
         }
     });
     ty += shown.length * rowH;
-    if (rows.length > maxRows)
-        text(ctx, `${scroll + 1}–${Math.min(rows.length, scroll + maxRows)} of ${rows.length} (scroll)`, x + 6, ty + 2, { font: "7px Silkscreen", color: "#8a8090" });
+    // Printed whenever the list is filtered too, not only when it is longer
+    // than a page: "0 of 30 matching" is the line that was missing when the
+    // modal went empty (issue #530).
+    if (rows.length > maxRows || (ui.mode === "list" && ui.query)) {
+        const all = (ui.rows ?? []).length;
+        const where = rows.length === 0 ? "no matches"
+            : `${scroll + 1}–${Math.min(rows.length, scroll + maxRows)} of ${rows.length}`;
+        const of = ui.mode === "list" && ui.query ? ` matching "${ui.query}" (of ${all})` : " (scroll)";
+        text(ctx, clip(ctx, where + of, w - 12, "7px Silkscreen"), x + 6, ty + 2, { font: "7px Silkscreen", color: "#8a8090" });
+    }
     let bx = x + w - 6;
     for (const b of (ui.buttons || []).slice().reverse()) {
         const bw = 60;
@@ -784,7 +1121,7 @@ function zoneOverlay(ctx, hits, state) {
         ctx.fillStyle = "#201828";
         ctx.fillRect(x, y, cw, ch);
         drawArt(ctx, x + 6, y + 3, ART_S.w, ART_S.h, c.name, colorsOfCost(c.cost), false);
-        wrap(ctx, c.name, cw - 4, "6px Silkscreen").slice(0, 3).forEach((l, j) => text(ctx, l, x + 2, y + 30 + j * 7, { font: "6px Silkscreen" }));
+        wrapCapped(ctx, c.name, cw - 4, "6px Silkscreen", 3).forEach((l, j) => text(ctx, l, x + 2, y + 30 + j * 7, { font: "6px Silkscreen" }));
         hits.push({ x: x - 1, y: y - 1, w: cw + 2, h: ch + 2, kind: "card", key, id: c.object_id, onClick: clickFor(state, key) });
     });
     if (cards.length > perPage) {
@@ -817,12 +1154,12 @@ export function render(ctx, state) {
     drawStrip(ctx, hits, live, ROWS.oppStrip, opp.id, opp.life, opp.hand_size, opp.library_size, gyCount(opp.id), exCount(opp.id), opp.mana_pool, false);
     const ob = splitBoard(view, opp.id);
     drawRow(ctx, hits, live, ob.groups, ROWS.oppOther);
-    drawRow(ctx, hits, live, ob.creatures.map(p => [p]), ROWS.oppCreatures);
+    drawRow(ctx, hits, live, ob.creatures, ROWS.oppCreatures);
     // Middle.
     drawBand(ctx, hits, live);
     // You.
     const mb = splitBoard(view, view.you);
-    drawRow(ctx, hits, live, mb.creatures.map(p => [p]), ROWS.myCreatures);
+    drawRow(ctx, hits, live, mb.creatures, ROWS.myCreatures);
     drawRow(ctx, hits, live, mb.groups, ROWS.myOther);
     // Hand: your strip sits on the hand's top edge.
     const hand = view.your_hand;
@@ -857,7 +1194,9 @@ export function render(ctx, state) {
         // A wide log drawer over the board, for reading rather than glancing.
         ctx.fillStyle = "rgba(10,8,14,0.92)";
         ctx.fillRect(0, H - 120, BOARD_W, 120);
-        logArea(ctx, hits, live, 0, H - 120, BOARD_W, 120);
+        // The heading gets a row of its own (issue #521); `logArea` starts
+        // below it and the drawer still had spare pixels at the bottom.
+        logArea(ctx, hits, live, 0, H - 120, BOARD_W, 120, 10);
         text(ctx, "LOG (l to close, wheel to scroll)", 4, H - 118, { font: "7px Silkscreen", color: "#ffe080" });
     }
     return hits;

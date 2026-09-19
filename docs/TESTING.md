@@ -45,11 +45,13 @@ Put it in the file for that rule. If none fits, make one, named for the rule.
 | an ability's controller and requirement are fixed at activation (CR 602.2a, 601.2c) | `activation_controller.rs` |
 | fizzling | `fizzle.rs` |
 | activated abilities (CR 602) | `activated_abilities.rs`, `activated_no_stack.rs` |
+| an ability granted twice is two abilities and one offer (CR 113.8) | `granted_ability_offers.rs` |
 | regeneration (CR 701.15) | `regeneration.rs` |
 | summoning sickness (CR 302.6) | `summoning_sickness.rs` |
 | planeswalkers, loyalty (CR 306, 606, 704.5i) | `planeswalkers.rs` |
 | combat | `combat.rs`, `combat_rules.rs` |
 | what is worth stopping a player for (CR 117.3d, 605.1a) | `auto_pass_gate.rs` |
+| an answer the prompt never offered is not played (CR 508.1, 104.3a) | `unoffered_answers.rs` |
 | damage assignment order (CR 509.2, 510.1c) | `damage_assignment_order.rs` |
 | attacking planeswalkers (CR 508.1a, 702.19d/i) | `planeswalker_combat.rs` |
 | damage | `damage_pipeline.rs`, `damage_helper.rs` (any target includes planeswalkers), `inline_damage.rs` |

@@ -67,7 +67,9 @@ async function main() {
       const theirs = m.view.battlefield.filter(p => p.controller !== you).map(p => p.object_id);
       const creatures = m.view.battlefield.filter(p => p.card_types.includes("Creature")).map(p => p.object_id);
       return { you, opp: m.view.opponents[0].id, mine, theirs, creatures, hand: m.view.your_hand.map(c => c.object_id),
-        library: m.view.your_library_cards.slice(0, 6).map(c => c.object_id), names: m.view.your_library_cards.slice(0, 30).map(c => c.name) };
+        library: m.view.your_library_cards.slice(0, 6).map(c => c.object_id),
+        libraryMany: m.view.your_library_cards.slice(0, 40).map(c => c.object_id),
+        names: m.view.your_library_cards.slice(0, 30).map(c => c.name) };
     });
     if (ids.mine.length < 2 || ids.hand.length < 2) fail(`board too small to test with: ${JSON.stringify(ids)}`);
 
@@ -274,6 +276,447 @@ async function main() {
       if (await stage("menu-pass", legal({ context: "MAIN PHASE 1", actions: ["PassPriority", "Concede"] }), null, "menu")) {
         await page.keyboard.press("Enter");
         await expectSent("menu-pass", a => a === "PassPriority");
+      }
+    }
+    // 14. Enter at a mark prompt: refuses out loud below the minimum, and
+    // never commits an empty answer nobody chose. Enter is the idle key —
+    // in menu mode it passes priority — so landing on an "up to N" mark
+    // with that habit used to throw the whole optional effect away in one
+    // keystroke, and below the minimum it did nothing and said nothing
+    // (issues #518, #520, #524).
+    const notice = () => page.evaluate(() => window.mtg.notice);
+    const expectNothingSent = async (name) => {
+      const s = await lastSent();
+      if (s && s.seq === seq) fail(`${name}: sent ${JSON.stringify(s.action)} — the prompt should have refused`);
+      else ok(`${name}: nothing sent`);
+    };
+    {
+      // (a) below the minimum — the DISCARD 1 CARD dead end.
+      if (await stage("mark-enter-below-min", legal({ context: "DISCARD 1 CARD", set_prompt: { kind: "DiscardToHandSize", player: ids.you, options: ids.hand, min: 1, max: 1 } }), null, "mark")) {
+        for (let i = 0; i < 3; i++) await page.keyboard.press("Enter");
+        await page.waitForTimeout(60);
+        await expectNothingSent("mark-enter-below-min");
+        const n = await notice();
+        if (!n || !/mark exactly 1 card/.test(n)) fail(`mark-enter-below-min: notice was ${JSON.stringify(n)}`);
+        else ok(`mark-enter-below-min: said "${n}"`);
+        // And it is still answerable by marking one.
+        await clickHit(`(h) => h.kind === 'hand' && h.id === ${ids.hand[0]}`);
+        await clickHit("(h) => h.kind === 'button' && h.label === 'Confirm'");
+        await expectSent("mark-enter-below-min recovers", a => a.DiscardCards && a.DiscardCards.cards.length === 1);
+      }
+      // (b) min 0 — the idle key must not be an answer (#262's rule).
+      const gy = ids.library.slice(0, 3);
+      if (await stage("mark-enter-at-min-zero", legal({ resolution_prompt: { ChooseExileFromGraveyard: { description: "Exile up to three cards", options: gy, min: 0, max: 3, source_id: ids.hand[0] } } }), null, "mark")) {
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(60);
+        await expectNothingSent("mark-enter-at-min-zero");
+        const n = await notice();
+        if (!n || !/nothing marked/.test(n)) fail(`mark-enter-at-min-zero: notice was ${JSON.stringify(n)}`);
+        else ok(`mark-enter-at-min-zero: said "${n}"`);
+        // Saying none on purpose still works, and says so on a button.
+        await clickHit("(h) => h.kind === 'button' && h.label === 'Confirm none'");
+        await expectSent("mark-confirm-none", a => a.ResolveChoice && a.ResolveChoice.choice.ChosenExileSet && a.ResolveChoice.choice.ChosenExileSet.length === 0);
+      }
+      // (c) once the player has marked something and unmarked it again,
+      // the empty answer IS theirs, and Enter takes it.
+      if (await stage("mark-enter-after-touching", legal({ resolution_prompt: { ChooseExileFromGraveyard: { description: "Exile up to three cards", options: gy, min: 0, max: 3, source_id: ids.hand[0] } } }), null, "mark")) {
+        await clickHit("(h, m) => h.kind === 'row' && h.y === Math.min(...m.hits.filter(x => x.kind === 'row').map(x => x.y))");
+        await clickHit("(h, m) => h.kind === 'row' && h.y === Math.min(...m.hits.filter(x => x.kind === 'row').map(x => x.y))");
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(60);
+        await expectSent("mark-enter-after-touching", a => a.ResolveChoice && a.ResolveChoice.choice.ChosenExileSet && a.ResolveChoice.choice.ChosenExileSet.length === 0);
+      }
+      // (d) the order widget: every arrangement is legal, so Enter answers.
+      {
+        const options = ["Doomed Traveler's trigger", "Mausoleum Guard's trigger"];
+        const actions = options.map((o, i) => rc({ ChosenIndex: [i, o] }));
+        if (await stage("order-enter", legal({ actions, resolution_prompt: { ChooseTriggerOrder: { description: "Order the triggers", options, ap_queue: true, indices: [0, 1], details: [] } } }), null, "order")) {
+          await page.keyboard.press("Enter");
+          await page.waitForTimeout(60);
+          await expectSent("order-enter", a => a.ResolveChoice && JSON.stringify(a.ResolveChoice.choice.ChosenOrder) === "[0,1]");
+        }
+      }
+    }
+    // 15. The inspector: what it is about, and what it says.
+    //
+    // The facts and the P/T lines are read back through the page's own
+    // `mtgDebug.inspect`, which resolves the hovered thing exactly as the
+    // renderer does. The view is edited in place first, so a board these
+    // seeds do not reach can still be asked about.
+    {
+      const perm = ids.mine[0];
+      // (a) an activated ability on the stack carries its SOURCE
+      // permanent's id (view.rs), and the page indexed the stack last, so
+      // the ability replaced the permanent: hovering the Ghoulcaller's Bell
+      // on the battlefield showed the ability and none of the permanent.
+      const both = await page.evaluate((perm) => {
+        const m = window.mtg;
+        const p = m.view.battlefield.find(x => x.object_id === perm);
+        m.view.stack = [{ object_id: perm, card_id: 1, name: `${p.name} ability`, controller: m.view.you, targets: [], x_value: null }];
+        const chip = window.mtgDebug.inspect(`o${perm}`, "stack");
+        const board = window.mtgDebug.inspect(`o${perm}`, "perm");
+        m.view.stack = [];
+        return { chip, board, permName: p.name };
+      }, perm);
+      if (!both.chip || both.chip.zone !== "stack" || !/ ability$/.test(both.chip.name))
+        fail(`stack-chip-inspect: ${JSON.stringify(both.chip)}`);
+      else ok(`stack-chip-inspect → ${both.chip.name} (${both.chip.zone})`);
+      if (!both.board || both.board.zone !== "battlefield" || both.board.name !== both.permName)
+        fail(`source-permanent-inspect: an ability on the stack overwrote its source — ${JSON.stringify(both.board)}`);
+      else ok(`source-permanent-inspect → ${both.board.name} (${both.board.zone})`);
+
+      // (b) two triggers at once are two different things, though the view
+      // gives them both ObjectId(0).
+      const triggers = await page.evaluate(() => {
+        const m = window.mtg;
+        m.view.stack = [
+          { object_id: 0, card_id: 0, name: "Doomed Traveler's dies trigger (a)", controller: m.view.you, targets: [], x_value: null },
+          { object_id: 0, card_id: 0, name: "Elder Cathar's dies trigger (b)", controller: m.view.you, targets: [], x_value: null },
+        ];
+        window.mtgDebug.render();
+        const chips = window.mtg.hits.filter(h => h.kind === "stack");
+        const out = chips.map(h => { const was = m.hover; m.hover = h; const r = window.mtgDebug.inspectHover(); m.hover = was; return r && r.name; });
+        m.view.stack = [];
+        return out;
+      });
+      if (triggers.length !== 2 || triggers[0] === triggers[1])
+        fail(`two-triggers-inspect: both chips resolved to ${JSON.stringify(triggers)}`);
+      else ok(`two-triggers-inspect → ${JSON.stringify(triggers)}`);
+
+      // (c) the facts the CLI's detail page carries and the panel dropped.
+      const facts = await page.evaluate((perm) => {
+        const m = window.mtg;
+        const p = m.view.battlefield.find(x => x.object_id === perm);
+        const saved = JSON.stringify(p);
+        Object.assign(p, { is_token: true, colors: ["Blue"], regeneration_shields: 6,
+          star_pt: true, printed_power: 0, printed_toughness: 0,
+          effective_power: 4, effective_toughness: 4, card_types: ["Creature"] });
+        const aura = JSON.parse(JSON.stringify(p));
+        Object.assign(aura, { object_id: 99001, name: "Cobbled Wings", attached_to: perm,
+          is_token: false, regeneration_shields: 0, star_pt: false, card_types: ["Artifact"] });
+        m.view.battlefield.push(aura);
+        const r = window.mtgDebug.inspect(`o${perm}`, "perm");
+        const colorless = (() => { p.colors = []; const x = window.mtgDebug.inspect(`o${perm}`, "perm"); return x && x.facts; })();
+        m.view.battlefield.pop();
+        Object.assign(p, JSON.parse(saved));
+        return { r, colorless };
+      }, perm);
+      const want = [
+        ["Token", /^Token$/],
+        ["Color", /^Color: Blue$/],
+        ["regeneration shields", /^6 regeneration shields$/],
+        ["attachments", /^Equipped\/enchanted with: Cobbled Wings$/],
+      ];
+      for (const [what, re] of want) {
+        if (!facts.r || !facts.r.facts.some(f => re.test(f))) fail(`inspector-${what}: facts were ${JSON.stringify(facts.r && facts.r.facts)}`);
+        else ok(`inspector-${what}`);
+      }
+      if (!facts.colorless || !facts.colorless.some(f => f === "Color: Colorless")) fail(`inspector-colorless: ${JSON.stringify(facts.colorless)}`);
+      else ok("inspector-colorless");
+      // The star-P/T sentinel is never shown as a printed value.
+      if (!facts.r || facts.r.pt[1] !== "(printed */*)") fail(`inspector-star-pt: pt was ${JSON.stringify(facts.r && facts.r.pt)}`);
+      else ok(`inspector-star-pt → ${JSON.stringify(facts.r.pt)}`);
+    }
+    // 16. A stack item's art is its source's. The engine names a stack item
+    // for a person — "<card> ability", "<source>'s <phrase> (<desc>)" — and
+    // the lookup used to strip at the FIRST "'s ", so every activated
+    // ability and every possessive card missed (issue #528).
+    {
+      const cases = await page.evaluate(() => {
+        const probe = (n) => window.mtgDebug.artNames(n);
+        return {
+          ability: probe("Ghoulcaller's Bell ability"),
+          plain: probe("Cobbled Wings ability"),
+          possessiveTrigger: probe("Geistcatcher's Rig's enters-the-battlefield trigger (deal 4 damage)"),
+          simpleTrigger: probe("Doomed Traveler's dies trigger (create a 1/1 white Spirit token with flying)"),
+          possessiveAbility: probe("Ludevic's Test Subject ability"),
+          spell: probe("Ghoulcaller's Bell"),
+          withId: probe("Unruly Mob (#34)'s triggered ability"),
+        };
+      });
+      const expect = [
+        ["ability", "Ghoulcaller's Bell"],
+        ["plain", "Cobbled Wings"],
+        ["possessiveTrigger", "Geistcatcher's Rig"],
+        ["simpleTrigger", "Doomed Traveler"],
+        ["possessiveAbility", "Ludevic's Test Subject"],
+        ["spell", "Ghoulcaller's Bell"],
+        ["withId", "Unruly Mob"],
+      ];
+      for (const [k, want] of expect) {
+        if (!cases[k] || !cases[k].includes(want)) fail(`artNames ${k}: ${JSON.stringify(cases[k])} does not offer ${JSON.stringify(want)}`);
+        else ok(`artNames ${k} → ${want}`);
+      }
+    }
+    // 17. Everything printed fits. `docs/playtest/README.md`: "A row wider
+    // than its pane is wrapped or clipped deliberately, never printed over
+    // the border into the next pane." Swept over the whole card pool and
+    // every turn/step line the band can produce, because the failures were
+    // found one card and one step at a time (#522, #532).
+    {
+      const names = Object.keys(JSON.parse(fs.readFileSync(path.join(root, "data", "oracle_cache.json"), "utf8")).cards);
+      // The twelve steps, and the words the band prints for them. The words
+      // are duplicated here on purpose: the primary assertion measures what
+      // `bandLine` actually returns, and these are only used to show the
+      // sweep is exercising a line that really is too wide untreated.
+      const steps = [["Untap", "untap"], ["Upkeep", "upkeep"], ["Draw", "draw"], ["PrecombatMain", "main phase 1"],
+        ["BeginCombat", "begin combat"], ["DeclareAttackers", "declare attackers"], ["DeclareBlockers", "declare blockers"],
+        ["CombatDamage", "combat damage"], ["EndCombat", "end of combat"], ["PostcombatMain", "main phase 2"],
+        ["EndStep", "end step"], ["Cleanup", "cleanup"]];
+      const bad = await page.evaluate(({ names, steps }) => {
+        const f = window.mtgDebug.fit;
+        const out = { inspector: [], hand: [], band: [], unmarked: [] };
+        // The inspector's name block: panel 160 wide, art 64, padding 12.
+        const tw = 160 - (64 + 12);
+        for (const n of names) {
+          for (const l of f.wrapCapped(n, tw, "8px PressStart", 3)) {
+            if (f.width(l, "8px PressStart") > tw) out.inspector.push([n, l, f.width(l, "8px PressStart")]);
+          }
+          const hand = f.wrapCapped(n, 66 - 6, "8px Silkscreen", 2);
+          for (const l of hand) {
+            if (f.width(l, "8px Silkscreen") > 66 - 6) out.hand.push([n, l, f.width(l, "8px Silkscreen")]);
+          }
+          // A name that needed more lines than it got says so.
+          if (f.wrap(n, 66 - 6, "8px Silkscreen").length > 2 && !hand[hand.length - 1].endsWith("…")) out.unmarked.push([n, hand]);
+        }
+        // The band's turn/step line, as the renderer builds it.
+        const bandW = f.bandW;
+        let everOver = 0;
+        for (const mine of [true, false]) for (const [st, words] of steps) {
+          const drawn = f.bandLine(mine, st);
+          if (f.width(drawn, "7px Silkscreen") > bandW) out.band.push([mine, st, drawn, f.width(drawn, "7px Silkscreen")]);
+          const raw = `${mine ? "YOUR TURN" : "OPPONENT'S TURN"} · ${words}`;
+          if (f.width(raw, "7px Silkscreen") > bandW) everOver++;
+        }
+        // The sweep has to be exercising something: at least one step's
+        // untreated line really is wider than the block.
+        out.bandLive = everOver;
+        return out;
+      }, { names, steps });
+      const live = bad.bandLive; delete bad.bandLive;
+      for (const [what, rows] of Object.entries(bad)) {
+        if (rows.length) fail(`fit-${what}: ${rows.length} over the pane, e.g. ${JSON.stringify(rows.slice(0, 3))}`);
+        else ok(`fit-${what}: all ${what === "band" ? 24 : names.length} fit`);
+      }
+      if (!live) fail("fit-band-live: no untreated line is over the block — the sweep proves nothing");
+      else ok(`fit-band-live: ${live} of 24 untreated lines really are over the block`);
+    }
+    // 18. The log drawer's heading is not printed over by the log.
+    //
+    // A differential check rather than a colour one: if the heading and the
+    // log's first visible line share a row, the heading's row of pixels
+    // changes when the log's contents change. It must not (issue #521).
+    {
+      const same = await page.evaluate(() => {
+        const m = window.mtg;
+        const c = document.getElementById("game").getContext("2d");
+        const saved = m.view.display_log.slice();
+        const wasOpen = m.logOpen, wasScroll = m.logScroll;
+        m.logOpen = true; m.logScroll = 0;
+        const headingRow = () => {
+          window.mtgDebug.render();
+          return Array.from(c.getImageData(0, 360 - 119, 480, 9).data).join(",");
+        };
+        m.view.display_log = ["Game started (p1 on the play)"];
+        const withLog = headingRow();
+        m.view.display_log = [];
+        const empty = headingRow();
+        m.view.display_log = saved; m.logOpen = wasOpen; m.logScroll = wasScroll;
+        window.mtgDebug.render();
+        return { same: withLog === empty, len: withLog.length };
+      });
+      if (!same.same) fail("log-drawer-heading: the heading's row changes with the log's contents — they are drawn over each other");
+      else ok("log-drawer-heading: the heading has a row of its own");
+    }
+    // 19. A long list can be reached to its end, and says where you are.
+    //
+    // A 30-card library search drew eleven rows in the panel and neither
+    // drew nor mentioned the other nineteen — legal answers the engine had
+    // offered that a person could not send (issue #529).
+    {
+      // Distinct ids: the picker keys its options by id, so repeats collapse.
+      const thirty = ids.libraryMany.slice(0, 30);
+      const actions = thirty.map(id => rc({ ChosenCard: id }));
+      actions.push(rc({ ChosenTarget: null }));
+      if (await stage("library-pager", legal({ actions, resolution_prompt: { ChooseFromLibrary: { description: "Search your library for a card", options: thirty, searcher: ids.you, source_id: ids.mine[0], destination: "Hand", tapped: false } } }), null, "pick")) {
+        const page1 = await page.evaluate(() => {
+          window.mtgDebug.render();
+          return { rows: window.mtg.ui.rows.length, drawn: window.mtg.hits.filter(h => h.kind === "row").length, scroll: window.mtg.rowScroll || 0 };
+        });
+        if (page1.rows <= page1.drawn) fail(`library-pager: the list fits (${page1.rows} rows, ${page1.drawn} drawn) — nothing to page`);
+        else ok(`library-pager: ${page1.drawn} of ${page1.rows} drawn on the first page`);
+        // Wheel to the end. The renderer clamps, so overshooting is safe and
+        // the last row must be reachable.
+        const last = await page.evaluate(() => {
+          const m = window.mtg;
+          m.rowScroll = 9999;
+          window.mtgDebug.render();
+          return m.rowPage;
+        });
+        if (!last) fail("library-pager: the panel published no page");
+        else if (last.scroll + last.drawn !== last.total)
+          fail(`library-pager: the last page stops at ${last.scroll + last.drawn} of ${last.total}`);
+        else ok(`library-pager: the last page reaches row ${last.total} of ${last.total}`);
+        // And the wheel over the panel is what moves it.
+        await page.mouse.move(560 * 2, 300 * 2);
+        await page.mouse.wheel(0, -600);
+        await page.waitForTimeout(80);
+        const backUp = await page.evaluate(() => window.mtg.rowScroll || 0);
+        if (!last || backUp >= last.scroll) fail(`library-pager: wheeling up over the panel left scroll at ${backUp}`);
+        else ok(`library-pager: the wheel over the panel scrolls the rows (${last.scroll} → ${backUp})`);
+      }
+    }
+    // 20. Filtering a scrolled list does not empty it, and the footer says
+    // what is on screen (issue #530); and the input is where the modal
+    // painted its box (issue #531).
+    {
+      // Duplicates are fine here: a ChooseCardName row is one per index.
+      const names = ids.names;
+      if (names.length >= 25) {
+        const actions = names.map((n, i) => rc({ ChosenIndex: [i, n] }));
+        if (await stage("filter-after-scroll", legal({ actions, resolution_prompt: { ChooseCardName: { description: "Choose a card name", options: names, source_id: ids.mine[0] } } }), null, "list")) {
+          // A query that matches something, chosen from the rows themselves.
+          const q = names[names.length - 1].slice(0, 4);
+          const res = await page.evaluate((q) => {
+            const m = window.mtg;
+            m.ui.scroll = 10;                   // as the wheel would leave it
+            m.ui.query = q;                     // then a filter narrows the list
+            window.mtgDebug.render();
+            const matches = m.ui.rows.filter(r => r.label.toLowerCase().includes(q.toLowerCase())).length;
+            return { drawn: m.hits.filter(h => h.kind === "row").length, matches, scroll: m.ui.scroll };
+          }, q);
+          if (res.matches === 0) fail(`filter-after-scroll: the probe filter "${q}" matched nothing`);
+          else if (res.drawn === 0) fail(`filter-after-scroll: ${res.matches} rows match "${q}" and none was drawn (scroll ${res.scroll})`);
+          else ok(`filter-after-scroll: ${res.drawn} of ${res.matches} matching rows drawn, scroll clamped to ${res.scroll}`);
+
+          // The DOM input sits over the box the modal painted, not at the
+          // top of the canvas over the opponent's life strip.
+          const field = await page.evaluate(() => {
+            const m = window.mtg;
+            const el = document.querySelector("input");
+            const r = document.getElementById("game").getBoundingClientRect();
+            const b = el.getBoundingClientRect();
+            return { field: [(b.left - r.left) / m.scale, (b.top - r.top) / m.scale],
+                     painted: m.fieldRect ? [m.fieldRect.x, m.fieldRect.y] : null };
+          });
+          if (!field.painted) fail("filter-box: the modal published no field rectangle");
+          else if (Math.abs(field.field[0] - field.painted[0]) > 2 || Math.abs(field.field[1] - field.painted[1]) > 2)
+            fail(`filter-box: the input is at ${JSON.stringify(field.field)} and the painted box at ${JSON.stringify(field.painted)}`);
+          else ok(`filter-box: the input is over the painted box at ${JSON.stringify(field.painted)}`);
+        }
+      } else fail(`only ${names.length} library rows to build a pageable list from`);
+    }
+    // 21. The engine's p0/p1 in the page's vocabulary, and an outcome line
+    // a person who only ever saw the browser can read (issue #519).
+    {
+      const r = await page.evaluate(() => {
+        const you = window.mtg.view.you, opp = window.mtg.view.opponents[0].id;
+        const w = window.mtgDebug.words;
+        return {
+          you, opp,
+          started: w(`Game started (p${opp} on the play)`),
+          drew: w(`p${you} drew 7 cards`),
+          banner: w(`\u2500\u2500 Turn 5 (p${opp}) \u2500\u2500`),
+          attack: w(`p${opp} declared attackers: Walking Corpse (#66) -> p${you}`),
+          stranger: w("p7 did something"),
+          card: w("Doom Blade (#75) resolved"),
+          win: window.mtgDebug.outcome(`Game over! p${you} (red-green) wins! (p${opp} (white-black) lost the game: life total reached 0 (CR 704.5a))`),
+          lose: window.mtgDebug.outcome(`Game over! p${opp} (white-black) wins! (p${you} (red-green) conceded)`),
+          draw: window.mtgDebug.outcome("Game over! It's a draw! (both players lost)"),
+          odd: window.mtgDebug.outcome("Game ended without a result."),
+        };
+      });
+      const want = [
+        ["started", `Game started (opp on the play)`],
+        ["drew", "you drew 7 cards"],
+        ["banner", "\u2500\u2500 Turn 5 (opp) \u2500\u2500"],
+        ["attack", "opp declared attackers: Walking Corpse (#66) -> you"],
+        ["stranger", "p7 did something"],
+        ["card", "Doom Blade (#75) resolved"],
+        ["win", "YOU WIN"],
+        ["lose", "OPPONENT WINS"],
+        ["draw", "A DRAW"],
+        ["odd", null],
+      ];
+      for (const [k, v] of want) {
+        if (r[k] !== v) fail(`seat-vocabulary ${k}: got ${JSON.stringify(r[k])}, expected ${JSON.stringify(v)}`);
+        else ok(`seat-vocabulary ${k} → ${JSON.stringify(r[k])}`);
+      }
+    }
+    // 22. The band reports what happened since the page last stopped for
+    // the player, not the last two lines of the log (issue #523).
+    {
+      const r = await page.evaluate(() => {
+        const m = window.mtg;
+        const saved = m.view.display_log.slice();
+        const since = m.logSince, seen = m.logSeen;
+        const out = {};
+        const at = (log, from) => { m.view.display_log = log; m.logSince = from; return window.mtgDebug.band(); };
+        const eight = ["\u2500\u2500 Turn 5 (p1) \u2500\u2500", "p1 tapped Swamp (#51) for mana", "p1 tapped Plains (#41) for mana",
+          "p1 cast Doom Blade (#75) targeting Grizzly Bears (#27)", "Doom Blade (#75) resolved",
+          "Grizzly Bears (#27) died", "p1 drew a card", "p1 declared attackers: Walking Corpse (#66) -> p0"];
+        out.wholeTurn = at(["older", "lines"].concat(eight), 2);
+        out.two = at(["older"].concat(eight.slice(-2)), 1);
+        out.one = at(["older"].concat(eight.slice(-1)), 1);
+        out.none = at(["older"].concat(eight.slice(-2)), 3);
+        m.view.display_log = saved; m.logSince = since; m.logSeen = seen;
+        return out;
+      });
+      // Eight new lines in two rows: where the interval began, how much is
+      // missing, and where it ended.
+      if (r.wholeTurn.length !== 2 || !/Turn 5/.test(r.wholeTurn[0]) || !/^\+6 · /.test(r.wholeTurn[1]) || !/declared attackers/.test(r.wholeTurn[1]))
+        fail(`band-recap wholeTurn: ${JSON.stringify(r.wholeTurn)}`);
+      else ok(`band-recap wholeTurn → ${JSON.stringify(r.wholeTurn)}`);
+      if (r.two.length !== 2 || /^\+/.test(r.two[1])) fail(`band-recap two: ${JSON.stringify(r.two)}`);
+      else ok(`band-recap two: both shown, uncounted`);
+      if (r.one.length !== 1) fail(`band-recap one: ${JSON.stringify(r.one)}`);
+      else ok("band-recap one: the single new line");
+      // Nothing new since the last stop: the band is not left blank.
+      if (r.none.length === 0) fail("band-recap none: the band went blank while sitting at a prompt");
+      else ok(`band-recap none: falls back to the last lines (${r.none.length})`);
+    }
+    // 23. The battlefield row has a fit contract: identical permanents
+    // collapse, the row never reaches past the pane, and nothing off the
+    // pane answers a click (issue #513).
+    {
+      const sweep = await page.evaluate(() => {
+        const m = window.mtg, you = m.view.you;
+        const proto = m.view.battlefield.find(p => p.controller === you && p.card_types.includes("Creature"));
+        if (!proto) return null;
+        const others = m.view.battlefield.filter(p => p !== proto);
+        const rows = [];
+        for (const distinct of [false, true]) {
+          for (const n of [1, 12, 30, 44, 45, 46, 60, 108]) {
+            const clones = [];
+            for (let i = 0; i < n; i++) clones.push(Object.assign({}, proto, {
+              object_id: 90000 + i, name: distinct ? `Creature ${i}` : proto.name }));
+            m.view.battlefield = others.concat(clones);
+            window.mtgDebug.render();
+            const perms = m.hits.filter(h => h.kind === "perm" && h.id >= 90000);
+            const maxRight = perms.length ? Math.max(...perms.map(h => h.x + h.w)) : 0;
+            rows.push({ distinct, n, drawn: perms.length, maxRight,
+                        offPane: perms.filter(h => h.x + h.w > 480).length });
+          }
+        }
+        m.view.battlefield = others.concat([proto]);
+        window.mtgDebug.render();
+        return rows;
+      });
+      if (!sweep) fail("board-fit: no creature on the board to clone");
+      else {
+        const over = sweep.filter(r => r.maxRight > 480);
+        if (over.length) fail(`board-fit: the row reaches past the pane: ${JSON.stringify(over.slice(0, 3))}`);
+        else ok(`board-fit: every row of up to 108 ends inside the pane (widest ${Math.max(...sweep.map(r => r.maxRight))})`);
+        const clickable = sweep.filter(r => r.offPane);
+        if (clickable.length) fail(`board-fit: ${JSON.stringify(clickable.slice(0, 3))} answer clicks from under the panel`);
+        else ok("board-fit: nothing off the pane answers a click");
+        const same = sweep.filter(r => !r.distinct);
+        if (same.some(r => r.drawn !== 1)) fail(`board-fit: identical permanents did not collapse: ${JSON.stringify(same)}`);
+        else ok("board-fit: 108 identical tokens are one stack");
+        // And distinct permanents are still drawn, not collapsed away.
+        const twelve = sweep.find(r => r.distinct && r.n === 12);
+        if (!twelve || twelve.drawn !== 12) fail(`board-fit: 12 distinct creatures drew ${twelve && twelve.drawn}`);
+        else ok("board-fit: 12 distinct creatures are 12 cards");
       }
     }
     if (errors.length) fail("page errors:\n" + errors.join("\n"));

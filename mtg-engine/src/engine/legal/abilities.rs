@@ -62,6 +62,32 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
             }
         }
 
+        // Two Skeletal Grimaces on one Walking Corpse really do grant two
+        // separate "{B}: Regenerate this creature" abilities (CR 113.8) — but
+        // they are one *offer*. An `ActivateAbility` names the permanent, the
+        // ability index and the granting card, and nothing else, so both
+        // grants build the byte-identical action and the menu carried it
+        // twice. `legal.actions` is a menu, not a multiset
+        // (`invariants/legal.rs`, `distinct_offers`), and
+        // `legal.activatable_abilities` already collapses the pair on
+        // `(object_id, source_card_id, ability_index)` — so the two halves of
+        // `LegalActions` disagreed about how many abilities were on offer,
+        // and the duplicate row made a random seat twice as likely to
+        // regenerate as to do anything else (issue #533).
+        //
+        // Deduping here rather than over the finished action list is the same
+        // rule the mana-ability loop above and the land-play loop below
+        // already apply: the offer is keyed by what the action carries.
+        let mut seen_grants: Vec<(CardId, usize)> = Vec::new();
+        abilities.retain(|(source_card_id, ab)| {
+            let key = (*source_card_id, ab.ability_index);
+            if seen_grants.contains(&key) {
+                return false;
+            }
+            seen_grants.push(key);
+            true
+        });
+
         for (source_card_id, ab) in abilities {
             // Check mana cost. For X-cost abilities, check that non-X portion is affordable.
             // We use compute_autotap (mirroring spell casting) so abilities with mana costs

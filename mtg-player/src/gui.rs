@@ -53,6 +53,17 @@ enum Outbound<'a> {
     View { seat: PlayerId, view: &'a GameView },
     /// An answer was refused; the decision it was for stands.
     Notice { seq: u64, text: String },
+    /// Decision `seq` has been answered. Every connection holds the same
+    /// decision, and only one of them answers it; without this the others
+    /// kept the answered prompt live and clickable, so a person at a second
+    /// tab could make a real decision — a mulligan — that was dropped as
+    /// stale and read on screen as accepted (issue #516).
+    Answered { seq: u64 },
+    /// The seat's settings, which belong to the seat and not to a page.
+    /// "Stop at every priority" used to be per page while the auto-answer
+    /// it governs is also per page, so a second tab passed the priorities
+    /// the first was deliberately holding (issue #515).
+    Settings { stop_at_pass: bool, auto_pass_since_turn: Option<u32> },
     /// The game is over.
     GameOver { seat: PlayerId, view: &'a GameView, summary: String },
 }
@@ -65,6 +76,9 @@ enum Inbound {
     Hello,
     /// The answer to decision `seq`.
     Action { seq: u64, action: serde_json::Value },
+    /// A page changed a seat setting; it applies to the seat, so it is
+    /// recorded here and broadcast to every other page (issue #515).
+    Settings { stop_at_pass: bool, auto_pass_since_turn: Option<u32> },
 }
 
 /// What a connection thread hands the seat: an answer to a decision.
@@ -82,6 +96,8 @@ struct Shared {
     clients: Mutex<Vec<mpsc::Sender<String>>>,
     answers: mpsc::Sender<Answer>,
     web_dir: PathBuf,
+    /// The seat's settings, shared by every page attached to it.
+    settings: Mutex<(bool, Option<u32>)>,
 }
 
 impl Shared {
@@ -138,6 +154,7 @@ impl GuiPlayer {
             clients: Mutex::new(Vec::new()),
             answers: answer_tx,
             web_dir,
+            settings: Mutex::new((false, None)),
         });
         let accept_shared = Arc::clone(&shared);
         thread::Builder::new().name("gui-accept".into()).spawn(move || {
@@ -203,7 +220,16 @@ impl GuiPlayer {
                 Ok(Action::AbandonGame) => {
                     self.notice(seq, "AbandonGame is the harness's, not a player's");
                 }
-                Ok(action) => return action,
+                Ok(action) => {
+                    // Every other page is holding this same decision. Tell
+                    // them it is taken, before the next board arrives, so
+                    // none of them leaves a live prompt over a game that has
+                    // moved on (issue #516).
+                    if let Ok(msg) = serde_json::to_string(&Outbound::Answered { seq }) {
+                        self.shared.broadcast(&msg);
+                    }
+                    return action;
+                }
                 Err(e) => self.notice(seq, &format!("not an action: {e}")),
             }
         }
@@ -217,6 +243,15 @@ impl GuiPlayer {
 
     /// Declare attackers or blockers.
     pub fn choose_combat(&mut self, view: &GameView, legal: &LegalActions, prompt: &CombatPrompt) -> Action {
+        // A combat prompt with one legal answer is never put to the page.
+        // The seat is deliberately the thinnest of the four and sends the
+        // engine's types as they are — but a prompt with nothing eligible is
+        // not a thin rendering of a question, it is a screen reading "CLICK
+        // CREATURES TO ATTACK WITH" over a board with nothing to click. One
+        // rule, shared with the other three seats (issue #517).
+        if let Some(forced) = crate::forced_combat_answer(prompt) {
+            return forced;
+        }
         self.ask(view, legal, Some(prompt))
     }
 }
@@ -317,12 +352,34 @@ fn serve_websocket(stream: TcpStream, shared: &Shared) {
             Ok(tungstenite::Message::Text(text)) => {
                 match serde_json::from_str::<Inbound>(&text) {
                     Ok(Inbound::Hello) => {
+                        // The seat's settings first: a page that joins a
+                        // seat which is stopping at every priority must not
+                        // spend its first decision auto-passing (#515).
+                        let (stop, since) = *shared.settings.lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        if let Ok(msg) = serde_json::to_string(&Outbound::Settings {
+                            stop_at_pass: stop, auto_pass_since_turn: since })
+                        {
+                            if ws.send(tungstenite::Message::Text(msg.into())).is_err() {
+                                return;
+                            }
+                        }
                         let latest = shared.latest.lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner).clone();
                         if let Some(msg) = latest {
                             if ws.send(tungstenite::Message::Text(msg.into())).is_err() {
                                 return;
                             }
+                        }
+                    }
+                    Ok(Inbound::Settings { stop_at_pass, auto_pass_since_turn }) => {
+                        *shared.settings.lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+                            (stop_at_pass, auto_pass_since_turn);
+                        if let Ok(msg) = serde_json::to_string(&Outbound::Settings {
+                            stop_at_pass, auto_pass_since_turn })
+                        {
+                            shared.broadcast(&msg);
                         }
                     }
                     Ok(Inbound::Action { seq, action }) => {

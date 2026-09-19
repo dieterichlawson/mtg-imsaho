@@ -753,6 +753,20 @@ impl ClaudeCodeDraftBackend {
                     if let Some(sid) = json["session_id"].as_str() {
                         // The id the CLI reports is authoritative; on the
                         // first call it is the one we asked for.
+                        //
+                        // Written down the first time it is seen. A seat
+                        // mints a fresh uuid per conversation and `--resume`s
+                        // it for the rest of the draft, and none of them
+                        // appeared in the log, the snapshot, or on stderr —
+                        // so the CLI's own transcript of a seat's 42 picks
+                        // existed and was unfindable, and "were these calls
+                        // one session?" could only be answered by re-running
+                        // the draft under a wrapper (issue #542).
+                        if self.session_id.as_deref() != Some(sid) {
+                            mtg_player::game_log::write_at(
+                                mtg_player::game_log::LogLevel::Info,
+                                file!(), line!(), "SESSION", sid);
+                        }
                         self.session_id = Some(sid.to_string());
                     }
                     let usage = &json["usage"];

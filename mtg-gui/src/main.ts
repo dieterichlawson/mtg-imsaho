@@ -1,8 +1,8 @@
 // The page: one WebSocket to the seat, one canvas, one state object.
 
-import { loadManifest, fontsReady } from "./assets.js";
-import { render, W, H, PANEL_X } from "./render.js";
-import { beginDecision, indexView, beginList } from "./prompts.js";
+import { loadManifest, fontsReady, artNames } from "./assets.js";
+import { render, inspecting, inspectorFacts, inspectorPt, wrap, wrapCapped, bandTurnLine, bandLogLines, clampScroll, outcomeHeadline, BAND_W, W, H, PANEL_X } from "./render.js";
+import { beginDecision, indexView, beginList, inOurWords } from "./prompts.js";
 import type { Action, ClientMessage, Decision, GameView, ServerMessage } from "./protocol.js";
 import type { Hit, LiveState, Row, State } from "./state.js";
 
@@ -22,9 +22,31 @@ const state: State = {
 };
 
 /** What tests and the console see. */
+interface Inspected { name: string; zone: string; facts: string[]; pt: string[] }
 interface DebugHook {
   stage(decision: Decision): void;
   render(): number;
+  /** What the inspector would say about the thing at `key`, as text. */
+  inspect(key: string, kind?: string): Inspected | null;
+  /** The same, about whatever `state.hover` currently is. Two stack chips
+   *  share a key, so a key is not enough to tell them apart — which is the
+   *  thing being tested. */
+  inspectHover(): Inspected | null;
+  /** The card names a stack item's display name could be art for. */
+  artNames(name: string): string[];
+  /** The band's two log lines, for the recap tests. */
+  band(): string[];
+  /** The engine's words in the page's vocabulary, and the outcome line. */
+  words(line: string): string;
+  outcome(summary: string): string | null;
+  /** The page's own text fitting, for the sweep in the tests. */
+  fit: {
+    wrap(s: string, maxW: number, font: string): string[];
+    wrapCapped(s: string, maxW: number, font: string, maxLines: number): string[];
+    width(s: string, font: string): number;
+    bandLine(mine: boolean, step: string): string;
+    bandW: number;
+  };
   sent: { seq: number; action: Action }[];
   /** One line per decision received: what it was and how it was handled. */
   trace: string[];
@@ -86,6 +108,8 @@ function onMessage(msg: ServerMessage): void {
     case "decision": {
       setView(msg.view);
       state.decision = { seq: msg.seq, legal: msg.legal, combat: msg.combat };
+      // A new question starts at the top of its list (issue #529).
+      state.rowScroll = 0;
       state.popover = null; state.overlay = null;
       const actions = msg.legal.actions || [];
       // Only Pass and Concede on offer: nothing to decide, as in the CLI.
@@ -96,10 +120,35 @@ function onMessage(msg: ServerMessage): void {
       if (onlyPass && !state.stopAtPass) { window.mtgDebug.trace.push(`${what}: only pass`); send("PassPriority"); return; }
       beginDecision(state as LiveState, send);
       if (autoPassDecides()) { window.mtgDebug.trace.push(`${what}: auto-passed`); return; }
+      // Past here the page is stopping and a person will read this frame.
+      // That is the point the band's recap is measured from: everything
+      // since the PREVIOUS stop is what they have not seen (issue #523).
+      // The two branches above return without touching these, which is how
+      // an interval of ten auto-answered priorities stays one interval.
+      state.logSince = state.logSeen ?? 0;
+      state.logSeen = v.display_log.length;
       window.mtgDebug.trace.push(`${what}: ${state.ui ? state.ui.mode : "?"}`);
       syncField();
       break;
     }
+    case "answered":
+      // Another page on this seat answered the decision we are holding
+      // (or we did). Stop offering it: the board is about to move, and a
+      // click here would be dropped as stale and read as accepted
+      // (issue #516).
+      if (state.decision && state.decision.seq === msg.seq) {
+        const ours = !!(state.lastSent && state.lastSent.seq === msg.seq);
+        state.decision = null; state.ui = null; state.popover = null;
+        if (!ours) state.notice = "Answered in another tab.";
+        hideField();
+      }
+      break;
+    case "settings":
+      // The seat's settings, not this page's. Applied without echoing them
+      // back, or two tabs would bounce the message between them.
+      state.stopAtPass = msg.stop_at_pass;
+      state.autoPass = msg.auto_pass_since_turn === null ? null : { sinceTurn: msg.auto_pass_since_turn };
+      break;
     case "notice":
       state.notice = msg.text;
       // The decision stands; if we had cleared it on send, ask again.
@@ -134,6 +183,7 @@ function autoPassDecides(): boolean {
   if (stop) {
     state.autoPass = null;
     state.notice = ui.mode !== "menu" ? "Auto-pass off: you are asked something." : v.stack.length > 0 ? "Auto-pass off: something is on the stack." : "Auto-pass off: your main phase.";
+    pushSettings();
     return false;
   }
   send("PassPriority");
@@ -142,12 +192,29 @@ function autoPassDecides(): boolean {
 
 function toggleAutoPass(): void {
   const v = state.view; const ui = state.ui;
-  if (state.autoPass) { state.autoPass = null; state.notice = "Auto-pass off."; return; }
+  if (state.autoPass) { state.autoPass = null; state.notice = "Auto-pass off."; pushSettings(); return; }
   if (!v) return;
   if (!ui || ui.mode !== "menu" || !ui.canPass) { state.notice = "Auto-pass passes priority, and this is not a pass."; return; }
   state.autoPass = { sinceTurn: v.turn_number };
   state.notice = null;
+  pushSettings();
   send("PassPriority");
+}
+
+/**
+ * Tell the seat what this page just decided about how the seat behaves.
+ *
+ * `s` and `f` both govern whether a page answers a priority *for* the
+ * player. That is a decision on behalf of the seat, and a seat has one
+ * state however many pages are attached to it: a second tab used to
+ * auto-pass the priorities the first was deliberately holding, because its
+ * own `stopAtPass` was false and nothing told it otherwise (issue #515).
+ * The seat holds the setting and echoes it to every page, including this
+ * one, which is also what a page joining later is handed on `hello`.
+ */
+function pushSettings(): void {
+  sendRaw({ type: "settings", stop_at_pass: !!state.stopAtPass,
+    auto_pass_since_turn: state.autoPass ? state.autoPass.sinceTurn : null });
 }
 
 // ----------------------------------------------------------------- input
@@ -219,8 +286,23 @@ canvas.addEventListener("contextmenu", (ev) => {
 
 canvas.addEventListener("wheel", (ev) => {
   const ui = state.ui;
+  const over = canvasPoint(ev);
+  // Over the prompt panel, the wheel scrolls the panel's row list. The
+  // renderer owns the clamp — it is the only thing that knows how many rows
+  // fit under the title, the hint and the buttons — so this only moves the
+  // number and lets the next frame pull it back into range (issue #529).
+  if (over.x >= PANEL_X && ui && ((ui.rows && ui.rows.length) || (ui.looseRows && ui.looseRows.length))
+      && ui.mode !== "list" && ui.mode !== "order" && ui.mode !== "number") {
+    state.rowScroll = Math.max(0, (state.rowScroll || 0) + Math.sign(ev.deltaY) * 3);
+    ev.preventDefault();
+    draw();
+    return;
+  }
   if (ui && ui.mode === "list" && ui.rows) {
-    ui.scroll = Math.max(0, Math.min(Math.max(0, ui.rows.length - 20), (ui.scroll || 0) + Math.sign(ev.deltaY) * 3));
+    // Clamped against the rows the modal will draw, filter applied — not
+    // against the unfiltered count, which is how a scrolled list could be
+    // filtered into an empty box (issue #530).
+    ui.scroll = clampScroll(ui, (ui.scroll || 0) + Math.sign(ev.deltaY) * 3);
   } else if (state.logOpen) {
     state.logScroll = Math.max(0, state.logScroll - Math.sign(ev.deltaY) * 2);
   }
@@ -253,7 +335,11 @@ window.addEventListener("keydown", (ev) => {
     case "G": if (v && v.opponents[0]) toggleZone("graveyard", v.opponents[0].id); break;
     case "e": if (v) toggleZone("exile", v.you); break;
     case "d": if (v) toggleZone("library", v.you); break;
-    case "s": state.stopAtPass = !state.stopAtPass; state.notice = state.stopAtPass ? "Stopping at every priority." : "Passing automatically when there is nothing to do."; break;
+    case "s":
+      state.stopAtPass = !state.stopAtPass;
+      state.notice = state.stopAtPass ? "Stopping at every priority." : "Passing automatically when there is nothing to do.";
+      pushSettings();
+      break;
     case "f": toggleAutoPass(); break;
     default: return;
   }
@@ -271,14 +357,24 @@ function syncField(): void {
   const wants = ui && ((ui.mode === "list" && ui.filter) || ui.mode === "number");
   if (!wants || !ui) { hideField(); return; }
   const r = canvas.getBoundingClientRect();
+  // Over the frame the modal painted for it, not at a fixed spot near the
+  // top of the canvas. The two used to be different rectangles, so the page
+  // showed two filter boxes — one over the opponent's life strip that took
+  // the typing, and an inert "type to filter…" in the middle of the modal
+  // that looked like the thing to click (issue #531). `modal()` publishes
+  // its rectangle the way `render` publishes hit rectangles; the fallback
+  // is the old position, for the frame before the modal has been drawn.
+  const box = state.fieldRect ?? { x: PANEL_X / 2 - 150 + 6, y: 4, w: 280, h: 12 };
   field.style.display = "block";
-  field.style.left = `${r.left + (PANEL_X / 2 - 150 + 6) * state.scale}px`;
-  field.style.top = `${r.top + 4 * state.scale}px`;
-  field.style.width = `${280 * state.scale}px`;
+  field.style.left = `${r.left + box.x * state.scale}px`;
+  field.style.top = `${r.top + box.y * state.scale}px`;
+  field.style.width = `${box.w * state.scale}px`;
+  field.style.height = `${box.h * state.scale}px`;
   field.style.fontSize = `${8 * state.scale}px`;
-  field.value = ui.mode === "number" ? (ui.value ?? "") : (ui.query ?? "");
+  const want = ui.mode === "number" ? (ui.value ?? "") : (ui.query ?? "");
+  if (field.value !== want) field.value = want;
   field.placeholder = ui.mode === "number" ? `X (0-${ui.max})` : "filter";
-  field.focus();
+  if (document.activeElement !== field) field.focus();
 }
 function hideField(): void { field.style.display = "none"; field.value = ""; }
 field.addEventListener("input", () => {
@@ -298,6 +394,10 @@ function draw(): void {
   requestAnimationFrame(() => {
     pending = false;
     try { state.hits = render(ctx, state); } catch (e) { console.error(e); }
+    // The modal's geometry depends on how many rows survive the filter, so
+    // it moves as a person types; the input has to follow it rather than
+    // sit where the modal was when the prompt opened (issue #531).
+    syncField();
   });
 }
 state.draw = draw;
@@ -320,11 +420,44 @@ window.mtgDebug = {
     const l = live();
     if (!l) throw new Error("no view to stage a decision over");
     state.decision = decision; state.lastDecision = decision; state.popover = null; state.overlay = null; state.notice = null;
+    state.rowScroll = 0;
     beginDecision(l, send);
     syncField();
     state.hits = render(ctx, state);
   },
-  render() { state.hits = render(ctx, state); return state.hits.length; },
+  render() { state.hits = render(ctx, state); syncField(); return state.hits.length; },
+  inspect(key, kind) {
+    const l = live();
+    if (!l) return null;
+    // A test may have edited the view in place; the index is derived from
+    // it, so derive it again rather than reading a stale one.
+    state.index = indexView(l.view);
+    state.hits = render(ctx, state);
+    const hit = state.hits.slice().reverse().find(h => h.key === key && (!kind || h.kind === kind));
+    if (!hit) return null;
+    const was = state.hover;
+    state.hover = hit;
+    const out = this.inspectHover();
+    state.hover = was;
+    return out;
+  },
+  inspectHover() {
+    const l = live();
+    if (!l) return null;
+    const e = inspecting(l);
+    return e ? { name: e.obj.name, zone: e.zone, facts: inspectorFacts(l, e), pt: inspectorPt(e.obj) } : null;
+  },
+  artNames,
+  band: () => { const l = live(); return l ? bandLogLines(l) : []; },
+  words: (line) => { const l = live(); return l ? inOurWords(l, line) : line; },
+  outcome: (summary) => { const l = live(); return l ? outcomeHeadline(l, summary) : null; },
+  fit: {
+    wrap: (s, maxW, font) => wrap(ctx, s, maxW, font),
+    wrapCapped: (s, maxW, font, maxLines) => wrapCapped(ctx, s, maxW, font, maxLines),
+    width: (s, font) => { ctx.font = font; return ctx.measureText(s).width; },
+    bandLine: (mine, step) => bandTurnLine(ctx, mine, step as never),
+    bandW: BAND_W,
+  },
   sent: [],
   trace: [],
 };

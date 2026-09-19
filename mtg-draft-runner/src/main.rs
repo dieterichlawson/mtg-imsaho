@@ -96,6 +96,14 @@ draft and the games.";
 /// A user error: report it and exit without a Rust panic/backtrace.
 fn die(msg: &str) -> ! {
     eprintln!("Error: {msg}");
+    // `process::exit` runs no destructors and raises no signal, so nothing
+    // else takes this run's in-flight `claude -p` subprocesses down with
+    // it. Every other seat is mid-call when one seat fatals — all seats
+    // pick in parallel and the joins are walked in seat order — and each
+    // one kept its whole process tree, orphaned to init and still spending
+    // against a draft that had stopped (issue #537). Ctrl-C has swept them
+    // since #206; the fatal path now sweeps the same registry.
+    mtg_player::llm::claude_code_kill_live_calls();
     std::process::exit(1);
 }
 
@@ -128,6 +136,19 @@ fn install_panic_hook() {
 /// `context` says where the run stopped — the seat, and the pack and pick
 /// it was on — which the payload itself does not know.
 fn report_worker_failure(payload: &Box<dyn std::any::Any + Send>, context: &str) -> ! {
+    // The first seat to get here is the one whose account the operator
+    // reads; the rest are about to be killed with the process and have
+    // nothing to add. Without this, two seats failing at once would race
+    // each other to stderr with two accounts of one stop.
+    // Whatever this worker was holding back for the deterministic flush is
+    // owed to the log now: `process::exit` will not come back for it.
+    mtg_player::game_log::flush_here();
+    static REPORTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if REPORTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        }
+    }
     let msg = payload
         .downcast_ref::<String>()
         .map(String::as_str)
@@ -135,6 +156,53 @@ fn report_worker_failure(payload: &Box<dyn std::any::Any + Send>, context: &str)
         .unwrap_or("worker thread failed");
     let msg = msg.strip_prefix(llm_client::FATAL_MARKER).unwrap_or(msg);
     die(&format!("{context}: {msg}"));
+}
+
+/// Run one seat's work, reporting a fatal failure where and when it happens.
+///
+/// The join loop used to be what discovered a failure, and that made the
+/// run's account of what broke wrong in two ways (issue #539).
+///
+/// `handles.into_iter().enumerate()` walks seats 0, 1, 2, … and the first
+/// `Err` ends the process, so the operator was told about the
+/// *lowest-numbered* failed seat rather than the one that actually broke.
+/// That is frequently the derived failure and not the real one: a seat that
+/// merely timed out gets the headline while the seat that failed outright,
+/// first, and for a nameable reason is not mentioned at all.
+///
+/// And a fatal in seat N was not printed until seats 0..N-1 had returned, so
+/// a perfectly healthy but slow seat 0 held the whole run silent — with
+/// shipped defaults, up to ten minutes of a run that was already dead,
+/// showing nothing but `Pack 1 Pick 1/14`.
+///
+/// Reporting from the failing worker makes the first failure *by the clock*
+/// the one that is reported, and makes it arrive when it happens. The join
+/// arms stay as a backstop for a panic this never saw.
+fn in_seat<T>(context: &str, body: impl FnOnce() -> T) -> T {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(body)) {
+        Ok(value) => value,
+        Err(payload) => report_worker_failure(&payload, context),
+    }
+}
+
+/// Spawn a scoped worker whose thread is named for the seat it is.
+///
+/// Every line `game_log` writes carries the thread it came from, and for a
+/// seat's own records — `API_FATAL`, `API_ERROR`, and the tournament's
+/// whole LLM round trip — that was a bare `t5`, the one identifier that
+/// means nothing to anybody. After a real run stopped there was no way back
+/// from the log to the seat whose account or session was the broken one
+/// (issues #539, #542). Naming the thread labels every line it writes, at
+/// the one place a worker is created rather than at each call site.
+fn spawn_seat<'scope, 'env, T: Send + 'scope>(
+    s: &'scope std::thread::Scope<'scope, 'env>,
+    name: String,
+    body: impl FnOnce() -> T + Send + 'scope,
+) -> std::thread::ScopedJoinHandle<'scope, T> {
+    std::thread::Builder::new()
+        .name(name)
+        .spawn_scoped(s, body)
+        .expect("a worker thread")
 }
 
 struct Args {
@@ -391,6 +459,23 @@ fn validate_model_specs(models: &[String]) {
                         "seat {i} model '{spec}' needs the Claude Code CLI: `{}` is not runnable (set {} to its path)",
                         mtg_player::llm::claude_code_binary(),
                         mtg_player::llm::CLAUDE_CODE_BINARY_ENV
+                    ));
+                }
+                // Every seat calls at once — picks, deck builds, and a
+                // tournament round's `players / 2` matches of two seats —
+                // so the run's concurrency is its seat count, and the
+                // Ctrl-C handler's registry has to be able to hold all of
+                // it. A call that does not fit runs outside the handler and
+                // is orphaned by an interrupt, which is what #538 cost at
+                // the DEFAULT `--players 8` against a registry of 4. The
+                // bound is checked here, before anything is spent, for the
+                // same reason the binary is.
+                if models.len() > mtg_player::llm::CLAUDE_CODE_MAX_LIVE_CALLS {
+                    die(&format!(
+                        "--players {} is more claude-code seats than can be taken down on Ctrl-C (limit {}); \
+                         past that a seat's `claude -p` call would be orphaned by an interrupt",
+                        models.len(),
+                        mtg_player::llm::CLAUDE_CODE_MAX_LIVE_CALLS
                     ));
                 }
                 continue;
@@ -666,22 +751,33 @@ fn main() {
                         .zip(clients.iter_mut())
                         .map(|((seat, available, pool), client)| {
                             let seat = *seat;
-                            s.spawn(move || {
-                                let prompt = crate::llm_client::DraftLlmClient::build_pick_prompt(
-                                    table_for(seat),
+                            spawn_seat(s, format!("seat {seat}"), move || {
+                                let context = format!(
+                                    "seat {seat} could not make pack {} pick {}",
                                     round + 1,
-                                    pick_num + 1,
-                                    available,
-                                    pool,
-                                    card_lines,
+                                    pick_num + 1
                                 );
-                                let response = client.send_pick_message(&prompt, available.len());
-                                let chosen = parse_pick_response(&response, available);
-                                (seat, chosen, prompt, response)
+                                in_seat(&context, move || {
+                                    let prompt = crate::llm_client::DraftLlmClient::build_pick_prompt(
+                                        table_for(seat),
+                                        round + 1,
+                                        pick_num + 1,
+                                        available,
+                                        pool,
+                                        card_lines,
+                                    );
+                                    let response =
+                                        client.send_pick_message(&prompt, available.len());
+                                    let chosen = parse_pick_response(&response, available);
+                                    (seat, chosen, prompt, response)
+                                })
                             })
                         })
                         .collect();
 
+                    // `in_seat` has already reported and exited for any
+                    // panic inside a worker's body, so this arm is a
+                    // backstop for one raised outside it.
                     handles
                         .into_iter()
                         .enumerate()
@@ -689,11 +785,7 @@ fn main() {
                             Ok(result) => result,
                             Err(payload) => report_worker_failure(
                                 &payload,
-                                &format!(
-                                    "seat {seat} could not make pack {} pick {}",
-                                    round + 1,
-                                    pick_num + 1
-                                ),
+                                &format!("seat {seat}'s pick worker failed"),
                             ),
                         })
                         .collect()
@@ -764,6 +856,14 @@ substituting {} (the first card). Response: {}",
     // concurrent writes from different workers are safe. Per-seat
     // entries may interleave in wall-clock order; each entry carries a
     // `[Seat N]` label so grep-by-seat still works.
+    //
+    // That interleave is the run's record disagreeing with the run: two
+    // `--seed 41` runs replay the same packs, picks, decks and games and
+    // then write logs that differ in a thousand places, because the order
+    // is the scheduler's (issue #541). Each worker now holds its records
+    // and they are written back in seat order, the way the pick loop above
+    // has always done it. An `Error` record is not held — see
+    // `game_log::buffer_here`.
     let pools: Vec<Vec<String>> = draft.players.iter().map(|p| p.pool.clone()).collect();
 
     let deck_results: Vec<DeckBuildResult> = std::thread::scope(|s| {
@@ -774,7 +874,10 @@ substituting {} (the first card). Response: {}",
             .iter_mut()
             .zip(pools.iter())
             .enumerate()
-            .map(|(seat, (client, pool))| s.spawn(move || {
+            .map(|(seat, (client, pool))| spawn_seat(s, format!("seat {seat}"), move || {
+                let context = format!("seat {seat} could not build its deck");
+                in_seat(&context, move || {
+                mtg_player::game_log::buffer_here();
                 let result = build_deck_with_llm(client, pool, registry_ref, card_lines_ref);
                 let attempts: Vec<(&str, &str, Option<&str>)> = result
                     .attempts
@@ -790,7 +893,8 @@ substituting {} (the first card). Response: {}",
                     result.retries,
                     result.fallback,
                 );
-                result
+                (result, mtg_player::game_log::take_buffered())
+                })
             }))
             .collect();
 
@@ -798,9 +902,12 @@ substituting {} (the first card). Response: {}",
             .into_iter()
             .enumerate()
             .map(|(seat, h)| match h.join() {
-                Ok(result) => result,
+                Ok((result, records)) => {
+                    mtg_player::game_log::write_block(&records);
+                    result
+                }
                 Err(payload) => {
-                    report_worker_failure(&payload, &format!("seat {seat} could not build its deck"))
+                    report_worker_failure(&payload, &format!("seat {seat}'s deck worker failed"))
                 }
             })
             .collect()
@@ -876,15 +983,27 @@ substituting {} (the first card). Response: {}",
                     // coordinates — not drawn inside the worker, where the
                     // draw order would be whatever the scheduler chose.
                     let seed = match_seed(args.seed, round_num, a, b);
-                    s.spawn(move || play_match(
-                        &PlayerSpec { seat: a, deck: deck_a, model_spec: model_a, guide: guide_a },
-                        &PlayerSpec { seat: b, deck: deck_b, model_spec: model_b, guide: guide_b },
-                        reg,
-                        best_of,
-                        quiet,
-                        card_ref,
-                        seed,
-                    ))
+                    spawn_seat(s, format!("seat {a} v {b}"), move || {
+                        let context =
+                            format!("the match between seat {a} and seat {b} could not finish");
+                        in_seat(&context, move || {
+                        // Held and written back in `real_matches` order, so
+                        // two runs of one seed record the round the same
+                        // way rather than as a scheduler-shuffled merge of
+                        // the concurrent matches (issue #541).
+                        mtg_player::game_log::buffer_here();
+                        let outcome = play_match(
+                            &PlayerSpec { seat: a, deck: deck_a, model_spec: model_a, guide: guide_a },
+                            &PlayerSpec { seat: b, deck: deck_b, model_spec: model_b, guide: guide_b },
+                            reg,
+                            best_of,
+                            quiet,
+                            card_ref,
+                            seed,
+                        );
+                        (outcome, mtg_player::game_log::take_buffered())
+                        })
+                    })
                 })
                 .collect();
 
@@ -892,10 +1011,13 @@ substituting {} (the first card). Response: {}",
                 .into_iter()
                 .zip(real_matches.iter())
                 .map(|(h, (a, b))| match h.join() {
-                    Ok(result) => result,
+                    Ok((result, records)) => {
+                        mtg_player::game_log::write_block(&records);
+                        result
+                    }
                     Err(payload) => report_worker_failure(
                         &payload,
-                        &format!("the match between seat {a} and seat {b} could not finish"),
+                        &format!("the seat {a} v seat {b} match worker failed"),
                     ),
                 })
                 .collect()

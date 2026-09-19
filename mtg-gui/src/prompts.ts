@@ -25,7 +25,19 @@ export function indexView(view: GameView): Map<ObjectId, IndexEntry> {
   for (const c of view.your_hand) put(c, "hand", view.you);
   for (const [pid, cards] of view.graveyards) for (const c of cards) put(c, "graveyard", pid);
   for (const c of view.exile) put(c, "exile", c.owner);
-  for (const s of view.stack) put(s, "stack", s.controller);
+  // A stack item is not always an object of its own. `view.rs` gives an
+  // activated ability its SOURCE permanent's id and gives every trigger
+  // `ObjectId(0)`, and the stack is filled last — so an ability on the
+  // stack used to replace its own source here. Hovering the Ghoulcaller's
+  // Bell on the battlefield showed "Ghoulcaller's Bell ability / IN STACK"
+  // and none of the permanent, `nameOf` renamed it everywhere for the
+  // duration, and two triggers at once both resolved to whichever was
+  // indexed last (issue #527).
+  //
+  // A spell on the stack IS its own object and still belongs here. The
+  // others are read off the slot they were drawn for, which is the only
+  // thing that tells two triggers apart.
+  for (const s of view.stack) if (s.object_id !== 0 && !idx.has(s.object_id)) put(s, "stack", s.controller);
   for (const c of view.your_library_cards) put(c, "library", view.you);
   for (const [id, name] of Object.entries(view.revealed_names || {})) {
     const n = Number(id);
@@ -41,6 +53,32 @@ export function nameOf(state: State, id: ObjectId): string {
 
 export function playerLabel(state: LiveState, pid: PlayerId): string {
   return pid === state.view.you ? "You" : "Opponent";
+}
+
+/**
+ * The engine's own words for a player, in the page's vocabulary.
+ *
+ * Everything the page writes itself says You or Opponent; two strings it
+ * is handed do not. `GameView::display_log` is the engine's log verbatim
+ * ("p1 cast Doom Blade (#75)"), and the game-over summary is built by the
+ * runner ("Game over! p0 (red-green) wins!"). Nothing on the page ever
+ * mapped `p0` onto You, and the page's viewer — unlike the CLI's — never
+ * sees the runner's header line, so the one screen whose whole job is to
+ * say who won was written in a vocabulary the page never defined
+ * (issue #519).
+ *
+ * The CLI answered this by printing "you are p0" in its status bar (#115);
+ * the LLM seat answered it by rewriting the tokens out before the model
+ * reads them (#465). The page does both: the life strip names the seat, so
+ * the engine's own words stay decodable, and the lines the page quotes are
+ * rewritten so they do not have to be decoded.
+ */
+export function inOurWords(state: LiveState, line: string): string {
+  return line.replace(/\bp(\d+)\b/g, (whole, n) => {
+    const pid = Number(n);
+    if (pid === state.view.you) return "you";
+    return state.view.opponents.some(o => o.id === pid) ? "opp" : whole;
+  });
 }
 
 export function targetLabel(state: LiveState, t: Target | null | undefined): string {
@@ -414,6 +452,23 @@ interface MarkArgs {
   cancelLabel?: string;
 }
 
+/**
+ * Why a confirmed selection was refused, in the terms the screen asked in.
+ *
+ * The same three sentences `CliPlayer::set_count_error` gives, because it
+ * is the same prompt asked on another surface.
+ */
+function markCountError(have: number, min: number, max: number): string {
+  const card = (n: number) => (n === 1 ? "card" : "cards");
+  if (min === max) return `${have} marked — mark exactly ${min} ${card(min)}`;
+  if (min === 0) return `${have} marked — mark at most ${max} ${card(max)}`;
+  return `${have} marked — mark between ${min} and ${max} cards`;
+}
+
+/** What the screen says when the idle key would commit an empty answer. */
+const NOTHING_MARKED =
+  "nothing marked — mark what you want, or press Confirm none";
+
 /** Mark between min and max of the options, then confirm. */
 function beginMark(state: LiveState, ui: Ui, { title, options, min, max, onConfirm, onCancel, cancelLabel }: MarkArgs): Ui {
   ui.mode = "mark";
@@ -422,15 +477,43 @@ function beginMark(state: LiveState, ui: Ui, { title, options, min, max, onConfi
   ui.min = min; ui.max = max;
   ui.marked = [];
   ui.hint = min === max ? `Mark ${min}.` : `Mark ${min} to ${max}.`;
+  // Whether the player has touched the selection at all. Where an empty
+  // answer is legal — Harvest Pyre exiling nothing, "up to N" targets — the
+  // idle key would otherwise COMMIT it, and Enter *is* the idle key here:
+  // in menu mode it passes priority, which a player presses dozens of times
+  // a turn. Issue #262 settled this for the CLI's set screen — "the safe
+  // key must not be an answer" — and this is the fourth surface of that
+  // same prompt (issues #520, #524).
+  //
+  // Nothing to mark is not that case: there is nothing else the player
+  // could say, so refusing would be a dead end rather than a guard. That is
+  // the same carve-out `pick_set` makes for a forced set.
+  let touched = options.length === 0;
   ui.toggle = (key) => {
+    touched = true;
     const i = ui.marked.indexOf(key);
     if (i >= 0) ui.marked.splice(i, 1);
     else if (ui.marked.length < max) ui.marked.push(key);
   };
   const canConfirm = () => ui.marked.length >= min && ui.marked.length <= max;
   ui.canConfirm = canConfirm;
-  ui.onConfirm = () => { if (canConfirm()) onConfirm(ui.marked.map(k => ui.options!.get(k)!)); };
+  // Refusing out loud, both ways round. This used to be a guarded no-op
+  // with no else: below the minimum the keyboard got the identical frame
+  // back and no reason, which stopped a game dead at DISCARD 1 CARD for 24
+  // presses (issue #524a, #518). `beginBlockers` in this same file already
+  // refuses out loud, and so does the CLI's set screen.
+  ui.onConfirm = () => {
+    if (!canConfirm()) { state.notice = markCountError(ui.marked.length, min, max); return; }
+    if (ui.marked.length === 0 && !touched) { state.notice = NOTHING_MARKED; return; }
+    onConfirm(ui.marked.map(k => ui.options!.get(k)!));
+  };
   ui.buttons.push({ label: "Confirm", primary: true, run: ui.onConfirm, enabled: canConfirm });
+  // The page's `n`: the deliberate empty answer, kept reachable now that
+  // the idle key no longer means it. A button saying what it does is the
+  // considered act pressing Enter out of habit is not.
+  if (min === 0 && options.length > 0) {
+    ui.buttons.push({ label: "Confirm none", run: () => { ui.marked = []; onConfirm([]); } });
+  }
   if (onCancel) { ui.buttons.push({ label: cancelLabel || "Cancel", run: onCancel }); ui.onCancel = onCancel; }
   ui.rows = offBoardRows(state, ui, (key) => ui.toggle!(key));
   state.ui = ui;
@@ -489,7 +572,13 @@ function beginOrder(state: LiveState, ui: Ui, rp: ResolutionPayload, title: stri
     if (j < 0 || j >= order.length) return;
     [order[pos], order[j]] = [order[j], order[pos]];
   };
-  ui.buttons.push({ label: "Confirm", primary: true, run: () => send(resolve({ ChosenOrder: order.map(o => o.i) })) });
+  // Enter answers here too. The order widget had a Confirm button and no
+  // `ui.onConfirm`, so the key `main.ts` routes into that field did nothing
+  // at all on this prompt — the one widget where every arrangement is a
+  // legal answer and there is nothing to refuse (issue #518).
+  ui.canConfirm = () => true;
+  ui.onConfirm = () => send(resolve({ ChosenOrder: order.map(o => o.i) }));
+  ui.buttons.push({ label: "Confirm", primary: true, run: ui.onConfirm });
   state.ui = ui;
   return ui;
 }

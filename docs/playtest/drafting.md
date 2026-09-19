@@ -12,6 +12,11 @@ Two setup rules, both about money and time:
 - **`--model` defaults to `claude`, a metered API seat.** Every draft
   run must pass `--model cc` explicitly. A mission that forgets is a
   mission that spent money.
+- **Point `CLAUDE_CODE_BIN` at an ABSOLUTE path.** The backend runs each call
+  in the seat's scratch `current_dir`, while the up-front "is the CLI runnable"
+  check runs in the invocation cwd — so a relative path passes the guard and then
+  fails every single call with `os error 2`, burning the whole wall-clock retry
+  budget before the run dies (#540). Both 2026-09-18 probes lost time to this.
 - **Draft runs are long.** Eight seats is 360 picks, eight deck builds
   and a full tournament. Use the smallest `--players` the question
   tolerates and `--best-of 1`, and prefer inspecting `--log` from a small
@@ -165,6 +170,27 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   matches in. Verify every log line and every prompt a seat is handed is
   identical between the two runs, and that anything which legitimately varies
   is recorded somewhere a reader can replay from
+  **Run 2026-09-18, and the `to_decklist` half is confirmed fixed.** Five seeded
+  pairs under a stub that is a pure function of (`--json-schema` argv, prompt):
+  the draft half, the decks, the games, the standings and every prompt in every
+  `claude -p` session are byte-identical (440 and 818 stub invocations per run,
+  empty multiset diff, every per-session stream matching), and all four named
+  ordering surfaces are deterministic — `serde_json` is built *without*
+  `preserve_order` (`Cargo.lock` lists no `indexmap` under it), so `Map` is a
+  `BTreeMap` and every request map is lexical for free, which also makes
+  `deck_schema_for`'s explicit sort redundant and `parse_deck_response`'s
+  expansion order lexical. What is *not* reproducible is the log, from
+  `DECK BUILDING` onward: `log_deck_building!` is called inside `s.spawn` and the
+  tournament's `PROMPT`/`RESPONSE` records are written inline from each match
+  thread, so the same seed diffs to 1,047 hunks at `--players 4` with an
+  identical sorted line multiset (#541); the session ids are the one genuinely
+  varying value and nothing records them (#542). Two methodological notes for
+  anyone re-probing determinism here. First, **`--players 2 --seed 41` passes by
+  luck** — it is a two-way race that fell the same way twice, and three of the
+  other four pairs failed, so a determinism claim needs at least three seeds and
+  one `--players 4`. Second, **`diff` alone cannot tell "different run" from
+  "same run, different line order"**: pair it with `diff <(sort a) <(sort b)`,
+  which is empty for an ordering defect and non-empty for a real one
 
 - D13 [proposed 2026-09-09, from #401] what else a resume launders: #401
   found the pick log, the substituted-pick counter and `--save` all skipped
@@ -205,6 +231,24 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   — rather than allocated first. Check the same for a deck response whose
   JSON is valid and whose keys are not the schema's
 
+  **Run 2026-09-18, and the maindeck is the one number with no bound on it.**
+  A count of 4e9 takes the process down with an allocator abort (exit 134) after
+  every pick has been paid for, because the `{name: count}` expansion allocates
+  before `validate_deck` runs and the 200-card guard covers `lands` only (#535);
+  a count `as_u64()` cannot read — `1.0`, `"1"`, `{count: 1}`, `-5` — is
+  rewritten to zero and the card dropped under `accepted` / `DECK (40 cards, 0
+  retries)`, with the maindecked card sitting in the sideboard (#536). Non-schema
+  keys and a 1e12 *land* count are both refused correctly, so the retry loop
+  works where it is reached. The comparison that made the case is the one the
+  README's four-surfaces rule asks for: `parse_pick_response`, in the same crate,
+  takes identical malformed input and is safe and loud about it — `?` out rather
+  than `unwrap_or(0)`, bounds-checked, `Pick::Substituted` plus a WARN and a
+  counter (#195). What is left here is the other direction: sweep the rest of the
+  program for a number a seat supplies that is used before it is checked.
+  `deckbuilding.rs:236` was the only model-number-driven allocation in the three
+  crates tonight (`grep 'for _ in 0\.\.' mtg-player/src/llm.rs mtg-draft-runner/src
+  mtg-draft/src`), but the game harness takes only indices today and would not
+  stay safe if a prompt ever asked for a count
 - D16 [proposed 2026-09-09, from #403] one card, one name, all the way down:
   `fallback_deck` emits its maindeck as the raw pool names, so a DFC reaches
   the engine as `"Front // Back"` with no stub involved at all, and
@@ -230,6 +274,27 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   failed, that a hang anywhere still reaches a fatal, and that the in-flight
   calls of the seats which did not fail are killed rather than orphaned when
   the run exits
+  **Run 2026-09-18: the blame is survivable, the cleanup is not.** Both of the
+  claims above are half wrong and worth correcting in place. `enumerate()`'s
+  index *does* equal the seat, because `pick_inputs` is built `(0..args.players)`
+  in order, so a lone failure is named correctly — the real defect is
+  first-`Err`-wins in seat order (seat 3 fails at t≈0.2s, the headline blames
+  seat 0) plus a report that waits on every lower seat, dead at t≈2.4s and silent
+  until t=45s, ~600s at shipped defaults, while `API_FATAL` carries a thread id
+  and no seat at all (#539). And a hang does *not* block forever: the per-call
+  watchdog and the retry budget bound every call. What the idea did not ask about
+  is where the night went — `die` → `process::exit(1)` runs no destructors, so a
+  fatal in one seat orphans every other seat's `claude -p` tree to init at
+  `PPID=1` (#537), and `LIVE_GROUPS`' four slots, commented "more seats than a
+  run has" because they were written for a 2-seat game, lose four of a default
+  8-seat draft's calls on the signal path too (#538). Setup notes for a re-probe:
+  the pick prompt states `You are seat N of M` (`llm_client.rs:1124`) and is the
+  reliable seat discriminator — a pool listing is *not*, since every pool is
+  empty at pack 1 pick 1 — the deck-build prompt states no seat, so memoise
+  seat→`--session-id` during the picks; and the two knobs that make a failure
+  arrive quickly are `MTG_DRAFT_RETRY_BUDGET_SECS` (`llm_client.rs:618`) and
+  `MTG_CLAUDE_CODE_TIMEOUT_SECS` (`mtg-player/src/llm/claude_code.rs:40`, default
+  300s)
 - D18 [proposed 2026-09-09, from #398 and #404] the draft's own copy of the
   harness contract. `mtg-draft-runner/src/llm_client.rs` builds its own
   prompts, its own schemas and its own `claude -p` invocation, and #404 is
@@ -283,3 +348,37 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   is either restated in the prompt or provably still in that seat's session. A
   configuration the runner supports and the prompt does not mention is a seat
   reasoning about a different draft than the one it is in
+
+- D21 [proposed 2026-09-18, from #537 and #538] every exit path, not just the
+  signal one: #206 killed in-flight `claude -p` trees on SIGINT/SIGTERM/SIGHUP,
+  and D17 found that the *fatal* exit (`die` → `process::exit`) sweeps nothing at
+  all, and that `LIVE_GROUPS`' four slots lose four of a default eight-seat
+  draft's calls even on the signal path that was fixed. Walk the remaining exits
+  the same way, with a `CLAUDE_CODE_BIN` stub that sleeps 600s in some seats and
+  an **absolute** path (a relative one silently fails every call after the first,
+  #540): `die` from an impossible replayed pick under `--resume`, `die` from a
+  bad `--seed`/`--guide`, a panic that is not a `FATAL_MARKER` (the default hook
+  runs — then what?), SIGQUIT and SIGPIPE (no handler is installed for either),
+  and the parent killed with SIGKILL. For each, record `ps -eo pid,ppid` for
+  surviving stubs and the count of `/tmp/mtg-draft-claude-code-*` left behind. An
+  exit that orphans a live metered call costs what #206 cost whatever caused it,
+  so the question underneath is whether the guard can be one place every exit
+  goes through rather than a signal handler plus three ad-hoc paths
+
+- D22 [proposed 2026-09-18, from #541, #538 and the join loop in `main.rs:861`]
+  the tournament phase as a concurrency surface: every probe so far has run
+  `--players 2`, where the tournament is one match on one thread and nothing is
+  actually concurrent — which is exactly why D12's 2-seat pair passed and its
+  4-seat pairs did not. At `--players 8 --best-of 3` a round is four `play_match`
+  threads and eight simultaneous `claude -p` children, on top of the eight the
+  draft already spawns. Run a full 8-seat pod under a stub and check what the
+  tournament shares: does the process-group table cover the *game* backend's
+  children or only the draft's; does Ctrl-C mid-round orphan four matches' worth
+  of subprocesses (#538 says the table has four slots); do two matches in one
+  round ever interleave a `GAME` block or a `MATCH` line (those are emitted after
+  the join, so they should not — verify it, because the LLM round-trip records
+  demonstrably do, #541); and does one match's fatal reach the operator or does
+  the join order swallow it the way #539 describes for the pick loop. Anything a
+  `play_match` worker touches that is not its own `PlayerSpec` — the registry,
+  the card reference, the log mutex, the usage counters the summary adds up — is
+  where to look
