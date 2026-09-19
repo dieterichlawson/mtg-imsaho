@@ -173,7 +173,7 @@ pub fn process_pending_damage(state: &mut GameState, registry: &CardRegistry) {
             state.pending_damage.remove(i);
             continue;
         }
-        let effects = applicable_effects(state, &pd, registry);
+        let effects = distinct_answers(applicable_effects(state, &pd, registry), state);
         if effects.is_empty() {
             state.pending_damage[i].settled = true;
             i += 1;
@@ -409,20 +409,78 @@ enum Outcome {
     Replaced { card: CardId, amount: u32 },
 }
 
+/// All `outcome_of` can tell two effects apart by.
+///
+/// Two effects of the same class produce the same `Outcome` from any
+/// position in any order, so swapping one for the other cannot change how
+/// the event ends: under this model they are the same answer. Both the
+/// decision to ask and the list the question is asked with go through here,
+/// so the two cannot disagree about what counts as a distinct effect.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum EffectClass {
+    PreventsAll,
+    PreventsAndRemovesCounter,
+    Doubles,
+    /// Keyed by the card, not the object — two Undead Alchemists mill once
+    /// between them, whichever is first.
+    Replaces(CardId),
+}
+
+fn class_of(effect: &DamageEffect, state: &GameState) -> EffectClass {
+    match effect {
+        DamageEffect::PreventAll(_) => EffectClass::PreventsAll,
+        DamageEffect::PreventAndRemoveCounter { .. } => EffectClass::PreventsAndRemovesCounter,
+        DamageEffect::Double { .. } => EffectClass::Doubles,
+        DamageEffect::Card { by } =>
+            EffectClass::Replaces(state.get_object(*by).map_or(CardId(0), |o| o.card_id)),
+    }
+}
+
 fn outcome_of(order: &[&DamageEffect], amount: u32, state: &GameState) -> Outcome {
     let mut amount = amount;
     for effect in order {
-        match effect {
-            DamageEffect::PreventAll(_) => return Outcome::Prevented { counter_removed: false },
-            DamageEffect::PreventAndRemoveCounter { .. } => return Outcome::Prevented { counter_removed: true },
-            DamageEffect::Double { .. } => amount = amount.saturating_mul(2),
-            DamageEffect::Card { by } => {
-                let card = state.get_object(*by).map_or(CardId(0), |o| o.card_id);
-                return Outcome::Replaced { card, amount };
-            }
+        match class_of(effect, state) {
+            EffectClass::PreventsAll => return Outcome::Prevented { counter_removed: false },
+            EffectClass::PreventsAndRemovesCounter => return Outcome::Prevented { counter_removed: true },
+            EffectClass::Doubles => amount = amount.saturating_mul(2),
+            EffectClass::Replaces(card) => return Outcome::Replaced { card, amount },
         }
     }
     Outcome::Dealt(amount)
+}
+
+/// The effects the CR 616.1 question is decided and asked with: one per
+/// distinct answer, in the order they were listed.
+///
+/// `applicable_effects` lists one effect per *object*, which is what the
+/// engine has to apply. It is not what the affected player can choose
+/// between. Two Undead Alchemists on the battlefield are two effects and
+/// one answer — the mill happens once between them, whichever is picked —
+/// and the engine already said so in `Outcome`; that model was used to
+/// decide *whether* to ask and never on the list the question was asked
+/// *with*, so N Alchemists were N identical rows on all four surfaces
+/// (#545). A prompt with one row per object grows with the board, which is
+/// the shape CLAUDE.md asks prompts not to take, and here the duplicates
+/// are not even a disambiguation problem: there is nothing to tell apart.
+///
+/// Dropping a duplicate loses no effect. What applies is recomputed from
+/// the board after each one, so an effect that was not offered is still
+/// applied afterwards if it still can be — which is also why collapsing
+/// them before `same_outcome_in_every_order` is safe, and keeps five
+/// Alchemists and two Flails from reaching the point where the orders stop
+/// being enumerated at all.
+fn distinct_answers(effects: Vec<DamageEffect>, state: &GameState) -> Vec<DamageEffect> {
+    let mut seen: Vec<EffectClass> = Vec::new();
+    effects.into_iter()
+        .filter(|e| {
+            let class = class_of(e, state);
+            let fresh = !seen.contains(&class);
+            if fresh {
+                seen.push(class);
+            }
+            fresh
+        })
+        .collect()
 }
 
 /// Whether every order of `effects` ends the same way, so that the choice

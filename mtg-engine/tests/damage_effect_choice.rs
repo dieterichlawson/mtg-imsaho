@@ -477,3 +477,72 @@ fn no_state_based_action_runs_under_an_open_damage_choice() {
         "with the question answered, CR 704.5f applies");
     assert_eq!(state.get_object(horde).unwrap().zone, Zone::Graveyard);
 }
+
+// ---------------------------------------------------------------------------
+// Issue #545 — one row per answer, not one row per object
+// ---------------------------------------------------------------------------
+
+/// `applicable_effects` pushes one `Card` effect per *object* whose
+/// replacement offer applies, so N Undead Alchemists on the battlefield were
+/// N rows in the prompt — all of them the same answer, on all four surfaces.
+///
+/// The engine already knew they were one answer: `Outcome` keys a card's
+/// replacement by its card rather than its object precisely because "two
+/// Undead Alchemists mill once between them, whichever is first". That model
+/// decided whether to ask and was never used on the list the question was
+/// asked with. A prompt with a row per object grows with the board, and here
+/// the duplicates are not even a disambiguation problem — there is nothing to
+/// tell apart.
+#[test]
+fn a_second_copy_of_one_card_is_not_a_second_row() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    named_permanent(&mut state, &reg, "Undead Alchemist", P0);
+    named_permanent(&mut state, &reg, "Undead Alchemist", P0);
+    let corpse = named_permanent(&mut state, &reg, "Walking Corpse", P0);
+    let flail = named_permanent(&mut state, &reg, "Inquisitor's Flail", P0);
+    state.get_object_mut(flail).unwrap().attached_to = Some(corpse);
+    stock_library(&mut state, P1, 10);
+    attacks_unblocked(&mut state, corpse, P1);
+
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+
+    let (player, options, _) = effect_prompt(&state)
+        .expect("the Flail and the Alchemists still order differently, so the defender is asked");
+    assert_eq!(player, P1, "the affected player is the one being damaged (CR 616.1)");
+    assert_eq!(options.iter().filter(|o| o.contains("Undead Alchemist")).count(), 1,
+        "two Alchemists are one answer: {options:?}");
+    assert_eq!(options.len(), 2, "so the question is the Flail's row and theirs: {options:?}");
+
+    // And the answer that was collapsed still resolves, once.
+    let state = choose(&state, &reg, "Undead Alchemist");
+    assert!(state.awaiting_action.is_none(), "one choice settles the event");
+    assert_eq!(library_size(&state, P1), 8, "milled once between them, not twice");
+    assert_eq!(state.get_player(P1).life, 20, "the damage never happened");
+    assert!(state.pending_damage.is_empty(), "nothing is left waiting");
+}
+
+/// The same, one step further out: the rows do not grow with the board.
+/// Five Alchemists and two Flails used to be seven rows, which is also where
+/// the engine stops enumerating orders and asks unconditionally.
+#[test]
+fn the_damage_effect_prompt_does_not_grow_with_the_board() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    for _ in 0..5 {
+        named_permanent(&mut state, &reg, "Undead Alchemist", P0);
+    }
+    let corpse = named_permanent(&mut state, &reg, "Walking Corpse", P0);
+    for _ in 0..2 {
+        let flail = named_permanent(&mut state, &reg, "Inquisitor's Flail", P0);
+        state.get_object_mut(flail).unwrap().attached_to = Some(corpse);
+    }
+    stock_library(&mut state, P1, 20);
+    attacks_unblocked(&mut state, corpse, P1);
+
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+
+    let (_, options, _) = effect_prompt(&state).expect("a choice of effects is still a choice");
+    assert_eq!(options.len(), 2,
+        "two distinct answers on a board of seven effects: {options:?}");
+}
