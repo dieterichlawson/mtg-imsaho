@@ -20,8 +20,8 @@ pub fn resolve_aura(state: &mut GameState, aura_id: ObjectId, targets: &[Target]
     if let Some(Target::Object(target_id)) = targets.first() {
         if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
             state.move_object(aura_id, Zone::Battlefield, registry);
+            state.attach(aura_id, *target_id);
             if let Some(obj) = state.get_object_mut(aura_id) {
-                obj.attached_to = Some(*target_id);
                 obj.summoning_sick = false;
             }
             return true;
@@ -70,13 +70,11 @@ pub fn resolve_equip(
     if state.is_creature(equipment_id, registry) {
         return false;
     }
-    // CR 702.6c: attaching it to a second creature moves it off the first.
-    // The same "stop being attached" event CR 704.5n produces, so it goes
-    // through the same helper and gets the same line (issue #502).
-    state.unattach(equipment_id);
-    if let Some(obj) = state.get_object_mut(equipment_id) {
-        obj.attached_to = Some(*creature_id);
-    }
+    // CR 702.6c (move it off the first creature) and CR 701.3b (re-equipping
+    // it to the creature it is already on does nothing) both live in
+    // `attach`, which is also where the "became unattached" line comes from.
+    // The ability resolved either way, so this says so either way.
+    state.attach(equipment_id, *creature_id);
     true
 }
 

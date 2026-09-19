@@ -976,3 +976,30 @@ fn an_equipment_moved_by_an_equip_ability_says_what_it_came_off() {
         "the line names both ends, with ids: {:?}", log_lines(&state));
     assert_eq!(state.get_object(dagger).unwrap().attached_to, Some(second));
 }
+
+/// CR 701.3b: "If an effect tries to attach an Aura, Equipment, or
+/// Fortification to the object or player it's already attached to, the effect
+/// does nothing." A random seat re-equips one Flail to one creature turn after
+/// turn, and the unconditional `unattach` announced that it came off a creature
+/// it never left — the line above means a bonus stopped applying (#502), so
+/// here it said the opposite of the truth to all three reading surfaces (#544).
+#[test]
+fn re_equipping_to_the_creature_it_is_already_on_says_nothing_came_off() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bears = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let dagger = named_permanent(&mut state, &reg, "Silver-Inlaid Dagger", P0);
+
+    assert!(mtg_engine::cards::helpers::resolve_equip(
+        &mut state, dagger, &[Target::Object(bears)], &reg));
+    state.game_log.clear();
+
+    assert!(mtg_engine::cards::helpers::resolve_equip(
+        &mut state, dagger, &[Target::Object(bears)], &reg),
+        "the ability still resolves; CR 701.3b is about its effect doing nothing");
+
+    assert!(log_lines(&state).iter().all(|l| !l.contains("became unattached")),
+        "it never left, so no reader is told it came off: {:?}", log_lines(&state));
+    assert_eq!(state.get_object(dagger).unwrap().attached_to, Some(bears),
+        "and it is still on the creature it was on");
+}

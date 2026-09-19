@@ -3402,6 +3402,34 @@ impl GameState {
         Some(host)
     }
 
+    /// Attach `id` to `host`, taking it off whatever it was on first.
+    ///
+    /// CR 701.3b: "If an effect tries to attach an Aura, Equipment, or
+    /// Fortification to the object or player it's already attached to, the
+    /// effect does nothing." Nothing is not the same as doing the same thing
+    /// again. Becoming unattached is a named game event (CR 701.3d) and
+    /// `unattach`'s line exists so that a reader knows a bonus stopped
+    /// applying (#502) — run unconditionally it tells the LOG pane, the LLM
+    /// seat's event delta and the browser's log band the opposite of the
+    /// truth: that an Equipment came off a creature it never left (#544).
+    ///
+    /// Otherwise CR 702.6c: attaching it to a second object moves it off the
+    /// first. That is the same "stop being attached" event, so it goes
+    /// through `unattach` and gets the same line.
+    ///
+    /// Returns whether the attachment changed.
+    pub fn attach(&mut self, id: ObjectId, host: ObjectId) -> bool {
+        let Some(obj) = self.get_object(id) else { return false };
+        if obj.attached_to == Some(host) {
+            return false;
+        }
+        self.unattach(id);
+        if let Some(obj) = self.get_object_mut(id) {
+            obj.attached_to = Some(host);
+        }
+        true
+    }
+
     /// CR 109.1: a "card" is a physical game object. A token is not one, so
     /// any effect whose text says "card" must exclude tokens.
     ///
