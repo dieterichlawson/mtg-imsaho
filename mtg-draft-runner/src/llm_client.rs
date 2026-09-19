@@ -928,7 +928,10 @@ impl GeminiDraftBackend {
             "model": &self.model,
             "input": message,
             "response_mime_type": "application/json",
-            "response_format": schema,
+            // The draft is the second request path, and the one that has
+            // already missed a fix the game path got (#404). Same sanitizer,
+            // not a second copy of it (#546).
+            "response_format": mtg_player::llm::sanitize_schema_for_gemini(schema),
         });
 
         if let Some(ref level) = self.draft_thinking {

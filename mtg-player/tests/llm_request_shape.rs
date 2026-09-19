@@ -93,3 +93,135 @@ fn the_ordering_schema_bounds_the_permutation_it_demands() {
         assert!(mtg_player::llm::schema_key_is_legal(key), "{key:?}");
     }
 }
+
+/// Every integer `enum` a seat's schema carries, by JSON path — the feature
+/// the harness's own portability comment says the Gemini seat's provider
+/// rejects outright.
+fn integer_enums(value: &serde_json::Value, path: &str, found: &mut Vec<String>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            let integer = matches!(
+                map.get("type").and_then(serde_json::Value::as_str), Some("integer" | "number"));
+            if integer && map.contains_key("enum") {
+                found.push(path.to_string());
+            }
+            for (k, v) in map {
+                integer_enums(v, &format!("{path}.{k}"), found);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for (i, v) in items.iter().enumerate() {
+                integer_enums(v, &format!("{path}[{i}]"), found);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// The harness states one portability rule — "Anthropic rejects
+/// `minimum`/`maximum` on integer fields, Gemini rejects `enum` on integer
+/// fields, and only `enum` on string fields is both accepted and enforced by
+/// both" — and used to enforce half of it. The Anthropic and `claude -p`
+/// paths sanitize; the Gemini request sent the caller's schema verbatim as
+/// `response_format`, and an integer `enum` is what 751 of 851 structured
+/// requests in one night's harvest were made of (issue #546).
+#[test]
+fn a_gemini_schema_carries_no_integer_enum() {
+    use mtg_player::llm::{ordering_schema, sanitize_schema_for_gemini};
+
+    // Harvested verbatim from a stub seat: the four top-level shapes that
+    // carry one, plus the X-funding shape that carries a string enum.
+    let action = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "thoughts": {"type": "string"},
+            "action": {"type": "integer", "enum": [0, 1, 2, 3], "description": "The action index"}
+        },
+        "required": ["thoughts", "action"]
+    });
+    let blockers = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "thoughts": {"type": "string"},
+            "0": {"type": "integer", "enum": [0, -1]},
+            "1": {"type": "integer", "enum": [-1]}
+        }
+    });
+    let indices = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "indices": {
+                "type": "array",
+                "items": {"type": "integer", "enum": [0, 1]},
+                "minItems": 1, "maxItems": 1
+            }
+        }
+    });
+    let funding = serde_json::json!({
+        "type": "object",
+        "properties": {
+            "lands": {"type": "string", "enum": ["0", "1", "2"]},
+            "rocks": {"type": "object", "properties": {}}
+        }
+    });
+
+    for (name, schema) in [
+        ("action", &action), ("blockers", &blockers), ("indices", &indices),
+        ("ordering", &ordering_schema(3)), ("x-funding", &funding),
+    ] {
+        let sanitized = sanitize_schema_for_gemini(schema);
+        let mut left = Vec::new();
+        integer_enums(&sanitized, name, &mut left);
+        assert!(left.is_empty(), "{name}: integer enums survive at {left:?}: {sanitized}");
+    }
+
+    // The constraint is not dropped, it is restated: a contiguous run of
+    // integers is exactly its own min and max.
+    let s = sanitize_schema_for_gemini(&action);
+    assert_eq!(s["properties"]["action"]["minimum"], serde_json::json!(0));
+    assert_eq!(s["properties"]["action"]["maximum"], serde_json::json!(3));
+    assert_eq!(s["properties"]["action"]["description"], action["properties"]["action"]["description"],
+        "and the rest of the field is untouched");
+
+    let s = sanitize_schema_for_gemini(&blockers);
+    assert_eq!((&s["properties"]["0"]["minimum"], &s["properties"]["0"]["maximum"]),
+        (&serde_json::json!(-1), &serde_json::json!(0)), "`[0, -1]` is the range -1..=0");
+    assert_eq!((&s["properties"]["1"]["minimum"], &s["properties"]["1"]["maximum"]),
+        (&serde_json::json!(-1), &serde_json::json!(-1)), "a one-value enum is a point range");
+
+    // Inside an array's items, and with the array's own bounds intact.
+    let s = sanitize_schema_for_gemini(&ordering_schema(3));
+    assert_eq!(s["properties"]["order"]["items"]["maximum"], serde_json::json!(2));
+    assert_eq!(s["properties"]["order"]["minItems"], serde_json::json!(3));
+
+    // String enums are the one form both providers accept and enforce, so
+    // the X-funding workaround is left exactly as it was written.
+    assert_eq!(sanitize_schema_for_gemini(&funding), funding);
+}
+
+/// There are two request paths, not one — `mtg-player` for the game and
+/// `mtg-draft-runner` for the draft — and the draft copy has already missed
+/// a fix the game path got (#404). Neither may hand a provider a schema no
+/// sanitizer has seen.
+#[test]
+fn neither_request_path_sends_a_schema_no_sanitizer_has_seen() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent()
+        .expect("the workspace root is the crate's parent");
+    let paths = ["mtg-player/src/llm.rs", "mtg-draft-runner/src/llm_client.rs"];
+
+    let mut sites = 0;
+    for rel in paths {
+        let src = std::fs::read_to_string(root.join(rel))
+            .unwrap_or_else(|e| panic!("{rel}: {e}"));
+        for (n, line) in src.lines().enumerate() {
+            // The Gemini request body names the schema field itself.
+            if !line.contains("\"response_format\"") {
+                continue;
+            }
+            sites += 1;
+            assert!(line.contains("sanitize_schema_for_gemini("),
+                "{rel}:{} sends a schema straight to the provider: {}", n + 1, line.trim());
+        }
+    }
+    assert_eq!(sites, 2, "both Gemini request paths are covered, and no third one appeared");
+}

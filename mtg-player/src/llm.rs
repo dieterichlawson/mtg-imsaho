@@ -77,6 +77,76 @@ pub fn schema_key_is_legal(key: &str) -> bool {
         && key.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
 }
 
+/// Rewrite a schema into the subset the Gemini seat's provider accepts.
+///
+/// The harness has always stated the portability rule — "Anthropic rejects
+/// `minimum`/`maximum` on integer fields, Gemini rejects `enum` on integer
+/// fields, and only `enum` on string fields is both accepted and enforced by
+/// both" — and enforced exactly half of it. `AnthropicBackend::sanitize_schema`
+/// strips the numeric constraints on the Anthropic and `claude -p` paths, and
+/// the draft crate has its own copy for its two. Nothing at all stood between
+/// a schema and the Gemini request, which sends it verbatim as
+/// `response_format`.
+///
+/// An integer `enum` is what nearly every schema here is made of: 751 of 851
+/// structured requests in one night's harvest carried one — every menu
+/// decision, every blocker assignment, every ordering prompt, every index set
+/// (#546). On the provider's own account of itself that is a 400 on 88% of a
+/// game's decisions, and the failure is silent by construction: a 400 is not
+/// in the retry set, `call_interactions_structured` returns `{}` after one
+/// attempt, and an empty answer is what a seat that declined looks like
+/// (#398). Six of the ten callers substitute without logging anything at all.
+///
+/// So an integer `enum` becomes the `minimum`/`maximum` that says the same
+/// thing. That is exact for a contiguous run of integers, which every enum in
+/// this program is — `0..n-1` for a menu or an ordering, `[0, -1]` and `[-1]`
+/// for a blocker assignment — and a weaker bound otherwise, never a wrong one.
+/// String enums are left alone: they are the one form the comment says both
+/// providers accept *and* enforce, which is why the X-funding schema is built
+/// out of them.
+///
+/// This does not depend on the claim being true today. A schema without an
+/// integer `enum` is accepted either way, and if the claim is stale the cost
+/// is a range constraint in place of a set constraint on one provider. What
+/// it removes is the asymmetry: neither request path now sends a schema no
+/// sanitizer has seen.
+#[must_use]
+pub fn sanitize_schema_for_gemini(value: &serde_json::Value) -> serde_json::Value {
+    let serde_json::Value::Object(map) = value else {
+        if let serde_json::Value::Array(items) = value {
+            return serde_json::Value::Array(items.iter().map(sanitize_schema_for_gemini).collect());
+        }
+        return value.clone();
+    };
+
+    // Only an integer field's enum, and only when every value in it is one:
+    // anything else is left exactly as the caller wrote it.
+    let is_integer = matches!(
+        map.get("type").and_then(serde_json::Value::as_str), Some("integer" | "number"));
+    let bounds = if is_integer {
+        map.get("enum")
+            .and_then(serde_json::Value::as_array)
+            .filter(|values| !values.is_empty())
+            .and_then(|values| values.iter().map(serde_json::Value::as_i64).collect::<Option<Vec<i64>>>())
+            .and_then(|values| Some((*values.iter().min()?, *values.iter().max()?)))
+    } else {
+        None
+    };
+
+    let mut out = serde_json::Map::new();
+    for (key, val) in map {
+        if bounds.is_some() && key == "enum" {
+            continue;
+        }
+        out.insert(key.clone(), sanitize_schema_for_gemini(val));
+    }
+    if let Some((low, high)) = bounds {
+        out.entry("minimum".to_string()).or_insert(serde_json::json!(low));
+        out.entry("maximum".to_string()).or_insert(serde_json::json!(high));
+    }
+    serde_json::Value::Object(out)
+}
+
 /// The schema an ordering prompt is answered through: `order`, a
 /// permutation of `0..n`.
 ///
@@ -1223,7 +1293,7 @@ impl GeminiBackend {
             "model": &self.model,
             "input": user_message,
             "response_mime_type": "application/json",
-            "response_format": schema,
+            "response_format": sanitize_schema_for_gemini(schema),
         });
 
         if let Some(ref level) = self.thinking_level {
@@ -3368,7 +3438,12 @@ impl LlmPlayer {
         // providers: Anthropic rejects `minimum`/`maximum` on integer fields,
         // Gemini rejects `enum` on integer fields, and only `enum` on string
         // fields is both accepted and enforced by both. Response is parsed
-        // back to u32 below.
+        // back to u32 below. The rule is now enforced rather than only
+        // stated — `AnthropicBackend::sanitize_schema` on one side and
+        // `sanitize_schema_for_gemini` on the other (#546) — so a schema that
+        // does not use this workaround is at worst bounded by a range on
+        // Gemini rather than rejected. A set constraint is still tighter than
+        // a range, which is why this one keeps it.
         let int_enum_str = |legal_values: Vec<u32>, description: &str| -> serde_json::Value {
             let enum_vals: Vec<serde_json::Value> = legal_values.into_iter()
                 .map(|n| serde_json::json!(n.to_string()))
