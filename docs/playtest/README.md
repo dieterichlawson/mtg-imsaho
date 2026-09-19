@@ -124,6 +124,15 @@ mtg-runner | tail -1`, which will find somebody else's game, and treat
 `logs/playtest/` as shared — do not wipe the whole directory, only your
 own files.
 
+For the GUI subject the terminal is not the surface: the page is. Build
+the runner, then drive the page in the Playwright Chromium the way
+`mtg-gui/tests/*.js` do (`NODE_PATH=$(npm root -g) node
+mtg-gui/tests/autoplay.js --games 2 --shots logs/playtest/<mission>`
+plays whole games and keeps screenshots; `window.mtg`, `window.mtgSend`
+and `window.mtgDebug.stage` are the page's handles for a probe of your
+own). Look at the screenshots — that is what a person would see.
+`mtg-gui/README.md` has the keys and the layout.
+
 For game and CLI subjects, pick deck pairs from `decks/` and
 `decks/coverage/`, or write one-off decks into a temp file (deck files
 are `COUNT NAME` lines). Check the pairing can actually reach what you
@@ -136,9 +145,10 @@ You are a finder: you file issues, you never fix. Three words that are
 easy to confuse, fixed here, and used in every issue's **Target** line:
 
 - **the engine** — the rules (`mtg-engine`).
-- **the machine** — the binaries as programs: the CLI/TUI, flags, files,
-  signals, save/resume, pack generation (`mtg-runner`, `mtg-draft-runner`,
-  `mtg-player`'s interactive surface).
+- **the machine** — the binaries as programs: the CLI/TUI, the browser
+  page and its seat, flags, files, signals, save/resume, pack generation
+  (`mtg-runner`, `mtg-draft-runner`, `mtg-player`'s interactive surfaces,
+  `mtg-gui/`).
 - **the harness** — the LLM interface: the prompts, the response schema and
   the conversation an LLM seat plays a game through (`mtg-player/src/llm.rs`
   and its backends). Documented in `docs/llm-harness.md`.
@@ -175,8 +185,8 @@ starts from, which is why it has to be runnable by a fresh reader.
 
 Write the night's report to `reports/playtests/YYYY-MM-DD.md` and append
 one ledger row per probe. The idea id carries the subject (C and L are
-the game, V and M the CLI, H the harness, D drafting), so the existing
-columns still work.
+the game, V and M the CLI, H the harness, D drafting, G the GUI), so the
+existing columns still work.
 
 Then add to the guide what the night taught you — see below. Finally
 clean up: `tmux kill-server`, and delete `logs/playtest/`; logs are

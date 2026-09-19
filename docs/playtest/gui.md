@@ -76,7 +76,10 @@ random game happened to reach.
 
 ## Filing
 
-As `docs/playtest/README.md` says, with `surface:gui` in the title. A
-finding on this surface is usually a question about the other three:
-if the page cannot ask something well, check whether the CLI and the
-LLM prompt can before writing it up as the page's problem alone.
+As `docs/playtest/README.md` says: title `[playtest] <symptom>`, labels
+`bug` + `phase:playtest`, **Target** is the machine for the page and its
+seat (the engine if the prompt itself is wrong), and the ledger row's
+idea id is one of the G numbers above. A finding on this surface is
+usually a question about the other three: if the page cannot ask
+something well, check whether the CLI and the LLM prompt can before
+writing it up as the page's problem alone.
