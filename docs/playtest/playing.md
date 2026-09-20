@@ -1066,4 +1066,22 @@ illegal or dubious resolutions do.
   mana-ability twin of this was #118, and it named the mana rather than the land;
   naming the ability is not enough here, because the ability is what is already
   identical
+- L51 [proposed 2026-09-20, from #553 and L49] the DERIVED damage amount, as a number
+  the player is never shown. #553 is Corpse Lunge, but the early return that hides it
+  is in `queue_damage`/`perform`, which every damage source goes through, and the wider
+  question is not the log line — it is that an amount computed from hidden or changing
+  state is committed to before anyone can see it. Sweep the pool for the sources whose
+  amount is derived rather than printed and build a board for each: **Harvest Pyre**
+  (X = cards exiled, where the prompt is the same `ExileXFromGraveyard` picker),
+  **Devil's Play** with X=0 and on flashback, **Heretic's Punishment** off a mill of
+  three lands (greatest mana value = 0), **Mindshrieker** on a land, and an ordinary
+  0-power creature in combat. At each, check three things: whether the log says
+  anything at all when the amount is 0; whether the amount appears anywhere BEFORE the
+  cost is paid, given that #259 fixed this for an announced X on the stack and nothing
+  covers an amount derived at resolution; and whether the CLI, the `i` detail page and
+  `mtg-player/src/llm.rs` agree about it, since the LLM seat gets the same log and has
+  no pane to check. Corpse Lunge is the sharp case and the one to start from, because
+  its amount is only knowable AFTER the irreversible part of the cost is paid — the
+  card is exiled at announcement and the player finds out what it bought at resolution,
+  or does not
 
