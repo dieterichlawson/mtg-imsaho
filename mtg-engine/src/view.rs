@@ -127,6 +127,22 @@ pub struct PermanentView {
     /// — the deck browser counted tokens into its header and then could not
     /// list them, so the total disagreed with the rows (issue #241).
     pub is_token: bool,
+    /// CR 707.2: this permanent is a copy of another object's copiable
+    /// values rather than its own printed self — an Evil Twin clone, a
+    /// Cackling Counterpart token.
+    ///
+    /// A token copy was marked `[tok]` and a NON-token copy was marked
+    /// nowhere at all, so a clone and the creature it copied rendered as one
+    /// byte-identical row, which the battlefield pane then counted together
+    /// as `2x` — a positive claim that two different permanents are the same
+    /// one (issue #557). The two differ in what they can do: an Evil Twin
+    /// clone has an ability the original does not and can never transform
+    /// (CR 701.28c), whatever face it is showing.
+    ///
+    /// `granted_abilities` is not this question. A copy effect with no
+    /// "except it has ..." clause grants nothing, and since #554 a token
+    /// copy of a clone carries the clone's granted ability too.
+    pub is_copy: bool,
     /// What this creature is attacking, if it is (CR 506.3a). "Attacking" is
     /// public state that decides how the defender blocks, and the only thing
     /// the panes showed for it was `[T]` — the same mark a creature gets for
@@ -382,6 +398,14 @@ impl GameView {
                             .and_then(|src| registry.get(src.card_id))
                             .and_then(super::cards::CardBehavior::token_pt_text))
                         .unwrap_or_default(),
+                    // A card that is a copy remembers what it is printed as;
+                    // a token copy is built from a card and an ordinary
+                    // token is built from nothing (`CardId(0)`).
+                    is_copy: if obj.is_token {
+                        obj.card_id != crate::ids::CardId(0)
+                    } else {
+                        obj.copy_grantor.is_some()
+                    },
                     granted_abilities: super::cards::ability_granting_grantor(state, obj.id, registry)
                         .and_then(|g| registry.get(g))
                         .map(|b| b.activated_abilities(state, obj.id, registry).into_iter()

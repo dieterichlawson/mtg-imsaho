@@ -69,6 +69,8 @@ export interface PermanentView {
   printed_toughness: number | null;
   star_pt: boolean;
   is_token: boolean;
+  /** CR 707.2: a copy of another permanent rather than its printed self. */
+  is_copy: boolean;
   attacking: AttackTarget | null;
   blocking: ObjectId[];
   blocked_by: ObjectId[];

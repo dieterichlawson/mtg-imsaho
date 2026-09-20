@@ -2001,6 +2001,36 @@ impl CliPlayer {
         counted
     }
 
+    /// What kind of object this is, as opposed to what state it is in:
+    /// `[tok]` for a token, `[copy]` for a permanent that is a copy of
+    /// something else. One helper, read by the battlefield row and by the
+    /// `i` list, because these are the marks that tell two permanents with
+    /// the same name and the same P/T apart — and the `i` list, which is the
+    /// screen you type a number into to reach a detail page, had neither of
+    /// them (issues #556, #557).
+    ///
+    /// CR 111.4 leaves the word "Token" out of a token's name, so the pane
+    /// says it here instead; otherwise a Spirit token and a card named
+    /// Spirit render identically and the CARDS pane, which excludes tokens,
+    /// is the only thing that tells them apart (issues #331, #334).
+    ///
+    /// CR 707.2: a copy is a different permanent from what it copied, and
+    /// the difference decides play — an Evil Twin clone has an ability the
+    /// original does not and can never transform (CR 701.28c). Unmarked, the
+    /// clone's row was byte-identical to the original's and `collapse_rows`
+    /// counted the two as `2x`, which is not a thin row but a false one
+    /// (#557, and #508 for why this pane must not group what differs).
+    /// `[tok]` implies it, so a token copy is not also told it is a copy.
+    fn identity_marks(perm: &PermanentView) -> String {
+        if perm.is_token {
+            " [tok]".to_string()
+        } else if perm.is_copy {
+            " [copy]".to_string()
+        } else {
+            String::new()
+        }
+    }
+
     /// Whether `[S]` means anything for this permanent.
     ///
     /// Summoning sickness restricts a *creature*'s attacks and `{T}`
@@ -2367,7 +2397,7 @@ impl CliPlayer {
             format!(" [{}]", c.restrictions.join(", "))
         };
         let flags = format!("{}{}{}{}{}{}{}",
-            if c.is_token { " [tok]" } else { "" },
+            Self::identity_marks(c),
             if c.tapped { " [T]" } else { "" },
             if sick { " [S]" } else { "" },
             regen,
@@ -4255,7 +4285,8 @@ impl CliPlayer {
             (Some(p), Some(t)) => format!(" {p}/{t}"),
             _ => String::new(),
         };
-        let flags = format!("{}{}{}",
+        let flags = format!("{}{}{}{}",
+            Self::identity_marks(perm),
             if perm.tapped { " [T]" } else { "" },
             if Self::is_summoning_sick(perm) { " [S]" } else { "" },
             Self::regen_marker(perm));
@@ -4264,7 +4295,13 @@ impl CliPlayer {
                 .copied().unwrap_or(0);
             format!(" [{l} loyalty]")
         } else { String::new() };
-        format!("  {idx:>2}: {}{}{}{}", perm.name, pt, loyalty, flags)
+        // The object id, in the form the target choosers and the ordering
+        // screen print it. Without it this was the one pane that addressed a
+        // permanent by a number of its own and could not say which permanent
+        // that number was: three same-named rows, and the only way to find
+        // out was to open all three detail pages, which is where `ID: #N`
+        // was all along (#556).
+        format!("  {idx:>2}: {}{}{}{} (#{})", perm.name, pt, loyalty, flags, perm.object_id.0)
     }
 
     /// The permanents the inspector numbers, yours first: the order the
@@ -6517,7 +6554,20 @@ impl CliPlayer {
         for d in prompt.details {
             if seen.contains(&d.source_name) { continue; }
             seen.push(d.source_name.clone());
-            let Some(data) = registry.get_id_by_name(&d.source_name).and_then(|id| registry.card_data(id)) else { continue };
+            // By FACE name. `source_name` is documented as "from the face
+            // that is up", and a card is named by its front face (CR 712.3),
+            // so a lookup by card name returned `None` for every transformed
+            // DFC in the set and the `continue` below took the whole block
+            // with it -- heading included, on a screen that said nothing
+            // about the omission (#558).
+            let Some(data) = registry.face_data_by_name(&d.source_name) else {
+                // A source whose text cannot be found says so. The silence
+                // was the worse half of the bug: a reader cannot tell a
+                // screen whose sources have no text from one that chose not
+                // to print any.
+                out.push((d.source_name.clone(), vec!["  (no card text found for this source)".to_string()]));
+                continue;
+            };
             let cost = data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
             let pt = match (data.power, data.toughness) {
                 (Some(p), Some(t)) => format!(" {p}/{t}"),
@@ -8221,6 +8271,71 @@ yourself at some considerable length";
         assert_eq!(bare, vec![vec![options[0].clone()]]);
     }
 
+    /// Issue #558: the "Sources:" block exists because "all their info"
+    /// includes what the card says, and a source that has already died is on
+    /// no pane. It found the card by name, `source_name` is the name of the
+    /// face that is UP, and a card is named by its front face (CR 712.3) —
+    /// so for a transformed permanent the lookup missed, the `continue`
+    /// fired, and the whole block including its heading was dropped with
+    /// nothing on the screen saying so. Every transforming card in the set
+    /// was affected.
+    ///
+    /// The second half is the face: a back-face name resolved to the card
+    /// would print the FRONT face's cost, type line and text, which trades a
+    /// silence for a false card. So the assertion is about Merciless
+    /// Predator's own text, not merely about the block being non-empty.
+    #[test]
+    fn the_ordering_screen_finds_the_text_of_a_transformed_source() {
+        use mtg_engine::state::TriggerOrderOption;
+        let detail = |name: &str, id: u64| TriggerOrderOption {
+            source: ObjectId(id), source_name: name.into(), power_toughness: Some((3, 2)),
+            kind: "upkeep trigger".into(),
+            ability: "transform back if 2+ spells cast".into(),
+            cause: "the upkeep step began".into(),
+        };
+        let options = vec![String::new(), String::new()];
+
+        let details = vec![detail("Merciless Predator", 27), detail("Reckless Waif", 28)];
+        let sources = CliPlayer::ordering_sources(&OrderingPrompt {
+            kind: OrderingKind::Triggers, description: "d",
+            options: &options, details: &details });
+
+        assert_eq!(sources.len(), 2, "both faces are sources with text: {sources:?}");
+        let (back_head, back_text) = &sources[0];
+        assert!(back_head.starts_with("Merciless Predator"),
+            "the block is headed by the face that is up: {back_head}");
+        assert!(back_head.contains("3/2"),
+            "and carries that face's P/T, not the front face's 1/1: {back_head}");
+        assert!(back_text.iter().any(|l| l.contains("transform")),
+            "and that face's text: {back_text:?}");
+
+        let (front_head, _) = &sources[1];
+        assert!(front_head.starts_with("Reckless Waif"),
+            "the front face still resolves to itself: {front_head}");
+        assert_ne!(back_head, front_head,
+            "the two faces of one card are two different blocks");
+    }
+
+    /// A source the registry cannot place says so rather than vanishing.
+    /// The silence was the worse half of #558: a reader cannot tell a screen
+    /// whose sources have no text from one that chose to print none.
+    #[test]
+    fn an_unplaceable_ordering_source_is_named_rather_than_dropped() {
+        use mtg_engine::state::TriggerOrderOption;
+        let details = vec![TriggerOrderOption {
+            source: ObjectId(9), source_name: "Not A Card At All".into(),
+            power_toughness: None, kind: "dies trigger".into(),
+            ability: String::new(), cause: "it died".into(),
+        }];
+        let options = vec![String::new()];
+        let sources = CliPlayer::ordering_sources(&OrderingPrompt {
+            kind: OrderingKind::Triggers, description: "d",
+            options: &options, details: &details });
+
+        assert_eq!(sources.len(), 1, "the source is still listed: {sources:?}");
+        assert!(sources[0].0.contains("Not A Card At All"), "by name: {sources:?}");
+    }
+
     /// The ordering screen's body pages when it is taller than the terminal,
     /// keeping a line for the marker, and `m`/`p` walk the pages and wrap.
     #[test]
@@ -9341,6 +9456,7 @@ yourself at some considerable length";
             printed_toughness: None,
             star_pt: false,
             is_token: false,
+            is_copy: false,
             protections: vec![],
             restrictions: vec![],
             granted_abilities: vec![],
@@ -9422,6 +9538,7 @@ yourself at some considerable length";
             printed_toughness: None,
             star_pt: false,
             is_token: false,
+            is_copy: false,
             protections: vec![],
             restrictions: vec![],
             granted_abilities: vec![],
@@ -9907,6 +10024,84 @@ yourself at some considerable length";
         let same = CliPlayer::collapse_rows(vec![a.clone(), a.clone(), b]);
         assert_eq!(same.len(), 2);
         assert_eq!(same[0].0, 2);
+    }
+
+    /// Issue #557: a token copy was marked `[tok]` and a NON-token copy was
+    /// marked nowhere at all. An Evil Twin clone and the creature it copied
+    /// have the same name, the same P/T and different ability sets — the
+    /// clone has one the original does not and can never transform
+    /// (CR 701.28c) — so the two rows came out byte-identical and
+    /// `collapse_rows` counted them as `2x`. #508 settled that this pane
+    /// must not group rows that are not the same permanent; here the strings
+    /// really were equal, which makes `2x` a false claim rather than a thin
+    /// one.
+    #[test]
+    fn a_non_token_copy_is_marked_on_the_row_and_in_the_inspector() {
+        let plain = creature(27, "Merciless Predator", 0);
+        let mut clone = creature(31, "Merciless Predator", 0);
+        clone.is_copy = true;
+        let mut token = creature(81, "Merciless Predator", 0);
+        token.is_token = true;
+        token.is_copy = true;
+
+        let (_, _, flags) = CliPlayer::creature_row_parts(&plain, None);
+        assert!(!flags.contains("[copy]"), "a printed card is not a copy; got {flags}");
+
+        let (_, _, flags) = CliPlayer::creature_row_parts(&clone, None);
+        assert!(flags.contains(" [copy]"), "the clone says so on the row; got {flags}");
+        assert!(CliPlayer::inspect_row(&clone, 9).contains(" [copy]"),
+            "and in the inspector: {}", CliPlayer::inspect_row(&clone, 9));
+
+        // `[tok]` already says it, and saying both is noise on a pane that
+        // elides for width.
+        let (_, _, flags) = CliPlayer::creature_row_parts(&token, None);
+        assert!(flags.contains(" [tok]") && !flags.contains("[copy]"),
+            "a token copy is marked once; got {flags}");
+    }
+
+    /// The consequence the mark exists for: the clone and the card it copied
+    /// are two permanents, so they are two rows, and neither is counted into
+    /// the other.
+    #[test]
+    fn a_clone_does_not_collapse_into_the_card_it_copied() {
+        let plain = creature(27, "Merciless Predator", 0);
+        let mut clone = creature(31, "Merciless Predator", 0);
+        clone.is_copy = true;
+
+        let a = CliPlayer::creature_row_parts(&plain, None);
+        let b = CliPlayer::creature_row_parts(&clone, None);
+        let grouped = CliPlayer::collapse_rows(vec![a, b]);
+        assert_eq!(grouped.len(), 2,
+            "a clone and its original are two permanents, not `2x` one: {grouped:?}");
+        assert_eq!(grouped[0].0, 1);
+    }
+
+    /// Issue #556: the `i` list is the screen you type a number into to
+    /// reach a detail page, and it was the one pane carrying neither the
+    /// token marker nor the object id. Three same-named permanents were
+    /// three byte-identical numbered rows, and the only way to learn which
+    /// number was which was to open all three detail pages — which is where
+    /// `ID: #N` had been all along. The target choosers and the ordering
+    /// screen print the id, so they could name permanents this list could
+    /// not point at.
+    #[test]
+    fn every_inspector_row_says_which_permanent_it_numbers() {
+        let plain = creature(27, "Merciless Predator", 0);
+        let mut clone = creature(31, "Merciless Predator", 0);
+        clone.is_copy = true;
+        let mut token = creature(81, "Merciless Predator", 0);
+        token.is_token = true;
+
+        let rows: Vec<String> = [&plain, &clone, &token].iter().enumerate()
+            .map(|(i, p)| CliPlayer::inspect_row(p, i + 8))
+            .collect();
+
+        for (perm, row) in [&plain, &clone, &token].iter().zip(&rows) {
+            assert!(row.contains(&format!("(#{})", perm.object_id.0)),
+                "the row that addresses a permanent says which one: {row}");
+        }
+        assert_eq!(rows.iter().collect::<std::collections::HashSet<_>>().len(), 3,
+            "three permanents, three distinguishable rows: {rows:?}");
     }
 
     // Issue #39 guard: a land play breaks auto-pass on any turn, even the

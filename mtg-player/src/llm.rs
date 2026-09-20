@@ -2399,6 +2399,13 @@ impl LlmPlayer {
             // A token's name is its subtypes alone (CR 111.4), so the board
             // says "token" here rather than in the name (issues #331, #334).
             if c.is_token { flag_parts.push("token".into()); }
+            // CR 707.2: a copy is a different permanent from what it copied
+            // — an Evil Twin clone can never transform (CR 701.28c) whatever
+            // face it shows, and the seat cannot tell from the name, the P/T
+            // or its own decklist, all of which are the copied card's. The
+            // granted ability below says it only when the copy effect had an
+            // "except it has ..." clause to grant (#557).
+            else if c.is_copy { flag_parts.push("copy".into()); }
             if c.tapped { flag_parts.push("T".into()); }
             if c.summoning_sick { flag_parts.push("S".into()); }
             if c.damage_marked > 0 { flag_parts.push(format!("{}dmg", c.damage_marked)); }
@@ -5752,6 +5759,7 @@ mod tests {
             printed_toughness: None,
             star_pt: false,
             is_token: false,
+            is_copy: false,
             protections: vec![],
             restrictions: vec![],
             granted_abilities: vec![],
@@ -5976,6 +5984,7 @@ this Aura deals 1 damage to that player.";
             printed_toughness: None,
             star_pt: false,
             is_token: false,
+            is_copy: false,
             protections: vec![],
             restrictions: vec![],
             granted_abilities: vec![],
