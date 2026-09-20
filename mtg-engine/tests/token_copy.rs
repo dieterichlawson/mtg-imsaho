@@ -202,3 +202,41 @@ fn a_clone_of_a_clone_still_has_the_granted_ability() {
     assert!(mtg_engine::cards::ability_granting_grantor(&state, second, &reg).is_some(),
         "a copy of an Evil Twin clone has the granted ability (CR 707.2)");
 }
+
+/// A token on its way off the battlefield is not rewritten into the card it
+/// copied.
+///
+/// CR 400.7 makes a permanent that changes zones a new object printed as its
+/// front face, and `move_object` writes that printed name and P/T back from
+/// the registry — for a CARD, which has one. A token does not (CR 111.1):
+/// what it is, it is on the object. A token copy of an Evil Twin clone
+/// carries the Twin's id in `copy_grantor` (CR 707.2, #554), so a reset that
+/// did not exclude tokens would put a 3/2 Grizzly Bears token into the
+/// graveyard renamed "Evil Twin" with Evil Twin's printed 0/0.
+///
+/// The window is short — the next state-based action pass removes it
+/// (CR 111.7) — but the death line and every LTB trigger read the object
+/// inside it. Written after a mutation sweep of `move_object_inner` found
+/// this the one live difference in the guard (#548).
+#[test]
+fn a_token_copy_leaving_the_battlefield_is_still_what_it_was() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let bears = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let twin = enters_as_copy_of(&mut state, &reg, "Evil Twin", P0, Some(bears));
+    let token = state.create_token_copy(twin, P0, &reg);
+
+    let before = state.get_object(token).unwrap().clone();
+    assert_eq!(before.name, "Grizzly Bears", "test setup: the token is a copy of the Bears");
+
+    state.move_object(token, Zone::Graveyard, &reg);
+
+    let after = state.get_object(token).unwrap();
+    assert_eq!(after.name, before.name,
+        "a token keeps its name on the way out — there is no printed card to restore it from");
+    assert_eq!((after.power, after.toughness), (before.power, before.toughness),
+        "and its power and toughness, which are equally its own (CR 111.1)");
+    assert_eq!(after.card_id, before.card_id,
+        "and the card it is a copy of, which is not the card that granted it an ability");
+}

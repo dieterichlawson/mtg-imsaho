@@ -1297,8 +1297,13 @@ impl GameState {
         // back from the registry, and that lookup needs `&self`, so it happens
         // before the mutable borrow below. For a copy, "printed" means the card
         // it was before the copy effect — which `copy_grantor` remembers.
+        //
+        // `leaving`, not `to != Zone::Battlefield`: the only place this value
+        // is read is inside the block guarded by "left the battlefield", so
+        // the loose condition here was a second, weaker reading of the same
+        // question (#548).
         let printed_reset: Option<(String, Option<i32>, Option<i32>)> =
-            if to != Zone::Battlefield && self.get_object(id).is_some_and(|o| !o.is_token) {
+            if leaving && self.get_object(id).is_some_and(|o| !o.is_token) {
                 self.get_object(id).and_then(|o| {
                     let printed_card = o.copy_grantor.unwrap_or(o.card_id);
                     registry.get(printed_card).map(|b| {
@@ -1390,8 +1395,18 @@ impl GameState {
                 // graveyard, and reanimating it ran that creature's ETB
                 // handler instead of its own — it came back as a permanent
                 // copy that could never offer its own choice again.
-                if let Some(printed) = obj.copy_grantor.take() {
-                    obj.card_id = printed;
+                //
+                // A token has no printed self to go back to (CR 111.1): its
+                // `copy_grantor` is only ever the card whose copy effect
+                // granted it an ability (CR 707.2, #554), and handing that
+                // card's id to a token on its way out makes it claim to be
+                // that card for as long as it exists -- which is until the
+                // next state-based action pass (CR 111.7), but the death
+                // line and the LTB triggers read it in that window.
+                if !obj.is_token {
+                    if let Some(printed) = obj.copy_grantor.take() {
+                        obj.card_id = printed;
+                    }
                 }
                 // CR 712.8a: a DFC off the battlefield has only its front
                 // face. Clearing `is_transformed` does most of it — every
