@@ -755,6 +755,13 @@ export function inspectorFacts(state, e) {
         out.push("Summoning sick");
     if (o.named_card)
         out.push(`Named: ${o.named_card}`);
+    // Whose ability this is. A trigger is not an object, so its `object_id`
+    // is a placeholder and the chip carries nothing that says which of several
+    // same-named permanents it fired from (issue #555, #527 on the slot).
+    if (e.zone === "stack" && o.source_id !== undefined && o.source_id !== null
+        && o.source_id !== o.object_id) {
+        out.push(`Source: ${nameOf(state, o.source_id)} (#${o.source_id})`);
+    }
     if (o.targets && o.targets.length)
         out.push("Targets: " + o.targets.map(t => targetLabel(state, t)).join(", "));
     if (o.x_value !== undefined && o.x_value !== null)

@@ -2225,7 +2225,12 @@ impl LlmPlayer {
                 // too, so the seat could not tell what it was responding to
                 // (issue #259).
                 let x = i.x_value.map_or_else(String::new, |x| format!(" (X={x})"));
-                writeln!(s, "  {}{x}{} ({})", i.name, targets_str, who).unwrap();
+                // Which permanent or card the entry is for (#555). The
+                // seat's `obj_name` carries the id everywhere else, and its
+                // targets line already did; the entry itself did not, so N
+                // triggers from N same-named sources were N identical lines.
+                let id = i.source_id.map(|s| format!(" (#{})", s.0)).unwrap_or_default();
+                writeln!(s, "  {}{id}{x}{} ({})", i.name, targets_str, who).unwrap();
             }
         }
 

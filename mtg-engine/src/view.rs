@@ -248,6 +248,19 @@ pub struct StackItemView {
     pub object_id: ObjectId,
     pub card_id: CardId,
     pub name: String,
+    /// The permanent or card this entry is on the stack FOR: the spell
+    /// itself, or the source of the ability. `None` only where the engine
+    /// cannot say.
+    ///
+    /// `object_id` is the stack object's own id and is `ObjectId(0)` for a
+    /// trigger, which is not an object — so the stack was the one public
+    /// zone (CR 400.2, and CR 405.1 makes it public in full) that could not
+    /// name what it was showing. Five simultaneous triggers from five
+    /// same-named permanents were five byte-identical rows, on a board where
+    /// exactly one of them would do anything, while the ordering prompt one
+    /// keystroke earlier told all five apart by id (#116) and the log after
+    /// the fact did too (#326). Issue #555.
+    pub source_id: Option<ObjectId>,
     pub controller: PlayerId,
     pub targets: Vec<crate::actions::Target>,
     /// The announced value of X (CR 601.2b), for a spell or ability that has
@@ -473,6 +486,7 @@ impl GameView {
                             card_id: obj.card_id,
                             name: registry.card_data(obj.card_id)
                                 .map_or_else(|| "Unknown".into(), |d| d.name),
+                            source_id: Some(obj.id),
                             controller: obj.controller,
                             targets: obj.targets.clone(),
                             x_value: obj.x_value,
@@ -480,9 +494,12 @@ impl GameView {
                     }
                     crate::state::StackEntry::Trigger(trigger) => {
                         Some(StackItemView {
-                            object_id: ObjectId(0), // triggers don't have an object ID
+                            object_id: ObjectId(0), // a trigger is not an object
                             card_id: CardId(0),
                             name: trigger.display_name_with_state(registry, Some(state)),
+                            // ... but it has one, and every other screen
+                            // names it by id (#555).
+                            source_id: Some(trigger.source_object()),
                             controller: trigger.controller(),
                             // CR 603.3d: a trigger's targets are chosen as it
                             // goes on the stack and are public — the panel
@@ -498,6 +515,7 @@ impl GameView {
                             card_id: *behavior_card_id,
                             name: registry.card_data(*behavior_card_id)
                                 .map_or_else(|| "Ability".into(), |d| format!("{} ability", d.name)),
+                            source_id: Some(*source_id),
                             controller: *activator,
                             targets: targets.clone(),
                             x_value: *x_value,

@@ -4834,9 +4834,17 @@ impl CliPlayer {
     /// (issue #259).
     fn stack_entry_headline(view: &GameView, item: &mtg_engine::view::StackItemView) -> String {
         let who = if item.controller == view.you { "you" } else { "opp" };
+        // Which permanent or card this entry is for. CR 405.1 makes the
+        // stack public IN FULL, and this was the one public zone printing no
+        // ids: five simultaneous triggers from five same-named permanents
+        // were five byte-identical rows, on a board where exactly one of
+        // them would do anything. The ordering prompt one keystroke earlier
+        // told all five apart (#116) and so did the log afterwards (#326);
+        // only the screen recording the decision could not (#555).
+        let id = item.source_id.map(|s| format!(" (#{})", s.0)).unwrap_or_default();
         match item.x_value {
-            Some(x) => format!("{} (X={x}) ({who})", item.name),
-            None => format!("{} ({who})", item.name),
+            Some(x) => format!("{}{id} (X={x}) ({who})", item.name),
+            None => format!("{}{id} ({who})", item.name),
         }
     }
 
@@ -4845,7 +4853,13 @@ impl CliPlayer {
         match target {
             // perm_name carries the (your)/(opp) marker and resolves
             // non-battlefield objects too (#100).
-            Target::Object(id) => format!(" -> {}", Self::perm_name(view, *id)),
+            // With the id, because the chooser that picked this target
+            // distinguished its rows by id and the stack recording the
+            // choice could not — four "Merciless Predator 3/2 (your)" on the
+            // board and one on the stack, with no way to say which (#555).
+            // `perm_name` itself stays as it is: the choosers append the id
+            // themselves, and every action row would carry two.
+            Target::Object(id) => format!(" -> {} (#{})", Self::perm_name(view, *id), id.0),
             Target::Player(pid) =>
                 if *pid == view.you { " -> you".into() } else { " -> opp".into() },
             Target::Illegal =>
@@ -9095,19 +9109,72 @@ yourself at some considerable length";
             object_id: ObjectId(22),
             card_id: mtg_engine::ids::CardId(0),
             name: "Devil's Play".to_string(),
+            source_id: Some(ObjectId(22)),
             controller: PlayerId(0),
             targets: vec![],
             x_value: Some(3),
         };
-        assert_eq!(CliPlayer::stack_entry_headline(&v, &item), "Devil's Play (X=3) (you)");
+        assert_eq!(CliPlayer::stack_entry_headline(&v, &item), "Devil's Play (#22) (X=3) (you)");
         item.x_value = Some(0);
-        assert_eq!(CliPlayer::stack_entry_headline(&v, &item), "Devil's Play (X=0) (you)");
+        assert_eq!(CliPlayer::stack_entry_headline(&v, &item), "Devil's Play (#22) (X=0) (you)");
 
         // A spell without an X says nothing about one.
         item.x_value = None;
         item.name = "Geistflame".to_string();
         item.controller = PlayerId(1);
-        assert_eq!(CliPlayer::stack_entry_headline(&v, &item), "Geistflame (opp)");
+        assert_eq!(CliPlayer::stack_entry_headline(&v, &item), "Geistflame (#22) (opp)");
+    }
+
+    /// Issue #555: CR 405.1 makes the stack public IN FULL, and it was the
+    /// one public zone printing no object ids. Five simultaneous triggers
+    /// from five same-named permanents were five byte-identical rows, on a
+    /// board where exactly one of them would do anything — while the
+    /// ordering prompt one keystroke earlier told all five apart by id
+    /// (#116), and the log afterwards did too (#326). Only the screen
+    /// recording the decision could not.
+    ///
+    /// The row is keyed on the SOURCE, not on the stack object: a trigger is
+    /// not an object (CR 113.7a) and its `object_id` is a placeholder, which
+    /// is why this needed a field rather than a format string.
+    #[test]
+    fn simultaneous_triggers_from_same_named_sources_are_told_apart_on_the_stack() {
+        let v = view(Step::Upkeep, 15, true);
+        let trigger = |source: u64| mtg_engine::view::StackItemView {
+            object_id: ObjectId(0),
+            card_id: mtg_engine::ids::CardId(0),
+            name: "Merciless Predator's upkeep trigger (transform back if 2+ spells cast)"
+                .to_string(),
+            source_id: Some(ObjectId(source)),
+            controller: PlayerId(0),
+            targets: vec![],
+            x_value: None,
+        };
+        let rows: Vec<String> = [27, 31, 81, 82, 83].iter()
+            .map(|&id| CliPlayer::stack_entry_headline(&v, &trigger(id)))
+            .collect();
+
+        assert_eq!(rows.iter().collect::<std::collections::HashSet<_>>().len(), 5,
+            "five triggers, five distinguishable rows: {rows:?}");
+        for (id, row) in [27, 31, 81, 82, 83].iter().zip(&rows) {
+            assert!(row.contains(&format!("(#{id})")), "each names its source: {row}");
+        }
+    }
+
+    /// The other half of #555: the chooser that picked a target named its
+    /// rows by id, and the stack recording the choice did not — four
+    /// `Merciless Predator 3/2 (your)` on the board and one on the stack,
+    /// with no way to say which was chosen.
+    #[test]
+    fn a_stack_targets_line_names_which_permanent_was_chosen() {
+        let mut v = view(Step::PrecombatMain, 15, true);
+        v.battlefield.push(creature(27, "Merciless Predator", 0));
+        v.battlefield.push(creature(31, "Merciless Predator", 0));
+
+        let a = CliPlayer::stack_target_line(&v, &Target::Object(ObjectId(27)));
+        let b = CliPlayer::stack_target_line(&v, &Target::Object(ObjectId(31)));
+        assert!(a.contains("(#27)"), "got {a}");
+        assert!(b.contains("(#31)"), "got {b}");
+        assert_ne!(a, b, "two same-named permanents, two different lines");
     }
 
     /// Issue #295: the declare-attackers stop tested whether the opponent

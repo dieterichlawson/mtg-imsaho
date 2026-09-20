@@ -88,6 +88,13 @@ export interface StackItemView {
   object_id: ObjectId;
   card_id: CardId;
   name: string;
+  /**
+   * The permanent or card this entry is on the stack FOR: the spell itself,
+   * or the source of the ability. A trigger is not an object, so its
+   * `object_id` is a placeholder and this is the only thing that says which
+   * of several same-named sources it came from (issue #555).
+   */
+  source_id: ObjectId | null;
   controller: PlayerId;
   targets: Target[];
   x_value: number | null;
