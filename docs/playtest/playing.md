@@ -929,6 +929,29 @@ illegal or dubious resolutions do.
   `ChosenIndex` per remaining trigger rather than N! permutations (#325), and the random
   seat picks from that flat list, so neither the menu explosion nor the constant-answer
   failure is present. The unexamined half is the copy's IDENTITY
+  — **played 2026-09-20: the engine holds and five of the six readers do not.** The
+  board is `10 Island / 10 Swamp / 6 Mountain / 4 Reckless Waif / 5 Evil Twin /
+  5 Cackling Counterpart` vs `40 Plains`, seed 4747, hotseat to turn 19 — one real
+  Merciless Predator, one Evil Twin clone, three token copies. Under 10 random mirror
+  games the machinery is sound: 41 Evil Twin casts split 23 copy / 18 decline (so the
+  choice is rolled, each option its own `Decision::Itself(index)` group), 157 token
+  copies made, and of 153 transform triggers pushed 44 flipped and 109 resolved inert —
+  86 token (CR 111.7), 12 single-faced clone (CR 701.28c), 11 off-battlefield
+  (CR 400.7) — every one logged with its citation, so #500's fix holds under load, and
+  both halves this idea wanted cleared are clear. The readers: the battlefield pane
+  marks the token `[tok]`, marks the clone nothing, and COLLAPSES the clone with the
+  card it copied into `2x Merciless Predator 3/2` (#557); the `i` list has neither mark
+  nor id, so three different ability sets are three byte-identical rows (#556); the
+  stack pane prints no object ids at all, five identical trigger rows one keystroke
+  after the ordering screen distinguished all five by id (#555); the `i` detail page is
+  the only reader that works. The target choosers and the ordering screen do carry ids,
+  but the ordering screen's `Sources:` block — the thing that would say why four of
+  those five triggers can do nothing — is silently empty for EVERY transformed DFC,
+  because `ordering_sources` looks the card up by back-face name and `CardRegistry`
+  indexes front faces only (#558; A/B it against Champion of the Parish, which prints
+  its block). One rules bug underneath: `create_token_copy` never carries
+  `copy_grantor`, so a Cackling Counterpart token copy of an Evil Twin comes out
+  without the granted "except it has ..." ability (#554, CR 707.2)
 - L48 [proposed 2026-09-15, from L15 and a read of `sba.rs`] the attachment SBA that
   only knows one of its cases. `check_state_based_actions` sweeps an Aura, or detaches
   an Equipment, only when the permanent it names has LEFT the battlefield; it never asks
