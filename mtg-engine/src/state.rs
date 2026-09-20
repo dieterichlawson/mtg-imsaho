@@ -3402,6 +3402,25 @@ impl GameState {
         Some(host)
     }
 
+    /// `unattach` for the player half of the same field pair: stop `id` being
+    /// attached to a player, and say so. Returns the player it came off.
+    ///
+    /// CR 704.5n unattaches an Equipment attached to a player, which is a
+    /// state no card in the set can currently make and which the sweep
+    /// nonetheless has to be able to clean up (#552) — the alternative is an
+    /// Equipment that the invariant checker calls corrupt for the rest of the
+    /// game with nothing able to fix it. A reader gets the same line they get
+    /// for the object case, for the same reason (#502).
+    pub fn unattach_from_player(&mut self, id: ObjectId) -> Option<PlayerId> {
+        let player = self.get_object(id)?.attached_to_player?;
+        let name = self.obj_name(id);
+        if let Some(obj) = self.get_object_mut(id) {
+            obj.attached_to_player = None;
+        }
+        self.log(LogLevel::Event, format!("{name} became unattached from p{}", player.0));
+        Some(player)
+    }
+
     /// Attach `id` to `host`, taking it off whatever it was on first.
     ///
     /// CR 701.3b: "If an effect tries to attach an Aura, Equipment, or
