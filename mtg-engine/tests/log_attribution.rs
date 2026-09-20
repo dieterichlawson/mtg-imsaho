@@ -1003,3 +1003,61 @@ fn re_equipping_to_the_creature_it_is_already_on_says_nothing_came_off() {
     assert_eq!(state.get_object(dagger).unwrap().attached_to, Some(bears),
         "and it is still on the creature it was on");
 }
+
+/// A spell that resolved and dealt 0 said only that it resolved.
+///
+/// CR 120.8 makes "deals 0 damage" into "does not deal damage at all", so the
+/// board is right either way and this is a question about the record. Corpse
+/// Lunge exiling the only creature card in its controller's graveyard is the
+/// normal case of it, not a corner: the flavour play is exiling a Boneyard
+/// Wurm, whose power counts the graveyard it just left (CR 604.3), so the
+/// spell costs {2}{B} and a permanently exiled card and deals nothing. In the
+/// issue's measurement 53 of 90 resolutions in a real pool came out this way,
+/// and the log said `Corpse Lunge (#16) resolved` and stopped (issue #553).
+///
+/// Same defect #299 fixed for a permanent entering with 0 counters, and the
+/// same answer.
+#[test]
+fn a_spell_whose_damage_comes_out_zero_says_that_it_dealt_none() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let wurm = named_card_in_graveyard(&mut state, &reg, "Boneyard Wurm", P0);
+    assert_eq!(state.effective_power(wurm, &reg), Some(1),
+        "test setup: in the graveyard the Wurm is the one creature card, counting itself");
+
+    let target = ready_creature(&mut state, P1, 0, 13);
+    let spell = castable_spell(&mut state, &reg, "Corpse Lunge", P0);
+    let state = cast_and_resolve(&state, &reg, spell, vec![Target::Object(target)]);
+
+    assert_eq!(state.effective_power(wurm, &reg), Some(0),
+        "test setup: exiled to pay the cost, the Wurm counts an empty graveyard");
+    assert_eq!(state.get_object(target).unwrap().damage_marked, 0,
+        "CR 120.8: a source that would deal 0 damage deals none — the rules half is right");
+
+    let lines = log_lines(&state);
+    assert_line(&lines, "dealt no damage to");
+}
+
+/// The control the line above is measured against: a spell that dealt
+/// something says how much, and does not also say it dealt none.
+#[test]
+fn a_spell_that_deals_damage_still_says_how_much() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    named_card_in_graveyard(&mut state, &reg, "Boneyard Wurm", P0);
+    named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+
+    let target = ready_creature(&mut state, P1, 0, 13);
+    let spell = castable_spell(&mut state, &reg, "Corpse Lunge", P0);
+    let state = cast_and_resolve(&state, &reg, spell, vec![Target::Object(target)]);
+
+    assert_eq!(state.get_object(target).unwrap().damage_marked, 1,
+        "test setup: the exiled Wurm reads the one creature card still in the graveyard");
+
+    let lines = log_lines(&state);
+    assert_line(&lines, "dealt 1 damage to");
+    assert!(index_of(&lines, "dealt no damage to").is_none(),
+        "a spell that dealt damage must not also report dealing none; log was {lines:#?}");
+}

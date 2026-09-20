@@ -135,11 +135,42 @@ pub fn queue_damage(
     kind: DamageKind,
 ) {
     if amount == 0 {
+        // CR 120.8: a source that would deal 0 damage deals none, so there is
+        // no event to queue and nothing below runs. What there still is, is
+        // something to say: the amount was computed, the computation came out
+        // 0, and a spell that dealt 0 used to be indistinguishable in the log
+        // from one that resolved and did nothing at all (#553). Corpse Lunge
+        // exiling the only creature card in your graveyard is the normal case
+        // of this, not the corner one -- 53 of 90 resolutions in the issue's
+        // measurement -- and the player paid {2}{B} and a card for it.
+        //
+        // Same trade as #299 made for a permanent entering with 0 counters,
+        // and settled the same way. The usual objection -- that this fills a
+        // combat log with 0-power attackers -- does not apply: `combat.rs`
+        // guards every one of its calls with `power > 0`, so a creature that
+        // deals no combat damage never reaches here at all. What reaches here
+        // is an amount a card computed, which is the case worth an account.
+        no_damage_line(state, source, &target, kind);
         return;
     }
     state.pending_damage.push(PendingDamage {
         source, target, amount, kind, applied: Vec::new(), settled: false,
     });
+}
+
+/// The account of a damage event that came out 0 (CR 120.8), worded to sit
+/// beside `perform`'s "dealt N damage to X" rather than to replace it.
+fn no_damage_line(state: &mut GameState, source: ObjectId, target: &DamageTarget, kind: DamageKind) {
+    // Nothing is dealt damage by a source that is not there, and nothing is
+    // said about it either: an id the game has forgotten reads as "(unknown)"
+    // and the line is noise.
+    if state.get_object(source).is_none() {
+        return;
+    }
+    let combat = if kind == DamageKind::Combat { "combat " } else { "" };
+    let source_name = state.obj_name(source);
+    let target_name = target_name(state, target);
+    state.log(LogLevel::Event, format!("{source_name} dealt no {combat}damage to {target_name}"));
 }
 
 /// Settle and deal everything in `pending_damage`.
