@@ -977,6 +977,30 @@ illegal or dubious resolutions do.
   the OWNER's graveyard while an Equipment in the same three states is merely unattached
   and left on the battlefield. Writing that test is the night's work; the sweep it
   protects is four lines
+  — **played 2026-09-20: the premise is confirmed, and it is still dormant.** All
+  three arrivals were re-swept rather than taken from the 09-15 note and 0 of 3 have
+  landed: `git log --since=2026-09-15 --diff-filter=A -- mtg-engine/src/cards/` adds no
+  card file at all, the only protection grants are four `ProtectionFromSubtype` hits
+  (all creature subtypes) plus Spare from Evil's
+  `And(HasCardType(Creature), Not(HasSubtype(Human)))`, no effect removes a card type,
+  and all 19 Auras are `TargetRequirement::Creature` or `PlayerOnly`. One datum 09-15
+  did not have, and the thing to watch: `CreatureFilter` has **no colour variant at
+  all**, so "protection from white" is not currently expressible, while
+  `HasCardType(Enchantment)` and `HasCardType(Artifact)` already are — that is the
+  cheapest way a future card makes this live, and it needs no new filter. Read side by
+  side, `sba.rs`'s sweep implements **2 of 9** CR 704.5m/n/702.16c cases and
+  `invariants/permanents.rs::check_settled` implements **9 of 9**. The test is written
+  and it fails as predicted — 6 cases, 5 failed / 1 passed, exit 101, each failure
+  quoting the oracle's contradictory verdict on the identical state — and it is NOT in
+  the repo: it is inline in full in **#552**, because a finder does not land engine
+  changes and because `test_suite_guards::the_testing_guide_names_every_rule_test_file`
+  refuses any rule test file `docs/TESTING.md` does not name (the row it needs is in
+  the issue too). Two secondary defects in the same four lines: the
+  `attached_to.is_some()` filter sits directly under a comment naming the one case it
+  excludes, and the function's doc comment promises a panic on that state which the
+  guard makes unreachable. **Nothing is left to try here until one of the three
+  arrivals lands** — re-run the sweep first, and if it is still 0 of 3, skip this idea
+  and pick another
 - L49 [proposed 2026-09-15, from L11] the characteristic-defining P/T as a value other
   cards READ. CR 604.3 makes a CDA function in every zone and L11 verified the engine
   renders it correctly off the battlefield — a Splinterfright reads 5/5 from the
