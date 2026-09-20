@@ -1033,6 +1033,21 @@ pub struct CardRegistry {
     cards: HashMap<CardId, Box<dyn CardBehavior>>,
     next_id: u32,
     name_to_id: HashMap<String, CardId>,
+    /// BACK-face names, to the card that prints them.
+    ///
+    /// A card is named by its front face (CR 712.3), so that is what
+    /// `name_to_id` holds and what a decklist line means. A *permanent*
+    /// showing its back face is named by that face, and every surface handed
+    /// such a name had no way back to the card: the ordering screen's
+    /// "Sources:" block silently dropped every transformed DFC in the set,
+    /// heading and all (issue #558).
+    ///
+    /// A second map rather than more entries in the first, so that a
+    /// decklist line, `all_names` and `get_id_by_name` still mean the card's
+    /// name and only `face_data_by_name` asks the wider question. It also
+    /// means the two faces are told apart by which map answered, rather than
+    /// by comparing a name against a name.
+    back_name_to_id: HashMap<String, CardId>,
 }
 
 impl Default for CardRegistry {
@@ -1041,6 +1056,7 @@ impl Default for CardRegistry {
             cards: HashMap::new(),
             next_id: 1,
             name_to_id: HashMap::new(),
+            back_name_to_id: HashMap::new(),
         }
     }
 }
@@ -1056,8 +1072,12 @@ impl CardRegistry {
         let id = CardId(self.next_id);
         self.next_id += 1;
         let name = card.card_data().name.clone();
+        let back_name = card.back_face_data().map(|d| d.name);
         self.cards.insert(id, card);
         self.name_to_id.insert(name, id);
+        if let Some(back_name) = back_name {
+            self.back_name_to_id.insert(back_name, id);
+        }
         id
     }
 
@@ -1084,6 +1104,30 @@ impl CardRegistry {
     /// Get card data by ID.
     pub fn card_data(&self, id: CardId) -> Option<CardData> {
         self.get(id).map(CardBehavior::card_data)
+    }
+
+    /// The printed data of the FACE that carries this name, front or back.
+    ///
+    /// `get_id_by_name` answers "which card is this?", and a card is named by
+    /// its front face — so for a permanent showing its back face it answered
+    /// `None`, and any caller handed a face name got silence. `ordering_sources`
+    /// was one: its `continue` dropped the source text of every transformed
+    /// DFC in the set, with nothing on the screen saying text was missing
+    /// (issue #558).
+    ///
+    /// Returning the *face's* data and not the card's is the other half of the
+    /// same bug: a back-face name resolved to a front-face card would have
+    /// printed Reckless Waif's cost, type line and text under the heading of a
+    /// Merciless Predator, trading a silence for a false card.
+    /// The card's own name is asked first, so a name that is both keeps
+    /// meaning the card it names.
+    #[must_use]
+    pub fn face_data_by_name(&self, name: &str) -> Option<CardData> {
+        if let Some(data) = self.get_id_by_name(name).and_then(|id| self.card_data(id)) {
+            return Some(data);
+        }
+        let id = self.back_name_to_id.get(name).copied()?;
+        self.get(id).and_then(CardBehavior::back_face_data)
     }
 
     /// Return all registered card names.
