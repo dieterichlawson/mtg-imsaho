@@ -1047,3 +1047,23 @@ illegal or dubious resolutions do.
   shouldn't; and `pay_exile_creatures`' no-named-ids auto-picker ranks by the PRE-exile
   power, which for a CDA card is not the power the damage will use — reachable from no
   shipped seat, since the CLI always asks and the random seat rolls (#455, #262)
+- L50 [proposed 2026-09-20, from #555 and L47] the ACTION MENU's source label, when two
+  permanents offer the same ability. #555 is about the stack pane; the main-phase menu
+  has the same hole and nobody has looked. The row is built through `perm_name`
+  (`mtg-player/src/cli.rs`), which formats `"{name} {p}/{t} ({your|opp})"` and stops —
+  no object id — so `1: Merciless Predator 3/2 (your): {U}{B}, {T}: Destroy target
+  creature with the same name` is what TWO Evil Twin clones of the same creature both
+  print, and the player picks between byte-identical rows that tap different creatures.
+  Set it up with the L47 deck (`10 Island / 10 Swamp / 6 Mountain / 4 Reckless Waif /
+  5 Evil Twin / 5 Cackling Counterpart` vs `40 Plains`, hotseat cli), get any creature
+  out, then cast TWO Evil Twins copying it — eight mana, about turn 15 — and read the
+  menu. Then ask the same of the three other shapes that produce one row per permanent
+  rather than per card: two Bloodline Keepers, two Demonmail Hauberks (equip, which
+  #472 showed dominates the random seat's encoding), two Avacynian Priests. Verify
+  three things at each: that the rows differ, that activating row N taps the permanent
+  row N names, and whether `mtg-player/src/llm.rs` — whose `obj_name` DOES carry the
+  id, so it may already be right — builds its list from the same label. The fix for the
+  mana-ability twin of this was #118, and it named the mana rather than the land;
+  naming the ability is not enough here, because the ability is what is already
+  identical
+
