@@ -1025,3 +1025,55 @@ writes, which only Gutter Grime calls — and Gutter Grime overrides the
 method. The `Some(String::new())` form is equivalent at that consumer in any
 case: the chain ends in `.unwrap_or_default()`, where `Some("")` and `None`
 are the same string. Reasons on the accepted list.
+
+### Shard 0's `move_object_inner` (issue #548): one killed, three accepted
+
+The last entry from #548, and the one the shard-0 write-up left open: `replace
+&& with || in GameState::move_object_inner`, a function with eighteen `&&` in
+it under a normalized name that strips line:col, so the issue named a site
+nobody had identified. Swept it, one site at a time, `cargo test -p mtg-engine`
+per mutant — the scope `cargo mutants -p mtg-engine -- -p mtg-engine` runs.
+`cargo-mutants` is not installed in this environment, so the sweep is a script
+applying the same edits by hand.
+
+**18 sites: 14 caught, 4 alive.** Three of the fourteen are caught by hanging
+the suite outright rather than by failing it (the CR 614.12b entry-choice
+gate, which defers every ordinary ETB); cargo-mutants reports that as a
+timeout, and so does the sweep. The earlier write-up's five hand-checked
+sites are among the fourteen.
+
+**One killed.** The guard on `printed_reset` read `to != Zone::Battlefield &&
+!is_token`, while the only place that value is *used* sits inside `if from ==
+Zone::Battlefield && to != Zone::Battlefield`. So the first half of the guard
+was a second, weaker reading of a question the consumer already asks, and the
+half that did the work was `!is_token`. Loosened to `||`, the printed reset
+applies to tokens — and since #554 a token copy of an Evil Twin clone carries
+the Twin's id in `copy_grantor`, so a 3/2 Grizzly Bears token would land in
+the graveyard renamed "Evil Twin" with Evil Twin's printed 0/0. The window is
+one state-based action pass (CR 111.7), but the death line and every LTB
+trigger read the object inside it. The guard now uses the `leaving` binding
+that already exists nine lines up, the `copy_grantor` restore beside it
+excludes tokens for the same reason (a token has no printed self to go back
+to, CR 111.1), and `token_copy::a_token_copy_leaving_the_battlefield_is_still_what_it_was`
+kills the mutant.
+
+**Three accepted, one argument.** 1250 (`graveyard_order`), 1463
+(`remove_from_combat`) and 1487 (`until_end_of_turn` / `control_effects` /
+`set_pt_effects`) each guard a *cleanup*: take this id out of the structure it
+is listed in. Loosening the guard makes the cleanup run on moves that do not
+need it, and a cleanup with nothing to clean is a no-op. Every one of those
+structures names a permanent that is on the battlefield now — because this
+very line is what evicts an id when it stops being one — so for an id to be
+listed while `from != Some(Zone::Battlefield)`, the state would already have
+to be corrupt in a way `invariants` reports on its own. The graveyard case is
+the same shape one zone over: an id in the owner's `graveyard_order` is an id
+in that graveyard, hence `from == Some(Zone::Graveyard)`. The mutant cannot
+make the engine do anything the original does not; it can only make it do
+nothing more often. (`until_eot_object_target` returns `None` for
+`GrantFlashback` — the one temporary effect aimed at a card off the
+battlefield — and says so in a comment, which is what closes that hole.)
+
+The accepted entry carries the function's normalized name, so it also
+suppresses any *future* `&&` in `move_object_inner` that survives. That is the
+standing cost of the normalization and it is not new here; the sweep script is
+in the session record if the function grows and someone wants to re-run it.

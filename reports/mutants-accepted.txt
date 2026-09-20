@@ -586,3 +586,11 @@ mtg-engine/src/invariants/prompts.rs: replace match guard !player_ok(state, *p) 
 # and `None` are the same empty string.
 mtg-engine/src/cards/mod.rs: replace CardBehavior::token_pt_text -> Option<String> with Some("xyzzy".into())
 mtg-engine/src/cards/mod.rs: replace CardBehavior::token_pt_text -> Option<String> with Some(String::new())
+
+# The four surviving `&&` in `move_object_inner` after the 2026-09-20 sweep
+# (18 sites: 14 caught, 4 alive). One of the four was a real gap and is now
+# killed by `token_copy::a_token_copy_leaving_the_battlefield_is_still_what_it_was`;
+# the other three guard cleanups whose structures only ever name a battlefield
+# permanent, so loosening the guard runs a no-op on moves that need none.
+# Reasons in reports/mutation-testing.md.
+mtg-engine/src/state.rs: replace && with || in GameState::move_object_inner
