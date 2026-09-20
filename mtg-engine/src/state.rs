@@ -939,7 +939,9 @@ impl GameState {
             attached_to_player: None,
             last_attached_to_player: None,
             zone_change_count: 0,
-            copy_grantor: None,
+            // A token has no printed card to give back, so this field is
+            // only ever the copy-granted ability's source here (CR 707.2).
+            copy_grantor: face.and_then(|f| f.copy_grantor),
             is_token: true,
             is_legendary: face.is_some_and(|f| f.is_legendary),
             cast_with_flashback: false,
@@ -1023,6 +1025,19 @@ impl GameState {
         // copying a Zombie token that Olivia Voldaren had made a Vampire
         // produced a Vampire Zombie. One caller of one accessor cannot drift
         // from itself.
+        // CR 707.2: "as modified by other copy effects" — a source that is
+        // itself a copy with an "except it has ..." clause has that clause in
+        // its copiable values, so the token gets it too. Evil Twin's own
+        // ruling says this in as many words: a creature that becomes a copy
+        // of an Evil Twin clone also gets the activated ability.
+        //
+        // `ability_granting_grantor` and not `copy_grantor` itself, because
+        // the field does two jobs on a card — "the card I am printed as, to
+        // be given back on the way out of the battlefield" and "the card
+        // whose copy effect granted me an ability". Only the second is a
+        // copiable value, and a token has no printed self to give back.
+        let copy_grantor = crate::cards::ability_granting_grantor(self, source_id, registry);
+
         let name = self.name_of(source_id, registry);
         let (power, toughness) = self.printed_pt_of(source_id, registry);
         let colors = self.printed_colors_of(source_id, registry);
@@ -1053,7 +1068,9 @@ impl GameState {
             card_types,
             keywords,
             subtypes.clone(),
-            Some(TokenCopyFace { card_id, is_legendary, is_transformed: source_transformed }),
+            Some(TokenCopyFace {
+                card_id, is_legendary, is_transformed: source_transformed, copy_grantor,
+            }),
             None,
             registry,
         );
@@ -3878,6 +3895,13 @@ pub(crate) struct TokenCopyFace {
     pub card_id: CardId,
     pub is_legendary: bool,
     pub is_transformed: bool,
+    /// CR 707.2: the copiable values are the printed text *as modified by
+    /// other copy effects*, so an "except it has ..." clause the source
+    /// picked up when it became a copy (Evil Twin) is copied along with
+    /// everything else. This is the card that clause came from — the same
+    /// thing `copy_grantor` means on the object, and the field the ability
+    /// lookup reads.
+    pub copy_grantor: Option<CardId>,
 }
 
 /// Whether a permanent that chooses what to enter as has been asked yet, and

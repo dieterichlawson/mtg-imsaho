@@ -136,3 +136,69 @@ fn an_unnamed_tokens_name_is_its_subtypes_alone() {
     assert_eq!(state.name_of(named, &reg), "Ashaya, the Awoken World",
         "a name the effect gave is not overwritten by the subtypes");
 }
+
+/// CR 707.2: the copiable values are the printed text "as modified by other
+/// copy effects", so an Evil Twin clone's "except it has `{U}{B}, {T}:
+/// Destroy target creature with the same name`" is part of what a later copy
+/// of that clone copies. The whole of that ability hangs off `copy_grantor`,
+/// and `create_token_copy` used to stamp the token with the copied card and
+/// leave the grantor `None` — a Cackling Counterpart token of an Evil Twin
+/// clone came out as a plain copy of the creature the Twin had copied, with
+/// the ability gone and nothing able to put it back (#554).
+#[test]
+fn a_token_copy_of_a_clone_keeps_the_ability_the_clone_was_granted() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let bears = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let twin = enters_as_copy_of(&mut state, &reg, "Evil Twin", P0, Some(bears));
+    assert!(mtg_engine::cards::ability_granting_grantor(&state, twin, &reg).is_some(),
+        "test precondition: the clone itself has the granted ability");
+
+    let token = state.create_token_copy(twin, P0, &reg);
+
+    assert_eq!(
+        mtg_engine::cards::ability_granting_grantor(&state, token, &reg),
+        mtg_engine::cards::ability_granting_grantor(&state, twin, &reg),
+        "a token copy of an Evil Twin clone has the clause the clone has \
+         (CR 707.2) — it is a copiable value, not something the Twin kept");
+    assert_eq!(state.get_object(token).unwrap().name, "Grizzly Bears",
+        "and it is still a copy of what the clone copied");
+}
+
+/// The other side of the same rule: a token copy of a permanent that is NOT a
+/// copy carries no grantor. `copy_grantor` doubles as "the card I am printed
+/// as, to be given back on the way off the battlefield", and a token that
+/// claimed one would be claiming an ability it has no source for.
+#[test]
+fn a_token_copy_of_an_ordinary_creature_is_granted_nothing() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let bears = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let token = state.create_token_copy(bears, P0, &reg);
+
+    assert_eq!(state.get_object(token).unwrap().copy_grantor, None,
+        "nothing granted this token an ability, so nothing may be looked up as \
+         having granted it one");
+}
+
+/// A clone that enters as a copy of another clone. The ability survives —
+/// through the entering permanent's own copy effect rather than through the
+/// source's copiable values, because Evil Twin is the only card in the pool
+/// with an "except it has ..." clause and so is always its own grantor. Here
+/// to record which of the two routes is doing the work: a clone card without
+/// a clause of its own would need `copy_grantor`'s two jobs split apart,
+/// which is worth doing when such a card arrives and not before.
+#[test]
+fn a_clone_of_a_clone_still_has_the_granted_ability() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let bears = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let first = enters_as_copy_of(&mut state, &reg, "Evil Twin", P0, Some(bears));
+    let second = enters_as_copy_of(&mut state, &reg, "Evil Twin", P0, Some(first));
+
+    assert!(mtg_engine::cards::ability_granting_grantor(&state, second, &reg).is_some(),
+        "a copy of an Evil Twin clone has the granted ability (CR 707.2)");
+}
