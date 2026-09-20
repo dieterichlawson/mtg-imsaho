@@ -586,41 +586,12 @@ pub fn check_settled(state: &GameState, registry: &CardRegistry) -> Vec<String> 
         }
     }
 
-    // CR 704.5m/n: an Aura on the battlefield is attached, and attached to
-    // something that is there.
-    for obj in state.objects_in_id_order() {
-        if obj.zone != Zone::Battlefield || !state.has_subtype(obj.id, "Aura", registry) {
-            continue;
-        }
-        match (obj.attached_to, obj.attached_to_player) {
-            (None, None) => {
-                v.push(format!("Aura {} ({}) on the battlefield unattached", obj.id.0, obj.name));
-            }
-            (Some(host), None) => {
-                if !state.get_object(host).is_some_and(|h| h.zone == Zone::Battlefield) {
-                    v.push(format!("Aura {} ({}) attached to {} which is not on the battlefield", obj.id.0, obj.name, host.0));
-                }
-            }
-            _ => {}
-        }
-    }
-
-    // Equipment is attached to a battlefield creature or not attached at
-    // all — unlike an Aura it may sit unattached, but never on a ghost, and
-    // never on a non-creature (CR 704.5p unattaches it).
-    for obj in state.objects_in_id_order() {
-        if obj.zone != Zone::Battlefield || !state.has_subtype(obj.id, "Equipment", registry) {
-            continue;
-        }
-        if let Some(host) = obj.attached_to {
-            if !state.get_object(host).is_some_and(|h| h.zone == Zone::Battlefield) {
-                v.push(format!("Equipment {} ({}) attached to {} which is not on the battlefield", obj.id.0, obj.name, host.0));
-            } else if !state.is_creature(host, registry) {
-                v.push(format!("Equipment {} ({}) attached to non-creature {}", obj.id.0, obj.name, host.0));
-            }
-        }
-    }
-
+    // CR 704.5m/n — an Aura on the battlefield is attached, and attached to
+    // something that is there; an Equipment is on a battlefield creature or
+    // on nothing — is `permanents::check_settled`, which asks
+    // `attachment::illegality`. These used to be two more loops here, a
+    // third reading of the same rules; the sweep in `sba.rs` was a fourth,
+    // and it was the one that disagreed (#552).
 
     turn::check_settled(state, registry, &mut v);
     effects::check_settled(state, registry, &mut v);

@@ -170,37 +170,25 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
             took_action = true;
         }
 
-        // Rule 704.5m: Aura not attached to anything goes to graveyard.
-        // Curses attached to players (attached_to_player) are exempt.
-        // Equipment stays on the battlefield when unattached (detaches instead).
-        let unattached_auras: Vec<_> = state.objects_in_id_order().into_iter()
-            .filter(|o| {
-                o.zone == Zone::Battlefield
-                    && o.attached_to.is_some()
-                    && o.attached_to_player.is_none() // player-attached curses are fine
-                    && !state.is_equipment(o.id, registry) // Equipment detaches instead
-                    && {
-                        let target_id = o.attached_to.expect("aura must have attached_to");
-                        state.get_object(target_id)
-                            .is_none_or(|t| t.zone != Zone::Battlefield) // target doesn't exist
-                    }
-            })
-            .map(|o| o.id)
+        // Rules 704.5m/n: an attachment that is not legally attached. The
+        // question is `attachment::illegality`, which is the same one
+        // `invariants::permanents` asks of a settled board — this sweep used
+        // to ask only "has my host left the battlefield?", so five states the
+        // oracle calls corrupt were states the engine called settled (#552).
+        // An Aura goes to its owner's graveyard; an Equipment becomes
+        // unattached and stays where it is.
+        let illegal: Vec<(ObjectId, bool)> = state.objects_in_id_order().into_iter()
+            .filter(|o| o.zone == Zone::Battlefield)
+            .filter(|o| crate::attachment::illegality(state, o.id, registry).is_some())
+            .map(|o| (o.id, state.is_equipment(o.id, registry)))
             .collect();
-
-        // Equipment attached to creatures that left the battlefield: detach (don't destroy).
-        let detach_equipment: Vec<ObjectId> = state.objects_in_id_order().into_iter()
-            .filter(|o| {
-                o.zone == Zone::Battlefield
-                    && state.is_equipment(o.id, registry)
-                    && o.attached_to.is_some()
-                    && {
-                        let target_id = o.attached_to.expect("equipment must have attached_to");
-                        state.get_object(target_id)
-                            .is_none_or(|t| t.zone != Zone::Battlefield)
-                    }
-            })
-            .map(|o| o.id)
+        let unattached_auras: Vec<ObjectId> = illegal.iter()
+            .filter(|(_, is_equipment)| !is_equipment)
+            .map(|(id, _)| *id)
+            .collect();
+        let detach_equipment: Vec<ObjectId> = illegal.iter()
+            .filter(|(_, is_equipment)| *is_equipment)
+            .map(|(id, _)| *id)
             .collect();
         for id in detach_equipment {
             // CR 704.5n: it becomes unattached and remains on the
@@ -208,7 +196,13 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
             // saying so lives — this used to clear the field and write
             // nothing, the only state-based action here that changed the
             // game state silently (issue #502).
-            state.unattach(id);
+            if state.get_object(id).is_some_and(|o| o.attached_to.is_some()) {
+                state.unattach(id);
+            } else {
+                // CR 301.5/704.5n: an Equipment on a player comes off the
+                // player. Same event, same line, a different field.
+                state.unattach_from_player(id);
+            }
             took_action = true;
         }
 
