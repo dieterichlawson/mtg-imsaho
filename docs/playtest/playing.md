@@ -972,3 +972,31 @@ illegal or dubious resolutions do.
   (CR 111.7) so it must never appear in the exile picker. Prompted by L11 observing
   `Splinterfright {2}{G} 5/5` and `Geist-Honored Monk {3}{W}{W} 1/1` live in the `g`
   pane with no card in either deck able to consume those numbers
+  — **played 2026-09-20: the consumer is right in both directions, and the amount it
+  computes is only narrated when it is nonzero.** Build it with `l49-min`
+  (12 Boneyard Wurm / 12 Corpse Lunge / 18 Forest / 18 Swamp) against
+  `l49-tree` (16 Tree of Redemption / 24 Forest) — the Tree is an 0/13 defender, so
+  the damage is readable exactly off the `(Nd)` marker — and note the cheapest way to
+  get a creature card into your own graveyard in this pool: cast a Boneyard Wurm or a
+  Splinterfright while the graveyard is empty, and it enters as a 0/0 and dies to
+  CR 704.5a on the spot. Exiling that Wurm as the only creature card there deals **0**
+  (in exile it stops counting itself, CR 604.3 + CR 108.4), and exiling a
+  Splinterfright the same way deals **1** once a Forbidden Alchemy cast IN RESPONSE
+  mills a creature card back in — an announcement-time snapshot would have dealt 0
+  both times, so the resolution read is the right one and it is live. The Monk half is
+  right too: a Geist-Honored Monk in the graveyard tracked its owner's board at `4/4`
+  (Monk, Skaab, two Spirit tokens) and dealt 4. The CDA renders correctly in hand, the
+  graveyard, the exile pane and the battlefield simultaneously, on two cards whose
+  sums differ. What broke is one layer down and is not about CDAs at all:
+  `queue_damage` (`damage.rs:137`) and `perform` (`damage.rs:731`) both return early on
+  `amount == 0` ABOVE their log line, so **53 of 90 Corpse Lunge resolutions — 59%,
+  over 109 casts in 30 random games — leave no record of what the spell did** (#553);
+  a fizzle IS logged distinctly, so the confusion is narrower than it looks, but the
+  player who exiled a card and paid {2}{B} is told only `resolved`. Both negative cases
+  are unreachable and both left something behind: no token can sit in a graveyard when
+  a picker is built (`sba.rs:359`, CR 704.5d), yet `exile_prompt`'s `gy()` filters
+  `is_creature` and NOT `is_card` while `additional_cost_is_payable` filters both, so
+  the two lists disagree about what a creature card is with nothing asserting they
+  shouldn't; and `pay_exile_creatures`' no-named-ids auto-picker ranks by the PRE-exile
+  power, which for a CDA card is not the power the damage will use — reachable from no
+  shipped seat, since the CLI always asks and the random seat rolls (#455, #262)
