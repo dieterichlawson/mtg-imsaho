@@ -889,6 +889,38 @@ fn a_trigger_order_prompt_orders_its_own_queue() {
     s.awaiting_action = Some(prompt(ghoul, vec![0, 1], labels(), true, P0));
     quiet_about(&s, &reg, "trigger-order prompt");
 
+    // The parts the ordering screen renders describe the same triggers as
+    // the options, in the same order (#325). A prompt from an older save has
+    // none at all, which is what every case above and below is; one that has
+    // them has to have them right, and no prompt in this file had them, so
+    // the whole `!details.is_empty()` block was reached by nothing (#551).
+    let detailed = |s: &GameState, idx: &[usize]| -> Vec<mtg_engine::state::TriggerOrderOption> {
+        idx.iter().map(|&i| s.pending_trigger_pushes_ap[i].order_option(&reg, s)).collect()
+    };
+    let with_details = |s: &GameState, src: ObjectId, indices: Vec<usize>,
+                        details: Vec<mtg_engine::state::TriggerOrderOption>| {
+        let mut s = s.clone();
+        s.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+            player: P0, source: src,
+            choice: ResolutionChoiceKind::ChooseTriggerOrder {
+                description: "d".into(), options: labels(), ap_queue: true, indices, details } });
+        s
+    };
+    let good = detailed(&ap, &[0, 1]);
+    quiet_about(&with_details(&ap, ghoul, vec![0, 1], good.clone()), &reg, "trigger-order prompt");
+
+    // One part for two rows: a screen that cannot name what it lists.
+    let mut short = good.clone();
+    short.pop();
+    flags(&with_details(&ap, ghoul, vec![0, 1], short), &reg, "with 1 details for 2 options");
+
+    // A part describing a different permanent from the trigger it sits on --
+    // the shape of #326, where twelve different decisions logged as twelve
+    // identical lines.
+    let mut wrong = good.clone();
+    wrong[1].source = theirs;
+    flags(&with_details(&ap, ghoul, vec![0, 1], wrong), &reg, "detail 1 names #");
+
     // One trigger is not an order to choose.
     let mut s = ap.clone();
     s.awaiting_action = Some(prompt(ghoul, vec![0], vec!["a".into()], true, P0));
@@ -1180,6 +1212,18 @@ fn a_damage_effect_prompt_is_the_affected_players_choice_among_applicable_effect
     }
     flags(&s, &reg, "but the queue's next event is");
 
+    // ... in every particular and not only in its amount. A prompt naming a
+    // different source describes an event that is not the one waiting, and
+    // the answer would be applied to a damage event the player was never
+    // asked about (CR 616.1). Only the amount was ever wrong here, so three
+    // quarters of the clause was reached by nothing (#551).
+    let mut s = state.clone();
+    if let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseDamageEffect { source, .. }, .. }) = &mut s.awaiting_action {
+        *source = ObjectId(4242);
+    }
+    flags(&s, &reg, "but the queue's next event is");
+
     // A prompt with no event behind it is a prompt about nothing.
     let mut s = state.clone();
     for p in &mut s.pending_damage {
@@ -1238,6 +1282,13 @@ fn a_target_set_prompt_offers_real_things_within_bounds_it_can_meet() {
     // A player among the options is not a missing one, and the bounds it
     // really has are not a violation.
     quiet_about(&with(&|_, _, _| {}), &reg, "who is not a player");
+    // The boundary itself: "exactly one" is `min == max`, which is a
+    // question with a legal answer and not a contradiction. Corpse Lunge's
+    // exile picker asks one every time it is cast. The clause beside it
+    // reaches its boundary on this prompt already (`max == options.len()`,
+    // two of two) and this one did not, so `>` could become `>=` here and
+    // the checker would call every exactly-N prompt corrupt (#551).
+    quiet_about(&with(&|_, min, max| { *min = 1; *max = 1; }), &reg, "asks for");
 }
 
 /// The same clause for the object-set prompt — Curse of Oblivion's "exile two
@@ -1271,4 +1322,10 @@ fn an_object_set_prompt_offers_real_objects_within_bounds_it_can_meet() {
     flags(&with(&|o, _, _| { let first = o[0]; o.push(first); }), &reg, "twice");
     flags(&with(&|_, min, max| { *min = 3; *max = 2; }), &reg, "asks for 3-2 objects");
     flags(&with(&|o, _, max| { *max = o.len() + 1; }), &reg, "of 4 options");
+    // And the boundary under that ceiling: asking for every option there is
+    // is answerable, so it is not a violation. Corpse Lunge exiling the only
+    // creature card in a graveyard is exactly `max == options.len()`. The
+    // sibling clause reaches its boundary on this prompt already (`min ==
+    // max`, two of four) and this one did not (#551).
+    quiet_about(&with(&|o, min, max| { *min = o.len(); *max = o.len(); }), &reg, "asks for");
 }
