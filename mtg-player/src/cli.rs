@@ -5779,7 +5779,6 @@ impl CliPlayer {
     ) -> Action {
         begin_decision(view.you, "x-funding");
         use mtg_engine::actions::ResolvedChoice;
-        use mtg_engine::funding::FundingResponse;
         use mtg_engine::types::ManaType;
 
         // Rendered inside the TUI frame like every other prompt: bare
@@ -5866,45 +5865,12 @@ impl CliPlayer {
         };
 
         // Distribute X: drain from pool (larger color buckets first), then
-        // tap sources starting from whole-ability steps. Any mismatch at
-        // the end (X isn't achievable due to multi-mana-source quanta) is
-        // rounded down by dropping excess.
-        let mut response = FundingResponse::default();
-        // A cost reduction with no generic pips to come off pays for the
-        // first `x_discount` of X, so only the rest is funded with mana
-        // (CR 601.2f).
-        let mut remaining = options.mana_for_x(x);
-
-        // Pool: drain largest buckets first.
-        let mut pool_sorted: Vec<(ManaType, u32)> = options.pool.iter()
-            .map(|(k, v)| (*k, *v))
-            .collect();
-        pool_sorted.sort_by(|a, b| b.1.cmp(&a.1));
-        for (mt, avail) in pool_sorted {
-            if remaining == 0 { break; }
-            let take = avail.min(remaining);
-            if take > 0 {
-                response.pool.insert(mt, take);
-                remaining -= take;
-            }
-        }
-
-        // Taps: iterate groups in their given order (category-sorted). For
-        // each, take as many whole activations as needed.
-        for g in &options.groups {
-            if remaining == 0 { break; }
-            if g.mana_per_tap == 0 { continue; }
-            let max_taps = u32::try_from(g.source_ids.len()).unwrap_or(u32::MAX);
-            // Take as many full activations as fit within `remaining`. If
-            // the quantum (mana_per_tap) doesn't divide `remaining` evenly,
-            // we under-tap rather than over-tap.
-            let take_taps = (remaining / g.mana_per_tap).min(max_taps);
-            if take_taps > 0 {
-                let amount = take_taps * g.mana_per_tap;
-                response.taps.insert(g.name.clone(), amount);
-                remaining -= amount;
-            }
-        }
+        // tap sources in whole-ability steps. Any mismatch at the end (X
+        // isn't achievable due to multi-mana-source quanta) is rounded down
+        // by dropping excess. Shared with the fuzzer seat, which had no
+        // allocation of its own and answered every X prompt with the whole
+        // board (#564).
+        let (response, remaining) = mtg_engine::funding::allocate_for_x(options, x);
         if remaining > 0 {
             Self::clear_panel_row(&mut stdout(), col, r + 1);
             let _ = execute!(stdout(),

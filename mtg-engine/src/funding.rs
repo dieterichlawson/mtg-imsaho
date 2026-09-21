@@ -151,6 +151,65 @@ impl FundingResponse {
     }
 }
 
+/// Build the response that funds `x`, and say how much of it could not be
+/// funded.
+///
+/// The pool is drained first, largest bucket first, then each group is
+/// tapped in the order the prompt lists them, in whole activations. A
+/// group that produces two mana a tap cannot fund an odd remainder, so the
+/// shortfall is returned rather than rounded up: the caller announces
+/// `x - shortfall` and says so. Callers that need an exact X check the
+/// second element.
+///
+/// One implementation, every seat. The terminal had it inline and the
+/// fuzzer had none — it answered every X prompt by allocating the whole
+/// board, which is by construction `max_announceable_x` and nothing else,
+/// so no seeded game has ever announced an intermediate X and the
+/// under-tapping branch above was reachable from the keyboard only (#564).
+#[must_use]
+pub fn allocate_for_x(options: &FundingOptions, x: u32) -> (FundingResponse, u32) {
+    let mut response = FundingResponse::default();
+    // A cost reduction with no generic pips to come off pays for the first
+    // `x_discount` of X, so only the rest is funded with mana (CR 601.2f).
+    let mut remaining = options.mana_for_x(x);
+
+    // Pool: drain largest buckets first.
+    let mut pool_sorted: Vec<(ManaType, u32)> =
+        options.pool.iter().map(|(k, v)| (*k, *v)).collect();
+    pool_sorted.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    for (mt, avail) in pool_sorted {
+        if remaining == 0 {
+            break;
+        }
+        let take = avail.min(remaining);
+        if take > 0 {
+            response.pool.insert(mt, take);
+            remaining -= take;
+        }
+    }
+
+    // Taps: groups in their given order (category-sorted). For each, as
+    // many full activations as fit — under-tapping rather than over-tapping
+    // when the quantum does not divide the remainder.
+    for g in &options.groups {
+        if remaining == 0 {
+            break;
+        }
+        if g.mana_per_tap == 0 {
+            continue;
+        }
+        let max_taps = u32::try_from(g.source_ids.len()).unwrap_or(u32::MAX);
+        let take_taps = (remaining / g.mana_per_tap).min(max_taps);
+        if take_taps > 0 {
+            let amount = take_taps * g.mana_per_tap;
+            response.taps.insert(g.name.clone(), amount);
+            remaining -= amount;
+        }
+    }
+
+    (response, remaining)
+}
+
 /// Error returned when a [`FundingResponse`] is inconsistent with its
 /// [`FundingOptions`].
 #[derive(Debug, Clone, PartialEq, Eq)]
