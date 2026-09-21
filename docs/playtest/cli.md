@@ -997,3 +997,26 @@ whether it told the truth.
   and check what the log records against what the prompt promised and what
   the screen said — then stage the same `ChooseXFunding` on the page with
   `mana_per_tap: 2` and see whether the shortfall is mentioned at all
+
+- V50 [proposed 2026-09-21, from V45] the budget on the other three surfaces.
+  V45 measured the CLI and found a power law: 0.09 s per keypress at 100
+  permanents, 1.9-3.7 s at 500, 16-23 s at 1,000, 8m30s to the first prompt
+  at 4,000, never at 12,928 (#565). The cost is per decision point and it is
+  NOT CLI-specific — `--resume --p1 random --p2 random` of the same
+  1,000-permanent save writes its first log line in 58 ms and then sits 40+ s
+  at `DeclareAttackers` with nobody at a keyboard — so the same board is a
+  wall for the fuzzer and for the page, and neither has ever been measured.
+  Method: prune one flood save to 100/250/500/1,000/2,000 permanents (the
+  recipe is in #565), resume each with `--p1 random --p2 random` and record
+  decisions per second, then with `--p1 gui` and time the page's round trip
+  and the size of the `GameView` it is handed — a 1,000-permanent board
+  produced 781 eligible attackers and a 781 x 192 blocker screen, and the LLM
+  seat's action list is one comma-joined line with no cap, so the same
+  position is a token flood on the harness side and an un-clickable page on
+  the browser side. The question is whether the number #565 documents for a
+  person is the same number for the other three, and whether the nightly fuzz
+  job is already paying it without anyone noticing. Worth pairing with the
+  `--check-invariants` multiplier, which is 2.0x at 100 permanents and 4.9x
+  at 2,000 (a full `GameState` clone per decision at `main.rs:864` plus a
+  full save rewrite — 13.46 MB per keypress at turn 22), since that is the
+  configuration CI runs in
