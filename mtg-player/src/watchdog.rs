@@ -26,30 +26,60 @@ use mtg_engine::state::GameState;
 /// decisions running.
 pub const STALLED_DECISIONS: u32 = 100;
 
-/// Everything one decision could move, as one number.
+/// The board, as one number: everything about the game a player can look
+/// at and see.
 ///
-/// Two decisions with the same fingerprint changed nothing any player can
-/// see: same turn and step, same stack, same lives and libraries and hands
-/// and graveyards, same permanents in the same states, same floating mana,
-/// and the same combat — who is attacking whom, who is blocking, and the
-/// order damage is assigned in.
-/// The priority holder is deliberately absent — the loop this catches hands
-/// priority back to the same seat every time, and a ping-pong that changed
-/// nothing else would be just as stuck.
+/// Two decisions with the same fingerprint left the board alone. Hashed:
+/// the turn and step; the stack's height; each player's life, land plays,
+/// loss, library size, graveyard *in order*, and mana pool by colour; each
+/// object's id, name, zone, controller, tapped and summoning-sick flags,
+/// damage, counters, attachment, power and toughness, keywords, card types
+/// and subtypes, regeneration shields, and which face is up; and all of
+/// combat — who is attacking whom, who is blocking, and the order damage is
+/// assigned in.
+///
+/// Two things are left out on purpose, and the distinction is the whole
+/// design:
+///
+/// * **Whose decision it is, and the one in flight.** Priority, the pass
+///   count, the trigger cursor, the prompt outstanding, a cast part-way
+///   through announcement (its targets, its X, its chosen mode). These are
+///   exactly what *does* move while a seat spins — the engine offers a
+///   cast, the seat names no target, the cast is cancelled and offered
+///   again (#462) — so hashing them would make this function blind to the
+///   thing it exists to catch.
+/// * **Library order.** No player can see it, and a fingerprint that
+///   changes when a library is shuffled would score a repeating shuffle as
+///   progress.
+///
+/// Everything else a player can see belongs here, and the list has grown
+/// twice by being wrong: combat, because a damage-assignment order is a
+/// decision that touches nothing else and the engine re-asks it once per
+/// blocker, so two gang blocks read as a hundred identical decisions and
+/// killed a live game at turn 29 (#509); and the object characteristics
+/// above, because a werewolf flipping — a different name, different power
+/// and toughness, different abilities — was scored as "nothing moved"
+/// (#560). The maps are ordered, so the hash is the same on every replay of
+/// a seeded game (#402).
 #[must_use]
 pub fn progress_fingerprint(state: &GameState) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
     state.turn_number.hash(&mut h);
-    format!("{:?}", state.step).hash(&mut h);
+    state.step.hash(&mut h);
     state.stack.len().hash(&mut h);
     for p in &state.players {
         p.life.hash(&mut h);
         p.land_plays_remaining.hash(&mut h);
         p.lost.hash(&mut h);
         p.library_order.len().hash(&mut h);
-        p.graveyard_order.len().hash(&mut h);
-        p.mana_pool.total().hash(&mut h);
+        // The graveyard is a public zone and its order is part of what is
+        // on the table (CR 400.2 — any player may examine it); a mill or a
+        // dredge that reorders it moved something. The pool is hashed by
+        // colour, not by total: {R} spent and {G} floating is not the same
+        // board as {R} floating and {G} spent.
+        p.graveyard_order.hash(&mut h);
+        p.mana_pool.mana.hash(&mut h);
     }
     // Sorted by id: `objects` is a map, and its iteration order is not the
     // game's (see #402 for what reading a map's order as an order costs).
@@ -57,11 +87,26 @@ pub fn progress_fingerprint(state: &GameState) -> u64 {
     objects.sort_by_key(|o| o.id);
     for o in &objects {
         o.id.hash(&mut h);
-        format!("{:?}", o.zone).hash(&mut h);
+        o.zone.hash(&mut h);
         o.controller.hash(&mut h);
         o.tapped.hash(&mut h);
         o.summoning_sick.hash(&mut h);
         o.damage_marked.hash(&mut h);
+        // What the permanent currently is, rather than which object it is.
+        // A transform changes every one of these at once and used to change
+        // none of them here (#560); a counter, an equip and a pump each
+        // change one.
+        o.name.hash(&mut h);
+        o.is_transformed.hash(&mut h);
+        o.counters.hash(&mut h);
+        o.attached_to.hash(&mut h);
+        o.attached_to_player.hash(&mut h);
+        o.power.hash(&mut h);
+        o.toughness.hash(&mut h);
+        o.keywords.hash(&mut h);
+        o.card_types.hash(&mut h);
+        o.subtypes.hash(&mut h);
+        o.regeneration_shields.hash(&mut h);
     }
     // Combat is state a decision can move without moving anything above it.
     // Announcing a damage assignment order (CR 509.2) touches nothing but
@@ -159,9 +204,8 @@ impl ProgressWatchdog {
 /// had no termination condition at all: the standings said the game was
 /// forfeit while the loop went on asking the seat (issue #559).
 ///
-/// `mtg-player/tests/stall_forfeit.rs` holds the contract, both halves of
-/// it — that the menu does not offer this at a prompt, and that the engine
-/// takes it there anyway.
+/// The engine accepts it there — that is the part that made the defect a
+/// pure runner bug. `mtg-player/tests/stall_forfeit.rs` holds the contract.
 #[must_use]
 pub fn forfeit_move() -> mtg_engine::actions::Action {
     mtg_engine::actions::Action::Concede
@@ -308,6 +352,117 @@ mod tests {
             watchdog.observe(&state);
         }
         assert!(watchdog.observe(&state), "the watchdog stopped watching");
+    }
+
+    /// Everything a player can look at and see is in the fingerprint.
+    ///
+    /// The list is a table rather than a test each, because these are one
+    /// property of one computation: a board change is a change. It grew
+    /// because two of them were missing — combat (#509, tested above) and
+    /// then the permanent's own characteristics, so a werewolf flipping
+    /// scored as "nothing moved" while the watchdog counted toward killing
+    /// the game (#560).
+    #[test]
+    fn a_board_change_a_player_can_see_changes_the_fingerprint() {
+        use mtg_engine::types::{CounterType, Keyword, ManaType};
+
+        // The lowest-numbered object, so the pick is the same every run.
+        let (base, _registry) = game();
+        let subject = base.objects_in_id_order().first().expect("a card exists").id;
+
+        let moves: Vec<(&str, fn(&mut GameState, ObjectId))> = vec![
+            ("a werewolf flipped", |s, id| {
+                let o = s.get_object_mut(id).expect("subject");
+                o.is_transformed = !o.is_transformed;
+                o.name = format!("{} (back)", o.name);
+            }),
+            ("a +1/+1 counter went on", |s, id| {
+                s.get_object_mut(id).expect("subject")
+                    .counters.insert(CounterType::PlusOnePlusOne, 1);
+            }),
+            ("an equipment was attached", |s, id| {
+                s.get_object_mut(id).expect("subject").attached_to = Some(ObjectId(9999));
+            }),
+            ("a curse was attached to a player", |s, id| {
+                s.get_object_mut(id).expect("subject").attached_to_player = Some(PlayerId(1));
+            }),
+            ("a creature was pumped", |s, id| {
+                s.get_object_mut(id).expect("subject").power = Some(7);
+            }),
+            ("a creature gained flying", |s, id| {
+                s.get_object_mut(id).expect("subject").keywords.push(Keyword::Flying);
+            }),
+            ("a permanent became an artifact", |s, id| {
+                s.get_object_mut(id).expect("subject")
+                    .card_types.push(mtg_engine::types::CardType::Artifact);
+            }),
+            ("a creature became a Vampire", |s, id| {
+                s.get_object_mut(id).expect("subject").subtypes.push("Vampire".into());
+            }),
+            ("a regeneration shield was made", |s, id| {
+                s.get_object_mut(id).expect("subject").regeneration_shields += 1;
+            }),
+            ("the graveyard was reordered", |s, _id| {
+                s.players[0].graveyard_order.push(ObjectId(9998));
+            }),
+            ("the floating mana changed colour", |s, _id| {
+                // Same total as the line below it on purpose: a pool
+                // hashed by its total cannot tell these apart.
+                s.players[0].mana_pool.add(ManaType::Red, 1);
+            }),
+        ];
+
+        let before = progress_fingerprint(&base);
+        for (what, apply) in moves {
+            let mut state = base.clone();
+            apply(&mut state, subject);
+            assert_ne!(
+                before,
+                progress_fingerprint(&state),
+                "{what}: the board moved and the fingerprint did not, so a game doing this \
+                 over and over counts as stalled and is killed for making progress"
+            );
+        }
+    }
+
+    /// And the other direction, which is what makes the watchdog work at
+    /// all: the decision in flight is deliberately invisible here.
+    ///
+    /// A seat that spins is *changing* these — the engine offers a cast,
+    /// the seat names no target, the cast is cancelled and offered again
+    /// (#462) — so a fingerprint that noticed them would never fire. Adding
+    /// a field to the hash is cheap and this is the cost; the two tests
+    /// together say where the line is.
+    #[test]
+    fn the_decision_in_flight_does_not_change_the_fingerprint() {
+        let (base, _registry) = game();
+        let before = progress_fingerprint(&base);
+
+        let moves: Vec<(&str, fn(&mut GameState))> = vec![
+            ("priority passed back", |s| {
+                s.priority_player = Some(PlayerId(1));
+            }),
+            ("a pass was counted", |s| {
+                s.consecutive_passes += 1;
+            }),
+            ("the trigger cursor moved", |s| {
+                s.trigger_event_index += 1;
+            }),
+            ("the library was shuffled", |s| {
+                s.players[0].library_order.reverse();
+            }),
+        ];
+
+        for (what, apply) in moves {
+            let mut state = base.clone();
+            apply(&mut state);
+            assert_eq!(
+                before,
+                progress_fingerprint(&state),
+                "{what}: this is what moves while a seat spins, so counting it as progress \
+                 means the watchdog never fires and an unusable answer repeats forever"
+            );
+        }
     }
 
     /// The report names the seat, the question and where the game is, which
