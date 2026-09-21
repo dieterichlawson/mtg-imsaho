@@ -188,6 +188,45 @@ async function main() {
         await expectSent("choose-x", a => { const f = a.ResolveChoice && a.ResolveChoice.choice.XFunding; return f && f.pool.Red === 1 && f.taps.Forest === 1; });
       }
     }
+    // 8b. The X box reads what the terminal reads (#561). `Number("")` is
+    //     0 and `Number.isInteger(0)` is true, so a bare Enter at an empty
+    //     box used to announce X = 0 and complete the cast — #123's exact
+    //     hazard, on the one prompt where the idle key commits instead of
+    //     declining, whose fix went into cli.rs and never reached here.
+    //     `Number` also took `0x2`, `0b11`, `2.0`, `1e1` and `-0`, none of
+    //     which `str::parse::<u32>()` takes.
+    {
+      const options = { pool: { Red: 1 }, groups: [{ name: "Forest", category: "BasicLand", source_ids: [ids.mine[0], ids.mine[1]], mana_per_tap: 1, mana_type: "Green" }], max_x: 3, x_discount: 0 };
+      const xPrompt = () => legal({ resolution_prompt: { ChooseXFunding: { description: "Choose X for Devil's Play", options, source_id: ids.hand[0], is_ability: false } } });
+      // Every one of these the terminal refuses; so must the page.
+      for (const token of ["", " ", "-0", "0x2", "0b11", "2.0", "1e1", "1_0", "2abc", "  "]) {
+        if (!await stage(`x-refuses-${JSON.stringify(token)}`, xPrompt(), null, "number")) continue;
+        if (token !== "") await page.keyboard.type(token);
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(60);
+        const s = await lastSent();
+        if (s && s.seq === seq) {
+          fail(`x-refuses: ${JSON.stringify(token)} was ACCEPTED as ${JSON.stringify(s.action)}`);
+        } else {
+          const notice = await page.evaluate(() => window.mtg.notice || null);
+          if (!notice) fail(`x-refuses: ${JSON.stringify(token)} refused with no message`);
+          else ok(`x-refuses ${JSON.stringify(token)} → ${JSON.stringify(notice)}`);
+        }
+      }
+      // And the forms it does take, which `str::parse::<u32>()` takes too.
+      for (const [token, funded] of [["2", 2], ["+2", 2], ["002", 2], ["  3  ", 3], ["0", 0]]) {
+        if (!await stage(`x-accepts-${JSON.stringify(token)}`, xPrompt(), null, "number")) continue;
+        await page.keyboard.type(token);
+        await page.keyboard.press("Enter");
+        await expectSent(`x-accepts ${JSON.stringify(token)}`, a => {
+          const f = a.ResolveChoice && a.ResolveChoice.choice.XFunding;
+          if (!f) return false;
+          const total = Object.values(f.pool || {}).reduce((n, v) => n + v, 0)
+            + Object.values(f.taps || {}).reduce((n, v) => n + v, 0);
+          return total === funded;
+        });
+      }
+    }
     // 9. PayOrNot: the two offered actions as a list.
     {
       const actions = [rc({ PayDecision: true }), rc({ PayDecision: false })];

@@ -583,6 +583,14 @@ function beginOrder(state: LiveState, ui: Ui, rp: ResolutionPayload, title: stri
   return ui;
 }
 
+/** A typed token as a refusal may echo it: control characters out, clipped.
+ *  The terminal's `quote_input` (#282, #283) — a 400-column paste in a
+ *  notice is a notice nobody can read. */
+function clipToken(typed: string): string {
+  const shown = [...typed].map(c => (c < " " || c === "\u007f" ? "\u00b7" : c)).join("");
+  return shown.length <= 40 ? shown : shown.slice(0, 40) + "\u2026";
+}
+
 /** X: one number, distributed over the pool and the tap groups the way the CLI does. */
 function beginNumber(state: LiveState, ui: Ui, opts: FundingOptions, title: string, send: Send): Ui {
   const maxX = (opts.max_x || 0) + (opts.x_discount || 0);
@@ -597,8 +605,25 @@ function beginNumber(state: LiveState, ui: Ui, opts: FundingOptions, title: stri
   for (const g of opts.groups || []) summary.push(`${g.name} x${g.source_ids.length} (${g.mana_per_tap}/tap)`);
   ui.hint = `Type X (0-${maxX}) and press Enter.`;
   ui.submit = () => {
-    const x = Number(ui.value);
-    if (!Number.isInteger(x) || x < 0 || x > maxX) { state.notice = `Enter an integer between 0 and ${maxX}.`; return; }
+    // The terminal's reader, not JavaScript's. `Number("")` is 0 and
+    // `Number.isInteger(0)` is true, so Enter at an empty box announced
+    // X = 0 and completed the cast — a card gone, irreversibly, from the
+    // key the rest of the program treats as "do nothing". That is #123,
+    // whose fix went into `cli.rs` and never reached this page, which
+    // copied the refusal string next to it and not the empty-input arm
+    // it sits in (#561, the shape of #520/#524).
+    //
+    // `Number` also takes `0x2`, `0b11`, `2.0`, `1e1` and `-0`, none of
+    // which `str::parse::<u32>()` takes, so the two surfaces disagreed
+    // about what a legal answer to one prompt is. This is that parser: an
+    // optional `+` and ASCII digits, nothing else.
+    const typed = (ui.value ?? "").trim();
+    if (typed === "") { state.notice = "Enter a value for X."; return; }
+    const x = /^\+?[0-9]+$/.test(typed) ? Number(typed) : NaN;
+    if (!Number.isInteger(x) || x < 0 || x > maxX) {
+      state.notice = `Invalid input '${clipToken(typed)}' — enter an integer between 0 and ${maxX}.`;
+      return;
+    }
     let remaining = Math.max(0, x - (opts.x_discount || 0));
     const response: FundingResponse = { pool: {}, taps: {} };
     const poolSorted = (Object.entries(opts.pool || {}) as [ManaType, number][]).sort((a, b) => b[1] - a[1]);
