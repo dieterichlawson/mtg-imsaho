@@ -830,6 +830,59 @@ whether it told the truth.
   nothing at all for the engine thinking. Worth pairing with a `--resume` of
   the resulting multi-megabyte save, which has never been tried
 
+  **Answered 2026-09-21: the CLI stops being playable between 500 and 1,000
+  permanents, on a smooth power law with no cliff — and the attribution in
+  the idea above is half wrong.** The flood was built hotseat
+  (`--seed 777 --on-the-play 1`, both seats `26 Swamp / 14 Forest / 4 Endless
+  Ranks of the Dead / 4 Parallel Lives / 4 Moan of the Unhallowed / 4 Army of
+  the Damned / 4 Diregraf Ghoul`, never attacking) to 73 permanents on turn
+  18, 1,631 on turn 21 and **12,928 on turn 22** — a **13.46 MB** `--save`,
+  about 1.04 KB per permanent, rewritten in full at every decision. That one
+  position was then pruned to a ladder and each rung `--resume`d, with
+  `utime+stime` from `/proc` agreeing with wall time to 0.1 s (100% CPU
+  throughout, so none of it is I/O):
+
+  | permanents | to first prompt | with `--check-invariants` | per keypress | RSS |
+  |---|---|---|---|---|
+  | 100 | 0.25 s | 0.43 s | 0.09 s | 11.2 MB |
+  | 250 | 0.43 s | 1.48 s | 0.26-0.52 s | 12.0 MB |
+  | 500 | 2.11 s | 9.63 s | 1.88-3.67 s | 14.1 MB |
+  | 1,000 | 15.26 s | 72.46 s | **16-23 s** | 19.6 MB |
+  | 2,000 | 100.94 s | 496.02 s | — | 27.0 MB |
+  | 4,000 | 509.63 s | not waited out | — | 45.0 MB |
+  | 12,928 | **never** (killed at 6m35s, blank pane) | — | — | 238 MB |
+
+  Doubling the board multiplies the cost by 4.9x/7.2x/6.6x/5.05x — a clean
+  **n^2.3-2.8**, no cliff anywhere, extrapolating to roughly 2.5 hours for one
+  decision at 12,928, against 15-18 ms on a 2-permanent turn-1 board (#565).
+  Declaring 781 attackers with `all` took about 4 minutes and landed on a
+  781 x 192 blocker screen.
+
+  **It is not the renderer and it is not the engine advancing the game.**
+  `capture-pane` is instant, and `--resume --p1 random --p2 random` of the
+  same 1,000-permanent save writes its first `--log` line **58 ms** after
+  launch — then that same run stalls 40+ s at `DeclareAttackers` with nobody
+  at a keyboard. The cost is the per-decision view and legal-action
+  construction, and **every seat pays it**. Unprofiled candidate:
+  `GameView::for_player` (`view.rs:326`) asks `has_keyword` 15x per
+  battlefield object and `has_keyword` falls through to `walk_effects`
+  (`state.rs:2355`), which walks the battlefield — O(15n^2) per view — with a
+  fresh `CardRegistry::with_all_cards()` built per view at `main.rs:692/697/712`.
+
+  **And the program says nothing while it happens.** The spinner exists
+  (`cli.rs:7531`) but `main.rs:701` starts it only for a `PlayerKind::Llm`
+  seat with `will_call_api`, and even then only *after* the views are built,
+  so a live game is indistinguishable from a hang for 16 s, 100 s, or
+  forever (#566). The one hard consequence, not a judgment call: keystrokes
+  typed into the dead window are buffered and answer the *next* prompts
+  unseen — three fast Enters at a 500-permanent board passed priority through
+  `BeginCombat` and landed on `DECLARE ATTACKERS` with neither screen read.
+
+  Everything else held: no crash, no invariant, no lost prompt, `--resume` of
+  multi-megabyte saves (0.74-5.01 MB) round-trips and plays on, and the `i`
+  inspector at 1,634 rows opens in **11 ms**. The viewers are free; it is the
+  transition between decisions that costs.
+
 - V46 [proposed 2026-09-16, from tonight's V2] the lenient reader, and what a
   refusal says. Every numeric prompt in `cli.rs` parses with
   `str::parse::<usize>`/`::<u32>`, which accepts a leading `+` and leading
