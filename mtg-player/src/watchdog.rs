@@ -143,6 +143,30 @@ impl ProgressWatchdog {
     }
 }
 
+/// The move a runner sends to stop a game that will not stop itself.
+///
+/// It is *sent*, never looked up. CR 104.3a lets a player concede at any
+/// time and [`LegalActions::permits`](mtg_engine::engine::LegalActions::permits)
+/// admits it at any prompt, but `engine::legal_actions` only ever *lists*
+/// it on the normal-priority path: at a mulligan, a discard, a declaration
+/// or any resolution choice the function returns early with the answers to
+/// that prompt alone, and for a set prompt that list is empty. So a runner
+/// that reaches for `legal.actions.iter().position(|a| ... Concede)` finds
+/// the move only when the stall happens to land on priority, and does
+/// nothing at every other decision point — which is where a spinning seat
+/// usually is. `mtg-draft-runner` had the stall forfeit *and* its
+/// 50,000-action ceiling behind that lookup, so a game stuck at a prompt
+/// had no termination condition at all: the standings said the game was
+/// forfeit while the loop went on asking the seat (issue #559).
+///
+/// `mtg-player/tests/stall_forfeit.rs` holds the contract, both halves of
+/// it — that the menu does not offer this at a prompt, and that the engine
+/// takes it there anyway.
+#[must_use]
+pub fn forfeit_move() -> mtg_engine::actions::Action {
+    mtg_engine::actions::Action::Concede
+}
+
 /// What a stalled game is stuck on: the seat, the question, where in the
 /// game it is, and the last thing that happened. Without it the operator
 /// gets a run that never ends and an empty stderr.

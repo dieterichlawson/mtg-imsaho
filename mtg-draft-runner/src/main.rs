@@ -1479,13 +1479,15 @@ fn play_game(
             }
 
             if stalled || action_count >= max_actions {
-                if let Some(concede_idx) = legal
-                    .actions
-                    .iter()
-                    .position(|a| matches!(a, mtg_engine::actions::Action::Concede))
-                {
-                    return legal.actions[concede_idx].clone();
-                }
+                // Sent, not looked up. `legal.actions` lists `Concede` only
+                // on the normal-priority path, so reaching for it there made
+                // both the forfeit and the 50,000-action ceiling no-ops at
+                // every prompt — a mulligan, a discard, a declaration, any
+                // resolution choice — which is where a spinning seat usually
+                // is, leaving the game with no termination condition at all
+                // (issue #559). The engine accepts a concede at any decision
+                // point (CR 104.3a, `LegalActions::permits`).
+                return mtg_player::watchdog::forfeit_move();
             }
 
             let view = GameView::for_player(game_state, acting_player, registry);
