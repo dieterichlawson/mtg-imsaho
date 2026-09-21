@@ -906,3 +906,41 @@ whether it told the truth.
   loops have the behaviour but spell it differently, because that is where
   a fix lands in one copy and not the other — which is the failure mode all
   three issues share
+
+- V48 [proposed 2026-09-21, from tonight's V46 and #561] one number, four
+  readers: sweep the text-to-number readers across the whole repo and
+  compare what each ACCEPTS, not what each selects. V46 checked the CLI's
+  nine and found them uniform; the moment you leave `cli.rs` they are not.
+  `mtg-gui/src/prompts.ts:599` reads X with JS `Number()`, which takes
+  `0x2`, `0b11`, `2.0`, `-0` and the empty string (#561); `llm.rs`'s
+  `parse_int_str` is `str::parse::<u32>().unwrap_or(0)`, so a bucket value
+  the model malformed silently becomes a legal zero inside a funding
+  response; `mtg-draft-runner` keeps its own copy of that path and has
+  already missed one fix (#404, #536). Method: list every place a string
+  becomes a number — cli.rs's nine, `prompts.ts`'s number entry and its
+  filter box, llm.rs's `parse_int_str` and its `as_u64` sites,
+  `llm_client.rs`, the deck-file loader (`COUNT NAME`), and
+  `mtg-runner/src/main.rs`'s flag parsing (`--seed +5`? `--seed 007`? never
+  tried) — and run the same twelve tokens through each: `+1`, `007`, `-0`,
+  `0x2`, `0b11`, `2.0`, `1e1`, `1_0`, `""`, `" "`, `2abc`, fullwidth `４`.
+  Any two surfaces that disagree about one prompt is a finding; any reader
+  whose lenient set includes the empty string is #123's hazard wherever it
+  sits. The staged-prompt Playwright probe in #561 does the GUI half
+  without playing a game to the prompt
+
+- V49 [proposed 2026-09-21, from V46's read of `funding.rs`] the X you
+  cannot buy. `X (0-N)` promises every value in 0..N, but a group with
+  `mana_per_tap > 1` makes some of them unachievable, and the four surfaces
+  round down in four different places: the CLI under-taps and says so for
+  900ms before moving on (`cli.rs:5908`, "could not allocate final N mana
+  due to source quanta"), the page does the same arithmetic with
+  `Math.floor` and says nothing, the LLM gets an enum of legal multiples so
+  it can never ask for one, and the random seat always takes the maximum so
+  it never produces one either (#564). Nobody has played this: Sol Ring is
+  in the registry (`produced: vec![(ManaType::Colorless, 2)]`) and a
+  `20 Mountain / 20 Sol Ring / 20 Devil's Play` pile loads and reaches X=13
+  unattended in 15 turns. Method: build that pile, cast Devil's Play with an
+  odd number of Sol Rings and no spare land, type an X that is not fundable,
+  and check what the log records against what the prompt promised and what
+  the screen said — then stage the same `ChooseXFunding` on the page with
+  `mana_per_tap: 2` and see whether the shortfall is mentioned at all
