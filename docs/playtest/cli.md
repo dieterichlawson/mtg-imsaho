@@ -765,6 +765,54 @@ whether it told the truth.
   regression (hash so much that nothing is ever a stall) look identical from
   the passing side
 
+  **Answered 2026-09-21: #509's fix holds with a 33x margin, and the method
+  that proves it is a state diff, not a game.** Hash the state with
+  `progress_fingerprint`, serialize the same state to JSON, and whenever two
+  consecutive decisions hash equal, diff the JSON: anything the diff names is
+  state a decision moved that the watchdog cannot see. That enumerates the
+  blind spots from live games rather than from reading the struct, and it is
+  about twenty lines. Over 90 seeded random-vs-random games — 60 on committed
+  pairs plus 30 on degenerate boards built for this (a token-flood mirror, a
+  40-creature go-wide swarm for gang blocks and damage-assignment orders, a
+  werewolf mirror) — **52,837 decisions, and the longest run of identical
+  fingerprints was 3**, against a `STALLED_DECISIONS` of 100. Zero runs of ten
+  or more, in any game, including the board that produced #509. The other
+  direction still holds too: the CI repro's spinning seat is stopped at 100,
+  exit 1, 98 cancelled casts.
+
+  What the diff names is in #560: `progress_fingerprint` hashes six of
+  `GameObject`'s forty fields, so `counters`, `attached_to`, `is_transformed`,
+  `power`/`toughness`, `keywords` and `regeneration_shields` all move
+  invisibly, as do the mulligan bookkeeping fields and `awaiting_action`
+  itself — the engine can ask a *different question* and score it as no
+  progress (643 times). A werewolf flipping is the one a player can see. For
+  each, V44's own question was asked and answered **no**: nothing in this pool
+  can repeat one a hundred times, because every `ManaCost::free()` ability in
+  `cards/isd/` also taps or sacrifices and both of those are hashed, a
+  transform is gated on a turn boundary, and trigger ordering answered one at
+  a time pushes onto the stack. It is a claim about the next card — a
+  level-up, a monstrosity, any repeatable ability whose whole effect is a
+  counter — not about this one.
+
+  **The find was one layer out, in the other copy of the loop.** Chasing "what
+  does the runner do when the watchdog fires" rather than "when does it fire"
+  turned up that `mtg-runner` calls `die` unconditionally while
+  `mtg-draft-runner` (`main.rs:1482`) looks for `Concede` in `legal.actions`
+  and does nothing if it misses — and `legal_actions_while_awaiting` returns
+  at `engine.rs:224`, eleven lines before `Concede` is pushed at
+  `engine.rs:302`, so at *any* prompt the lookup always misses and for a set
+  prompt `legal.actions` is empty outright. The same guard covers
+  `action_count >= max_actions`, so that loop has no unconditional termination
+  at all (#559). The engine accepts `Concede` submitted there anyway — the
+  runner simply never sends it. Worth remembering as a method: the watchdog
+  is two contracts, when it fires and what happens next, and only the first
+  one had ever been probed.
+
+  One structural note with no repro: `observe` compares against the
+  *immediately previous* fingerprint only, so it detects a constant state and
+  never a cycle. Every candidate two-cycle in this pool pays a cost in a
+  hashed field, so it stays a note.
+
 - V45 [proposed 2026-09-16, from V4's token flood] latency and footprint as a
   budget. The CLI never breaks on a 2,735-permanent board — it just takes 80
   seconds to answer one keypress, and the screen lags several seconds behind
