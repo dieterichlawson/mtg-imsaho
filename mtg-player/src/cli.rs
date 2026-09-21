@@ -494,6 +494,28 @@ fn quote_input(input: &str) -> String {
     format!("{}\u{2026}", clip_cols(&shown, MAX))
 }
 
+/// How a refusal names the number it is refusing: what was typed, and what
+/// the parser made of it when the two differ.
+///
+/// `str::parse` normalizes before the range check — `+7`, `007` and `7` are
+/// all 7 — so a message that echoes only the parsed value cannot tell a
+/// player which of those they typed. On the bottoming screen `0 7`, `007`
+/// and `0,7` produced one byte-identical sentence, none of which was the
+/// line that had been typed, and #322 deliberately turns an unbound
+/// keystroke between two digits into a space, so `0<Tab>7` and `07` are two
+/// genuinely different inputs a player could not tell apart from the answer
+/// (issue #562).
+///
+/// Ordinary input reads exactly as it did — `7` is `7` — so every message
+/// keeps its shape and only the odd forms grow the gloss.
+fn refused_number(typed: &str, parsed: usize) -> String {
+    if typed == parsed.to_string() {
+        parsed.to_string()
+    } else {
+        format!("'{}' (read as {parsed})", quote_input(typed))
+    }
+}
+
 /// Blank `cols` display columns at (`col`, `row`), leaving the cursor where
 /// it started — the bounded form of `Clear(ClearType::UntilNewLine)`.
 ///
@@ -5209,9 +5231,13 @@ return",
     ///
     /// Messages are unprefixed; the caller indents them like every other
     /// refusal in the prompt.
+    ///
+    /// Each index arrives with the token it was typed as, so the refusal
+    /// can name that rather than what `parse` made of it — `007` and `7`
+    /// are different things to have typed (issue #562).
     fn attack_index_error(
-        indices: &[usize],
-        walker_attacks: &[(usize, usize)],
+        indices: &[(usize, &str)],
+        walker_attacks: &[((usize, &str), (usize, &str))],
         eligible_len: usize,
         walkers_len: usize,
     ) -> Option<String> {
@@ -5219,26 +5245,26 @@ return",
         // with, and it stays the named error even when the pw index is bad
         // too. The duplicate-index guard runs before this, so it cannot
         // repeat.
-        let bad_attackers: Vec<usize> = indices.iter().copied()
+        let bad_attackers: Vec<String> = indices.iter().copied()
             .chain(walker_attacks.iter().map(|&(a, _)| a))
-            .filter(|&a| a >= eligible_len)
+            .filter(|&(a, _)| a >= eligible_len)
+            .map(|(a, tok)| refused_number(tok, a))
             .collect();
         if !bad_attackers.is_empty() {
             return Some(format!("Invalid attacker(s): {}. Valid range is 0-{}.",
-                bad_attackers.iter().map(std::string::ToString::to_string)
-                    .collect::<Vec<_>>().join(", "),
+                bad_attackers.join(", "),
                 eligible_len.saturating_sub(1)));
         }
         // One planeswalker can be named by two attackers ("0>pw9 1>pw9"),
         // so this half needs the dedup the other half gets for free.
-        let mut bad_walkers: Vec<usize> = walker_attacks.iter()
-            .map(|&(_, w)| w).filter(|&w| w >= walkers_len).collect();
+        let mut bad_walkers: Vec<(usize, &str)> = walker_attacks.iter()
+            .map(|&(_, w)| w).filter(|&(w, _)| w >= walkers_len).collect();
         bad_walkers.sort_unstable();
         bad_walkers.dedup();
         if bad_walkers.is_empty() {
             return None;
         }
-        let named = bad_walkers.iter().map(|w| format!("pw{w}"))
+        let named = bad_walkers.iter().map(|&(w, tok)| format!("pw{}", refused_number(tok, w)))
             .collect::<Vec<_>>().join(", ");
         Some(if walkers_len == 0 {
             format!("No planeswalker {named} to attack — the defender controls none, \
@@ -5273,14 +5299,16 @@ return",
             return Err(if n_blockers == 0 {
                 "You have no blockers.".to_string()
             } else {
-                format!("No blocker {b}. Your blockers are 0-{}.", n_blockers - 1)
+                format!("No blocker {}. Your blockers are 0-{}.",
+                    refused_number(parts[0], b), n_blockers - 1)
             });
         }
         if a >= n_attackers {
             return Err(if n_attackers == 0 {
                 "There are no attackers.".to_string()
             } else {
-                format!("No attacker {a}. Attackers are 0-{}.", n_attackers - 1)
+                format!("No attacker {}. Attackers are 0-{}.",
+                    refused_number(parts[1], a), n_attackers - 1)
             });
         }
         Ok((b, a))
@@ -5498,17 +5526,19 @@ return",
                 .collect();
             // "N" attacks the player; "N>pwM" sends attacker N at
             // planeswalker M.
-            let mut indices: Vec<usize> = Vec::new();
-            let mut walker_attacks: Vec<(usize, usize)> = Vec::new();
+            // Each index keeps the token it was typed as, for the refusal
+            // to name (#562).
+            let mut indices: Vec<(usize, &str)> = Vec::new();
+            let mut walker_attacks: Vec<((usize, &str), (usize, &str))> = Vec::new();
             let mut parsed = 0usize;
             for t in &tokens {
-                if let Some((a, w)) = t.split_once(">pw") {
-                    if let (Ok(a), Ok(w)) = (a.parse::<usize>(), w.parse::<usize>()) {
-                        walker_attacks.push((a, w));
+                if let Some((a_tok, w_tok)) = t.split_once(">pw") {
+                    if let (Ok(a), Ok(w)) = (a_tok.parse::<usize>(), w_tok.parse::<usize>()) {
+                        walker_attacks.push(((a, a_tok), (w, w_tok)));
                         parsed += 1;
                     }
                 } else if let Ok(i) = t.parse::<usize>() {
-                    indices.push(i);
+                    indices.push((i, t));
                     parsed += 1;
                 }
             }
@@ -5517,8 +5547,8 @@ return",
                 // index is a typo, not a double attack — refuse it loudly
                 // (issue #108). The engine de-duplicates too, as the
                 // authority for non-interactive players.
-                let mut listed: Vec<usize> = indices.iter().copied()
-                    .chain(walker_attacks.iter().map(|&(a, _)| a))
+                let mut listed: Vec<usize> = indices.iter().map(|&(i, _)| i)
+                    .chain(walker_attacks.iter().map(|&((a, _), _)| a))
                     .collect();
                 listed.sort_unstable();
                 let before_dedup = listed.len();
@@ -5530,8 +5560,8 @@ return",
                 let index_error = Self::attack_index_error(
                     &indices, &walker_attacks, eligible.len(), defending_planeswalkers.len());
                 if index_error.is_none() {
-                    let chosen: Vec<ObjectId> = indices.iter().map(|&i| eligible[i])
-                        .chain(walker_attacks.iter().map(|&(a, _)| eligible[a]))
+                    let chosen: Vec<ObjectId> = indices.iter().map(|&(i, _)| eligible[i])
+                        .chain(walker_attacks.iter().map(|&((a, _), _)| eligible[a]))
                         .collect();
                     let missing = missing_forced(&chosen);
                     if !missing.is_empty() {
@@ -5539,9 +5569,9 @@ return",
                         continue;
                     }
                     return Action::DeclareAttackers {
-                        attackers: indices.iter().map(|&i| (eligible[i], defending)).collect(),
+                        attackers: indices.iter().map(|&(i, _)| (eligible[i], defending)).collect(),
                         planeswalker_attacks: walker_attacks.iter()
-                            .map(|&(a, w)| (eligible[a], defending_planeswalkers[w]))
+                            .map(|&((a, _), (w, _))| (eligible[a], defending_planeswalkers[w]))
                             .collect(),
                     };
                 }
@@ -5909,10 +5939,14 @@ impl CliPlayer {
             // bare Enter used to commit the cast for X=0, burning the card
             // on a stray keypress (issue #123). It re-prompts now — X=0 is
             // still available by typing 0.
+            // The refusal names the token that was typed. This prompt
+            // used to name neither it nor the parsed value, so `0x2`,
+            // `2.0`, `-0` and `hello` were one sentence (issue #562).
             notice = Some(match input.parse::<u32>() {
                 Ok(n) if n <= options.max_announceable_x() => break n,
                 _ if input.is_empty() => "  Enter a value for X.".to_string(),
-                _ => format!("  Enter an integer between 0 and {}.", options.max_announceable_x()),
+                _ => format!("  Invalid input '{}' — enter an integer between 0 and {}.",
+                    quote_input(input), options.max_announceable_x()),
             });
         };
 
@@ -6210,10 +6244,12 @@ impl CliPlayer {
                     "'{}' is not a number — type the indices in order, e.g. \"2 0 1\"", quote_input(tok)));
             };
             if k >= n {
-                return OrderInput::Invalid(format!("{k} is out of range — the entries are numbered 0-{}", n.saturating_sub(1)));
+                return OrderInput::Invalid(format!("{} is out of range — the entries are numbered 0-{}",
+                    refused_number(tok, k), n.saturating_sub(1)));
             }
             if order.contains(&k) {
-                return OrderInput::Invalid(format!("{k} is listed twice — each entry goes in the order exactly once"));
+                return OrderInput::Invalid(format!("{} is listed twice — each entry goes in the order exactly once",
+                    refused_number(tok, k)));
             }
             order.push(k);
         }
@@ -6543,7 +6579,8 @@ impl CliPlayer {
                     "'{}' is not a number — type the number of a card to mark or unmark it", quote_input(tok)));
             };
             if k >= n {
-                return SetInput::Invalid(format!("{k} is out of range — the cards are numbered 0-{}", n.saturating_sub(1)));
+                return SetInput::Invalid(format!("{} is out of range — the cards are numbered 0-{}",
+                    refused_number(tok, k), n.saturating_sub(1)));
             }
             ks.push(k);
         }
@@ -8802,7 +8839,7 @@ yourself at some considerable length";
     /// wrong; a legal creature index is never blamed for a mistyped `pwM`.
     #[test]
     fn a_mistyped_planeswalker_index_is_refused_as_a_planeswalker_index() {
-        let msg = CliPlayer::attack_index_error(&[], &[(0, 1)], 2, 1)
+        let msg = CliPlayer::attack_index_error(&[], &[((0, "0"), (1, "1"))], 2, 1)
             .expect("pw1 is out of range");
         assert!(msg.contains("pw1"), "names the bad planeswalker index: {msg}");
         assert!(msg.contains("pw0"), "points at the one that exists: {msg}");
@@ -8814,7 +8851,7 @@ yourself at some considerable length";
     /// used to answer "Invalid attacker(s): 0. Valid range is 0-0."
     #[test]
     fn a_walker_attack_with_no_planeswalkers_says_there_are_none() {
-        let msg = CliPlayer::attack_index_error(&[], &[(0, 0)], 1, 0)
+        let msg = CliPlayer::attack_index_error(&[], &[((0, "0"), (0, "0"))], 1, 0)
             .expect("there is no pw0");
         assert!(msg.contains("pw0"), "got {msg}");
         assert!(msg.contains("controls none"), "got {msg}");
@@ -8824,16 +8861,76 @@ yourself at some considerable length";
     /// The half that was already right must not swing the other way.
     #[test]
     fn an_out_of_range_creature_index_is_still_refused_as_an_attacker_index() {
-        assert_eq!(CliPlayer::attack_index_error(&[5], &[], 2, 1).as_deref(),
+        assert_eq!(CliPlayer::attack_index_error(&[(5, "5")], &[], 2, 1).as_deref(),
             Some("Invalid attacker(s): 5. Valid range is 0-1."));
-        assert_eq!(CliPlayer::attack_index_error(&[], &[(5, 0)], 2, 1).as_deref(),
+        assert_eq!(CliPlayer::attack_index_error(&[], &[((5, "5"), (0, "0"))], 2, 1).as_deref(),
             Some("Invalid attacker(s): 5. Valid range is 0-1."),
             "a bad creature index inside an N>pwM token is still a creature-index error");
-        assert!(CliPlayer::attack_index_error(&[], &[(5, 9)], 2, 1).unwrap()
+        assert!(CliPlayer::attack_index_error(&[], &[((5, "5"), (9, "9"))], 2, 1).unwrap()
             .contains("Invalid attacker(s): 5"),
             "with both halves wrong the creature half is named first");
-        assert_eq!(CliPlayer::attack_index_error(&[0, 1], &[(0, 0)], 2, 1), None,
+        assert_eq!(CliPlayer::attack_index_error(&[(0, "0"), (1, "1")], &[((0, "0"), (0, "0"))], 2, 1), None,
             "every index names something on the screen");
+    }
+
+    /// Issue #562: `str::parse` normalizes `+7` and `007` to 7 before the
+    /// range check, and four of the nine numeric readers echoed the parsed
+    /// value. On the bottoming screen `0 7`, `007` and `0,7` produced one
+    /// byte-identical refusal, none of which was the line that had been
+    /// typed — and #322 turns an unbound keystroke between two digits into
+    /// a space, so `0<Tab>7` and `07` are two different inputs the player
+    /// could not tell apart from the answer.
+    ///
+    /// Ordinary input keeps its shape; only the forms that survived
+    /// normalization say so.
+    #[test]
+    fn a_refusal_names_the_token_that_was_typed() {
+        assert_eq!(refused_number("7", 7), "7", "the ordinary case is unchanged");
+        assert_eq!(refused_number("007", 7), "'007' (read as 7)");
+        assert_eq!(refused_number("+7", 7), "'+7' (read as 7)");
+        // Quoted through `quote_input`, so a control character or a very
+        // long token cannot scribble on the frame (#282, #283).
+        assert!(refused_number(&"9".repeat(80), 999).contains('\u{2026}'),
+            "a long token is clipped like every other echo");
+    }
+
+    /// The four readers that echoed the parsed number, each now naming the
+    /// token. One test rather than four, because it is one property.
+    #[test]
+    fn every_numeric_reader_names_the_typed_token_when_it_differs() {
+        // The card-set screen: bottoming, the cleanup discard, an "up to
+        // N" slot, exile-from-graveyard, pile division.
+        let SetInput::Invalid(msg) = CliPlayer::parse_card_set_input("007", 7, false) else {
+            panic!("7 is out of range for 0-6")
+        };
+        assert!(msg.contains("'007' (read as 7)"), "{msg}");
+
+        // The ordering screen: trigger order, damage assignment order.
+        let OrderInput::Invalid(msg) = CliPlayer::parse_order_input("0 007", 2) else {
+            panic!("7 is out of range for 0-1")
+        };
+        assert!(msg.contains("'007' (read as 7)"), "{msg}");
+
+        // Declare blockers.
+        let msg = CliPlayer::parse_block_pair("007:0", 2, 3).unwrap_err();
+        assert!(msg.contains("'007' (read as 7)"), "{msg}");
+        let msg = CliPlayer::parse_block_pair("0:009", 2, 3).unwrap_err();
+        assert!(msg.contains("'009' (read as 9)"), "{msg}");
+
+        // Declare attackers, both halves of an `N>pwM` token.
+        let msg = CliPlayer::attack_index_error(&[(7, "007")], &[], 1, 1)
+            .expect("7 is out of range for 0-0");
+        assert!(msg.contains("'007' (read as 7)"), "{msg}");
+        let msg = CliPlayer::attack_index_error(&[], &[((0, "0"), (9, "009"))], 1, 1)
+            .expect("pw9 is out of range for pw0-pw0");
+        assert!(msg.contains("'009' (read as 9)"), "{msg}");
+
+        // And the ordinary forms are untouched, so the messages still read
+        // as sentences.
+        assert_eq!(CliPlayer::parse_block_pair("2:0", 2, 3).unwrap_err(),
+            "No blocker 2. Your blockers are 0-1.");
+        assert_eq!(CliPlayer::attack_index_error(&[(5, "5")], &[], 2, 1).as_deref(),
+            Some("Invalid attacker(s): 5. Valid range is 0-1."));
     }
 
     /// Issue #289: `2:0` is a well-formed pair whose blocker index is a live
