@@ -850,3 +850,22 @@ whether it told the truth.
   echo the parsed value (as the marking screen and the attackers prompt do), so
   `007` comes back as "7 is out of range" and the player loses the only clue
   that the leading zero was eaten
+
+- V47 [proposed 2026-09-21, from #559] the two game loops as one protocol,
+  read side by side. `mtg-runner/src/main.rs` and `mtg-draft-runner/src/main.rs`
+  each keep their own copy of the decision callback, and #559 is one
+  divergence found by accident: the stall handler stops the game
+  unconditionally in one and only if `Concede` happens to be in
+  `legal.actions` in the other. That is the third time this shape has cost
+  something (#404 a backend fix that did not travel, #488 the watchdog
+  itself, now its stopping move), so the question is how many more there
+  are. Method: put the two callbacks in two panes and list every behaviour
+  one has and the other does not — `--check-invariants`, the streamed game
+  log, `--save`, `observe_every_submit`, the non-token card-count baseline,
+  the `offers_nothing()` guard, the spinner, `max_actions` and what action
+  it submits, how a refused answer is counted and reported. For each, ask
+  what a draft tournament game silently loses by not having it, and whether
+  the draft log would show its absence. The interesting ones are where both
+  loops have the behaviour but spell it differently, because that is where
+  a fix lands in one copy and not the other — which is the failure mode all
+  three issues share
