@@ -100,27 +100,31 @@ impl Player for RandomPlayer {
     fn choose_action(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
         let legal_actions = &legal.actions;
 
-        // X-cost funding: no enumerated actions to pick from. Default to
-        // tapping everything (max X), which is rarely optimal but lets
-        // RandomPlayer-driven tests make forward progress through X-cost
-        // spells/abilities without requiring smart choices.
+        // X-cost funding: no enumerated actions to pick from. The value is
+        // rolled across the whole range and then allocated the way the
+        // terminal allocates it.
+        //
+        // NOT the maximum, which is what this used to do — drain the pool,
+        // tap every group to its `max_contribution` — and
+        // `FundingOptions::max_x` is defined as exactly that sum, so the
+        // announced X was `max_announceable_x()` on every board, every
+        // seed and every card. Never an intermediate X; never a response
+        // that funds less than the board allows, so `funding::validate`'s
+        // error arms and the under-tapping branch were reached by no seat;
+        // and X's own rules (CR 601.2b, CR 120.8 for a zero-damage Devil's
+        // Play, the `x_discount` reduction of CR 601.2f) exercised at one
+        // point of their range per board. The same defect as #455, #456 and
+        // #457 below with the sign flipped, and this seat is what the
+        // invariant fuzzer plays (#564).
         if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseXFunding { options, .. }) =
             legal.resolution_prompt.as_ref()
         {
             use mtg_engine::actions::ResolvedChoice;
-            use mtg_engine::funding::FundingResponse;
             if self.cancels_the_cast() {
                 return Action::ResolveChoice { choice: ResolvedChoice::CancelCast };
             }
-            let mut response = FundingResponse::default();
-            for (mt, amt) in &options.pool {
-                if *amt > 0 {
-                    response.pool.insert(*mt, *amt);
-                }
-            }
-            for g in &options.groups {
-                response.taps.insert(g.name.clone(), g.max_contribution());
-            }
+            let x = self.rng.gen_range(0..=options.max_announceable_x());
+            let (response, _shortfall) = mtg_engine::funding::allocate_for_x(options, x);
             return Action::ResolveChoice { choice: ResolvedChoice::XFunding(response) };
         }
 
@@ -701,6 +705,51 @@ mod rolls {
         })
     }
 
+    /// A board that can fund X: `pool` floating mana of one colour and
+    /// `groups` of tap sources, given as (name, mana per tap, sources).
+    fn funding_prompt_on(
+        pool: u32,
+        groups: &[(&str, u32, u32)],
+        x_discount: u32,
+    ) -> LegalActions {
+        use mtg_engine::funding::{FundingCategory, FundingGroup, FundingOptions};
+        use mtg_engine::types::ManaType;
+        let mut options = FundingOptions {
+            pool: std::collections::BTreeMap::new(),
+            groups: vec![],
+            max_x: 0,
+            x_discount,
+        };
+        if pool > 0 {
+            options.pool.insert(ManaType::Red, pool);
+        }
+        let mut next_id = 200u64;
+        for (name, per_tap, sources) in groups {
+            let source_ids: Vec<ObjectId> = (0..*sources)
+                .map(|_| {
+                    next_id += 1;
+                    ObjectId(next_id)
+                })
+                .collect();
+            options.groups.push(FundingGroup {
+                name: (*name).to_string(),
+                category: FundingCategory::Lands,
+                mana_per_tap: *per_tap,
+                source_ids,
+                colors_produced: vec![],
+            });
+        }
+        // The ceiling is defined as the sum, which is exactly what the seat
+        // used to answer with every time.
+        options.max_x = pool + options.groups.iter().map(|g| g.max_contribution()).sum::<u32>();
+        prompted(ResolutionChoiceKind::ChooseXFunding {
+            description: "X".into(),
+            options,
+            source_id: ObjectId(99),
+            is_ability: false,
+        })
+    }
+
     /// Answer `n` times and report what came back.
     fn answers(legal: &LegalActions, n: usize) -> Vec<Action> {
         let mut p = RandomPlayer::with_seed("r", 7);
@@ -712,6 +761,101 @@ mod rolls {
         answers(legal, n).iter()
             .filter(|a| matches!(a, Action::ResolveChoice { choice: ResolvedChoice::CancelCast }))
             .count()
+    }
+
+    /// Issue #564: the seat answered every X prompt by draining the pool
+    /// and tapping every group to its `max_contribution`, and
+    /// `FundingOptions::max_x` is defined as exactly that sum — so the
+    /// announced X was `max_announceable_x()` on every board, every seed
+    /// and every card. Not "usually": arithmetically, always. No seeded
+    /// game had ever announced an X strictly between 0 and the maximum,
+    /// which is the whole interesting range of CR 601.2b, and this is the
+    /// seat the invariant fuzzer plays.
+    #[test]
+    fn the_x_funding_prompt_rolls_its_value_across_the_whole_range() {
+        // One floating Red and four one-mana Forests: max X is 5.
+        let legal = funding_prompt_on(1, &[("Forest", 1, 4)], 0);
+        let Some(ResolutionChoiceKind::ChooseXFunding { options, .. }) =
+            legal.resolution_prompt.as_ref()
+        else {
+            panic!("a funding prompt")
+        };
+        assert_eq!(options.max_announceable_x(), 5, "the fixture's ceiling");
+
+        let mut seen = std::collections::HashSet::new();
+        for a in answers(&legal, 400) {
+            if let Action::ResolveChoice { choice: ResolvedChoice::XFunding(r) } = a {
+                assert!(
+                    mtg_engine::funding::validate(&r, options).is_ok(),
+                    "the seat must answer with a response the engine accepts: {r:?}"
+                );
+                seen.insert(r.x_value());
+            }
+        }
+        for x in 0..=5 {
+            assert!(
+                seen.contains(&x),
+                "X={x} is fundable on this board and the seat never announced it; saw {seen:?}"
+            );
+        }
+    }
+
+    /// The allocation a rolled X produces is the terminal's, so what a
+    /// player can reach the fuzzer can reach: a group that makes two mana
+    /// a tap cannot fund an odd X, and the seat under-taps rather than
+    /// rounding up — the branch `cli.rs` prints "could not allocate" for,
+    /// which no seat could reach while the answer was always the maximum.
+    #[test]
+    fn a_rolled_x_under_taps_a_group_it_cannot_divide() {
+        // No pool, one group of three sources making two mana each: only
+        // even values of X are fundable, and the ceiling is 6.
+        let legal = funding_prompt_on(0, &[("Sol Ring", 2, 3)], 0);
+        let Some(ResolutionChoiceKind::ChooseXFunding { options, .. }) =
+            legal.resolution_prompt.as_ref()
+        else {
+            panic!("a funding prompt")
+        };
+
+        let mut seen = std::collections::HashSet::new();
+        for a in answers(&legal, 400) {
+            if let Action::ResolveChoice { choice: ResolvedChoice::XFunding(r) } = a {
+                assert!(
+                    mtg_engine::funding::validate(&r, options).is_ok(),
+                    "an under-tapped response is still a legal one: {r:?}"
+                );
+                assert_eq!(r.x_value() % 2, 0, "a two-mana tap cannot fund an odd X: {r:?}");
+                seen.insert(r.x_value());
+            }
+        }
+        for x in [0, 2, 4, 6] {
+            assert!(seen.contains(&x), "X={x} is fundable here; saw {seen:?}");
+        }
+    }
+
+    /// And the reduction of CR 601.2f: the first `x_discount` of X costs no
+    /// mana, so the announceable range is wider than the board.
+    #[test]
+    fn a_rolled_x_spends_the_cost_reduction_first() {
+        let legal = funding_prompt_on(2, &[], 3);
+        let Some(ResolutionChoiceKind::ChooseXFunding { options, .. }) =
+            legal.resolution_prompt.as_ref()
+        else {
+            panic!("a funding prompt")
+        };
+        assert_eq!(options.max_announceable_x(), 5, "2 of mana plus 3 discounted");
+
+        let mut seen = std::collections::HashSet::new();
+        for a in answers(&legal, 400) {
+            if let Action::ResolveChoice { choice: ResolvedChoice::XFunding(r) } = a {
+                assert!(mtg_engine::funding::validate(&r, options).is_ok(), "{r:?}");
+                seen.insert(r.x_value());
+            }
+        }
+        // The response funds `X - x_discount`, so the values it can carry
+        // are 0..=2 — the seat announcing 5 spends 2 mana for it.
+        for funded in 0..=2 {
+            assert!(seen.contains(&funded), "a response funding {funded} never came back: {seen:?}");
+        }
     }
 
     /// Issue #455: the count exiled for an `ExileXFromGraveyard` cost IS X,
