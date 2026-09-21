@@ -1144,18 +1144,30 @@ pub fn run_mulligan_phase<F>(
 ) where
     F: FnMut(&GameState, PlayerId, &LegalActions) -> Action,
 {
-    run_mulligan_phase_inner(state, registry, &mut choose_action);
+    let _stopped = run_mulligan_phase_inner(state, registry, &mut choose_action);
 }
 
+/// Returns `true` when the harness stopped the game (an `AbandonGame`),
+/// so the caller does not fall through into turn 1.
 fn run_mulligan_phase_inner<F>(
     state: &mut GameState,
     registry: &CardRegistry,
     choose_action: &mut F,
-) where
+) -> bool
+where
     F: FnMut(&GameState, PlayerId, &LegalActions) -> Action,
 {
     loop {
         if !in_mulligan_phase(state) {
+            break;
+        }
+        // A game can end here: CR 104.3a lets a player concede at any time,
+        // and a harness forfeiting a seat that is spinning at its mulligan
+        // does exactly that. `in_mulligan_phase` reads the outstanding
+        // prompt, which a concede does not clear, so without this the
+        // conceded game was asked for a mulligan decision forever — the
+        // stopping move landing and the game still not stopping (#559).
+        if state.is_game_over() {
             break;
         }
         // If awaiting_action is None but there are queued bottoms, advance.
@@ -1164,10 +1176,9 @@ fn run_mulligan_phase_inner<F>(
             continue;
         }
 
-        let acting_player = match &state.awaiting_action {
-            Some(AwaitingAction::MulliganDecision { player } | AwaitingAction::BottomAfterMulligan { player, .. }) => *player,
-            _ => unreachable!("in_mulligan_phase guaranteed a mulligan awaiting_action"),
-        };
+        let acting_player = state
+            .player_to_act()
+            .expect("in_mulligan_phase guaranteed a mulligan awaiting_action");
 
         let legal = legal_actions(state, registry);
         if legal.offers_nothing() {
@@ -1186,6 +1197,15 @@ fn run_mulligan_phase_inner<F>(
         }
 
         let action = choose_action(state, acting_player, &legal);
+        // The harness is stopping, not the game (issue #233) — the same
+        // return the main loop makes. Without it an `AbandonGame` fell
+        // through to `permits` (which admits it) and `submit_action`
+        // (which is a no-op for it), and the same mulligan was asked
+        // again: a runner's action ceiling could not end a game that
+        // stalled before turn 1 (issue #559).
+        if matches!(action, Action::AbandonGame) {
+            return true;
+        }
         // The same gate the main loop applies: a mulligan prompt takes a
         // keep, a mull or a bottoming, and executing anything else here
         // leaves the phase without advancing it (issue #514).
@@ -1197,7 +1217,18 @@ fn run_mulligan_phase_inner<F>(
             continue;
         }
         *state = submit_action(state, &action, registry);
+        // CR 104.3a: a player who concedes leaves the game immediately, and
+        // CR 104.2a hands the game to the player still in it. No player
+        // receives priority during the mulligan phase, so the pass that
+        // turns "everyone else has left" into a result (`sba.rs`) never ran
+        // here: a conceded seat was marked lost and then asked for its
+        // mulligan decision again, with the result still unset (#559).
+        // Nothing else an SBA does is reachable before turn 1 — no
+        // permanents, no damage, no empty library — so this is that clause
+        // and nothing more.
+        crate::sba::check_state_based_actions(state, registry);
     }
+    false
 }
 
 /// Resume a game loop from a previously saved state. Unlike `run_game_loop`,
@@ -1236,8 +1267,8 @@ fn run_game_loop_inner<F>(
     // clear itself by setting awaiting_action = None and draining the
     // pending bottom queue.
     if in_mulligan_phase(state) {
-        run_mulligan_phase_inner(state, registry, choose_action);
-        if state.is_game_over() {
+        let abandoned = run_mulligan_phase_inner(state, registry, choose_action);
+        if abandoned || state.is_game_over() {
             return;
         }
     }
@@ -1324,18 +1355,11 @@ fn run_game_loop_inner<F>(
             continue;
         }
 
-        // Determine who needs to act.
-        let acting_player = if matches!(state.awaiting_action, Some(AwaitingAction::DeclareAttackers)) {
-            // CR 508.1: the active player declares attackers. Reading it off
-            // priority happened to agree, since advance_step sets both.
-            state.active_player
-        } else if let Some(AwaitingAction::DeclareBlockers { defending_player }) = &state.awaiting_action {
-            *defending_player
-        } else if let Some(AwaitingAction::DiscardToHandSize { player, .. }) = &state.awaiting_action {
-            *player
-        } else if let Some(AwaitingAction::ResolutionChoice { player, .. }) = &state.awaiting_action {
-            *player
-        } else if let Some(p) = state.priority_player { p } else {
+        // Determine who needs to act. `player_to_act` is the one reading of
+        // that question (CR 508.1 for the declaration, the prompt's own
+        // player otherwise), shared with the mulligan loop above and with
+        // the concede that has to know whose it is (issue #559).
+        let Some(acting_player) = state.player_to_act() else {
             advance_or_resolve(state, registry);
             continue;
         };

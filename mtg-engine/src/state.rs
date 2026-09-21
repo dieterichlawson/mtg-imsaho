@@ -3087,6 +3087,36 @@ impl GameState {
             .unwrap_or(0)
     }
 
+    /// The player the engine is currently asking, if anyone.
+    ///
+    /// An outstanding prompt owns the decision and names its own player:
+    /// CR 508.1 makes declaring attackers a turn-based action of the active
+    /// player, a block is declared by the defending player, and every
+    /// discard, mulligan and resolution choice carries the player it is
+    /// asked of. Only with no prompt outstanding is the decision priority's.
+    ///
+    /// Read priority alone and the answer is wrong in two different ways at
+    /// once: `None` through the whole mulligan phase and at a declaration,
+    /// and the *other* player at a blocker prompt. A concede submitted at
+    /// such a prompt is legal (CR 104.3a) and used to land on
+    /// `priority_player`, so it conceded nobody and the game went on — which
+    /// is what a runner's stall forfeit is, and why it could not stop a seat
+    /// spinning at a mulligan (issue #559).
+    #[must_use]
+    pub fn player_to_act(&self) -> Option<PlayerId> {
+        match &self.awaiting_action {
+            Some(AwaitingAction::DeclareAttackers) => Some(self.active_player),
+            Some(AwaitingAction::DeclareBlockers { defending_player }) => Some(*defending_player),
+            Some(
+                AwaitingAction::DiscardToHandSize { player, .. }
+                | AwaitingAction::ResolutionChoice { player, .. }
+                | AwaitingAction::MulliganDecision { player }
+                | AwaitingAction::BottomAfterMulligan { player, .. },
+            ) => Some(*player),
+            None => self.priority_player,
+        }
+    }
+
     /// Is the game over?
     #[must_use]
     pub fn is_game_over(&self) -> bool {

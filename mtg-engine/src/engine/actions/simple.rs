@@ -53,7 +53,15 @@ pub(crate) fn discard_cards(state: &mut GameState, cards: &[ObjectId], registry:
 }
 
 pub(crate) fn concede(state: &mut GameState, _registry: &CardRegistry) -> Applied {
-        if let Some(player) = state.priority_player {
+        // The player being asked, not the one holding priority. CR 104.3a
+        // lets a concede in at any decision point and `LegalActions::permits`
+        // admits it at every prompt, but at a prompt priority is `None` (the
+        // whole mulligan phase, a declaration) or belongs to the other player
+        // (a blocker prompt) — so this conceded nobody, or the wrong
+        // somebody, and the game carried on. A harness forfeiting a stalled
+        // seat at its mulligan was a silent no-op followed by the same prompt
+        // forever (issue #559).
+        if let Some(player) = state.player_to_act() {
             state.player_loses(player, crate::events::LossReason::Conceded);
         }
     Applied::Continue
