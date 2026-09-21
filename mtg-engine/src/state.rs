@@ -1953,7 +1953,21 @@ impl GameState {
             if source.zone != Zone::Battlefield {
                 continue;
             }
-            for effect in self.continuous_effects_of(source.id, registry) {
+            // Read, not built. This used to call `continuous_effects_of`,
+            // which goes through `face_data` to `CardBehavior::card_data` —
+            // and that CONSTRUCTS a whole `CardData`, strings and vectors
+            // and all, on every call. This loop runs once per object in the
+            // game per lookup, `has_keyword` is one such lookup, and a view
+            // asks for fifteen keywords per permanent: one view of a
+            // 1,000-permanent board built about sixteen million of them and
+            // took three seconds, growing with the square of the board
+            // (issue #565). The printed effects are now built once at
+            // registration and the instance ones are already on the object,
+            // so nothing here allocates.
+            let printed = registry
+                .printed_continuous_effects(source.card_id, source.is_transformed);
+            let instance = source.instance_continuous_effects.as_deref().unwrap_or(&[]);
+            for effect in printed.iter().chain(instance.iter()) {
                 let (inner, condition) = effect.unwrap_condition();
                 if !want(inner) {
                     continue;
@@ -2300,76 +2314,137 @@ impl GameState {
         !self.has_effect(id, &|e| matches!(e, ContinuousEffect::PreventUntap { .. }), registry)
     }
 
+    /// Which of `wanted` this permanent has, reported to `found` as each is
+    /// established. `found` returns `false` to stop the scan.
+    ///
+    /// One walk of the battlefield's continuous effects for the whole set.
+    /// `has_keyword` was the only way in, and a view asks it for fifteen
+    /// keywords on every permanent — fifteen walks of every object in the
+    /// game where one does, which is most of what building a view of a
+    /// large board cost (issue #565).
+    ///
+    /// A keyword may be reported more than once when two sources grant it;
+    /// a caller collecting them deduplicates, and a caller asking about one
+    /// stops at the first.
+    fn scan_keywords(
+        &self,
+        creature_id: ObjectId,
+        wanted: &[crate::types::Keyword],
+        registry: &crate::cards::CardRegistry,
+        found: &mut dyn FnMut(crate::types::Keyword) -> bool,
+    ) {
+        use crate::types::Keyword;
+        let Some(obj) = self.get_object(creature_id) else { return };
+        if obj.zone != Zone::Battlefield {
+            return;
+        }
+
+        // Removed until end of turn: not had at all, whatever grants it.
+        let removed = |kw: Keyword| {
+            self.until_end_of_turn.iter().any(|e| matches!(e,
+                TemporaryEffect::RemoveKeyword { target, keyword: k }
+                if *target == creature_id && *k == kw))
+        };
+
+        // 1. Printed on the active face (the back face when transformed).
+        // For a card with a registry entry the registry is authoritative —
+        // this avoids returning stale front-face keywords after a transform
+        // that did not go through `helpers::apply_transform`.
+        //
+        // Without one (tokens, anonymous objects) `obj.keywords` is where
+        // printed keywords live. Deliberately NOT unioned in for a card
+        // that HAS a face, unlike subtypes and colors. Those are granted at
+        // runtime by writing the object vector (Olivia Voldaren's
+        // "Vampire", Grimoire of the Dead's black), so they have to be
+        // unioned. Keywords have a real effects layer instead —
+        // `ContinuousEffect::GrantKeyword` and `TemporaryEffect`, below —
+        // and nothing grants one by writing here. Unioning would resurrect
+        // a stale front-face keyword on a transformed DFC.
+        let printed: &[Keyword] = registry
+            .printed_keywords(obj.card_id, obj.is_transformed)
+            .unwrap_or(obj.keywords.as_slice());
+        for &kw in wanted {
+            if printed.contains(&kw) && !removed(kw) && !found(kw) {
+                return;
+            }
+        }
+
+        // 2. Granted by a continuous effect: auras with GrantKeyword, anthem
+        // keyword grants. Conditional grants ("has lifelink as long as it's
+        // a Human") come through here too — `walk_effects` unwraps the
+        // condition. This used to be a second, near-identical walk in
+        // `has_conditional_keyword`.
+        let mut stopped = false;
+        self.walk_effects(
+            creature_id,
+            &|e| matches!(e, ContinuousEffect::GrantKeyword { keyword, .. }
+                if wanted.contains(keyword)),
+            registry,
+            &mut |inner, _source| {
+                let ContinuousEffect::GrantKeyword { keyword, .. } = inner else { return true };
+                if printed.contains(keyword) || removed(*keyword) {
+                    return true;
+                }
+                if found(*keyword) {
+                    return true;
+                }
+                stopped = true;
+                false
+            },
+        );
+        if stopped {
+            return;
+        }
+
+        // 3. Granted until end of turn.
+        for effect in &self.until_end_of_turn {
+            if let TemporaryEffect::GrantKeyword { target, keyword } = effect {
+                if *target == creature_id
+                    && wanted.contains(keyword)
+                    && !printed.contains(keyword)
+                    && !removed(*keyword)
+                    && !found(*keyword)
+                {
+                    return;
+                }
+            }
+        }
+    }
+
     /// Check if a creature on the battlefield has a given keyword ability.
     /// Checks static card keywords, continuous effect grants, aura grants, and until-EOT grants.
     #[must_use]
     pub fn has_keyword(&self, creature_id: ObjectId, keyword: crate::types::Keyword, registry: &crate::cards::CardRegistry) -> bool {
-        let obj = match self.get_object(creature_id) {
-            Some(o) if o.zone == Zone::Battlefield => o,
-            _ => return false,
-        };
+        let mut has = false;
+        self.scan_keywords(creature_id, std::slice::from_ref(&keyword), registry, &mut |_| {
+            has = true;
+            false
+        });
+        has
+    }
 
-        // Check if this keyword was temporarily removed until end of turn.
-        if self.until_end_of_turn.iter().any(|e| matches!(e,
-            TemporaryEffect::RemoveKeyword { target, keyword: kw }
-            if *target == creature_id && *kw == keyword
-        )) {
-            return false;
-        }
-
-        // 1. Static keywords from card definition (or back face if transformed).
-        // For cards with a registry entry the registry is authoritative — this
-        // avoids returning stale front-face keywords after a transform that did
-        // not go through helpers::apply_transform.
-        if let Some(behavior) = registry.get(obj.card_id) {
-            if obj.is_transformed {
-                if let Some(back) = behavior.back_face_data() {
-                    if back.keywords.contains(&keyword) {
-                        return true;
-                    }
-                }
-            } else if behavior.card_data().keywords.contains(&keyword) {
-                return true;
+    /// Which of `wanted` this permanent has, in `wanted`'s order.
+    ///
+    /// The batch form of [`GameState::has_keyword`], for a caller that
+    /// wants several — a view asks for fifteen per permanent. One walk
+    /// rather than one per keyword; the answers are identical.
+    #[must_use]
+    pub fn keywords_among(
+        &self,
+        creature_id: ObjectId,
+        wanted: &[crate::types::Keyword],
+        registry: &crate::cards::CardRegistry,
+    ) -> Vec<crate::types::Keyword> {
+        let mut found = Vec::new();
+        self.scan_keywords(creature_id, wanted, registry, &mut |kw| {
+            if !found.contains(&kw) {
+                found.push(kw);
             }
-        } else {
-            // No registry entry (tokens, anonymous objects): `obj.keywords` is
-            // where their printed keywords live.
-            //
-            // Deliberately NOT unioned in for a card that HAS a face, unlike
-            // subtypes and colors. Those are granted at runtime by writing the
-            // object vector (Olivia Voldaren's "Vampire", Grimoire of the
-            // Dead's black), so they have to be unioned. Keywords have a real
-            // effects layer instead — `ContinuousEffect::GrantKeyword` and
-            // `TemporaryEffect`, handled below — and nothing grants one by
-            // writing here. Unioning would resurrect a stale front-face
-            // keyword on a transformed DFC.
-            if obj.keywords.contains(&keyword) {
-                return true;
-            }
-        }
-
-        // 2. Keywords from continuous effects (auras with GrantKeyword, anthem keyword grants).
-        // Conditional grants ("has lifelink as long as it's a Human") come
-        // through here too — `has_effect` unwraps the condition. This used to
-        // be a second, near-identical walk in `has_conditional_keyword`.
-        if self.has_effect(creature_id,
-            &|e| matches!(e, ContinuousEffect::GrantKeyword { keyword: kw, .. } if *kw == keyword),
-            registry)
-        {
-            return true;
-        }
-
-        // 3. Temporary keyword grants (until end of turn).
-        for effect in &self.until_end_of_turn {
-            match effect {
-                TemporaryEffect::GrantKeyword { target, keyword: kw } if *target == creature_id && *kw == keyword => {
-                    return true;
-                }
-                _ => {}
-            }
-        }
-
-        false
+            true
+        });
+        // In the caller's order, not discovery order: a printed keyword and
+        // a granted one arrive in different passes.
+        wanted.iter().copied().filter(|kw| found.contains(kw)).collect()
     }
 
     /// Drop repeats from a described-effect list, keeping the first of each.
@@ -3714,7 +3789,12 @@ impl GameState {
     #[must_use]
     pub fn continuous_effects_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<crate::types::ContinuousEffect> {
         let Some(obj) = self.get_object(id) else { return Vec::new() };
-        let mut effects = self.face_data(id, registry).map(|d| d.continuous_effects).unwrap_or_default();
+        // The printed half comes from the registry's one-time build rather
+        // than from a freshly constructed `CardData` (#565); the active
+        // face is chosen the same way `face_data` chooses it.
+        let mut effects = registry
+            .printed_continuous_effects(obj.card_id, obj.is_transformed)
+            .to_vec();
         if let Some(ref inst) = obj.instance_continuous_effects {
             effects.extend(inst.iter().cloned());
         }

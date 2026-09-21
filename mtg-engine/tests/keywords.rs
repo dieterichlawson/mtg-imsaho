@@ -667,3 +667,78 @@ fn a_printed_keyword_is_only_had_on_the_battlefield() {
     assert!(!state.has_keyword(in_hand, Keyword::Flying, &reg),
         "nor does one in hand");
 }
+
+// ── The batch form and the single form are one answer ───────────────
+
+/// `GameState::keywords_among` is the batch form of `has_keyword`, and it
+/// exists because a view asks about fifteen keywords on every permanent:
+/// fifteen walks of every object in the game where one does, which was most
+/// of what building a view of a large board cost (#565).
+///
+/// Both are the same scan with a different sink, and this is the test that
+/// says so. It sweeps the whole keyword set over a board carrying one of
+/// each way a keyword can be had or not had: printed on a real card,
+/// printed on an anonymous object, granted by a continuous effect from an
+/// aura, granted until end of turn, and removed until end of turn on top of
+/// each of those.
+#[test]
+fn the_batch_keyword_scan_answers_exactly_what_asking_one_at_a_time_does() {
+    const ALL: &[Keyword] = &[
+        Keyword::Flying, Keyword::FirstStrike, Keyword::DoubleStrike,
+        Keyword::Trample, Keyword::Deathtouch, Keyword::Lifelink,
+        Keyword::Vigilance, Keyword::Flash, Keyword::Reach,
+        Keyword::Haste, Keyword::Defender, Keyword::Hexproof,
+        Keyword::Intimidate, Keyword::Menace, Keyword::Indestructible,
+    ];
+
+    let registry = registry();
+    let mut state = game_at_step(Step::PrecombatMain, PlayerId(0));
+
+    // A real card whose printed keyword comes from the registry.
+    let griffin = named_permanent(&mut state, &registry, "Abbey Griffin", PlayerId(0));
+    // An anonymous object, whose printed keywords live on the object.
+    let token = ready_creature(&mut state, PlayerId(0), 2, 2);
+    state.get_object_mut(token).unwrap().keywords.push(Keyword::Trample);
+    // A creature wearing a granted keyword from a continuous effect.
+    let bears = named_permanent(&mut state, &registry, "Grizzly Bears", PlayerId(0));
+    state.get_object_mut(bears).unwrap().instance_continuous_effects =
+        Some(vec![ContinuousEffect::GrantKeyword {
+            keyword: Keyword::Lifelink,
+            scope: EffectScope::OnSelf,
+        }]);
+    // One granted until end of turn, and one removed on top of its print.
+    let wolf = named_permanent(&mut state, &registry, "Darkthicket Wolf", PlayerId(0));
+    grant_keyword(&mut state, wolf, Keyword::Deathtouch);
+    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::RemoveKeyword {
+        target: griffin,
+        keyword: Keyword::Flying,
+    });
+    // And one off the battlefield, which has no keywords at all.
+    let in_hand = spell_in_hand(&mut state, &registry, "Abbey Griffin", PlayerId(0));
+
+    for id in [griffin, token, bears, wolf, in_hand] {
+        let one_at_a_time: Vec<Keyword> = ALL.iter()
+            .filter(|kw| state.has_keyword(id, **kw, &registry))
+            .copied()
+            .collect();
+        assert_eq!(
+            state.keywords_among(id, ALL, &registry),
+            one_at_a_time,
+            "the batch scan and the single scan disagree about {:?}",
+            state.get_object(id).map(|o| o.name.clone()),
+        );
+        // And the batch form reports each keyword once, however many
+        // sources grant it.
+        let batch = state.keywords_among(id, ALL, &registry);
+        let mut deduped = batch.clone();
+        deduped.dedup();
+        assert_eq!(batch, deduped, "a keyword was reported twice: {batch:?}");
+    }
+
+    // The board is not trivially keyword-free, or the agreement above is
+    // agreement about nothing.
+    assert!(state.has_keyword(token, Keyword::Trample, &registry), "printed on an object");
+    assert!(state.has_keyword(bears, Keyword::Lifelink, &registry), "granted by an effect");
+    assert!(state.has_keyword(wolf, Keyword::Deathtouch, &registry), "granted until end of turn");
+    assert!(!state.has_keyword(griffin, Keyword::Flying, &registry), "removed until end of turn");
+}

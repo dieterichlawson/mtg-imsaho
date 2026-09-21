@@ -138,3 +138,65 @@ fn an_unregistered_card_prints_nothing_and_says_so() {
     assert_eq!(registry.printed_keywords(unknown, false), None);
     assert_eq!(registry.printed_keywords(unknown, true), None);
 }
+
+/// Reading the battlefield is linear in the battlefield.
+///
+/// The cost that made #565 was shaped, not constant: `walk_effects` asked
+/// every object in the game for its continuous effects, `has_keyword` is
+/// one such walk, and a view asked for fifteen keywords per permanent — so
+/// building one view was `O(15 n²)` calls to `CardBehavior::card_data`,
+/// each of which CONSTRUCTS a `CardData`. A 1,000-permanent board took
+/// three seconds in release and a 12,928-permanent one never answered.
+///
+/// A wall-clock assertion would be flaky and would say nothing about why.
+/// This counts the constructions instead: the card under test tallies its
+/// own `card_data` calls, so the quadratic term is visible as a number.
+/// Against master, n=40 gives tens of thousands.
+#[test]
+fn building_a_view_does_not_ask_each_card_about_every_other_one() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    static CALLS: AtomicUsize = AtomicUsize::new(0);
+
+    struct Counted;
+    impl CardBehavior for Counted {
+        fn card_data(&self) -> CardData {
+            CALLS.fetch_add(1, Ordering::Relaxed);
+            CardData {
+                name: "Counted".into(),
+                card_types: vec![CardType::Creature],
+                power: Some(1),
+                toughness: Some(1),
+                keywords: vec![Keyword::Flying],
+                ..Default::default()
+            }
+        }
+    }
+
+    let mut registry = CardRegistry::new();
+    let counted = registry.register(Box::new(Counted));
+
+    const N: usize = 40;
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    for i in 0..N {
+        let owner = if i % 2 == 0 { P0 } else { P1 };
+        let id = state.create_object(counted, owner, Zone::Battlefield, Some(1), Some(1));
+        state.get_object_mut(id).unwrap().summoning_sick = false;
+    }
+
+    CALLS.store(0, Ordering::Relaxed);
+    let view = mtg_engine::view::GameView::for_player(&state, P0, &registry);
+    let calls = CALLS.load(Ordering::Relaxed);
+
+    assert_eq!(view.battlefield.len(), N, "the board is the one that was built");
+    assert!(
+        view.battlefield.iter().all(|p| p.keywords.contains(&Keyword::Flying)),
+        "and the view still reads the keyword off the card"
+    );
+    assert!(
+        calls < 20 * N,
+        "building a view of {N} permanents constructed {calls} CardDatas — that is per-pair, \
+         not per-permanent, and it is what made a 1,000-permanent board take three seconds \
+         and a 12,928-permanent one never answer (#565)"
+    );
+}

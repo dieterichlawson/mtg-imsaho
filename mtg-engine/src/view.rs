@@ -326,10 +326,11 @@ impl GameView {
         let battlefield = state.all_objects_in_zone(Zone::Battlefield)
             .iter()
             .map(|obj| {
-                let keywords: Vec<Keyword> = all_keywords.iter()
-                    .filter(|kw| state.has_keyword(obj.id, **kw, registry))
-                    .copied()
-                    .collect();
+                // One scan for the fifteen, not fifteen scans. Each one
+                // walked every object in the game looking for a grant, so a
+                // view of a 1,000-permanent board made sixteen million such
+                // passes and took three seconds (#565).
+                let keywords: Vec<Keyword> = state.keywords_among(obj.id, &all_keywords, registry);
                 // For transformed DFCs, show the back-face name and card types
                 // so the display matches the active face. Without this, a
                 // transformed Villagers of Estwald shows as "Villagers of
