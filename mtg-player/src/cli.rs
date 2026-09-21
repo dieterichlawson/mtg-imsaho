@@ -4563,6 +4563,7 @@ impl CliPlayer {
         // front face's text and P/T (issue #240).
         let mut out = stdout();
         let mut page = 0usize;
+        let mut notice: Option<String> = None;
 
         loop {
             let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
@@ -4577,9 +4578,11 @@ impl CliPlayer {
                 .collect();
             let widest_heading = format!(
                 " INSPECT BATTLEFIELD (showing {n}-{n} of {n})", n = rows.len());
+            // The notice, when there is one, is a row of the chrome too.
             let chrome = Self::wrapped_height(str_cols(&widest_heading), w)
                 + 2
-                + Self::wrapped_height(str_cols(DECK_PAGED_FOOTER), w);
+                + Self::wrapped_height(str_cols(DECK_PAGED_FOOTER), w)
+                + notice.as_ref().map_or(0, |n| Self::wrapped_height(2 + str_cols(n), w));
             let avail = Self::viewer_avail(h, chrome);
             let (start, shown, paged) = Self::menu_page_lines(&heights, avail, page, 0);
             page = start;
@@ -4591,35 +4594,76 @@ impl CliPlayer {
             } else {
                 " INSPECT BATTLEFIELD".to_string()
             };
-            let footer = if paged {
-                format!("\n{DECK_PAGED_FOOTER}")
-            } else {
-                "\n  Enter number for details, or press enter to return: ".to_string()
-            };
+            let footer = format!("{}\n{}",
+                notice.take().map(|n| format!("\n  {n}")).unwrap_or_default(),
+                if paged { DECK_PAGED_FOOTER.to_string() }
+                else { "  Enter number for details, or press enter to return: ".to_string() });
             Self::paint_inspect_page(&mut out, &heading, &rows[start..end], &footer);
             let _ = out.flush();
             let input = Self::read_line("");
 
             if input.is_empty() { return; }
-            match input.trim() {
+            let typed = input.trim();
+            match typed {
                 "n" if end < rows.len() => { page = end; continue; }
-                "n" => continue,
                 "p" if page > 0 => {
                     page = Self::prev_menu_offset_lines(&heights, avail, page, 0);
                     continue;
                 }
-                "p" => continue,
                 _ => {}
             }
 
-            if let Ok(i) = input.parse::<usize>() {
+            if let Ok(i) = typed.parse::<usize>() {
                 if i < all_perms.len() {
                     let perm = all_perms[i];
                     let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
                     Self::paint_permanent_detail(&mut out, view, perm);
                     let _ = out.flush();
                     let _ = Self::read_line("");
+                    continue;
                 }
+            }
+            // Anything else: say so. A viewer that repaints the identical
+            // page is indistinguishable from a hung one (#563).
+            notice = Some(Self::viewer_refusal(
+                typed, all_perms.len(), paged, page == 0, end >= rows.len()));
+        }
+    }
+
+    /// What a full-screen viewer says about input it will not act on.
+    ///
+    /// The deck browser and the battlefield inspector were the only two
+    /// readers in this file that answered nothing: an out-of-range number
+    /// or junk text fell off the end of a bare `if let Ok(idx) =
+    /// input.parse()` with no `else`, and the page was repainted
+    /// unchanged. That is the hang-lookalike every other screen here has
+    /// an issue behind — #76 for the menu, #122 for the target chooser,
+    /// #42 for the yes/no, #124 for an empty filter — and both viewers
+    /// advertise themselves as prompts in their own footer, "Enter number
+    /// for details" (#563).
+    ///
+    /// The typed token is quoted, not the parsed one: `007` and `7` are
+    /// different things to have typed, and #322 makes `0<Tab>7` a third
+    /// (#562).
+    fn viewer_refusal(
+        input: &str,
+        entries: usize,
+        paged: bool,
+        at_first: bool,
+        at_last: bool,
+    ) -> String {
+        match input {
+            "n" if paged && at_last => "Already at the last page.".to_string(),
+            "p" if paged && at_first => "Already at the first page.".to_string(),
+            _ if entries == 0 => {
+                format!("Invalid input '{}' — nothing here to show; press enter to return",
+                    quote_input(input))
+            }
+            _ => {
+                let paging = if paged { "n/p to page, " } else { "" };
+                format!("Invalid input '{}' — enter a number 0-{}, {paging}or press enter to \
+return",
+                    quote_input(input), entries - 1)
             }
         }
     }
@@ -5035,6 +5079,7 @@ impl CliPlayer {
             + lib_counts.values().sum::<usize>();
 
         let mut page = 0usize;
+        let mut notice: Option<String> = None;
         loop {
             let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
 
@@ -5093,9 +5138,13 @@ impl CliPlayer {
                 " YOUR DECK ({total_cards} cards, showing {n}-{n} of {n} entries)");
             // Heading, the blank under it, the blank the footer leads with,
             // and the footer itself.
+            // The notice, when there is one, is a row of the chrome too:
+            // a page sized as though it were not there pushes its own
+            // heading off the top (#365 is what that costs).
             let chrome = Self::wrapped_height(str_cols(&widest_heading), w)
                 + 2
-                + Self::wrapped_height(str_cols(DECK_PAGED_FOOTER), w);
+                + Self::wrapped_height(str_cols(DECK_PAGED_FOOTER), w)
+                + notice.as_ref().map_or(0, |n| Self::wrapped_height(2 + str_cols(n), w));
             let avail = Self::viewer_avail(h, chrome);
             let (start, shown, paged) = Self::menu_page_lines(&heights, avail, page, 0);
             page = start;
@@ -5106,40 +5155,43 @@ impl CliPlayer {
             } else {
                 format!(" YOUR DECK ({total_cards} cards)")
             };
-            let footer = if paged {
-                format!("\n{DECK_PAGED_FOOTER}")
-            } else {
-                "\n  Enter number for details, or press enter to return: ".to_string()
-            };
+            let footer = format!("{}\n{}",
+                notice.take().map(|n| format!("\n  {n}")).unwrap_or_default(),
+                if paged { DECK_PAGED_FOOTER.to_string() }
+                else { "  Enter number for details, or press enter to return: ".to_string() });
             Self::paint_deck_page(&mut out, &heading, &rows[start..end], &footer);
             let _ = out.flush();
             let input = Self::read_line("");
 
             if input.is_empty() { return; }
-            match input.trim() {
+            let typed = input.trim();
+            match typed {
                 // `page` is a row offset, not a page index: the next page
                 // starts where this one ended, and `p` walks back by whole
                 // rows rather than by a fixed count that uneven heights made
                 // a guess.
                 "n" if end < deck_cards.len() => { page = end; continue; }
-                "n" => continue,
                 "p" if page > 0 => {
                     page = Self::prev_menu_offset_lines(&heights, avail, page, 0);
                     continue;
                 }
-                "p" => continue,
                 _ => {}
             }
 
-            if let Ok(idx) = input.parse::<usize>() {
+            if let Ok(idx) = typed.parse::<usize>() {
                 if idx < deck_cards.len() {
                     let data = deck_cards[idx];
                     let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
                     Self::paint_card_detail(&mut out, data);
                     let _ = out.flush();
                     let _ = Self::read_line("");
+                    continue;
                 }
             }
+            // Anything else: say so. A viewer that repaints the identical
+            // page is indistinguishable from a hung one (#563).
+            notice = Some(Self::viewer_refusal(
+                typed, deck_cards.len(), paged, page == 0, end >= deck_cards.len()));
         }
     }
 

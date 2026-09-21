@@ -866,3 +866,53 @@ fn a_wide_enchantment_row_is_fitted_to_the_pane_not_printed_past_it() {
     g.send("\x03");
     assert_clean_exit(&mut g);
 }
+
+/// Issue #563: the deck browser and the battlefield inspector were the only
+/// two readers in the CLI that refused in silence. Both ended their input
+/// handling with a bare `if let Ok(idx) = input.parse::<usize>() { if idx <
+/// len { .. } }` and no `else`, so an out-of-range number or junk text fell
+/// off the end of the loop body and the page was repainted unchanged — no
+/// notice, and no place to put one.
+///
+/// That is the hang-lookalike every other screen in the file has an issue
+/// behind (#76 for the menu, #122 for the target chooser, #42 for the
+/// yes/no, #124 for an empty filter), and both viewers call themselves
+/// prompts in their own footer: "Enter number for details".
+#[test]
+fn a_viewer_says_so_when_it_will_not_act_on_what_was_typed() {
+    let mut g = seeded_game();
+
+    g.expect("Keep opening hand", T);
+    g.answer("0\r");
+    g.expect("Pass priority", T);
+
+    // The deck browser groups by card name, so a 60-card deck is a handful
+    // of rows and a two-digit number is out of range by a long way.
+    g.answer("d\r");
+    g.expect("YOUR DECK", T);
+    g.forget();
+    g.answer("99\r");
+    g.expect("Invalid input", T);
+    // The typed token, not what `parse` made of it (#562): a leading zero
+    // is a different thing to have typed.
+    g.forget();
+    g.answer("099\r");
+    g.expect("'099'", T);
+    g.forget();
+    g.answer("zzz\r");
+    g.expect("Invalid input", T);
+    g.answer("\r");
+    g.expect("Pass priority", T);
+
+    // The battlefield inspector, same question.
+    g.answer("i\r");
+    g.expect("INSPECT BATTLEFIELD", T);
+    g.forget();
+    g.answer("77\r");
+    g.expect("Invalid input", T);
+    g.answer("\r");
+    g.expect("Pass priority", T);
+
+    g.send("\x03");
+    assert_clean_exit(&mut g);
+}
