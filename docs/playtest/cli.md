@@ -851,6 +851,43 @@ whether it told the truth.
   `007` comes back as "7 is out of range" and the player loses the only clue
   that the leading zero was eaten
 
+  **Answered 2026-09-21: the leniency is uniform and harmless; the REFUSAL
+  is not, and the alphabet stops being the CLI's the moment you leave
+  `cli.rs`.** There are **nine** numeric readers, not the seven listed above
+  — V46 omitted `show_deck_browser` (`cli.rs:5134`) and
+  `show_battlefield_inspector` (`cli.rs:4615`). All nine parse with
+  `str::parse::<usize>`/`::<u32>`, so all nine accept `+N` and leading zeros
+  and all nine reject `-N` including `-0`, and eight accepted lenient tokens
+  were played through two `cli`-vs-`random` games and reconciled against
+  `--log`: `+1` and `01` each took a mulligan, `+6` and `00003` marked rows 6
+  and 3, `+2` at `X (0-3)` logged `p0 cast Devil's Play (#30) (X=2)` and dealt
+  2, `+1:+0` declared the block it named. V2's verdict holds at every reader:
+  the value it names is the value it selects.
+
+  The refusal is four styles, not two (#562): 2 readers quote the typed line
+  via `quote_input`, 4 echo the *parsed* value, 1 echoes neither, and **2 say
+  nothing at all** — the deck browser and the inspector redraw a
+  byte-identical page for `99` and for `zzz` (#563), the only two prompts in
+  the program that refuse silently. On the bottoming screen `0 7`, `007` and
+  `0,7` produce three byte-identical refusals, which matters because #322
+  deliberately makes `0<Tab>7` and `07` different inputs.
+
+  **The cross-surface half is where the real find was.** The LLM seat is
+  *stricter* for indices (an integer `enum`) but uses the same lenient
+  `str::parse::<u32>` with a silent `unwrap_or(0)` on its X string-enum;
+  `random.rs` has no alphabet at all and answers every `ChooseXFunding` with
+  pool-plus-`max_contribution()`, which is `max_x` by construction, so no
+  seeded game has ever announced an intermediate X (55 casts over 8 mirrors:
+  36 at X=0 and the rest all at the board maximum — an H10 constant that
+  survived the three `random.rs` arms fixed for exactly this, #564). And the
+  page reads X with JS `Number()` (`mtg-gui/src/prompts.ts:599`), so `-0`,
+  `0x2`, `0b11`, `2.0` and `"  3  "` are all accepted where the CLI refuses
+  every one of them — and `Number("")` is 0, so a bare Enter on the
+  auto-focused, initially-empty box commits the cast for X=0 (#561, which is
+  #123 verbatim on a new surface). A staged-prompt Playwright probe against
+  `window.mtgDebug.stage` reaches this without playing a game to it, and is
+  the cheap way to ask the same question of any other widget.
+
 - V47 [proposed 2026-09-21, from #559] the two game loops as one protocol,
   read side by side. `mtg-runner/src/main.rs` and `mtg-draft-runner/src/main.rs`
   each keep their own copy of the decision callback, and #559 is one
