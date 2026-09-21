@@ -689,12 +689,16 @@ stops here — pass --save {path} to keep writing it");
             return mtg_engine::actions::Action::AbandonGame;
         }
 
-        let view = GameView::for_player(game_state, acting_player, &CardRegistry::with_all_cards());
+        // The registry the run already built, not a new one. Each of these
+        // three call sites was constructing all 275 cards and both name
+        // maps from scratch — three times per decision, for a registry that
+        // never changes (issue #565).
+        let view = GameView::for_player(game_state, acting_player, registry_ref);
 
         let (player, other) = if acting_player == PlayerId(0) { (&mut p1, &mut p2) } else { (&mut p2, &mut p1) };
         if let PlayerKind::Gui(gui) = other {
             let other_id = PlayerId(1 - acting_player.0);
-            gui.observe(&GameView::for_player(game_state, other_id, &CardRegistry::with_all_cards()));
+            gui.observe(&GameView::for_player(game_state, other_id, registry_ref));
         }
 
         // Show thinking spinner only if a human is playing — render from the
@@ -709,7 +713,7 @@ stops here — pass --save {path} to keep writing it");
             );
             if will_call_api {
                 let human_id = if acting_player == PlayerId(0) { PlayerId(1) } else { PlayerId(0) };
-                let human_view = GameView::for_player(game_state, human_id, &CardRegistry::with_all_cards());
+                let human_view = GameView::for_player(game_state, human_id, registry_ref);
                 Some(mtg_player::cli::CliPlayer::start_thinking(&human_view))
             } else {
                 None
