@@ -1048,6 +1048,36 @@ pub struct CardRegistry {
     /// means the two faces are told apart by which map answered, rather than
     /// by comparing a name against a name.
     back_name_to_id: HashMap<String, CardId>,
+    /// The continuous effects printed on each registered card's faces, built
+    /// once at registration and indexed by `CardId.0 - 1`.
+    ///
+    /// `CardBehavior::card_data` *constructs* a whole `CardData` — the name,
+    /// the oracle text, the keyword list, the trigger list, every one of
+    /// them a fresh allocation — and returns it by value.
+    /// `GameState::walk_effects` asks every object in the game for its
+    /// continuous effects, and `has_keyword` calls it once per keyword; the
+    /// view asks for fifteen keywords per permanent. One view of a
+    /// 1,000-permanent board therefore built about sixteen million
+    /// `CardData`s and took three seconds in release, growing with the
+    /// square of the board (issue #565).
+    ///
+    /// A face's printed text is the same on every call. So it is read out
+    /// here once, and the hot paths read slices.
+    printed: Vec<PrintedCard>,
+}
+
+/// What a card prints, per face, for the readers that ask once per object
+/// per decision.
+struct PrintedCard {
+    front: PrintedFace,
+    /// `None` for a card with no back face — not an empty face, which is a
+    /// back face that prints nothing.
+    back: Option<PrintedFace>,
+}
+
+struct PrintedFace {
+    continuous_effects: Vec<ContinuousEffect>,
+    keywords: Vec<Keyword>,
 }
 
 impl Default for CardRegistry {
@@ -1057,6 +1087,7 @@ impl Default for CardRegistry {
             next_id: 1,
             name_to_id: HashMap::new(),
             back_name_to_id: HashMap::new(),
+            printed: Vec::new(),
         }
     }
 }
@@ -1071,8 +1102,24 @@ impl CardRegistry {
     pub fn register(&mut self, card: Box<dyn CardBehavior>) -> CardId {
         let id = CardId(self.next_id);
         self.next_id += 1;
-        let name = card.card_data().name.clone();
-        let back_name = card.back_face_data().map(|d| d.name);
+        let data = card.card_data();
+        let name = data.name.clone();
+        let back = card.back_face_data();
+        let back_name = back.as_ref().map(|d| d.name.clone());
+        // `printed` is indexed by `id.0 - 1`, which holds because this is
+        // the only way a card enters the registry and ids are handed out
+        // in order.
+        debug_assert_eq!(self.printed.len(), (id.0 - 1) as usize);
+        self.printed.push(PrintedCard {
+            front: PrintedFace {
+                continuous_effects: data.continuous_effects,
+                keywords: data.keywords,
+            },
+            back: back.map(|d| PrintedFace {
+                continuous_effects: d.continuous_effects,
+                keywords: d.keywords,
+            }),
+        });
         self.cards.insert(id, card);
         self.name_to_id.insert(name, id);
         if let Some(back_name) = back_name {
@@ -1099,6 +1146,46 @@ impl CardRegistry {
                 None
             }
         })
+    }
+
+    /// The continuous effects printed on a card's active face — the back
+    /// face when `transformed` and the card has one (CR 712.8a), the front
+    /// face otherwise.
+    ///
+    /// The one hot read of `printed_effects`; see the field for why it
+    /// exists. Returns an empty slice for a card that is not registered,
+    /// which is what a token with no face has.
+    #[must_use]
+    pub fn printed_continuous_effects(&self, id: CardId, transformed: bool) -> &[ContinuousEffect] {
+        let Some(card) = self.printed_card(id) else { return &[] };
+        if transformed {
+            if let Some(back) = &card.back {
+                return &back.continuous_effects;
+            }
+        }
+        &card.front.continuous_effects
+    }
+
+    /// The keywords printed on a card's active face, or `None` when the
+    /// card is not in the registry — a token or an anonymous object, whose
+    /// printed keywords live on the object itself.
+    ///
+    /// A transformed card with no back face reports *nothing*, rather than
+    /// falling back to its front face: that is what `has_keyword` has
+    /// always done, and the comment there says why (a stale front-face
+    /// keyword on a transformed DFC).
+    #[must_use]
+    pub fn printed_keywords(&self, id: CardId, transformed: bool) -> Option<&[Keyword]> {
+        let card = self.printed_card(id)?;
+        if transformed {
+            return Some(card.back.as_ref().map_or(&[], |b| b.keywords.as_slice()));
+        }
+        Some(&card.front.keywords)
+    }
+
+    fn printed_card(&self, id: CardId) -> Option<&PrintedCard> {
+        id.0.checked_sub(1)
+            .and_then(|i| self.printed.get(i as usize))
     }
 
     /// Get card data by ID.
