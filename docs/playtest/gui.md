@@ -181,6 +181,27 @@ random game happened to reach.
   `Number.isInteger` and the range check, so Enter looks like it submits X=0),
   `beginOrder` without reordering, `beginPick`'s Decline. Compare each against
   the CLI's same prompt, which refuses out loud in both directions.
+  [2026-09-22] All six asked, and the table is the finding (#570):
+
+  | widget | Enter, untouched | does it say so? |
+  |---|---|---|
+  | `menu` | sends `PassPriority` | n/a |
+  | `order` | confirms | n/a (#518) |
+  | `number` | refuses | yes — "Enter a value for X." (#561) |
+  | `mark` (min 1) | refuses | yes — "0 marked — mark between 1 and 2 cards" |
+  | `pick` | **nothing** | **no** |
+  | `list` | **nothing** | **no** |
+
+  `main.ts:322` tries `canPass`, then `onConfirm`, then `number`'s `submit`,
+  then `preventDefault`s the key and draws an identical frame; `pick` and
+  `list` set none of the three, and neither has an `onCancel`, so Escape is
+  dead too. `list` is the mulligan — the first decision of every game. Read
+  the `mark` row before deciding this is by design: on a widget that also has
+  no default answer, the same key produces a sentence.
+  What this leaves: the *destructive* half of the idea is now answered
+  everywhere and nothing commits a no-op any more. What has not been asked is
+  what Enter does when a `list` has been **filtered to exactly one row**, where
+  there is an obvious answer and the key still does nothing.
 
 - G17 [proposed 2026-09-17, from reading `mtg-player/src/gui.rs:190` during G9]
   the seat that can never give up: `ask`'s
