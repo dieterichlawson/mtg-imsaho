@@ -300,6 +300,22 @@ random game happened to reach.
   idea was written for; if the honest ceiling is 11 or 12, say so here and drop
   the button half of the idea.
 
+- G24 [proposed 2026-09-22, from reading main.ts:313-318 during G16] the field
+  that eats the keyboard: `syncField` calls `field.focus()` whenever the widget
+  is a filtered `list` or a `number`, and the window's keydown handler opens
+  with `if (ev.target === field) { ...Enter, Escape... return; }`. So while any
+  filter box or X box is up, every other key the page documents — `l` for the
+  log, `g`/`G`/`e`/`d` for the zones, `s` for stop-at-every-priority, `f` for
+  auto-pass — is typed into the filter instead of doing its job, and Escape
+  only blurs the field rather than backing out. Open a `ChooseCardName` prompt
+  (a filtered list) and a `ChooseXFunding` prompt (a number) and press each of
+  `l g G e d s f` at both; check what `window.mtg.logOpen`, `.overlay`,
+  `.stopAtPass` and `.autoPass` do, and what ends up in `ui.query`. Then decide
+  whether the player can consult a graveyard before answering a question about
+  it — which is the same complaint as #529's, that a prompt must not be the
+  only thing you can do. G16's table is the neighbouring fact: at those two
+  widgets Enter is also the only key `main.ts` will act on.
+
 ## Filing
 
 As `docs/playtest/README.md` says: title `[playtest] <symptom>`, labels
