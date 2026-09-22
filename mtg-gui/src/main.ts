@@ -219,8 +219,26 @@ function pushSettings(): void {
 
 // ----------------------------------------------------------------- input
 
+/**
+ * Size the canvas to the window.
+ *
+ * At or above the canvas's own 640x360 the scale is an integer: this is a
+ * pixel-art page and a fractional scale there would blur it for nothing.
+ *
+ * Below it, the scale used to be floored at 1 — so the canvas stayed at
+ * full size and `index.html`'s `overflow: hidden` cut the overflow off
+ * both sides, with no scrollbar, no drag and nothing on screen saying
+ * anything was missing. What goes first is the right-hand 160px, which is
+ * the prompt panel: its title, its rows and every button. At 390px wide,
+ * 35px of that panel was on screen and clicking Pass or Concede did
+ * nothing at all (issue #569). Shrinking below 1 makes a small window
+ * blurry; cropping made it unanswerable.
+ */
 function fitCanvas(): void {
-  const s = Math.max(1, Math.floor(Math.min(window.innerWidth / W, window.innerHeight / H)));
+  const fit = Math.min(window.innerWidth / W, window.innerHeight / H);
+  // A window with no area at all (a hidden tab, a zero-height frame) would
+  // otherwise give a scale of 0, which `canvasPoint` divides by.
+  const s = fit >= 1 ? Math.floor(fit) : Math.max(fit, 0.05);
   state.scale = s;
   canvas.style.width = `${W * s}px`; canvas.style.height = `${H * s}px`;
   draw();

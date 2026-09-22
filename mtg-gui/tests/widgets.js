@@ -813,6 +813,42 @@ async function main() {
         else ok(`inspector-fit: all ${inBox.length} lines in the inspector's text box stay in it`);
       }
     }
+    // 26. A window smaller than the canvas is shrunk, not cropped. The
+    // scale was floored at 1, so below 640x360 the canvas stayed full size
+    // and `overflow: hidden` cut the overflow off both sides — and the half
+    // that goes first holds the prompt and every button (issue #569).
+    {
+      seq++;
+      await page.evaluate(({ seq, legalObj }) => window.mtgDebug.stage({ seq, legal: legalObj, combat: null }),
+        { seq, legalObj: legal({ actions: ["PassPriority", "Concede"], context: "MAIN PHASE 1" }) });
+      for (const [name, width, height] of [[ "desktop", 1280, 720 ], [ "exact", 640, 360 ], [ "laptop half", 620, 700 ],
+                                           [ "wide and short", 1600, 300 ], [ "phone portrait", 390, 844 ], [ "tiny", 320, 240 ]]) {
+        await page.setViewportSize({ width, height });
+        await page.waitForTimeout(80);
+        const r = await page.evaluate(() => {
+          const m = window.mtg;
+          window.mtgDebug.render();
+          const box = document.getElementById("game").getBoundingClientRect();
+          // The prompt panel is x=480..640 in canvas coordinates.
+          const panel = (Math.min(innerWidth, box.left + 640 * m.scale) - Math.max(0, box.left + 480 * m.scale)) / m.scale;
+          return {
+            scale: m.scale,
+            panel: Math.max(0, panel),
+            buttons: m.hits.filter(h => h.kind === "button").length,
+            offscreen: m.hits.filter(h => h.kind === "button").filter(h => {
+              const px = box.left + (h.x + h.w / 2) * m.scale, py = box.top + (h.y + h.h / 2) * m.scale;
+              return !(px >= 0 && px < innerWidth && py >= 0 && py < innerHeight);
+            }).map(h => h.label),
+          };
+        });
+        if (!r.buttons) fail(`small-window ${name}: no buttons on the prompt to check`);
+        else if (r.offscreen.length) fail(`small-window ${name} (${width}x${height}): ${JSON.stringify(r.offscreen)} off screen at scale ${r.scale}`);
+        else if (r.panel < 159.5) fail(`small-window ${name} (${width}x${height}): only ${r.panel.toFixed(1)} of the 160px prompt panel on screen`);
+        else ok(`small-window ${name} (${width}x${height}): scale ${r.scale.toFixed(3)}, whole panel and every button reachable`);
+      }
+      await page.setViewportSize({ width: 1280, height: 720 });
+      await page.waitForTimeout(80);
+    }
     if (errors.length) fail("page errors:\n" + errors.join("\n"));
   } finally {
     await browser.close();
