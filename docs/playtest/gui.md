@@ -86,6 +86,41 @@ random game happened to reach.
   step name, a full keyword list, an eight-line oracle text, a player label
   after #519. Measure with `ctx.measureText` against the pane width rather
   than by looking.
+  [2026-09-22] Answered both ways, and **the method is the part to reuse**.
+  Don't read the call sites and reason about them: wrap `fillText` itself
+  before the page's scripts run, and every string the page paints arrives with
+  its own measured width.
+
+  ```js
+  await page.addInitScript(() => {
+    window.__draws = [];
+    const orig = CanvasRenderingContext2D.prototype.fillText;
+    CanvasRenderingContext2D.prototype.fillText = function (s, x, y) {
+      window.__draws.push({ s: String(s), x, y, w: this.measureText(String(s)).width, font: this.font });
+      return orig.apply(this, arguments);
+    };
+  });
+  ```
+
+  "Does it fit" is then `x + w > 640` (off the canvas) and `x < 480 && x + w >
+  480` (board text in the panel), exactly the way G4's `window.mtg.hits` rule
+  works — and unlike `hits` it covers text the page draws without publishing a
+  rectangle for it, which is most of it. Drive it with
+  `window.mtgDebug.render()` for a frame on demand and `m.hover = <hit>` to
+  point the inspector at anything on the board.
+  **In ordinary play the page fits**: 2 whole games, 99 decisions, 542 hover
+  frames over every permanent, hand card, stack chip and player strip, plus the
+  log drawer and all three zone overlays — zero overruns. Don't re-sweep live
+  games without a reason; #522 and #532 took the ones that used to.
+  **At the longest string it can hold, the inspector's P/T line does not**
+  (#568): `render.ts:706-707` is a bare `text()` into an 84px box at x=552, so
+  a printed 13/13 (Ludevic's Abomination) with 10 damage marked is 96px wide,
+  ends at 648 and reads `13/13 10 dm` — while the card name one row above
+  ellipsizes correctly, because #532's rule lives inside `wrap` and these two
+  lines don't go through it. The sites still unswept at their worst case are
+  the perm badge strip and `drawStrip`'s `parts` loop, which both lay out
+  left-to-right with no bound; a 6-colour floating mana pool was not enough to
+  push `parts` past 480.
 
 - G15 [proposed 2026-09-17, from the G5 runs — unverified] the window that is
   too small: `index.html` sets `body { overflow: hidden }` and `fitCanvas`
