@@ -4,7 +4,7 @@ import { loadManifest, fontsReady, artNames } from "./assets.js";
 import { render, inspecting, inspectorFacts, inspectorPt, wrap, wrapCapped, bandTurnLine, bandLogLines, clampScroll, outcomeHeadline, BAND_W, W, H, PANEL_X } from "./render.js";
 import { beginDecision, indexView, beginList, inOurWords } from "./prompts.js";
 import type { Action, ClientMessage, Decision, GameView, ServerMessage } from "./protocol.js";
-import type { Hit, LiveState, Row, State } from "./state.js";
+import type { Hit, LiveState, Row, State, Ui } from "./state.js";
 
 const canvas = document.getElementById("game") as HTMLCanvasElement;
 const ctx = canvas.getContext("2d")!;
@@ -328,6 +328,36 @@ canvas.addEventListener("wheel", (ev) => {
   draw();
 }, { passive: false });
 
+/**
+ * What the page says when its confirm key cannot answer the prompt on
+ * screen.
+ *
+ * Enter walks three chances and Escape three more, and a widget that sets
+ * none of them dropped the key on the floor: the event was consumed, a
+ * frame identical to the last one was drawn, and nothing was said. On
+ * `pick` and `list` that is every "choose a target", every library search,
+ * and the mulligan — the first decision of every game (issue #570).
+ *
+ * Doing nothing is the right answer for those two: there is no default
+ * here that Enter could safely commit, and committing one would be #520.
+ * Saying nothing is not — a silent redraw at a full-screen prompt is
+ * indistinguishable from a hung page, which is the rule the CLI has
+ * carried since #76 and the `mark` widget since #518. The sentence is
+ * built from the widget's own hint and buttons rather than from its mode,
+ * so the next widget added cannot be silent either.
+ */
+function noAnswerHere(ui: Ui, key: string): string {
+  const ways: string[] = [];
+  // The hint is written as a sentence of its own ("Click a row."); here it
+  // is the tail of one.
+  if (ui.hint) ways.push(ui.hint.charAt(0).toLowerCase() + ui.hint.slice(1).replace(/[.\s]+$/, ""));
+  const buttons = ui.buttons.map(b => b.label).filter(Boolean);
+  if (buttons.length) ways.push(`or press ${buttons.join(" / ")}`);
+  return ways.length
+    ? `${key} does not answer this — ${ways.join(", ")}.`
+    : `${key} does not answer this.`;
+}
+
 window.addEventListener("keydown", (ev) => {
   if (ev.target === field) {
     if (ev.key === "Enter") { const ui = state.ui; if (ui && ui.mode === "number" && ui.submit) ui.submit(); ev.preventDefault(); }
@@ -342,11 +372,13 @@ window.addEventListener("keydown", (ev) => {
       if (ui.mode === "menu" && ui.canPass) send("PassPriority");
       else if (ui.onConfirm) ui.onConfirm();
       else if (ui.mode === "number" && ui.submit) ui.submit();
+      else state.notice = noAnswerHere(ui, "Enter");
       break;
     case "Escape":
       if (state.popover) state.popover = null;
       else if (state.overlay) state.overlay = null;
       else if (ui && ui.onCancel) ui.onCancel();
+      else if (ui) state.notice = noAnswerHere(ui, "Escape");
       break;
     case "l": state.logOpen = !state.logOpen; state.logScroll = 0; break;
     case "g": if (v) toggleZone("graveyard", v.you); break;
@@ -394,7 +426,13 @@ function syncField(): void {
   field.placeholder = ui.mode === "number" ? `X (0-${ui.max})` : "filter";
   if (document.activeElement !== field) field.focus();
 }
-function hideField(): void { field.style.display = "none"; field.value = ""; }
+/** Put the typing field away, and the keyboard back on the page with it.
+ *
+ * `display: none` drops focus eventually, but not before the next key: a
+ * prompt that follows a filtered list or an X box got its first Enter
+ * delivered to an input nobody can see, which is the #570 silence by
+ * another route. Blur it explicitly. */
+function hideField(): void { field.blur(); field.style.display = "none"; field.value = ""; }
 field.addEventListener("input", () => {
   const ui = state.ui;
   if (!ui) return;

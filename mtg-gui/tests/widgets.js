@@ -813,6 +813,38 @@ async function main() {
         else ok(`inspector-fit: all ${inBox.length} lines in the inspector's text box stay in it`);
       }
     }
+    // 25. A key that cannot answer says so. Enter walks three chances and
+    // Escape three more; `pick` and `list` set none of them, so the key was
+    // consumed, an identical frame was drawn and nothing was said — on
+    // every "choose a target", every library search, and the mulligan, the
+    // first decision of every game (issue #570). Doing nothing is right
+    // here; doing it silently is the #76/#42 hang-lookalike.
+    {
+      const opts = [{ Object: ids.mine[0] }, { Player: ids.opp }];
+      const cases = [
+        ["pick", legal({ actions: [...opts.map(t => rc({ ChosenTarget: t })), rc({ ChosenTarget: null })],
+          resolution_prompt: { ChooseTarget: { description: "Deal 3 damage to any target", options: opts, optional: true, effect: "Destroy" } } })],
+        ["list", legal({ actions: ["MulliganKeep", "MulliganMull"], context: "MULLIGAN DECISION (mulligans taken: 0)" })],
+      ];
+      for (const [want, legalObj] of cases) {
+        seq++;
+        const staged = await page.evaluate(({ seq, legalObj }) => {
+          window.mtgDebug.stage({ seq, legal: legalObj, combat: null });
+          window.mtg.notice = null;
+          return { mode: window.mtg.ui && window.mtg.ui.mode, sent: window.mtgDebug.sent.length };
+        }, { seq, legalObj });
+        if (staged.mode !== want) { fail(`silent-key ${want}: widget is ${staged.mode}`); continue; }
+        for (const key of ["Enter", "Escape"]) {
+          await page.evaluate(() => { window.mtg.notice = null; });
+          await page.keyboard.press(key);
+          await page.waitForTimeout(60);
+          const after = await page.evaluate(() => ({ notice: window.mtg.notice, sent: window.mtgDebug.sent.length }));
+          if (after.sent !== staged.sent) fail(`silent-key ${want}: ${key} answered the prompt (#520: there is no safe default here)`);
+          else if (!after.notice) fail(`silent-key ${want}: ${key} did nothing and said nothing`);
+          else ok(`silent-key ${want}: ${key} → "${after.notice}"`);
+        }
+      }
+    }
     // 26. A window smaller than the canvas is shrunk, not cropped. The
     // scale was floored at 1, so below 640x360 the canvas stayed full size
     // and `overflow: hidden` cut the overflow off both sides — and the half
