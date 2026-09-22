@@ -822,8 +822,17 @@ fn action_contract(prev: &GameState, cur: &GameState, action: &Action, events: &
             }
         }
         Action::DiscardCards { cards } => {
-            if let Some(AwaitingAction::DiscardToHandSize { player, .. }) = &prev.awaiting_action {
+            if let Some(AwaitingAction::DiscardToHandSize { player, discard_count }) = &prev.awaiting_action {
                 let who = *player;
+                // CR 514.2: "the active player discards down to that many
+                // cards" — not "may". The sibling `BottomCards` arm below
+                // has always said so and this one did not, so a seat that
+                // answered the cleanup with the empty set kept its whole
+                // hand and nothing in the program disagreed (issue #567).
+                if cards.len() != *discard_count {
+                    v.push(format!("p{} discarded {} cards, asked for {discard_count} (CR 514.2)",
+                        who.0, cards.len()));
+                }
                 let discarded: Vec<ObjectId> = events.iter().filter_map(|e| match e {
                     GameEvent::Discarded { player, object } if *player == who => Some(*object),
                     _ => None,

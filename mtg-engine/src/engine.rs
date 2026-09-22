@@ -149,10 +149,21 @@ impl LegalActions {
     ///
     /// This asks about *shape*, not validity. A menu row has to be a row
     /// that is on the menu. An answer a seat builds from a prompt rather
-    /// than picks from a list — a declaration, a set of cards, a
-    /// mid-resolution choice — is admitted by the prompt it answers, and
-    /// `submit_action` checks its contents, which is where that check has
-    /// always lived.
+    /// than picks from a list — a declaration, a mid-resolution choice — is
+    /// admitted by the prompt it answers, and `submit_action` checks its
+    /// contents, which is where that check has always lived.
+    ///
+    /// A set of cards is the exception, and it is here because for a set
+    /// prompt the shape *is* the contents: there is no menu row behind it
+    /// to be wrong about and no handler that can refuse one. `discard_cards`
+    /// discarded whatever it was handed and then cleared the prompt
+    /// unconditionally, so a seat that answered the empty set kept its whole
+    /// hand and the engine believed the cleanup step had happened — the hand
+    /// grew by one a turn for thirty turns, with no panic, no invariant
+    /// violation and no line in the log (issue #567). Refusing here leaves
+    /// the prompt standing, which turns a silent rule-skip into the spin the
+    /// progress watchdog catches, exactly as #514 intended. The one check
+    /// written for this is `SetPrompt::accepts`, which had no caller.
     ///
     /// `Action` has no `PartialEq`, so a row is matched the way
     /// `invariants::legal`'s `distinct_offers` matches one: by its `Debug`
@@ -171,10 +182,10 @@ impl LegalActions {
                 matches!(self.combat_prompt, Some(CombatPrompt::ChooseAttackers { .. })),
             Action::DeclareBlockers { .. } =>
                 matches!(self.combat_prompt, Some(CombatPrompt::ChooseBlockers { .. })),
-            Action::DiscardCards { .. } => matches!(&self.set_prompt,
-                Some(p) if p.kind == SetPromptKind::DiscardToHandSize),
-            Action::BottomCards { .. } => matches!(&self.set_prompt,
-                Some(p) if p.kind == SetPromptKind::BottomAfterMulligan),
+            Action::DiscardCards { cards } => matches!(&self.set_prompt,
+                Some(p) if p.kind == SetPromptKind::DiscardToHandSize && p.accepts(cards)),
+            Action::BottomCards { cards } => matches!(&self.set_prompt,
+                Some(p) if p.kind == SetPromptKind::BottomAfterMulligan && p.accepts(cards)),
             Action::ResolveChoice { .. } => self.resolution_prompt.is_some(),
             row => {
                 let row = format!("{row:?}");

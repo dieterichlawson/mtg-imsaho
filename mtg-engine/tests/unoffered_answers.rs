@@ -102,7 +102,12 @@ fn every_prompt_admits_its_own_answer_and_refuses_a_pass() {
             player: P0, discard_count: 1 });
         mtg_engine::engine::legal_actions(&s, &reg)
     };
-    assert!(discard.permits(&Action::DiscardCards { cards: vec![] }));
+    // A set prompt is the one answer whose shape *is* its contents: it has
+    // no menu row behind it to be wrong about, so the empty set was admitted
+    // on the action's name alone and executed (issue #567). The cards the
+    // prompt offers are checked in `set_prompt_contents.rs`.
+    assert!(!discard.permits(&Action::DiscardCards { cards: vec![] }),
+        "the empty set is not a discard of one card (CR 514.2 is not a 'may')");
     assert!(!discard.permits(&Action::BottomCards { cards: vec![] }),
         "a bottoming is not a discard, though both are a set of cards from hand");
     assert!(!discard.permits(&Action::PassPriority));

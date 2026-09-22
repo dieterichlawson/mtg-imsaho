@@ -69,22 +69,21 @@ pub(crate) fn mulligan_mull(state: &mut GameState, registry: &CardRegistry) -> A
 }
 
 pub(crate) fn bottom_cards(state: &mut GameState, cards: &[ObjectId], registry: &CardRegistry) -> Applied {
-        let (player, count) = match &state.awaiting_action {
-            Some(AwaitingAction::BottomAfterMulligan { player, count }) => (*player, *count),
-            _ => panic!("BottomCards without BottomAfterMulligan awaiting"),
-        };
-        assert_eq!(cards.len(), count,
-            "BottomCards: expected {} cards, got {}", count, cards.len());
-        // Validate the chosen cards are all in this player's hand and distinct.
-        let hand_ids: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, player)
-            .iter().map(|o| o.id).collect();
-        let mut seen = std::collections::HashSet::new();
-        for id in cards {
-            assert!(hand_ids.contains(id),
-                "BottomCards: card {:?} not in p{}'s hand", id, player.0);
-            assert!(seen.insert(*id),
-                "BottomCards: duplicate card {id:?}");
-        }
+        // The right number, all from the hand, none of them twice — asked
+        // of the prompt the engine is actually offering rather than
+        // re-derived here. This was three assertions rebuilding what
+        // `SetPrompt::accepts` says in one line, and the count they checked
+        // was the raw `count` rather than the clamped one the prompt asks
+        // for. `LegalActions::permits` refuses a bad answer before it gets
+        // this far (issue #567); reaching here with one is an engine bug,
+        // not a seat's, which is what an assertion is for.
+        let prompt = crate::engine::legal::awaiting::pending_set_prompt(state)
+            .filter(|p| p.kind == crate::actions::SetPromptKind::BottomAfterMulligan)
+            .expect("BottomCards without BottomAfterMulligan awaiting");
+        assert!(prompt.accepts(cards),
+            "BottomCards: {cards:?} is not a legal answer to a prompt for {} of {:?}",
+            prompt.min, prompt.options);
+        let (player, count) = (prompt.player, cards.len());
         // Move each card from hand to library and append to the bottom, in
         // the order given (so `cards[0]` ends up bottom-most of the group).
         for &card_id in cards {

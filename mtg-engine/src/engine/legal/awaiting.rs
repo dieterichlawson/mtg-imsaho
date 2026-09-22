@@ -22,6 +22,27 @@ fn hand_set_prompt(state: &GameState, player: crate::ids::PlayerId, count: usize
     crate::actions::SetPrompt { kind, player, options, min: n, max: n }
 }
 
+/// The set prompt the engine is waiting on, or `None` if what it is waiting
+/// on is not a set of cards.
+///
+/// One reading of the question, because there are two callers who must
+/// agree about it: `legal_actions_while_awaiting` below, which offers the
+/// prompt, and the handler that consumes the answer, which has to hold it
+/// to the same `min`/`max` and the same option list the seat was shown.
+/// `mulligan::bottom_cards` used to rebuild that judgement from the raw
+/// `count` instead (issue #567).
+pub(crate) fn pending_set_prompt(state: &GameState) -> Option<crate::actions::SetPrompt> {
+    match state.awaiting_action.as_ref()? {
+        AwaitingAction::DiscardToHandSize { player, discard_count } =>
+            Some(hand_set_prompt(state, *player, *discard_count,
+                crate::actions::SetPromptKind::DiscardToHandSize)),
+        AwaitingAction::BottomAfterMulligan { player, count } =>
+            Some(hand_set_prompt(state, *player, *count,
+                crate::actions::SetPromptKind::BottomAfterMulligan)),
+        _ => None,
+    }
+}
+
 /// The legal actions for the pending `awaiting_action`, or `None` if the
 /// engine is not waiting on one.
 pub(crate) fn legal_actions_while_awaiting(
@@ -103,8 +124,7 @@ pub(crate) fn legal_actions_while_awaiting(
             }
         }
         AwaitingAction::DiscardToHandSize {
-            player,
-            discard_count,
+            discard_count, ..
         } => LegalActions {
             // CR 514.1: the cards are chosen, not picked out of a list of
             // every way of choosing them. Enumerating the subsets is
@@ -112,8 +132,7 @@ pub(crate) fn legal_actions_while_awaiting(
             // of seven discarding three — and reading a menu like that is
             // working a combination lock.
             actions: vec![],
-            set_prompt: Some(hand_set_prompt(state, *player, *discard_count,
-                crate::actions::SetPromptKind::DiscardToHandSize)),
+            set_prompt: pending_set_prompt(state),
             combat_prompt: None,
             castable_spells: vec![],
             activatable_abilities: vec![],
@@ -142,7 +161,7 @@ pub(crate) fn legal_actions_while_awaiting(
                 set_prompt: None,
             }
         }
-        AwaitingAction::BottomAfterMulligan { player, count } => {
+        AwaitingAction::BottomAfterMulligan { count, .. } => {
             // CR 103.4: the cards are chosen. This used to enumerate every
             // subset so the action list was self-contained for simple
             // players, which is C(hand, count) entries — 35 at "bottom 3 of
@@ -151,8 +170,7 @@ pub(crate) fn legal_actions_while_awaiting(
             // player builds the answer from that.
             LegalActions {
                 actions: vec![],
-                set_prompt: Some(hand_set_prompt(state, *player, *count,
-                    crate::actions::SetPromptKind::BottomAfterMulligan)),
+                set_prompt: pending_set_prompt(state),
                 combat_prompt: None,
                 castable_spells: vec![],
                 activatable_abilities: vec![],
