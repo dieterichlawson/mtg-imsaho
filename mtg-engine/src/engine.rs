@@ -1250,6 +1250,15 @@ fn run_game_loop_inner<F>(
 ) where
     F: FnMut(&GameState, PlayerId, &LegalActions) -> Action,
 {
+    /// How many auto-passes in a row the loop will take *while the game
+    /// stands still* before breaking out of what must be a spin.
+    ///
+    /// Counted since the game last moved, not since a seat last had a
+    /// meaningful action. Those are not the same number: a stack neither
+    /// seat can respond to — a pile of activations by a player who has run
+    /// out of creatures to sacrifice — drains at two auto-passes per
+    /// resolution, so fifty perfectly ordinary resolutions used to trip a
+    /// valve meant for a loop that was not moving at all (issue #571).
     const MAX_AUTO_PASSES: u32 = 100;
 
     /// How many rounds in a row the loop will take the "nothing is on
@@ -1261,6 +1270,10 @@ fn run_game_loop_inner<F>(
 
     let num_players = u32::try_from(state.players.len()).unwrap_or(u32::MAX);
     let mut auto_pass_count = 0u32;
+    // What "the game moved" means for the counter above: a turn, a step, or
+    // an object leaving the stack. Anything else an auto-pass can change is
+    // bookkeeping the players did not do.
+    let mut auto_pass_mark: Option<(u32, crate::types::Step, usize)> = None;
     let mut empty_offers = 0u32;
 
     // Opening-hand mulligan phase. When present, drive it first; it will
@@ -1443,11 +1456,28 @@ fn run_game_loop_inner<F>(
             auto_pass_count = 0;
             choose_action(state, acting_player, &legal)
         } else if state.priority_player.is_some() {
+            let mark = (state.turn_number, state.step, state.stack.len());
+            if auto_pass_mark != Some(mark) {
+                auto_pass_mark = Some(mark);
+                auto_pass_count = 0;
+            }
             auto_pass_count += 1;
             if auto_pass_count > MAX_AUTO_PASSES {
-                // Safety: break infinite auto-pass loops.
+                // Safety: break an auto-pass loop that is not moving.
+                //
+                // This resolves or advances with nobody having passed
+                // (CR 117.4) and without reaching the callback, so it is
+                // invisible to every observer the program has — the
+                // transition checker, the progress watchdog, the action
+                // ceiling. It fired in an ordinary game until #571 and
+                // said nothing; whatever it is escaping is now worth a
+                // line in the log.
+                state.log(LogLevel::Milestone, format!(
+                    "the loop auto-passed {MAX_AUTO_PASSES} times at turn {} {:?}                      without the game moving; advancing it directly (CR 117.4                      is not satisfied by this pass round)",
+                    state.turn_number, state.step));
                 advance_or_resolve(state, registry);
                 auto_pass_count = 0;
+                auto_pass_mark = None;
                 continue;
             }
             if state.observe_every_submit {

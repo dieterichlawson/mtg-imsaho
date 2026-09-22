@@ -117,3 +117,84 @@ fn a_bare_mana_ability_is_still_not_a_meaningful_action() {
     assert!(stops <= 4,
         "an empty board with two lands should pass through its steps, got {stops} stops");
 }
+
+/// The safety valve counts passes, not spinning.
+///
+/// `run_game_loop` breaks an infinite auto-pass loop by advancing or resolving
+/// the game itself once it has auto-passed `MAX_AUTO_PASSES` times in a row.
+/// The counter was reset only when a seat had a meaningful action, so a game
+/// that is making perfectly good progress *through* auto-passes trips it: a
+/// stack neither seat can respond to drains at two auto-passes per resolution,
+/// and after fifty resolutions the valve fires.
+///
+/// What it does when it fires is the defect. It resolves the top of the stack
+/// with nobody having passed priority (CR 117.4) and without going through the
+/// decision callback, so an observer never sees that resolution at all — the
+/// transition it does see spans two, and reads the second one's bookkeeping
+/// against the first one's stack entry. That is issue #571 verbatim: "ability
+/// resolved with sacrifice=Some(ObjectId(93)) but the state says
+/// sacrifice=Some(ObjectId(95))", bg-coverage vs ub-coverage, seed
+/// 20718200198, where a random seat had stacked thirty Grimgrin activations
+/// and then run out of creatures to respond with.
+#[test]
+fn a_stack_drained_by_auto_passes_resolves_one_object_per_pass_round() {
+    use mtg_engine::state::StackEntry;
+
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+    // Grimgrin with no other creature to sacrifice: its ability is on the
+    // card and not on the menu, so neither seat has a meaningful action and
+    // every pass from here is an auto-pass.
+    let grimgrin = named_permanent(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
+    let card_id = state.get_object(grimgrin).unwrap().card_id;
+
+    // Deep enough to pass MAX_AUTO_PASSES at two auto-passes per resolution,
+    // with room to spare.
+    const ENTRIES: usize = 80;
+    for _ in 0..ENTRIES {
+        state.stack.push(StackEntry::Ability {
+            source_id: grimgrin,
+            ability_index: 0,
+            behavior_card_id: card_id,
+            targets: vec![],
+            activator: P0,
+            x_value: None,
+            target_requirement: None,
+            sacrificed: None,
+            sacrificed_toughness: None,
+            loyalty: false,
+        });
+    }
+    // The fuzz runner's mode: every pass is a decision the observer sees.
+    state.observe_every_submit = true;
+
+    let mut depths: Vec<usize> = Vec::new();
+    let mut unobserved: Option<(usize, usize)> = None;
+    mtg_engine::engine::run_game_loop(&mut state, &reg, |gs, _player, legal| {
+        if let Some(&before) = depths.last() {
+            if before > gs.stack.len() + 1 {
+                unobserved.get_or_insert((before, gs.stack.len()));
+            }
+        }
+        depths.push(gs.stack.len());
+        if gs.stack.is_empty() {
+            return Action::Concede;
+        }
+        if legal.actions.iter().any(|a| matches!(a, Action::PassPriority)) {
+            return Action::PassPriority;
+        }
+        legal.actions[0].clone()
+    });
+
+    assert_eq!(unobserved, None,
+        "the stack went from {:?} to {:?} between two decisions: something \
+         resolved without a pass round and without reaching the callback \
+         (CR 117.4)",
+        unobserved.map(|(a, _)| a), unobserved.map(|(_, b)| b));
+    assert!(depths.contains(&0),
+        "the stack never drained; deepest-to-last seen: {:?}",
+        depths.last());
+    assert!(depths.len() >= 2 * ENTRIES,
+        "{} entries drained in {} decisions — fewer than the two passes each \
+         resolution owes (CR 117.4)", ENTRIES, depths.len());
+}
