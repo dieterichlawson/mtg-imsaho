@@ -122,12 +122,24 @@ random game happened to reach.
   left-to-right with no bound; a 6-colour floating mana pool was not enough to
   push `parts` past 480.
 
-- G15 [proposed 2026-09-17, from the G5 runs — unverified] the window that is
+- G15 [proposed 2026-09-17, from the G5 runs] the window that is
   too small: `index.html` sets `body { overflow: hidden }` and `fitCanvas`
   floors the integer scale at 1, so a window narrower than 640x360 should crop
   the canvas with no scrollbar and no way to reach the right-hand panel — where
   every button and the whole prompt live. Check a phone-sized window, a
   half-screen window and a very wide short one.
+  [2026-09-22] **Confirmed (#569), and it starts biting well above phone
+  size.** The canvas is centred, so the crop eats both edges and the 160px
+  prompt panel goes first: 150px of it survive at 620x700, 90 at 500x700, 35
+  at 390x844 and **0 at 320x240**, where clicking where Pass and Concede are
+  drawn does nothing at all. The measurement to copy is the page-coordinate
+  one — take `getBoundingClientRect()` of the canvas, map a button's hit
+  rectangle through `m.scale`, and ask whether that point is inside
+  `innerWidth`/`innerHeight`; `window.mtg.hits` alone cannot see this, because
+  the hit rectangles are all perfectly correct in canvas space.
+  The half still worth probing is what a *shorter* window does to a prompt
+  with rows: at 1600x300 only Concede had left the bottom, and no prompt with
+  a long row list was on screen at the time.
 
 **The Fumbler** clicks the wrong things.
 
