@@ -29,13 +29,35 @@ const KEYWORD_SHORT: Record<string, string> = { Flying: "Fly", FirstStrike: "FS"
   Intimidate: "Int", Menace: "Men", Indestructible: "Ind" };
 
 type Ctx = CanvasRenderingContext2D;
-interface TextOpts { font?: string; color?: string; align?: CanvasTextAlign }
+interface TextOpts { font?: string; color?: string; align?: CanvasTextAlign; maxW?: number }
 
 // ------------------------------------------------------------ text helpers
 
-export function text(ctx: Ctx, s: string, x: number, y: number, { font = "8px Silkscreen", color = "#e8e0d0", align = "left" }: TextOpts = {}): void {
+/**
+ * Paint one line, clipped to the room it has.
+ *
+ * Canvas `fillText` does not clip, so a string wider than the space it was
+ * given is painted straight over whatever is to its right — and past the
+ * canvas edge there is no canvas left, so those glyphs do not exist at all.
+ * #532 put the rule in `wrap`, which covers every line that goes through
+ * it. The inspector's two P/T lines do not, and a damaged 13/13 read
+ * "13/13 10 dm" with the "g" painted at x=640..648 (issue #568).
+ *
+ * The rule lives here now rather than at the fifteen call sites, so it
+ * holds for the next one as well: nothing is ever painted off the canvas,
+ * and a caller that knows the pane it is drawing into says so with `maxW`
+ * and is clipped to that instead.
+ */
+export function text(ctx: Ctx, s: string, x: number, y: number, { font = "8px Silkscreen", color = "#e8e0d0", align = "left", maxW }: TextOpts = {}): void {
   ctx.font = font; ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = "top";
-  ctx.fillText(s, Math.round(x), Math.round(y));
+  const px = Math.round(x);
+  // How much room the line has before it leaves the canvas, given where its
+  // anchor sits and which way the text grows from there.
+  const toEdge = align === "center" ? 2 * Math.min(px, ctx.canvas.width - px)
+    : align === "right" ? px
+    : ctx.canvas.width - px;
+  const room = Math.max(0, Math.min(maxW === undefined ? Infinity : maxW, toEdge));
+  ctx.fillText(clip(ctx, s, room, font), px, Math.round(y));
   ctx.textAlign = "left";
 }
 
@@ -703,8 +725,10 @@ function inspector(ctx: Ctx, state: LiveState, x: number, y: number, w: number):
   const typeLine = [...(o.supertypes || []), ...(o.card_types || [])].join(" ") + ((o.subtypes && o.subtypes.length) ? " — " + o.subtypes.join(" ") : "");
   for (const l of wrapCapped(ctx, typeLine, tw, "7px Silkscreen", 2)) { text(ctx, l, tx, ty, { font: "7px Silkscreen", color: "#b0b8c8" }); ty += 8; }
   const pt = inspectorPt(o);
-  if (pt.length) { text(ctx, pt[0], tx, ty, { font: "8px PressStart", color: "#e0f0ff" }); ty += 10; }
-  if (pt.length > 1) { text(ctx, pt[1], tx, ty, { font: "7px Silkscreen", color: "#8a8090" }); ty += 8; }
+  // `tw`, not the canvas: these two share their row with nothing, but the
+  // rule the name one line above obeys is the pane's, not the screen's.
+  if (pt.length) { text(ctx, pt[0], tx, ty, { font: "8px PressStart", color: "#e0f0ff", maxW: tw }); ty += 10; }
+  if (pt.length > 1) { text(ctx, pt[1], tx, ty, { font: "7px Silkscreen", color: "#8a8090", maxW: tw }); ty += 8; }
   ty = Math.max(ty, y + 4 + ART_L.h + 4);
   const facts = inspectorFacts(state, e);
   for (const f of facts) for (const l of wrapCapped(ctx, f, w - 8, "7px Silkscreen", 2)) { text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#d0c8a0" }); ty += 8; }

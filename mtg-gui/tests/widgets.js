@@ -758,6 +758,61 @@ async function main() {
         else ok("board-fit: 12 distinct creatures are 12 cards");
       }
     }
+    // 24. Nothing the inspector paints leaves the canvas or its own pane.
+    //
+    // `fillText` does not clip, so an over-long string is simply painted
+    // over — and past x=640 there is no canvas, so the glyphs do not exist.
+    // The inspector's P/T line bypassed the `wrap` -> `clip` rule #532 put
+    // in, and a 13/13 with two digits of damage read "13/13 10 dm" with the
+    // "g" at x=640..648 (issue #568). Ludevic's Abomination is a printed
+    // 13/13 with 13 toughness, so 10-12 damage marked is reachable.
+    {
+      const drawn = await page.evaluate(() => {
+        const m = window.mtg, you = m.view.you;
+        const p = m.view.battlefield.find(x => x.controller === you);
+        if (!p) return null;
+        const keep = JSON.parse(JSON.stringify(p));
+        const orig = CanvasRenderingContext2D.prototype.fillText;
+        const out = [];
+        // Every P/T the inspector can be handed for a real card, with and
+        // without damage, plus a pumped one so the "(printed N/N)" line is
+        // drawn too.
+        const cases = [[2, 2, 0], [13, 13, 5], [13, 13, 10], [13, 13, 12], [100, 100, 20]];
+        try {
+          CanvasRenderingContext2D.prototype.fillText = function (s, x, y) {
+            const w = this.measureText(String(s)).width;
+            const left = this.textAlign === "center" ? x - w / 2 : this.textAlign === "right" ? x - w : x;
+            out.push({ s: String(s), left, right: left + w, font: this.font });
+            return orig.apply(this, arguments);
+          };
+          for (const [pw, th, dmg] of cases) {
+            Object.assign(p, { name: "Ludevic's Abomination", effective_power: pw, effective_toughness: th,
+              power: pw, toughness: th, printed_power: pw === 13 ? 13 : 5, printed_toughness: th === 13 ? 13 : 5,
+              damage_marked: dmg });
+            window.mtgDebug.inspect("o" + p.object_id);
+            m.hover = m.hits.slice().reverse().find(x => x.key === "o" + p.object_id && x.kind === "perm") || m.hover;
+            window.mtgDebug.render();
+          }
+        } finally {
+          CanvasRenderingContext2D.prototype.fillText = orig;
+          Object.assign(p, keep);
+          window.mtgDebug.render();
+        }
+        return out;
+      });
+      if (!drawn) fail("inspector-fit: no permanent on the board to inspect");
+      else {
+        const off = drawn.filter(d => d.right > 640 || d.left < 0);
+        if (off.length) fail(`inspector-fit: painted past the canvas edge: ${JSON.stringify(off.slice(0, 3))}`);
+        else ok(`inspector-fit: all ${drawn.length} strings stay on the canvas`);
+        // The P/T line shares the name's text box, which starts at x=552
+        // and is 84px wide. The name ellipsizes there; the P/T did not.
+        const inBox = drawn.filter(d => d.left >= 552 && d.left < 640);
+        const spill = inBox.filter(d => d.right > 552 + 84);
+        if (spill.length) fail(`inspector-fit: past the 84px text box: ${JSON.stringify(spill.slice(0, 3))}`);
+        else ok(`inspector-fit: all ${inBox.length} lines in the inspector's text box stay in it`);
+      }
+    }
     if (errors.length) fail("page errors:\n" + errors.join("\n"));
   } finally {
     await browser.close();
