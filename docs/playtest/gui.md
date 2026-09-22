@@ -275,6 +275,30 @@ random game happened to reach.
   buttons are still on screen and the oracle text is not silently cut to
   nothing by `maxLines`. Seen indirectly in #529, where the row budget shrinks
   as the inspector grows.
+  [2026-09-22] **Half wrong, half real, nothing filed — read this before
+  re-running it.** The buttons are *not* pushed off the canvas and cannot be:
+  `promptH = H - promptY - 4`, so `promptY + promptH` is `H - 4` whatever the
+  inspector does, and the buttons lay out upward from `y + h - 18`. Measured at
+  y=323/338 at every fact count from 0 to 17. With the log open (`l`)
+  `promptH` is pinned at 100 and they do drift — y=261 at one fact, y=287 at
+  seventeen — about 8px per fact, so the bottom edge needs roughly 23 facts.
+  The starvation is real: facts are uncapped and the rules text gets what is
+  left, 10 lines at 0-6 facts, 4 at 12, 1 at 14 and **0 at 15 — silently,
+  because `wrapCapped` only marks the cut on a line it keeps**.
+  The reason there is no issue is that a real game did not come close. A
+  purpose-built deck (14 Plains / 4 Forest / 12 Elite Inquisitor / 6 Travel
+  Preparations / 4 Cobbled Wings vs 16 Swamp / 12 Walking Corpse / 6 Vampire
+  Interloper / 6 Diregraf Ghoul, seed 7), with every permanent hovered at every
+  decision, peaked at **6 facts** — Color, the keyword line, three protections,
+  Summoning sick — with all four of its rules-text lines still drawn.
+  **The wrinkle to take next**: that run never equipped or enchanted anything,
+  because the driver only ever played lands and cast spells. Drive the Cobbled
+  Wings onto the Inquisitor and an aura onto it as well, get it attacking and
+  blocked by three, and count again — attached-to, equipped-with, attacking,
+  blocked-by and a curse are five more facts on top of six, which is where the
+  ellipsis stops appearing. If a real board reaches 15, that is the issue this
+  idea was written for; if the honest ceiling is 11 or 12, say so here and drop
+  the button half of the idea.
 
 ## Filing
 
