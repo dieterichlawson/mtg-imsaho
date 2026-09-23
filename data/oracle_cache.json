@@ -3715,6 +3715,166 @@
       "source": "Scryfall API",
       "source_url": "https://scryfall.com/card/m19/150/lava-axe?utm_source=api",
       "cached_at": "2026-04-12"
+    },
+    "Sol Ring": {
+      "name": "Sol Ring",
+      "mana_cost": "{1}",
+      "type_line": "Artifact",
+      "oracle_text": "{T}: Add {C}{C}.",
+      "power": null,
+      "toughness": null,
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/frc/21/sol-ring?utm_source=api",
+      "cached_at": "2026-09-23"
+    },
+    "Coral Merfolk": {
+      "name": "Coral Merfolk",
+      "mana_cost": "{1}{U}",
+      "type_line": "Creature — Merfolk",
+      "oracle_text": "",
+      "power": "2",
+      "toughness": "1",
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/m20/315/coral-merfolk?utm_source=api",
+      "cached_at": "2026-09-23"
+    },
+    "Counterspell": {
+      "name": "Counterspell",
+      "mana_cost": "{U}{U}",
+      "type_line": "Instant",
+      "oracle_text": "Counter target spell.",
+      "power": null,
+      "toughness": null,
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/dsc/114/counterspell?utm_source=api",
+      "cached_at": "2026-09-23"
+    },
+    "Divination": {
+      "name": "Divination",
+      "mana_cost": "{2}{U}",
+      "type_line": "Sorcery",
+      "oracle_text": "Draw two cards.",
+      "power": null,
+      "toughness": null,
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/m19/51/divination?utm_source=api",
+      "cached_at": "2026-09-23"
+    },
+    "Doom Blade": {
+      "name": "Doom Blade",
+      "mana_cost": "{1}{B}",
+      "type_line": "Instant",
+      "oracle_text": "Destroy target nonblack creature.",
+      "power": null,
+      "toughness": null,
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/msc/576/doom-blade?utm_source=api",
+      "cached_at": "2026-09-23"
+    },
+    "Giant Growth": {
+      "name": "Giant Growth",
+      "mana_cost": "{G}",
+      "type_line": "Instant",
+      "oracle_text": "Target creature gets +3/+3 until end of turn.",
+      "power": null,
+      "toughness": null,
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/msh/167/giant-growth?utm_source=api",
+      "cached_at": "2026-09-23"
+    },
+    "Glorious Anthem": {
+      "name": "Glorious Anthem",
+      "mana_cost": "{1}{W}{W}",
+      "type_line": "Enchantment",
+      "oracle_text": "Creatures you control get +1/+1.",
+      "power": null,
+      "toughness": null,
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/m21/21/glorious-anthem?utm_source=api",
+      "cached_at": "2026-09-23"
+    },
+    "Goblin Piker": {
+      "name": "Goblin Piker",
+      "mana_cost": "{1}{R}",
+      "type_line": "Creature — Goblin Warrior",
+      "oracle_text": "",
+      "power": "2",
+      "toughness": "1",
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/m12/141/goblin-piker?utm_source=api",
+      "cached_at": "2026-09-23"
+    },
+    "Grizzly Bears": {
+      "name": "Grizzly Bears",
+      "mana_cost": "{1}{G}",
+      "type_line": "Creature — Bear",
+      "oracle_text": "",
+      "power": "2",
+      "toughness": "2",
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/10e/268/grizzly-bears?utm_source=api",
+      "cached_at": "2026-09-23"
+    },
+    "Holy Strength": {
+      "name": "Holy Strength",
+      "mana_cost": "{W}",
+      "type_line": "Enchantment — Aura",
+      "oracle_text": "Enchant creature\nEnchanted creature gets +1/+2.",
+      "power": null,
+      "toughness": null,
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/m11/16/holy-strength?utm_source=api",
+      "cached_at": "2026-09-23",
+      "keywords": [
+        "Enchant"
+      ]
+    },
+    "Kalonian Tusker": {
+      "name": "Kalonian Tusker",
+      "mana_cost": "{G}{G}",
+      "type_line": "Creature — Beast",
+      "oracle_text": "",
+      "power": "3",
+      "toughness": "3",
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/m14/182/kalonian-tusker?utm_source=api",
+      "cached_at": "2026-09-23"
+    },
+    "Pacifism": {
+      "name": "Pacifism",
+      "mana_cost": "{1}{W}",
+      "type_line": "Enchantment — Aura",
+      "oracle_text": "Enchant creature\nEnchanted creature can't attack or block.",
+      "power": null,
+      "toughness": null,
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/msc/575/pacifism?utm_source=api",
+      "cached_at": "2026-09-23",
+      "keywords": [
+        "Enchant"
+      ]
+    },
+    "Savannah Lions": {
+      "name": "Savannah Lions",
+      "mana_cost": "{W}",
+      "type_line": "Creature — Cat",
+      "oracle_text": "",
+      "power": "2",
+      "toughness": "1",
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/fdn/146/savannah-lions?utm_source=api",
+      "cached_at": "2026-09-23"
+    },
+    "Swords to Plowshares": {
+      "name": "Swords to Plowshares",
+      "mana_cost": "{W}",
+      "type_line": "Instant",
+      "oracle_text": "Exile target creature. Its controller gains life equal to its power.",
+      "power": null,
+      "toughness": null,
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/frc/37/swords-to-plowshares?utm_source=api",
+      "cached_at": "2026-09-23"
     }
   },
   "rulings": {
@@ -8103,6 +8263,15 @@
         "source": "Scryfall API",
         "source_url": "https://api.scryfall.com/cards/e1efb0d3-2c72-46ff-bdc1-1069967365a0/rulings",
         "cached_at": "2026-04-06"
+      }
+    ],
+    "Swords to Plowshares": [
+      {
+        "date": "2022-12-08",
+        "text": "Use the power of the creature from when it was last on the battlefield to determine how much life is gained.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/f7e12477-d59f-442b-a678-1be746d0b7be/rulings",
+        "cached_at": "2026-09-23"
       }
     ]
   }

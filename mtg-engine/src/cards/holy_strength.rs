@@ -16,7 +16,7 @@ impl CardBehavior for HolyStrength {
             ])),
             card_types: vec![CardType::Enchantment],
             subtypes: vec!["Aura".into()],
-            oracle_text: "Enchanted creature gets +1/+2.".into(),
+            oracle_text: "Enchant creature\nEnchanted creature gets +1/+2.".into(),
             continuous_effects: vec![
                 ContinuousEffect::ModifyPT { power: 1, toughness: 2, scope: EffectScope::Attached },
             ],

@@ -18,7 +18,7 @@ impl CardBehavior for Pacifism {
             ])),
             card_types: vec![CardType::Enchantment],
             subtypes: vec!["Aura".into()],
-            oracle_text: "Enchanted creature can't attack or block.".into(),
+            oracle_text: "Enchant creature\nEnchanted creature can't attack or block.".into(),
             continuous_effects: vec![
                 ContinuousEffect::PreventAttack { scope: EffectScope::Attached },
                 ContinuousEffect::PreventBlock { scope: EffectScope::Attached },
