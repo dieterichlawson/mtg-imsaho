@@ -98,18 +98,94 @@ fn resolve_binary(raw: String) -> String {
     }
 }
 
+/// How long the availability probe waits for `--version`.
+///
+/// Its own knob rather than [`call_timeout`]: a decision may legitimately
+/// take minutes, but `--version` either answers at once or the CLI is
+/// wedged, and this one runs before the first prompt — with no `--log` open
+/// yet and a person watching a blank screen.
+const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Overrides [`PROBE_TIMEOUT`], so the hung-probe path can be exercised in
+/// seconds. Not something a run should set.
+const PROBE_TIMEOUT_ENV: &str = "MTG_CLAUDE_CODE_PROBE_TIMEOUT_SECS";
+
+fn probe_timeout() -> Duration {
+    std::env::var(PROBE_TIMEOUT_ENV)
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .map_or(PROBE_TIMEOUT, Duration::from_secs)
+}
+
 /// Whether the Claude Code binary can be executed at all — the seat's
 /// equivalent of "is the API key set", checked up front so a run refuses
 /// cleanly instead of failing on the first decision.
+///
+/// This is the first subprocess a `cc` run spawns, and it used to be the
+/// one that went through none of the lifecycle the calls below get. It was
+/// a bare `status()`: no deadline, so a CLI that does not answer
+/// `--version` hung the run forever before the first prompt with nothing
+/// printed and nothing logged; no `setpgid`, and no [`LiveGroup`] slot, so
+/// a signal left the probe and its descendants running, reparented to init
+/// — #206's "take in-flight subprocesses down with the run" did not hold
+/// for it, because the handler only sweeps `LIVE_GROUPS` (issue #584).
+///
+/// It now gets the same three things a call does, minus the pipes.
 #[must_use]
 pub fn available() -> bool {
-    Command::new(binary())
-        .arg("--version")
+    let binary = binary();
+    let mut cmd = Command::new(&binary);
+    cmd.arg("--version")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .is_ok_and(|s| s.success())
+        .stderr(Stdio::null());
+
+    // Its own process group, so the deadline below and the signal handler
+    // reach everything it spawns and not just the wrapper we launched.
+    #[cfg(unix)]
+    unsafe {
+        use std::os::unix::process::CommandExt;
+        cmd.pre_exec(|| {
+            if libc::setpgid(0, 0) == 0 {
+                Ok(())
+            } else {
+                Err(std::io::Error::last_os_error())
+            }
+        });
+    }
+
+    let Ok(mut child) = cmd.spawn() else { return false };
+    let pgid = i32::try_from(child.id()).unwrap_or(0);
+    let group = LiveGroup::register(pgid);
+
+    let timeout = probe_timeout();
+    let deadline = Instant::now() + timeout;
+    let runnable = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status.success(),
+            Ok(None) => {}
+            Err(_) => break false,
+        }
+        if Instant::now() >= deadline {
+            // "Not runnable" is the right answer, but the caller's line for
+            // it reads as "missing". Say which this was, since the whole
+            // defect was that nothing was ever said at all.
+            eprintln!(
+                "Warning: `{binary} --version` did not answer within {}s — treating the \
+                 Claude Code CLI as not runnable.",
+                timeout.as_secs()
+            );
+            kill_group(pgid);
+            let _ = child.wait();
+            break false;
+        }
+        std::thread::sleep(Duration::from_millis(2));
+    };
+
+    // Nothing in this group is wanted now, whether it answered or hung.
+    kill_group(pgid);
+    drop(group);
+    runnable
 }
 
 /// The most `claude -p` calls that can be in flight at once and still be
