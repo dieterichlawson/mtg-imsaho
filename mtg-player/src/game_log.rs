@@ -144,10 +144,34 @@ pub fn init(path: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Write an info-level log entry. Equivalent to `write_at(LogLevel::Info, ..)`.
-/// No-op if `init` was never called.
+/// The level a record's label is worth at least.
+///
+/// The level used to be each call site's own decision, and call sites
+/// disagreed: the same `is_error` retry from `claude -p` was written at
+/// `Error` by the draft backend and at `Info` by the game backend, so
+/// `grep ERROR` answered "did this run hit the usage limit?" for a draft
+/// and not for a game (#583). Four more game-side records had drifted the
+/// same way, including an `API_FATAL` written at `Info` immediately before
+/// `process::exit(1)`.
+///
+/// `LogLevel::Error` is documented above as "recoverable errors: malformed
+/// LLM responses, API retries that eventually succeeded, fallback
+/// activations", which is exactly this family of labels. Deriving the floor
+/// from the label rather than from the call site is what stops the two
+/// copies of a request path from drifting apart again: there is one rule,
+/// in one place, and a new record inherits it by being named.
+pub fn level_floor(label: &str) -> LogLevel {
+    if label.starts_with("API_") || label == "MALFORMED" {
+        LogLevel::Error
+    } else {
+        LogLevel::Info
+    }
+}
+
+/// Write a log entry at the level its label implies. No-op if `init` was
+/// never called.
 pub fn write(file: &str, line: u32, label: &str, content: &str) {
-    write_at(LogLevel::Info, file, line, label, content);
+    write_at(level_floor(label), file, line, label, content);
 }
 
 /// Write a log entry at the given level. The header is a single tab-delimited
@@ -157,6 +181,12 @@ pub fn write_at(level: LogLevel, file: &str, line: u32, label: &str, content: &s
     if !INITIALIZED.load(Ordering::Relaxed) {
         return;
     }
+    // A caller may raise a record's level but not lower it below what its
+    // label is worth: see `level_floor`.
+    let level = match (level, level_floor(label)) {
+        (LogLevel::Error, _) | (_, LogLevel::Info) => level,
+        (_, floor) => floor,
+    };
 
     let thread = std::thread::current();
     let filename = file.rsplit('/').next().unwrap_or(file);
