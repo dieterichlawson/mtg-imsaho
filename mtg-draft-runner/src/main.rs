@@ -743,6 +743,14 @@ fn main() {
                     .collect();
 
             // All players pick in parallel
+            // The worker holds its own records and `main` writes them back in
+            // seat order, the same way the deck-build and tournament scopes
+            // do. Everything else in the pick phase is already written from
+            // `main` after the join; the one record a worker emits itself is
+            // the `SESSION` line (issue #542), and without this it landed in
+            // whatever order the seats' first `claude -p` calls returned —
+            // two runs of one seed writing the same lines in different order,
+            // which is the defect #541 closed (issue #586).
             let pick_results: Vec<(usize, Pick, String, String)> =
                 std::thread::scope(|s| {
                     let card_lines = &card_lines;
@@ -758,6 +766,7 @@ fn main() {
                                     pick_num + 1
                                 );
                                 in_seat(&context, move || {
+                                    mtg_player::game_log::buffer_here();
                                     let prompt = crate::llm_client::DraftLlmClient::build_pick_prompt(
                                         table_for(seat),
                                         round + 1,
@@ -769,7 +778,8 @@ fn main() {
                                     let response =
                                         client.send_pick_message(&prompt, available.len());
                                     let chosen = parse_pick_response(&response, available);
-                                    (seat, chosen, prompt, response)
+                                    (seat, chosen, prompt, response,
+                                        mtg_player::game_log::take_buffered())
                                 })
                             })
                         })
@@ -782,7 +792,10 @@ fn main() {
                         .into_iter()
                         .enumerate()
                         .map(|(seat, h)| match h.join() {
-                            Ok(result) => result,
+                            Ok((s, chosen, prompt, response, records)) => {
+                                mtg_player::game_log::write_block(&records);
+                                (s, chosen, prompt, response)
+                            }
                             Err(payload) => report_worker_failure(
                                 &payload,
                                 &format!("seat {seat}'s pick worker failed"),

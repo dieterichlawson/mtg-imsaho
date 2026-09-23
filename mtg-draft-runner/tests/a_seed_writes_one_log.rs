@@ -14,6 +14,15 @@
 //! What may still differ is what genuinely varies between two runs of one
 //! seed and is now written down for that reason: the wall-clock timestamp,
 //! and the `claude -p` session ids (#542).
+//!
+//! The *ids* vary; where their records sit does not. This test used to
+//! excuse any two differing lines that were both `SESSION` records, which
+//! excused their order as well as their content — and the `SESSION` record
+//! was the one thing in the pick phase written from inside a worker rather
+//! than from `main` after the join, so a seed's eight `SESSION` lines came
+//! out in whatever order the seats' first calls returned (#586). Masking
+//! the uuid instead of exempting the line holds the whole log to one
+//! order, seat column included.
 #![cfg(unix)]
 
 use std::path::{Path, PathBuf};
@@ -89,7 +98,36 @@ fn masked(path: &Path) -> Vec<String> {
                 l.to_string()
             }
         })
+        .map(|l| mask_uuids(&l))
         .collect()
+}
+
+/// A v4 uuid, replaced by a fixed token.
+///
+/// The session ids are the one value a seed does not control (#542), so
+/// they are masked rather than exempted: a `SESSION` record still has to
+/// appear at the same index, for the same seat, as the other run's (#586).
+fn mask_uuids(line: &str) -> String {
+    let b = line.as_bytes();
+    let is_uuid = |w: &[u8]| {
+        w.len() == 36
+            && [8usize, 13, 18, 23].iter().all(|&i| w[i] == b'-')
+            && w.iter().enumerate().all(|(i, c)| {
+                if [8, 13, 18, 23].contains(&i) { *c == b'-' } else { c.is_ascii_hexdigit() }
+            })
+    };
+    let mut out = String::with_capacity(line.len());
+    let mut i = 0;
+    while i < b.len() {
+        if i + 36 <= b.len() && is_uuid(&b[i..i + 36]) {
+            out.push_str("UUID");
+            i += 36;
+        } else {
+            out.push(b[i] as char);
+            i += 1;
+        }
+    }
+    out
 }
 
 fn run(dir: &Path, bin: &Path, name: &str) -> PathBuf {
@@ -135,30 +173,51 @@ fn two_runs_of_one_seed_write_the_same_log() {
     assert!(a.len() > 1000, "the fixture should produce a substantial log, got {}", a.len());
     assert_eq!(a.len(), b.len(), "the two runs did not even record the same number of lines");
 
-    // Line for line, in order. A `SESSION` record holds a fresh uuid per
-    // conversation, which is the one thing a seeded run cannot reproduce
-    // and is in the log precisely so that it is written down (#542).
-    let differing: Vec<(usize, &String, &String)> = a
+    // Line for line, in order, with the session uuids masked. Nothing is
+    // exempt: a `SESSION` record's *id* is the one thing a seeded run
+    // cannot reproduce (#542), but its position and its seat are the
+    // run's record of which seat opened which conversation when, and two
+    // runs of one seed record that the same way (#586).
+    let unexplained: Vec<(usize, &String, &String)> = a
         .iter()
         .zip(b.iter())
         .enumerate()
         .filter(|(_, (x, y))| x != y)
         .map(|(i, (x, y))| (i, x, y))
         .collect();
-    let unexplained: Vec<&(usize, &String, &String)> = differing
-        .iter()
-        .filter(|(_, x, y)| !(x.contains("\tSESSION") && y.contains("\tSESSION")))
-        .collect();
 
     assert!(
         unexplained.is_empty(),
-        "{} of {} lines differ between two runs of seed 41 for a reason other than \
-         a session id — the run replays but its record does not, so `diff` of two \
-         seeded logs cannot be read. First few: {:?}",
+        "{} of {} lines differ between two runs of seed 41 once the timestamp and \
+         the session uuids are masked — the run replays but its record does not, so \
+         `diff` of two seeded logs cannot be read. First few: {:?}",
         unexplained.len(),
         a.len(),
         unexplained.iter().take(3).collect::<Vec<_>>()
     );
+
+    // The control #541 and #586 both turn on: `diff` alone cannot tell
+    // "different run" from "same run, different line order", so a sorted
+    // comparison has to agree with the ordered one. If this passes while
+    // the assertion above fails, the defect is ordering, not replay.
+    let (mut sa, mut sb) = (a.clone(), b.clone());
+    sa.sort();
+    sb.sort();
+    assert_eq!(sa, sb, "the two runs did not even write the same set of lines");
+
+    // The `SESSION` records specifically: one per seat, in seat order, as
+    // a block — which is what someone looking a conversation up wants to
+    // read, and what a worker writing its own record could not give (#586).
+    let seats_of = |log: &[String]| -> Vec<String> {
+        log.iter()
+            .filter(|l| l.contains("\tSESSION"))
+            .filter_map(|l| l.split('\t').nth(2).map(str::to_string))
+            .collect()
+    };
+    let (sess_a, sess_b) = (seats_of(&a), seats_of(&b));
+    assert!(!sess_a.is_empty(), "the fixture should open some claude -p sessions");
+    assert_eq!(sess_a, sess_b,
+        "the seats opened their sessions in a different order between two runs of one seed");
 
     let _ = std::fs::remove_dir_all(&dir);
 }
