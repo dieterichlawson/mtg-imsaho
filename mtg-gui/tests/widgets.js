@@ -881,6 +881,33 @@ async function main() {
       await page.setViewportSize({ width: 1280, height: 720 });
       await page.waitForTimeout(80);
     }
+    // 27. Two copies of a land in hand both play a land. The engine offers
+    // PlayLand for one object id per name — the CLI menu and the LLM schema
+    // want one row — so the page owes the copies it draws a marker and a
+    // click that works (issue #572, the 2026-09-17 night's G13).
+    {
+      const r = await page.evaluate(() => {
+        const m = window.mtg;
+        const land = m.view.your_hand.find(c => c.card_types.includes("Land"));
+        if (!land) return null;
+        const twin = { ...land, object_id: 9001 };
+        m.view.your_hand.push(twin);
+        return { land: land.object_id, twin: twin.object_id };
+      });
+      if (!r) fail("land-copies: no land in hand to copy");
+      else if (await stage("land-copies", legal({ context: "MAIN PHASE 1", actions: ["PassPriority", "Concede", { PlayLand: { object_id: r.land } }] }), null, "menu")) {
+        const verbs = await page.evaluate((twin) => {
+          window.mtgDebug.render();
+          const h = window.mtg.hits.find(h => h.kind === "hand" && h.id === twin);
+          return h && h.verbs ? h.verbs.map(v => v.label) : [];
+        }, r.twin);
+        if (!verbs.includes("Play land")) fail(`land-copies: the second copy offers ${JSON.stringify(verbs)}, not "Play land"`);
+        await clickHit(`(h) => h.kind === 'hand' && h.id === ${r.twin}`);
+        await clickHit("(h, m) => h.kind === 'row' && m.popover");
+        await expectSent("land-copies", a => a.PlayLand && a.PlayLand.object_id === r.land);
+        await page.evaluate((twin) => { const h = window.mtg.view.your_hand; h.splice(h.findIndex(c => c.object_id === twin), 1); }, r.twin);
+      }
+    }
     if (errors.length) fail("page errors:\n" + errors.join("\n"));
   } finally {
     await browser.close();

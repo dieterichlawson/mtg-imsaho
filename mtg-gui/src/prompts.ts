@@ -333,6 +333,20 @@ function beginMenu(state: LiveState, ui: Ui, actions: Action[], legal: LegalActi
   // Rows that hang off nothing (a stray ResolveChoice) get the panel.
   ui.looseRows = verbs.get(-1) || [];
   verbs.delete(-1);
+  // The engine offers one PlayLand per land *name* — with three Forests in
+  // hand `legal.actions` names one object id — and the CLI's menu and the
+  // LLM's schema want exactly that. This page hangs verbs off cards, so the
+  // other two Forests drew with no marker and answered no click, which to
+  // a person reads as "one of your Forests is playable and the others are
+  // not" (issue #572, G13). Two cards of one name in one hand are the same
+  // card to the rules, so a copy with nothing of its own borrows what its
+  // namesake was offered: any Forest plays a Forest.
+  const hand = state.view.your_hand || [];
+  for (const card of hand) {
+    if (verbs.has(card.object_id)) continue;
+    const twin = hand.find(c => c.object_id !== card.object_id && c.name === card.name && verbs.has(c.object_id));
+    if (twin) verbs.set(card.object_id, verbs.get(twin.object_id)!);
+  }
   ui.hint = hasPass ? "Click a card for what it can do. Enter passes." : "Choose an action.";
   if (hasPass) ui.buttons.push({ label: "Pass", primary: true, run: () => send("PassPriority") });
   if (actions.includes("Concede")) ui.buttons.push({ label: "Concede", run: () => {
