@@ -1228,6 +1228,70 @@ fn without_reminder_text(s: &str) -> String {
     out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// Every implemented card is in the oracle cache, so that the cross-checks
+/// below actually reach it.
+///
+/// The three cross-checks against the cache — oracle text, back faces, type
+/// lines — look each card up with `front.get(name)` and move on when it
+/// misses. A card the registry implements but the cache lacks is therefore
+/// not compared against anything, and the suite passes in silence: 14 cards
+/// were in that state, among them every non-Innistrad card the built-in
+/// `red-green`, `white-black` and `blue-white` decks run — which is what
+/// the smoke tests, the GUI widget suite and most fuzz seeds are played
+/// with (issue #577).
+///
+/// Two of the 14 were wrong. Pacifism and Holy Strength stated their
+/// enchanted-creature clause without the `Enchant creature` line every
+/// other aura in the set carries, and nothing had ever looked.
+///
+/// `scripts/oracle_lookup.py fetch "<name>"` adds a card to the cache.
+#[test]
+fn every_implemented_card_is_in_the_oracle_cache() {
+    let raw = std::fs::read_to_string("../data/oracle_cache.json")
+        .expect("oracle cache is checked in at data/oracle_cache.json");
+
+    // Card names as the pretty-printed cache holds them: a front face is a
+    // key at four-space indent, a back face is a "name" inside a nested
+    // "back_face" object.
+    let mut cached: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut in_back = false;
+    for line in raw.lines() {
+        if let Some(rest) = line.strip_prefix("    \"") {
+            if let Some(end) = rest.find("\": {") {
+                cached.insert(rest[..end].to_string());
+                in_back = false;
+            }
+        }
+        let t = line.trim_start();
+        if t.starts_with("\"back_face\": {") {
+            in_back = true;
+        }
+        if in_back {
+            if let Some(rest) = t.strip_prefix("\"name\": \"") {
+                if let Some(end) = rest.find('"') {
+                    cached.insert(rest[..end].to_string());
+                }
+            }
+        }
+    }
+    assert!(cached.len() > 200, "parsed only {} names from the cache", cached.len());
+
+    let reg = registry();
+    let missing: Vec<&str> = reg
+        .all_names()
+        .into_iter()
+        .filter(|n| !cached.contains(*n))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "{} implemented card(s) are absent from data/oracle_cache.json, so the \
+         cross-checks below skip them and their text is checked against nothing. \
+         Add each with `scripts/oracle_lookup.py fetch \"<name>\"`:\n  {}",
+        missing.len(),
+        missing.join("\n  ")
+    );
+}
+
 /// Every card's oracle text — both faces — says what Scryfall says.
 ///
 /// `data/oracle_cache.json` is fetched, not written alongside the card, so this
