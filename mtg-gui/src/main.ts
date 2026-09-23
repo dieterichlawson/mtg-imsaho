@@ -477,6 +477,9 @@ window.mtgDebug = {
     if (!l) throw new Error("no view to stage a decision over");
     state.decision = decision; state.lastDecision = decision; state.popover = null; state.overlay = null; state.notice = null;
     state.rowScroll = 0;
+    // A test may have edited the view in place (a second copy of a card);
+    // the index is derived from it, so derive it again.
+    state.index = indexView(l.view);
     beginDecision(l, send);
     syncField();
     state.hits = render(ctx, state);

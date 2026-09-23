@@ -424,8 +424,30 @@ function stackKey(p, attachedTo) {
         (p.card_types || []).join(","), (p.subtypes || []).join(","), (p.supertypes || []).join(","),
     ].join("|");
 }
+/**
+ * What the page itself has pending on a permanent in the open prompt: an
+ * attack mark and whom it attacks, a blocker assignment, the blocker being
+ * placed, a mark in a set. None of it is in the view — the engine learns
+ * of an attacker when the declaration is sent — so `stackKey` alone let
+ * two Doomed Travelers stay one "x2" card after the first was marked: the
+ * stack still showed that first one, the next click withdrew it, and the
+ * second Traveler could not be reached at all (issue #573). A member that
+ * that has any of it is drawn as its own card — the way `stackKey` treats
+ * a declared attacker or blocker — so each copy can be marked and
+ * withdrawn on its own, and the stack left behind offers the next one.
+ */
+function pendingKey(state, key) {
+    const ui = state.ui;
+    if (!ui)
+        return "";
+    const pending = ui.marked.includes(key)
+        || (ui.assignments !== undefined && ui.assignments.has(key))
+        || ui.selectedBlocker === key
+        || (ui.badge !== undefined && ui.badge(key) !== null);
+    return pending ? key : "";
+}
 /** Battlefield permanents of one controller, grouped into the two rows. */
-function splitBoard(view, controller) {
+function splitBoard(state, view, controller) {
     const mine = view.battlefield.filter(p => p.controller === controller);
     const attachedTo = new Set();
     for (const p of view.battlefield)
@@ -435,7 +457,8 @@ function splitBoard(view, controller) {
         const out = [];
         const byKey = new Map();
         for (const p of list) {
-            const k = stackKey(p, attachedTo);
+            const base = stackKey(p, attachedTo);
+            const k = base === null ? null : `${base}|${pendingKey(state, `o${p.object_id}`)}`;
             const g = k === null ? undefined : byKey.get(k);
             if (g)
                 g.push(p);
@@ -471,7 +494,9 @@ function drawRow(ctx, hits, state, all, y) {
     const draw = (item, i) => {
         const group = item.length > 1 ? item.map(q => q.object_id) : null;
         // In a pick or mark, a stack whose members are options should offer
-        // a member that IS an option, not merely its first card.
+        // a member that IS an option, not merely its first card. Members
+        // already marked or assigned are split out by `pendingKey`, so the
+        // option this finds is one the next click can still act on.
         let shown = item[0];
         if (group && state.ui && state.ui.isOption) {
             const opt = item.find(q => state.ui.isOption(`o${q.object_id}`));
@@ -1185,13 +1210,13 @@ export function render(ctx, state) {
     const exCount = (pid) => view.exile.filter(c => c.owner === pid).length;
     // Opponent.
     drawStrip(ctx, hits, live, ROWS.oppStrip, opp.id, opp.life, opp.hand_size, opp.library_size, gyCount(opp.id), exCount(opp.id), opp.mana_pool, false);
-    const ob = splitBoard(view, opp.id);
+    const ob = splitBoard(live, view, opp.id);
     drawRow(ctx, hits, live, ob.groups, ROWS.oppOther);
     drawRow(ctx, hits, live, ob.creatures, ROWS.oppCreatures);
     // Middle.
     drawBand(ctx, hits, live);
     // You.
-    const mb = splitBoard(view, view.you);
+    const mb = splitBoard(live, view, view.you);
     drawRow(ctx, hits, live, mb.creatures, ROWS.myCreatures);
     drawRow(ctx, hits, live, mb.groups, ROWS.myOther);
     // Hand: your strip sits on the hand's top edge.

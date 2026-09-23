@@ -908,6 +908,63 @@ async function main() {
         await page.evaluate((twin) => { const h = window.mtg.view.your_hand; h.splice(h.findIndex(c => c.object_id === twin), 1); }, r.twin);
       }
     }
+    // 28. Two identical creatures draw as one "x2" stack. Declaring
+    // attackers reaches both, one click each, each shows its own ATK, and
+    // each can be withdrawn on its own (issue #573).
+    {
+      const r = await page.evaluate(() => {
+        const m = window.mtg; const you = m.view.you;
+        const c = m.view.battlefield.find(p => p.controller === you && p.card_types.includes("Creature"));
+        if (!c) return null;
+        const twin = { ...c, object_id: 9002 };
+        m.view.battlefield.push(twin);
+        return { c: c.object_id, twin: twin.object_id };
+      });
+      const pair = r ? [r.c, r.twin] : [];
+      const stacks = () => page.evaluate((pair) => {
+        window.mtgDebug.render();
+        return window.mtg.hits.filter(h => h.kind === "perm" && pair.includes(h.id)).map(h => (h.group || [h.id]).length);
+      }, pair);
+      const combat = r && { ChooseAttackers: { eligible: pair, must_attack: [], defending_player: ids.opp, defending_planeswalkers: [] } };
+      if (!r) fail("attack-stack: no creature of ours to copy");
+      else if (await stage("attack-stack", legal({ context: "DECLARE ATTACKERS" }), combat, "attackers")) {
+        const before = await stacks();
+        if (before.length !== 1 || before[0] !== 2) fail(`attack-stack: expected one stack of two before any click, drew ${JSON.stringify(before)}`);
+        await clickHit(`(h) => h.kind === 'perm' && [${pair}].includes(h.id) && h.onClick`);
+        const after = await stacks();
+        if (after.length !== 2) fail(`attack-stack: after one click expected the marked copy on its own, drew ${JSON.stringify(after)}`);
+        await clickHit(`(h, m) => h.kind === 'perm' && [${pair}].includes(h.id) && h.onClick && !m.ui.marked.includes(h.key)`);
+        const marked = await page.evaluate(() => window.mtg.ui.marked.slice());
+        if (marked.length !== 2) fail(`attack-stack: ${JSON.stringify(marked)} marked after clicking both copies`);
+        await shot("attack-stack-both.png");
+        await clickHit(`(h) => h.kind === 'perm' && h.id === ${r.twin} && h.onClick`);
+        const left = await page.evaluate(() => window.mtg.ui.marked.slice());
+        if (left.length !== 1 || left[0] !== `o${r.c}`) fail(`attack-stack: after withdrawing the second copy, marked is ${JSON.stringify(left)}`);
+        await clickHit("(h) => h.kind === 'button' && h.label.startsWith('Attack')");
+        await expectSent("attack-stack", a => a.DeclareAttackers && a.DeclareAttackers.attackers.length === 1 && a.DeclareAttackers.attackers[0][0] === r.c);
+        // Blockers: the same stack, a blocker placed from it, the other still offered.
+        const foe = ids.theirs[0];
+        if (foe) {
+          const combatB = { ChooseBlockers: { eligible_blockers: pair, attackers: [foe], legal_blocks: { [r.c]: [foe], [r.twin]: [foe] }, min_blockers: {} } };
+          if (await stage("block-stack", legal({ context: "DECLARE BLOCKERS" }), combatB, "blockers")) {
+            await clickHit(`(h) => h.kind === 'perm' && [${pair}].includes(h.id) && h.onClick`);
+            await clickHit(`(h) => h.id === ${foe} && h.onClick`);
+            const rest = await page.evaluate((pair) => {
+              window.mtgDebug.render();
+              return window.mtg.hits.filter(h => h.kind === "perm" && pair.includes(h.id) && !window.mtg.ui.assignments.has(h.key)).length;
+            }, pair);
+            if (rest !== 1) fail(`block-stack: after placing one blocker, ${rest} unassigned copies drawn, expected 1`);
+            await clickHit(`(h, m) => h.kind === 'perm' && [${pair}].includes(h.id) && h.onClick && !m.ui.assignments.has(h.key)`);
+            await clickHit(`(h) => h.id === ${foe} && h.onClick`);
+            const n = await page.evaluate(() => window.mtg.ui.assignments.size);
+            if (n !== 2) fail(`block-stack: ${n} assignments after placing both copies`);
+            await clickHit("(h) => h.kind === 'button' && h.label.startsWith('Block')");
+            await expectSent("block-stack", a => a.DeclareBlockers && a.DeclareBlockers.assignments.length === 2);
+          }
+        }
+        await page.evaluate((twin) => { const b = window.mtg.view.battlefield; b.splice(b.findIndex(p => p.object_id === twin), 1); }, r.twin);
+      }
+    }
     if (errors.length) fail("page errors:\n" + errors.join("\n"));
   } finally {
     await browser.close();
