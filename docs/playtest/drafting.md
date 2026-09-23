@@ -411,3 +411,36 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   `play_match` worker touches that is not its own `PlayerSpec` — the registry,
   the card reference, the log mutex, the usage counters the summary adds up — is
   where to look
+
+  **Run 2026-09-23: the concurrency is sound and the bookkeeping around it is
+  not.** Nine eight-seat runs (`--best-of 3`, seeds 7 and 41 twice each) and two
+  four-seat runs under a schema-walking stub, plus a SIGINT run whose game calls
+  each slept 90-120s holding a `sleep` descendant on stdout, and a run with one
+  seat's backend dead for the whole tournament. Five things are **checked,
+  correct**, and a re-probe should not pay for them again: SIGINT with four
+  matches in flight killed all four stubs *and* all four descendants with 0
+  orphans, so the game backend's children are in the same `LIVE_GROUPS` and
+  #538's fix covers the phase it was not written for; no `MATCH` line or `GAME`
+  block interleaves, because both are written from `main` after the join; the
+  usage counters survive four match threads to the call (936 stub invocations =
+  344 draft + 592 game, 117 failed, printed `Games: 475 calls`); pairings never
+  repeat over three rounds at eight seats; and a match's fatal is *not* swallowed
+  by the join order, because the tournament workers go through `in_seat`, so
+  #539 does not reach here. What broke: `buffer_here()` is installed on the
+  deck-build scope (`main.rs:880`) and the tournament scope (`:994`) and **not on
+  the pick loop**, so #542's `SESSION` record — written from inside the pick
+  worker at `llm_client.rs:768` — is the one block that escapes #541's
+  machinery, and one seed writes two logs again (#586); a seat whose subprocess
+  died is reported as a model that answered `{}`, on a retry window measured at
+  ≈6.5s against the draft's 600s (#587); and `standings_row` carries a bye but
+  not a substituted deck, a forfeited game or 39 substituted answers (#588).
+  Three method notes. **Give the stub a concede branch** — answer the action
+  menu with the `Concede` row when the schema offers it — or an eight-seat
+  best-of-three tournament is tens of thousands of calls; with it a full run is
+  ten seconds. **A conversation id is not a seat discriminator**: a retried
+  *first* call mints a fresh `--session-id` each attempt, so a stub keyed on it
+  fails once and then stops. Hash the `--system-prompt` instead, which carries
+  that seat's decklist and is stable across its whole match. And a determinism
+  claim needs `diff <(sort a) <(sort b)` beside the plain `diff` — an empty
+  sorted diff with a non-empty ordered one is the ordering defect, and is
+  exactly what #586 looks like.
