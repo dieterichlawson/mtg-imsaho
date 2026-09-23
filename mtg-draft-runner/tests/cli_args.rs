@@ -559,3 +559,71 @@ fn a_resumed_draft_records_the_picks_it_replays() {
     let _ = std::fs::remove_file(&healthy);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A resume's reconciliation note names a value the operator gave, or says
+/// where the value came from — never a value the run invented for itself.
+///
+/// `--seed` defaults to a fresh `rand::random::<u64>()` so that an
+/// unseeded draft can still be re-run afterwards (#212). The note compared
+/// that generated value against the save, so the most ordinary resume there
+/// is — `--resume <save>` with no `--seed`, which is what the flag's help
+/// tells you to do — announced the override of a 19-digit number the
+/// operator had never seen, that appears in no log and no snapshot, and
+/// that was generated one line earlier to be thrown away (#582).
+#[test]
+fn a_resume_note_does_not_invent_an_argument_nobody_passed() {
+    let dir = std::env::temp_dir().join(format!("mtg-draft-note-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    // The set is one that does not exist, so the run reaches the
+    // reconciliation note and then dies loading set data — before it builds
+    // a client or spends anything.
+    let save = dir.join("save.json");
+    std::fs::write(&save,
+        r#"{"seed":3,"set":"nosuchset-for-the-note-test","players":2,"picks":[]}"#).unwrap();
+
+    let run = |extra: &[&str]| -> String {
+        let out = runner()
+            .args(["--resume", save.to_str().unwrap()])
+            .args(["--players", "2", "--best-of", "1", "-q"])
+            .args(extra)
+            .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
+            .output()
+            .expect("failed to run");
+        stderr(&out)
+    };
+
+    // No --seed: nothing was overridden, so nothing is reported as having
+    // been. The note says where the seed came from.
+    let unseeded = run(&[]);
+    assert!(
+        unseeded.contains("note: --seed 3 comes from the save"),
+        "an unseeded resume should say where the seed came from.\nstderr: {unseeded}"
+    );
+    assert!(
+        !unseeded.contains("--seed comes from the save ("),
+        "an unseeded resume must not report an override of a seed nobody passed.\n\
+         stderr: {unseeded}"
+    );
+    // The generated seed is a u64 and shows up as a long run of digits. No
+    // number that is not the save's own belongs in the note.
+    let invented: Vec<&str> = unseeded
+        .lines()
+        .filter(|l| l.contains("--seed"))
+        .filter(|l| l.split(|c: char| !c.is_ascii_digit()).any(|n| n.len() > 6))
+        .collect();
+    assert!(
+        invented.is_empty(),
+        "the note names a generated seed the operator never saw: {invented:?}"
+    );
+
+    // A --seed that really does conflict is still reported as an override,
+    // and still distinguishable from the case above.
+    let seeded = run(&["--seed", "99"]);
+    assert!(
+        seeded.contains("note: --seed comes from the save (99 -> 3)"),
+        "a conflicting --seed should be reported as overridden.\nstderr: {seeded}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

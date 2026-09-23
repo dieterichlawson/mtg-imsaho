@@ -231,6 +231,25 @@ struct Args {
     /// save's seed, so replaying the recorded picks reproduces the position
     /// exactly, without spending anything.
     resume: Option<String>,
+    /// The flags the operator actually wrote, as opposed to the values that
+    /// ended up in the fields above.
+    ///
+    /// They are not the same thing, and a resume's reconciliation note used
+    /// to confuse them: `--seed` defaults to a fresh `rand::random::<u64>()`
+    /// (#212), so the most ordinary resume there is — `--resume <save>` with
+    /// no `--seed`, which is what the flag's help tells you to do — printed
+    /// `note: --seed comes from the save (8502523799382835523 -> 3)`,
+    /// announcing the override of a 19-digit number the operator never saw,
+    /// that appears in no log and no snapshot, and that was invented one
+    /// line earlier to be discarded (#582).
+    supplied: std::collections::HashSet<String>,
+}
+
+impl Args {
+    /// Whether the operator wrote this flag themselves.
+    fn was_supplied(&self, flag: &str) -> bool {
+        self.supplied.contains(flag)
+    }
 }
 
 /// One pick, as the snapshot records it.
@@ -388,6 +407,11 @@ fn parse_args() -> Args {
         quiet,
         save: get("--save"),
         resume: get("--resume"),
+        supplied: args
+            .iter()
+            .filter(|a| a.starts_with("--"))
+            .cloned()
+            .collect(),
     }
 }
 
@@ -525,13 +549,21 @@ fn main() {
             .unwrap_or_else(|e| die(&format!("failed to read draft save '{path}': {e}")));
         let save: DraftSave = serde_json::from_str(&text)
             .unwrap_or_else(|e| die(&format!("draft save '{path}' is not a valid snapshot: {e}")));
+        // Only a value the operator actually asked for can be overridden.
+        // Where they asked for nothing, the note says where the value came
+        // from rather than inventing an argument they never gave (#582).
         for (flag, saved, used) in [
             ("--seed", save.seed.to_string(), args.seed.to_string()),
             ("--set", save.set.clone(), args.set.clone()),
             ("--players", save.players.to_string(), args.players.to_string()),
         ] {
-            if saved != used {
+            if saved == used {
+                continue;
+            }
+            if args.was_supplied(flag) {
                 eprintln!("note: {flag} comes from the save ({used} -> {saved})");
+            } else {
+                eprintln!("note: {flag} {saved} comes from the save");
             }
         }
         save
