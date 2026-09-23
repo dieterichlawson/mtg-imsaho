@@ -156,6 +156,29 @@ fn blocking_stub(name: &str) -> std::path::PathBuf {
     path
 }
 
+/// A stub `claude` that answers the preflight and then fails at once, so a
+/// run gets past validation and dies in about a second instead of blocking.
+#[cfg(unix)]
+fn failing_stub(name: &str) -> std::path::PathBuf {
+    use std::io::Write;
+    let path = std::env::temp_dir()
+        .join(format!("mtg-draft-failstub-{name}-{}.sh", std::process::id()));
+    let script = concat!(
+        "#!/bin/sh\n",
+        "case \"$1\" in --version) echo '0.0.0 (stub)'; exit 0;; esac\n",
+        "cat > /dev/null\n",
+        "exit 17\n",
+    );
+    let mut f = std::fs::File::create(&path).expect("create stub");
+    f.write_all(script.as_bytes()).expect("write stub");
+    drop(f);
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+    }
+    path
+}
+
 /// Every seat's draft system prompt reaches the log, tagged with its seat.
 ///
 /// A draft has no `--seed` and cannot be replayed, so its log is the whole
@@ -626,4 +649,124 @@ fn a_resume_note_does_not_invent_an_argument_nobody_passed() {
     );
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A resume that grows the pod gives every seat the guide `--guide` asked
+/// for, and accepts a `--guide-N` for a seat the save has.
+///
+/// The snapshot's seat count wins over the flag, and the per-seat vectors
+/// used to be grown with `resize`: `models` padded with `models[0]`, so a
+/// global `--model` survived, but `guides` padded with `None`, so a global
+/// `--guide` — documented as "prepended to every seat's prompt" — reached
+/// only the first `--players` seats and the rest drafted with no guide at
+/// all, with nothing printed about it (#580).
+///
+/// The same line made `--guide-N` unreachable twice over: the range check
+/// ran in `parse_args`, before the snapshot was read, so it refused a seat
+/// the resumed draft does have.
+#[test]
+#[cfg(unix)]
+fn a_resume_that_grows_the_pod_keeps_the_guide_for_every_seat() {
+    let tmp = std::env::temp_dir();
+    let pid = std::process::id();
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("package dir has a workspace parent");
+
+    let guide = tmp.join(format!("mtg-draft-grow-guide-{pid}.txt"));
+    std::fs::write(&guide, "POD WIDE GUIDE MARKER: always take the biggest creature.\n").unwrap();
+    // A four-seat snapshot with nothing picked yet: resuming it is a
+    // four-seat draft, whatever --players says.
+    let save = tmp.join(format!("mtg-draft-grow-save-{pid}.json"));
+    std::fs::write(&save, r#"{"seed":3,"set":"isd","players":4,"picks":[]}"#).unwrap();
+
+    // (1) --guide-3 names a seat the resumed draft has, so it is not
+    //     refused against the flag's smaller seat count.
+    let out = runner()
+        .current_dir(workspace_root)
+        .args(["--model", "cc", "--players", "2", "--best-of", "1", "-q"])
+        .args(["--resume", &save.to_string_lossy()])
+        .args(["--guide-3", &guide.to_string_lossy()])
+        .args(["--log", &tmp.join(format!("mtg-draft-grow-x-{pid}.log")).to_string_lossy()])
+        .env("CLAUDE_CODE_BIN", failing_stub("grow-range"))
+        .env("MTG_DRAFT_RETRY_BUDGET_SECS", "1")
+        .stdout(std::process::Stdio::null())
+        .output()
+        .expect("failed to run");
+    assert!(
+        !stderr(&out).contains("there is no seat 3"),
+        "--guide-3 names a seat the resumed 4-seat draft has.\nstderr: {}",
+        stderr(&out)
+    );
+
+    // (2) A seat outside even the resumed pod is still refused.
+    let out = runner()
+        .current_dir(workspace_root)
+        .args(["--model", "cc", "--players", "2", "--best-of", "1", "-q"])
+        .args(["--resume", &save.to_string_lossy()])
+        .args(["--guide-9", &guide.to_string_lossy()])
+        .env("CLAUDE_CODE_BIN", failing_stub("grow-range9"))
+        .env("MTG_DRAFT_RETRY_BUDGET_SECS", "1")
+        .stdout(std::process::Stdio::null())
+        .output()
+        .expect("failed to run");
+    assert!(
+        stderr(&out).contains("there is no seat 9"),
+        "a seat outside the resumed pod is still refused.\nstderr: {}",
+        stderr(&out)
+    );
+
+    // (3) The whole defect: a global --guide reaches all four seats, not
+    //     just the two the flags asked for.
+    let stub = blocking_stub("grow-guides");
+    let log = tmp.join(format!("mtg-draft-grow-{pid}.log"));
+    let _ = std::fs::remove_file(&log);
+    let mut child = runner()
+        .current_dir(workspace_root)
+        .args(["--model", "cc", "--players", "2", "--best-of", "1", "--quiet"])
+        .args(["--resume", &save.to_string_lossy()])
+        .args(["--guide", &guide.to_string_lossy()])
+        .args(["--log", &log.to_string_lossy()])
+        .env("CLAUDE_CODE_BIN", &stub)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("failed to spawn runner");
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let mut logged = String::new();
+    while std::time::Instant::now() < deadline {
+        logged = std::fs::read_to_string(&log).unwrap_or_default();
+        if logged.contains("[Seat 3] DRAFT SYSTEM PROMPT") {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    for path in [&stub, &guide, &save, &log] {
+        let _ = std::fs::remove_file(path);
+    }
+
+    assert!(
+        logged.contains("[Seat 3] DRAFT SYSTEM PROMPT"),
+        "the resumed draft should seat all four players:\n{logged}"
+    );
+    // One marker per seat: --guide means every seat, and seats 2 and 3 are
+    // the ones the resize dropped it for.
+    let seats_with_guide = logged.matches("POD WIDE GUIDE MARKER").count();
+    assert!(
+        seats_with_guide >= 4,
+        "--guide means every seat; only {seats_with_guide} of 4 system prompts \
+         carry it:\n{logged}"
+    );
+    // The header agrees: no seat drafted without the guide that was asked for.
+    let without: Vec<&str> = logged
+        .lines()
+        .filter(|l| l.contains("guide:") && l.contains("none"))
+        .collect();
+    assert!(
+        without.is_empty(),
+        "--guide was passed and these seats drafted without one: {without:?}"
+    );
 }

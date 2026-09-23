@@ -231,6 +231,26 @@ struct Args {
     /// save's seed, so replaying the recorded picks reproduces the position
     /// exactly, without spending anything.
     resume: Option<String>,
+    /// The ingredients the per-seat vectors above are built from, kept so
+    /// that they can be rebuilt once the seat count is final.
+    ///
+    /// A resume's snapshot decides the seat count, and growing the pod used
+    /// to `resize` the vectors in place: `models` padded with `models[0]`,
+    /// so a global `--model` survived, but `guides` padded with `None`, so
+    /// a global `--guide` — documented as "prepended to every seat's
+    /// prompt" — reached only the first `--players` seats and the rest
+    /// drafted with no guide at all, silently (#580).
+    default_model: String,
+    global_guide_path: Option<String>,
+    /// `--model-N` / `--guide-N`, by seat.
+    model_overrides: Vec<(usize, String)>,
+    guide_overrides: Vec<(usize, String)>,
+    /// Every `--model-N` / `--guide-N` the operator wrote, for the range
+    /// check. It has to run against the seat count the draft will actually
+    /// have: run in `parse_args`, before the snapshot is read, it refused
+    /// `--guide-3` on a resume of a four-seat save whenever the flags said
+    /// `--players 2` — a seat the run does have (#580).
+    per_seat_flags: Vec<(String, usize)>,
     /// The flags the operator actually wrote, as opposed to the values that
     /// ended up in the fields above.
     ///
@@ -250,6 +270,56 @@ impl Args {
     fn was_supplied(&self, flag: &str) -> bool {
         self.supplied.contains(flag)
     }
+
+    /// Build the per-seat vectors for a pod of `players`, from the flags as
+    /// written.
+    ///
+    /// Called once with the flag's seat count and again, when a snapshot
+    /// overrides it, with the save's — so that a global `--model` or
+    /// `--guide` reaches every seat the draft actually has, a `--model-N` /
+    /// `--guide-N` for a seat the save adds is applied rather than dropped,
+    /// and the range check refuses only the seats that really are outside
+    /// the pod (#580).
+    fn resolve_seats(&mut self, players: usize) {
+        self.players = players;
+
+        self.models = vec![self.default_model.clone(); players];
+        for (seat, model) in self.model_overrides.iter().filter(|(s, _)| *s < players) {
+            self.models[*seat] = model.clone();
+        }
+
+        let global_guide = self.global_guide_path.as_deref().map(read_guide);
+        self.guides = vec![global_guide; players];
+        self.guide_paths = vec![self.global_guide_path.clone(); players];
+        for (seat, path) in self.guide_overrides.iter().filter(|(s, _)| *s < players) {
+            self.guides[*seat] = Some(read_guide(path));
+            self.guide_paths[*seat] = Some(path.clone());
+        }
+    }
+
+    /// Refuse a `--model-N` / `--guide-N` that names a seat the draft does
+    /// not have.
+    ///
+    /// Run once, against the seat count the draft will actually be played
+    /// with. Run in `parse_args` it used the *flag's* count, which a
+    /// snapshot can still override, so it refused `--guide-3` on a resume
+    /// of a four-seat save whenever the flags said `--players 2` — a seat
+    /// the run does have (#580).
+    fn check_seat_flags(&self) {
+        for (flag, index) in &self.per_seat_flags {
+            if *index >= self.players {
+                die(&format!(
+                    "{flag}: there is no seat {index} with {} players", self.players));
+            }
+        }
+    }
+}
+
+/// An unreadable guide file is fatal: drafting without the guide the caller
+/// asked for is a different draft than the one requested.
+fn read_guide(path: &str) -> String {
+    fs::read_to_string(path)
+        .unwrap_or_else(|e| die(&format!("failed to read guide file '{path}': {e}")))
 }
 
 /// One pick, as the snapshot records it.
@@ -360,59 +430,50 @@ fn parse_args() -> Args {
         s.parse().unwrap_or_else(|_| die(&format!("--seed takes a number, got '{s}'")))
     });
 
+    // --model-N / --guide-N, collected as written. They are applied — and
+    // a seat number outside the pod refused — by `resolve_seats`, once the
+    // seat count is final, because a resume's snapshot can still change it.
+    //
     // A --model-N or --guide-N naming a seat outside the pod used to be read
     // by nobody — the same silent no-op as a misspelled flag, so it is
     // refused the same way.
-    for (flag, index) in &per_seat_flags {
-        if *index >= players {
-            die(&format!("{flag}: there is no seat {index} with --players {players}"));
-        }
-    }
-
-    // Load per-player models: --model sets default, --model-N overrides for player N
-    let mut models: Vec<String> = vec![default_model; players];
-    for (i, model) in models.iter_mut().enumerate() {
-        if let Some(m) = get(&format!("--model-{i}")) {
-            *model = m;
-        }
-    }
-
-    // Load guides: --guide applies to all, --guide-N overrides for player N.
-    // An unreadable guide file is fatal: drafting without the guide the
-    // caller asked for is a different draft than the one requested.
-    let read_guide = |path: &str| -> String {
-        fs::read_to_string(path)
-            .unwrap_or_else(|e| die(&format!("failed to read guide file '{path}': {e}")))
+    let seat_overrides = |prefix: &str| -> Vec<(usize, String)> {
+        per_seat_flags
+            .iter()
+            .filter(|(flag, _)| flag.starts_with(prefix))
+            .filter_map(|(flag, i)| get(flag).map(|v| (*i, v)))
+            .collect()
     };
-    let global_path = get("--guide");
-    let global_guide = global_path.as_ref().map(|path| read_guide(path));
-    let mut guides: Vec<Option<String>> = vec![global_guide; players];
-    let mut guide_paths: Vec<Option<String>> = vec![global_path; players];
-    for i in 0..players {
-        if let Some(path) = get(&format!("--guide-{i}")) {
-            guides[i] = Some(read_guide(&path));
-            guide_paths[i] = Some(path);
-        }
-    }
+    let model_overrides = seat_overrides("--model-");
+    let guide_overrides = seat_overrides("--guide-");
 
-    Args {
+    // --guide applies to all seats, --guide-N overrides one; both are
+    // resolved by `resolve_seats` below.
+    let mut parsed = Args {
         set,
         players,
-        models,
+        models: Vec::new(),
         best_of,
-        guides,
-        guide_paths,
+        guides: Vec::new(),
+        guide_paths: Vec::new(),
         seed,
         log,
         quiet,
         save: get("--save"),
         resume: get("--resume"),
+        default_model,
+        global_guide_path: get("--guide"),
+        model_overrides,
+        guide_overrides,
+        per_seat_flags,
         supplied: args
             .iter()
             .filter(|a| a.starts_with("--"))
             .cloned()
             .collect(),
-    }
+    };
+    parsed.resolve_seats(players);
+    parsed
 }
 
 /// The seed for one match, derived from the run's root seed and the match's
@@ -572,12 +633,14 @@ fn main() {
         args.seed = save.seed;
         args.set.clone_from(&save.set);
         if save.players != args.players {
-            args.players = save.players;
-            args.models.resize(save.players, args.models[0].clone());
-            args.guides.resize(save.players, None);
-            args.guide_paths.resize(save.players, None);
+            // Rebuilt, not resized. Padding grew `models` with `models[0]`
+            // and `guides` with `None`, so a global `--model` survived the
+            // resume and a global `--guide` did not (#580).
+            args.resolve_seats(save.players);
+            validate_model_specs(&args.models);
         }
     }
+    args.check_seat_flags();
 
     // One seeded root RNG, so the packs a run deals can be dealt again.
     let mut rng = <rand::rngs::StdRng as rand::SeedableRng>::seed_from_u64(args.seed);
