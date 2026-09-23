@@ -6073,9 +6073,9 @@ impl CliPlayer {
         let (title, detail) = Self::rule_title(description, 60);
         let pick = SetPick {
             title,
-            question: format!("{}Mark the permanents for pile 1; the {} you leave form pile 2.",
-                detail.map(|d| format!("{d} ")).unwrap_or_default(),
-                if permanents.len() == 1 { "one" } else { "rest" }),
+            question: Self::question_after(detail,
+                &format!("Mark the permanents for pile 1; the {} you leave form pile 2.",
+                    if permanents.len() == 1 { "one" } else { "rest" })),
             rows,
             min: 0,
             max: permanents.len(),
@@ -6164,9 +6164,8 @@ impl CliPlayer {
         let (title, detail) = Self::rule_title(description, 60);
         let pick = SetPick {
             title,
-            question: format!("{}{}",
-                detail.map(|d| format!("{d} ")).unwrap_or_default(),
-                Self::set_question(min, max, options.len(), "cards below to exile")),
+            question: Self::question_after(detail,
+                &Self::set_question(min, max, options.len(), "cards below to exile")),
             rows,
             min,
             max,
@@ -6299,6 +6298,31 @@ impl CliPlayer {
     }
 
     /// The line that says how many to mark.
+    /// A rule's remainder, prefixed to a screen's own question.
+    ///
+    /// `rule_title` splits a long description into a heading and the rest,
+    /// and the rest is a sentence of card text. Joining it to the question
+    /// with a bare space ran the two together (issue #575):
+    ///
+    /// ```text
+    /// choose exactly 1 creature to exile from your graveyard Mark 1 of the 1 cards below to exile.
+    /// ```
+    ///
+    /// The remainder ends a sentence before the question starts, whatever
+    /// punctuation it arrived with.
+    fn question_after(detail: Option<String>, question: &str) -> String {
+        let Some(detail) = detail else { return question.to_string() };
+        let detail = detail.trim_end_matches(|c: char| c.is_whitespace() || c == ',');
+        if detail.is_empty() {
+            return question.to_string();
+        }
+        if detail.ends_with(['.', '!', '?', ':', ';']) {
+            format!("{detail} {question}")
+        } else {
+            format!("{detail}. {question}")
+        }
+    }
+
     fn set_question(min: usize, max: usize, n: usize, what: &str) -> String {
         if min == max {
             format!("Mark {min} of the {n} {what}.")
@@ -7909,6 +7933,42 @@ yourself at some considerable length";
         let (title, _) = CliPlayer::rule_title(
             "Some Extremely Long Card Name That Runs On: do a thing", 20);
         assert_eq!(title, "CHOICE");
+    }
+
+    /// A rule's remainder and the screen's own question are two sentences,
+    /// and they are punctuated as two (issue #575). The exile-from-graveyard
+    /// screen read "…to exile from your graveyard Mark 1 of the 1 cards
+    /// below to exile." — the remainder ran straight into the question.
+    #[test]
+    fn a_rule_remainder_ends_before_the_question_begins() {
+        // The verbatim #575 case: `rule_title` splits Corpse Lunge's
+        // description, and the remainder gets a full stop of its own.
+        let (title, detail) = CliPlayer::rule_title(
+            "Corpse Lunge: choose exactly 1 creature to exile from your graveyard", 60);
+        assert_eq!(title, "Corpse Lunge");
+        let question = CliPlayer::question_after(
+            detail, &CliPlayer::set_question(1, 1, 1, "cards below to exile"));
+        assert_eq!(question,
+            "choose exactly 1 creature to exile from your graveyard. \
+Mark 1 of the 1 cards below to exile.");
+        assert!(!question.contains("graveyard Mark"),
+            "the two sentences run together: {question:?}");
+
+        // Punctuation the remainder already ends a sentence with is not
+        // doubled, and a trailing comma is replaced rather than appended to.
+        assert_eq!(CliPlayer::question_after(Some("pick one of these.".into()), "Mark 1."),
+            "pick one of these. Mark 1.");
+        assert_eq!(CliPlayer::question_after(Some("which of these?".into()), "Mark 1."),
+            "which of these? Mark 1.");
+        assert_eq!(CliPlayer::question_after(Some("choose one:".into()), "Mark 1."),
+            "choose one: Mark 1.");
+        assert_eq!(CliPlayer::question_after(Some("first this,".into()), "Mark 1."),
+            "first this. Mark 1.");
+
+        // No remainder, or one that is only punctuation, leaves the
+        // question exactly as it was — no leading space, no bare stop.
+        assert_eq!(CliPlayer::question_after(None, "Mark 1."), "Mark 1.");
+        assert_eq!(CliPlayer::question_after(Some("  ,".into()), "Mark 1."), "Mark 1.");
     }
 
     /// The rows that describe a menu — the paging marker and the hint line —
