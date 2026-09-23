@@ -262,6 +262,35 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   (#398). Verify the seat is never shown, nor asked to answer with, two
   different names for the same physical card
 
+  **Run 2026-09-23, and it comes back NEGATIVE — the name chain holds on every
+  surface.** Two `--players 2 --best-of 1 --seed 7` runs under a capturing stub,
+  one with valid decks and one answering the deck prompt with no `maindeck` key
+  so `parse_deck_response` refuses all ten attempts and both seats take the
+  fallback; both 42-card pools held three DFCs and Seat 0's fallback deck
+  maindecked all three. Extracting all 20 full DFC names from
+  `data/sets/isd.json` and searching them as exact strings found **0** in 1,886
+  captured prompts, 1,886 schemas, 1,886 system prompts and both run logs, with
+  0 illegal top-level schema keys alongside. The only ` // ` a seat meets is the
+  deliberate two-face headline, byte-identical in the pack line, the pool
+  listing and the deck-build prompt because all three go through
+  `card_lines.rs`. Both producers of a `DraftDeck` front-face the maindeck now
+  (`deckbuilding.rs:193` and `:440`); the sideboard does keep raw pool names in
+  the struct, but `draft_log.rs:282` front-faces it on the way out, so the raw
+  string reaches no reader. `deck_schema_for` keys `maindeck` by front face
+  only, and a back-face answer is refused correctly (`'Howlpack Alpha' is not in
+  your drafted pool.`). Two things worth recording as **checked, correct** so
+  nobody re-files them: the `--save` snapshot holds raw set-data names, which is
+  the pool's native form and normalises through `front_face` on read; and a seat
+  *can* connect the two names when a card transforms, because its decklist
+  section carries both faces with both faces' rules text and the event log
+  writes `Ulvenwald Mystics (#1) transforms into Ulvenwald Primordials (#1)`
+  with one object id on both sides (#500), 42 times in one game. The idea's
+  last clause was also answered in passing: the two distinct `## Your decklist`
+  sections across 1,102 game system prompts match the two logged 40-card
+  fallback decks entry for entry, so the tournament plays the deck the log says
+  was built. There is nothing left here; a re-probe wants a *new* producer of
+  card-name strings, not this one.
+
 - D17 [proposed 2026-09-09, from #404 and the join loop in `main.rs`] which
   seat the fatal blames, and whether one seat can block the report: the pick
   loop joins the seats' scoped threads in seat order, so `Error: seat N could
