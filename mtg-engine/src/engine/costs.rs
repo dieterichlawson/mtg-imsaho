@@ -440,6 +440,40 @@ pub(crate) fn pay_additional_cost(
     }
 }
 
+/// The power a graveyard card will have once it is the card this cost
+/// exiled.
+///
+/// CR 208.2: a characteristic-defining power works in every zone, so
+/// Boneyard Wurm in a graveyard is not a 0/0 — but it is also not, once
+/// exiled, the power it read while it was still there. Its power is the
+/// number of creature cards in your graveyard, and leaving the graveyard
+/// is one of the things that changes that number.
+///
+/// Corpse Lunge deals damage equal to the exiled creature's power, read
+/// where the card then is, so ranking candidates by the power they had
+/// before the exile ranked them by a number the spell never uses: with a
+/// Wurm and a vanilla 2/2 both reading 2, the choice fell to the object id,
+/// and taking the Wurm dealt 1 where taking the 2/2 dealt 2 (issue #576).
+///
+/// The card is moved by writing the zone field rather than through
+/// `move_object`, so nothing observes it: no trigger fires, no zone-change
+/// counter advances, and the card is back before the function returns.
+fn power_once_exiled(
+    state: &mut GameState,
+    registry: &CardRegistry,
+    id: ObjectId,
+) -> i32 {
+    let Some(was) = state.get_object(id).map(|o| o.zone) else { return 0 };
+    if let Some(obj) = state.get_object_mut(id) {
+        obj.zone = Zone::Exile;
+    }
+    let power = state.effective_power(id, registry).unwrap_or(0);
+    if let Some(obj) = state.get_object_mut(id) {
+        obj.zone = was;
+    }
+    power
+}
+
 /// Pay an `ExileCreaturesFromGraveyard` cost.
 ///
 /// `chosen` is what the player picked; when it is empty the engine picks the
@@ -461,14 +495,15 @@ pub fn pay_exile_creatures(
     chosen: &[ObjectId],
 ) {
     let to_exile: Vec<ObjectId> = if chosen.is_empty() {
-        let mut candidates: Vec<(ObjectId, i32)> = state.objects_in_id_order().into_iter()
+        let ids: Vec<ObjectId> = state.objects_in_id_order().into_iter()
             .filter(|o| {
                 o.zone == Zone::Graveyard && o.owner == player && o.id != spell
                     && state.is_creature(o.id, registry)
             })
-            // CR 208.2: a characteristic-defining power works in every zone,
-            // so Boneyard Wurm in a graveyard is not a 0/0.
-            .map(|o| (o.id, state.effective_power(o.id, registry).unwrap_or(0)))
+            .map(|o| o.id)
+            .collect();
+        let mut candidates: Vec<(ObjectId, i32)> = ids.into_iter()
+            .map(|id| (id, power_once_exiled(state, registry, id)))
             .collect();
         candidates.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.0.cmp(&b.0.0)));
         candidates.into_iter().take(count).map(|(id, _)| id).collect()

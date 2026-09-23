@@ -176,6 +176,52 @@ fn auto_paying_an_exile_cost_picks_the_strongest_creature_card() {
          power when it resolves");
 }
 
+/// The auto-pick ranks by the power the spell will read, which is the power
+/// the card has *after* it has been exiled.
+///
+/// Corpse Lunge "deals damage equal to the exiled creature's power", and the
+/// exiled creature is in exile when the spell resolves. For a
+/// characteristic-defining power that is not the power it had in the
+/// graveyard: Boneyard Wurm's is the number of creature cards in your
+/// graveyard, and exiling the Wurm is one of the things that changes that
+/// number (issue #576).
+///
+/// With a Wurm and a vanilla 2/2 in the graveyard both reading 2, exiling
+/// the Wurm makes Corpse Lunge deal 1 and exiling the 2/2 makes it deal 2.
+/// Ranking before the exile saw a tie and fell through to the object id.
+#[test]
+fn auto_paying_an_exile_cost_ranks_by_the_power_after_the_exile() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // The Wurm goes in first, so it holds the lower object id and a tie
+    // broken by id would take it.
+    let wurm = named_card_in_graveyard(&mut state, &reg, "Boneyard Wurm", P0);
+    let bears = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
+
+    // Two creature cards in the graveyard, so in the graveyard both read 2
+    // and nothing distinguishes them.
+    assert_eq!(state.effective_power(wurm, &reg), Some(2),
+        "the Wurm reads 2 while both cards are still in the graveyard");
+    assert_eq!(state.effective_power(bears, &reg), Some(2));
+
+    let lunge = spell_in_hand(&mut state, &reg, "Corpse Lunge", P0);
+    mtg_engine::engine::pay_exile_creatures(&mut state, &reg, lunge, P0, 1, &[]);
+
+    assert_eq!(state.get_object(bears).unwrap().zone, Zone::Exile,
+        "the 2/2 is the one worth exiling: it still has power 2 in exile, \
+         while the Wurm drops to 1 the moment it stops being a creature card \
+         in the graveyard");
+    assert_eq!(state.get_object(wurm).unwrap().zone, Zone::Graveyard);
+
+    // And the damage the spell will deal is the 2 the player was owed.
+    let exiled = state.get_object(lunge).unwrap().card_state
+        .get(&mtg_engine::cards::exiled_to_cost_key(0)).copied();
+    assert_eq!(exiled, Some(bears));
+    assert_eq!(state.effective_power(bears, &reg), Some(2),
+        "Corpse Lunge deals the exiled creature's power, read in exile");
+}
+
 // ---------------------------------------------------------------------------
 // Structural guard
 // ---------------------------------------------------------------------------
