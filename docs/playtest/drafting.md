@@ -205,6 +205,40 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   different `--guide-N` than the save was drafted under is refused or noted
   rather than silently producing a hybrid draft
 
+  **Run 2026-09-23, and #401's fix holds — the laundering moved to the money and
+  the flags.** Everything #401 named is now correct and was verified end to end:
+  the header carries `resumed from: <path> (N picks replayed)`, all 84 picks
+  appear as `PICK … — replayed from the snapshot, no prompt sent`, a snapshot
+  holding 20 substituted picks resumes into `=== Substituted Picks === 20
+  pick(s)` plus 20 `WARN Pack` log lines, `--save` keeps writing after a resume,
+  and a resumed run's snapshot resumes again (a three-process chain works). The
+  substituted-*deck* report also survives, but only because deck building is
+  re-run from scratch every process — it is re-derived, not carried. What does
+  not survive is the cost. `print_usage_summary` is reached only on the happy
+  exit, so `die` and a SIGKILL publish nothing at all, and `MODEL_USAGE` is
+  process-local: one `--seed 7` draft split across three runs made 288 successful
+  `claude -p` calls and reported 238, and the surviving run prints `Draft: 36
+  calls` in the same file whose log holds 84 `PICK` records (#578; seed 23 in two
+  runs: 288 real, 248 reported). `DraftSave` records `{seed, set, players, picks}`
+  and the reconciliation loop checks exactly those three, so `--guide`/`--guide-N`
+  and `--model`/`--model-N` are taken from whatever was typed: an alpha-guide
+  snapshot resumed under beta exits 0, silently, with the header claiming
+  `guide: beta.txt` for a draft 20 of whose picks were alpha's (#579). Two
+  adjacent ones: a resume that grows the pod pads `guides` with `None` while
+  `models` is padded with `models[0]`, so a global `--guide` reached seats 0-1 of
+  a 4-seat resumed draft and not seats 2-3 (#580), and the reconciliation note
+  fires against the *generated* default seed, announcing a 19-digit number nobody
+  passed (#582). The idea's framing also has a gap worth carrying forward:
+  `--save` checkpoints the pick loop only, so a kill just inside the tournament
+  re-bills the deck build and every game — 49 of 288 calls bought twice at
+  `--players 2 --best-of 1`, and the tournament is ~95% of a default run's calls
+  (#581). Method notes for a re-probe: a stub whose successful calls draw from a
+  *shared* counter file makes the addition exact, and the fail counter must be
+  per-run while the token counter is global; and a tournament-phase failure
+  cannot be forced by stub exit codes, because the game harness rejects the
+  answer and plays on (#488/#489), so kill the pid you spawned once `Starting
+  Swiss tournament...` appears.
+
 - D14 [proposed 2026-09-09, from #404, #399] subprocess-lifecycle parity
   between the two `claude -p` backends: `mtg-draft-runner/src/llm_client.rs`
   and `mtg-player/src/llm/claude_code.rs` are two copies of one protocol and
