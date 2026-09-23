@@ -515,3 +515,25 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   claim needs `diff <(sort a) <(sort b)` beside the plain `diff` — an empty
   sorted diff with a non-empty ordered one is the ordering defect, and is
   exactly what #586 looks like.
+
+- D23 [proposed 2026-09-23, from #586 and the D22 night] every record a worker
+  writes, not just the ones #541 knew about: #541's fix is a convention, not a
+  mechanism — `game_log::buffer_here()` is called at exactly two sites
+  (`main.rs:880`, `:994`) and any `write_at`/`write` reachable from a thread that
+  did not call it lands in the log in scheduler order. #542's `SESSION` line is
+  one such site and put the non-determinism straight back (#586); nothing says it
+  is the only one. Enumerate every `mtg_player::game_log` write reachable from a
+  `spawn_seat` worker — the pick loop, the deck-build scope, `play_match` and
+  everything `mtg-player` writes underneath it — and for each say which of the
+  two buffered scopes it is inside. Then test the enumeration rather than trust
+  it: run the same `--seed` twice at `--players 8 --best-of 3` under a stub that
+  is a pure function of prompt‖schema, and require **both** `diff` and
+  `diff <(sort a) <(sort b)` to be empty after masking timestamps and session
+  uuids. Force the seat-level paths that a clean run never reaches — a rejected
+  answer, a `FALLBACK`, a `STALLED` game, an `API_RETRY`, a `MALFORMED` — so the
+  error records are in the comparison too, since those are exactly the lines
+  written from the deepest point in a worker. The underlying question is whether
+  the buffer should be a property of the *logger* (records tagged with their
+  seat and emitted in seat order at the end of a scope) rather than something
+  each new call site has to remember to be inside, because the convention has now
+  been broken once by a fix that had no reason to know about it
