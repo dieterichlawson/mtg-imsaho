@@ -724,8 +724,15 @@ impl ClaudeCodeDraftBackend {
     /// the run is worse than one that stops.
     fn decide(&mut self, message: &str, schema: &serde_json::Value) -> String {
         let sanitized = sanitize_schema_for_anthropic(schema);
-        let deadline = std::time::Instant::now() + retry_budget();
+        let began = std::time::Instant::now();
+        let deadline = began + retry_budget();
         let mut attempt = 0u32;
+        // The reason the last attempt failed, for the fatal record. Each
+        // attempt's reason goes to stderr as it happens, but the `--log`'s
+        // `API_FATAL` record is the durable one — after the terminal has
+        // scrolled it is all a reader has, and carrying only a count meant
+        // a draft log could not tell a hung CLI from a crashing one (#585).
+        let mut last_failure = String::new();
         loop {
             if attempt > 0 {
                 let backoff = retry_backoff(attempt);
@@ -748,6 +755,8 @@ impl ClaudeCodeDraftBackend {
                         );
                         eprintln!("{msg}");
                         mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_RETRY", &msg);
+                        last_failure = format!("reported an error: {}",
+                            json["result"].as_str().unwrap_or("").chars().take(200).collect::<String>());
                         continue;
                     }
                     if let Some(sid) = json["session_id"].as_str() {
@@ -788,6 +797,8 @@ impl ClaudeCodeDraftBackend {
                     );
                     eprintln!("WARN: {msg}");
                     mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_WARN", &msg);
+                    last_failure = format!("returned no structured object: {}",
+                        json["result"].as_str().unwrap_or("").chars().take(200).collect::<String>());
                 }
                 Err(e) => {
                     let msg = format!(
@@ -796,13 +807,40 @@ impl ClaudeCodeDraftBackend {
                     );
                     eprintln!("{msg}");
                     mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
+                    last_failure = e;
                 }
             }
         }
-        fatal(&format!(
-            "claude -p draft seat gave up after {attempt} attempts over {}s",
-            retry_budget().as_secs()
-        ))
+        fatal(&Self::gave_up_message(attempt, began.elapsed(), retry_budget(), &last_failure))
+    }
+
+    /// The one sentence an operator gets when a draft seat dies.
+    ///
+    /// It used to report the configured retry budget where the duration
+    /// belongs — "gave up after 1 attempts over 6s" after sixty seconds of
+    /// trying (#585). The loop stops as soon as the next backoff would
+    /// overshoot the deadline, so the budget and the time spent are equal
+    /// only by coincidence; they diverge with the ratio of the per-call
+    /// timeout to the budget, and at the shipped defaults they happen to
+    /// land close enough to hide it.
+    ///
+    /// So: the measured elapsed time, the budget named as the budget (it is
+    /// the knob to turn), the attempt count pluralised, and the reason the
+    /// last attempt failed.
+    fn gave_up_message(
+        attempts: u32,
+        elapsed: std::time::Duration,
+        budget: std::time::Duration,
+        last_failure: &str,
+    ) -> String {
+        let plural = if attempts == 1 { "attempt" } else { "attempts" };
+        let mut msg = format!(
+            "claude -p draft seat gave up after {attempts} {plural} in {:.1}s (budget {}s)",
+            elapsed.as_secs_f64(), budget.as_secs());
+        if !last_failure.is_empty() {
+            msg.push_str(&format!("; last failure: {last_failure}"));
+        }
+        msg
     }
 
     fn call_once(&mut self, message: &str, schema: &serde_json::Value) -> Result<serde_json::Value, String> {
