@@ -203,6 +203,16 @@ pub fn unlink_scratch_file() {
 
 /// Ctrl-C at a prompt: put the terminal back, take the scratch file with
 /// us, and exit as an interrupted program does.
+///
+/// "As an interrupted program does" is `128 + SIGINT`, which is what
+/// `restore_terminal_and_exit` above already exits with when the same
+/// keystroke arrives as a real signal. At a TUI prompt the terminal is in
+/// raw mode, so Ctrl-C is delivered as a key event and never becomes
+/// SIGINT — and this path exited 0, the status a game that reached game
+/// over exits with. So the one keystroke had two answers, and
+/// `mtg-runner --p1 cli … ; echo $?` printed 0 whether the game finished
+/// or the operator abandoned it at turn 2: a wrapper script, a cron entry
+/// or the playtest crew's tmux driver could not tell them apart (#574).
 fn quit_at_prompt() -> ! {
     // Clear the frame on the way out, the same as the game-over path does
     // (#47). Restoring the terminal MODES without clearing left the whole
@@ -212,8 +222,13 @@ fn quit_at_prompt() -> ! {
     // reset rather than the async-signal-safe subset.
     reset_terminal_for_exit();
     unlink_scratch_file();
-    std::process::exit(0);
+    std::process::exit(INTERRUPTED_EXIT_CODE);
 }
+
+/// What an interrupted run exits with: the shell's convention of
+/// `128 + SIGINT`, and the same status the signal handler uses when Ctrl-C
+/// arrives as a signal rather than as a key.
+pub const INTERRUPTED_EXIT_CODE: i32 = 128 + libc::SIGINT;
 
 /// True while a TUI prompt holds the terminal in raw mode, and the raw
 /// termios itself — what the SIGCONT handler re-arms after a job-control

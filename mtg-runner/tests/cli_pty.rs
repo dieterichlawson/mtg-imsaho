@@ -323,15 +323,26 @@ fn seeded_game() -> PtyGame {
 
 const T: Duration = Duration::from_secs(30);
 
-/// Ctrl-C has two clean exit paths: read inside a raw-mode prompt it is a
-/// keystroke (exit 0); landing between prompts, the cooked line discipline
-/// turns it into SIGINT and the #78 restore-terminal handler exits 130.
-/// Both restore the terminal; both are clean.
+/// Ctrl-C has two exit paths and they agree on the status.
+///
+/// Read inside a raw-mode prompt it is a keystroke, handled by
+/// `quit_at_prompt`; landing between prompts, the cooked line discipline
+/// turns it into SIGINT and the #78 restore-terminal handler takes it.
+/// Both restore the terminal, and both exit `128 + SIGINT`.
+///
+/// This used to accept 0 as well, because the keystroke path exited 0 —
+/// the status a game that ran to game over exits with. So `mtg-runner
+/// --p1 cli … ; echo $?` printed 0 whether the game finished or the
+/// operator abandoned it at turn 2, and a wrapper script, a cron entry or
+/// the playtest crew's tmux driver could not tell them apart (#574).
+const INTERRUPTED: i32 = 130;
+
 #[track_caller]
 fn assert_clean_exit(g: &mut PtyGame) {
     let status = g.wait_exit(T);
-    assert!(matches!(status.code(), Some(0) | Some(130)),
-        "expected a clean Ctrl-C exit (0 or 130), got {status:?}");
+    assert_eq!(status.code(), Some(INTERRUPTED),
+        "an interrupted game exits {INTERRUPTED} (128 + SIGINT), not 0 — a script \
+         cannot otherwise tell it from a game that finished. Got {status:?}");
 }
 
 /// The core interactive loop: boot to the mulligan prompt, keep, see the
