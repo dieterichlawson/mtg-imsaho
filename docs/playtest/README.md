@@ -170,6 +170,21 @@ Search open issues for the same symptom first and comment there rather
 than duplicating. UX judgments are worth filing; label the severity
 honestly.
 
+**Observed is filed.** There is no such thing as "observed but not
+filed", "noted, out of scope", or "smaller observations" at the end of a
+report. A thing that is wrong, that a person at the surface would meet,
+is an issue the night it is seen — however small, whatever probe you were
+running, whether or not it is the subject's. A guide idea is not a
+substitute for an issue: an idea schedules a *probe*; a defect you have
+already seen needs no probe, it needs a number. The 2026-09-17 GUI night
+saw that a second Forest in hand answers no click, wrote it into `gui.md`
+as G13 "observed but not filed", and five nights later the first person
+to sit at the page hit it in their second game (#572). Unsure whether it
+is deliberate? File it and say so under **Confidence**; the fixer can
+close it. The only observation that stays out of the tracker is one you
+checked and found *correct*, and that goes in the report as "checked,
+correct", with the evidence.
+
 You are one of three finders, and the labels tell them apart: the
 `nightly-fuzz` workflow files `phase:fuzz` issues, one per failing seed
 (`[fuzz] <pair> seed <N>: <violation>`, which doubles as its dedupe key);

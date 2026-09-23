@@ -70,13 +70,31 @@ random game happened to reach.
   Then press `s` (stop at every priority) and confirm the page stops, says so,
   and that `f` and `s` compose sanely rather than fighting.
 
-- G13 [proposed 2026-09-17, observed during #517's repro but not filed] the
-  dedup'd duplicate: the engine offers `PlayLand` for one object id even with
-  four Forests in hand, so three visually identical hand cards carry no verb
-  marker and answer no click — clicking one only moves the inspector. Sweep
-  every prompt where the engine dedups by name (the land drop, a second copy
-  of the same spell) and decide what the page owes the copies it draws but
-  cannot act on. #512 is the CLI's version of the same question.
+- G13 [proposed 2026-09-17, observed during #517's repro; filed five nights
+  late as #572 after a person hit it, which is the case the "observed is
+  filed" rule in the README was written for] the dedup'd duplicate: the
+  engine offers `PlayLand` for one object id even with four Forests in hand,
+  so three visually identical hand cards carried no verb marker and answered
+  no click — clicking one only moved the inspector. Fixed on the page: a hand
+  card with no verbs borrows its namesake's (`beginMenu`), pinned by
+  `widgets.js` "land-copies". Still worth a sweep: every prompt where the
+  engine dedups by name (a second copy of the same spell, an ability offered
+  once for two identical sources) and what the page owes the copies it draws.
+  #512 is the CLI's version of the same question.
+
+- G25 [proposed 2026-09-22, from #572 and #573, both found by a person at the
+  page and neither by a night] the copies, by hand: gw-humans against
+  anything, no debug hook, no `mtgSend`. Play a game in which you hold two
+  Plains and control two Doomed Travelers, and at every prompt click the copy
+  the page did *not* mark first: the second Plains, the second Traveler as an
+  attacker, as a blocker, as a sacrifice, as a target. #573 was the "x2"
+  stack from #513's fix reaching combat: a pending attack mark never split
+  the stack, so the second Traveler could not be declared at all, and the
+  widget test could not see it because it staged the prompt and sent the
+  answer instead of clicking a stacked card. The fix (`pendingKey` in
+  `render.ts`) is pinned by "attack-stack" and "block-stack" in
+  `widgets.js`; this idea is the part a test cannot do — a person, a real
+  deck, and the copy the page did not point at.
 
 - G14 [proposed 2026-09-17, from #522] an unclipped-text sweep: #522 was found
   by eye, and it is the *one* string on the board drawn without `clip()` only
