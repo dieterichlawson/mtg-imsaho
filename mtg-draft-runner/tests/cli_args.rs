@@ -770,3 +770,102 @@ fn a_resume_that_grows_the_pod_keeps_the_guide_for_every_seat() {
         "--guide was passed and these seats drafted without one: {without:?}"
     );
 }
+
+/// A resume under a different guide says so, in the run's own record.
+///
+/// `--seed`, `--set` and `--players` have been reconciled against the
+/// snapshot since #218, but the guide — the flag with the most effect on
+/// what a seat actually does — was in no snapshot at all. So `--resume`
+/// took it from whatever the operator happened to type, and resuming a
+/// draft under a different guide produced one pool, one set of decks and
+/// one set of standings assembled from picks made under two sets of
+/// instructions, with no note, no warning and exit 0. The log header then
+/// named only the guide the last process used, so the one artefact that
+/// outlives the terminal positively asserted something false about the
+/// replayed picks (#579).
+#[test]
+#[cfg(unix)]
+fn a_resume_under_a_different_guide_is_not_silent() {
+    let tmp = std::env::temp_dir();
+    let pid = std::process::id();
+    let workspace_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("package dir has a workspace parent");
+
+    let alpha = tmp.join(format!("mtg-draft-alpha-{pid}.txt"));
+    let beta = tmp.join(format!("mtg-draft-beta-{pid}.txt"));
+    std::fs::write(&alpha, "GUIDE ALPHA: always take the biggest creature.\n").unwrap();
+    std::fs::write(&beta, "GUIDE BETA: always take removal, never creatures.\n").unwrap();
+
+    // A snapshot that records having been drafted under alpha. Written by
+    // hand in the current format, so the test does not need a first run.
+    let save = tmp.join(format!("mtg-draft-guideswap-{pid}.json"));
+    let alpha_text = std::fs::read_to_string(&alpha).unwrap();
+    // The digest the runner stores: FNV-1a/64 of the guide's contents.
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in alpha_text.as_bytes() {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    let policy = format!(
+        r#"{{"model":"cc","guide_path":{:?},"guide_hash":"{h:016x}"}}"#,
+        alpha.to_string_lossy()
+    );
+    std::fs::write(&save, format!(
+        r#"{{"seed":11,"set":"isd","players":2,"picks":[],"seats":[{policy},{policy}]}}"#
+    )).unwrap();
+
+    let log = tmp.join(format!("mtg-draft-guideswap-{pid}.log"));
+    let _ = std::fs::remove_file(&log);
+    let stub = blocking_stub("guideswap");
+    let mut child = runner()
+        .current_dir(workspace_root)
+        .args(["--model", "cc", "--players", "2", "--best-of", "1", "--quiet"])
+        .args(["--resume", &save.to_string_lossy()])
+        .args(["--guide", &beta.to_string_lossy()])
+        .args(["--log", &log.to_string_lossy()])
+        .env("CLAUDE_CODE_BIN", &stub)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to spawn runner");
+
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    let mut logged = String::new();
+    while std::time::Instant::now() < deadline {
+        logged = std::fs::read_to_string(&log).unwrap_or_default();
+        if logged.contains("HEADER") {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    let _ = child.kill();
+    let mut err = String::new();
+    if let Some(mut pipe) = child.stderr.take() {
+        use std::io::Read;
+        let _ = pipe.read_to_string(&mut err);
+    }
+    let _ = child.wait();
+    for path in [&stub, &alpha, &beta, &save, &log] {
+        let _ = std::fs::remove_file(path);
+    }
+
+    // stderr says it, even though the operator passed --quiet: this is a
+    // warning about what the run is, not progress output.
+    assert!(
+        err.contains("replayed picks were made under") && err.contains("mixture"),
+        "a resume under a different guide should warn.\nstderr: {err}"
+    );
+
+    // And the log header says it, which is the part that outlives the
+    // terminal. The header used to name beta alone.
+    assert!(
+        logged.contains("those picks were made under"),
+        "the header should not assert the current guide for the replayed picks.\n\
+         log: {logged}"
+    );
+    assert!(
+        logged.contains("alpha") && logged.contains("beta"),
+        "the header should name both guides.\nlog: {logged}"
+    );
+}

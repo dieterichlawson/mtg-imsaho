@@ -27,6 +27,9 @@ impl DraftLogger {
         guide_paths: &[Option<String>],
         seed: u64,
         resumed_from: Option<(&str, usize)>,
+        // Seats whose replayed picks were made under something other than
+        // what the rest of the draft will use: `(seat, then, now)`.
+        replayed_under: &[(usize, String, String)],
         file: &str,
         line: u32,
     ) {
@@ -56,6 +59,17 @@ impl DraftLogger {
         // resume left no trace in any file (issue #401).
         if let Some((path, picks)) = resumed_from {
             lines.push(format!("resumed from: {path} ({picks} picks replayed)"));
+            // The guide lines below describe the rest of the draft. Saying
+            // only that used to make the header assert something false about
+            // the replayed picks, and the snapshot it points at recorded no
+            // guide either, so a reader who followed the pointer still could
+            // not recover what those picks were made under — the fact
+            // survived only in the previous run's separate log file
+            // (issue #579).
+            for (seat, then, now) in replayed_under {
+                lines.push(format!(
+                    "  ! seat {seat}: those picks were made under {then}, not {now}"));
+            }
         }
         let guides_used = guide_paths.iter().any(Option::is_some);
         if guides_used {

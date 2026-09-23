@@ -297,6 +297,17 @@ impl Args {
         }
     }
 
+    /// What each seat is drafting under, for the snapshot.
+    fn seat_policies(&self) -> Vec<SeatPolicy> {
+        (0..self.players)
+            .map(|seat| SeatPolicy {
+                model: self.models[seat].clone(),
+                guide_path: self.guide_paths[seat].clone(),
+                guide_hash: self.guides[seat].as_deref().map(guide_digest),
+            })
+            .collect()
+    }
+
     /// Refuse a `--model-N` / `--guide-N` that names a seat the draft does
     /// not have.
     ///
@@ -338,6 +349,51 @@ struct PickRecord {
     substituted: bool,
 }
 
+/// What one seat was told to do while it was making the recorded picks.
+///
+/// A guide changes what a seat does more than any other flag, and none of
+/// it was in the snapshot: `--resume` took the guide and the model from
+/// whatever the operator happened to type, so resuming a draft under a
+/// different guide produced one pool, one set of decks and one set of
+/// standings assembled from picks made under two sets of instructions —
+/// with no note, no warning and exit 0. The log header then named only the
+/// guide the last process used, so the surviving artefact positively
+/// asserted something false about the replayed picks (issue #579).
+///
+/// The hash is of the guide's contents, because a guide file can be edited
+/// between two runs and the path alone would not notice.
+#[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, Eq, Default, Debug)]
+struct SeatPolicy {
+    model: String,
+    guide_path: Option<String>,
+    guide_hash: Option<String>,
+}
+
+impl SeatPolicy {
+    /// How a mismatch reads in a warning.
+    fn describe(&self) -> String {
+        match (&self.guide_path, &self.guide_hash) {
+            (Some(path), _) => format!("model {}, guide {path}", self.model),
+            (None, _) => format!("model {}, no guide", self.model),
+        }
+    }
+}
+
+/// A 64-bit FNV-1a of a guide's contents, rendered hex.
+///
+/// Only has to notice an edit, so it is arithmetic rather than a
+/// dependency — and, like `match_seed`, it must not depend on a hasher
+/// whose output may change between compiler versions and silently
+/// invalidate every snapshot written before the upgrade.
+fn guide_digest(text: &str) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in text.as_bytes() {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{h:016x}")
+}
+
 /// A draft in progress: enough to deal the same packs again and replay every
 /// pick that has been made.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -346,6 +402,13 @@ struct DraftSave {
     set: String,
     players: usize,
     picks: Vec<PickRecord>,
+    /// What each seat was drafting under when these picks were made.
+    ///
+    /// Empty in a snapshot written before the field existed, which reads as
+    /// "unknown" rather than as agreement with the current flags — the most
+    /// a replay can say about them (issue #579).
+    #[serde(default)]
+    seats: Vec<SeatPolicy>,
 }
 
 /// Refuse an argument vector `parse_args` wouldn't fully consume, and hand
@@ -642,6 +705,40 @@ fn main() {
     }
     args.check_seat_flags();
 
+    // What the replayed picks were made under, against what the rest of the
+    // draft will be made under. `--seed`, `--set` and `--players` have been
+    // reconciled since #218; the guide is the flag with the most effect on
+    // what a seat does and had no check on it at all, so a resume under a
+    // different guide silently produced a hybrid draft (issue #579).
+    //
+    // Not a refusal: swapping the guide mid-draft is a legitimate thing to
+    // want to do. It has to be visible, which it was not — and the header
+    // below carries it into the one artefact that outlives the terminal.
+    let replayed_under: Vec<(usize, SeatPolicy, SeatPolicy)> = resumed
+        .as_ref()
+        .map(|save| {
+            let now = args.seat_policies();
+            save.seats
+                .iter()
+                .enumerate()
+                .take(now.len())
+                .filter(|(seat, was)| *was != &now[*seat])
+                .map(|(seat, was)| (seat, was.clone(), now[seat].clone()))
+                .collect()
+        })
+        .unwrap_or_default();
+    for (seat, was, now) in &replayed_under {
+        eprintln!("WARN: seat {seat}'s replayed picks were made under {}, and the rest of \
+this draft will be made under {} — this draft is a mixture of the two",
+            was.describe(), now.describe());
+    }
+    if let Some(save) = &resumed {
+        if save.seats.is_empty() && !save.picks.is_empty() {
+            eprintln!("note: this snapshot predates the guide/model record, so what its \
+{} replayed picks were made under is unknown", save.picks.len());
+        }
+    }
+
     // One seeded root RNG, so the packs a run deals can be dealt again.
     let mut rng = <rand::rngs::StdRng as rand::SeedableRng>::seed_from_u64(args.seed);
 
@@ -671,8 +768,13 @@ fn main() {
     let resumed_from = resumed.as_ref().map(|save| {
         (args.resume.as_deref().unwrap_or_default(), save.picks.len())
     });
+    let replayed_note: Vec<(usize, String, String)> = replayed_under
+        .iter()
+        .map(|(seat, was, now)| (*seat, was.describe(), now.describe()))
+        .collect();
     log_header!(log, &set_data.set_name, args.players, args.best_of,
-        args.models.as_slice(), args.guide_paths.as_slice(), args.seed, resumed_from);
+        args.models.as_slice(), args.guide_paths.as_slice(), args.seed, resumed_from,
+        replayed_note.as_slice());
 
     if !args.quiet {
         eprintln!(
@@ -767,6 +869,7 @@ fn main() {
             set: args.set.clone(),
             players: args.players,
             picks: picks.to_vec(),
+            seats: args.seat_policies(),
         };
         // Write-then-rename: a snapshot half-written when the run dies is
         // worse than none, because it looks resumable.
