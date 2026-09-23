@@ -219,6 +219,43 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   process and no leaked scratch directory. Any difference is either a fix
   that reached one copy only, or an argument for deleting one copy
 
+  **Run 2026-09-23, and the process half is in parity; the reporting half is
+  not.** One stub with fourteen modes through both backends: exit 7, `is_error`,
+  junk, empty, hang-with-descendant, hang-with-`exec`, answer-then-linger on
+  stdout and on stderr, a result with no `structured_output`, a 20-second
+  transient outage, and SIGINT/SIGTERM/SIGHUP — including one delivered during a
+  draft's *tournament* phase. Every process-level property matched: the per-call
+  timeout fires at the configured value on both (`5001ms` at
+  `MTG_CLAUDE_CODE_TIMEOUT_SECS=5`), the wording of every non-fatal line is
+  identical apart from the deliberate `attempt 1` vs `attempt 1/3`, all three
+  signals exit 130/143/129, and there were **zero orphaned stub processes or
+  descendants on either side in any mode**. The scratch sweep does cover both
+  prefixes now: a fatalled draft leaks its two `mtg-draft-claude-code-<pid>-*`
+  directories, because `die` → `process::exit` runs no destructor, and the next
+  run's `prepare_seat` removes them. `claude_code_run` being one function did
+  its job, and #404 is genuinely closed. What still differs is the reporting,
+  three new ways: `API_RETRY` is written at `INFO` by `claude_code.rs:447` and at
+  `ERROR` by `llm_client.rs:750`, so `grep ERROR` over a game log finds no
+  usage-limit retry (#583); the draft fatal prints the configured budget where
+  the elapsed time belongs — "gave up after 1 attempts over 6s" after 60 seconds
+  (#585); and the retry policy itself is still #399's deferred judgment call,
+  now with a number — a 20-second outage costs the game seat 2 of 74 decisions
+  to the fallback and the draft seat none, and a call that *succeeds* with prose
+  and no `structured_output` gets zero retries from the game copy against
+  retry-then-fatal from the draft copy (74/74 decisions substituted, no stderr,
+  exit 0). The one thing the mode list above does not name is where the night's
+  biggest find was: `available()`'s `--version` probe is the only `claude -p`
+  subprocess outside `run_print_mode`, with no timeout, no `setpgid` and no
+  `LIVE_GROUPS` slot, so a CLI that does not answer `--version` hangs **both**
+  runners forever before the first prompt with no message, and `kill -INT` or
+  `-TERM` leaves the probe and its descendant at `PPID=1` (#584). Two setup
+  notes for a re-probe: send signals with `kill -INT <pid>` and never Ctrl-C at
+  a terminal, because an interactive Ctrl-C goes to the whole foreground process
+  group and hides exactly this class of defect; and take the runner's real pid
+  rather than `$!` when the command is wrapped in `timeout`, which forks — the
+  workdirs are named with the *binary's* pid, so an orphan hunt keyed on the
+  wrapper's finds other testers' directories instead of your own.
+
 - D15 [proposed 2026-09-09, from reading `deckbuilding.rs` during D4] the deck
   answer the schema cannot describe: `parse_deck_response` pushes `count`
   copies of a name into a `Vec` before `validate_deck` ever sees it, taking
