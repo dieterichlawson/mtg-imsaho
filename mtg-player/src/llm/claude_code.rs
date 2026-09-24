@@ -463,6 +463,8 @@ pub(super) struct ClaudeCodeBackend {
     /// only channel this seat has — and the schema used to be stripped of
     /// the field, which left it with none at all (issue #213).
     last_thinking: Option<String>,
+    /// Why the last call produced no answer at all (#587).
+    last_call_failure: Option<String>,
 }
 
 impl ClaudeCodeBackend {
@@ -485,6 +487,7 @@ impl ClaudeCodeBackend {
             turns: 0,
             workdir,
             last_thinking: None,
+            last_call_failure: None,
         }
     }
 
@@ -552,6 +555,10 @@ impl ClaudeCodeBackend {
         let msg = format!("claude -p exhausted all {MAX_ATTEMPTS} attempts");
         eprintln!("{msg}");
         crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
+        // The caller is about to be handed an empty answer. Say that no
+        // answer happened, so it is not reported as one the model gave
+        // (issue #587).
+        self.last_call_failure = Some(msg);
         None
     }
 
@@ -819,6 +826,10 @@ impl LlmBackend for ClaudeCodeBackend {
 
     fn take_thinking(&mut self) -> Option<String> {
         self.last_thinking.take()
+    }
+
+    fn take_call_failure(&mut self) -> Option<String> {
+        self.last_call_failure.take()
     }
 
     fn session_id(&self) -> Option<&str> {

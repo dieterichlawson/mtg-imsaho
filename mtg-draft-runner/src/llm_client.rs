@@ -29,6 +29,10 @@ pub struct ModelUsage {
     /// itself — the game phase's counter used to be dropped one line before
     /// it would have been printed (issue #489, the shape of #211/#399).
     pub rejected: u64,
+    /// Decisions the backend never answered at all. Carried for the same
+    /// reason `rejected` is: the field that was not carried is the one that
+    /// went missing (#489, #587).
+    pub unanswered: u64,
 }
 
 static MODEL_USAGE: std::sync::LazyLock<Mutex<HashMap<String, ModelUsage>>> =
@@ -105,6 +109,7 @@ fn as_llm_usage(u: &ModelUsage) -> mtg_player::llm::LlmModelUsage {
         cache_create: u.cache_create,
         calls: u.calls,
         rejected: u.rejected,
+        unanswered: u.unanswered,
     }
 }
 
@@ -171,7 +176,7 @@ pub fn print_usage_summary(outcome: RunOutcome) {
     // Game phase cost
     let game_usage: HashMap<String, ModelUsage> = game_usage.iter().map(|(m, u)| (m.clone(), ModelUsage {
         calls: u.calls, input: u.input, output: u.output, cache_read: u.cache_read,
-        cache_create: u.cache_create, rejected: u.rejected,
+        cache_create: u.cache_create, rejected: u.rejected, unanswered: u.unanswered,
     })).collect();
     let game_cost = phase_cost(&game_usage);
     let game_calls: u64 = game_usage.values().map(|u| u.calls).sum();
@@ -186,6 +191,7 @@ pub fn print_usage_summary(outcome: RunOutcome) {
         entry.cache_read += u.cache_read;
         entry.cache_create += u.cache_create;
         entry.rejected += u.rejected;
+        entry.unanswered += u.unanswered;
     }
 
     // Build summary string for both stderr and log file. A run that
@@ -218,7 +224,10 @@ pub fn print_usage_summary(outcome: RunOutcome) {
         // call count alone reads as a healthy seat even when every answer
         // was thrown away (#489).
         let rejected = mtg_player::llm::rejected_note(u.rejected);
-        writeln!(summary, "  {}: {} calls, {}in/{}out/{}cached = {cost}{rejected}",
+        // A dead backend and a bad answer are different events with
+        // different remedies, so they are different numbers (#587).
+        let unanswered = mtg_player::llm::unanswered_note(u.unanswered);
+        writeln!(summary, "  {}: {} calls, {}in/{}out/{}cached = {cost}{rejected}{unanswered}",
             model, u.calls, u.input, u.output, u.cache_read
         ).unwrap();
     }
@@ -251,6 +260,22 @@ the earlier run(s) spent making them is counted in no number above)",
 so this seat's games are not wholly its own", if *n == 1 { "" } else { "s" }).unwrap();
         }
         summary.push_str("  (grep the log for MALFORMED to see each one)\n");
+    }
+
+    // And the seats whose backend never answered, which is a broken CLI
+    // rather than a seat playing badly (#587).
+    let mut mute: Vec<(String, u64)> = mtg_player::llm::get_unanswered_by_seat()
+        .into_iter()
+        .filter(|(_, n)| *n > 0)
+        .collect();
+    if !mute.is_empty() {
+        mute.sort();
+        summary.push_str("\n  Decisions the seat's backend never answered:\n");
+        for (seat, n) in &mute {
+            writeln!(summary, "    {seat}: {n} decision{} got no answer at all — the CLI or \
+API failed, not the model", if *n == 1 { "" } else { "s" }).unwrap();
+        }
+        summary.push_str("  (grep the log for NO_ANSWER to see each one)\n");
     }
 
     // Write to stderr
@@ -1300,6 +1325,7 @@ mod usage_summary_tests {
             cache_create: 44,
             calls: 55,
             rejected: 66,
+            unanswered: 77,
         };
         let shared = as_llm_usage(&usage);
 
@@ -1309,11 +1335,14 @@ mod usage_summary_tests {
         assert_eq!(shared.cache_create, 44);
         assert_eq!(shared.calls, 55);
         assert_eq!(shared.rejected, 66, "a rejected answer is what the summary exists to say");
+        assert_eq!(shared.unanswered, 77,
+            "a decision the backend never answered is the other thing the summary exists to say");
 
         // And a clone keeps them all — the hand-written `Clone` that dropped
         // fields silently is how one went missing (#489).
         let copy = usage.clone();
         assert_eq!(copy.rejected, usage.rejected);
+        assert_eq!(copy.unanswered, usage.unanswered);
         assert_eq!(copy.calls, usage.calls);
     }
 

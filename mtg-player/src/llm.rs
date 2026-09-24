@@ -34,6 +34,17 @@ pub struct LlmModelUsage {
     /// call — without this, a seat that never once chose anything reported
     /// the same "70 calls" as a healthy one (issue #211).
     pub rejected: u64,
+    /// Decisions where the backend never answered at all — the subprocess
+    /// died, or the API gave up after its retries — so the harness had
+    /// nothing to reject and substituted a fallback anyway.
+    ///
+    /// Separate from `rejected` because the two call for opposite responses
+    /// from the operator: "your CLI is logged out / you are rate limited"
+    /// against "the model is playing badly". Folded together, they were one
+    /// number and the per-decision line quoted `{}` as the seat's answer —
+    /// an answer the model never gave (issue #587). Not part of `calls`
+    /// either: no call succeeded.
+    pub unanswered: u64,
 }
 
 static LLM_MODEL_USAGE: std::sync::LazyLock<Mutex<HashMap<String, LlmModelUsage>>> =
@@ -220,12 +231,34 @@ pub fn rejected_note(rejected: u64) -> String {
     }
 }
 
+/// The suffix for decisions the backend never answered.
+///
+/// Printed beside `rejected_note` rather than added into it: a dead CLI and
+/// a bad answer are different events with different remedies (#587).
+#[must_use]
+pub fn unanswered_note(unanswered: u64) -> String {
+    if unanswered == 0 {
+        String::new()
+    } else {
+        format!(", {unanswered} decision{} the backend never answered → fallback",
+            if unanswered == 1 { "" } else { "s" })
+    }
+}
+
 /// A call whose answer was unusable. See `LlmModelUsage::rejected`.
 fn record_llm_rejected(model: &str, seat: &str) {
     let mut map = LLM_MODEL_USAGE.lock().unwrap();
     map.entry(model.to_string()).or_default().rejected += 1;
     drop(map);
     *REJECTED_BY_SEAT.lock().unwrap().entry(seat.to_string()).or_default() += 1;
+}
+
+/// A decision the backend never answered. See `LlmModelUsage::unanswered`.
+fn record_llm_unanswered(model: &str, seat: &str) {
+    let mut map = LLM_MODEL_USAGE.lock().unwrap();
+    map.entry(model.to_string()).or_default().unanswered += 1;
+    drop(map);
+    *UNANSWERED_BY_SEAT.lock().unwrap().entry(seat.to_string()).or_default() += 1;
 }
 
 /// Rejected answers by seat as well as by model.
@@ -237,6 +270,21 @@ fn record_llm_rejected(model: &str, seat: &str) {
 /// of that (issue #489).
 static REJECTED_BY_SEAT: std::sync::LazyLock<Mutex<HashMap<String, u64>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// Decisions each seat's backend never answered, by seat.
+static UNANSWERED_BY_SEAT: std::sync::LazyLock<Mutex<HashMap<String, u64>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// How many decisions each seat's backend never answered at all.
+#[must_use]
+pub fn get_unanswered_by_seat() -> HashMap<String, u64> {
+    UNANSWERED_BY_SEAT
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(seat, n)| (seat.clone(), *n))
+        .collect()
+}
 
 /// How many answers each seat gave that the harness could not use.
 #[must_use]
@@ -872,6 +920,14 @@ trait LlmBackend {
     fn resume(&mut self, recap: &str);
     /// Set thinking level (Gemini only, no-op for others).
     fn set_thinking_level(&mut self, _level: &str) {}
+    /// Why the last call produced no answer at all, if it produced none.
+    ///
+    /// A backend that gives up hands the caller an empty value, which is
+    /// indistinguishable from a model that answered with one — so the log
+    /// said the seat sent `{}` and the summary counted it beside genuine
+    /// bad answers (issue #587). Taken, like `take_thinking`, so it belongs
+    /// to exactly one decision.
+    fn take_call_failure(&mut self) -> Option<String> { None }
     /// Get the conversation length (for tests).
     fn conversation_len(&self) -> usize { 0 }
     /// Get the system prompt (for tests).
@@ -990,6 +1046,9 @@ struct AnthropicBackend {
     system_prompt: String,
     conversation: Vec<serde_json::Value>,
     last_thinking: Option<String>,
+    /// Set when the retries run out, so the caller can tell "no answer"
+    /// from an answer it could not use (#587).
+    last_call_failure: Option<String>,
 }
 
 impl AnthropicBackend {
@@ -1003,6 +1062,7 @@ impl AnthropicBackend {
             system_prompt: format!("{ANTHROPIC_RESPONSE_FORMAT}{GAME_RULES}"),
             conversation: Vec::new(),
             last_thinking: None,
+            last_call_failure: None,
         }
     }
 
@@ -1112,6 +1172,7 @@ impl AnthropicBackend {
         let msg = format!("Anthropic game API exhausted all {MAX_ATTEMPTS} retries");
         crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
         eprintln!("{msg}");
+        self.last_call_failure = Some(msg);
         "0".to_string()
     }
 
@@ -1207,6 +1268,10 @@ impl AnthropicBackend {
 }
 
 impl LlmBackend for AnthropicBackend {
+    fn take_call_failure(&mut self) -> Option<String> {
+        self.last_call_failure.take()
+    }
+
     fn send(&mut self, message: &str) -> String {
         self.conversation.push(serde_json::json!({"role": "user", "content": message}));
         let result = self.call_with_messages(&self.conversation.clone());
@@ -1267,6 +1332,8 @@ struct GeminiBackend {
     system_prompt: String,
     interaction_id: Option<String>,
     last_thinking: Option<String>,
+    /// See `AnthropicBackend::last_call_failure` (#587).
+    last_call_failure: Option<String>,
 }
 
 impl GeminiBackend {
@@ -1281,6 +1348,7 @@ impl GeminiBackend {
             system_prompt: format!("{THOUGHTS_IN_JSON_FORMAT}{GAME_RULES}"),
             interaction_id: None,
             last_thinking: None,
+            last_call_failure: None,
         }
     }
 
@@ -1411,6 +1479,7 @@ impl GeminiBackend {
         let msg = format!("Gemini API exhausted all {MAX_ATTEMPTS} retries");
         eprintln!("WARN: {msg}");
         crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
+        self.last_call_failure = Some(msg);
         serde_json::json!({})
     }
 
@@ -1431,6 +1500,10 @@ impl GeminiBackend {
 }
 
 impl LlmBackend for GeminiBackend {
+    fn take_call_failure(&mut self) -> Option<String> {
+        self.last_call_failure.take()
+    }
+
     fn send(&mut self, message: &str) -> String {
         self.call_interactions(message)
     }
@@ -1517,6 +1590,9 @@ pub struct LlmPlayer {
     /// The conversation id already written down, so a `SESSION` record is
     /// one per conversation rather than one per call.
     session_logged: Option<String>,
+    /// Why this decision's backend call produced no answer, when it
+    /// produced none. Refreshed on every structured request (#587).
+    last_call_failure: Option<String>,
 }
 
 impl LlmPlayer {
@@ -1531,6 +1607,7 @@ impl LlmPlayer {
             provider: Provider::Anthropic,
             guide: None,
             session_logged: None,
+            last_call_failure: None,
         }
     }
 
@@ -1550,6 +1627,7 @@ impl LlmPlayer {
             provider: Provider::Anthropic,
             guide: None,
             session_logged: None,
+            last_call_failure: None,
         }
     }
 
@@ -1564,6 +1642,7 @@ impl LlmPlayer {
             provider: Provider::Gemini,
             guide: None,
             session_logged: None,
+            last_call_failure: None,
         }
     }
 
@@ -1582,6 +1661,7 @@ impl LlmPlayer {
             provider: Provider::ClaudeCode,
             guide: None,
             session_logged: None,
+            last_call_failure: None,
         }
     }
 
@@ -1598,6 +1678,7 @@ impl LlmPlayer {
             provider: Provider::ClaudeCode,
             guide: None,
             session_logged: None,
+            last_call_failure: None,
         }
     }
 
@@ -1872,6 +1953,16 @@ impl LlmPlayer {
     /// knows happened.
     #[track_caller]
     fn log_rejected(&self, content: &str) {
+        // A backend that never answered is not a seat that answered badly.
+        // The fallback is the same; what the operator should do about it is
+        // the opposite — fix the CLI, or fix the model — and the log said
+        // the seat sent `{}`, quoting an answer it never gave (#587).
+        if let Some(why) = &self.last_call_failure {
+            self.log_at(crate::game_log::LogLevel::Error, "NO_ANSWER",
+                &format!("{why}; {content}"));
+            record_llm_unanswered(self.backend.model_name(), self.name());
+            return;
+        }
         // `LogLevel::Error` is documented as being for exactly this —
         // "malformed LLM responses, API retries ..., fallback activations" —
         // and this was written at Info, so `grep ERROR` over a game log
@@ -2916,6 +3007,9 @@ impl LlmPlayer {
                     .cloned().collect::<Vec<_>>()));
         self.log("PROMPT", user_message);
         let result = self.backend.send_with_schema(user_message, schema);
+        // Whether this decision got an answer at all, before anything
+        // downstream reads the value it was handed (#587).
+        self.last_call_failure = self.backend.take_call_failure();
         self.log_session();
         self.log_thinking();
         // Raw backend JSON is verbose and duplicates the THOUGHT line for
@@ -5060,6 +5154,7 @@ mod tests {
             provider: Provider::Anthropic,
             guide: None,
             session_logged: None,
+            last_call_failure: None,
         };
         (player, prompts)
     }
@@ -5393,6 +5488,85 @@ mod tests {
             panic!("a cast row casts: {chosen:?}")
         };
         assert_eq!(alternative_cost, Some(dear), "index 2 is the second cost");
+    }
+
+    /// A backend that answers `{}` — either because the model sent one, or
+    /// because it gave up and never called at all.
+    struct MuteBackend {
+        model: &'static str,
+        failure: Option<String>,
+    }
+
+    impl LlmBackend for MuteBackend {
+        fn send(&mut self, message: &str) -> String {
+            self.send_with_schema(message, &serde_json::Value::Null).to_string()
+        }
+        fn send_with_schema(&mut self, _m: &str, _s: &serde_json::Value) -> serde_json::Value {
+            serde_json::json!({})
+        }
+        fn take_call_failure(&mut self) -> Option<String> { self.failure.clone() }
+        fn init(&mut self, _deck_info: &str) {}
+        fn resume(&mut self, _recap: &str) {}
+        fn system_prompt(&self) -> &str { "" }
+        fn model_name(&self) -> &str { self.model }
+    }
+
+    fn mute_player(name: &str, model: &'static str, failure: Option<&str>) -> LlmPlayer {
+        let mut player = LlmPlayer::for_prompt_tests(name);
+        player.backend = Box::new(MuteBackend {
+            model,
+            failure: failure.map(std::string::ToString::to_string),
+        });
+        player
+    }
+
+    /// Issue #587: when a seat's `claude -p` died, the backend returned
+    /// nothing, the caller substituted the literal `{}`, and every surface
+    /// downstream described the event as a model that had sent an empty
+    /// object — `MALFORMED … ({}), defaulting to keep`, and `39 answers
+    /// rejected` in the summary. Those are the words a seat gets for
+    /// hallucinating an out-of-range index. The two call for opposite
+    /// responses from the operator — fix the CLI, or fix the model — and in
+    /// a mixed run they were added into one number.
+    ///
+    /// This is the half of #399 its close left behind: #489 made the
+    /// substitution *counted*; nothing made it *attributable*.
+    #[test]
+    fn a_backend_that_never_answered_is_not_a_seat_that_answered_badly() {
+        let view = empty_view();
+        let legal = copies_priority_offer();
+
+        // One seat whose subprocess died, one whose model really did send
+        // `{}`. Distinct names and models, because the tallies are global.
+        let mut dead = mute_player("Seat-587-dead", "model-587-dead",
+            Some("claude -p exhausted all 3 attempts"));
+        let mut bad = mute_player("Seat-587-bad", "model-587-bad", None);
+        let _ = dead.choose_action(&view, &legal);
+        let _ = bad.choose_action(&view, &legal);
+
+        let unanswered = get_unanswered_by_seat();
+        let rejected = get_rejected_by_seat();
+        assert_eq!(unanswered.get("Seat-587-dead"), Some(&1),
+            "a decision the backend never answered is counted as one: {unanswered:?}");
+        assert_eq!(rejected.get("Seat-587-dead"), None,
+            "…and not as an answer the seat gave: {rejected:?}");
+        assert_eq!(rejected.get("Seat-587-bad"), Some(&1),
+            "a model that really sent {{}} is still a rejected answer: {rejected:?}");
+        assert_eq!(unanswered.get("Seat-587-bad"), None,
+            "…and is not reported as a dead backend: {unanswered:?}");
+
+        // The per-model counters split the same way, which is what both
+        // runners' summaries read.
+        let usage = get_llm_model_usage();
+        assert_eq!(usage.get("model-587-dead").map(|u| u.unanswered), Some(1));
+        assert_eq!(usage.get("model-587-dead").map(|u| u.rejected), Some(0));
+        assert_eq!(usage.get("model-587-bad").map(|u| u.rejected), Some(1));
+        assert_eq!(usage.get("model-587-bad").map(|u| u.unanswered), Some(0));
+
+        // And the sentences the summaries print say which is which.
+        assert_eq!(unanswered_note(0), "");
+        assert_eq!(unanswered_note(1), ", 1 decision the backend never answered → fallback");
+        assert_eq!(unanswered_note(39), ", 39 decisions the backend never answered → fallback");
     }
 
     /// Issue #466: the system prompt's card reference was the union of both

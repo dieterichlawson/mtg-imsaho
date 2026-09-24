@@ -1030,10 +1030,14 @@ use --save if you need a resumable file.");
             // will see it (issue #211). The sentence lives in `mtg_player`
             // because the draft runner prints it too (issue #489).
             let rejected = mtg_player::llm::rejected_note(stats.rejected);
+            // And a decision the backend never answered is not a call at
+            // all. Folded into the rejection count it read as a model
+            // playing badly rather than a dead CLI (issue #587).
+            let unanswered = mtg_player::llm::unanswered_note(stats.unanswered);
             writeln!(usage_lines,
-                "{}: {} calls, {} input, {} output, {} cache_read, {} cache_create{}",
+                "{}: {} calls, {} input, {} output, {} cache_read, {} cache_create{}{}",
                 model, stats.calls, stats.input, stats.output,
-                stats.cache_read, stats.cache_create, rejected
+                stats.cache_read, stats.cache_create, rejected, unanswered
             ).unwrap();
         }
         println!("{}", usage_lines.trim());
