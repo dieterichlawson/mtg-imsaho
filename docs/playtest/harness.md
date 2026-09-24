@@ -654,3 +654,30 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   for one object. Walk the remaining collapse keys (`seen_cast_labels`, and the
   `AbilityCopy` key, which groups copies on a label that does not name the
   granting card) the same way
+- H19 [proposed 2026-09-24, from #589] every collapse key the seat owns,
+  against the engine's. #589 is one key too coarse: the seat deduped
+  activations on `(object_id, ability_index)` where the engine's offer is
+  `(object_id, source_card_id, ability_index)`, and an Aura-granted ability at
+  a colliding index stopped existing for the seat while both of the engine's
+  own lists still agreed — so `--check-invariants` passed, the log said
+  nothing, and 718 of 718 menus were short a row. That is a *shape*, not one
+  bug: `choose_action` collapses four times and `invariants/legal.rs`'s
+  `distinct_offers` keys the same offers for the engine. Method: put the two
+  key expressions side by side, field for field, and for each seat-side key
+  that names fewer fields, find the board that makes two engine offers share
+  it. Three to start with. **`seen_spell_objects`** is
+  `(object_id, alternative_cost.is_some())` against the engine's
+  `(object_id, format!("{alternative_cost:?}"))`, so one object offering two
+  *different* alternative costs collapses — no card in this pool does, so
+  either find one or record that it is unreachable and say why.
+  **`seen_cast_labels`** drops any second row whose rendered label matches an
+  earlier one, which makes the *label* the key: ask what two castable entries
+  can differ in that the label does not print (the tap plan, the zone, the
+  additional cost and the X range are all in it — what is not?).
+  **`ActionRow::Copies`** groups on a label that does not name the granting
+  card, so once #589 is fixed the restored granted row must not join a group
+  spanning copies that do not all wear the Aura — the Ulvenwald Mystics board
+  in #589 (three copies, one enchanted, one range `3-5`) is the regression
+  case. Cheapest instrument: the board section of the prompt prints an
+  attachment's granted rules text verbatim, so "named in the board, absent
+  from the rows" is one greppable predicate over a whole harvested game
