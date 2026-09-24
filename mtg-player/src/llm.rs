@@ -3856,8 +3856,12 @@ impl Player for LlmPlayer {
         // castable spell + one per activatable ability.
         let mut seeds: Vec<(DisplayEntry, Seed)> = Vec::new();
         // Keyed by (object, alternative cost) — one row per way to cast
-        // (issue #128), matching the CLI.
-        let mut seen_spell_objects: Vec<(mtg_engine::ids::ObjectId, bool)> = Vec::new();
+        // (issue #128), matching the CLI. Keyed by what the cost *is*, not
+        // by whether there is one: two different alternative costs on one
+        // object are two ways to cast it, and the engine's own key
+        // (`invariants/legal.rs`, `collapsed_views`) says so. Same shape as
+        // the activation key below, found in the same reading (#589).
+        let mut seen_spell_objects: Vec<(mtg_engine::ids::ObjectId, String)> = Vec::new();
         // The triple the engine keys an activation offer on. Keying on the
         // pair instead dropped every Aura- or Equipment-granted ability
         // whose index collided with one the host already had natively —
@@ -3871,11 +3875,11 @@ impl Player for LlmPlayer {
         for (i, action) in legal_actions.iter().enumerate() {
             match action {
                 Action::CastSpell { object_id, alternative_cost, .. } => {
-                    let key = (*object_id, alternative_cost.is_some());
+                    let key = (*object_id, format!("{alternative_cost:?}"));
                     if !seen_spell_objects.contains(&key) {
                         if let Some(cs_idx) = legal.castable_spells.iter()
                             .position(|cs| cs.object_id == *object_id
-                                && cs.alternative_cost.is_some() == alternative_cost.is_some())
+                                && format!("{:?}", cs.alternative_cost) == key.1)
                         {
                             seen_spell_objects.push(key);
                             let cs = &legal.castable_spells[cs_idx];
@@ -5322,6 +5326,73 @@ mod tests {
                 object_id: ObjectId(2), source_card_id: Some(CardId(77)), .. }),
             "index 4 is the granted ability on #2: {chosen:?}"
         );
+    }
+
+    /// The cast arm of #589. The seat keyed a cast on
+    /// `(object_id, alternative_cost.is_some())` while the engine keys it
+    /// on `(object_id, alternative_cost)` — so two *different* alternative
+    /// costs on one object collapsed into one row, and the seat could only
+    /// ever cast it the first way the engine happened to list.
+    ///
+    /// No card in the current pool offers two, which is why nothing caught
+    /// it and why this drives the collapse directly rather than a game.
+    #[test]
+    fn two_different_alternative_costs_on_one_spell_are_two_rows() {
+        use mtg_engine::actions::{CastTargetSpec, CastableSpell};
+        use mtg_engine::types::{Color, ManaCost, ManaSymbol};
+
+        let cheap = ManaCost::new(vec![ManaSymbol::Colored(Color::Green)]);
+        let dear = ManaCost::new(vec![ManaSymbol::Generic(4), ManaSymbol::Colored(Color::Blue)]);
+        let cast = |alt: &ManaCost| Action::CastSpell {
+            object_id: ObjectId(8),
+            targets: Vec::new(),
+            tap_plan: Vec::new(),
+            alternative_cost: Some(alt.clone()),
+            exile_count: None,
+            exile_ids: Vec::new(),
+            sacrifice: None,
+        };
+        let castable = |alt: &ManaCost| CastableSpell {
+            object_id: ObjectId(8),
+            name: "Two-Headed Bargain".to_string(),
+            is_flashback: false,
+            target_spec: CastTargetSpec::NoTargets,
+            tap_plan: Vec::new(),
+            exile_x_from_gy_max: None,
+            sacrifice_options: Vec::new(),
+            additional_cost_label: None,
+            alternative_cost: Some(alt.clone()),
+            from_graveyard: false,
+        };
+        let legal = mtg_engine::engine::LegalActions {
+            actions: vec![Action::PassPriority, cast(&cheap), cast(&dear), Action::Concede],
+            combat_prompt: None,
+            castable_spells: vec![castable(&cheap), castable(&dear)],
+            activatable_abilities: Vec::new(),
+            context: Some("MAIN PHASE 1".to_string()),
+            resolution_prompt: None,
+            set_prompt: None,
+        };
+
+        let view = empty_view();
+        let (mut player, prompts) = scripted_player(vec![serde_json::json!({"action": 2})]);
+        let chosen = player.choose_action(&view, &legal);
+
+        let asked = prompts.borrow();
+        let list = &asked[0][asked[0].find("Available actions:\n").expect("the list")..];
+        assert_eq!(
+            list,
+            "Available actions:\n\
+             0: Pass\n\
+             1: Cast Two-Headed Bargain (alternative cost {G})\n\
+             2: Cast Two-Headed Bargain (alternative cost {4}{U})\n\
+             3: Concede\n",
+            "each alternative cost is its own way to cast the spell:\n{}", asked[0]
+        );
+        let Action::CastSpell { alternative_cost, .. } = chosen else {
+            panic!("a cast row casts: {chosen:?}")
+        };
+        assert_eq!(alternative_cost, Some(dear), "index 2 is the second cost");
     }
 
     /// Issue #466: the system prompt's card reference was the union of both
