@@ -457,6 +457,29 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   (`engine/legal/awaiting.rs:298-307`), so its forfeit and its action cap both
   depend on a flat action that is not there — `mtg-runner` returns
   `AbandonGame` unconditionally and does not
+  — **played 2026-09-24: negative. Every floor this doubted is there, and the
+  cycle it predicts cannot be built from this pool.** The mulligan floor fires
+  exactly where it says: a stub answering `mull: true` at every prompt (rg vs
+  wb, seed 3) got **7** mulligan prompts and then
+  `AUTO-KEEP [P1] seven mulligans taken`, `p0 keeps (7 mulligans)`, and an
+  ordinary game to turn 41. It is not a floor in one seat either — `random.rs`
+  caps itself at `MAX_MULLIGANS` = 3 (#63/#456) and the other two answering
+  surfaces are people. The forfeit worry is closed by construction rather than
+  by policy: `LegalActions::permits` returns `true` for `AbandonGame` **and**
+  `Concede` unconditionally, in the first two arms of the match before anything
+  prompt-specific (`engine.rs:177-180`), so #559's shape cannot recur on either
+  loop; and both loops increment `action_count` once per decision callback
+  (`mtg-runner/src/main.rs:737`, `mtg-draft-runner/src/main.rs:1672`), which
+  makes the 50,000-action ceiling a live backstop in exactly the state-mutating
+  case the fingerprint is blind to. As for the period-≥2 livelock: it needs a
+  repeatable state change that costs nothing, and sweeping every
+  `ActivatedAbilityDef` in `mtg-engine/src/cards/` for one that is
+  `ManaCost::free()`, `requires_tap: false`, `SacrificeCost::None`,
+  `counter_cost: None` and not `once_per_turn` returns **nothing**. Every
+  toggle costs mana, mana needs an untap, an untap costs a turn, and a turn
+  costs a card — decking is the bound. What would revive this idea is a new
+  card, so the sweep above is the thing to re-run rather than the game: it is
+  one grep and it is the whole question
 - H16 [proposed 2026-09-14, from H13's variant sweep] the seventeenth prompt.
   `ChooseDamageEffect` (CR 616.1) is the one `ResolutionChoiceKind` of seventeen
   that 6,150 harvested structured requests over twenty-two games and a draft
