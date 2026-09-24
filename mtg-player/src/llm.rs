@@ -3725,9 +3725,16 @@ impl Player for LlmPlayer {
         enum Seed {
             One(String),
             /// An activated ability of a permanent, keyed by everything but
-            /// which copy: the label without the `(#id)`, so copies of one
-            /// card offering the same ability the same way share a row.
-            AbilityCopy { key: String, label: String, id: ObjectId },
+            /// which copy: the granting card and the label without the
+            /// `(#id)`, so copies of one card offering the same ability the
+            /// same way share a row.
+            ///
+            /// The key carries `source_card_id` and the row does not. An
+            /// Aura can grant an ability that reads and costs exactly like
+            /// the host's own, and grouping those together would put one
+            /// copy in the range twice and claim the unenchanted copies
+            /// offer it too (issue #589).
+            AbilityCopy { key: (Option<mtg_engine::ids::CardId>, String), label: String, id: ObjectId },
         }
 
         let legal_actions = &legal.actions;
@@ -3851,7 +3858,14 @@ impl Player for LlmPlayer {
         // Keyed by (object, alternative cost) — one row per way to cast
         // (issue #128), matching the CLI.
         let mut seen_spell_objects: Vec<(mtg_engine::ids::ObjectId, bool)> = Vec::new();
-        let mut seen_ability_keys: Vec<(mtg_engine::ids::ObjectId, usize)> = Vec::new();
+        // The triple the engine keys an activation offer on. Keying on the
+        // pair instead dropped every Aura- or Equipment-granted ability
+        // whose index collided with one the host already had natively —
+        // always the granted one, since natives are collected first — and
+        // did it silently: the two halves of `LegalActions` agree, so no
+        // invariant could see it (issue #589).
+        let mut seen_ability_keys: Vec<(mtg_engine::ids::ObjectId, Option<mtg_engine::ids::CardId>, usize)> =
+            Vec::new();
 
         let mut seen_cast_labels: Vec<String> = Vec::new();
         for (i, action) in legal_actions.iter().enumerate() {
@@ -3903,11 +3917,13 @@ impl Player for LlmPlayer {
                         }
                     }
                 }
-                Action::ActivateAbility { object_id, ability_index, .. } => {
-                    let key = (*object_id, *ability_index);
+                Action::ActivateAbility { object_id, ability_index, source_card_id, .. } => {
+                    let key = (*object_id, *source_card_id, *ability_index);
                     if !seen_ability_keys.contains(&key) {
                         if let Some(ab_idx) = legal.activatable_abilities.iter()
-                            .position(|ab| ab.object_id == *object_id && ab.ability_index == *ability_index)
+                            .position(|ab| ab.object_id == *object_id
+                                && ab.source_card_id == *source_card_id
+                                && ab.ability_index == *ability_index)
                         {
                             seen_ability_keys.push(key);
                             let ab = &legal.activatable_abilities[ab_idx];
@@ -3922,7 +3938,7 @@ impl Player for LlmPlayer {
                             let id_suffix = format!(" (#{})", ab.object_id.0);
                             let card = ab.name.strip_suffix(id_suffix.as_str()).unwrap_or(&ab.name);
                             seeds.push((DisplayEntry::Ability(ab_idx), Seed::AbilityCopy {
-                                key: format!("Activate {card}{tail}"),
+                                key: (ab.source_card_id, format!("Activate {card}{tail}")),
                                 label: format!("Activate {}{tail}", ab.name),
                                 id: ab.object_id,
                             }));
@@ -3942,7 +3958,7 @@ impl Player for LlmPlayer {
         // option it was shown as.
         let mut rows: Vec<ActionRow> = Vec::new();
         let mut display_entries: Vec<DisplayEntry> = Vec::new();
-        let mut grouped: Vec<&str> = Vec::new();
+        let mut grouped: Vec<&(Option<mtg_engine::ids::CardId>, String)> = Vec::new();
         for (entry, seed) in &seeds {
             match seed {
                 Seed::One(label) => {
@@ -3950,7 +3966,7 @@ impl Player for LlmPlayer {
                     display_entries.push(*entry);
                 }
                 Seed::AbilityCopy { key, label, .. } => {
-                    if grouped.contains(&key.as_str()) { continue; }
+                    if grouped.contains(&key) { continue; }
                     let members: Vec<(DisplayEntry, ObjectId)> = seeds.iter()
                         .filter_map(|(e, s)| match s {
                             Seed::AbilityCopy { key: k, id, .. } if k == key => Some((*e, *id)),
@@ -3963,7 +3979,7 @@ impl Player for LlmPlayer {
                     } else {
                         grouped.push(key);
                         rows.push(ActionRow::Copies {
-                            label: key.clone(),
+                            label: key.1.clone(),
                             ids: members.iter().map(|(_, id)| *id).collect(),
                         });
                         display_entries.extend(members.iter().map(|(e, _)| *e));
@@ -5170,6 +5186,142 @@ mod tests {
         assert!(matches!(chosen, Action::ActivateAbility { object_id: ObjectId(50), .. }), "{chosen:?}");
         let (mut player, _) = scripted_player(vec![serde_json::json!({"action": 5}), serde_json::json!({"confirm": true})]);
         assert!(matches!(player.choose_action(&view, &legal), Action::Concede));
+    }
+
+    /// A priority offer over `copies` copies of one creature with a native
+    /// index-0 ability, where the copies in `enchanted` also carry an
+    /// Aura granting an index-0 ability described by `granted`.
+    ///
+    /// The engine collects native abilities before attached ones, which is
+    /// why it is always the granted ability that a coarser key drops.
+    fn granted_ability_offer(copies: &[u64], enchanted: &[u64], granted: &str)
+        -> mtg_engine::engine::LegalActions
+    {
+        use mtg_engine::actions::{ActivatableAbility, ActivatableAbilityOption};
+        const AURA: CardId = CardId(77);
+        let native = "{G}: Regenerate";
+        let activate = |id: u64, source: Option<CardId>| Action::ActivateAbility {
+            object_id: ObjectId(id),
+            ability_index: 0,
+            targets: Vec::new(),
+            tap_plan: Vec::new(),
+            sacrifice: None,
+            x_value: None,
+            source_card_id: source,
+        };
+        let ability = |id: u64, source: Option<CardId>, desc: &str| ActivatableAbility {
+            object_id: ObjectId(id),
+            ability_index: 0,
+            source_card_id: source,
+            name: format!("Ulvenwald Mystics (#{id})"),
+            description: desc.to_string(),
+            target_options: Vec::new(),
+            tap_plan: Vec::new(),
+            option_combos: vec![ActivatableAbilityOption { targets: Vec::new(), sacrifice: None }],
+        };
+        let mut actions = vec![Action::PassPriority];
+        let mut abilities = Vec::new();
+        for &id in copies {
+            actions.push(activate(id, None));
+            abilities.push(ability(id, None, native));
+        }
+        for &id in enchanted {
+            actions.push(activate(id, Some(AURA)));
+            abilities.push(ability(id, Some(AURA), granted));
+        }
+        actions.push(Action::Concede);
+        mtg_engine::engine::LegalActions {
+            actions,
+            combat_prompt: None,
+            castable_spells: Vec::new(),
+            activatable_abilities: abilities,
+            context: Some("MAIN PHASE 1".to_string()),
+            resolution_prompt: None,
+            set_prompt: None,
+        }
+    }
+
+    /// Issue #589: the seat collapsed `ActivateAbility` on
+    /// `(object_id, ability_index)` while the engine keys the same offer on
+    /// `(object_id, source_card_id, ability_index)` — the field whose whole
+    /// job is to tell an Aura-granted ability from a native one. An Aura
+    /// granting an ability at an index the host already uses therefore lost
+    /// its row, always the granted one, because natives are collected first.
+    ///
+    /// Silently: `legal.actions` and `legal.activatable_abilities` agree, so
+    /// the invariant checker passes; the CLI renders `legal.actions` and so
+    /// cannot lose a row; the random seat picks from the flat list. Only the
+    /// LLM seat, and only by never being offered the option. Measured at
+    /// 718 of 718 menus in one game — and with Skeletal Grimace granting at
+    /// index 0, that is where almost every creature's first ability lives.
+    ///
+    /// The two rows are not redundant: `{G}: Regenerate` and `{B}:
+    /// Regenerate` are the same effect for different mana, and the seat can
+    /// only ever pay one of them.
+    #[test]
+    fn an_aura_granted_ability_keeps_its_row_when_its_index_collides() {
+        let view = empty_view();
+        let legal = granted_ability_offer(&[2, 4, 6], &[2], "{B}: Regenerate");
+
+        let (mut player, prompts) = scripted_player(vec![serde_json::json!({"action": 4})]);
+        let chosen = player.choose_action(&view, &legal);
+
+        let asked = prompts.borrow();
+        let list = &asked[0][asked[0].find("Available actions:\n").expect("the list")..];
+        assert_eq!(
+            list,
+            "Available actions:\n\
+             0: Pass\n\
+             1-3: Activate Ulvenwald Mystics ({G}: Regenerate) — one per copy: 1=#2, 2=#4, 3=#6\n\
+             4: Activate Ulvenwald Mystics (#2) ({B}: Regenerate)\n\
+             5: Concede\n",
+            "the Aura-granted ability is a row of its own, on the one copy that has it:\n{}",
+            asked[0]
+        );
+
+        // And the index resolves to the granted activation, not the native
+        // one it collided with.
+        assert!(
+            matches!(chosen, Action::ActivateAbility {
+                object_id: ObjectId(2), ability_index: 0, source_card_id: Some(CardId(77)), .. }),
+            "index 4 is the granted ability on #2: {chosen:?}"
+        );
+    }
+
+    /// The other half of #589: restoring the row is not enough if the row
+    /// then joins the wrong group. The copy grouping keys on the label with
+    /// the `(#id)` stripped, so an Aura granting an ability that reads and
+    /// costs exactly like the host's native one would collapse into the
+    /// native group — listing one copy twice, and claiming the copies with
+    /// no Aura offer it too.
+    #[test]
+    fn a_granted_ability_that_reads_like_the_native_one_is_its_own_group() {
+        let view = empty_view();
+        // #2 and #4 wear the Aura; #6 does not. The grant is word-for-word
+        // the native ability.
+        let legal = granted_ability_offer(&[2, 4, 6], &[2, 4], "{G}: Regenerate");
+
+        let (mut player, prompts) = scripted_player(vec![serde_json::json!({"action": 4})]);
+        let chosen = player.choose_action(&view, &legal);
+
+        let asked = prompts.borrow();
+        let list = &asked[0][asked[0].find("Available actions:\n").expect("the list")..];
+        assert_eq!(
+            list,
+            "Available actions:\n\
+             0: Pass\n\
+             1-3: Activate Ulvenwald Mystics ({G}: Regenerate) — one per copy: 1=#2, 2=#4, 3=#6\n\
+             4-5: Activate Ulvenwald Mystics ({G}: Regenerate) — one per copy: 4=#2, 5=#4\n\
+             6: Concede\n",
+            "the granted ability groups over the enchanted copies only, and \
+             #6 — which has no Aura — is not in that group:\n{}",
+            asked[0]
+        );
+        assert!(
+            matches!(chosen, Action::ActivateAbility {
+                object_id: ObjectId(2), source_card_id: Some(CardId(77)), .. }),
+            "index 4 is the granted ability on #2: {chosen:?}"
+        );
     }
 
     /// Issue #466: the system prompt's card reference was the union of both
