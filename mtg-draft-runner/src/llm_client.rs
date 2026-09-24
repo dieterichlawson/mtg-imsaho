@@ -34,6 +34,21 @@ pub struct ModelUsage {
 static MODEL_USAGE: std::sync::LazyLock<Mutex<HashMap<String, ModelUsage>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
+/// Picks this run replayed out of a `--resume` snapshot instead of paying
+/// for them.
+///
+/// `MODEL_USAGE` is process-local, so a resumed run's counters cover that
+/// process only. The summary read identically whether the run had drafted
+/// all 84 picks or 34 of them, so a draft split across resumes could not be
+/// costed: the number you had did not say it was a fragment, and the runs
+/// that died published no number to add to it (issue #578).
+static REPLAYED_PICKS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Tell the summary how many picks came out of a snapshot rather than a
+/// model call. Called once, by `main`, when a resume replays one.
+pub fn note_replayed_picks(picks: usize) {
+    REPLAYED_PICKS.store(picks as u64, std::sync::atomic::Ordering::Relaxed);
+}
 
 fn record_model_usage(model: &str, input: u64, output: u64, cache_read: u64, cache_create: u64) {
     let mut map = MODEL_USAGE.lock().unwrap();
@@ -209,6 +224,16 @@ pub fn print_usage_summary(outcome: RunOutcome) {
     }
     writeln!(summary, "  ---\n  Total: {} calls, {total_cost}", draft_calls + game_calls).unwrap();
 
+    // These counters are process-local, so a resumed run's totals are a
+    // fragment of the draft's real cost. Say so next to them: the number
+    // the operator is reading covers this process, and the calls the run
+    // that died spent on the replayed picks are in no total here (#578).
+    let replayed = REPLAYED_PICKS.load(std::sync::atomic::Ordering::Relaxed);
+    if replayed > 0 {
+        writeln!(summary, "  (this run only: {replayed} pick{} came from a snapshot, and what \
+the earlier run(s) spent making them is counted in no number above)",
+            if replayed == 1 { "" } else { "s" }).unwrap();
+    }
 
     // Whose answers those were. Every `cc` seat shares one model label, so
     // the per-model line above can say that answers were rejected and not

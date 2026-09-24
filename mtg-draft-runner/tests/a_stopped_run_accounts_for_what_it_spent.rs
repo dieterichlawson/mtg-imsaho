@@ -4,10 +4,13 @@
 //! `print_usage_summary` was called once, from the very end of `main`,
 //! after the standings. Every other way a run can end — a seat's fatal, a
 //! worker panic, a config error — skipped it, so a draft split across
-//! resumes could not be costed at all (issue #578).
+//! resumes could not be costed at all (issue #578):
 //!
-//! The runs that died published no number anywhere, on stderr or in the
-//! `--log`, although every `claude -p` call they made was paid for.
+//! * the runs that died published no number anywhere, on stderr or in the
+//!   `--log`, although every `claude -p` call they made was paid for;
+//! * and the run that finished reported `Draft: 36 calls` for a draft of 84
+//!   picks, labelled exactly like a whole run's, because `MODEL_USAGE` is
+//!   process-local and nothing said so.
 #![cfg(unix)]
 
 use std::path::{Path, PathBuf};
@@ -145,6 +148,50 @@ fn a_run_that_dies_reports_the_calls_it_paid_for() {
     assert!(
         text.contains("TOKEN USAGE"),
         "the stopped run's cost is in no TOKEN USAGE record in the log"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_resumed_run_says_its_numbers_are_a_fragment() {
+    if !have_python() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("mtg-draft-578-b-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let bin = counting_stub(&dir);
+    let save = dir.join("save.json");
+
+    // Run one: die partway through pack 1, leaving a snapshot of the rounds
+    // that completed.
+    let (code, _) = run(&dir, &bin, 20, &dir.join("one.log"), &save, false);
+    assert_eq!(code, Some(1), "the first run should stop on the failing seat");
+    let snapshot = std::fs::read_to_string(&save).expect("run one wrote a snapshot");
+    let replayed = snapshot.matches("\"card\":").count();
+    assert!(replayed > 0, "run one saved no picks, so there is nothing to resume");
+
+    // Run two: replay them and then stop as well, so the same summary is
+    // reached by the other path. Its counters cover this process only.
+    std::fs::write(dir.join("counter"), "0").unwrap();
+    let (code, stderr) = run(&dir, &bin, 4, &dir.join("two.log"), &save, true);
+    assert_eq!(code, Some(1), "the second run should stop on the failing seat too:\n{stderr}");
+
+    assert!(
+        stderr.contains("came from a snapshot"),
+        "the resumed run reports a fragment of the draft's cost with nothing \
+         saying it is one — its {replayed} replayed picks are unaccounted for:\n{stderr}"
+    );
+    assert!(
+        stderr.contains(&format!("{replayed} pick")),
+        "the fragment note should say how many picks were replayed ({replayed}):\n{stderr}"
+    );
+    // The fragment is smaller than the draft it is a fragment of.
+    assert!(
+        total_calls(&stderr) < replayed as u64,
+        "run two claims to have paid for more calls than it made:\n{stderr}"
     );
 
     let _ = std::fs::remove_dir_all(&dir);

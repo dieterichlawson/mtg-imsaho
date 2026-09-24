@@ -871,6 +871,9 @@ this draft will be made under {} — this draft is a mixture of the two",
     if !replaying.is_empty() && !args.quiet {
         eprintln!("Replaying {} recorded pick(s) from the snapshot...", replaying.len());
     }
+    // The cost summary counts this process's calls only, so it has to say
+    // which part of the draft it is the cost of (issue #578).
+    llm_client::note_replayed_picks(replaying.len());
     let write_snapshot = |picks: &[PickRecord]| {
         let Some(path) = &args.save else { return };
         let save = DraftSave {
