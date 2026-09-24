@@ -438,6 +438,28 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   Every one of those is a retry loop waiting for a deterministic seat, and the
   fix is usually to narrow the answer rather than to ask again — the engine's own
   `declare_blockers_with_registry` drops the offending pairs and keeps the rest
+  — **partially played 2026-09-24: the loop this named is fixed and the lesson
+  generalised; the measurement is still owed.** All 11
+  `send_message_structured` call sites walked:
+  `choose_blockers_structured` is the **only** loop in `llm.rs` that re-asks one
+  decision, and it is now `MAX_RETRIES = 1`, with a comment spelling out why
+  twenty was pointless — the constraint is joint over several blockers, a
+  per-blocker `enum` cannot express it, so attempt 20's schema was
+  byte-identical to attempt 1's — and it repairs through
+  `partition_under_minimum_blocks` instead of discarding (#496). The second
+  question, which prompts have a client-side validator that can reject a
+  schema-legal answer, has H14's own predicted answer everywhere: the ordering
+  permutation check, the mulligan-not-on-offer guard, `card_indices`,
+  X-funding, the action-index range and `attacker_indices` all **substitute**
+  and log; none re-asks. Worst single-decision budget is therefore
+  2 x `MAX_ATTEMPTS` x `CALL_TIMEOUT` = 6 calls / 30 min, down from 60 / ~5h.
+  **Still owed, and the reason to keep this idea open**: nobody has driven the
+  validator to exhaustion on a real board or measured wall clock per decision.
+  That needs the menace board H11 describes (reachable only through Terror of
+  Kruin Pass, and both decks need a turn in which neither player casts a
+  spell), plus a `sleep` in the `CLAUDE_CODE_BIN` stub to turn the shape into a
+  number. Do that part, and re-walk the call sites for any loop a fix has added
+  since
 - H15 [proposed 2026-09-14, from H11's mulligan arm] the refusals the watchdog
   can never see. `progress_fingerprint` catches a livelock only while the board
   stands still, so a prompt whose unusable answer CHANGES the state is invisible
