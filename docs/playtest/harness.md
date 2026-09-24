@@ -570,3 +570,42 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   permanent with the same index after a copy effect. Compare with the CLI,
   which renders `legal.actions` directly and so cannot lose one. A row the
   seat is never shown is the quietest way to take an option away
+  — **played 2026-09-24: the lookup cannot miss, and the row disappears
+  anyway — one level up from where this idea was looking (#589).** Nothing
+  falls through to the `Display` fallback and no `position()` returns `None`,
+  because `invariants/legal.rs:840` guarantees every activation action has an
+  `activatable_abilities` entry. The defect is that the two lists are keyed
+  differently: the seat's `seen_ability_keys` is `(object_id, ability_index)`
+  and the engine's offer is `(object_id, source_card_id, ability_index)` — the
+  key #533 added, whose whole job is to tell an aura-granted ability from a
+  native one. So an Aura or Equipment granting an ability at an index the host
+  already uses is **two legal actions, two entries and one row**, and since
+  natives are collected before the `attached` loop it is always the *granted*
+  half that vanishes. Lantern Spirit (`{U}: Return to hand`, index 0) under
+  Skeletal Grimace (grants `{B}: Regenerate`, index 0) lost the regenerate row
+  in **718 of 718** menus with `Tap Swamp: Add {B}` on the same screen;
+  Ulvenwald Mystics is the sharp version, `{G}: Regenerate` shown and
+  `{B}: Regenerate` gone in **479 of 479** — the same effect at a cost the seat
+  can no longer choose. 26 pool creatures have a native index-0 ability, Blazing
+  Torch grants at index 1 (Olivia Voldaren, Bloodline Keeper, Mikaeus), and
+  `decks/coverage/bg-coverage.txt` already ships the collision.
+  Three method notes worth keeping. **A harvest tells you what is in the menu
+  and never what is missing from it** — the thing that closes that gap is the
+  board section, which prints an attachment's granted rules text verbatim, so
+  "named in the board, absent from the rows" is one greppable predicate over a
+  whole game. **Replaying the same seed through `--p1 cli` is a free control**:
+  the CLI renders `legal.actions` directly, and driving it to the same turn
+  with a land and `f` each turn took about twenty keypresses. And
+  **`--check-invariants` passing proves nothing here** — every invariant in the
+  repo is engine-internal, both engine lists agree, and nothing compares the
+  engine's key against the seat's.
+  The generalisation, which is the next probe rather than this one: **wherever
+  the seat's collapse key is coarser than the engine's, an option is
+  unreachable and no invariant can see it.** The cast arm one block above is
+  the other instance — the seat keys casts on
+  `(object_id, alternative_cost.is_some())` while `distinct_offers` keys them
+  on `(object_id, format!("{alternative_cost:?}"))` — and it is unexercised
+  only because no card in this pool offers two *different* alternative costs
+  for one object. Walk the remaining collapse keys (`seen_cast_labels`, and the
+  `AbilityCopy` key, which groups copies on a label that does not name the
+  granting card) the same way
