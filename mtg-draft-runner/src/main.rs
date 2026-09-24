@@ -96,6 +96,15 @@ draft and the games.";
 /// A user error: report it and exit without a Rust panic/backtrace.
 fn die(msg: &str) -> ! {
     eprintln!("Error: {msg}");
+    // A run that stopped still spent what it spent. The usage summary was
+    // printed only at the end of the happy path, so a seat's fatal, a
+    // worker panic or a config error published no account of the
+    // `claude -p` calls already paid for, and the resume that finished
+    // reported a fragment labelled like a whole run (issue #578).
+    llm_client::print_usage_summary(llm_client::RunOutcome::Stopped);
+    // The summary's own log record is owed to the file now, for the same
+    // reason the caller flushed before getting here.
+    mtg_player::game_log::flush_here();
     // `process::exit` runs no destructors and raises no signal, so nothing
     // else takes this run's in-flight `claude -p` subprocesses down with
     // it. Every other seat is mid-call when one seat fatals — all seats
@@ -1303,7 +1312,7 @@ substituting {} (the first card). Response: {}",
         .sum();
 
     // Print token usage summary (draft client + game player combined)
-    llm_client::print_usage_summary(total_games);
+    llm_client::print_usage_summary(llm_client::RunOutcome::Finished { total_games });
 
     // A run whose seats never picked must not look like one that did. This
     // is the last thing printed before "Done", next to the standings it

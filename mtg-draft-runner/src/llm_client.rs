@@ -34,6 +34,7 @@ pub struct ModelUsage {
 static MODEL_USAGE: std::sync::LazyLock<Mutex<HashMap<String, ModelUsage>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
+
 fn record_model_usage(model: &str, input: u64, output: u64, cache_read: u64, cache_create: u64) {
     let mut map = MODEL_USAGE.lock().unwrap();
     let entry = map.entry(model.to_string()).or_default();
@@ -105,10 +106,48 @@ fn phase_cost(usage: &HashMap<String, ModelUsage>) -> Cost {
     mtg_player::llm::total_cost(&converted)
 }
 
+/// How a run reached its usage summary.
+///
+/// The summary used to be a statement on the happy path — one call at the
+/// very end of `main`, after the standings — so every other way a run can
+/// end skipped it, and the `claude -p` calls those runs had already paid
+/// for were reported nowhere at all (issue #578).
+#[derive(Clone, Copy)]
+pub enum RunOutcome {
+    /// The tournament finished, having played `total_games` games.
+    Finished { total_games: usize },
+    /// The run stopped early: a seat's fatal, a config error, a panic. What
+    /// it spent up to that point is still owed an account, and there is no
+    /// finished game count to average a metered phase over.
+    Stopped,
+}
+
 /// Print a summary of all token usage and estimated cost, broken down by model and phase.
-pub fn print_usage_summary(total_games: usize) {
+///
+/// Prints once per process: the run that finishes and then hits a fatal on
+/// the way out must not account for itself twice, and two seats racing into
+/// the fatal path must not each print a copy.
+pub fn print_usage_summary(outcome: RunOutcome) {
     let draft_usage = get_model_usage();
     let game_usage = mtg_player::llm::get_llm_model_usage();
+
+    // A run that stopped before it called anything has nothing to account
+    // for, and a bare `Error: unknown flag` should not grow a table of
+    // zeroes. A *finished* run always reports, even an all-zero one: that
+    // the seats never called is itself the result.
+    let spent: u64 = draft_usage.values().map(|u| u.calls).sum::<u64>()
+        + game_usage.values().map(|u| u.calls).sum::<u64>();
+    if matches!(outcome, RunOutcome::Stopped) && spent == 0 {
+        return;
+    }
+    static SUMMARIZED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if SUMMARIZED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    let total_games = match outcome {
+        RunOutcome::Finished { total_games } => total_games,
+        RunOutcome::Stopped => 0,
+    };
 
     // Draft phase cost
     let draft_cost = phase_cost(&draft_usage);
@@ -134,8 +173,14 @@ pub fn print_usage_summary(total_games: usize) {
         entry.rejected += u.rejected;
     }
 
-    // Build summary string for both stderr and log file
-    let mut summary = String::from("=== Token Usage ===\n");
+    // Build summary string for both stderr and log file. A run that
+    // stopped early says so in the heading, because the same table from a
+    // finished run and from a dead one is the thing that cannot be added
+    // up afterwards (#578).
+    let mut summary = String::from(match outcome {
+        RunOutcome::Finished { .. } => "=== Token Usage ===\n",
+        RunOutcome::Stopped => "=== Token Usage (run stopped early) ===\n",
+    });
 
     writeln!(summary, "  Draft:  {draft_calls} calls, {draft_cost}").unwrap();
     // A per-game average only means anything for a metered phase; a
@@ -163,6 +208,7 @@ pub fn print_usage_summary(total_games: usize) {
         ).unwrap();
     }
     writeln!(summary, "  ---\n  Total: {} calls, {total_cost}", draft_calls + game_calls).unwrap();
+
 
     // Whose answers those were. Every `cc` seat shares one model label, so
     // the per-model line above can say that answers were rejected and not
@@ -1048,9 +1094,11 @@ impl GeminiDraftBackend {
                     // Fatal config errors — abort loudly so we don't silently produce garbage.
                     if code == 400 && (text.contains("thinking level") || text.contains("not a supported")) {
                         let msg = format!("Gemini config error: {}", &text[..text.len().min(300)]);
-                        eprintln!("FATAL: {msg}");
                         mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_FATAL", &msg);
-                        std::process::exit(1);
+                        // Through the one fatal exit, so this stop accounts
+                        // for what the run spent and sweeps the live calls
+                        // the same way every other fatal does (#537, #578).
+                        crate::die(&msg);
                     }
                     let msg = format!("Gemini API error {}: {}", code, &text[..text.len().min(200)]);
                     fatal(&msg);
