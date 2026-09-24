@@ -78,8 +78,11 @@ Options:
                          re-run by passing the seed from its log header
   --guide <path>         Draft guide file prepended to every seat's prompt
   --guide-<N> <path>     Draft guide file for seat N alone (0-based)
-  --save <path>          Snapshot the draft here after every pick round, so a
-                         failed model call costs one round and not the run
+  --save <path>          Snapshot the picks here after every pick round, so a
+                         failed model call costs one round and not the draft.
+                         The picks only: deck building and the tournament are
+                         not checkpointed, so an interruption after the last
+                         pick re-runs both — which is most of a run's calls
   --resume <path>        Replay a snapshot and carry on from it. Its seed, set
                          and seat count win over the flags — the packs are
                          re-dealt from the seed, so the position is exact
@@ -1058,6 +1061,17 @@ substituting {} (the first card). Response: {}",
 
     if !args.quiet {
         eprintln!("\nDraft complete!");
+    }
+
+    // Where the protection ends, said where it matters rather than only in
+    // `--save`'s help. Past this point a failed model call, a Ctrl-C or a
+    // reboot costs the deck builds and the whole tournament, which at the
+    // shipped defaults is around fifteen times the draft's calls — and the
+    // flag that promised "one round and not the run" said nothing about it
+    // (issue #581).
+    if args.save.is_some() && !args.quiet {
+        eprintln!("note: the snapshot covers the picks and stops here — deck building \
+and the tournament are not checkpointed, so an interruption from now on re-runs them");
     }
 
     // Log final pools

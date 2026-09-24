@@ -45,6 +45,35 @@ fn help_prints_usage_and_exits_without_drafting() {
     assert!(stderr(&out).is_empty(), "nothing ran: stderr is empty.\nstderr: {}", stderr(&out));
 }
 
+/// Issue #581: `--save`'s help said the snapshot means "a failed model
+/// call costs one round and not the run". True up to the last pick and
+/// false after it: `write_snapshot` is called only from inside the pick
+/// loop, so deck building and the whole Swiss tournament — roughly
+/// fifteen times the draft's calls at the shipped defaults — are bought
+/// again by any interruption past that point, and nothing said so.
+#[test]
+fn the_save_flag_says_what_the_snapshot_does_not_cover() {
+    let out = runner().arg("--help").output().expect("failed to run");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let save = stdout
+        .split("  --save ")
+        .nth(1)
+        .and_then(|rest| rest.split("  --resume").next())
+        .unwrap_or_else(|| panic!("no --save entry in the help:\n{stdout}"));
+    assert!(
+        save.contains("not checkpointed"),
+        "--save promises protection it does not give past the last pick:\n{save}"
+    );
+    assert!(
+        save.contains("tournament"),
+        "--save's help must name the phase it does not cover:\n{save}"
+    );
+    assert!(
+        !save.contains("and not the run"),
+        "the snapshot costs one round of the *draft*, not of the run:\n{save}"
+    );
+}
+
 #[test]
 fn version_prints_the_version_and_exits_without_drafting() {
     let out = runner().arg("--version").output().expect("failed to run");
