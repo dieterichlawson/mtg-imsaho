@@ -1089,7 +1089,8 @@ illegal or dubious resolutions do.
   (`mtg-engine/src/engine.rs:280`). The three other shapes L50 lists — two
   Bloodline Keepers, two Demonmail Hauberks, two Avacynian Priests — all route
   through `ability_row_label`, so the first of them answers for all three
-- L51 [proposed 2026-09-20, from #553 and L49] the DERIVED damage amount, as a number
+- L51 [tried 2026-09-25 → #590, #592; the sweep below is DONE, the two cards named at
+  the end are not] the DERIVED damage amount, as a number
   the player is never shown. #553 is Corpse Lunge, but the early return that hides it
   is in `queue_damage`/`perform`, which every damage source goes through, and the wider
   question is not the log line — it is that an amount computed from hidden or changing
@@ -1106,5 +1107,31 @@ illegal or dubious resolutions do.
   no pane to check. Corpse Lunge is the sharp case and the one to start from, because
   its amount is only knowable AFTER the irreversible part of the cost is paid — the
   card is exiled at announcement and the player finds out what it bought at resolution,
-  or does not
-
+  or does not.
+  **What the night found.** The sweep is spent; these five are settled.
+  **Mindshrieker on a land** is #590: the `+X/+X` line lives inside the
+  `mana_value > 0` guard, so the ability's commonest outcome is a mill line and
+  then silence, indistinguishable from an ability that did nothing — and three
+  log lines later in the same game **Devil's Play with X=0** says `dealt no
+  damage`, which is the contrast that makes it a defect rather than a choice.
+  **Heretic's Punishment off three milled lands** DOES report its zero, but by
+  its own line rather than through `no_damage_line`, and that line is built
+  from the amount it requested: pointed at an Unbreathing Horde carrying a
+  +1/+1 counter it prints `… prevented, removed a +1/+1 counter` and `… dealt 5
+  damage` on consecutive lines (#592). **Devil's Play** and **Harvest Pyre**
+  are correct and are the same two lines as each other — no zero guard, straight
+  to `PendingEffect::DealDamage`, so `queue_damage`'s `no_damage_line` fires;
+  #259's stack-pane `X=0` holds. A 0-power creature in combat never reaches
+  `queue_damage` at all (`combat.rs` guards every call with `power > 0`).
+  **What is left of L51, and it is the half that matters**: not the log line but
+  L45's move applied to damage — a card that writes its own outcome line from
+  the amount it ASKED for rather than from what the pipeline DID. `grep -rn
+  'format!("' mtg-engine/src/cards/ | grep -iE "dealt|damage|destroyed|gains|milled"`
+  returns eight; six are correct, Heretic's Punishment is #592, and **Olivia
+  Voldaren** (`olivia_voldaren.rs:126`, `deals 1 damage to X, makes it a
+  Vampire, and gets a +1/+1 counter` — two clauses unconditional and right, the
+  damage clause asserted unchecked) has only been READ. Point her `{1}{R}` at an
+  Unbreathing Horde with a counter and confirm it; **Unbreathing Horde is the
+  only prevention effect in the pool** (`PreventDamageRemoveCounter`), which is
+  what makes every probe in this family a zombie board, so build it once and
+  run both cards past it
