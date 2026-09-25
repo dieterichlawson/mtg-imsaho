@@ -4021,6 +4021,24 @@ impl CliPlayer {
         w / 5 + 1 + Self::middle_panel_width_at(w)
     }
 
+    /// How many columns the echo of a typed answer may occupy, for a reader
+    /// whose input starts at column `col` at terminal width `w`.
+    ///
+    /// The bound is the middle panel's right border, never the terminal's.
+    /// They differ by the right gutter plus the borders — 21 columns at 150 —
+    /// so a row that stopped at the terminal's edge had already printed
+    /// through the frame and over the CARDS pane (#320 for the prompt row,
+    /// #591 for the y/n dialog's echo, which was the last reader in the file
+    /// still measuring against `terminal::size`). It is also what the row is
+    /// allowed to *erase*: `repaint_input_line` blanks exactly the columns it
+    /// paints, which is #355's rule.
+    ///
+    /// Taking the width as an argument is what lets the three readers agree
+    /// and lets the agreement be checked without a terminal to measure.
+    fn echo_cap_at(w: usize, col: u16) -> usize {
+        Self::middle_panel_edge_at(w).saturating_sub(usize::from(col) + 1)
+    }
+
     fn read_line_redrawing(prompt: &str, redraw: &dyn Fn()) -> String {
         // ONE reader for the terminal, always. This used to be a cooked-mode
         // io::stdin() read while every menu prompt reads crossterm events in
@@ -4039,7 +4057,6 @@ impl CliPlayer {
         // assume too. This row was handed straight to `Print`, so a hint 3
         // columns wider than the panel drew over the frame's own border, and
         // then over the CARDS pane beside it (issue #320).
-        let edge = Self::middle_panel_edge();
         let shown: String = prompt.chars().take(Self::middle_panel_width_at(Self::term_width()))
             .collect();
         let _ = execute!(out, Print(&shown));
@@ -4058,7 +4075,7 @@ impl CliPlayer {
         // menu reader's, #53). Input beyond the cap still lands in `buf`,
         // it just isn't painted.
         let (mut start_col, mut start_row) = cursor::position().unwrap_or((0, 0));
-        let mut echo_cap = edge.saturating_sub(start_col as usize + 1);
+        let mut echo_cap = Self::echo_cap_at(Self::term_width(), start_col);
         let mut buf = String::new();
         loop {
             let Some(ev) = read_event_guarded() else { continue };
@@ -4073,8 +4090,7 @@ impl CliPlayer {
                 let _ = execute!(out, Print(&reshown));
                 let _ = out.flush();
                 (start_col, start_row) = cursor::position().unwrap_or((start_col, start_row));
-                echo_cap = Self::middle_panel_edge_at(w as usize)
-                    .saturating_sub(start_col as usize + 1);
+                echo_cap = Self::echo_cap_at(w as usize, start_col);
                 repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
                 continue;
             }
@@ -4116,7 +4132,6 @@ impl CliPlayer {
         // in place. The old reprompt printed a fresh row per junk key,
         // eating the LOG panel one row at a time (issue #125).
         let (px, py) = cursor::position().unwrap_or((0, 20));
-        let (term_w, _) = terminal::size().unwrap_or((100, 30));
         let _ = execute!(out, Print(prompt));
         let _ = out.flush();
         let was_raw = terminal::is_raw_mode_enabled().unwrap_or(false);
@@ -4138,10 +4153,26 @@ impl CliPlayer {
         // answer is short, but "the keystroke that ends the game" cannot be
         // one the player has not finished choosing.
         let echo_col = px + u16::try_from(prompt.chars().count()).unwrap_or(0);
-        let echo_cap = (term_w as usize).saturating_sub(echo_col as usize + 1);
+        // The panel's border, like the other two readers — this was the
+        // terminal's width, so everything typed past column 118 of a 150-column
+        // terminal printed straight through the frame and over the CARDS pane,
+        // and the erase that precedes each repaint blanked the same columns
+        // (#591). Re-derived on a resize, because the panel is a different
+        // width afterwards and a cap measured once is a cap measured at the old
+        // size (#353's mistake, in the small).
+        let mut echo_cap = Self::echo_cap_at(Self::term_width(), echo_col);
         let mut buf = String::new();
         let answer = loop {
-            let Some(Event::Key(KeyEvent { code, modifiers, .. })) = read_event_guarded() else {
+            let ev = match read_event_guarded() {
+                Some(ev) => ev,
+                None => continue,
+            };
+            if let Event::Resize(w, _) = ev {
+                echo_cap = Self::echo_cap_at(w as usize, echo_col);
+                repaint_input_line(&mut out, echo_col, py, &buf, echo_cap);
+                continue;
+            }
+            let Event::Key(KeyEvent { code, modifiers, .. }) = ev else {
                 continue;
             };
             match code {
@@ -4168,7 +4199,10 @@ impl CliPlayer {
                         "y" | "yes" => break true,
                         "n" | "no" | "" => break false,
                         _ => {
-                            let msg = format!("Please answer y or n. {}", prompt.trim_start());
+                            let indent: String = prompt.chars()
+                                .take_while(|c| c.is_whitespace()).collect();
+                            let msg = format!("{indent}Please answer y or n. {}",
+                                prompt.trim_start());
                             let clipped = clip_cols(&msg,
                                 Self::middle_panel_edge().saturating_sub(usize::from(px)));
                             Self::clear_panel_row(&mut stdout(), px, py);
@@ -4199,19 +4233,17 @@ impl CliPlayer {
         tui_raw_on();
         let mut buf = String::new();
 
-        // The echo stops at the middle panel's right edge (same layout math
-        // as `render`): an unbounded echo let one long pasted line wrap over
-        // the card panel and scroll the whole UI away (#53). Input beyond
-        // the cap still lands in `buf`, it just isn't painted.
-        let (term_w, _) = terminal::size().unwrap_or((100, 30));
-        let w = term_w as usize;
-        let has_right = w >= 100;
-        let gutter = w / 5;
-        let mid_w = w.saturating_sub(gutter + if has_right { gutter + 2 } else { 1 });
-        let echo_cap = mid_w.saturating_sub("  > ".len());
         // The line is repainted from `buf` (see `repaint_input_line`), so
         // there is no parallel echo model to drift from it (#281).
         let (mut start_col, mut start_row) = cursor::position().unwrap_or((0, 0));
+        // The echo stops at the middle panel's right border: an unbounded echo
+        // let one long pasted line wrap over the card panel and scroll the
+        // whole UI away (#53). Input beyond the cap still lands in `buf`, it
+        // just isn't painted. This used to re-derive the panel's geometry from
+        // the terminal width by hand, a second copy of
+        // `middle_panel_width_at`, and then measure from the prompt's length
+        // rather than from where the cursor actually is.
+        let mut echo_cap = Self::echo_cap_at(Self::term_width(), start_col);
 
         // Bracketed paste, enabled only for this raw-mode read: without it a
         // multi-line paste arrives as N keystroke sequences whose embedded
@@ -4234,9 +4266,12 @@ impl CliPlayer {
                     None => continue,
                 },
             };
-            if let Event::Resize(..) = ev {
+            if let Event::Resize(w, _) = ev {
                 redraw();
                 (start_col, start_row) = cursor::position().unwrap_or((start_col, start_row));
+                // The panel is a different width now, so the echo is bounded
+                // by the new border rather than the old one (#353).
+                echo_cap = Self::echo_cap_at(w as usize, start_col);
                 repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
                 continue;
             }
@@ -8724,6 +8759,68 @@ Mark 1 of the 1 cards below to exile.");
         // Below 100 there is no right pane, and the panel does run to the
         // edge; the bound is then the same one and still correct.
         assert_eq!(CliPlayer::middle_panel_edge_at(80), 80);
+    }
+
+    /// What an echo is allowed to print, stated as an invariant rather than as
+    /// three copies of the arithmetic: whatever column a reader starts at, the
+    /// last column it may paint is inside the panel's right border.
+    ///
+    /// The border is also what it may *erase* — `repaint_input_line` blanks
+    /// exactly the columns it paints — so a cap that overshoots takes the
+    /// frame and the CARDS pane's content with it, which is #591.
+    #[test]
+    fn an_echo_never_reaches_past_the_panel_border() {
+        for w in [80usize, 100, 120, 150, 200] {
+            let edge = CliPlayer::middle_panel_edge_at(w);
+            let content = CliPlayer::middle_panel_col_at(w);
+            for col in [content, content + 4, content + 40] {
+                let cap = CliPlayer::echo_cap_at(w, col);
+                assert!(usize::from(col) + cap <= edge,
+                    "at {w} columns, an echo from column {col} may paint {cap} \
+                     columns, which reaches {} — past the border at {edge}",
+                    usize::from(col) + cap);
+            }
+            // And the bound really is tighter than the terminal's wherever a
+            // CARDS pane exists: this is the difference the dialog was missing.
+            if w >= 100 {
+                let col = content;
+                assert!(CliPlayer::echo_cap_at(w, col)
+                        < w.saturating_sub(usize::from(col) + 1),
+                    "at {w} columns the panel bound is strictly inside the terminal's");
+            }
+            // A prompt whose text has already filled the panel gets no echo
+            // rather than an underflowed one.
+            assert_eq!(CliPlayer::echo_cap_at(w, u16::MAX), 0);
+        }
+    }
+
+    /// Every reader that echoes what is typed takes its cap from the one
+    /// function that knows where the border is.
+    ///
+    /// `confirm_yn` was the exception and nothing said so: it measured against
+    /// `terminal::size`, the other two against the panel, and the three
+    /// computations sat 70 lines apart with no way to see them disagree
+    /// (#591 — the y/n dialog printed 27 columns past the frame at 150). The
+    /// arithmetic being right in `echo_cap_at` is checked above; this checks
+    /// that it is the arithmetic each reader actually uses, which is the half
+    /// that was wrong.
+    #[test]
+    fn every_prompt_echo_takes_its_cap_from_the_panel_not_the_terminal() {
+        let src = include_str!("cli.rs");
+        let caps: Vec<&str> = src.lines()
+            .map(str::trim)
+            .filter(|l| l.starts_with("let echo_cap")
+                || l.starts_with("let mut echo_cap")
+                || l.starts_with("echo_cap ="))
+            .collect();
+        // Three readers, each binding a cap and re-deriving it on a resize.
+        assert!(caps.len() >= 6,
+            "expected every reader's cap to be found; got {caps:#?}");
+        for line in &caps {
+            assert!(line.contains("echo_cap_at"),
+                "an echo cap computed some other way is a cap that can disagree \
+                 with the panel's border: {line:?}");
+        }
     }
 
     /// The escape and the deliberate empty selection are different keys, and
