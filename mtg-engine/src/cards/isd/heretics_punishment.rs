@@ -101,7 +101,6 @@ impl CardBehavior for HereticsPunishment {
         // object, not a different card); this used to drain `library_order` by
         // hand so it could read them first.
         let milled = crate::engine::mill_cards(state, controller, 3, "Heretic's Punishment", registry);
-        let mill_count = milled.len();
 
         // "equal to the greatest mana value among them".
         let max_mv: u32 = milled.iter()
@@ -112,14 +111,22 @@ impl CardBehavior for HereticsPunishment {
             .unwrap_or(0);
 
         // Ruling: "If all three cards have a mana value of 0, no damage will be
-        // dealt." Nothing is dealt rather than a zero-damage event, which
-        // damage watchers would otherwise see.
-        if max_mv > 0 {
-            crate::damage::deal_damage(state, object_id, damage_target, max_mv,
-                crate::damage::DamageKind::NonCombat, registry);
-        }
-
-        state.log(crate::state::LogLevel::Event,
-            format!("Heretic's Punishment milled {mill_count} cards, dealt {max_mv} damage"));
+        // dealt." That is CR 120.8, and it lives in `queue_damage`: 0 queues
+        // no event, so no damage watcher sees one, and the sentence it writes
+        // on the way out is the `… dealt no damage to …` that Devil's Play and
+        // Harvest Pyre already produce. Guarding the call here bought the same
+        // rules answer and skipped the sentence.
+        //
+        // Nothing is logged after it. The card used to add "milled N cards,
+        // dealt M damage" unconditionally, where M was the amount it had
+        // *asked for* — prevention (CR 615), protection (CR 702.16e), a damage
+        // replacement effect and a target that has left the battlefield all
+        // change what was dealt and none of them change M, so the claim sat
+        // directly beneath the pipeline's own correct line saying the opposite
+        // (#592). This is #467's defect in a different card: read the result
+        // rather than restate the request. The mill half was a duplicate too —
+        // `mill_cards` had already named the source and the count one line up.
+        crate::damage::deal_damage(state, object_id, damage_target, max_mv,
+            crate::damage::DamageKind::NonCombat, registry);
     }
 }

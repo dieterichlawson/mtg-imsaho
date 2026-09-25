@@ -23,6 +23,7 @@ mod common;
 
 use common::*;
 use mtg_engine::actions::{Action, Target};
+use mtg_engine::cards::CardRegistry;
 use mtg_engine::state::GameState;
 use mtg_engine::types::*;
 
@@ -1060,4 +1061,91 @@ fn a_spell_that_deals_damage_still_says_how_much() {
     assert_line(&lines, "dealt 1 damage to");
     assert!(index_of(&lines, "dealt no damage to").is_none(),
         "a spell that dealt damage must not also report dealing none; log was {lines:#?}");
+}
+
+// ---------------------------------------------------------------------------
+// #592 — a card reports what the damage pipeline did, not what it asked for
+// ---------------------------------------------------------------------------
+
+/// Put `n` copies of `card` on top of `player`'s library.
+fn library_top(state: &mut GameState, reg: &CardRegistry, player: PlayerId, card: &str, n: usize) {
+    let card_id = reg.get_id_by_name(card).unwrap_or_else(|| panic!("unknown card: {card}"));
+    for _ in 0..n {
+        let obj = state.create_object(card_id, player, Zone::Library, None, None);
+        state.get_object_mut(obj).unwrap().name = card.into();
+        state.get_player_mut(player).library_order.insert(0, obj);
+    }
+}
+
+/// Activate Heretic's Punishment's `{3}{R}` at `target` and resolve it.
+fn punish(state: &mut GameState, reg: &CardRegistry, hp: ObjectId, target: Target) {
+    activate_via_hooks(state, reg, hp, 0, &[target]);
+    mtg_engine::stack::resolve_top_of_stack(state, reg);
+}
+
+/// Heretic's Punishment computed the damage, asked the pipeline to deal it,
+/// and then logged `dealt {max_mv} damage` from the amount it had *asked for*.
+/// Prevention, protection, a replacement effect and a target that has left the
+/// battlefield all change what was dealt and none of them change that number,
+/// so the card's line sat directly beneath the pipeline's own — correct — line
+/// saying the opposite (issue #592).
+///
+/// Unbreathing Horde is the prevention in this pool: "if this creature would
+/// be dealt damage, prevent that damage and remove a +1/+1 counter from it."
+///
+/// Same defect as #467, where the shared `PendingEffect::Destroy` arm threw
+/// `DestroyResult` away and logged "destroyed" unconditionally.
+#[test]
+fn a_card_does_not_report_damage_the_pipeline_prevented() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let hp = named_permanent(&mut state, &reg, "Heretic's Punishment", P0);
+    let horde = named_permanent(&mut state, &reg, "Unbreathing Horde", P0);
+    state.add_counters(horde, CounterType::PlusOnePlusOne, 3);
+    // Kalonian Tusker is {G}{G}, mana value 2 — so the amount asked for is 2.
+    library_top(&mut state, &reg, P0, "Kalonian Tusker", 3);
+
+    punish(&mut state, &reg, hp, Target::Object(horde));
+
+    assert_eq!(state.get_object(horde).unwrap().damage_marked, 0,
+        "test setup: the Horde prevents it, so nothing was dealt");
+    assert_eq!(counters_of(&state, horde, CounterType::PlusOnePlusOne), 2,
+        "test setup: and a +1/+1 counter went instead");
+
+    let lines = log_lines(&state);
+    assert_line(&lines, "prevented");
+    let claims: Vec<&String> = lines.iter()
+        .filter(|l| l.contains("dealt") && !l.contains("dealt no "))
+        .collect();
+    assert!(claims.is_empty(),
+        "nothing was dealt, so no line may report damage as dealt; got {claims:#?} \
+         in {lines:#?}");
+}
+
+/// The other half of the same fix: with the claim gone, the account of what a
+/// card's damage did comes from the pipeline in every case — including the one
+/// that comes out 0, which `queue_damage` already has a sentence for (#553).
+///
+/// And the mill is reported once. `mill_cards` logs it with the source's name;
+/// the card's own line said it again, in a second format, one line below.
+#[test]
+fn a_cards_damage_and_its_mill_are_each_reported_once_by_whoever_did_them() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let hp = named_permanent(&mut state, &reg, "Heretic's Punishment", P0);
+    // Basic lands have no mana cost at all, so the greatest mana value is 0.
+    library_top(&mut state, &reg, P0, "Forest", 3);
+
+    punish(&mut state, &reg, hp, Target::Player(P1));
+
+    let lines = log_lines(&state);
+    assert_line(&lines, "dealt no damage to");
+
+    let mills: Vec<&String> = lines.iter().filter(|l| l.contains("milled")).collect();
+    assert_eq!(mills.len(), 1,
+        "one mill, one line saying so; got {mills:#?}");
+    assert!(mills[0].contains("Heretic's Punishment"),
+        "and it names the source that did it; got {:?}", mills[0]);
 }
