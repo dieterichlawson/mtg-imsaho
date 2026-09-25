@@ -1135,3 +1135,19 @@ illegal or dubious resolutions do.
   only prevention effect in the pool** (`PreventDamageRemoveCounter`), which is
   what makes every probe in this family a zombie board, so build it once and
   run both cards past it
+- L52 [proposed 2026-09-25, from the L51 board] the ORDER the announcement asks
+  its questions in. CR 601.2b chooses modes and the value of X; CR 601.2c
+  chooses targets, after it. The CLI asks the reverse: casting Devil's Play
+  opened `Devil's Play: select a target` and only then `Devil's Play (#37):
+  choose X funding (0-2)`. In this pool it changes nothing — no legal target
+  depends on X, and nothing is revealed between the two questions — so it was
+  noted rather than filed. It stops being harmless the moment a card exists
+  whose legal targets depend on X, whose modes decide how many targets there
+  are, or that lets a player see something between the two. Walk every
+  announcement the CLI stages (`cast_row_label`'s flow, `ability_slots`, the X
+  funding prompt) against 601.2a-601.2i and write down which of the nine steps
+  this program asks and in what order; then ask the same of
+  `mtg-player/src/llm.rs`, which stages the same decisions as separate calls,
+  and of the GUI, where the two prompts are separate widgets. The answer is
+  worth having written down even if the order stays as it is, because nothing
+  in the repo states it
