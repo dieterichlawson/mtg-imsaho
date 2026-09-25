@@ -1047,7 +1047,7 @@ illegal or dubious resolutions do.
   shouldn't; and `pay_exile_creatures`' no-named-ids auto-picker ranks by the PRE-exile
   power, which for a CDA card is not the power the damage will use — reachable from no
   shipped seat, since the CLI always asks and the random seat rolls (#455, #262)
-- L50 [proposed 2026-09-20, from #555 and L47] the ACTION MENU's source label, when two
+- L50 [tried 2026-09-25 → negative; this one is DONE, do not redo it] the ACTION MENU's source label, when two
   permanents offer the same ability. #555 is about the stack pane; the main-phase menu
   has the same hole and nobody has looked. The row is built through `perm_name`
   (`mtg-player/src/cli.rs`), which formats `"{name} {p}/{t} ({your|opp})"` and stops —
@@ -1065,7 +1065,30 @@ illegal or dubious resolutions do.
   id, so it may already be right — builds its list from the same label. The fix for the
   mana-ability twin of this was #118, and it named the mana rather than the land;
   naming the ability is not enough here, because the ability is what is already
-  identical
+  identical.
+  **What the night found: the hole is closed, and the idea was written without
+  #257 in view.** `perm_name` does still stop where L50 says it does, but the
+  row is not `perm_name`. Ability rows are built by `ability_row_label` into a
+  `MenuLabel { text, ids }` carrying the source object plus whatever slots the
+  row already commits to, and every render path goes through `menu_row_texts`,
+  which groups rows whose TEXT collides, works out the id positions on which
+  the group is not unanimous, and appends `(#id)` to exactly those rows. Two
+  Bloodline Keepers (`20 Swamp / 20 Bloodline Keeper` vs `40 Plains`, seed 11,
+  both past summoning sickness at turn 11 — a much cheaper board than the two
+  Evil Twins L50 specifies, and it reaches the same collision) printed
+  `… (#26)` and `… (#27)`; picking row 2 put `Bloodline Keeper ability (#27)`
+  on the stack and `i` showed `#27` tapped and `#26` not; the turn before,
+  with one Keeper summoning-sick, the lone row carried no id at all, which is
+  the right behaviour rather than a missing one. The LLM seat is right too, by
+  a different route than L50 guessed: its rows come from `ab.name`, which the
+  engine hands over already carrying `(#id)` (`mtg-player/src/llm.rs:4036`),
+  and `Seed::AbilityCopy` then groups copies deliberately (#461).
+  Two collapses in the same menu look like this bug and are not: four Keepers
+  in hand are ONE cast row (interchangeable — #54), and two untapped Swamps
+  are ONE mana row, deduped by `card_id` in the engine itself
+  (`mtg-engine/src/engine.rs:280`). The three other shapes L50 lists — two
+  Bloodline Keepers, two Demonmail Hauberks, two Avacynian Priests — all route
+  through `ability_row_label`, so the first of them answers for all three
 - L51 [proposed 2026-09-20, from #553 and L49] the DERIVED damage amount, as a number
   the player is never shown. #553 is Corpse Lunge, but the early return that hides it
   is in `queue_damage`/`perform`, which every damage source goes through, and the wider
