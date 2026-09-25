@@ -1149,3 +1149,77 @@ fn a_cards_damage_and_its_mill_are_each_reported_once_by_whoever_did_them() {
     assert!(mills[0].contains("Heretic's Punishment"),
         "and it names the source that did it; got {:?}", mills[0]);
 }
+
+// ---------------------------------------------------------------------------
+// #590 — a pump whose amount is derived says what the amount came out as
+// ---------------------------------------------------------------------------
+
+/// Mindshrieker: "{2}: Target player mills a card. This creature gets +X/+X
+/// until end of turn, where X is the milled card's mana value."
+///
+/// A land has no mana cost, so X is 0 — and a land is the commonest card in
+/// any library. The log line lived inside the `mana_value > 0` guard that
+/// (rightly) skips a +0/+0 entry in `until_end_of_turn`, so the two most
+/// different outcomes of the same paid ability produced logs differing by the
+/// *absence* of a line, and the 0 case was byte-identical to an ability that
+/// resolved and did nothing (issue #590).
+///
+/// The CLI player can recover the answer from the battlefield pane. The LLM
+/// seat is given this log and no pane. Same question #553 settled for damage
+/// and #299 for a permanent entering with 0 counters.
+#[test]
+fn a_pump_whose_amount_came_out_zero_still_says_what_it_came_out_as() {
+    // (card on top of the library, its mana value)
+    const CARDS: &[(&str, i32)] = &[("Kindercatch", 6), ("Forest", 0)];
+
+    for &(card_name, mana_value) in CARDS {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+
+        let shrieker = named_permanent(&mut state, &reg, "Mindshrieker", P0);
+        library_top(&mut state, &reg, P1, card_name, 1);
+
+        add_mana(&mut state, P0, &[(ManaType::Colorless, 2)]);
+        let state = activate_offered(&state, &reg, shrieker, Some(Target::Player(P1)));
+
+        assert_eq!(state.effective_power(shrieker, &reg), Some(1 + mana_value),
+            "test setup: {card_name} has mana value {mana_value}");
+
+        let lines = log_lines(&state);
+        assert_line(&lines, &format!("Mindshrieker gets +{mana_value}/+{mana_value}"));
+    }
+}
+
+/// CR 400.7, the second case the same guard swallowed: the ability mills, the
+/// source is no longer on the battlefield, and there is nothing to pump. That
+/// is an outcome, not a non-event, and it was reported by silence too.
+#[test]
+fn a_pump_with_no_permanent_left_to_land_on_says_so() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let shrieker = named_permanent(&mut state, &reg, "Mindshrieker", P0);
+    library_top(&mut state, &reg, P1, "Kindercatch", 1);
+
+    add_mana(&mut state, P0, &[(ManaType::Colorless, 2)]);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let action = legal.actions.iter()
+        .find(|a| matches!(a, Action::ActivateAbility { object_id: o, targets, .. }
+            if *o == shrieker && targets.contains(&Target::Player(P1))))
+        .expect("the ability is offered")
+        .clone();
+    let mut state = mtg_engine::engine::submit_action(&state, &action, &reg);
+
+    // In response, the Mindshrieker dies.
+    state.move_object(shrieker, Zone::Graveyard, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert!(!state.until_end_of_turn.iter().any(|e| matches!(e,
+        mtg_engine::state::TemporaryEffect::ModifyPT { target, .. } if *target == shrieker)),
+        "test setup: there is no permanent left to give +6/+6 to");
+
+    let lines = log_lines(&state);
+    assert_line(&lines, "Mindshrieker");
+    assert!(lines.iter().any(|l| l.contains("Mindshrieker") && l.contains("left the battlefield")),
+        "the ability resolved and pumped nothing, and says which; log was {lines:#?}");
+}

@@ -67,12 +67,27 @@ impl CardBehavior for Mindshrieker {
                     .unwrap_or(0)
             ).unwrap_or(i32::MAX);
 
-            // +0/+0 is not worth an entry in `until_end_of_turn`, and a land
-            // has no mana cost at all. CR 400.7: if the Mindshrieker has left
-            // the battlefield, the permanent this would modify is gone.
-            if mana_value > 0
-                && state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield)
-            {
+            // Two decisions, which used to be one condition (#590).
+            //
+            // Whether to make an entry in `until_end_of_turn` is a question
+            // about the game: +0/+0 changes nothing, and CR 400.7 says a
+            // permanent that has left the battlefield is not there to be
+            // modified.
+            //
+            // Whether to say what X came out as is a question about the
+            // record, and the answer is always yes. A land has no mana cost at
+            // all and a land is the commonest card in any library, so the
+            // commonest outcome of this ability was reported by the *absence*
+            // of a line — byte-identical to an ability that resolved and did
+            // nothing. A player at the CLI can recover the answer from the
+            // battlefield pane; the LLM seat is handed this log and no pane,
+            // so for that seat the ability's whole effect on its own creature
+            // went unreported. Same question #553 settled for damage that came
+            // out 0 and #299 for a permanent entering with 0 counters.
+            let still_on_battlefield = state.get_object(object_id)
+                .is_some_and(|o| o.zone == Zone::Battlefield);
+
+            if mana_value > 0 && still_on_battlefield {
                 state.until_end_of_turn.push(
                     crate::state::TemporaryEffect::ModifyPT {
                         target: object_id,
@@ -80,9 +95,14 @@ impl CardBehavior for Mindshrieker {
                         toughness_mod: mana_value,
                     }
                 );
-                state.log(crate::state::LogLevel::Event,
-                    format!("Mindshrieker gets +{mana_value}/+{mana_value} (milled card's mana value)"));
             }
+
+            let line = if still_on_battlefield {
+                format!("Mindshrieker gets +{mana_value}/+{mana_value} (milled card's mana value)")
+            } else {
+                format!("Mindshrieker has left the battlefield, so its                          +{mana_value}/+{mana_value} (milled card's mana value) lands on nothing")
+            };
+            state.log(crate::state::LogLevel::Event, line);
         }
     }
 }
