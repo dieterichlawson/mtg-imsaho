@@ -927,3 +927,74 @@ fn a_viewer_says_so_when_it_will_not_act_on_what_was_typed() {
     g.send("\x03");
     assert_clean_exit(&mut g);
 }
+
+/// A deck that reaches a board whose only X source taps for two mana:
+/// Mountains for the land drop and the `{R}` pip, a Sol Ring for X, and
+/// Devil's Play to spend it on.
+fn mountains_rings_and_devils_play() -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("mtg-cli-pty-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let path = dir.join("mountains-rings-devils-play.txt");
+    std::fs::write(&path, "20 Mountain\n20 Sol Ring\n20 Devil's Play\n").expect("write deck");
+    path
+}
+
+/// Issue #595: `X (0-N)` offered values no allocation could fund, and
+/// typing one burned the card.
+///
+/// On a board whose only funding source taps for two mana the payable
+/// values of X are 0 and 2. The prompt stated `0-2`, accepted `1`, funded
+/// **0**, and completed the cast — a Devil's Play gone from hand for zero
+/// damage, with the one acknowledgement on screen for 900ms before the
+/// board repainted over it. Every other refusal in this reader re-prompts;
+/// the one value the program was about to not honour did not.
+#[test]
+fn an_unpayable_x_is_refused_before_the_card_is_spent() {
+    let deck = mountains_rings_and_devils_play();
+    let deck = deck.to_str().expect("utf-8 temp path");
+    let mut g = PtyGame::spawn(&[
+        "--p1", "cli", "--p2", "random",
+        "--deck1", deck, "--deck2", "decks/gw-humans.txt",
+        "--seed", "7", "--on-the-play", "1", "--quiet",
+    ]);
+
+    g.expect("Keep opening hand", T);
+    g.answer("0\r");
+
+    // Turn 1: a Mountain, then pass until our own next land drop.
+    g.expect("MAIN PHASE 1", T);
+    g.answer_option("Play land", T);
+    g.answer_until("\r", "Play land", T);
+
+    // Turn 2: the second Mountain, then a Sol Ring off one of them, passing
+    // until it has resolved. That leaves one untapped Mountain — which
+    // Devil's Play's {R} takes — and an untapped Sol Ring, which is the
+    // whole of what X may be funded from.
+    g.answer_option("Play land", T);
+    g.answer_option("Cast Sol Ring", T);
+    g.answer_until("\r", "Cast Devil's Play", T);
+
+    g.answer_option("Cast Devil's Play", T);
+    g.answer_option("Opponent", T);
+    g.expect("Max X = 2", T);
+    // The set is stated up front, not discovered afterwards.
+    g.expect("Payable X: 0, 2", T);
+    g.forget();
+
+    // The value the prompt's own range offers and the sources cannot pay.
+    g.answer("1\r");
+    g.expect("X = 1 is not payable", T);
+    // Still being asked, and the card is still in hand: nothing committed.
+    g.expect_absent("dealt no damage", Duration::from_millis(300));
+
+    // And the payable value goes through, for its full damage: the log's
+    // own record of the announced X, and the life total behind it. (The
+    // damage line itself wraps in the narrow log pane, so the needles are
+    // the two short ones.)
+    g.answer("2\r");
+    g.expect("Funded X = 2", T);
+    g.expect("18hp", T);
+
+    g.send("\x03");
+    assert_clean_exit(&mut g);
+}

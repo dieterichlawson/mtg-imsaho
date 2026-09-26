@@ -509,6 +509,47 @@ fn quote_input(input: &str) -> String {
     format!("{}\u{2026}", clip_cols(&shown, MAX))
 }
 
+/// The X values a board can pay, as one line a prompt can print.
+///
+/// Runs of consecutive values collapse to `a-b`, so the ordinary case (every
+/// source makes one mana) reads `0-7` rather than eight numbers. A board of
+/// two-mana rocks does not collapse, so the line is capped and ends with the
+/// largest value: a list nobody can read is the failure mode `clip` exists
+/// for, and the ceiling is the number a player most wants (#595, #318).
+fn describe_fundable_x(values: &[u32]) -> String {
+    const MAX_COLS: usize = 44;
+    let mut runs: Vec<String> = Vec::new();
+    let mut i = 0;
+    while i < values.len() {
+        let start = values[i];
+        let mut end = start;
+        while i + 1 < values.len() && values[i + 1] == end + 1 {
+            i += 1;
+            end = values[i];
+        }
+        runs.push(if start == end { format!("{start}") } else { format!("{start}-{end}") });
+        i += 1;
+    }
+    let full = runs.join(", ");
+    if str_cols(&full) <= MAX_COLS || runs.len() < 3 {
+        return full;
+    }
+    // Keep a prefix and the last value, so both ends of the set are stated.
+    let last = runs.last().expect("runs is non-empty").clone();
+    let budget = MAX_COLS.saturating_sub(str_cols(&last) + 5);
+    let mut kept: Vec<String> = Vec::new();
+    let mut cols = 0;
+    for run in &runs[..runs.len() - 1] {
+        let next = cols + str_cols(run) + 2;
+        if next > budget {
+            break;
+        }
+        cols = next;
+        kept.push(run.clone());
+    }
+    format!("{}, \u{2026} {last}", kept.join(", "))
+}
+
 /// How a refusal names the number it is refusing: what was typed, and what
 /// the parser made of it when the two differ.
 ///
@@ -5951,6 +5992,22 @@ impl CliPlayer {
                     g.name, g.source_ids.len(), g.mana_per_tap, g.max_contribution()))));
             r += 1;
         }
+        // Which values of X the sources can actually pay. The prompt used
+        // to state `0-N` and accept every integer in it, then fund a
+        // smaller X and say so for 900ms before the screen repainted — a
+        // card gone for zero damage on a value the prompt itself offered
+        // (#595). A board whose only source taps for two mana pays 0 and 2
+        // and nothing between, so the set is stated and the loop refuses
+        // the rest like any other input it will not honour.
+        let fundable = mtg_engine::funding::fundable_x_values(options);
+        let contiguous = fundable.len() as u32 == options.max_announceable_x() + 1;
+        if !contiguous {
+            let _ = execute!(out, cursor::MoveTo(col, r),
+                SetForegroundColor(Color::Yellow),
+                Print(clip(&format!("  Payable X: {}", describe_fundable_x(&fundable)))),
+                ResetColor);
+            r += 1;
+        }
         let _ = execute!(out, cursor::MoveTo(col, r));
         let _ = out.flush();
 
@@ -5993,7 +6050,13 @@ impl CliPlayer {
             // used to name neither it nor the parsed value, so `0x2`,
             // `2.0`, `-0` and `hello` were one sentence (issue #562).
             notice = Some(match input.parse::<u32>() {
-                Ok(n) if n <= options.max_announceable_x() => break n,
+                Ok(n) if fundable.binary_search(&n).is_ok() => break n,
+                // In range and unpayable: the sources cannot sum to it, so
+                // say which values they can. This used to be accepted,
+                // funded lower and committed (#595).
+                Ok(n) if n <= options.max_announceable_x() => format!(
+                    "  X = {n} is not payable with these sources — payable X: {}.",
+                    describe_fundable_x(&fundable)),
                 _ if input.is_empty() => "  Enter a value for X.".to_string(),
                 _ => format!("  Invalid input '{}' — enter an integer between 0 and {}.",
                     quote_input(input), options.max_announceable_x()),
@@ -6001,21 +6064,16 @@ impl CliPlayer {
         };
 
         // Distribute X: drain from pool (larger color buckets first), then
-        // tap sources in whole-ability steps. Any mismatch at the end (X
-        // isn't achievable due to multi-mana-source quanta) is rounded down
-        // by dropping excess. Shared with the fuzzer seat, which had no
-        // allocation of its own and answered every X prompt with the whole
-        // board (#564).
+        // tap sources in whole-ability steps. Shared with the fuzzer seat,
+        // which had no allocation of its own and answered every X prompt
+        // with the whole board (#564).
+        //
+        // `x` came out of `fundable`, so the allocation is exact and there
+        // is no shortfall to announce — which is why the "could not
+        // allocate final N mana" line and the 900ms sleep behind it are
+        // gone. The player is told before they commit, not after (#595).
         let (response, remaining) = mtg_engine::funding::allocate_for_x(options, x);
-        if remaining > 0 {
-            Self::clear_panel_row(&mut stdout(), col, r + 1);
-            let _ = execute!(stdout(),
-                Print(clip(&format!(
-                    "  (could not allocate final {remaining} mana due to source quanta; X = {})",
-                    x - remaining))));
-            let _ = stdout().flush();
-            std::thread::sleep(std::time::Duration::from_millis(900));
-        }
+        debug_assert_eq!(remaining, 0, "the prompt offered an X it cannot fund: {x}");
         Action::ResolveChoice { choice: ResolvedChoice::XFunding(response) }
     }
 
@@ -7771,6 +7829,26 @@ mod tests {
     use mtg_engine::engine::LegalActions;
     use mtg_engine::ids::PlayerId;
     use mtg_engine::types::ManaPool;
+
+    /// The payable-X line has to fit the panel and name both ends of the
+    /// set, whatever shape the board gives it (#595, #318).
+    #[test]
+    fn the_payable_x_line_collapses_runs_and_keeps_both_ends() {
+        // Every source makes one mana: a range, not a list.
+        assert_eq!(describe_fundable_x(&[0, 1, 2, 3, 4, 5, 6, 7]), "0-7");
+        assert_eq!(describe_fundable_x(&[0]), "0");
+        assert_eq!(describe_fundable_x(&[0, 2]), "0, 2");
+        // A discount pays the first three of X with no mana, then a 2/tap
+        // rock: contiguous up to the discount, stepped after it.
+        assert_eq!(describe_fundable_x(&[0, 1, 2, 3, 5, 7]), "0-3, 5, 7");
+        // Twenty Sol Rings: too many to print, so it is capped — and the
+        // ceiling, which is the value a player most wants, is still there.
+        let many: Vec<u32> = (0..=20).map(|n| n * 2).collect();
+        let line = describe_fundable_x(&many);
+        assert!(str_cols(&line) <= 44, "the line must fit the panel: {line:?}");
+        assert!(line.starts_with("0, 2, 4"), "the low end is stated: {line:?}");
+        assert!(line.ends_with("\u{2026} 40"), "the ceiling is stated: {line:?}");
+    }
 
     /// One equip label per Champion, differing only in whom it targets and
 
