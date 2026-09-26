@@ -981,6 +981,35 @@ whether it told the truth.
   sits. The staged-prompt Playwright probe in #561 does the GUI half
   without playing a game to the prompt
 
+  **Partly answered 2026-09-26: the two readers nobody had run are uniform,
+  so retire that half; the `unwrap_or(0)` half is a real find.** All twelve
+  tokens plus `-1` and `2^64` through `--seed`, and thirteen deck files
+  through `load_deck_file`'s `COUNT NAME`: both are plain `str::parse`, both
+  agree with `cli.rs`'s nine to the token (`+1` and `007` in; `-0` `-1`
+  `0x2` `0b11` `2.0` `1e1` `1_0` `""` `" "` `2abc` fullwidth `４` and `2^64`
+  out), each refusal names the token, exit 1 (2 for an unknown flag). So the
+  "the moment you leave cli.rs they are not uniform" claim is **false here**,
+  and `--seed`/deck-loader need not be swept again. Structural probes also
+  clean: `0 Mountain` loads and plays, an all-zero file loses to CR 704.5b
+  at turn 1, a 10M count aborts on allocation (not a shape a person meets),
+  and a tab-separated line is refused because the split is on a single space.
+
+  The find is the reader the idea named and nobody had run: `parse_int_str`
+  (`llm.rs:3676-3679`) is `as_str().and_then(parse).unwrap_or(0)`, and the
+  X-funding schema is a per-group **string** enum — so an answer typed as
+  JSON numbers reads as 0 for every group, `validate` accepts the empty
+  response, `log_rejected` is never reached, and the seat logs `CHOSE X
+  funding sum = 0` exactly as if the model had chosen it. Two stubbed `cc`
+  games, same stub and same values, differing only in JSON value type:
+  numbers gave `sum = 0` eleven times and a 69-turn decking, strings gave
+  1/8/9/9 and game over at turn 18, with **zero** `invalid X funding` lines
+  and no `answers rejected` clause in `TOKEN_USAGE` either time (#596).
+  `mtg-draft/src/deckbuilding.rs::card_count` is the same problem solved
+  right — it refuses a count it cannot expand instead of defaulting it.
+
+  Still unswept: the GUI filter box, and `llm_client.rs`'s own numeric
+  readers. The GUI *number* box is covered by #561's probe.
+
 - V49 [proposed 2026-09-21, from V46's read of `funding.rs`] the X you
   cannot buy. `X (0-N)` promises every value in 0..N, but a group with
   `mana_per_tap > 1` makes some of them unachievable, and the four surfaces
