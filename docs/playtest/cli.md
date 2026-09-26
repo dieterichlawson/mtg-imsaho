@@ -998,6 +998,39 @@ whether it told the truth.
   the screen said — then stage the same `ChooseXFunding` on the page with
   `mana_per_tap: 2` and see whether the shortfall is mentioned at all
 
+  **Answered 2026-09-26: the reserve is right, everything after it is not,
+  and the idea's premise was only half the defect.** What the idea predicted
+  holds — `X (0-N)` is not a range: with one untapped Mountain and one
+  untapped Sol Ring the prompt reads `Max X = 2` over `Sol Ring x1 (2/tap,
+  max 2)`, the achievable set is {0, 2}, and typing `1` is accepted, funded
+  at 0 and **committed**, the card spent for no damage behind a 900ms flash
+  (#595). The page runs a line-for-line JS copy of the same loop
+  (`prompts.ts:648-655`) with **no shortfall arm at all** — typed 2 → funded
+  1, typed 1 → funded 0, `notice` null every time (#594, #561's shape).
+
+  The half the idea did not predict is underneath: some of the values blamed
+  on "source quanta" are values the board pays **exactly**.
+  `allocate_for_x` (`funding.rs:191-206`) walks groups in category order
+  taking whole activations and never revisits one, so with Mountain x1
+  (1/tap) + Sol Ring x1 (2/tap) and `Max X = 3`, announcing X = 2 taps the
+  Mountain, cannot spend the Sol Ring on the leftover 1, and announces
+  **X = 1 with the Sol Ring still untapped** — while X = 3 on the same board
+  works, so the larger X is buyable and the smaller is not (#593). The
+  ordering preference (lands before rocks before dorks) is deliberate and
+  worth keeping as a tie-break among exact allocations.
+
+  Checked and correct, so nobody need re-derive it: the `{R}` pip IS
+  reserved before the options are built — the Mountain is absent from the
+  group list and `Max X` is 2 rather than 3 — and the group summary lines
+  (`name xN (M/tap, max K)`) are accurate on both surfaces.
+
+  The fourth surface is the control and settles the target: `llm.rs:3589-3609`
+  gives the model a per-group enum of legal multiples, so **the only seat
+  that can buy the X the others are promised is the one with nobody at it**.
+  `random.rs:126-127` discards the `_shortfall`, so the fuzzer announces an
+  X it did not roll and no invariant sees it — the tail of #564, folded into
+  #593 rather than filed apart.
+
 - V50 [proposed 2026-09-21, from V45] the budget on the other three surfaces.
   V45 measured the CLI and found a power law: 0.09 s per keypress at 100
   permanents, 1.9-3.7 s at 500, 16-23 s at 1,000, 8m30s to the first prompt
