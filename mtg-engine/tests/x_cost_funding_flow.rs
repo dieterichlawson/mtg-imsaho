@@ -571,3 +571,40 @@ fn an_x_spell_with_no_reduction_funds_every_point_of_x() {
     assert_eq!(options.max_announceable_x(), 2, "three lands, one of them the {{W}}");
     assert_eq!(options.mana_for_x(2), 2);
 }
+
+#[test]
+fn a_two_mana_rock_pays_an_odd_x_the_lands_cannot() {
+    // #593, from the keyboard: two Mountains and a Sol Ring, one Mountain
+    // reserved for Devil's Play's {R}, so X may be announced up to 3. The
+    // allocator used to take whole activations in category order — Mountain
+    // first, then a Sol Ring that no longer fit the leftover 1 — and
+    // announce X = 1 for a player who typed 2, leaving the Sol Ring
+    // untapped on a board where X = 2 and X = 3 were both exactly payable.
+    // CR 601.2b has the player announce X; nothing reduces it for them.
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let dp = spell_in_hand(&mut state, &registry, "Devil's Play", P0);
+    named_permanent(&mut state, &registry, "Mountain", P0);
+    named_permanent(&mut state, &registry, "Mountain", P0);
+    named_permanent(&mut state, &registry, "Sol Ring", P0);
+
+    let post_cast = cast_devils_play(&state, &registry, dp);
+    let options = extract_funding(&post_cast).clone();
+    assert_eq!(options.max_announceable_x(), 3, "one Mountain goes to the {{R}} pip");
+    assert_eq!(
+        mtg_engine::funding::fundable_x_values(&options),
+        vec![0, 1, 2, 3],
+        "every X in the stated range is payable on this board"
+    );
+
+    // Announce 2 and the spell must deal 2, not 1.
+    let (response, shortfall) = mtg_engine::funding::allocate_for_x(&options, 2);
+    assert_eq!(shortfall, 0, "X = 2 is payable: tap the Sol Ring, keep the Mountain");
+    let funded = engine::submit_action(
+        &post_cast,
+        &Action::ResolveChoice { choice: ResolvedChoice::XFunding(response) },
+        &registry,
+    );
+    let dp_obj = funded.get_object(dp).expect("Devil's Play is on the stack");
+    assert_eq!(dp_obj.x_value, Some(2), "the announced X is the X that was cast");
+}

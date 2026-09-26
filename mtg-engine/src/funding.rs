@@ -151,15 +151,104 @@ impl FundingResponse {
     }
 }
 
+/// Tap sums groups `i..` can produce exactly, as one reachability row per
+/// suffix: `rows[i][s]` is true iff some choice of taps among groups `i..`
+/// sums to exactly `s`. `rows[n]` is `{0}` — no groups, no mana.
+///
+/// Bounded at `limit` because an allocation may never overshoot the X the
+/// player announced, and computed per residue class so a group of 4,000
+/// one-mana lands costs `O(limit)` rather than `O(limit * 4000)`.
+fn tap_reachability(groups: &[FundingGroup], limit: u32) -> Vec<Vec<bool>> {
+    let width = limit as usize + 1;
+    let mut rows: Vec<Vec<bool>> = vec![Vec::new(); groups.len() + 1];
+    let mut row = vec![false; width];
+    row[0] = true;
+    rows[groups.len()] = row;
+    for i in (0..groups.len()).rev() {
+        let prev = &rows[i + 1];
+        let g = &groups[i];
+        // A group that produces nothing contributes nothing (`build_options`
+        // filters these out; a hand-built `FundingOptions` may not).
+        if g.mana_per_tap == 0 {
+            rows[i] = prev.clone();
+            continue;
+        }
+        let q = g.mana_per_tap as usize;
+        let max_taps = usize::try_from(g.source_ids.len()).unwrap_or(usize::MAX);
+        let mut next = vec![false; width];
+        for r in 0..q.min(width) {
+            // Steps of `q` back to the nearest reachable sum. The nearest is
+            // the criterion: if it is more taps than the group has sources,
+            // so is every one behind it.
+            let mut taps_back: Option<usize> = None;
+            let mut s = r;
+            while s < width {
+                taps_back = if prev[s] { Some(0) } else { taps_back.map(|t| t + 1) };
+                if taps_back.is_some_and(|t| t <= max_taps) {
+                    next[s] = true;
+                }
+                s += q;
+            }
+        }
+        rows[i] = next;
+    }
+    rows
+}
+
+/// Every X the player may announce that some allocation of `options` funds
+/// exactly, in ascending order.
+///
+/// The range the prompt states — `0..=max_announceable_x()` — is not this
+/// set. A board whose only source taps for two mana can fund 0 and 2 and
+/// nothing between them, and a surface that offers the player 1 is offering
+/// a value it cannot honour (#595). Always non-empty: X = 0 funds itself.
+#[must_use]
+pub fn fundable_x_values(options: &FundingOptions) -> Vec<u32> {
+    let pool_total: u32 = options.pool.values().sum();
+    let rows = tap_reachability(&options.groups, options.max_x);
+    let reachable = &rows[0];
+    // The largest tap sum at or below each mana amount, so "can the pool
+    // top some tap sum up to exactly `m`?" is one comparison.
+    let mut largest_at_or_below: Vec<Option<u32>> = vec![None; reachable.len()];
+    let mut best: Option<u32> = None;
+    for (s, &ok) in reachable.iter().enumerate() {
+        if ok {
+            best = Some(u32::try_from(s).unwrap_or(u32::MAX));
+        }
+        largest_at_or_below[s] = best;
+    }
+    (0..=options.max_announceable_x())
+        .filter(|&x| {
+            let mana = options.mana_for_x(x);
+            largest_at_or_below
+                .get(mana as usize)
+                .copied()
+                .flatten()
+                .is_some_and(|s| mana - s <= pool_total)
+        })
+        .collect()
+}
+
 /// Build the response that funds `x`, and say how much of it could not be
 /// funded.
 ///
-/// The pool is drained first, largest bucket first, then each group is
-/// tapped in the order the prompt lists them, in whole activations. A
-/// group that produces two mana a tap cannot fund an odd remainder, so the
-/// shortfall is returned rather than rounded up: the caller announces
-/// `x - shortfall` and says so. Callers that need an exact X check the
-/// second element.
+/// Funds `x` **exactly whenever the board can**, which is not the same as
+/// taking whole activations greedily in the order the prompt lists them:
+/// one Mountain and one Sol Ring can fund X = 2, but only by leaving the
+/// Mountain untapped, and a greedy pass spent the Mountain first and then
+/// reported the leftover 1 as unfundable — announcing X = 1 on a board
+/// where X = 2 and X = 3 were both exactly payable (#593).
+///
+/// Among the allocations that fund `x` exactly, the preference order the
+/// prompt implies is kept as a tie-break: drain the pool before tapping
+/// anything (largest colour bucket first), then spend lands before rocks
+/// before dorks — a player would rather keep a mana dork untapped.
+///
+/// When *no* allocation funds `x` — the genuinely unbuyable values, which
+/// [`fundable_x_values`] enumerates — this funds as much as it can and
+/// returns the shortfall. Callers that need an exact X check the second
+/// element, and an interactive surface should not offer a value whose
+/// shortfall is non-zero in the first place.
 ///
 /// One implementation, every seat. The terminal had it inline and the
 /// fuzzer had none — it answered every X prompt by allocating the whole
@@ -171,9 +260,29 @@ pub fn allocate_for_x(options: &FundingOptions, x: u32) -> (FundingResponse, u32
     let mut response = FundingResponse::default();
     // A cost reduction with no generic pips to come off pays for the first
     // `x_discount` of X, so only the rest is funded with mana (CR 601.2f).
-    let mut remaining = options.mana_for_x(x);
+    let target = options.mana_for_x(x);
+    let pool_total: u32 = options.pool.values().sum();
+
+    let rows = tap_reachability(&options.groups, target);
+    let reachable = &rows[0];
+
+    // The pool can top any tap sum up by 0..=pool_total, so `target` is
+    // exactly fundable iff some reachable tap sum sits in this window.
+    let floor = target.saturating_sub(pool_total);
+    let exact = (floor..=target).find(|&s| reachable[s as usize]);
+    // Exactness outranks the preference for pool over taps: the smallest
+    // tap sum in the window leaves the most of the pool intact, but if the
+    // window holds none, spend the whole pool behind the largest tap sum
+    // there is and report what is left over.
+    let tap_sum = exact.unwrap_or_else(|| {
+        (0..floor)
+            .rev()
+            .find(|&s| reachable[s as usize])
+            .unwrap_or(0)
+    });
 
     // Pool: drain largest buckets first.
+    let mut remaining = target - tap_sum;
     let mut pool_sorted: Vec<(ManaType, u32)> =
         options.pool.iter().map(|(k, v)| (*k, *v)).collect();
     pool_sorted.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
@@ -188,22 +297,27 @@ pub fn allocate_for_x(options: &FundingOptions, x: u32) -> (FundingResponse, u32
         }
     }
 
-    // Taps: groups in their given order (category-sorted). For each, as
-    // many full activations as fit — under-tapping rather than over-tapping
-    // when the quantum does not divide the remainder.
-    for g in &options.groups {
-        if remaining == 0 {
+    // Taps: walk the groups in their given order (category-sorted), taking
+    // the most each can contribute that still leaves `left` reachable by
+    // the groups behind it. That spends lands before rocks before dorks
+    // among the allocations summing to `tap_sum`.
+    let mut left = tap_sum;
+    for (i, g) in options.groups.iter().enumerate() {
+        if left == 0 {
             break;
         }
         if g.mana_per_tap == 0 {
             continue;
         }
         let max_taps = u32::try_from(g.source_ids.len()).unwrap_or(u32::MAX);
-        let take_taps = (remaining / g.mana_per_tap).min(max_taps);
+        let take_taps = (0..=(left / g.mana_per_tap).min(max_taps))
+            .rev()
+            .find(|&t| rows[i + 1][(left - t * g.mana_per_tap) as usize])
+            .unwrap_or(0);
         if take_taps > 0 {
             let amount = take_taps * g.mana_per_tap;
             response.taps.insert(g.name.clone(), amount);
-            remaining -= amount;
+            left -= amount;
         }
     }
 
@@ -672,6 +786,171 @@ mod tests {
         // 2 Sol Rings: legal amounts should be 0, 2, 4.
         let g = group("Sol Ring", FundingCategory::Rocks, 2, 2);
         assert_eq!(g.max_contribution(), 4);
+    }
+
+    #[test]
+    fn an_x_the_board_can_pay_exactly_is_funded_exactly() {
+        // One Mountain (1/tap) and one Sol Ring (2/tap): X = 2 is payable
+        // only by leaving the Mountain up. Taking whole activations in
+        // category order spent the Mountain, could not spend the Sol Ring
+        // on the leftover 1, and announced X = 1 on a board where X = 3
+        // succeeded — the larger X buyable and the smaller one not (#593).
+        let options = FundingOptions {
+            pool: BTreeMap::new(),
+            groups: vec![
+                group("Mountain", FundingCategory::Lands, 1, 1),
+                group("Sol Ring", FundingCategory::Rocks, 2, 1),
+            ],
+            max_x: 3,
+            x_discount: 0,
+        };
+        for x in 0..=3 {
+            let (response, shortfall) = allocate_for_x(&options, x);
+            assert_eq!(shortfall, 0, "X = {x} is exactly payable on this board");
+            assert_eq!(response.x_value(), x, "X = {x} funded {response:?}");
+            assert_eq!(validate(&response, &options), Ok(()));
+        }
+        // And the tie-break survives: the Sol Ring alone pays 2, while 1
+        // and 3 still spend the land first.
+        assert_eq!(allocate_for_x(&options, 2).0.taps,
+            [("Sol Ring".to_string(), 2)].into_iter().collect());
+        assert_eq!(allocate_for_x(&options, 1).0.taps,
+            [("Mountain".to_string(), 1)].into_iter().collect());
+        assert_eq!(allocate_for_x(&options, 3).0.taps,
+            [("Mountain".to_string(), 1), ("Sol Ring".to_string(), 2)].into_iter().collect());
+    }
+
+    #[test]
+    fn the_preference_order_is_only_a_tie_break_among_exact_allocations() {
+        // Two dorks (1/tap) and one Sol Ring (2/tap), X = 2. Both the
+        // dork pair and the Sol Ring pay it exactly; a player would rather
+        // keep the attackers, so the rock wins. X = 3 needs both, and X = 1
+        // can only be a dork.
+        let options = FundingOptions {
+            pool: BTreeMap::new(),
+            groups: vec![
+                group("Sol Ring", FundingCategory::Rocks, 2, 1),
+                group("Llanowar Elves", FundingCategory::Dorks, 1, 2),
+            ],
+            max_x: 4,
+            x_discount: 0,
+        };
+        for x in 0..=4 {
+            let (response, shortfall) = allocate_for_x(&options, x);
+            assert_eq!((x, shortfall), (x, 0));
+            assert_eq!(response.x_value(), x);
+        }
+        assert_eq!(allocate_for_x(&options, 2).0.taps,
+            [("Sol Ring".to_string(), 2)].into_iter().collect());
+        assert_eq!(allocate_for_x(&options, 1).0.taps,
+            [("Llanowar Elves".to_string(), 1)].into_iter().collect());
+    }
+
+    #[test]
+    fn an_x_no_allocation_can_reach_reports_its_shortfall() {
+        // The branch that must survive the fix: one 2/tap source funds 0
+        // and 2 and nothing between, so X = 1 is unbuyable by any
+        // allocation, not merely missed by this one.
+        let options = FundingOptions {
+            pool: BTreeMap::new(),
+            groups: vec![group("Sol Ring", FundingCategory::Rocks, 2, 1)],
+            max_x: 2,
+            x_discount: 0,
+        };
+        let (response, shortfall) = allocate_for_x(&options, 1);
+        assert_eq!(shortfall, 1);
+        assert_eq!(response.x_value(), 0);
+        assert_eq!(fundable_x_values(&options), vec![0, 2]);
+    }
+
+    #[test]
+    fn the_pool_is_spent_first_unless_that_costs_the_announced_x() {
+        // Floating mana goes before taps (it is lost at end of step either
+        // way), so a pool that covers X taps nothing.
+        let mut pool = BTreeMap::new();
+        pool.insert(ManaType::Red, 2);
+        let options = FundingOptions {
+            pool: pool.clone(),
+            groups: vec![group("Mountain", FundingCategory::Lands, 1, 2)],
+            max_x: 4,
+            x_discount: 0,
+        };
+        let (response, shortfall) = allocate_for_x(&options, 2);
+        assert_eq!(shortfall, 0);
+        assert_eq!(response.pool, pool);
+        assert!(response.taps.is_empty());
+
+        // But exactness outranks that preference: with one Red floating and
+        // a single 2/tap rock, X = 2 is payable only by tapping the rock and
+        // keeping the Red. Spending the Red first left 1 to find and a
+        // source that cannot make 1.
+        let mut one_red = BTreeMap::new();
+        one_red.insert(ManaType::Red, 1);
+        let options = FundingOptions {
+            pool: one_red,
+            groups: vec![group("Sol Ring", FundingCategory::Rocks, 2, 1)],
+            max_x: 3,
+            x_discount: 0,
+        };
+        let (response, shortfall) = allocate_for_x(&options, 2);
+        assert_eq!(shortfall, 0);
+        assert_eq!(response.x_value(), 2);
+        assert!(response.pool.is_empty(), "the Red is kept: {response:?}");
+        assert_eq!(fundable_x_values(&options), vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn fundable_x_values_names_exactly_the_x_values_that_fund_without_shortfall() {
+        // The property the interactive surfaces rely on: the set they may
+        // offer is the set that funds exactly, over every shape of board.
+        let boards = vec![
+            vec![],
+            vec![group("Sol Ring", FundingCategory::Rocks, 2, 1)],
+            vec![group("Sol Ring", FundingCategory::Rocks, 2, 3)],
+            vec![group("Mountain", FundingCategory::Lands, 1, 1),
+                 group("Sol Ring", FundingCategory::Rocks, 2, 1)],
+            vec![group("Gilded Lotus", FundingCategory::Rocks, 3, 2),
+                 group("Sol Ring", FundingCategory::Rocks, 2, 1)],
+            vec![group("Worn Powerstone", FundingCategory::Rocks, 4, 2),
+                 group("Gilded Lotus", FundingCategory::Rocks, 3, 1)],
+            // A group with no output at all must not make X unfundable.
+            vec![group("Tapped Out", FundingCategory::Rocks, 0, 2),
+                 group("Sol Ring", FundingCategory::Rocks, 2, 2)],
+        ];
+        for pool_red in 0..3u32 {
+            for discount in 0..3u32 {
+                for groups in &boards {
+                    let mut pool = BTreeMap::new();
+                    if pool_red > 0 {
+                        pool.insert(ManaType::Red, pool_red);
+                    }
+                    let max_x = pool_red
+                        + groups.iter().map(FundingGroup::max_contribution).sum::<u32>();
+                    let options = FundingOptions {
+                        pool,
+                        groups: groups.clone(),
+                        max_x,
+                        x_discount: discount,
+                    };
+                    let fundable = fundable_x_values(&options);
+                    for x in 0..=options.max_announceable_x() {
+                        let (response, shortfall) = allocate_for_x(&options, x);
+                        assert_eq!(
+                            validate(&response, &options), Ok(()),
+                            "X = {x} on {options:?} produced {response:?}");
+                        assert_eq!(
+                            fundable.contains(&x), shortfall == 0,
+                            "X = {x} on {options:?}: fundable says {}, shortfall is {shortfall}",
+                            fundable.contains(&x));
+                        if shortfall == 0 {
+                            assert_eq!(response.x_value(), options.mana_for_x(x),
+                                "X = {x} on {options:?} funded {response:?}");
+                        }
+                    }
+                    assert!(fundable.contains(&0), "X = 0 always funds itself");
+                }
+            }
+        }
     }
 
     #[test]
