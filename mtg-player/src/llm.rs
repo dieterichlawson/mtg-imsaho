@@ -3671,31 +3671,61 @@ impl LlmPlayer {
 
         // Parse response. The schema uses string-enum for integer-range
         // fields (see `int_enum_str` above), so values arrive as strings
-        // like "2" and we parse back to u32. Any non-parseable value
-        // falls back to 0 — `validate` catches downstream issues.
-        let parse_int_str = |v: &serde_json::Value| -> u32 {
-            v.as_str()
-                .and_then(|s| s.parse::<u32>().ok())
-                .unwrap_or(0)
+        // like "2" and we parse back to u32.
+        //
+        // A JSON *number* carrying the same value is the same allocation and
+        // is taken as one: `as_str()` alone is `None` for it, so
+        // `{"rocks":{"Sol Ring":4}}` read as 0, every group read as 0, the
+        // response became `FundingResponse::default()` — which `validate`
+        // accepts, because an empty response is a legal X = 0 — and the seat
+        // logged `X funding sum = 0`, byte-identical to a model that chose
+        // zero. A seat cast every X spell for nothing and the counter built
+        // to surface exactly that read clean (#596). The other readers in
+        // this file take `as_u64()`; this one was the odd one out.
+        //
+        // What is still not an allocation — "two", "", "0x2", "1e1", 2.5,
+        // -1, an object — is substituted with 0 *and counted*, the way every
+        // other client-side validator here does it (H14). Substituting is
+        // right; substituting silently is what made this invisible.
+        let parse_int_str = |v: &serde_json::Value| -> Option<u32> {
+            if let Some(s) = v.as_str() {
+                return s.parse::<u32>().ok();
+            }
+            v.as_u64().and_then(|n| u32::try_from(n).ok())
         };
         let mut funding = FundingResponse::default();
+        let mut unreadable: Vec<String> = Vec::new();
         for mt in colors {
-            let amount = response.get("floating")
-                .and_then(|f| f.get(mt_key(mt)))
-                .map_or(0, parse_int_str);
-            if amount > 0 {
-                funding.pool.insert(mt, amount);
+            let Some(val) = response.get("floating").and_then(|f| f.get(mt_key(mt))) else {
+                continue;
+            };
+            match parse_int_str(val) {
+                Some(amount) => {
+                    if amount > 0 {
+                        funding.pool.insert(mt, amount);
+                    }
+                }
+                None => unreadable.push(format!("floating.{} = {val}", mt_key(mt))),
             }
         }
         for cat_key in ["lands", "rocks", "dorks"] {
             if let Some(obj) = response.get(cat_key).and_then(|v| v.as_object()) {
                 for (name, val) in obj {
-                    let amount = parse_int_str(val);
-                    if amount > 0 {
-                        funding.taps.insert(name.clone(), amount);
+                    match parse_int_str(val) {
+                        Some(amount) => {
+                            if amount > 0 {
+                                funding.taps.insert(name.clone(), amount);
+                            }
+                        }
+                        None => unreadable.push(format!("{cat_key}.{name} = {val}")),
                     }
                 }
             }
+        }
+        if !unreadable.is_empty() {
+            self.log_rejected(&format!(
+                "X funding allocations the harness could not read ({}), taken as 0",
+                unreadable.join(", ")));
         }
 
         // Best-effort validation: if the model produced something invalid,
@@ -5567,6 +5597,129 @@ mod tests {
         assert_eq!(unanswered_note(0), "");
         assert_eq!(unanswered_note(1), ", 1 decision the backend never answered → fallback");
         assert_eq!(unanswered_note(39), ", 39 decisions the backend never answered → fallback");
+    }
+
+    /// A backend that answers one fixed object, whatever it is asked.
+    struct FixedBackend {
+        model: &'static str,
+        reply: serde_json::Value,
+    }
+
+    impl LlmBackend for FixedBackend {
+        fn send(&mut self, message: &str) -> String {
+            self.send_with_schema(message, &serde_json::Value::Null).to_string()
+        }
+        fn send_with_schema(&mut self, _m: &str, _s: &serde_json::Value) -> serde_json::Value {
+            self.reply.clone()
+        }
+        fn init(&mut self, _deck_info: &str) {}
+        fn resume(&mut self, _recap: &str) {}
+        fn system_prompt(&self) -> &str { "" }
+        fn model_name(&self) -> &str { self.model }
+    }
+
+    fn fixed_player(name: &str, model: &'static str, reply: serde_json::Value) -> LlmPlayer {
+        let mut player = LlmPlayer::for_prompt_tests(name);
+        player.backend = Box::new(FixedBackend { model, reply });
+        player
+    }
+
+    /// Two untapped Sol Rings and nothing else: the only allocations are
+    /// 0, 2 and 4, and the schema offers them as the strings "0", "2", "4".
+    fn x_funding_offer() -> mtg_engine::engine::LegalActions {
+        use mtg_engine::funding::{FundingCategory, FundingGroup, FundingOptions};
+        let options = FundingOptions {
+            pool: std::collections::BTreeMap::new(),
+            groups: vec![FundingGroup {
+                name: "Sol Ring".to_string(),
+                category: FundingCategory::Rocks,
+                mana_per_tap: 2,
+                source_ids: vec![ObjectId(301), ObjectId(302)],
+                colors_produced: vec![],
+            }],
+            max_x: 4,
+            x_discount: 0,
+        };
+        mtg_engine::engine::LegalActions {
+            actions: Vec::new(),
+            combat_prompt: None,
+            castable_spells: Vec::new(),
+            activatable_abilities: Vec::new(),
+            context: Some("MAIN PHASE 1".to_string()),
+            resolution_prompt: Some(mtg_engine::state::ResolutionChoiceKind::ChooseXFunding {
+                description: "Choose X for Devil's Play".to_string(),
+                options,
+                source_id: ObjectId(400),
+                is_ability: false,
+            }),
+            set_prompt: None,
+        }
+    }
+
+    fn funded_x(player: &mut LlmPlayer, legal: &mtg_engine::engine::LegalActions) -> u32 {
+        use mtg_engine::actions::ResolvedChoice;
+        let view = empty_view();
+        match player.choose_action(&view, legal) {
+            Action::ResolveChoice { choice: ResolvedChoice::XFunding(f) } => f.x_value(),
+            other => panic!("an X funding prompt is answered with a funding response: {other:?}"),
+        }
+    }
+
+    /// Issue #596: the X-funding reader was `as_str().and_then(parse).
+    /// unwrap_or(0)`, so an answer whose values were JSON numbers instead of
+    /// the schema's strings read as 0 for every group. The response became
+    /// `FundingResponse::default()`, which `funding::validate` accepts
+    /// because an empty response is a legal X = 0 — so `log_rejected` was
+    /// never called, the `answers rejected → fallback` counter stayed at
+    /// zero, and the seat logged `X funding sum = 0`, byte-identical to a
+    /// model that deliberately announced zero. A seat cast every X spell for
+    /// nothing and the operator-facing record said nothing had gone wrong.
+    ///
+    /// Two halves: the same number in the other JSON type is the same
+    /// allocation (the eleven other readers in this file take `as_u64()`),
+    /// and a value that really cannot be read is still substituted but is
+    /// **counted**.
+    #[test]
+    fn an_x_funding_answer_is_read_as_a_number_or_counted_as_unreadable() {
+        let legal = x_funding_offer();
+
+        // The control: the schema's own shape.
+        let mut strings = fixed_player("Seat-596-strings", "model-596-strings",
+            serde_json::json!({"rocks": {"Sol Ring": "4"}}));
+        assert_eq!(funded_x(&mut strings, &legal), 4);
+
+        // The defect: the same allocation as a JSON number.
+        let mut numbers = fixed_player("Seat-596-numbers", "model-596-numbers",
+            serde_json::json!({"rocks": {"Sol Ring": 4}}));
+        assert_eq!(funded_x(&mut numbers, &legal), 4,
+            "a number is the same allocation as the string of that number");
+
+        // Neither is a rejection: both said 4 and both got 4.
+        let rejected = get_rejected_by_seat();
+        assert_eq!(rejected.get("Seat-596-strings"), None, "{rejected:?}");
+        assert_eq!(rejected.get("Seat-596-numbers"), None, "{rejected:?}");
+
+        // And what genuinely cannot be read is substituted AND counted, so
+        // the one counter built to surface this no longer reads clean.
+        for (seat, model, value) in [
+            ("Seat-596-word", "model-596-word", serde_json::json!("two")),
+            ("Seat-596-empty", "model-596-empty", serde_json::json!("")),
+            ("Seat-596-hex", "model-596-hex", serde_json::json!("0x2")),
+            ("Seat-596-float", "model-596-float", serde_json::json!(2.5)),
+            ("Seat-596-negative", "model-596-negative", serde_json::json!(-2)),
+            ("Seat-596-object", "model-596-object", serde_json::json!({"taps": 2})),
+        ] {
+            let mut player = fixed_player(seat, model,
+                serde_json::json!({"rocks": {"Sol Ring": value}}));
+            assert_eq!(funded_x(&mut player, &legal), 0,
+                "{seat}: an unreadable allocation is substituted with nothing");
+            let rejected = get_rejected_by_seat();
+            assert_eq!(rejected.get(seat), Some(&1),
+                "{seat}: the substitution is counted as an answer the harness could not use: \
+                 {rejected:?}");
+            assert_eq!(get_llm_model_usage().get(model).map(|u| u.rejected), Some(1),
+                "{seat}: and in the per-model tally the summaries read");
+        }
     }
 
     /// Issue #466: the system prompt's card reference was the union of both
