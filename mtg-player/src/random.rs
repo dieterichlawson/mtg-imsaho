@@ -101,8 +101,19 @@ impl Player for RandomPlayer {
         let legal_actions = &legal.actions;
 
         // X-cost funding: no enumerated actions to pick from. The value is
-        // rolled across the whole range and then allocated the way the
-        // terminal allocates it.
+        // rolled across the X values the board can actually fund and then
+        // allocated the way the terminal allocates it.
+        //
+        // Rolled across `fundable_x_values`, not `0..=max_announceable_x()`.
+        // Those differ whenever a source makes more than one mana a tap: a
+        // lone Sol Ring funds 0 and 2 and nothing between, and rolling 1
+        // got the allocator's shortfall arm, whose response this seat
+        // discarded the second element of — so the seat announced an X it
+        // did not roll, silently, and `validate` was happy because an
+        // under-funded response is a legal response. That is CLAUDE.md's
+        // rule 2 by a back route: the seat's answer collapses onto a legal
+        // no-op that no invariant can see (#593). Roll the fundable set and
+        // the rolled X is the announced X, so a shortfall here is a bug.
         //
         // NOT the maximum, which is what this used to do — drain the pool,
         // tap every group to its `max_contribution` — and
@@ -123,8 +134,13 @@ impl Player for RandomPlayer {
             if self.cancels_the_cast() {
                 return Action::ResolveChoice { choice: ResolvedChoice::CancelCast };
             }
-            let x = self.rng.gen_range(0..=options.max_announceable_x());
-            let (response, _shortfall) = mtg_engine::funding::allocate_for_x(options, x);
+            let fundable = mtg_engine::funding::fundable_x_values(options);
+            let x = fundable[self.rng.gen_range(0..fundable.len())];
+            let (response, shortfall) = mtg_engine::funding::allocate_for_x(options, x);
+            debug_assert_eq!(
+                shortfall, 0,
+                "fundable_x_values offered X = {x} and the allocator could not fund it"
+            );
             return Action::ResolveChoice { choice: ResolvedChoice::XFunding(response) };
         }
 
@@ -830,6 +846,52 @@ mod rolls {
         for x in [0, 2, 4, 6] {
             assert!(seen.contains(&x), "X={x} is fundable here; saw {seen:?}");
         }
+    }
+
+    /// #593: the roll used to span `0..=max_announceable_x()` and the
+    /// allocator's shortfall was discarded, so on a board with a big
+    /// quantum most rolls were silently replaced by a smaller X — the
+    /// answer collapsing toward the legal no-op that CLAUDE.md's rule 2
+    /// exists to keep a non-interactive seat away from, reached by the
+    /// parser rather than by the seat's own choice.
+    #[test]
+    fn a_rolled_x_is_the_x_the_seat_announces() {
+        // One source making four mana: only X = 0 and X = 4 are fundable.
+        // Rolling 0..=4 sent four of five rolls to X = 0.
+        let legal = funding_prompt_on(0, &[("Worn Powerstone", 4, 1)], 0);
+        let Some(ResolutionChoiceKind::ChooseXFunding { options, .. }) =
+            legal.resolution_prompt.as_ref()
+        else {
+            panic!("a funding prompt")
+        };
+        assert_eq!(options.max_announceable_x(), 4, "the fixture's ceiling");
+        assert_eq!(mtg_engine::funding::fundable_x_values(options), vec![0, 4]);
+
+        let mut counts = std::collections::BTreeMap::new();
+        for a in answers(&legal, 400) {
+            if let Action::ResolveChoice { choice: ResolvedChoice::XFunding(r) } = a {
+                // Every answer funds an X the seat could have rolled: no
+                // response comes back under-funded.
+                let (exact, shortfall) =
+                    mtg_engine::funding::allocate_for_x(options, r.x_value());
+                assert_eq!(shortfall, 0, "the seat announced an unfundable X: {r:?}");
+                assert_eq!(exact, r, "the seat's answer is the allocation for its X");
+                *counts.entry(r.x_value()).or_insert(0usize) += 1;
+            }
+        }
+        assert_eq!(
+            counts.keys().copied().collect::<Vec<u32>>(), vec![0, 4],
+            "only the fundable values are announced: {counts:?}"
+        );
+        // Two fundable values rolled evenly is ~half each of the ~400
+        // non-cancelled answers. Rolling the stated range instead gave
+        // X = 4 one fifth of them, so 150 separates the two by a wide
+        // margin without asserting on the exact stream.
+        assert!(
+            counts[&4] >= 150,
+            "X = 4 is half the fundable set and came back {} times: {counts:?}",
+            counts[&4]
+        );
     }
 
     /// And the reduction of CR 601.2f: the first `x_discount` of X costs no
