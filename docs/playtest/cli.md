@@ -1082,3 +1082,27 @@ whether it told the truth.
   at 2,000 (a full `GameState` clone per decision at `main.rs:864` plus a
   full save rewrite — 13.46 MB per keypress at turn 22), since that is the
   configuration CI runs in
+
+- V51 [proposed 2026-09-26, from tonight's V49 and #593/#594/#596] the
+  answer the program changed. Every reader in this repo does one of three
+  things with what it is given: honours it, refuses it by name, or **changes
+  it and carries on**. The third is the one nobody sweeps, and all three of
+  tonight's V49 issues are instances — the CLI funds a smaller X than was
+  typed and says so for 900ms, the page funds a smaller X and says nothing,
+  and `parse_int_str` turns a mistyped allocation into a legal zero that
+  `validate` waves through and no counter records. Method, two halves.
+  (a) Grep for the shape: a call whose result carries "how much of this did
+  not work" and a caller that drops it — `let (response, _shortfall) =`
+  (`random.rs:127`), `unwrap_or(0)` / `unwrap_or_default()` on a parsed
+  value (`llm.rs:3679` is the one that paid), `Math.floor` and bare
+  remainder arithmetic in `prompts.ts`, and any `if let Ok(..)` whose `Err`
+  arm is empty. For each, ask what the caller would have done differently
+  had it looked, and whether any log line or counter would show the
+  difference. (b) Then sit at the CLI and type, at every prompt that takes
+  a value rather than an index, a legal-looking answer the program cannot
+  deliver exactly — an X with a quantum shortfall, a mark count on a screen
+  whose max moved, a blocker set that is legal pairwise and illegal jointly
+  — and check the log against the screen. A prompt that refuses is fine and
+  a prompt that honours is fine; a prompt that quietly substitutes needs a
+  number. Start with `pick_set`'s five callers and the two combat prompts,
+  since those are where a substitution would be invisible in the same way
