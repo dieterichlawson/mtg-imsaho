@@ -227,6 +227,62 @@ async function main() {
         });
       }
     }
+    // 8c. #594: the page funded a smaller X than the player typed and said
+    //     nothing at all — the terminal's "could not allocate" line was
+    //     never ported here, so `notice` was null, the popover closed and
+    //     the card was spent. On a board whose only source taps for two
+    //     mana, X = 1 is payable by no allocation; X = 2 is, and #593 is
+    //     that the page's greedy loop funded 1 for it.
+    {
+      const options = { pool: {}, groups: [
+        { name: "Mountain", category: "Lands", source_ids: [ids.mine[0]], mana_per_tap: 1, colors_produced: ["Red"] },
+        { name: "Sol Ring", category: "Rocks", source_ids: [ids.mine[1]], mana_per_tap: 2, colors_produced: [] },
+      ], max_x: 3, x_discount: 0 };
+      const xPrompt = () => legal({ resolution_prompt: { ChooseXFunding: { description: "Choose X for Devil's Play", options, source_id: ids.hand[0], is_ability: false } } });
+
+      // Every value here is payable, so the prompt must not claim otherwise.
+      if (await stage("x-payable-line", xPrompt(), null, "number")) {
+        const summary = await page.evaluate(() => (window.mtg.ui.summary || []).join(" | "));
+        if (/Payable X/.test(summary)) fail(`x-payable-line: 0-3 are all payable here, but the prompt said ${JSON.stringify(summary)}`);
+        else ok("x-payable-line: no payable-set line when the whole range is payable");
+        // And 2 is funded to the point rather than greedily to 1.
+        await page.keyboard.type("2");
+        await page.keyboard.press("Enter");
+        await expectSent("x-exact-2", a => {
+          const f = a.ResolveChoice && a.ResolveChoice.choice.XFunding;
+          return f && (f.taps["Sol Ring"] || 0) === 2 && !f.taps.Mountain;
+        });
+      }
+
+      // One 2/tap source and nothing else: payable X is 0 and 2.
+      const only = { pool: {}, groups: [
+        { name: "Sol Ring", category: "Rocks", source_ids: [ids.mine[1]], mana_per_tap: 2, colors_produced: [] },
+      ], max_x: 2, x_discount: 0 };
+      const onlyPrompt = () => legal({ resolution_prompt: { ChooseXFunding: { description: "Choose X for Devil's Play", options: only, source_id: ids.hand[0], is_ability: false } } });
+      if (await stage("x-unpayable", onlyPrompt(), null, "number")) {
+        const summary = await page.evaluate(() => (window.mtg.ui.summary || []).join(" | "));
+        if (!/Payable X: 0, 2/.test(summary)) fail(`x-unpayable: the payable set is not stated: ${JSON.stringify(summary)}`);
+        else ok("x-unpayable: the prompt states 'Payable X: 0, 2'");
+        await page.keyboard.type("1");
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(60);
+        const s = await lastSent();
+        if (s && s.seq === seq) {
+          fail(`x-unpayable: X = 1 was ACCEPTED as ${JSON.stringify(s.action)} — the card is spent for 0`);
+        } else {
+          const notice = await page.evaluate(() => window.mtg.notice || null);
+          if (!notice || !/not payable/.test(notice)) fail(`x-unpayable: refused with no message (notice ${JSON.stringify(notice)})`);
+          else ok(`x-unpayable: X = 1 → ${JSON.stringify(notice)}`);
+        }
+        // Still being asked, and the payable value goes through.
+        await page.keyboard.type("2");
+        await page.keyboard.press("Enter");
+        await expectSent("x-unpayable-then-2", a => {
+          const f = a.ResolveChoice && a.ResolveChoice.choice.XFunding;
+          return f && (f.taps["Sol Ring"] || 0) === 2;
+        });
+      }
+    }
     // 9. PayOrNot: the two offered actions as a list.
     {
       const actions = [rc({ PayDecision: true }), rc({ PayDecision: false })];

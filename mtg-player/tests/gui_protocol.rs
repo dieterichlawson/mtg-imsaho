@@ -156,3 +156,114 @@ fn every_resolution_kind_the_engine_defines_is_known_to_the_page() {
          Add a `case` for each in mtg-gui/src/prompts.ts (a list is the safe default), \
          then add it here if a list is right.");
 }
+
+/// The X-funding cases the page is held to.
+///
+/// The page builds its own `Action`, so it carries its own copy of
+/// `funding::allocate_for_x` — the engine cannot be called from the browser.
+/// A copy is what #404 and #561 are about: a fix that went into one request
+/// path and not the other. So the engine writes the answers down here and
+/// `mtg-gui/tests/xfunding.js` holds the page to them, which fails whichever
+/// side moves alone.
+///
+/// Regenerate with `MTG_UPDATE_X_FUNDING_CASES=1 cargo test -p mtg-player
+/// --test gui_protocol` and commit the file with the change that moved it.
+#[test]
+fn the_page_is_given_the_engines_x_funding_answers() {
+    use mtg_engine::funding::{self, FundingCategory, FundingGroup, FundingOptions};
+    use mtg_engine::ids::ObjectId;
+    use mtg_engine::types::ManaType;
+
+    fn group(name: &str, category: FundingCategory, per_tap: u32, count: u64) -> FundingGroup {
+        FundingGroup {
+            name: name.into(),
+            category,
+            mana_per_tap: per_tap,
+            source_ids: (0..count).map(|i| ObjectId(200 + i)).collect(),
+            colors_produced: vec![],
+        }
+    }
+
+    // The shapes that made the two surfaces disagree: a quantum bigger than
+    // one (#593, #594), two quanta that need the later group alone, a pool
+    // that must be kept rather than spent, a cost reduction (CR 601.2f), and
+    // a group that produces nothing.
+    let boards: Vec<(&str, Vec<FundingGroup>)> = vec![
+        ("one-land", vec![group("Mountain", FundingCategory::Lands, 1, 1)]),
+        ("one-rock", vec![group("Sol Ring", FundingCategory::Rocks, 2, 1)]),
+        ("three-rocks", vec![group("Sol Ring", FundingCategory::Rocks, 2, 3)]),
+        ("land-and-rock", vec![
+            group("Mountain", FundingCategory::Lands, 1, 1),
+            group("Sol Ring", FundingCategory::Rocks, 2, 1)]),
+        ("rock-and-dorks", vec![
+            group("Sol Ring", FundingCategory::Rocks, 2, 1),
+            group("Llanowar Elves", FundingCategory::Dorks, 1, 2)]),
+        ("coprime-rocks", vec![
+            group("Worn Powerstone", FundingCategory::Rocks, 4, 2),
+            group("Gilded Lotus", FundingCategory::Rocks, 3, 1)]),
+        ("a-group-making-nothing", vec![
+            group("Nothing", FundingCategory::Rocks, 0, 2),
+            group("Sol Ring", FundingCategory::Rocks, 2, 2)]),
+    ];
+
+    let mut cases = Vec::new();
+    for (name, groups) in boards {
+        for (pool_red, pool_white) in [(0, 0), (1, 0), (2, 1)] {
+            for x_discount in [0, 2] {
+                let mut pool = std::collections::BTreeMap::new();
+                if pool_red > 0 {
+                    pool.insert(ManaType::Red, pool_red);
+                }
+                if pool_white > 0 {
+                    pool.insert(ManaType::White, pool_white);
+                }
+                let max_x = pool_red + pool_white
+                    + groups.iter().map(FundingGroup::max_contribution).sum::<u32>();
+                let options = FundingOptions { pool, groups: groups.clone(), max_x, x_discount };
+                let allocations: Vec<serde_json::Value> = (0..=options.max_announceable_x())
+                    .map(|x| {
+                        let (response, shortfall) = funding::allocate_for_x(&options, x);
+                        serde_json::json!({
+                            "x": x,
+                            "pool": response.pool,
+                            "taps": response.taps,
+                            "shortfall": shortfall,
+                        })
+                    })
+                    .collect();
+                cases.push(serde_json::json!({
+                    "board": format!("{name}/pool{pool_red}-{pool_white}/discount{x_discount}"),
+                    "options": options,
+                    "fundable": funding::fundable_x_values(&options),
+                    "allocations": allocations,
+                }));
+            }
+        }
+    }
+    // One compact case per line: a 40-case fixture pretty-printed is 80 KB of
+    // one-number lines, and a diff that names the board that moved is worth
+    // more than indentation.
+    let mut fresh = String::from(
+        "{\"generated_by\":\"mtg-player/tests/gui_protocol.rs::the_page_is_given_the_engines_x_funding_answers\",\
+          \"read_by\":\"mtg-gui/tests/xfunding.js\"}\n",
+    );
+    for case in &cases {
+        fresh.push_str(&serde_json::to_string(case).expect("serialize"));
+        fresh.push('\n');
+    }
+
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../mtg-gui/tests/x-funding-cases.jsonl");
+    if std::env::var_os("MTG_UPDATE_X_FUNDING_CASES").is_some() {
+        std::fs::write(path, &fresh).expect("write the fixture");
+        return;
+    }
+    let committed = std::fs::read_to_string(path).unwrap_or_default();
+    assert_eq!(
+        committed, fresh,
+        "the engine's X-funding answers have moved and mtg-gui/tests/x-funding-cases.jsonl \
+         has not. The page carries its own allocator, so a change here is a change there: \
+         port it into mtg-gui/src/prompts.ts, run `MTG_UPDATE_X_FUNDING_CASES=1 cargo test \
+         -p mtg-player --test gui_protocol`, rebuild the page (cd mtg-gui && npx tsc -p .) \
+         and commit all three."
+    );
+}

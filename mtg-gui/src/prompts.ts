@@ -7,7 +7,7 @@
 // actions were offered, never to nothing.
 
 import type {
-  Action, ActivatableAbility, CastableSpell, CombatPrompt, FundingOptions, FundingResponse, GameView,
+  Action, ActivatableAbility, CastableSpell, CombatPrompt, FundingGroup, FundingOptions, FundingResponse, GameView,
   LegalActions, ManaCost, ManaType, ObjectId, PlayerId, ResolutionPayload, ResolvedChoice, Target,
 } from "./protocol.js";
 import { tag } from "./protocol.js";
@@ -605,6 +605,145 @@ function clipToken(typed: string): string {
   return shown.length <= 40 ? shown : shown.slice(0, 40) + "\u2026";
 }
 
+// ------------------------------------------------------- X funding, exactly
+
+// The page's copy of `mtg-engine/src/funding.rs`. It is a copy because the
+// page builds the `Action` itself — the seat sends `LegalActions` as it is
+// and reads one `Action` back — so a change to the allocator has to be made
+// here too, and `mtg-gui/tests/x-funding-cases.json` is the fixture that
+// fails when only one side of it moves (#404 and #561 are what happens when
+// a second request path misses a fix).
+
+/** Tap sums groups `i..` can produce exactly: `rows[i][s]`, bounded at
+ *  `limit`. Per residue class, so a group of 4,000 lands is O(limit). */
+export function tapReachability(groups: FundingGroup[], limit: number): boolean[][] {
+  const width = limit + 1;
+  const rows: boolean[][] = new Array(groups.length + 1);
+  const last = new Array<boolean>(width).fill(false);
+  last[0] = true;
+  rows[groups.length] = last;
+  for (let i = groups.length - 1; i >= 0; i--) {
+    const prev = rows[i + 1];
+    const q = groups[i].mana_per_tap;
+    if (!q) { rows[i] = prev.slice(); continue; }
+    const maxTaps = groups[i].source_ids.length;
+    const next = new Array<boolean>(width).fill(false);
+    for (let r = 0; r < Math.min(q, width); r++) {
+      // Steps of `q` back to the nearest reachable sum; the nearest is the
+      // criterion, since everything behind it is further still.
+      let tapsBack = -1;
+      for (let s = r; s < width; s += q) {
+        tapsBack = prev[s] ? 0 : (tapsBack < 0 ? -1 : tapsBack + 1);
+        if (tapsBack >= 0 && tapsBack <= maxTaps) next[s] = true;
+      }
+    }
+    rows[i] = next;
+  }
+  return rows;
+}
+
+const manaForX = (opts: FundingOptions, x: number): number => Math.max(0, x - (opts.x_discount || 0));
+const poolTotal = (opts: FundingOptions): number =>
+  Object.values(opts.pool || {}).reduce((a, n) => a + (n || 0), 0);
+
+/** Every X the player may announce that some allocation funds exactly.
+ *  Not `0..=max_x + x_discount`: a lone Sol Ring pays 0 and 2, and nothing
+ *  between (#595). Always contains 0. */
+export function fundableXValues(opts: FundingOptions): number[] {
+  const maxX = (opts.max_x || 0) + (opts.x_discount || 0);
+  const reachable = tapReachability(opts.groups || [], opts.max_x || 0)[0];
+  const pool = poolTotal(opts);
+  const largestAtOrBelow: number[] = new Array(reachable.length).fill(-1);
+  let best = -1;
+  for (let s = 0; s < reachable.length; s++) {
+    if (reachable[s]) best = s;
+    largestAtOrBelow[s] = best;
+  }
+  const out: number[] = [];
+  for (let x = 0; x <= maxX; x++) {
+    const mana = manaForX(opts, x);
+    const s = mana < largestAtOrBelow.length ? largestAtOrBelow[mana] : -1;
+    if (s >= 0 && mana - s <= pool) out.push(x);
+  }
+  return out;
+}
+
+/** The response that funds `x`, and what could not be funded.
+ *  Exact whenever the board can pay it — the page used to take whole
+ *  activations greedily in category order, so one Mountain and one Sol Ring
+ *  funded 1 for a player who typed 2 and left the Sol Ring untapped
+ *  (#593) — with the pool drained before taps and lands before rocks before
+ *  dorks as the tie-break among the exact allocations. */
+export function allocateForX(opts: FundingOptions, x: number): { response: FundingResponse; shortfall: number } {
+  const response: FundingResponse = { pool: {}, taps: {} };
+  const target = manaForX(opts, x);
+  const groups = opts.groups || [];
+  const rows = tapReachability(groups, target);
+  const reachable = rows[0];
+  const pool = poolTotal(opts);
+
+  const floor = Math.max(0, target - pool);
+  let tapSum = -1;
+  for (let s = floor; s <= target; s++) if (reachable[s]) { tapSum = s; break; }
+  if (tapSum < 0) {
+    // Nothing in the window: spend the whole pool behind the largest tap
+    // sum there is and report the rest.
+    tapSum = 0;
+    for (let s = floor - 1; s >= 0; s--) if (reachable[s]) { tapSum = s; break; }
+  }
+
+  let remaining = target - tapSum;
+  const poolSorted = (Object.entries(opts.pool || {}) as [ManaType, number][])
+    .filter(([, n]) => (n || 0) > 0)
+    .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  for (const [mt, avail] of poolSorted) {
+    if (remaining === 0) break;
+    const take = Math.min(avail, remaining);
+    if (take > 0) { response.pool[mt] = take; remaining -= take; }
+  }
+
+  let left = tapSum;
+  for (let i = 0; i < groups.length; i++) {
+    if (left === 0) break;
+    const g = groups[i];
+    if (!g.mana_per_tap) continue;
+    const ceiling = Math.min(Math.floor(left / g.mana_per_tap), g.source_ids.length);
+    let taps = 0;
+    for (let t = ceiling; t >= 0; t--) {
+      if (rows[i + 1][left - t * g.mana_per_tap]) { taps = t; break; }
+    }
+    if (taps > 0) { const amount = taps * g.mana_per_tap; response.taps[g.name] = amount; left -= amount; }
+  }
+
+  return { response, shortfall: remaining };
+}
+
+/** The payable set as one line, runs collapsed, capped, both ends kept —
+ *  the terminal's `describe_fundable_x` (#595). */
+export function describeFundableX(values: number[]): string {
+  const MAX = 44;
+  const runs: string[] = [];
+  for (let i = 0; i < values.length; i++) {
+    const start = values[i];
+    let end = start;
+    while (i + 1 < values.length && values[i + 1] === end + 1) end = values[++i];
+    runs.push(start === end ? `${start}` : `${start}-${end}`);
+  }
+  const full = runs.join(", ");
+  if (full.length <= MAX || runs.length < 3) return full;
+  const last = runs[runs.length - 1];
+  const budget = Math.max(0, MAX - (last.length + 5));
+  const kept: string[] = [];
+  let cols = 0;
+  for (const run of runs.slice(0, -1)) {
+    const next = cols + run.length + 2;
+    if (next > budget) break;
+    cols = next;
+    kept.push(run);
+  }
+  return `${kept.join(", ")}, \u2026 ${last}`;
+}
+
 /** X: one number, distributed over the pool and the tap groups the way the CLI does. */
 function beginNumber(state: LiveState, ui: Ui, opts: FundingOptions, title: string, send: Send): Ui {
   const maxX = (opts.max_x || 0) + (opts.x_discount || 0);
@@ -617,6 +756,14 @@ function beginNumber(state: LiveState, ui: Ui, opts: FundingOptions, title: stri
   const pool = Object.entries(opts.pool || {}).filter(([, n]) => (n ?? 0) > 0).map(([k, n]) => `${n} ${k}`).join(", ");
   if (pool) summary.push(`Pool: ${pool}`);
   for (const g of opts.groups || []) summary.push(`${g.name} x${g.source_ids.length} (${g.mana_per_tap}/tap)`);
+  // Which values of X the sources can actually pay. The page used to state
+  // `0-N`, accept every integer in it, fund a smaller X and send it with
+  // `state.notice` left null — a card spent, the popover closed, and
+  // nothing on the page ever mentioning it (#594). The terminal's half of
+  // the same silence is #595.
+  const fundable = fundableXValues(opts);
+  const payable = new Set(fundable);
+  if (fundable.length !== maxX + 1) summary.push(`Payable X: ${describeFundableX(fundable)}`);
   ui.hint = `Type X (0-${maxX}) and press Enter.`;
   ui.submit = () => {
     // The terminal's reader, not JavaScript's. `Number("")` is 0 and
@@ -632,27 +779,25 @@ function beginNumber(state: LiveState, ui: Ui, opts: FundingOptions, title: stri
     // about what a legal answer to one prompt is. This is that parser: an
     // optional `+` and ASCII digits, nothing else.
     const typed = (ui.value ?? "").trim();
+    // A refusal empties the box, the way the terminal's reader starts each
+    // attempt on a cleared row. Keeping the refused token meant the next
+    // digit appended to it, so answering `1` and then `2` at a prompt that
+    // refused the 1 asked for X = 12.
+    const refuse = (msg: string) => { state.notice = msg; ui.value = ""; };
     if (typed === "") { state.notice = "Enter a value for X."; return; }
     const x = /^\+?[0-9]+$/.test(typed) ? Number(typed) : NaN;
     if (!Number.isInteger(x) || x < 0 || x > maxX) {
-      state.notice = `Invalid input '${clipToken(typed)}' — enter an integer between 0 and ${maxX}.`;
+      refuse(`Invalid input '${clipToken(typed)}' — enter an integer between 0 and ${maxX}.`);
       return;
     }
-    let remaining = Math.max(0, x - (opts.x_discount || 0));
-    const response: FundingResponse = { pool: {}, taps: {} };
-    const poolSorted = (Object.entries(opts.pool || {}) as [ManaType, number][]).sort((a, b) => b[1] - a[1]);
-    for (const [mt, avail] of poolSorted) {
-      if (remaining === 0) break;
-      const take = Math.min(avail, remaining);
-      if (take > 0) { response.pool[mt] = take; remaining -= take; }
+    // In range and unpayable: say which values are, and keep asking. The
+    // cast is still cancellable, and nothing is spent until a payable X is
+    // confirmed.
+    if (!payable.has(x)) {
+      refuse(`X = ${x} is not payable with these sources — payable X: ${describeFundableX(fundable)}.`);
+      return;
     }
-    for (const g of opts.groups || []) {
-      if (remaining === 0) break;
-      if (!g.mana_per_tap) continue;
-      const taps = Math.min(Math.floor(remaining / g.mana_per_tap), g.source_ids.length);
-      if (taps > 0) { const amount = taps * g.mana_per_tap; response.taps[g.name] = amount; remaining -= amount; }
-    }
-    send(resolve({ XFunding: response }));
+    send(resolve({ XFunding: allocateForX(opts, x).response }));
   };
   ui.buttons.push({ label: "Confirm", primary: true, run: ui.submit });
   ui.buttons.push({ label: "Cancel", run: () => send(resolve({ ChosenTarget: null })) });

@@ -78,6 +78,9 @@ License (`assets/fonts/OFL-*.txt`).
   — a real runner and the Playwright Chromium: keep, play a land through
   the popover, pass, no page errors. Needs `cargo build -p mtg-runner`
   and the `playwright` package with its Chromium.
+- `node mtg-gui/tests/xfunding.js` — the page's X-funding allocator
+  against the engine's own answers (`tests/x-funding-cases.jsonl`, written
+  by `mtg-player/tests/gui_protocol.rs`). No browser, no runner.
 - `NODE_PATH=$(npm root -g) node mtg-gui/tests/widgets.js` — one
   synthetic decision per prompt kind over a real board: the widget the
   page chooses, the clicks that answer it, and the Action it sends.

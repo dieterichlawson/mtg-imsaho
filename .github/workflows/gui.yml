@@ -47,6 +47,12 @@ jobs:
       - name: Protocol test
         run: cargo test -p mtg-player --test gui_protocol
 
+      # The page's own copy of the X-funding allocator against the engine's
+      # answers. No browser and no runner — the helpers are pure — so it runs
+      # before Playwright is installed.
+      - name: X funding, page against engine
+        run: node mtg-gui/tests/xfunding.js
+
       - name: Playwright Chromium
         run: |
           npm install -g playwright@1.56.1
