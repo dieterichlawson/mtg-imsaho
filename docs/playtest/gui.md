@@ -220,6 +220,19 @@ random game happened to reach.
   everywhere and nothing commits a no-op any more. What has not been asked is
   what Enter does when a `list` has been **filtered to exactly one row**, where
   there is an obvious answer and the key still does nothing.
+  [2026-09-27] **Asked, and the answer is that #570's fix cannot reach a
+  filtered list at all** (#606). `noAnswerHere` sits *after* the
+  `ev.target === field` early return, and a filtered `list` always owns the
+  focus, so the sentence fires at an unfiltered `list` and never at a filtered
+  one. Filtered to exactly one visible row — `{"visibleRows":1,"notice":null,
+  "sent":5}` — Enter gives `{"notice":null,"sentCount":5,"stillAsking":true}`:
+  nothing sent, nothing said, which is the `pick`/`list` row of the table above
+  un-fixed in the one variant the fix's mechanism is blind to. The control that
+  proves it is the mulligan (`filter:false`, `focused:false`), where both keys
+  now produce `Enter/Escape does not answer this — click a row.`
+  So the table's `list` row should be read as two rows: unfiltered, fixed;
+  filtered, still silent. Whether Enter at one row should *pick* it is still
+  open, and is the design question left in #606.
 
 - G17 [proposed 2026-09-17, from reading `mtg-player/src/gui.rs:190` during G9]
   the seat that can never give up: `ask`'s
