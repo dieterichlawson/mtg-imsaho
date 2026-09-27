@@ -46,14 +46,6 @@ pub enum Illegality {
     PlayerIneligible,
 }
 
-/// Whether `id` is an attachment at all — an Aura or an Equipment. Anything
-/// else has no attachment legality to speak of, and `illegality` says so by
-/// returning `None` for it.
-#[must_use]
-pub fn is_attachment(state: &GameState, id: ObjectId, registry: &CardRegistry) -> bool {
-    state.has_subtype(id, "Aura", registry) || state.is_equipment(id, registry)
-}
-
 /// Why `id` is illegally attached, or `None` if it is legally attached (or
 /// is not an attachment on the battlefield at all).
 ///

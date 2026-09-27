@@ -15,7 +15,7 @@
 
 mod common;
 use common::*;
-use mtg_engine::cards::{CardData, CardRegistry};
+use mtg_engine::cards::{CardData, CardRegistry, TargetRequirement};
 use mtg_engine::types::{CardType, Color, Step, Supertype};
 use std::collections::HashSet;
 
@@ -2187,4 +2187,40 @@ fn printed_colors_come_from_cost_or_color_indicator() {
     state.get_object_mut(mayor).unwrap().is_transformed = true;
     assert_eq!(state.printed_colors_of(mayor, &reg), vec![Color::Green],
         "Howlpack Alpha is green by color indicator");
+}
+
+/// Every Aura's enchant ability is one the attachment rules can decide about.
+///
+/// CR 704.5n sweeps an Aura off a host its enchant ability does not allow,
+/// and the engine decides "allows" from the card's `target_requirement`
+/// (`attachment::host_is_eligible`). That match ends in a catch-all which
+/// errs towards legal — an enchant ability the engine does not model as a
+/// requirement claims nothing about the host, so no Aura is ever swept on
+/// the strength of a requirement nobody wrote down. That is the right
+/// default and a silent one: an Aura that lands on it sits on any host for
+/// ever and nothing says so. This sweep is what records which arm each Aura
+/// in the pool actually uses, so an Aura needing a new arm fails here rather
+/// than in a game.
+#[test]
+fn every_auras_enchant_ability_is_one_the_attachment_rules_model() {
+    let reg = registry();
+    let mut checked = 0;
+    let mut unmodelled = Vec::new();
+    for card in all_cards(&reg) {
+        if !card.subtypes.iter().any(|s| s == "Aura") {
+            continue;
+        }
+        checked += 1;
+        let id = reg.get_id_by_name(&card.name).expect("an Aura in all_names has an id");
+        let req = reg.get(id).expect("an Aura in all_names has a behavior").target_requirement();
+        match req {
+            TargetRequirement::Creature
+            | TargetRequirement::CreatureWithFilter(_)
+            | TargetRequirement::PlayerOnly
+            | TargetRequirement::OpponentOnly => {}
+            other => unmodelled.push(format!("{}: enchant is {other:?}", card.name)),
+        }
+    }
+    assert_none(&unmodelled, "are Auras whose enchant ability the host-eligibility match has no arm for");
+    assert_covers(checked, 15, "are Auras");
 }
