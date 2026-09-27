@@ -29,7 +29,10 @@ random game happened to reach.
   keeps a screenshot every 25 decisions, and the page exposes
   `window.mtg` (state), `window.mtgSend(action)` and
   `window.mtgDebug.stage(decision)` for staging a prompt over a real
-  board without a socket.
+  board without a socket. A probe that edits the view in place
+  (a second copy of a card, a counter, an attachment) must rebuild the
+  index before drawing: `stage` and `inspect` both call `indexView`,
+  `render()` does not, and a stale index throws inside `nameOf`.
 
 ## Ideas
 
