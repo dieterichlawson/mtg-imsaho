@@ -594,3 +594,33 @@ mtg-engine/src/cards/mod.rs: replace CardBehavior::token_pt_text -> Option<Strin
 # permanent, so loosening the guard runs a no-op on moves that need none.
 # Reasons in reports/mutation-testing.md.
 mtg-engine/src/state.rs: replace && with || in GameState::move_object_inner
+
+# ── 2026-09-26 run 36242972177, shards 1/3/7 (issues #597, #599, #600) ──
+# An Aura whose enchant ability names a FILTERED creature: unreachable with
+# the current pool, where all nineteen Auras say "enchant creature" or
+# "enchant player". Accept, not delete — the match's catch-all is the silent
+# "errs towards legal" default, so this arm is what a filtered Aura needs.
+# `card_data_invariants::every_auras_enchant_ability_is_one_the_attachment_rules_model`
+# states the reachability claim and fails the day an Aura lands on the
+# catch-all.
+mtg-engine/src/attachment.rs: delete match arm TargetRequirement::CreatureWithFilter(filter) in host_is_eligible
+mtg-engine/src/attachment.rs: replace && with || in host_is_eligible
+
+# `is_copy` on a token — `if obj.is_token { obj.card_id != CardId(0) }`. All
+# four surfaces read `is_copy` only in the `else` of an `is_token` check and
+# say "Token" there instead, deliberately (#557), so the value this branch
+# computes cannot be observed. Kept rather than deleted: it is the right
+# value if a surface ever wants it.
+# NOTE the normalization cost: keyed on the function, so this line also
+# suppresses `p.id != player` in the same function, which IS killed by
+# `harness_display::the_view_is_one_seats_view_of_the_game`.
+mtg-engine/src/view.rs: replace != with == in GameView::for_player
+
+# `describe` only chooses the words for a violation its caller has already
+# found and already reported. Both mutants swap one correct-shaped sentence
+# for another — an Equipment described in the Aura wording, or two
+# player-ineligibility wordings exchanged — while the fuzzer fails on the
+# same state with the same object and the same CR rule from `illegality`'s
+# variant. The oracle is not blinded; the phrasing is not the contract.
+mtg-engine/src/invariants/permanents.rs: delete ! in describe
+mtg-engine/src/invariants/permanents.rs: replace match guard is_equipment with false in describe

@@ -1077,3 +1077,109 @@ The accepted entry carries the function's normalized name, so it also
 suppresses any *future* `&&` in `move_object_inner` that survives. That is the
 standing cost of the normalization and it is not new here; the sweep script is
 in the session record if the function grows and someone wants to re-run it.
+
+## 2026-09-26 run 36242972177 (issues #597, #598, #599, #600)
+
+Eighteen survivors across four shards. No `cargo-mutants` on the fixer's
+machine, so every judgement below was made by applying the mutation by hand
+and running the `mtg-engine` suite — which is the ceremony this guide asks
+for anyway, and it caught one claim the shard report made that was no longer
+true.
+
+**funding.rs (#597) does not reproduce.** All eight survivors are named `in
+allocate_for_x`, and that function was rewritten sixteen minutes before the
+shard filed its issue — `2d11f48c` ("an X the board can pay exactly is
+funded exactly", #593) replaced the greedy pass with a reachability table and
+brought `fundable_x_values_names_exactly_the_x_values_that_fund_without_shortfall`
+with it. Every `*`, `/`, `-=`, `==` and `>` in the function as it stands now
+was flipped by hand at every site — fifteen mutations — and all fifteen die,
+twelve of them to that one property test. The shard measured the tree it
+checked out, not the tree it filed against.
+
+The pass did leave one clause of the function's documented contract
+unasserted, so it is now: `allocate_for_x` promises to fund *as much of X as
+the board can* and report the rest short, and nothing checked the second
+half — with `shortfall == 0` the old test pinned the funded amount, and with
+a shortfall it pinned nothing. `an_allocation_funds_the_most_of_x_the_board_can_reach_and_says_the_rest_is_short`
+brute-forces the reachable sums over ten boards × six pools × three
+discounts and asserts both clauses. One property over the output, not
+fifteen assertions about the arithmetic.
+
+**scan_keywords (#598): two real gaps, both closed by widening one board.**
+Three of the six `!`/`||` sites survive, and there was already a property
+test for the function —
+`keywords::the_batch_keyword_scan_answers_exactly_what_asking_one_at_a_time_does`,
+which asserts `keywords_among` agrees with `has_keyword` asked one keyword at
+a time. It survived because of what was *on* its board rather than what it
+asserted:
+
+- the two `!found(...)` guards decide whether the scan stops after reporting
+  a keyword. Delete either and `keywords_among` returns after its first hit —
+  a creature with flying and trample is published to every surface as having
+  flying. No permanent on the old board wore two keywords from one pass: the
+  griffin prints flying and vigilance, and the test removes its flying. An
+  Elite Inquisitor (first strike, vigilance) and a creature with two
+  until-end-of-turn grants now do.
+- `printed.contains(keyword) || removed(*keyword)` is the grant pass's skip.
+  With `&&`, a keyword that was *removed* until end of turn but not printed
+  stops being skipped, so an aura-granted flying that an effect removed is
+  reported as had — CR 613.1 the wrong way round, and a creature that cannot
+  block a flyer blocking one. Nothing on the board was granted-and-removed;
+  a Grizzly Bears whose granted menace is removed now is.
+
+**host_is_eligible (#599): two accepted, unreachable with the pool.** The
+`CreatureWithFilter` arm and the `&&` inside it decide whether an Aura whose
+enchant ability names a *filtered* creature is still legally attached (CR
+704.5n). No Aura in the pool has one: all nineteen say "enchant creature" or
+"enchant player". The arm is therefore unreachable rather than untested,
+which is accept and not delete — the match's own catch-all is the silent
+default the code comments warn about, so the arm is what a filtered Aura
+would need. What it was missing was a statement of that reachability claim,
+and `card_data_invariants::every_auras_enchant_ability_is_one_the_attachment_rules_model`
+is it: a sweep that names the arm each Aura in the pool uses and fails the
+day one lands on the catch-all, which is the failure nothing could see.
+
+**is_attachment (#599): deleted.** `replace || with && in is_attachment`
+survives because the function has no callers at all. It is a `pub` helper
+whose documented job — "is this an Aura or an Equipment" — `illegality` does
+inline, three lines from where it would have called it. A second copy of a
+question the module already asks, and the copy no test reaches is the one
+that drifts. Gone, and the mutant with it.
+
+**The view's ability descriptions (#599): one test, both mutants.** Both
+`*i == ability_index` lookups survived. Inverted, `mana_ability_description`
+and `loyalty_ability_description` hand back a *neighbour's* text — or, on a
+permanent with one ability, `None`. Both seats' action tables print the words
+instead of the index precisely so the player is not choosing between two rows
+that differ by a number (#61, #494), and a loyalty ability cannot be taken
+back that turn (CR 606.3). `harness_display::the_views_ability_descriptions_belong_to_the_ability_asked_about`
+sweeps every permanent in the pool asserting each accessor returns the entry
+the view lists at that index, and names Liliana of the Veil directly, because
+three abilities on one permanent is where "returns something" and "returns
+the right thing" come apart.
+
+**`is_copy` on a token (#599): accepted.** The other surviving `!=` in
+`for_player` is `is_copy: if obj.is_token { obj.card_id != CardId(0) }`. All
+four surfaces read `is_copy` only in the `else` of an `is_token` check —
+`cli.rs`'s `identity_marks`, `llm.rs`'s flag list and the page's
+`inspectorFacts` all say `[tok]`/`tok`/`Token` and stop, deliberately
+(#557: "`[tok]` implies it, so a token copy is not also told it is a copy").
+So the branch computes a value nothing can observe, and flipping it changes
+no surface. Accepted rather than deleted: it is the right value, and the day
+a surface wants "token copy of Evil Twin" it is already there. Note the
+normalization cost — the accepted entry is keyed on the function, so it also
+suppresses the `p.id != player` mutant in the same function, which *is*
+killed (`harness_display::the_view_is_one_seats_view_of_the_game`).
+
+**`describe` (#600): both accepted, report wording.** `invariants::permanents::describe`
+turns an `Illegality` into the sentence a reader of a fuzz failure sees. Its
+caller has already decided there *is* a violation and already pushed it onto
+the report — `describe` only chooses the words. Deleting the `!` in
+`if !player_ok(...)` swaps "is attached to p1 who is not a player" for
+"enchants p1 who cannot be enchanted by it"; blanking the `is_equipment`
+match guard describes an Equipment violation in the Aura wording. Either way
+the fuzzer still fails, on the same state, with the same object named and the
+same rule cited by `illegality`'s variant. The oracle is not blinded, which
+is the test worth writing in this file; the phrasing is not (the guide's
+accept bucket 5, and the same call the campaign made for `log_attribution`'s
+neighbours).
