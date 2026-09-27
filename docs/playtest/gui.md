@@ -312,6 +312,35 @@ random game happened to reach.
   regenerating, and check what a person can still see on the card. Both facts
   that fall off are also the ones missing from the inspector (#525), so on that
   creature they are on no surface of the page at all.
+  [2026-09-27] **Built, and the idea's own prediction is the part that was
+  wrong** — three findings, none of them the one it names.
+  Two premises are dead and the idea should not be re-run on them: the
+  attachment badge is never on the *host* (`permBadges` draws `→Name` on the
+  attachment itself, so an equipped creature's strip is unchanged), and #525
+  is fixed, so the inspector does list `1 regeneration shield` and
+  `Equipped/enchanted with: …`. Nothing is on no surface any more.
+  What is wrong is the strip's width (#603). `CARD.w` is 40 and `drawPerm`
+  lays badges out from `x + 3` with no bound, so **three badges never fit, at
+  any load**: `["ATK","+1","1d"]` already ends 2px past the card,
+  `["ATK","+10","12d"]` 12px past. Row stride is 43 on a width of 42, so the
+  1px gutter means the overflow lands on the permanent standing next to it.
+  Raising the `.slice(0, 3)` cap is therefore not available as a fix, and the
+  silent drop has to be answered with the overflow.
+  And the find the idea did not look for, which was the night's best: the
+  sickness badge reads the raw `summoning_sick`, which the engine leaves set
+  on a haste creature (`state.rs:3622` checks haste separately), so an
+  **attacking** Manor Skeleton wears `z` and the inspector says `Haste`,
+  `Attacking Opponent` and `Summoning sick` at once (#604). That is #139,
+  whose fix became `CliPlayer::is_summoning_sick` and never left `cli.rs`;
+  the page learned #221's half (skip non-creatures) and not #139's. The same
+  hole is in `llm.rs:2506` (#605), where the seat's legend defines `[S]` as
+  "can't attack" and the next section offers the creature as attacker 0.
+  Two things to reuse: `16 Manor Skeleton / 24 Swamp` vs white-black, seed 3,
+  on the play reaches an attacking summoning-sick-flagged creature by turn 2
+  (Manor Skeleton and Falkenrath Marauders are the pool's only haste
+  creatures, both in `decks/coverage/br-coverage.txt`); and `attacking` is
+  `Option<AttackTarget>`, so a staged `attacking: true` renders but makes
+  `inspectorFacts` throw — use `{ Player: <opponent id> }`.
 
 - G23 [proposed 2026-09-17, from reading render.ts during G10] the inspector
   has no ceiling: `facts` is drawn with no cap (`render.ts:461`) and
