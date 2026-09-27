@@ -34,6 +34,11 @@ pub const WEB_DIR_ENV: &str = "MTG_GUI_DIR";
 /// Where the page lives relative to the working directory, like `data/`
 /// and `decks/`.
 pub const DEFAULT_WEB_DIR: &str = "mtg-gui";
+
+/// How often a seat blocked on an answer looks up to see whether anybody is
+/// still at the page. Long enough to be free, short enough that an operator
+/// who has just closed a tab is told where to go back to (#602).
+const BROWSER_CHECK: Duration = Duration::from_secs(2);
 /// The port tried first when the seat spec names none.
 pub const DEFAULT_PORT: u16 = 8765;
 
@@ -92,8 +97,12 @@ struct Shared {
     /// What a page connecting now needs first: the pending decision, else
     /// the latest board.
     latest: Mutex<Option<String>>,
-    /// One outbound channel per connected page.
-    clients: Mutex<Vec<mpsc::Sender<String>>>,
+    /// One outbound channel per connected page, each with the id its
+    /// connection thread removes on the way out. Reaping them here rather
+    /// than in `broadcast` is what lets the seat notice a page leaving while
+    /// it is blocked waiting for an answer and broadcasting nothing (#602).
+    clients: Mutex<Vec<(u64, mpsc::Sender<String>)>>,
+    next_client: std::sync::atomic::AtomicU64,
     answers: mpsc::Sender<Answer>,
     web_dir: PathBuf,
     /// The seat's settings, shared by every page attached to it.
@@ -103,12 +112,49 @@ struct Shared {
 impl Shared {
     fn broadcast(&self, msg: &str) {
         let mut clients = self.clients.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        clients.retain(|c| c.send(msg.to_string()).is_ok());
+        clients.retain(|(_, c)| c.send(msg.to_string()).is_ok());
     }
 
     fn connected(&self) -> usize {
         self.clients.lock().unwrap_or_else(std::sync::PoisonError::into_inner).len()
     }
+
+    /// Register a page's outbound channel; the id is how it deregisters.
+    fn add_client(&self, tx: mpsc::Sender<String>) -> u64 {
+        let id = self.next_client.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.clients.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push((id, tx));
+        id
+    }
+
+    /// This page is gone, however it went.
+    fn drop_client(&self, id: u64) {
+        self.clients.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+            .retain(|(cid, _)| *cid != id);
+    }
+}
+
+/// The line to print about the browsers attached, or `None` when there is
+/// nothing new to say.
+///
+/// `said` is "the operator has already been told nobody is here", and the
+/// point of this function is that it is a latch *per disappearance* and not
+/// for the life of the seat. It used to be the latter, set the first time a
+/// decision came up — which is before anyone has had a chance to open the
+/// page, every single run — so when the browser later closed, the one line
+/// that says where to reconnect was never printed again and the seat waited
+/// for ever in total silence. A game left that way is indistinguishable
+/// from a hung process (#602, and #566 by another route).
+fn browser_notice(name: &str, url: &str, connected: usize, said: &mut bool) -> Option<String> {
+    if connected > 0 {
+        // Somebody is here; the next time they all leave, say so again.
+        *said = false;
+        return None;
+    }
+    if *said {
+        return None;
+    }
+    *said = true;
+    Some(format!("{name}: no browser at {url} — open it to answer"))
 }
 
 /// A seat played through a browser page.
@@ -152,6 +198,7 @@ impl GuiPlayer {
         let shared = Arc::new(Shared {
             latest: Mutex::new(None),
             clients: Mutex::new(Vec::new()),
+            next_client: std::sync::atomic::AtomicU64::new(0),
             answers: answer_tx,
             web_dir,
             settings: Mutex::new((false, None)),
@@ -200,16 +247,29 @@ impl GuiPlayer {
         }).expect("a decision serializes");
         *self.shared.latest.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(msg.clone());
         self.shared.broadcast(&msg);
-        if self.shared.connected() == 0 && !self.said_waiting {
-            eprintln!("{}: waiting for a browser at {}", self.name, self.url);
-            self.said_waiting = true;
+        if let Some(line) = browser_notice(&self.name, &self.url, self.shared.connected(), &mut self.said_waiting) {
+            eprintln!("{line}");
         }
         loop {
-            let Ok(answer) = self.answers.recv() else {
-                // Every connection thread is gone and the listener with
-                // them; nothing will ever answer. Leave the game the way
-                // the harness does, not the way a player does.
-                return Action::AbandonGame;
+            // Timed, so the wait is not a black hole: a page can close while
+            // the seat is blocked here, and the only way to tell the operator
+            // where to reconnect is to look again on a beat. `Shared` owns
+            // the sending half and this seat owns the `Arc` for its whole
+            // life, so the channel cannot be disconnected and both error
+            // arms mean the same thing — nobody has answered yet. (The
+            // `AbandonGame` this used to return on `Err` was unreachable
+            // for that reason, and the comment above it described a state
+            // that cannot occur.)
+            let answer = match self.answers.recv_timeout(BROWSER_CHECK) {
+                Ok(answer) => answer,
+                Err(_) => {
+                    if let Some(line) = browser_notice(
+                        &self.name, &self.url, self.shared.connected(), &mut self.said_waiting)
+                    {
+                        eprintln!("{line}");
+                    }
+                    continue;
+                }
             };
             if answer.seq != seq {
                 // An answer to an earlier decision (issue #71's rule: a
@@ -340,7 +400,22 @@ fn serve_websocket(stream: TcpStream, shared: &Shared) {
     // neither side can starve the other.
     let _ = ws.get_ref().set_read_timeout(Some(Duration::from_millis(50)));
     let (tx, rx) = mpsc::channel::<String>();
-    shared.clients.lock().unwrap_or_else(std::sync::PoisonError::into_inner).push(tx);
+    let id = shared.add_client(tx);
+    pump_websocket(&mut ws, &rx, shared);
+    // However this page went — closed, errored, or read to EOF — it is no
+    // longer attached. Saying so here rather than leaving it to the next
+    // `broadcast` is what makes `connected()` true while the seat sits in
+    // `ask` broadcasting nothing (#602).
+    shared.drop_client(id);
+}
+
+/// Forward one page's answers in and everything the seat broadcasts out,
+/// until it closes.
+fn pump_websocket(
+    ws: &mut tungstenite::WebSocket<TcpStream>,
+    rx: &mpsc::Receiver<String>,
+    shared: &Shared,
+) {
     loop {
         // Everything the seat has broadcast since last time.
         while let Ok(msg) = rx.try_recv() {
@@ -403,5 +478,70 @@ fn serve_websocket(stream: TcpStream, shared: &Shared) {
                 if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {}
             Err(_) => return,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// #602: the seat says where its page is every time the last browser
+    /// goes away, not once for the life of the run.
+    ///
+    /// The old latch was set at the first decision, which happens before
+    /// anybody has had a chance to open the page. So the line was always
+    /// spent on the start of the game, and the one moment it matters — a
+    /// browser closing mid-game, with the seat holding a decision — was
+    /// silent.
+    #[test]
+    fn the_seat_names_its_url_once_per_disappearance_not_once_per_run() {
+        let url = "http://127.0.0.1:8765/";
+        let mut said = false;
+        let first = browser_notice("P1", url, 0, &mut said);
+        assert!(first.is_some_and(|l| l.contains(url)), "the first decision names the URL");
+        assert!(browser_notice("P1", url, 0, &mut said).is_none(),
+            "and does not repeat it on every beat of the wait");
+
+        // Somebody is at the page: nothing to say.
+        assert!(browser_notice("P1", url, 1, &mut said).is_none());
+
+        // And they close it. This is the line that never came.
+        let again = browser_notice("P1", url, 0, &mut said);
+        assert!(again.is_some_and(|l| l.contains(url)),
+            "the browser went away and the seat said where to go back to");
+        assert!(browser_notice("P1", url, 0, &mut said).is_none(), "once per disappearance");
+    }
+
+    /// A page that has gone stops being counted straight away, without
+    /// anything being broadcast.
+    ///
+    /// `broadcast`'s `retain` was the only thing that reaped a dead client,
+    /// and a seat blocked in `ask` broadcasts nothing — so `connected()` went
+    /// on counting a closed page for as long as the seat was waiting for it,
+    /// which is exactly when the count is read (#602).
+    #[test]
+    fn a_page_that_has_gone_is_not_counted_and_is_not_broadcast_to() {
+        let (answers, _answers_rx) = mpsc::channel();
+        let shared = Shared {
+            latest: Mutex::new(None),
+            clients: Mutex::new(Vec::new()),
+            next_client: std::sync::atomic::AtomicU64::new(0),
+            answers,
+            web_dir: PathBuf::from("."),
+            settings: Mutex::new((false, None)),
+        };
+        let (a_tx, a_rx) = mpsc::channel();
+        let (b_tx, b_rx) = mpsc::channel();
+        let a = shared.add_client(a_tx);
+        let _b = shared.add_client(b_tx);
+        assert_eq!(shared.connected(), 2);
+
+        shared.drop_client(a);
+        assert_eq!(shared.connected(), 1,
+            "the page that left is gone before anything is broadcast");
+        shared.broadcast("board");
+        assert!(a_rx.try_recv().is_err(), "and is not sent to");
+        assert_eq!(b_rx.try_recv().ok().as_deref(), Some("board"),
+            "while the one still attached is");
     }
 }
