@@ -3598,6 +3598,31 @@ impl GameState {
         self.get_object(id).is_some_and(|o| !o.is_token)
     }
 
+    /// Whether summoning sickness stops this permanent doing anything
+    /// (CR 302.6).
+    ///
+    /// `Object::summoning_sick` is the raw fact — "came under its
+    /// controller's control since their most recent turn began" — and it is
+    /// set on *every* permanent that entered this turn. The restriction is
+    /// narrower than the fact in two ways, and both have been got wrong
+    /// separately: it applies only to creatures, so it means nothing on a
+    /// planeswalker or an enchantment that has just resolved (#221), and a
+    /// creature with haste is not restricted by it (#139).
+    ///
+    /// One definition, because that difference is not obvious from the field
+    /// name and every surface that re-derived it forgot a different half of
+    /// it. Anything asking "may this creature attack / pay `{T}`" and
+    /// anything *displaying* summoning sickness asks here; the view carries
+    /// the answer so the four seats cannot each get it wrong again.
+    #[must_use]
+    pub fn has_summoning_sickness(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
+        self.get_object(id).is_some_and(|obj| {
+            obj.summoning_sick
+                && self.is_creature(id, registry)
+                && !self.has_keyword(id, crate::types::Keyword::Haste, registry)
+        })
+    }
+
     /// Whether this permanent can pay a `{T}` cost right now.
     ///
     /// Three conditions, and they are the same for every permanent in the
@@ -3619,9 +3644,7 @@ impl GameState {
         if obj.zone != Zone::Battlefield || obj.tapped {
             return false;
         }
-        !(obj.summoning_sick
-            && self.is_creature(id, registry)
-            && !self.has_keyword(id, crate::types::Keyword::Haste, registry))
+        !self.has_summoning_sickness(id, registry)
     }
 
     /// The printed half of a token — the characteristics the effect that

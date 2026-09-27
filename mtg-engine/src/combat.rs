@@ -718,8 +718,8 @@ pub fn eligible_attackers(state: &GameState, player: PlayerId, registry: &CardRe
                 && o.controller == player
                 && state.is_creature(o.id, registry)
                 && !o.tapped
-                // Haste overrides summoning sickness.
-                && (!o.summoning_sick || state.has_keyword(o.id, Keyword::Haste, registry))
+                // CR 302.6, haste and all: one definition, in the engine.
+                && !state.has_summoning_sickness(o.id, registry)
                 // Defender can't attack.
                 && !state.has_keyword(o.id, Keyword::Defender, registry)
                 // Check aura-based restrictions (Pacifism).

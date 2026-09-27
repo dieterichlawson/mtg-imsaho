@@ -163,15 +163,14 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
                     None => continue,
                 }
             };
-            // Check tap cost and summoning sickness.
-            // Per MTG rules, creatures with summoning sickness cannot use
-            // abilities with {T} in the cost (unless they have haste).
-            // Non-creature permanents (lands, artifacts, enchantments) are not
-            // affected by summoning sickness (CR 302.6).
+            // Check tap cost and summoning sickness. A creature that came
+            // under its controller's control this turn cannot pay `{T}`
+            // unless it has haste, and a non-creature permanent is never
+            // restricted by it though the flag is set on it (CR 302.6) —
+            // `has_summoning_sickness` is that sentence, once.
             if ab.requires_tap {
                 if obj_tapped { continue; }
-                let is_creature = state.is_creature(obj.id, registry);
-                if is_creature && obj.summoning_sick && !state.has_keyword(obj.id, Keyword::Haste, registry) {
+                if state.has_summoning_sickness(obj.id, registry) {
                     continue;
                 }
             }
