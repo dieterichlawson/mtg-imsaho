@@ -1063,6 +1063,67 @@ async function main() {
         await page.evaluate((twin) => { const b = window.mtg.view.battlefield; b.splice(b.findIndex(p => p.object_id === twin), 1); }, r.twin);
       }
     }
+    // 29. The typing box does not own the whole keyboard. While a filtered
+    // `list` or the X box is up, `syncField` focuses the DOM input on every
+    // frame and the keydown handler returned before the switch, so all seven
+    // documented keys (l g G e d s f) were typed into the box and neither
+    // Enter nor Escape did anything or said anything — at exactly the two
+    // prompts that ask you about cards (#601), which is #570's silence in the
+    // one branch #570's fix could not reach (#606). Escape is the way back.
+    {
+      const names29 = [...new Set(ids.names)];
+      const xOptions = { pool: { Red: 1 }, groups: [{ name: "Forest", category: "BasicLand", source_ids: [ids.mine[0], ids.mine[1]], mana_per_tap: 1, mana_type: "Green" }], max_x: 3, x_discount: 0 };
+      const cases = [
+        ["list", legal({ actions: names29.map((n, i) => rc({ ChosenIndex: [i, n] })),
+          resolution_prompt: { ChooseCardName: { description: "Name a card", options: names29, source_id: ids.mine[0] } } })],
+        ["number", legal({ resolution_prompt: { ChooseXFunding: { description: "Choose X for Devil's Play", options: xOptions, source_id: ids.hand[0], is_ability: false } } })],
+      ];
+      const peek = () => page.evaluate(() => {
+        const m = window.mtg, f = document.querySelector("input");
+        return { mode: m.ui && m.ui.mode, logOpen: !!m.logOpen, overlay: m.overlay ? m.overlay.zone : null,
+          stopAtPass: !!m.stopAtPass, typed: m.ui && (m.ui.mode === "number" ? m.ui.value : m.ui.query),
+          notice: m.notice, focused: document.activeElement === f, sent: window.mtgDebug.sent.length };
+      });
+      for (const [want, legalObj] of cases) {
+        if (!(await stage(`keys-${want}`, legalObj, null, want))) continue;
+        // The box does take the typing — that is the point of a filter.
+        await page.keyboard.type("lg");
+        await page.waitForTimeout(80);
+        let st = await peek();
+        if (!st.focused) { fail(`keys-${want}: the box is not focused, so this prompt is not the case under test`); continue; }
+        if (st.typed !== "lg") fail(`keys-${want}: typing went somewhere else (${JSON.stringify(st.typed)})`);
+        else ok(`keys-${want}: the box still takes the typing`);
+        // Enter is not silent any more: it either answers or explains.
+        await page.evaluate(() => { window.mtg.notice = null; });
+        const before = st.sent;
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(80);
+        st = await peek();
+        if (st.sent === before && !st.notice) fail(`keys-${want}: Enter did nothing and said nothing (#606)`);
+        else ok(`keys-${want}: Enter → ${st.sent !== before ? "answered" : JSON.stringify(st.notice)}`);
+        if (st.sent !== before) { if (!(await stage(`keys-${want}-again`, legalObj, null, want))) continue; await page.keyboard.type("lg"); await page.waitForTimeout(80); }
+        // Escape empties the box, hands the keyboard back and says so.
+        await page.keyboard.press("Escape");
+        await page.waitForTimeout(80);
+        st = await peek();
+        if (st.focused) fail(`keys-${want}: Escape left the box holding the keyboard (#601)`);
+        else if (st.typed) fail(`keys-${want}: Escape left ${JSON.stringify(st.typed)} in the box with no way to clear it`);
+        else if (!st.notice) fail(`keys-${want}: Escape gave the keyboard back in silence`);
+        else ok(`keys-${want}: Escape → ${JSON.stringify(st.notice)}`);
+        // And now the documented keys reach the page.
+        const reached = [];
+        for (const [key, read] of [["l", s => s.logOpen], ["g", s => s.overlay === "graveyard"], ["s", s => s.stopAtPass]]) {
+          await page.keyboard.press(key);
+          await page.waitForTimeout(80);
+          const now = await peek();
+          if (read(now)) reached.push(key);
+          else fail(`keys-${want}: '${key}' still does nothing after Escape`);
+          await page.keyboard.press(key);   // put it back
+          await page.waitForTimeout(60);
+        }
+        if (reached.length === 3) ok(`keys-${want}: l, g and s reach the page again`);
+      }
+    }
     if (errors.length) fail("page errors:\n" + errors.join("\n"));
   } finally {
     await browser.close();

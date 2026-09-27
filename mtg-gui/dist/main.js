@@ -354,16 +354,27 @@ function noAnswerHere(ui, key) {
 }
 window.addEventListener("keydown", (ev) => {
     if (ev.target === field) {
-        if (ev.key === "Enter") {
-            const ui = state.ui;
-            if (ui && ui.mode === "number" && ui.submit)
-                ui.submit();
-            ev.preventDefault();
-        }
+        // The box owns the typing — it has to, for a filter — but not the two
+        // keys that answer a prompt and not the seven that open the log and the
+        // zone overlays. It used to own all of them: `l g G e d s f` were typed
+        // into the box at exactly the two prompts that ask you about cards, so a
+        // `ChooseCardName` was the one decision you could not look anything up
+        // to answer, and the box ended up filtered to nothing with no on-screen
+        // way back (#601). Enter and Escape were dropped in silence at a
+        // filtered list, which is the #570 silence in the one branch #570's fix
+        // could not see (#606).
+        //
+        // Escape is the way back: it empties the box, hands the keyboard to the
+        // page and says so. Enter falls through to the switch, which answers the
+        // prompt or says why it cannot.
         if (ev.key === "Escape") {
-            field.blur();
+            releaseField();
+            ev.preventDefault();
+            draw();
+            return;
         }
-        return;
+        if (ev.key !== "Enter")
+            return;
     }
     const ui = state.ui;
     const v = state.view;
@@ -453,16 +464,52 @@ function syncField() {
     if (field.value !== want)
         field.value = want;
     field.placeholder = ui.mode === "number" ? `X (0-${ui.max})` : "filter";
-    if (document.activeElement !== field)
+    // Not after Escape on this widget: the frame that follows used to take the
+    // keyboard straight back, so the blur was undone 120 ms later and the seven
+    // board keys stayed unreachable (#601). Keyed on the widget rather than a
+    // flag somebody has to remember to clear, so the next prompt starts ready
+    // to type in however the last one ended, whichever code path installed it.
+    if (document.activeElement !== field && releasedFor !== ui)
         field.focus();
 }
+/**
+ * Hand the keyboard back to the page from the typing box, and say so.
+ *
+ * Escape at a filtered list or an X box. It empties the box — a person who
+ * pressed `l` for the log has a prompt showing none of its options and
+ * Backspace to guess at otherwise — blurs for real (`releasedFor` stops
+ * the next frame refocusing), and names the keys that work now, because a
+ * page that goes quiet is indistinguishable from a page that ignored you
+ * (#518, #570). A click in the box takes the keyboard back.
+ */
+function releaseField() {
+    const ui = state.ui;
+    if (ui) {
+        if (ui.mode === "number")
+            ui.value = "";
+        else if (ui.mode === "list") {
+            ui.query = "";
+            ui.scroll = 0;
+        }
+    }
+    field.value = "";
+    releasedFor = ui;
+    field.blur();
+    state.notice = "Box cleared — the board keys (l g G e d s f) work again; click the box to type.";
+}
+/**
+ * The widget whose typing box Escape handed back: while it is on screen, the
+ * frame must not refocus the box. A click in the box takes it back.
+ */
+let releasedFor = null;
+field.addEventListener("focus", () => { releasedFor = null; });
 /** Put the typing field away, and the keyboard back on the page with it.
  *
  * `display: none` drops focus eventually, but not before the next key: a
  * prompt that follows a filtered list or an X box got its first Enter
  * delivered to an input nobody can see, which is the #570 silence by
  * another route. Blur it explicitly. */
-function hideField() { field.blur(); field.style.display = "none"; field.value = ""; }
+function hideField() { field.blur(); field.style.display = "none"; field.value = ""; releasedFor = null; }
 field.addEventListener("input", () => {
     const ui = state.ui;
     if (!ui)
