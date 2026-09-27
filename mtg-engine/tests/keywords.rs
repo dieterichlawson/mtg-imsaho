@@ -713,10 +713,36 @@ fn the_batch_keyword_scan_answers_exactly_what_asking_one_at_a_time_does() {
         target: griffin,
         keyword: Keyword::Flying,
     });
+    // Two printed keywords, neither removed. Every other permanent here
+    // wears at most one at a time — the griffin's flying is removed — so a
+    // printed pass that stopped at its first hit still agreed with asking
+    // one at a time, and the batch form silently returned one keyword of
+    // two (#598).
+    let inquisitor = named_permanent(&mut state, &registry, "Elite Inquisitor", PlayerId(0));
+    // Two granted until end of turn on one creature, for the same reason in
+    // the until-end-of-turn pass.
+    let flying_trampler = named_permanent(&mut state, &registry, "Grizzly Bears", PlayerId(1));
+    grant_keyword(&mut state, flying_trampler, Keyword::Flying);
+    grant_keyword(&mut state, flying_trampler, Keyword::Trample);
+    // A continuous-effect grant that is also removed until end of turn. A
+    // keyword removed is not had whatever grants it (CR 613.1), and the
+    // grant pass has to skip it *because* it was removed — the only other
+    // reason it skips is that the keyword is printed, and nothing here was
+    // both.
+    let muzzled = named_permanent(&mut state, &registry, "Grizzly Bears", PlayerId(1));
+    state.get_object_mut(muzzled).unwrap().instance_continuous_effects =
+        Some(vec![ContinuousEffect::GrantKeyword {
+            keyword: Keyword::Menace,
+            scope: EffectScope::OnSelf,
+        }]);
+    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::RemoveKeyword {
+        target: muzzled,
+        keyword: Keyword::Menace,
+    });
     // And one off the battlefield, which has no keywords at all.
     let in_hand = spell_in_hand(&mut state, &registry, "Abbey Griffin", PlayerId(0));
 
-    for id in [griffin, token, bears, wolf, in_hand] {
+    for id in [griffin, token, bears, wolf, inquisitor, flying_trampler, muzzled, in_hand] {
         let one_at_a_time: Vec<Keyword> = ALL.iter()
             .filter(|kw| state.has_keyword(id, **kw, &registry))
             .copied()
@@ -741,4 +767,17 @@ fn the_batch_keyword_scan_answers_exactly_what_asking_one_at_a_time_does() {
     assert!(state.has_keyword(bears, Keyword::Lifelink, &registry), "granted by an effect");
     assert!(state.has_keyword(wolf, Keyword::Deathtouch, &registry), "granted until end of turn");
     assert!(!state.has_keyword(griffin, Keyword::Flying, &registry), "removed until end of turn");
+    // And each pass reports every keyword it finds, not just its first.
+    assert_eq!(
+        state.keywords_among(inquisitor, ALL, &registry),
+        vec![Keyword::FirstStrike, Keyword::Vigilance],
+        "two printed keywords, both of them reported");
+    assert_eq!(
+        state.keywords_among(flying_trampler, ALL, &registry),
+        vec![Keyword::Flying, Keyword::Trample],
+        "two keywords granted until end of turn, both of them reported");
+    assert!(
+        !state.has_keyword(muzzled, Keyword::Menace, &registry),
+        "a keyword granted by a continuous effect and removed until end of turn \
+         is not had (CR 613.1)");
 }
