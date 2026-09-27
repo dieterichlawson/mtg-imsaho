@@ -709,3 +709,71 @@ fn every_restriction_the_pool_can_impose_is_visible() {
         assert!(!line.trim().is_empty(), "a blank line is not a restriction");
     }
 }
+
+/// The view's two ability-description accessors name the ability the action
+/// carries, not a neighbour of it.
+///
+/// Both seats' action tables print `+1: Each player discards a card` rather
+/// than the index the action carries, and both read the words through
+/// `GameView::loyalty_ability_description` / `mana_ability_description`
+/// (#61 for the CLI, #494 for the LLM seat, which had no arm for the variant
+/// at all). Each looks its index up in the permanent's own list, so a
+/// comparison that matches the wrong entry hands the player another
+/// ability's text — and a loyalty ability cannot be taken back or retried
+/// that turn (CR 606.3), so the label is the whole decision.
+///
+/// Swept over the pool because the lists are built per card, and Liliana is
+/// named directly because she is the permanent with three of them: a lookup
+/// that returns *something* for every index is only caught where there is
+/// more than one index to confuse.
+#[test]
+fn the_views_ability_descriptions_belong_to_the_ability_asked_about() {
+    let reg = registry();
+    let mut names: Vec<String> = reg.all_names().iter().map(|s| (*s).to_string()).collect();
+    names.sort();
+    let mut mana_checked = 0usize;
+    let mut loyalty_checked = 0usize;
+    for name in &names {
+        let id = reg.get_id_by_name(name).expect("a name in all_names has an id");
+        let data = reg.card_data(id).expect("a name in all_names has card data");
+        if !data.card_types.iter().any(CardType::is_permanent) {
+            continue;
+        }
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let obj = named_permanent(&mut state, &reg, name, P0);
+        set_loyalty(&mut state, obj, 4);
+        let view = mtg_engine::view::GameView::for_player(&state, P0, &reg);
+        let perm = view.battlefield.iter().find(|p| p.object_id == obj)
+            .expect("the permanent just put on the battlefield is in the view");
+        for (i, desc) in &perm.mana_abilities {
+            assert_eq!(view.mana_ability_description(obj, *i), Some(desc.as_str()),
+                "{name}: mana ability {i} is {desc:?} in the view");
+            mana_checked += 1;
+        }
+        for (i, desc) in &perm.loyalty_abilities {
+            assert_eq!(view.loyalty_ability_description(obj, *i), Some(desc.as_str()),
+                "{name}: loyalty ability {i} is {desc:?} in the view");
+            loyalty_checked += 1;
+        }
+    }
+    assert!(mana_checked > 0, "no permanent in the pool offered a mana ability");
+    assert!(loyalty_checked > 0, "no permanent in the pool offered a loyalty ability");
+
+    // Three abilities on one permanent, each asked for by its own index.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
+    set_loyalty(&mut state, liliana, 6);
+    let view = mtg_engine::view::GameView::for_player(&state, P0, &reg);
+    let perm = view.battlefield.iter().find(|p| p.object_id == liliana).expect("on the battlefield");
+    assert!(perm.loyalty_abilities.len() >= 3,
+        "Liliana has three loyalty abilities, not {}: {:?}",
+        perm.loyalty_abilities.len(), perm.loyalty_abilities);
+    let words: Vec<&str> = perm.loyalty_abilities.iter()
+        .map(|(i, _)| view.loyalty_ability_description(liliana, *i).expect("each index names its own"))
+        .collect();
+    let mut distinct = words.clone();
+    distinct.sort_unstable();
+    distinct.dedup();
+    assert_eq!(distinct.len(), words.len(),
+        "three indices, three different abilities, not one repeated: {words:?}");
+}
