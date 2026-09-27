@@ -186,8 +186,67 @@ export function bandTurnLine(ctx: Ctx, mine: boolean, step: Step): string {
   return clip(ctx, `${mine ? "YOUR TURN" : "OPPONENT'S TURN"} · ${STEP_WORDS[step]}`, BAND_W, "7px Silkscreen");
 }
 
+/** The badge strip's room inside a card: 3px in from each edge. */
+export const BADGE_ROOM = CARD.w - 6;
+const BADGE_FONT = "7px Silkscreen";
+/**
+ * The colour of the "N more, hover to see them" marker, and its prefix.
+ *
+ * The prefix is not `+`: a `+1/+1` counter badge already reads `+1`, and a
+ * marker saying `+1` next to it would be a second badge claiming to be a
+ * counter.
+ */
+const BADGE_MORE = "#9090a0";
+const BADGE_MORE_MARK = "\u2026";
+
+/**
+ * Where each badge of `badges` goes in a strip `maxW` wide, dropping the
+ * ones that do not fit and ending with a marker that says how many
+ * went.
+ *
+ * The strip used to be `slice(0, 3)` laid out from `x + 3` with no bound,
+ * and three badges never fit: the mildest three a creature can wear
+ * (`ATK`, `+1`, `1d`) ran 2px past the card, a 10-counter 12-damage
+ * attacker ran 12px past, and the gutter between two cards in a row is
+ * 1px — so the overflow was painted onto the neighbouring permanent's art
+ * (issue #603). The cap also dropped whatever came after the third badge
+ * silently, so a regeneration shield on a damaged attacker simply was not
+ * on the card.
+ *
+ * Both halves are the same question — how many fit — so both are answered
+ * here: take badges while they and the marker for the rest still fit, and
+ * say in the marker how many are only in the inspector (`\u20262` — two
+ * more, hover the card). Exported so the "everything printed fits" sweep
+ * measures what is drawn.
+ */
+export function badgeStrip(ctx: Ctx, badges: { t: string; c: string }[], maxW: number): { t: string; c: string; x: number; w: number }[] {
+  ctx.font = BADGE_FONT;
+  const box = (t: string) => ctx.measureText(t).width + 2;
+  // Width of a strip of the first `k`, plus the marker for the rest: each
+  // badge is its box, and the boxes are 1px apart.
+  const stripW = (k: number) => {
+    const boxes = badges.slice(0, k).map(b => box(b.t));
+    if (k < badges.length) boxes.push(box(`${BADGE_MORE_MARK}${badges.length - k}`));
+    return boxes.reduce((a, b) => a + b, 0) + Math.max(0, boxes.length - 1);
+  };
+  let k = badges.length;
+  while (k > 0 && stripW(k) > maxW) k--;
+  const out: { t: string; c: string; x: number; w: number }[] = [];
+  let bx = 0;
+  for (const b of badges.slice(0, k)) {
+    const w = box(b.t);
+    out.push({ t: b.t, c: b.c, x: bx, w });
+    bx += w + 1;
+  }
+  if (k < badges.length) {
+    const t = `${BADGE_MORE_MARK}${badges.length - k}`;
+    out.push({ t, c: BADGE_MORE, x: bx, w: box(t) });
+  }
+  return out;
+}
+
 /** Status marks for a permanent: tapped, attacking, blocking, sick, counters, damage. */
-function permBadges(p: PermanentView, state: State): { t: string; c: string }[] {
+export function permBadges(p: PermanentView, state: State): { t: string; c: string }[] {
   const b: { t: string; c: string }[] = [];
   if (p.attacking) b.push({ t: "ATK", c: "#e07040" });
   if (p.blocking && p.blocking.length) b.push({ t: "BLK", c: "#60a0e0" });
@@ -269,13 +328,10 @@ function drawPerm(ctx: Ctx, hits: Hit[], state: LiveState, p: PermanentView, x: 
   const kw = (p.keywords || []).map(k => KEYWORD_SHORT[k] || k.slice(0, 3)).slice(0, 2).join(" ");
   const kwRoom = CARD.w - 8 - rightW;
   if (kw && kwRoom >= 10) text(ctx, clip(ctx, kw, kwRoom, "7px Silkscreen"), x + 3, y + CARD.h - 10, { color: "#c0c8d8", font: "7px Silkscreen" });
-  // Badges strip below the art.
-  let bx = x + 3;
-  for (const b of permBadges(p, state).slice(0, 3)) {
-    ctx.font = "7px Silkscreen"; const w = ctx.measureText(b.t).width + 2;
-    ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(bx, y + 29, w, 9);
-    text(ctx, b.t, bx + 1, y + 30, { color: b.c, font: "7px Silkscreen" });
-    bx += w + 1;
+  // Badges strip below the art, bounded by the card it is drawn on (#603).
+  for (const b of badgeStrip(ctx, permBadges(p, state), BADGE_ROOM)) {
+    ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(x + 3 + b.x, y + 29, b.w, 9);
+    text(ctx, b.t, x + 4 + b.x, y + 30, { color: b.c, font: BADGE_FONT });
   }
   if (group && group.length > 1) {
     ctx.fillStyle = "#101010"; ctx.fillRect(x + CARD.w - 12, y - 3, 14, 10);

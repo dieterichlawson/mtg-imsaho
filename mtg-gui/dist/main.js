@@ -1,6 +1,6 @@
 // The page: one WebSocket to the seat, one canvas, one state object.
 import { loadManifest, fontsReady, artNames } from "./assets.js";
-import { render, inspecting, inspectorFacts, inspectorPt, wrap, wrapCapped, bandTurnLine, bandLogLines, clampScroll, outcomeHeadline, BAND_W, W, H, PANEL_X } from "./render.js";
+import { render, inspecting, inspectorFacts, inspectorPt, wrap, wrapCapped, bandTurnLine, bandLogLines, badgeStrip, permBadges, clampScroll, outcomeHeadline, BAND_W, BADGE_ROOM, W, H, PANEL_X } from "./render.js";
 import { beginDecision, indexView, beginList, inOurWords } from "./prompts.js";
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
@@ -562,6 +562,9 @@ window.mtgDebug = {
         width: (s, font) => { ctx.font = font; return ctx.measureText(s).width; },
         bandLine: (mine, step) => bandTurnLine(ctx, mine, step),
         bandW: BAND_W,
+        badges: (perm) => permBadges(perm, state),
+        badgeStrip: (badges, maxW) => badgeStrip(ctx, badges, maxW),
+        badgeRoom: BADGE_ROOM,
     },
     sent: [],
     trace: [],

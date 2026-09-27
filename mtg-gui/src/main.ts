@@ -1,7 +1,7 @@
 // The page: one WebSocket to the seat, one canvas, one state object.
 
 import { loadManifest, fontsReady, artNames } from "./assets.js";
-import { render, inspecting, inspectorFacts, inspectorPt, wrap, wrapCapped, bandTurnLine, bandLogLines, clampScroll, outcomeHeadline, BAND_W, W, H, PANEL_X } from "./render.js";
+import { render, inspecting, inspectorFacts, inspectorPt, wrap, wrapCapped, bandTurnLine, bandLogLines, badgeStrip, permBadges, clampScroll, outcomeHeadline, BAND_W, BADGE_ROOM, W, H, PANEL_X } from "./render.js";
 import { beginDecision, indexView, beginList, inOurWords } from "./prompts.js";
 import type { Action, ClientMessage, Decision, GameView, ServerMessage } from "./protocol.js";
 import type { Hit, LiveState, Row, State, Ui } from "./state.js";
@@ -46,6 +46,10 @@ interface DebugHook {
     width(s: string, font: string): number;
     bandLine(mine: boolean, step: string): string;
     bandW: number;
+    /** The badges a permanent wears, and where they land on its card. */
+    badges(perm: unknown): { t: string; c: string }[];
+    badgeStrip(badges: { t: string; c: string }[], maxW: number): { t: string; c: string; x: number; w: number }[];
+    badgeRoom: number;
   };
   sent: { seq: number; action: Action }[];
   /** One line per decision received: what it was and how it was handled. */
@@ -426,6 +430,7 @@ function syncField(): void {
   field.placeholder = ui.mode === "number" ? `X (0-${ui.max})` : "filter";
   if (document.activeElement !== field) field.focus();
 }
+
 /** Put the typing field away, and the keyboard back on the page with it.
  *
  * `display: none` drops focus eventually, but not before the next key: a
@@ -516,6 +521,9 @@ window.mtgDebug = {
     width: (s, font) => { ctx.font = font; return ctx.measureText(s).width; },
     bandLine: (mine, step) => bandTurnLine(ctx, mine, step as never),
     bandW: BAND_W,
+    badges: (perm) => permBadges(perm as never, state),
+    badgeStrip: (badges, maxW) => badgeStrip(ctx, badges, maxW),
+    badgeRoom: BADGE_ROOM,
   },
   sent: [],
   trace: [],

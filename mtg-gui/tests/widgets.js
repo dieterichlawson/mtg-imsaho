@@ -586,15 +586,57 @@ async function main() {
         // The sweep has to be exercising something: at least one step's
         // untreated line really is wider than the block.
         out.bandLive = everOver;
+        // The battlefield's own badge strip. It is drawn on a 40px card
+        // with a 1px gutter to the next one, so a strip wider than the room
+        // is ink on the neighbouring permanent (#603) — and the old cap of
+        // three did not fit even at its mildest.
+        const room = f.badgeRoom;
+        const perm = (extra) => Object.assign({ object_id: 1, name: "Probe", card_types: ["Creature"],
+          colors: [], keywords: [], counters: {}, damage_marked: 0, regeneration_shields: 0,
+          attached_to: null, attacking: null, blocking: null, summoning_sick: false, tapped: false }, extra);
+        let badgeLive = 0, badgeCases = 0, marked = 0;
+        for (const attacking of [null, { Player: 1 }])
+          for (const blocking of [null, [1]])
+            for (const summoning_sick of [false, true])
+              for (const PlusOnePlusOne of [0, 1, 3, 10, 99])
+                for (const damage_marked of [0, 1, 9, 12, 99])
+                  for (const regeneration_shields of [0, 1])
+                    for (const attached_to of [null, 7]) {
+                      const p = perm({ attacking, blocking, summoning_sick, damage_marked,
+                        regeneration_shields, attached_to, counters: PlusOnePlusOne ? { PlusOnePlusOne } : {} });
+                      const all = f.badges(p);
+                      const strip = f.badgeStrip(all, room);
+                      badgeCases++;
+                      const last = strip[strip.length - 1];
+                      const end = last ? last.x + last.w : 0;
+                      if (end > room) out.badges = (out.badges || []).concat([[all.map(b => b.t), end, room]]);
+                      // Untreated, the same strip: boxes plus a 1px stride.
+                      const untreated = all.reduce((w, b) => w + f.width(b.t, "7px Silkscreen") + 3, -1);
+                      if (untreated > room) badgeLive++;
+                      // What was dropped is counted on the card, not lost.
+                      const hasMarker = !!last && /^\u2026\d+$/.test(last.t);
+                      const dropped = all.length - (strip.length - (hasMarker ? 1 : 0));
+                      const saysRight = dropped === 0 ? !hasMarker : (hasMarker && last.t === `\u2026${dropped}`);
+                      if (saysRight) marked++;
+                      else out.badgeCount = (out.badgeCount || []).concat([[all.map(b => b.t), strip.map(b => b.t)]]);
+                    }
+        out.badgeLive = badgeLive; out.badgeCases = badgeCases; out.badgeMarked = marked;
         return out;
       }, { names, steps });
       const live = bad.bandLive; delete bad.bandLive;
+      const badgeLive = bad.badgeLive, badgeCases = bad.badgeCases, badgeMarked = bad.badgeMarked;
+      delete bad.badgeLive; delete bad.badgeCases; delete bad.badgeMarked;
       for (const [what, rows] of Object.entries(bad)) {
         if (rows.length) fail(`fit-${what}: ${rows.length} over the pane, e.g. ${JSON.stringify(rows.slice(0, 3))}`);
         else ok(`fit-${what}: all ${what === "band" ? 24 : names.length} fit`);
       }
+      if (!bad.badges) ok(`fit-badges: all ${badgeCases} badge strips fit the card`);
       if (!live) fail("fit-band-live: no untreated line is over the block — the sweep proves nothing");
       else ok(`fit-band-live: ${live} of 24 untreated lines really are over the block`);
+      if (!badgeLive) fail("fit-badges-live: no untreated badge strip is over the card — the sweep proves nothing");
+      else ok(`fit-badges-live: ${badgeLive} of ${badgeCases} untreated strips really are over the card`);
+      if (badgeMarked !== badgeCases) fail(`fit-badges-marked: ${badgeCases - badgeMarked} strips do not say how many badges they dropped`);
+      else ok(`fit-badges-marked: every strip says how many badges are only in the inspector`);
     }
     // 18. The log drawer's heading is not printed over by the log.
     //
