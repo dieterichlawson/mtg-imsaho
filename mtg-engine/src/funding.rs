@@ -953,6 +953,104 @@ mod tests {
         }
     }
 
+    /// Every tap sum `groups` can produce exactly, by brute force over how
+    /// many sources of each group are tapped.
+    fn every_tap_sum(groups: &[FundingGroup]) -> std::collections::BTreeSet<u32> {
+        let mut sums: std::collections::BTreeSet<u32> = [0].into_iter().collect();
+        for g in groups {
+            let count = u32::try_from(g.source_ids.len()).unwrap();
+            let mut next = std::collections::BTreeSet::new();
+            for &s in &sums {
+                for t in 0..=count {
+                    next.insert(s + t * g.mana_per_tap);
+                }
+            }
+            sums = next;
+        }
+        sums
+    }
+
+    #[test]
+    fn an_allocation_funds_the_most_of_x_the_board_can_reach_and_says_the_rest_is_short() {
+        // The contract every seat leans on, stated over the response rather
+        // than over the arithmetic that builds it:
+        //
+        //   what it funds + what it reports short == the mana X needs
+        //   what it funds == the most any allocation of this board reaches
+        //
+        // Break the first and a player announces an X the payment does not
+        // cover, or taps mana the announcement never bought. Break the
+        // second and a payable mana is left on the board while the
+        // shortfall claims X was out of reach (#593). Brute force says what
+        // the board reaches; `validate` says the response is one the
+        // payment can actually execute.
+        let boards = vec![
+            vec![],
+            vec![group("Sol Ring", FundingCategory::Rocks, 2, 1)],
+            vec![group("Sol Ring", FundingCategory::Rocks, 2, 3)],
+            vec![group("Mountain", FundingCategory::Lands, 1, 1),
+                 group("Sol Ring", FundingCategory::Rocks, 2, 1)],
+            vec![group("Mountain", FundingCategory::Lands, 1, 3),
+                 group("Sol Ring", FundingCategory::Rocks, 2, 2)],
+            vec![group("Gilded Lotus", FundingCategory::Rocks, 3, 2),
+                 group("Sol Ring", FundingCategory::Rocks, 2, 1)],
+            vec![group("Worn Powerstone", FundingCategory::Rocks, 4, 2),
+                 group("Gilded Lotus", FundingCategory::Rocks, 3, 1)],
+            vec![group("Mountain", FundingCategory::Lands, 1, 2),
+                 group("Gilded Lotus", FundingCategory::Rocks, 3, 1),
+                 group("Llanowar Elves", FundingCategory::Dorks, 1, 2)],
+            vec![group("Cabal Coffers", FundingCategory::Lands, 5, 1),
+                 group("Sol Ring", FundingCategory::Rocks, 2, 2),
+                 group("Llanowar Elves", FundingCategory::Dorks, 1, 1)],
+            // A group with no output at all must not shift the answer.
+            vec![group("Tapped Out", FundingCategory::Rocks, 0, 2),
+                 group("Sol Ring", FundingCategory::Rocks, 2, 2)],
+        ];
+        for groups in &boards {
+            let tap_sums = every_tap_sum(groups);
+            let tappable: u32 = groups.iter().map(FundingGroup::max_contribution).sum();
+            for (red, green) in [(0, 0), (1, 0), (2, 0), (3, 0), (1, 2), (2, 2)] {
+                let mut pool = BTreeMap::new();
+                if red > 0 {
+                    pool.insert(ManaType::Red, red);
+                }
+                if green > 0 {
+                    pool.insert(ManaType::Green, green);
+                }
+                let pool_total: u32 = red + green;
+                for discount in 0..3u32 {
+                    let options = FundingOptions {
+                        pool: pool.clone(),
+                        groups: groups.clone(),
+                        max_x: pool_total + tappable,
+                        x_discount: discount,
+                    };
+                    for x in 0..=options.max_announceable_x() {
+                        let target = options.mana_for_x(x);
+                        let reachable = tap_sums
+                            .iter()
+                            .flat_map(|&s| (0..=pool_total).map(move |p| s + p))
+                            .filter(|&funded| funded <= target)
+                            .max()
+                            .unwrap_or(0);
+                        let (response, shortfall) = allocate_for_x(&options, x);
+                        assert_eq!(
+                            validate(&response, &options), Ok(()),
+                            "X = {x} on {options:?} produced {response:?}");
+                        assert_eq!(
+                            response.x_value() + shortfall, target,
+                            "X = {x} on {options:?}: {response:?} funds {} and calls \
+                             {shortfall} short of {target}", response.x_value());
+                        assert_eq!(
+                            response.x_value(), reachable,
+                            "X = {x} on {options:?}: {response:?} funds {} where some \
+                             allocation reaches {reachable}", response.x_value());
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn category_keys_match_schema_expectations() {
         assert_eq!(FundingCategory::Lands.key(), "lands");
