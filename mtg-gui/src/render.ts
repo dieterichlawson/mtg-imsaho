@@ -250,7 +250,7 @@ export function permBadges(p: PermanentView, state: State): { t: string; c: stri
   const b: { t: string; c: string }[] = [];
   if (p.attacking) b.push({ t: "ATK", c: "#e07040" });
   if (p.blocking && p.blocking.length) b.push({ t: "BLK", c: "#60a0e0" });
-  if (p.summoning_sick && p.card_types.includes("Creature")) b.push({ t: "z", c: "#8080a0" });
+  if (p.affected_by_summoning_sickness) b.push({ t: "z", c: "#8080a0" });
   const c = p.counters || {};
   if (c.PlusOnePlusOne) b.push({ t: `+${c.PlusOnePlusOne}`, c: "#80e080" });
   if (c.MinusOneMinusOne) b.push({ t: `-${c.MinusOneMinusOne}`, c: "#e08080" });
@@ -420,12 +420,12 @@ function stackKey(p: PermanentView, attachedTo: Set<ObjectId>): string | null {
   if (p.damage_marked || p.regeneration_shields) return null;
   if (p.attacking || (p.blocking && p.blocking.length) || (p.blocked_by && p.blocked_by.length)) return null;
   if (p.named_card) return null;
-  const isCreature = p.card_types.includes("Creature");
   return [
     p.name, p.tapped, p.is_token,
-    // Summoning sickness is only painted on a creature, so it only tells
-    // two permanents apart when they are creatures.
-    isCreature ? p.summoning_sick : false,
+    // The engine's answer, which is already "no" for a non-creature and for
+    // a creature with haste — the two cases this used to narrow by hand and
+    // the badge did not (#604).
+    p.affected_by_summoning_sickness,
     p.effective_power, p.effective_toughness, p.star_pt,
     (p.keywords || []).join(","), (p.protections || []).join(","), (p.restrictions || []).join(","),
     (p.card_types || []).join(","), (p.subtypes || []).join(","), (p.supertypes || []).join(","),
@@ -754,7 +754,7 @@ export function inspectorFacts(state: LiveState, e: IndexEntry): string[] {
   if (o.blocked_by && o.blocked_by.length) out.push("Blocked by " + o.blocked_by.map(id => nameOf(state, id)).join(", "));
   for (const p of o.protections || []) out.push(p);
   for (const r of o.restrictions || []) out.push(r);
-  if (o.summoning_sick) out.push("Summoning sick");
+  if (o.affected_by_summoning_sickness) out.push("Summoning sick");
   if (o.named_card) out.push(`Named: ${o.named_card}`);
   // Whose ability this is. A trigger is not an object, so its `object_id`
   // is a placeholder and the chip carries nothing that says which of several

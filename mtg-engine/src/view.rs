@@ -97,7 +97,24 @@ pub struct PermanentView {
     /// an attack trades, and no surface could read it — the field existed on
     /// the object and stopped there (issue #468).
     pub regeneration_shields: u32,
-    pub summoning_sick: bool,
+    /// Whether summoning sickness is stopping this permanent doing anything
+    /// (CR 302.6) — `GameState::has_summoning_sickness`, not the raw
+    /// "entered this turn" flag.
+    ///
+    /// The raw flag is set on every permanent that entered this turn, and
+    /// three surfaces in a row read it as "can't attack": the CLI said `[S]`
+    /// on a planeswalker that had just resolved (#221) and on a hasty
+    /// creature that was attacking (#139), the page painted the sickness
+    /// badge on an attacking Manor Skeleton and listed `Haste` and
+    /// `Summoning sick` as two facts about it (#604), and the LLM seat was
+    /// handed `haste [S]` in a row whose own legend defines `[S]` as "can't
+    /// attack" (#605). The CLI's fix was a helper inside `cli.rs`, which is
+    /// why the other two never got it.
+    ///
+    /// So the view answers the question rather than handing out the fact:
+    /// there is one definition, in the engine, next to the gate that
+    /// enforces it.
+    pub affected_by_summoning_sickness: bool,
     pub attached_to: Option<ObjectId>,
     /// The player this Aura enchants (Curses, CR 702.5c). A Curse's entire
     /// identity is whom it curses, and the display had nowhere to read it —
@@ -365,7 +382,8 @@ impl GameView {
                     effective_toughness: state.effective_toughness(obj.id, registry),
                     damage_marked: obj.damage_marked,
                     regeneration_shields: obj.regeneration_shields,
-                    summoning_sick: obj.summoning_sick,
+                    affected_by_summoning_sickness:
+                        state.has_summoning_sickness(obj.id, registry),
                     attached_to: obj.attached_to,
                     attached_to_player: obj.attached_to_player,
                     keywords,

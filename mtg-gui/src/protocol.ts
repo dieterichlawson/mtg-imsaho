@@ -59,7 +59,13 @@ export interface PermanentView {
   effective_toughness: number | null;
   damage_marked: number;
   regeneration_shields: number;
-  summoning_sick: boolean;
+  /**
+   * Whether summoning sickness is stopping this permanent doing anything
+   * (CR 302.6), which the engine decides — not the raw "entered this turn"
+   * field, which is set on every permanent and on a hasty creature for its
+   * whole first turn (#604, and #139 in the terminal before it).
+   */
+  affected_by_summoning_sickness: boolean;
   attached_to: ObjectId | null;
   attached_to_player: PlayerId | null;
   keywords: Keyword[];

@@ -2503,7 +2503,13 @@ impl LlmPlayer {
             // "except it has ..." clause to grant (#557).
             else if c.is_copy { flag_parts.push("copy".into()); }
             if c.tapped { flag_parts.push("T".into()); }
-            if c.summoning_sick { flag_parts.push("S".into()); }
+            // `S` is the engine's answer to CR 302.6, not the raw
+            // "entered this turn" field: a hasty creature carries that field
+            // for its whole first turn, so the seat used to be handed
+            // `haste [S]` and a legend defining `[S]` as "can't attack"
+            // about a creature the very next section offered as a legal
+            // attacker (#605, the harness's half of #139).
+            if c.affected_by_summoning_sickness { flag_parts.push("S".into()); }
             if c.damage_marked > 0 { flag_parts.push(format!("{}dmg", c.damage_marked)); }
             // A live regeneration shield (CR 701.15a), which decides whether
             // removal is worth casting and whether an attack trades. The seat
@@ -6304,7 +6310,7 @@ mod tests {
             effective_toughness: Some(toughness),
             damage_marked: 0,
             regeneration_shields: 0,
-            summoning_sick: false,
+            affected_by_summoning_sickness: false,
             attached_to: None,
             attached_to_player: None,
             keywords: vec![],
@@ -6408,6 +6414,39 @@ mod tests {
         let perms = vec![&plain];
         let board = LlmPlayer::format_perms_compact(&perms, &perms, you);
         assert!(!board.contains("protection") && !board.contains("can't"), "got {board}");
+    }
+
+    /// `[S]` is the engine's CR 302.6 answer, and both board renderers say
+    /// it only when the engine does.
+    ///
+    /// The flag used to be the raw "entered this turn" view field, so a
+    /// haste creature was handed to the seat as `Manor Skeleton (#3) 1/1
+    /// black, haste [S]` while the same request's legend defined `S` as
+    /// "summoning sick (entered this turn, can't attack)" and the next
+    /// section offered it as a legal attacker. One row saying both things
+    /// about one creature (#605, the harness's half of #139). The seat
+    /// talked itself past it, which is why nobody noticed and not a reason
+    /// it was harmless.
+    #[test]
+    fn the_sickness_flag_says_what_the_engine_says_on_both_board_renderers() {
+        let you = PlayerId(0);
+        for restricted in [false, true] {
+            let mut c = perm(3, "Manor Skeleton", 1, 1, you);
+            c.keywords = vec![mtg_engine::types::Keyword::Haste];
+            c.affected_by_summoning_sickness = restricted;
+
+            let perms = vec![&c];
+            let board = LlmPlayer::format_perms_compact(&perms, &perms, you);
+            assert!(board.contains("haste"), "the row still says haste: {board}");
+            assert_eq!(board.contains("[S]"), restricted,
+                "restricted={restricted} but the board says {board}");
+
+            let mut view = empty_view();
+            view.battlefield = vec![c.clone()];
+            let row = LlmPlayer::format_combat_creature(&view, ObjectId(3));
+            assert!(!row.contains("[S]") || restricted,
+                "restricted={restricted} but the combat row says {row}");
+        }
     }
 
     /// CR 706.2: an ability a copy effect added is on neither surface the
@@ -6529,7 +6568,7 @@ this Aura deals 1 damage to that player.";
             effective_toughness: None,
             damage_marked: 0,
             regeneration_shields: 0,
-            summoning_sick: false,
+            affected_by_summoning_sickness: false,
             attached_to: Some(ObjectId(attached_to)),
             attached_to_player: None,
             keywords: vec![],

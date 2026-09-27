@@ -2109,20 +2109,6 @@ impl CliPlayer {
         }
     }
 
-    /// Whether `[S]` means anything for this permanent.
-    ///
-    /// Summoning sickness restricts a *creature*'s attacks and `{T}`
-    /// abilities (CR 302.6) and nothing else, so the raw object flag is
-    /// meaningless on a planeswalker or an enchantment that has just
-    /// resolved (issue #221) and misleading on a creature with haste (#139).
-    /// One helper, so every pane answers it the same way — the battlefield
-    /// row learned the haste half and the inspector never did.
-    fn is_summoning_sick(perm: &PermanentView) -> bool {
-        perm.summoning_sick
-            && perm.card_types.contains(&CardType::Creature)
-            && !perm.keywords.contains(&mtg_engine::types::Keyword::Haste)
-    }
-
     fn counters_suffix(counters: &HashMap<mtg_engine::types::CounterType, u32>) -> String {
         let mut parts: Vec<String> = counters.iter()
             .filter(|&(ct, n)| *ct != mtg_engine::types::CounterType::Loyalty && *n > 0)
@@ -2437,7 +2423,7 @@ impl CliPlayer {
         // A hasty creature isn't slowed by summoning sickness —
         // '[S]' read as "cannot attack" on a creature whose attack
         // was perfectly legal (issue #139).
-        let sick = Self::is_summoning_sick(c);
+        let sick = c.affected_by_summoning_sickness;
         // CR 506.3a/509.1a: attacking and blocking are public state,
         // and `[T]` — the same mark a creature gets for tapping for
         // mana — was the only thing the pane said about either
@@ -4401,7 +4387,7 @@ impl CliPlayer {
         let flags = format!("{}{}{}{}",
             Self::identity_marks(perm),
             if perm.tapped { " [T]" } else { "" },
-            if Self::is_summoning_sick(perm) { " [S]" } else { "" },
+            if perm.affected_by_summoning_sickness { " [S]" } else { "" },
             Self::regen_marker(perm));
         let loyalty = if perm.card_types.contains(&CardType::Planeswalker) {
             let l = perm.counters.get(&mtg_engine::types::CounterType::Loyalty)
@@ -4579,7 +4565,7 @@ impl CliPlayer {
             let _ = execute!(out, Print(format!("  Regeneration shields: {}\n",
                 perm.regeneration_shields)));
         }
-        if Self::is_summoning_sick(perm) {
+        if perm.affected_by_summoning_sickness {
             let _ = execute!(out, Print("  Summoning sick: true\n".to_string()));
         }
         let _ = execute!(out, Print(format!("  ID: #{}\n", perm.object_id.0)));
@@ -9878,7 +9864,7 @@ Mark 1 of the 1 cards below to exile.");
             effective_toughness: None,
             damage_marked: 0,
             regeneration_shields: 0,
-            summoning_sick: false,
+            affected_by_summoning_sickness: false,
             attached_to: None,
             attached_to_player: None,
             keywords: vec![],
@@ -9960,7 +9946,7 @@ Mark 1 of the 1 cards below to exile.");
             effective_toughness: Some(2),
             damage_marked: 0,
             regeneration_shields: 0,
-            summoning_sick: false,
+            affected_by_summoning_sickness: false,
             attached_to: None,
             attached_to_player: None,
             keywords: vec![],
@@ -10273,24 +10259,31 @@ Mark 1 of the 1 cards below to exile.");
         assert!(entry.contains("flying"), "got {entry}");
     }
 
-    /// Issue #221: `[S]` is a creature restriction (CR 302.6). It means
-    /// nothing on a planeswalker or an enchantment, and nothing on a hasty
-    /// creature (#139).
+    /// `[S]` says what the view says and nothing else.
+    ///
+    /// The pane used to decide for itself, and the decision — a creature,
+    /// without haste (CR 302.6, issues #221 and #139) — was a helper here
+    /// that the browser page and the LLM seat never learned (#604, #605).
+    /// The engine answers it now, so what is left to check is that every
+    /// pane prints the answer it was given rather than re-deriving one.
     #[test]
-    fn summoning_sickness_is_only_asked_about_creatures() {
-        let mut walker = creature(30, "Liliana of the Veil", 0);
-        walker.card_types = vec![CardType::Planeswalker];
-        walker.summoning_sick = true;
-        assert!(!CliPlayer::is_summoning_sick(&walker));
+    fn the_sickness_mark_says_what_the_view_says() {
+        for sick in [false, true] {
+            let mut c = creature(30, "Fresh Thing", 0);
+            c.affected_by_summoning_sickness = sick;
+            // A raw "entered this turn" that the engine did not count as
+            // sickness — a hasty attacker — must not bring the mark back.
+            c.keywords = vec![mtg_engine::types::Keyword::Haste];
+            let mut v = view(Step::PrecombatMain, 7, false);
+            v.battlefield = vec![c.clone()];
 
-        let mut hasty = creature(31, "Hasty Thing", 0);
-        hasty.summoning_sick = true;
-        hasty.keywords = vec![mtg_engine::types::Keyword::Haste];
-        assert!(!CliPlayer::is_summoning_sick(&hasty));
+            let inspector = CliPlayer::inspect_row(&c, 0);
+            assert_eq!(inspector.contains("[S]"), sick, "inspector row, sick={sick}: {inspector}");
 
-        let mut sick = creature(32, "Fresh Thing", 0);
-        sick.summoning_sick = true;
-        assert!(CliPlayer::is_summoning_sick(&sick));
+            let (_, mid, right) = CliPlayer::creature_row_parts(&c, None);
+            let board = format!("{mid}{right}");
+            assert_eq!(board.contains("[S]"), sick, "battlefield row, sick={sick}: {board}");
+        }
     }
 
     /// Issue #270: the tap / sickness / damage flags are what the row is read
@@ -10342,7 +10335,7 @@ Mark 1 of the 1 cards below to exile.");
     #[test]
     fn a_collapsed_row_pays_for_its_own_count_prefix() {
         let mut sick = inquisitor(40);
-        sick.summoning_sick = true;
+        sick.affected_by_summoning_sickness = true;
         let parts = CliPlayer::creature_row_parts(&sick, None);
 
         // The reported board: a 46-column terminal, so a 37-column pane.

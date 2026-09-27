@@ -150,3 +150,90 @@ fn a_control_change_to_the_same_controller_is_a_no_op() {
         "no controller changed, so no summoning sickness");
     let _ = reg;
 }
+
+/// CR 302.6 has one answer, and every seat is handed that answer.
+///
+/// `Object::summoning_sick` is the raw fact — came under this controller's
+/// control this turn — and it is set on every permanent that entered, so it
+/// is not the question any surface wants. Three surfaces read it as "can't
+/// attack" anyway: the terminal said `[S]` on a just-resolved planeswalker
+/// (#221) and on an attacking hasty creature (#139), the browser page
+/// painted the sickness badge on an attacking Manor Skeleton while its
+/// inspector listed `Haste` beside `Summoning sick` (#604), and the LLM
+/// seat was handed `haste [S]` against its own legend's "`S` = can't
+/// attack" (#605). The terminal's fix was a helper inside `cli.rs`, which
+/// is exactly why the other two never got it.
+///
+/// So the engine answers it — `has_summoning_sickness` — the view carries
+/// the answer, and this is the test that the answer is the same one the
+/// gates enforce. A surface that agrees with `eligible_attackers` and
+/// `can_pay_tap_cost` cannot contradict the game it is showing.
+#[test]
+fn the_view_says_summoning_sick_about_exactly_the_permanents_the_rules_restrict() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Haste: the flag is set for its whole first turn and the rules do not
+    // restrict it. Manor Skeleton is {1}{B} 1/1 haste.
+    let hasty = named_permanent(&mut state, &registry, "Manor Skeleton", P0);
+    state.get_object_mut(hasty).unwrap().summoning_sick = true;
+    // No haste: restricted.
+    let fresh = named_permanent(&mut state, &registry, "Walking Corpse", P0);
+    state.get_object_mut(fresh).unwrap().summoning_sick = true;
+    // Not a creature: the flag is set and means nothing (#221).
+    let walker = named_permanent(&mut state, &registry, "Liliana of the Veil", P0);
+    state.get_object_mut(walker).unwrap().summoning_sick = true;
+    set_loyalty(&mut state, walker, 3);
+    // A creature that has been here since the turn began.
+    let settled = named_permanent(&mut state, &registry, "Walking Corpse", P0);
+    state.get_object_mut(settled).unwrap().summoning_sick = false;
+
+    for (id, restricted, what) in [
+        (hasty, false, "a creature with haste (CR 702.10b)"),
+        (fresh, true, "a creature that entered this turn (CR 302.6)"),
+        (walker, false, "a planeswalker that just resolved (#221)"),
+        (settled, false, "a creature that was already here"),
+    ] {
+        assert_eq!(state.has_summoning_sickness(id, &registry), restricted,
+            "the engine about {what}");
+    }
+
+    let view = mtg_engine::view::GameView::for_player(&state, P0, &registry);
+    for perm in &view.battlefield {
+        assert_eq!(
+            perm.affected_by_summoning_sickness,
+            state.has_summoning_sickness(perm.object_id, &registry),
+            "the view disagrees with the engine about {} (#{})",
+            perm.name, perm.object_id.0);
+    }
+    let flagged: Vec<&str> = view.battlefield.iter()
+        .filter(|p| p.affected_by_summoning_sickness)
+        .map(|p| p.name.as_str())
+        .collect();
+    assert_eq!(flagged, vec!["Walking Corpse"],
+        "only the creature the rules restrict is flagged: {flagged:?}");
+
+    // And the flag agrees with the two gates that enforce the rule, which is
+    // what makes it safe for a surface to print "can't attack" from it.
+    let mut combat_state = game_at_step(Step::DeclareAttackers, P0);
+    let hasty = named_permanent(&mut combat_state, &registry, "Manor Skeleton", P0);
+    let fresh = named_permanent(&mut combat_state, &registry, "Walking Corpse", P0);
+    for id in [hasty, fresh] {
+        combat_state.get_object_mut(id).unwrap().summoning_sick = true;
+    }
+    let eligible = combat::eligible_attackers(&combat_state, P0, &registry);
+    let combat_view = mtg_engine::view::GameView::for_player(&combat_state, P0, &registry);
+    for perm in &combat_view.battlefield {
+        if !combat_state.is_creature(perm.object_id, &registry) {
+            continue;
+        }
+        assert_eq!(
+            !perm.affected_by_summoning_sickness,
+            eligible.contains(&perm.object_id),
+            "{} wears the sickness mark but {} declared as an attacker",
+            perm.name,
+            if eligible.contains(&perm.object_id) { "may be" } else { "may not be" });
+    }
+    assert!(eligible.contains(&hasty), "the hasty creature attacks the turn it enters");
+    assert!(!eligible.contains(&fresh), "the other one does not");
+}
