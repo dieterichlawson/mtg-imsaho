@@ -246,6 +246,22 @@ random game happened to reach.
   (`said_waiting` latches, and `Shared::connected()` counts channels reaped
   only on the next broadcast). Then decide whether a human seat *should* wait
   for ever, and if so fix the comment rather than the code.
+  [2026-09-27] **All of it confirmed, and the verdict is: the waiting is
+  right, the silence is not** (#602). Destroy the browser while the seat holds
+  a decision and the runner emits **not one byte** — state `Sl` at every 5 s
+  sample out to +45 s, `exited: null`. Both mechanisms the idea named are
+  exactly as read: `said_waiting` latches at the *first* decision, before
+  anybody has opened the page, so the line naming the URL never comes back; and
+  since `broadcast` is the only thing that reaps dead clients, `connected()`
+  keeps counting the closed page while `ask` is blocked in `recv()`, so the
+  check could not see the disconnect even if it ran. `AbandonGame` is
+  unreachable — `Shared` owns the `Sender` for the life of the `GuiPlayer` —
+  and `mtg-runner` has no `--max-actions` and no watchdog, so that half of the
+  idea is a code-reading question with no runtime to probe.
+  **Checked, correct**: a fresh browser 45 s after the first was destroyed gets
+  the same pending decision back (`seq 2`, `menu`), so `mtg-gui/README.md`'s
+  reconnect promise holds and nothing here argues for a forfeit. Don't
+  re-probe the reconnect; the open half is only what the terminal should say.
 
 - G18 [proposed 2026-09-17, from G9] a notice belongs to one tab but is sent to
   all: `GuiPlayer::notice` broadcasts, while `main.ts`'s notice branch only
