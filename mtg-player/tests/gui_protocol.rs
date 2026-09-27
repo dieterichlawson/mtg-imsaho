@@ -267,3 +267,94 @@ fn the_page_is_given_the_engines_x_funding_answers() {
          and commit all three."
     );
 }
+
+/// Read the property names of one `export interface` out of the page's
+/// protocol declarations.
+fn page_interface_fields(src: &str, name: &str) -> BTreeSet<String> {
+    let start = src.find(&format!("export interface {name} {{"))
+        .unwrap_or_else(|| panic!("mtg-gui/src/protocol.ts declares no {name}"));
+    let body = &src[start..];
+    let end = body.find("\n}").unwrap_or_else(|| panic!("{name} never ends"));
+    body[..end].lines()
+        .filter_map(|line| {
+            let l = line.trim();
+            // `name: Type;` at two spaces of indent. Doc comments and the
+            // interface's own header line have no bare `name:` prefix.
+            if !line.starts_with("  ") || l.starts_with('*') || l.starts_with("/*") || l.starts_with("//") {
+                return None;
+            }
+            let (field, _) = l.split_once(':')?;
+            let field = field.trim().trim_end_matches('?');
+            field.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+                .then(|| field.to_string())
+        })
+        .collect()
+}
+
+/// Every field of the view the page is sent is a field the page declares.
+///
+/// The page is handed `GameView` as it is — nothing on the Rust side is
+/// per-prompt — so `mtg-gui/src/protocol.ts` is a second, hand-written copy
+/// of the view's shape, and TypeScript cannot know it has gone stale. A
+/// field renamed or added on the engine side reads as `undefined` in the
+/// browser, which is falsy: the badge simply never paints, the fact simply
+/// never appears in the inspector, and nothing anywhere fails. That is how
+/// #604 stayed open — the page was reading a field whose *meaning* had moved
+/// on — and it is what the "one decision, four surfaces" rule exists to
+/// stop.
+///
+/// The engine's names are taken from the serialized JSON rather than the
+/// struct, because that is what crosses the socket.
+#[test]
+fn every_view_field_the_page_is_sent_is_one_the_page_declares() {
+    let registry = CardRegistry::with_all_cards();
+    let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../decks/coverage/");
+    let config = GameConfig {
+        player_names: vec!["a".into(), "b".into()],
+        decklists: vec![coverage_deck(&format!("{root}wb-coverage.txt")),
+                        coverage_deck(&format!("{root}rg-coverage.txt"))],
+        starting_life: 20,
+        starting_player: Some(PlayerId(0)),
+        rng_seed: Some(7),
+    };
+    let state = engine::setup_game(&config, &registry);
+    let view = GameView::for_player(&state, PlayerId(0), &registry);
+    let json = serde_json::to_value(&view).expect("the view serializes");
+
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../mtg-gui/src/protocol.ts"))
+        .expect("the page's protocol declarations");
+
+    // The top level, and the two object shapes a board is made of. A
+    // battlefield is empty at the start of a game, so the permanent's fields
+    // come from the engine's own view of a staged board below.
+    let mut checked = 0;
+    for (interface, sent) in [
+        ("GameView", json.as_object().expect("the view is an object").clone()),
+        ("CardView", json["your_hand"].as_array().and_then(|a| a.first())
+            .and_then(|c| c.as_object()).expect("a hand card").clone()),
+    ] {
+        let declared = page_interface_fields(&src, interface);
+        let missing: Vec<&String> = sent.keys().filter(|k| !declared.contains(*k)).collect();
+        assert!(missing.is_empty(),
+            "{interface}: the engine sends fields mtg-gui/src/protocol.ts does not declare: \
+             {missing:?}. The page reads a field it does not declare as `undefined`, which is \
+             falsy and silent — add them there and to whatever reads them in render.ts.");
+        checked += sent.len();
+    }
+
+    // A permanent, from a state with something on the battlefield.
+    let mut staged = state;
+    let card_id = registry.get_id_by_name("Walking Corpse").expect("a creature in the pool");
+    staged.create_object(card_id, PlayerId(0), mtg_engine::types::Zone::Battlefield, Some(2), Some(2));
+    let staged_view = GameView::for_player(&staged, PlayerId(0), &registry);
+    let perm = serde_json::to_value(&staged_view.battlefield[0]).expect("a permanent serializes");
+    let declared = page_interface_fields(&src, "PermanentView");
+    let sent = perm.as_object().expect("a permanent is an object");
+    let missing: Vec<&String> = sent.keys().filter(|k| !declared.contains(*k)).collect();
+    assert!(missing.is_empty(),
+        "PermanentView: the engine sends fields mtg-gui/src/protocol.ts does not declare: \
+         {missing:?}. The page reads a field it does not declare as `undefined`, which is \
+         falsy and silent — add them there and to whatever reads them in render.ts.");
+    checked += sent.len();
+    assert!(checked >= 60, "only {checked} fields compared — this guard has stopped covering");
+}
