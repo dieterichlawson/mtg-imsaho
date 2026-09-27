@@ -409,6 +409,23 @@ random game happened to reach.
   (a `list` whose `filter` is set by a future prompt kind), and whether the
   same three lines swallow a key the page does not yet document.
 
+- G26 [proposed 2026-09-27, from #604 and #605] the rest of the raw flags:
+  `summoning_sick` was rendered as a player-facing claim ("can't attack") by
+  three surfaces and corrected by one, and the correction lived in a private
+  helper in `cli.rs` where the other two could not find it. Nothing says it is
+  the only such field. Take every boolean and `Option` on `PermanentView`,
+  `PlayerView` and `StackItemView` that some surface turns into a sentence or a
+  badge — `tapped` (on a creature with vigilance, after attacking), `attacking`
+  and `blocked_by` (after the attacker or the blocker has left), `named_card`,
+  `is_copy`, `attached_to` (on an Aura whose host is gone this frame),
+  `regeneration_shields` (spent versus waiting) — and for each one grep the
+  four renderers (`cli.rs`, `render.ts`, `llm.rs`, and `random.rs` where it
+  decides) for the predicate. A field rendered through a *different* test on
+  two surfaces is the bug; a field rendered through the same test everywhere
+  is a "checked, correct" line worth writing down once so nobody sweeps it
+  twice. Start from the ones with an issue number in a doc comment — those are
+  the ones a fix has already touched on one surface.
+
 ## Filing
 
 As `docs/playtest/README.md` says: title `[playtest] <symptom>`, labels
