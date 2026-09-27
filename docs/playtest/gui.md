@@ -333,6 +333,23 @@ random game happened to reach.
   it — which is the same complaint as #529's, that a prompt must not be the
   only thing you can do. G16's table is the neighbouring fact: at those two
   widgets Enter is also the only key `main.ts` will act on.
+  [2026-09-27] **Confirmed on every key, and Escape does not get the keyboard
+  back either** (#601). At a filtered `list` and at a `number`, `l g G e d s f`
+  all land in the box: `query` ends `"lgGedsf"` while `logOpen`, `overlay`,
+  `stopAtPass` and `autoPass` never move. The half the idea did not predict is
+  that `syncField` calls `field.focus()` on *every frame* (`main.ts:427`, and
+  `draw()` ends in `syncField()` on a 120 ms interval), so Escape's `field.blur()`
+  is undone before the next keystroke — measured, `focused` is still `true`
+  after it and the typed text is still there. The seven keystrokes also leave
+  the prompt reading `NO MATCHES MATCHING "LGGEDSF" (OF 7)` over an empty row
+  list, with no on-screen way back.
+  **The control is the part to copy**: stage the same seven keys at a `mark`
+  prompt on the same board in the same game. All seven work there, and `f` even
+  says why it did nothing — so the board, the seat and the game are ruled out
+  in one capture, and the `filter`/`number` flag is the only difference left.
+  Still unasked: whether anything *outside* these two widgets focuses the field
+  (a `list` whose `filter` is set by a future prompt kind), and whether the
+  same three lines swallow a key the page does not yet document.
 
 ## Filing
 
