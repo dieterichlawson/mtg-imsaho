@@ -1642,6 +1642,7 @@ fn play_match(
         if rand::Rng::gen_bool(&mut match_rng, 0.5) { 1 } else { 0 });
 
     while !match_is_over(best_of, games.len(), wins_a, wins_b) {
+        let game_number = games.len() + 1;
         let outcome = play_game(
             seat_a,
             seat_b,
@@ -1652,7 +1653,18 @@ fn play_match(
             &mut p2,
             starter,
             card_reference,
-            best_of,
+            MatchFormat::BestOf {
+                best_of,
+                game: game_number,
+                your_wins: wins_a,
+                their_wins: wins_b,
+            },
+            MatchFormat::BestOf {
+                best_of,
+                game: game_number,
+                your_wins: wins_b,
+                their_wins: wins_a,
+            },
             rand::Rng::gen(&mut match_rng),
         );
 
@@ -1690,7 +1702,10 @@ fn play_game(
     p2: &mut LlmPlayer,
     starting_player: mtg_engine::ids::PlayerId,
     card_reference: &str,
-    best_of: usize,
+    // Each seat's own side of the match: the score is stated from the seat's
+    // point of view, so the two are mirrors of each other (issue #609).
+    format_a: MatchFormat,
+    format_b: MatchFormat,
     rng_seed: u64,
 ) -> GameOutcome {
     let config = GameConfig {
@@ -1704,10 +1719,12 @@ fn play_game(
 
     let mut state = engine::setup_game(&config, registry);
 
-    // Re-initialize conversations for this game (fresh context per game)
-    let format = MatchFormat::BestOf(best_of);
-    p1.init_conversation(&deck_a.entries, card_reference, registry, format);
-    p2.init_conversation(&deck_b.entries, card_reference, registry, format);
+    // Re-initialize conversations for this game (fresh context per game).
+    // The context is fresh, so whatever the seat is to know about the match
+    // around this game has to be in the system prompt — it is the only thing
+    // that survives (issue #609).
+    p1.init_conversation(&deck_a.entries, card_reference, registry, format_a);
+    p2.init_conversation(&deck_b.entries, card_reference, registry, format_b);
 
     let mut action_count: u64 = 0;
     let max_actions: u64 = 50_000;

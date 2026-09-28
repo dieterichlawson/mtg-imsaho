@@ -481,7 +481,7 @@ pub fn build_card_reference(names: &[String], registry: &mtg_engine::cards::Card
     names.iter().map(|n| card_reference_entry(n, registry)).collect()
 }
 
-/// The match a seat is playing, as far as the seat needs to know.
+/// The match a seat is playing, and where in it this game sits.
 ///
 /// This used to be a paragraph of the fixed `GAME_RULES` const reading
 /// "Matches are best-of-three ... In this tournament", which every seat was
@@ -491,43 +491,125 @@ pub fn build_card_reference(names: &[String], registry: &mtg_engine::cards::Card
 /// concede a lost game quickly), so a seat told it has two more games plays
 /// game 1 differently from one that knows the match is decided now (issue
 /// #210).
+///
+/// The format alone was not enough. `BestOf` carried only the length, a
+/// constant for the whole tournament, and `play_match` re-initialises both
+/// conversations before every game — so all 3,232 decisions of a 16-game
+/// best-of-4 tournament were answered against 4 distinct system prompts, one
+/// per seat, identical between game 1 and game 4 and between a 0-0 match and
+/// a 2-1 one. A seat could not tell an elimination game from a dead rubber,
+/// could not tell it had already won, and could not apply the one rule this
+/// section spends five lines teaching, which is keyed on whether this is game
+/// 1. Since #484 an even `best_of` can also end level, and a level match is a
+/// draw worth 1 point against 3, so a seat behind with one game left is
+/// playing for a draw and was never told (issue #609).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MatchFormat {
     /// One game, standing alone — no match around it and no tournament.
     SingleGame,
-    /// A match in a tournament, decided over this many games.
-    BestOf(usize),
+    /// One game of a tournament match, with the seat's own side of the score.
+    BestOf {
+        /// Games the match is decided over; it stops after this many played.
+        best_of: usize,
+        /// 1-based number of the game about to be played.
+        game: usize,
+        /// Games this seat has won so far in the match.
+        your_wins: usize,
+        /// Games the opponent has won so far in the match.
+        their_wins: usize,
+    },
 }
 
 impl MatchFormat {
-    /// The "## Play/draw" section of the system prompt for this format.
+    /// Game 1 of a best-of-`n` match, before anything has been played.
     #[must_use]
-    pub fn play_draw_section(self) -> String {
-        let mut s = String::from("\n\n## Play/draw\n\n");
+    pub fn best_of(n: usize) -> Self {
+        Self::BestOf { best_of: n, game: 1, your_wins: 0, their_wins: 0 }
+    }
+
+    /// The "## This match" section of the system prompt: the format, where
+    /// this game sits in it, what winning or losing it settles, and what
+    /// being on the play costs.
+    #[must_use]
+    pub fn match_section(self) -> String {
+        let mut s = String::from("\n\n## This match\n\n");
         match self {
             Self::SingleGame => s.push_str(
                 "This is a single game, not a match: there is no game 2, and nothing \
 carries over from it. The starting player is randomised (a fair coin flip); the \
 mulligan prompt tells you which you are.\n",
             ),
-            Self::BestOf(1) => s.push_str(
+            Self::BestOf { best_of: 1, .. } => s.push_str(
                 "Matches are best-of-one: this game decides the match, and there is no \
 game 2. The starting player is randomised (a fair coin flip); the mulligan prompt \
 tells you which you are.\n",
             ),
-            Self::BestOf(n) => {
+            Self::BestOf { best_of: n, game, your_wins, their_wins } => {
+                // Two bounds end a match, and only one of them is a win
+                // threshold: `wins_needed` is `n / 2 + 1`, and the match also
+                // stops after `n` games however they went (#484). At the cap
+                // `MatchResult::winner` is simply whoever has more game wins,
+                // so a best-of-4 can be won 2-1 without anyone reaching 3 —
+                // which is why the stake below is computed from both bounds
+                // rather than from the threshold alone.
+                let needed = n / 2 + 1;
+                // Games after this one, if the match runs to the cap.
+                let left = n.saturating_sub(game);
+                let win_takes_it = your_wins + 1 >= needed
+                    || (left == 0 && your_wins + 1 > their_wins);
+                let loss_loses_it = their_wins + 1 >= needed
+                    || (left == 0 && their_wins + 1 > your_wins);
+                // The last game, where the result only levels the score.
+                let win_levels = left == 0 && your_wins + 1 == their_wins;
+                let loss_levels = left == 0 && their_wins + 1 == your_wins;
+
                 // The last game is game n, not game 3: a seat told its match
                 // ends at game 3 when it does not plays the end of a longer
                 // match wrong, and one told there is a game 3 in a
                 // best-of-two is told about a game that will not happen
                 // (#484).
-                writeln!(s, "Matches are best-of-{n}. The starting player for each game is chosen as follows:\n\
-- **Game 1**: randomised (fair coin flip).\n\
-- **Games 2 to {n}**: the loser of the previous game chooses who goes first. In this \
-tournament, the loser ALWAYS elects to play first — going on the draw is effectively \
-never correct in Limited, so there is no decision to make. You will simply find \
-yourself on the play or draw at the start of each game; the mulligan prompt will tell \
-you which.").unwrap();
+                writeln!(s, "Matches are best-of-{n}: the match ends as soon as one of you \
+has won {needed} games, or after {n} games have been played, whichever comes first. \
+Whoever has won more games then wins the match.").unwrap();
+                writeln!(s, "\n**This is game {game} of at most {n}.** The score so far is \
+**you {your_wins}, your opponent {their_wins}**.").unwrap();
+
+                if win_takes_it && loss_loses_it {
+                    s.push_str("This game decides the match either way: win it and the \
+match is yours, lose it and it is theirs.\n");
+                } else if win_takes_it {
+                    s.push_str("Winning this game wins you the match.");
+                    if loss_levels {
+                        s.push_str(" Losing it leaves the score level, which is a draw.");
+                    }
+                    s.push('\n');
+                } else if loss_loses_it {
+                    s.push_str("Losing this game loses you the match.");
+                    if win_levels {
+                        s.push_str(" Winning it levels the score, which is a draw.");
+                    }
+                    s.push('\n');
+                } else {
+                    let more = if left == 1 { "1 more game follows it" }
+                        else { &format!("{left} more games follow it") };
+                    writeln!(s, "Neither of you can win the match with this game; {more}.").unwrap();
+                }
+                s.push_str("A match that ends with the score level is a **draw** — 1 \
+tournament point each, against 3 for a match win — so a game that cannot win you the \
+match is still worth not losing.\n");
+
+                if game == 1 {
+                    s.push_str("\nThe starting player for game 1 is randomised (a fair \
+coin flip). For each later game the loser of the previous one chooses who goes first, and \
+in this tournament the loser ALWAYS elects to play first — going on the draw is \
+effectively never correct in Limited, so there is no decision for you to make. The \
+mulligan prompt tells you which side you are on.\n");
+                } else {
+                    writeln!(s, "\nThe loser of game {} chose to go first, as the loser \
+always does in this tournament — going on the draw is effectively never correct in \
+Limited, so there is no decision for you to make. The mulligan prompt tells you which \
+side you are on.", game - 1).unwrap();
+                }
             }
         }
         s.push_str(
@@ -1744,7 +1826,7 @@ impl LlmPlayer {
         // The match structure is a property of the run, not of the rules, so
         // it is composed here where the caller knows it rather than baked
         // into the shared `GAME_RULES` const (issue #210).
-        let mut deck_info = match_format.play_draw_section();
+        let mut deck_info = match_format.match_section();
         if let Some(guide) = &self.guide {
             deck_info.push_str("\n\n## Guide\n\n");
             deck_info.push_str(guide);

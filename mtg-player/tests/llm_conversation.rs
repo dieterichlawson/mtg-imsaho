@@ -374,25 +374,88 @@ fn format_decklist_describes_the_back_face_a_transform_produces() {
 /// tournament — was told the same. Match structure changes how a game 1 is
 /// played, so the prompt has to state the one the seat is actually in.
 #[test]
-fn the_play_draw_section_states_the_match_the_seat_is_in() {
-    let single = MatchFormat::SingleGame.play_draw_section();
+fn the_match_section_states_the_match_the_seat_is_in() {
+    let single = MatchFormat::SingleGame.match_section();
     assert!(single.contains("single game"), "{single}");
     assert!(!single.contains("best-of-three"), "{single}");
     assert!(!single.contains("tournament"), "one game is not a tournament: {single}");
 
-    let bo1 = MatchFormat::BestOf(1).play_draw_section();
+    let bo1 = MatchFormat::best_of(1).match_section();
     assert!(bo1.contains("best-of-one"), "{bo1}");
     assert!(bo1.contains("no game 2"), "{bo1}");
 
-    let bo3 = MatchFormat::BestOf(3).play_draw_section();
+    let bo3 = MatchFormat::best_of(3).match_section();
     assert!(bo3.contains("best-of-3"), "{bo3}");
-    assert!(bo3.contains("Games 2 to 3"), "{bo3}");
-    assert!(bo3.contains("loser of the previous game"), "{bo3}");
+    assert!(bo3.contains("one of you has won 2 games"), "{bo3}");
+    assert!(bo3.contains("after 3 games have been played"), "{bo3}");
+    assert!(bo3.contains("the loser of the previous one chooses"), "{bo3}");
 
     // Every format still explains what being on the play costs.
     for section in [single, bo1, bo3] {
         assert!(section.contains("skips their first draw step"), "{section}");
     }
+}
+
+/// #609: `BestOf` carried only the length, a constant for the whole
+/// tournament, and `play_match` re-initialises both conversations before
+/// every game — so a 16-game best-of-4 tournament answered 3,232 decisions
+/// against 4 distinct system prompts, one per seat. Game 1 and game 4 of the
+/// same match, a 0-0 match and a 2-1 one: identical bytes.
+#[test]
+fn a_tournament_seat_is_told_which_game_it_is_playing_and_the_score() {
+    let at = |game, your_wins, their_wins| {
+        MatchFormat::BestOf { best_of: 4, game, your_wins, their_wins }.match_section()
+    };
+
+    // Every distinct position in a best-of-4 gets its own text.
+    let positions = [(1, 0, 0), (2, 1, 0), (2, 0, 1), (3, 1, 1), (4, 2, 1), (4, 1, 2)];
+    let sections: Vec<String> = positions.iter().map(|&(g, y, t)| at(g, y, t)).collect();
+    for (i, a) in sections.iter().enumerate() {
+        for (j, b) in sections.iter().enumerate() {
+            assert!(
+                i == j || a != b,
+                "positions {:?} and {:?} produce the same prompt",
+                positions[i], positions[j]
+            );
+        }
+    }
+
+    // The game number and the score are both stated, from this seat's side.
+    let g3 = at(3, 1, 1);
+    assert!(g3.contains("game 3 of at most 4"), "{g3}");
+    assert!(g3.contains("you 1, your opponent 1"), "{g3}");
+
+    // What this game settles. Best-of-4 needs 3 wins.
+    assert!(at(3, 2, 0).contains("Winning this game wins you the match"), "{}", at(3, 2, 0));
+    assert!(at(3, 0, 2).contains("Losing this game loses you the match"), "{}", at(3, 0, 2));
+    // ... and with a game still to come, losing it is not yet the match.
+    assert!(!at(3, 2, 0).contains("loses you the match"), "{}", at(3, 2, 0));
+    let decider = at(4, 2, 2);
+    assert!(decider.contains("decides the match either way"), "{decider}");
+    let early = at(1, 0, 0);
+    assert!(early.contains("Neither of you can win the match with this game"), "{early}");
+
+    // A best-of-4 is won 2-1 at the cap without anyone reaching 3, so the
+    // last game's stake is not read off the win threshold alone.
+    let last_ahead = at(4, 2, 1);
+    assert!(last_ahead.contains("Winning this game wins you the match"), "{last_ahead}");
+    assert!(last_ahead.contains("Losing it leaves the score level"), "{last_ahead}");
+    let last_level = at(4, 1, 1);
+    assert!(last_level.contains("decides the match either way"), "{last_level}");
+
+    // A level finish is a draw, which is the half the mulligan prompt cannot
+    // resolve for the seat and the reason an even best-of matters.
+    for s in [&g3, &decider, &early, &last_ahead] {
+        assert!(s.contains("draw"), "a level match is a draw: {s}");
+        assert!(s.contains("1 \ntournament point each") || s.contains("1 tournament point each"),
+            "and what it is worth: {s}");
+    }
+
+    // Game 1 gets the coin flip; a later game gets the rule that applies to
+    // it, which the seat could not tell apart before.
+    assert!(early.contains("game 1 is randomised"), "{early}");
+    assert!(!early.contains("chose to go first"), "{early}");
+    assert!(g3.contains("loser of game 2 chose to go first"), "{g3}");
 }
 
 #[test]
@@ -412,10 +475,10 @@ fn a_best_of_three_seat_is_told_about_games_two_and_three() {
     let registry = CardRegistry::with_all_cards();
     let deck = vec![("Mountain".to_string(), 20)];
     let mut player = mtg_player::llm::LlmPlayer::for_prompt_tests("t");
-    player.init_conversation(&deck, "Mountain | Land", &registry, MatchFormat::BestOf(3));
+    player.init_conversation(&deck, "Mountain | Land", &registry, MatchFormat::best_of(3));
     let prompt = player.system_prompt_for_test();
     assert!(prompt.contains("Matches are best-of-3"), "prompt: {prompt}");
-    assert!(prompt.contains("Games 2 to 3"), "prompt: {prompt}");
+    assert!(prompt.contains("game 1 of at most 3"), "prompt: {prompt}");
 }
 
 /// The recap a resumed seat is handed must reach `--log` in full, not as a
@@ -469,3 +532,4 @@ fn resume_logs_the_recap_body_not_just_a_count() {
     assert!(!logged.contains("p0 played Mountain"),
         "the log carries the rewritten recap, not the raw engine entries: {logged}");
 }
+
