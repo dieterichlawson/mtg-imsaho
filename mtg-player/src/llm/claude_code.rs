@@ -809,7 +809,7 @@ impl LlmBackend for ClaudeCodeBackend {
         // field left the seat's reasoning recorded nowhere at all — 101
         // decisions, zero THOUGHT lines (issue #213). This is the seat the
         // project actually runs.
-        let sanitized = super::AnthropicBackend::sanitize_schema(schema, true);
+        let sanitized = super::sanitize_schema_for_anthropic(schema, true);
         let mut structured = match self.call(message, Some(&sanitized)) {
             Some(json) => Self::structured(&json).unwrap_or_else(|| serde_json::json!({})),
             None => serde_json::json!({}),

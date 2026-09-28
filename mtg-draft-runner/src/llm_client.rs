@@ -391,43 +391,8 @@ fn deck_schema_for(pool: &[String]) -> serde_json::Value {
     })
 }
 
-/// Transform a JSON schema to be Anthropic-compatible:
-/// - add `additionalProperties: false` to every object
-/// - strip unsupported numeric constraints (`minimum`, `maximum`, `multipleOf`)
-/// - strip the `thoughts` field from `properties` and `required` (reasoning
-///   happens in the extended-thinking channel, not inside the JSON payload)
-fn sanitize_schema_for_anthropic(value: &serde_json::Value) -> serde_json::Value {
-    match value {
-        serde_json::Value::Object(map) => {
-            let mut new_map = serde_json::Map::new();
-            for (key, val) in map {
-                if key == "minimum" || key == "maximum" || key == "multipleOf" {
-                    continue;
-                }
-                new_map.insert(key.clone(), sanitize_schema_for_anthropic(val));
-            }
-            if new_map.get("type").and_then(|t| t.as_str()) == Some("object") {
-                new_map
-                    .entry("additionalProperties".to_string())
-                    .or_insert(serde_json::Value::Bool(false));
-                if let Some(props) = new_map.get_mut("properties").and_then(|p| p.as_object_mut()) {
-                    props.remove("thoughts");
-                }
-                if let Some(req) = new_map.get_mut("required").and_then(|r| r.as_array_mut()) {
-                    req.retain(|v| v.as_str() != Some("thoughts"));
-                }
-            }
-            serde_json::Value::Object(new_map)
-        }
-        serde_json::Value::Array(arr) => serde_json::Value::Array(
-            arr.iter().map(sanitize_schema_for_anthropic).collect(),
-        ),
-        other => other.clone(),
-    }
-}
-
 /// Response-format instructions appended to the draft rules for every
-/// backend that runs its schema through [`sanitize_schema_for_anthropic`].
+/// backend whose schema is sanitized with `keep_thoughts` false.
 /// That sanitizer strips `thoughts` out of the schema, so the prompt has to
 /// tell the model to reason elsewhere and not emit the key.
 const STRUCTURED_RESPONSE_FORMAT: &str = "\n\n## Response format\nYour responses are constrained by a JSON schema provided via the API's structured output mode. Always reply with exactly the JSON object matching the schema — no surrounding prose, no markdown fences.\n\nYour private reasoning happens in the model's extended-thinking channel — think through the situation there before producing the JSON. The JSON payload itself should contain ONLY the response fields in the schema; do NOT add a \"thoughts\" key, it will be rejected by the schema validator.";
@@ -585,7 +550,7 @@ impl AnthropicDraftBackend {
             }
         }
 
-        let sanitized = sanitize_schema_for_anthropic(schema);
+        let sanitized = mtg_player::llm::sanitize_schema_for_anthropic(schema, false);
         let body = serde_json::json!({
             "model": &self.model,
             "max_tokens": 8192,
@@ -819,7 +784,7 @@ impl ClaudeCodeDraftBackend {
     /// on the API path — a draft that quietly picks card 0 for the rest of
     /// the run is worse than one that stops.
     fn decide(&mut self, message: &str, schema: &serde_json::Value) -> String {
-        let sanitized = sanitize_schema_for_anthropic(schema);
+        let sanitized = mtg_player::llm::sanitize_schema_for_anthropic(schema, false);
         let began = std::time::Instant::now();
         let deadline = began + retry_budget();
         let mut attempt = 0u32;

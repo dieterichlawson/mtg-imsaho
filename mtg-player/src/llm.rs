@@ -88,6 +88,58 @@ pub fn schema_key_is_legal(key: &str) -> bool {
         && key.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
 }
 
+/// Rewrite a schema into the subset Anthropic's structured-output mode accepts:
+/// - add `additionalProperties: false` to every object
+/// - strip unsupported numeric constraints (`minimum`, `maximum`, `multipleOf`)
+/// - strip `thoughts` unless the caller keeps it
+///
+/// `keep_thoughts` is false for the Messages API, where the reasoning comes
+/// back in a thinking block the harness reads. It is TRUE for the `claude -p`
+/// seat, whose result object carries no thinking block — so stripping the
+/// field there erased the reasoning entirely: the schema asked for it, this
+/// stripped it, and nothing read a thinking channel, which is why 101
+/// decisions produced zero THOUGHT lines (issue #213).
+///
+/// Both request paths call this one function. The draft crate used to carry
+/// its own copy, which had no `keep_thoughts` parameter at all, so #213's fix
+/// never travelled and a `cc` seat's 42 picks were recorded with no reasoning
+/// in the same log where the tournament recorded 202 (issue #607) — the same
+/// drift, in the same pair of files, that #546 removed for the Gemini
+/// sanitizer and #404 met before that.
+#[must_use]
+pub fn sanitize_schema_for_anthropic(value: &serde_json::Value, keep_thoughts: bool) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(map) => {
+            let mut new_map = serde_json::Map::new();
+            for (key, val) in map {
+                // Strip unsupported numeric constraints.
+                if key == "minimum" || key == "maximum" || key == "multipleOf" {
+                    continue;
+                }
+                new_map.insert(key.clone(), sanitize_schema_for_anthropic(val, keep_thoughts));
+            }
+            // Add additionalProperties: false to object types.
+            if new_map.get("type").and_then(|t| t.as_str()) == Some("object") {
+                new_map.entry("additionalProperties".to_string())
+                    .or_insert(serde_json::Value::Bool(false));
+                if !keep_thoughts {
+                    if let Some(props) = new_map.get_mut("properties").and_then(|p| p.as_object_mut()) {
+                        props.remove("thoughts");
+                    }
+                    if let Some(req) = new_map.get_mut("required").and_then(|r| r.as_array_mut()) {
+                        req.retain(|v| v.as_str() != Some("thoughts"));
+                    }
+                }
+            }
+            serde_json::Value::Object(new_map)
+        }
+        serde_json::Value::Array(arr) => {
+            serde_json::Value::Array(arr.iter()
+                .map(|v| sanitize_schema_for_anthropic(v, keep_thoughts)).collect())
+        }
+        other => other.clone(),
+    }
+}
 /// Rewrite a schema into the subset the Gemini seat's provider accepts.
 ///
 /// The harness has always stated the portability rule — "Anthropic rejects
@@ -1201,54 +1253,9 @@ impl AnthropicBackend {
         self.call_api(&body)
     }
 
-    /// Transform a JSON schema to be Anthropic-compatible:
-    /// - Add "additionalProperties": false to all objects
-    /// - Strip unsupported numeric constraints (minimum, maximum, multipleOf)
-    /// - Strip "thoughts" unless the caller keeps it
-    ///
-    /// `keep_thoughts` is false for the Messages API, where the reasoning
-    /// comes back in a thinking block the harness reads. It is TRUE for the
-    /// `claude -p` seat, whose result object carries no thinking block — so
-    /// stripping the field there erased the reasoning entirely: the schema
-    /// asked for it, this stripped it, and nothing read a thinking channel,
-    /// which is why 101 decisions produced zero THOUGHT lines (issue #213).
-    pub(super) fn sanitize_schema(value: &serde_json::Value, keep_thoughts: bool) -> serde_json::Value {
-        match value {
-            serde_json::Value::Object(map) => {
-                let mut new_map = serde_json::Map::new();
-                for (key, val) in map {
-                    // Strip unsupported numeric constraints.
-                    if key == "minimum" || key == "maximum" || key == "multipleOf" {
-                        continue;
-                    }
-                    new_map.insert(key.clone(), Self::sanitize_schema(val, keep_thoughts));
-                }
-                // Add additionalProperties: false to object types.
-                if new_map.get("type").and_then(|t| t.as_str()) == Some("object") {
-                    new_map.entry("additionalProperties".to_string())
-                        .or_insert(serde_json::Value::Bool(false));
-                    if !keep_thoughts {
-                        if let Some(props) = new_map.get_mut("properties").and_then(|p| p.as_object_mut()) {
-                            props.remove("thoughts");
-                        }
-                        if let Some(req) = new_map.get_mut("required").and_then(|r| r.as_array_mut()) {
-                            req.retain(|v| v.as_str() != Some("thoughts"));
-                        }
-                    }
-                }
-                serde_json::Value::Object(new_map)
-            }
-            serde_json::Value::Array(arr) => {
-                serde_json::Value::Array(arr.iter()
-                    .map(|v| Self::sanitize_schema(v, keep_thoughts)).collect())
-            }
-            other => other.clone(),
-        }
-    }
-
     fn call_with_messages_structured(&mut self, messages: &[serde_json::Value], schema: &serde_json::Value) -> serde_json::Value {
         let (system, msgs) = self.prepare_request(messages);
-        let sanitized = Self::sanitize_schema(schema, false);
+        let sanitized = sanitize_schema_for_anthropic(schema, false);
         let body = serde_json::json!({
             "model": self.model,
             "max_tokens": 8192,
