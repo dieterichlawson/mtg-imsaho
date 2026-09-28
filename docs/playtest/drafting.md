@@ -609,3 +609,26 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   seat and emitted in seat order at the end of a scope) rather than something
   each new call site has to remember to be inside, because the convention has now
   been broken once by a fix that had no reason to know about it
+
+- D24 [proposed 2026-09-28, from #609's fix] does a seat play the match it is
+  now told it is in? #609 gave the system prompt the game number, the score
+  from the seat's own side, and what winning or losing this game settles — so
+  the states that text names are now checkable at the surface. Run
+  `--players 2 --best-of 4 --model cc --seed 7` under a stub and, for each
+  game, read the `## This match` section against the `MATCH`/game records that
+  follow it: the game number must match the games already logged, the two
+  seats' scores must be mirrors, and the stake sentence must be true of the
+  position. Then force the three positions the prose makes claims about and
+  check the claim holds rather than that it was printed: a seat at 2-0 in a
+  best-of-4 (winning takes it), a seat at 0-2 (losing loses it), and — the one
+  worth the night — a seat leading **2-1 going into game 4**, where the match
+  is won 2-1 at the cap without anyone reaching `wins_needed` of 3, so winning
+  takes the match and losing only levels it to a draw. That last case is the
+  one a threshold-only reading of `wins_needed` gets wrong, and it is reachable
+  at every even `--best-of`. Worth asking of a real `cc` seat rather than a
+  stub for one match, since the question is whether a seat told it is playing
+  for a draw plays differently from one told it is playing for a win — a
+  concession at 19 life in a game it cannot win the match with would be the
+  visible tell. The engine-side truth to compare against is
+  `MatchResult::winner` (more game wins, `None` if level) and `match_is_over`
+  (`wins_needed` **or** `best_of` games played, #484), not `wins_needed` alone.
