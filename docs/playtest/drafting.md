@@ -497,6 +497,30 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   configuration the runner supports and the prompt does not mention is a seat
   reasoning about a different draft than the one it is in
 
+  **Run 2026-09-28, and #485 and #481 both hold — the gap is the pod below the range
+  #485 was written for.** Ten runs at `--seed 7` under a capturing stub, `--players`
+  2-8 and 12: one distinct system prompt per seat at every pod size, each carrying its
+  own index and the real pod size, and the wheel prose arithmetically right rather than
+  merely parameterised (at 8 seats, "8 picks later, with the 7 cards the other seats
+  took gone" against a measured 14 cards at pick 1 → 6 at pick 9). Every `after your
+  pick this pack passes <DIR> to seat N` claim was checked against the pack the named
+  seat was actually handed next: **1,365 handoffs across pods 2-8 and all three pack
+  rounds, 0 real mismatches**, and `Pick N of 14` / `Available (15-N cards)` agreed
+  1,974 of 1,974. `--guide` with `--guide-1`/`--guide-3` routed GLOBAL/ALPHA/GLOBAL/BETA
+  to seats 0-3 with no bleed, and a `--save` truncated in place to 24 picks (pack 1
+  pick 6, mid-pack-round) resumes into a first prompt that already restates a 6-card
+  pool, tracking `(pack-1)*14 + pick-1` for all 144 remaining picks. The one
+  configuration whose prompt describes a different draft is `--players 1`, which
+  `count()` accepts (it refuses only 0): the seat falls into `Table::description`'s
+  `else` arm and is told it is "drafting against 0 other seat(s)", to read signals off
+  cards nobody upstream took, and 42 times that "this pack passes LEFT to seat 0", then
+  the log prints an empty `TOURNAMENT` header into `1. Seat 0 — 0-0 (0 game wins)`
+  (#608). Two method notes. **Compare pack residues as sorted multisets** — an ISD pack
+  can hold two copies of a common and the runner does not remove the copy your index
+  names, which is 1 of my 1,365 compares and is the checker's bug, not the runner's.
+  And a `--save`'s `picks` array truncates cleanly with `json.load`/`json.dump`; `round`
+  and `pick` are 1-based, so filtering on them lands you exactly mid-pack-round
+
 - D21 [proposed 2026-09-18, from #537 and #538] every exit path, not just the
   signal one: #206 killed in-flight `claude -p` trees on SIGINT/SIGTERM/SIGHUP,
   and D17 found that the *fatal* exit (`die` → `process::exit`) sweeps nothing at
