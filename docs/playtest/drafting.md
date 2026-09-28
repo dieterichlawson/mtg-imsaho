@@ -414,6 +414,31 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   in correctly, and a wrong count there is a deck that fails legality rather
   than a deck that plays badly
 
+  **Run 2026-09-28, and the drift that costs something is #213: it never travelled.**
+  `ClaudeCodeDraftBackend::decide` runs every pick and deck schema through
+  `sanitize_schema_for_anthropic` (`llm_client.rs:399`), which has no `keep_thoughts`
+  parameter and deletes the `thoughts` property and its `required` entry
+  unconditionally — while the game copy calls `sanitize_schema(schema, true)` under a
+  comment that names #213 and says "This is the seat the project actually runs". On
+  the wire in one `--players 2 --best-of 1 --model cc` run: **86 of 86 draft calls got
+  a schema with no `thoughts`; 202 of 202 game calls got one with it.** And
+  `STRUCTURED_RESPONSE_FORMAT`, appended to every draft backend, tells the seat its
+  reasoning "happens in the model's extended-thinking channel" and that a `thoughts`
+  key will be rejected — true of the Anthropic and Gemini backends, false in both
+  halves for `claude -p`, which has no thinking block the harness reads (#213's own
+  finding 3). Measured with a stub that emits only the keys its schema declares, the
+  way a constrained decode does: **0 reasoning records across all 86 draft calls, 202
+  across the tournament's, in the same run, log, binary and seat**; a pick's whole
+  durable account is `{"pick": 13}` (#607). Two things **checked, correct**: both
+  copies guard #398's top-level-key rule with `debug_assert!`, which is a stated
+  "loud for a developer, retry path for a live game" choice in both comments and not
+  an accident of one; and the deck-build prompt is no longer #487's name/count list —
+  it states the 40-card floor, the 17/23 target, the two-colour norm, that the
+  leftovers are a sideboard nothing is swapped from, and where a basic land goes, with
+  `max_retries = 10` and each retry prefixing the validator's own message. The
+  deck-object-size half of the idea (45 keys for a model to fill in correctly) is
+  **not** done: nothing here drove a real seat at a full 45-property `maindeck`
+
 - D19 [proposed 2026-09-13, from #484 and the D8 night] the drawn game, which no
   probe has ever reached: `play_match`'s `while wins_a < wins_needed && wins_b <
   wins_needed` counts wins, never games, so a draw is a free extra game and MTR
