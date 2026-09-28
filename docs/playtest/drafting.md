@@ -455,6 +455,29 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   `--best-of 2` and `--best-of 5`, where `best_of / 2 + 1` and `MatchFormat`'s
   `n.min(3)` already disagree about how long a match is
 
+  **Run 2026-09-28: #484's fix holds, and the drawn MATCH is reachable — through an
+  even `--best-of`, not through a drawn game.** The idea's premise has aged: the loop
+  is `match_is_over(best_of, games.len(), wins_a, wins_b)` with MTR 6.5's
+  games-played clause, and `MatchFormat`'s `n.min(3)` is gone. The drawn *game* is
+  still unreached and looks unreachable from this pool, which is worth writing down so
+  nobody builds the deck pair again: the engine's only draw is `sba.rs:369`'s "zero
+  players alive", **no card in `data/oracle_cache.json` deals damage to each player or
+  makes each player draw**, so there is no simultaneous loss to construct, and 12
+  `random` vs `random` games at seeds 1-31 ended 9 on life total and 3 on an empty
+  library with none simultaneous. But the match-level path needs no drawn game at all:
+  `wins_needed` is `best_of / 2 + 1`, so at an even `--best-of` a level score is a
+  draw. `--best-of 2` stopped every match at 2 games and `--best-of 4` at 4, and the
+  whole chain the idea asks for fired — `MatchResult::winner()` `None`, `MATCH Round 1
+  — Seat 0 vs Seat 1: 2-2 (Draw)`, `match_draws` incremented for both seats, `0-0-2`
+  in the standings, `match_points` 2. 1/3/5 play 1/3/5 games with the right "Games 2 to
+  N" prose, so #210 is closed too. What the probe found instead is #609: `play_match`
+  re-inits both conversations per game and passes only the constant
+  `MatchFormat::BestOf(n)`, so hashing every game-phase `--system-prompt` in a
+  `--players 4 --best-of 4` run gives **3,232 calls and 4 distinct prompts, 808 each —
+  one per seat** — identical between game 1 and game 4 and between a 0-0 match and a
+  2-1 one. Method note: **a conceding stub is what makes this affordable** (D22's
+  note), and an even `--best-of` is the cheapest drawn match anyone will find
+
 - D20 [proposed 2026-09-13, from #485 and #481] does the prompt change when the
   draft does: the runner varies the draft by `--players` (2..8), `--set`,
   `--guide-N` and `--resume`, and #485 found the `## How drafting works` section
