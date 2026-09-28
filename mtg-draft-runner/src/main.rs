@@ -1174,6 +1174,28 @@ and the tournament are not checkpointed, so an interruption from now on re-runs 
     };
     let mut tournament = Tournament::new(args.players, tournament_config);
 
+    // A pod with nobody to pair off plays no rounds — `total_rounds` returns 0
+    // for it deliberately — and nothing said so: the log printed an empty
+    // TOURNAMENT header straight into FINAL STANDINGS, and a seat that played
+    // nothing was ranked `0-0`, which is the row for a seat that played and
+    // went even. The same rule as a bye, a substituted pick or deck, and a
+    // forfeited game: a standing the run did not earn has to be marked where
+    // the standings are (#195, #200, #486, #488, issue #608).
+    let played_nothing = tournament.total_rounds() == 0;
+    if played_nothing {
+        // `WARN` in the label, so `grep WARN` over the log finds it the way
+        // it finds a substituted pick (#195).
+        mtg_player::game_log::write(
+            file!(), line!(),
+            &format!(
+                "WARN NO ROUNDS — a {}-seat pod has no pairings, so no match was played \
+and the FINAL STANDINGS below record none",
+                args.players
+            ),
+            "",
+        );
+    }
+
     while !tournament.is_complete() {
         let round_num = tournament.rounds.len() + 1;
         let pairings = tournament.generate_pairings();
@@ -1370,6 +1392,15 @@ progress (the same unusable answer over and over), so the game was awarded to it
             }
         }
         eprintln!("  (grep the log for STALLED to see each one)");
+    }
+
+    if played_nothing {
+        eprintln!("\n=== No Tournament ===");
+        eprintln!(
+            "    A {}-seat pod has no pairings, so no match was played: every standing above \
+is an unplayed 0-0, not a result",
+            args.players
+        );
     }
 
     let substituted_total: usize = substituted_picks.iter().sum();

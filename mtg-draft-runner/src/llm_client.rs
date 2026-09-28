@@ -433,16 +433,24 @@ pub struct Table {
 
 impl Table {
     /// The seat this one passes a pack to in `pack_number`, and the word for
-    /// that direction.
+    /// that direction — `None` in a one-seat pod, where a pack is not passed
+    /// to anybody.
+    ///
+    /// The arithmetic is `(seat + 1) % pod_size`, which at `pod_size == 1`
+    /// lands on the seat itself, so every pick prompt of a `--players 1` run
+    /// told the seat it was passing the pack to itself (issue #608).
     #[must_use]
-    fn passes_to(self, pack_number: usize) -> (&'static str, usize) {
+    fn passes_to(self, pack_number: usize) -> Option<(&'static str, usize)> {
+        if self.pod_size <= 1 {
+            return None;
+        }
         // Packs 1 and 3 pass left (seat N -> N+1), pack 2 right — the same
         // rotation `DraftState::rotate_packs` performs.
-        if pack_number % 2 == 1 {
-            ("LEFT", (self.seat + 1) % self.pod_size.max(1))
+        Some(if pack_number % 2 == 1 {
+            ("LEFT", (self.seat + 1) % self.pod_size)
         } else {
-            ("RIGHT", (self.seat + self.pod_size.saturating_sub(1)) % self.pod_size.max(1))
-        }
+            ("RIGHT", (self.seat + self.pod_size - 1) % self.pod_size)
+        })
     }
 
     /// How the table reads from this seat: who else is here, when a pack
@@ -450,6 +458,32 @@ impl Table {
     fn description(self) -> String {
         let Table { seat, pod_size, pack_size } = self;
         let others = pod_size.saturating_sub(1);
+
+        // A one-seat pod is not a draft with fewer opponents, it is a draft
+        // with none: no cards leave the packs, so the seat ends up with all
+        // of them and there is nothing to read off a pack coming back. The
+        // rest of this function assumes at least one opponent, and a 1-seat
+        // pod used to fall into the `else` below — told it was reading
+        // signals off "the 0 cards the other seats took" (issue #608, the
+        // same shape as #485 one pod size lower down).
+        if pod_size <= 1 {
+            return format!(
+                "\n## Your seat\n\
+                 - You are the only drafter: a {pod_size}-seat pod, with no opponents at this table\n\
+                 - Nobody takes cards out of your packs, so every card you are shown is a card \
+you can still have — there are no signals to read and no colour anybody else is cutting\n\
+                 \n## How drafting works\n\
+                 - You'll open 3 packs of {pack_size} cards each and make {picks} picks in all\n\
+                 - No pack is passed to another seat: what you leave comes back to you on your \
+next pick, so by the end of a pack you will have taken all {pack_size} of its cards\n\
+                 - The order you take them in therefore does not change your pool: every \
+card in these three packs ends up in it. The deck you build from the {picks} cards \
+afterwards is the whole exercise\n\
+                 - After drafting, you'll build a 40-card deck from your picks plus basic lands\n",
+                picks = 3 * pack_size,
+            );
+        }
+
         let mut s = format!(
             "\n## Your seat\n\
              - You are seat {seat} of a {pod_size}-seat pod, drafting against {others} other seat(s)\n\
@@ -1262,10 +1296,19 @@ impl DraftLlmClient {
         pool: &[String],
         cards: &CardLines,
     ) -> String {
-        let (direction, next_seat) = table.passes_to(pack_number);
+        // A one-seat pod passes to nobody: the rest of the pack comes back to
+        // this seat on its next pick (issue #608).
+        let handoff = match table.passes_to(pack_number) {
+            Some((direction, next_seat)) => {
+                format!("after your pick this pack passes {direction} to seat {next_seat}")
+            }
+            None => "you are the only drafter, so the rest of this pack comes straight \
+back to you on your next pick"
+                .to_string(),
+        };
         let mut prompt = format!(
             "Pack {pack_number} of 3, Pick {pick_index} of {}. You are seat {} of {}; \
-after your pick this pack passes {direction} to seat {next_seat}.\n\nAvailable ({} cards):\n",
+{handoff}.\n\nAvailable ({} cards):\n",
             table.pack_size, table.seat, table.pod_size, available.len(),
         );
         for (i, card) in available.iter().enumerate() {
@@ -1440,6 +1483,50 @@ mod draft_prompt_tests {
             table(0, 8), 2, 1, &available, &[], &cards,
         );
         assert!(wraps.contains("passes RIGHT to seat 7"), "{wraps}");
+    }
+
+    /// #608: `--players 1` is a supported configuration — `count()` refuses
+    /// only 0, and `Tournament::total_rounds` returns 0 for it deliberately —
+    /// but every word the seat was told about the table was about a table it
+    /// was not at. #485's `else` arm assumes at least one opponent, so a
+    /// 1-seat pod was told it was reading signals off "the 0 cards the other
+    /// seats took", and `(seat + 1) % pod_size` told it, 42 times, that it
+    /// was passing the pack to itself.
+    #[test]
+    fn a_one_seat_pod_is_not_told_it_has_neighbours() {
+        let cards = cards();
+        let available = vec!["Moon Heron".to_string()];
+
+        let solo = DraftLlmClient::build_pick_prompt(table(0, 1), 1, 1, &available, &[], &cards);
+        assert!(!solo.contains("passes LEFT to seat 0"), "passing to itself: {solo}");
+        assert!(!solo.contains("passes RIGHT to seat 0"), "passing to itself: {solo}");
+        assert!(solo.contains("comes straight back to you"), "{solo}");
+        // Pack 2 reverses the rotation, which is still nobody.
+        let solo_p2 = DraftLlmClient::build_pick_prompt(table(0, 1), 2, 1, &available, &[], &cards);
+        assert!(!solo_p2.contains("to seat 0"), "{solo_p2}");
+
+        let rules = build_draft_rules("Innistrad", None, "", table(0, 1));
+        let flat = rules.replace(" \n", " ").replace('\n', " ");
+        assert!(flat.contains("You are the only drafter"), "{rules}");
+        for claim in [
+            "other seat(s)",
+            "the other seats took",
+            "that colour is open",
+            "passes to the next seat",
+            "Pack 1 passes left",
+            "never shown another seat's pick",
+        ] {
+            assert!(
+                !flat.contains(claim),
+                "a 1-seat pod is still told {claim:?}, which describes a draft it is not in:\n{rules}"
+            );
+        }
+        // And the pods that do have neighbours keep being told so.
+        for pod in [2usize, 3, 8] {
+            let other = build_draft_rules("Innistrad", None, "", table(0, pod));
+            assert!(other.contains(&format!("seat 0 of a {pod}-seat pod")), "{other}");
+            assert!(!other.contains("You are the only drafter"), "{other}");
+        }
     }
 
     /// The rules a seat is given are about its own table: the two pod sizes
@@ -1680,3 +1767,4 @@ fi
         assert_eq!(fake.calls().len(), 2);
     }
 }
+
