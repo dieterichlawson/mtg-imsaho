@@ -681,3 +681,50 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   case. Cheapest instrument: the board section of the prompt prints an
   attachment's granted rules text verbatim, so "named in the board, absent
   from the rows" is one greppable predicate over a whole harvested game
+  — **played 2026-09-29: the case this idea guessed was unreachable is
+  reachable, and it costs a row on both surfaces for two different reasons.**
+  Two flashback instances on one graveyard card is the board: CR 702.33 allows
+  it and `casting.rs`'s `flashback()` implements it on purpose ("the player may
+  pay ANY of them"), so **Past in Flames** plus any printed-flashback instant or
+  sorcery gives one object two different alternative costs — Geistflame in the
+  graveyard is `{R}` granted and `{3}{R}` printed. The hand path really is
+  unreachable and the reason is one line: `casting.rs:180` takes `alt_costs[0]`
+  under "for now there's only one source at a time", so `is_some()` is
+  injective over those entries. **#610**: the coarse key is in **`cli.rs:7244`**,
+  not `llm.rs` — `llm.rs` was fixed in 3455a85 and the CLI copy was not, so at
+  one save opened twice the LLM seat offers `Flashback Geistflame (tap Mountain)`
+  *and* `(tap 4x Mountain)` while the CLI offers one, with both costs payable.
+  **#611** is the `seen_cast_labels` half, and the answer to "what can two
+  castable entries differ in that the label does not print" is **the
+  alternative cost itself, whenever `is_flashback`** — the cost note is gated on
+  `!cs.is_flashback`, the tap plan is the only proxy, and `format_tap_plan`
+  renders nothing once the mana is in the pool: at `Red:3` two rows, at `Red:4`
+  **one**. `Flashback available:` never printed a granted cost in 1,813 lines,
+  and picking the survivor took the pool `Red:4` → `Red:3`, so the prompt names
+  `{3}{R}` for a row that charges `{R}`. **#612** came out of the `Copies` arm
+  and is one level down: Skirsdag High Priest emits one `ActivatedAbilityDef`
+  per `C(n,2)` pair and writes the pair into `description` by **card name**, so
+  two Demon tokens make two cost payments one string — byte-identical CLI rows
+  (#257's symptom from a source its fix cannot reach, the tapped pair being in
+  neither `targets` nor `sacrifice`) and an LLM row reading
+  `4-5: … — one per copy: 4=#37, 5=#37` for a single permanent.
+  **Checked, correct and not worth re-walking**: #589's own fix holds — on every
+  collision menu where both colours were payable the granted and native rows are
+  both there, 138 of 138 (note the regenerate ability is on the *back* face, so
+  the Mystics collision only exists after the werewolf transforms); and
+  `ActionRow::Copies` never named a copy lacking the ability it offers, 328 of
+  328, because its key carries `source_card_id`. Three method notes worth
+  keeping. **Snapshot the save from inside the stub**: `--save` is overwritten at
+  every decision, so a `CLAUDE_CODE_BIN` stub that copies it aside the first time
+  the prompt matches a predicate turns "seen once in game 4" into a file that
+  opens the same board at any seat — comparing two surfaces at one save is what
+  made #610 and #612 unarguable, and it is how every repro filed that night is
+  built. **"Named in the board, absent from the rows" does not self-clear**: the
+  prompt states no available mana (H5's suspicion, confirmed), so the predicate
+  cannot tell a lost row from an unaffordable cost — 213 raw hits and post-hoc
+  filtering left 177 that were mostly parser noise, where constraining the board
+  so every candidate is affordable gave an exact 138 of 138. **A structural
+  predicate beats a semantic one**: "a `— one per copy:` list that names the same
+  `#id` twice" needs no game knowledge, is one regex, and found #612 in 2 of
+  3,048 prompts.
+
