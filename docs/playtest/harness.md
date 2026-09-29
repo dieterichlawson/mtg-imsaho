@@ -728,3 +728,24 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   `#id` twice" needs no game knowledge, is one regex, and found #612 in 2 of
   3,048 prompts.
 
+- H20 [proposed 2026-09-29, from #612] every ability description that names a
+  permanent, against a board where two permanents share a name. #612 is one
+  card: Skirsdag High Priest returns one `ActivatedAbilityDef` per `C(n,2)`
+  cost combination and writes the pair into `description` as
+  `(tap {name_i} & {name_j})`, so two Demon tokens make two different cost
+  payments one string — and because which creature is tapped lives only in
+  `ability_index`, no surface can recover it. That is a shape, not one card.
+  Method: `grep -rn 'description: format!' mtg-engine/src/cards/` and keep the
+  ones that interpolate a *runtime* name rather than a cost or a number
+  (Skirsdag Cultist is the other `C(n,2)` card, from #471; the sacrifice- and
+  exile-cost abilities are the next suspects). For each, build a board with two
+  identically-named permanents it can choose between — tokens are the cheapest
+  source, and `Parallel Lives` or any token-maker gives you two in one
+  resolution — and check both surfaces: the CLI prints two byte-identical rows,
+  the LLM seat groups them into an `ActionRow::Copies` that claims copies of one
+  permanent. The structural predicate from #612 ("a `— one per copy:` list that
+  names the same `#id` twice") catches the LLM half over a whole harvested game
+  and needs no game knowledge; the CLI half wants an equality check over
+  rendered rows, which `build_action_menu` is pure enough to test directly.
+  Record any card whose description names an object but *cannot* be made
+  ambiguous, and say why
