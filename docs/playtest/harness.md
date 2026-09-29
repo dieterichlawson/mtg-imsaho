@@ -770,3 +770,22 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   for two different funding plans. Ask also whether floating mana should change
   a menu's *shape* at all — the CLI and the seat both lose their only
   disambiguator for doing something a player is entitled to do
+- H22 [proposed 2026-09-29, from #610 and the method that found it] one save,
+  two seats, diff the options. #610 was two near-identical copies of the same
+  collapse drifting apart — `llm.rs` took #589's fix and `cli.rs` did not — and
+  nothing in the repo compares them, so it survived `--check-invariants` and a
+  whole night's harvest. The check that would have caught it needs no new
+  contract: **open the same `--save` at `--p1 cli` and at `--p1 cc` and compare
+  the set of distinct options each is offered.** They may order and word rows
+  differently (the CLI defers taps and concede, the seat groups copies), so
+  compare sets of (object, what-it-does), not strings, and flag any option one
+  surface offers and the other does not. Method: a `CLAUDE_CODE_BIN` stub that
+  copies `--save` aside at every Nth decision — `--save` is overwritten at each
+  decision, so it always holds the position being asked about — gives you a
+  directory of positions from one game; then open each at both seats and read
+  the two menus. This is a probe, not a test, but it is also the shape of the
+  test that is missing: CLAUDE.md says a change to one surface is a question
+  about the other three, and there is currently nothing that asks. Run it over
+  positions with an Aura-granted ability, a graveyard cast, two ways to pay, and
+  duplicate permanents — the four places the two copies are known to diverge —
+  and extend it to the GUI seat if the page will resume a save
