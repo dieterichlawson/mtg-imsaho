@@ -328,9 +328,14 @@ impl Player for RandomPlayer {
 #[derive(PartialEq, Eq)]
 enum Decision {
     Ability(mtg_engine::ids::ObjectId, usize, Option<mtg_engine::ids::CardId>),
-    /// Whether an alternative cost is being used is part of the decision: a
-    /// spell castable both normally and via Rooftop Storm is two choices.
-    Cast(mtg_engine::ids::ObjectId, bool),
+    /// WHICH cost is being paid is part of the decision: a spell castable
+    /// both normally and via Rooftop Storm is two choices, and a graveyard
+    /// card carrying two instances of flashback at once (CR 702.33 — Past in
+    /// Flames grants one alongside the printed one) is two more. Keyed on
+    /// whether there *was* an alternative cost, two flashback costs were one
+    /// decision here and one menu row on the CLI (issue #610); the engine
+    /// keys the offer on the cost itself (`invariants/legal.rs`).
+    Cast(mtg_engine::ids::ObjectId, String),
     Itself(usize),
 }
 
@@ -340,7 +345,7 @@ impl Decision {
             Action::ActivateAbility { object_id, ability_index, source_card_id, .. } =>
                 Decision::Ability(*object_id, *ability_index, *source_card_id),
             Action::CastSpell { object_id, alternative_cost, .. } =>
-                Decision::Cast(*object_id, alternative_cost.is_some()),
+                Decision::Cast(*object_id, format!("{alternative_cost:?}")),
             _ => Decision::Itself(index),
         }
     }
@@ -1201,6 +1206,61 @@ mod decisions {
         }
         assert_eq!(targets.len(), 5, "every creature can be equipped: {targets:?}");
         assert_eq!(sacrifices.len(), 5, "and every creature can be the one sacrificed: {sacrifices:?}");
+    }
+
+    /// Two different alternative costs on one spell are two decisions, the
+    /// way the engine keys them (issue #610): Geistflame in the graveyard with
+    /// Past in Flames' granted `{R}` flashback alongside its printed `{3}{R}`
+    /// is two ways to cast, and CR 601.2b makes which one to pay the caster's
+    /// choice. Keyed on whether there was an alternative cost at all, the two
+    /// shared one decision's share of the draws.
+    #[test]
+    fn two_alternative_costs_on_one_spell_are_two_decisions() {
+        use mtg_engine::types::{Color, ManaCost, ManaSymbol};
+        let mut player = RandomPlayer::with_seed("r", 5);
+        let cast = |alt: Option<ManaCost>| Action::CastSpell {
+            object_id: ObjectId(30),
+            targets: vec![],
+            tap_plan: vec![],
+            alternative_cost: alt,
+            exile_count: None,
+            exile_ids: vec![],
+            sacrifice: None,
+        };
+        let granted = ManaCost::new(vec![ManaSymbol::Colored(Color::Red)]);
+        let printed = ManaCost::new(vec![
+            ManaSymbol::Generic(3), ManaSymbol::Colored(Color::Red)]);
+        let legal = LegalActions {
+            actions: vec![
+                Action::PassPriority,
+                cast(Some(granted.clone())),
+                cast(Some(printed.clone())),
+            ],
+            combat_prompt: None,
+            castable_spells: vec![],
+            activatable_abilities: vec![],
+            context: None,
+            resolution_prompt: None,
+            set_prompt: None,
+        };
+        let v = view();
+
+        let mut costs: HashMap<String, usize> = HashMap::new();
+        const DRAWS: usize = 3000;
+        for _ in 0..DRAWS {
+            if let Action::CastSpell { alternative_cost: Some(c), .. } =
+                player.choose_action(&v, &legal)
+            {
+                *costs.entry(c.to_string()).or_default() += 1;
+            }
+        }
+        assert_eq!(costs.len(), 2, "both costs are rolled: {costs:?}");
+        for cost in [granted.to_string(), printed.to_string()] {
+            let share = costs[&cost] as f64 / DRAWS as f64;
+            assert!((0.25..=0.42).contains(&share),
+                "{cost} is one of three decisions, so about a third of the draws, \
+                 not {share:.3} — grouped with the other cost it would be a sixth: {costs:?}");
+        }
     }
 
     /// Two abilities on one permanent, or one ability on two permanents, are
