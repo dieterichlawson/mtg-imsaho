@@ -749,3 +749,24 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   rendered rows, which `build_action_menu` is pure enough to test directly.
   Record any card whose description names an object but *cannot* be made
   ambiguous, and say why
+- H21 [proposed 2026-09-29, from #611] the tap plan is load-bearing, and it
+  disappears. #611's mechanism generalises past flashback: the only thing
+  telling two same-named rows apart was the `(tap …)` suffix, and
+  `format_tap_plan` renders **nothing** whenever the cost is already payable
+  from the mana pool — so a menu that is unambiguous with lands untapped
+  collapses the moment the seat floats mana. Every collapse keyed on a rendered
+  label (`seen_cast_labels` in both `llm.rs` and `cli.rs`, and
+  `ActionRow::Copies`, whose key embeds the tap plan in `tail`) inherits this.
+  Method, and it is cheap: for each action prompt in a harvest, re-render the
+  row labels with the `(tap …)` / `(tap N x …)` clause stripped and count
+  collisions — any pair that collides is a menu that will collapse as soon as
+  that mana is floating, whether or not it collapsed in the harvest. Then
+  confirm the live ones by floating: a `CLAUDE_CODE_BIN` stub that answers the
+  highest `Tap …` row N times and then passes walks a position through every
+  pool size, and #611 was found by watching two rows become one between `Red:3`
+  and `Red:4`. Suspects beyond flashback: `additional_cost_label` is a *summary*
+  ("sacrifice a creature"), so two entries differing only in which creature is
+  eligible read alike; the `Copies` label's `tail`; and an X range that is equal
+  for two different funding plans. Ask also whether floating mana should change
+  a menu's *shape* at all — the CLI and the seat both lose their only
+  disambiguator for doing something a player is entitled to do
