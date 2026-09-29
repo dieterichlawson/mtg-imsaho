@@ -101,6 +101,23 @@ export function costText(cost: ManaCost | null | undefined): string {
   }).join("");
 }
 
+/** What a cast row says about the cost it will pay, or "" when it pays the
+ *  printed one.
+ *
+ *  The page's copy of `cast_cost_note` in `mtg-player/src/lib.rs`. A
+ *  flashback row used to say only "Flashback", so two flashback costs on one
+ *  graveyard card (CR 702.33 allows several instances at once; Past in Flames
+ *  grants one) hung two identical verbs off the card with nothing to choose
+ *  between (issue #611). */
+export function costNote(cs: CastableSpell): string {
+  const alt = cs.alternative_cost;
+  if (!alt) return "";
+  const amount = costText(alt) || "{0}";
+  if (cs.is_flashback) return `flashback cost ${amount}`;
+  if (!alt.symbols || alt.symbols.length === 0) return "without paying its mana cost";
+  return `alternative cost ${amount}`;
+}
+
 function isObj(a: Action): a is Exclude<Action, string> { return typeof a === "object"; }
 
 /** What one legal action does, for a row or a popover item. */
@@ -113,7 +130,9 @@ export function describeAction(state: LiveState, a: Action): string {
   if ("PlayLand" in a) return `Play ${nameOf(state, a.PlayLand.object_id)}`;
   if ("CastSpell" in a) {
     const v = a.CastSpell;
-    const alt = v.alternative_cost ? " (alternative cost)" : "";
+    // The amount, not just that there is one: two flashback costs on one
+    // card are two different casts (#611).
+    const alt = v.alternative_cost ? ` (cost ${costText(v.alternative_cost) || "{0}"})` : "";
     const t = v.targets.length ? ` → ${v.targets.map(x => targetLabel(state, x)).join(", ")}` : "";
     return `Cast ${nameOf(state, v.object_id)}${alt}${t}`;
   }
@@ -316,8 +335,9 @@ function beginMenu(state: LiveState, ui: Ui, actions: Action[], legal: LegalActi
     else add(-1, describeAction(state, a), () => send(a));
   }
   for (const cs of legal.castable_spells || []) {
-    const verb = cs.is_flashback ? "Flashback" : cs.from_graveyard ? "Cast from graveyard" : cs.alternative_cost ? "Cast (alternative cost)" : "Cast";
-    const extra = cs.additional_cost_label ? ` (${cs.additional_cost_label})` : "";
+    const verb = cs.is_flashback ? "Flashback" : cs.from_graveyard ? "Cast from graveyard" : "Cast";
+    const notes = [costNote(cs), cs.additional_cost_label || ""].filter(n => n);
+    const extra = notes.length ? ` (${notes.join(", ")})` : "";
     const forced = forcedTargets(cs.target_spec);
     const named = forced.length ? ` → ${forced.map(t => targetLabel(state, t)).join(", ")}` : "";
     const sac = cs.sacrifice_options.length === 1 ? `, sacrificing ${nameOf(state, cs.sacrifice_options[0])}` : "";

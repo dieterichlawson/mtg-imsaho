@@ -3709,13 +3709,9 @@ impl CliPlayer {
         let verb = if cs.is_flashback { "Flashback" } else { "Cast" };
         let zone_note = if cs.from_graveyard { " from graveyard" } else { "" };
         let mut notes: Vec<String> = Vec::new();
-        match &cs.alternative_cost {
-            Some(alt) if !cs.is_flashback && alt.symbols.is_empty() =>
-                notes.push("without paying its mana cost".to_string()),
-            Some(alt) if !cs.is_flashback =>
-                notes.push(format!("alternative cost {alt}")),
-            _ => {}
-        }
+        // What the row charges, in the one wording every surface uses
+        // (`crate::cast_cost_note`, issue #611).
+        if let Some(note) = crate::cast_cost_note(cs) { notes.push(note); }
         // The additional cost is the whole reason two ways to cast the same
         // card are not interchangeable — but once the cost is forced, the
         // tail names the creature instead, which says strictly more.
@@ -8469,6 +8465,57 @@ Mark 1 of the 1 cards below to exile.");
             "both flashback costs are payable and each is its own way to cast              (CR 601.2b), so each is its own row: {rows:#?}");
         assert_eq!(casts, vec![0, 1],
             "and the rows point at the two DIFFERENT castable entries, not              twice at the first: {rows:#?}");
+    }
+
+    /// Issue #611: the row's cost note was gated on `!is_flashback`, so a
+    /// flashback row never said what it charged and the only thing telling
+    /// two flashback costs apart was the tap plan. With the mana already
+    /// floating there is no tap plan, both rows render one string, and the
+    /// label dedupe two lines below drops the second — so keying the offer on
+    /// the cost (#610) is necessary and not sufficient. A row says its cost.
+    #[test]
+    fn a_flashback_row_says_which_cost_it_charges() {
+        use mtg_engine::types::{Color, ManaCost, ManaSymbol};
+
+        let granted = ManaCost::new(vec![ManaSymbol::Colored(Color::Red)]);
+        let printed = ManaCost::new(vec![
+            ManaSymbol::Generic(3), ManaSymbol::Colored(Color::Red)]);
+        let v = view(Step::PrecombatMain, 19, true);
+
+        let row = CliPlayer::cast_row_label(
+            &v, &flashback_of(30, "Geistflame", granted.clone(), 0)).full();
+        assert!(row.contains("{R}"), "the row names the cost it pays: {row:?}");
+
+        // The whole menu, with the mana floating so neither row has a tap
+        // plan left to distinguish it.
+        let mut legal = legal(vec![
+            Action::PassPriority,
+            Action::CastSpell {
+                object_id: ObjectId(30), targets: vec![], sacrifice: None,
+                exile_count: None, exile_ids: vec![],
+                alternative_cost: Some(granted.clone()), tap_plan: vec![],
+            },
+            Action::CastSpell {
+                object_id: ObjectId(30), targets: vec![], sacrifice: None,
+                exile_count: None, exile_ids: vec![],
+                alternative_cost: Some(printed.clone()), tap_plan: vec![],
+            },
+            Action::Concede,
+        ]);
+        legal.castable_spells = vec![
+            flashback_of(30, "Geistflame", granted, 0),
+            flashback_of(30, "Geistflame", printed, 0),
+        ];
+        let (display, labels) = CliPlayer::build_action_menu(&v, &legal);
+        let rows: Vec<String> = labels.iter().map(MenuLabel::full).collect();
+        let casts: Vec<&String> = rows.iter().filter(|r| r.contains("Geistflame")).collect();
+        assert_eq!(casts.len(), 2,
+            "both costs are payable from the pool, so both are rows: {rows:#?}");
+        assert_ne!(casts[0], casts[1],
+            "and the two rows are different strings, or the dedupe drops one \
+             and the player picks a cost by accident: {rows:#?}");
+        assert_eq!(display.iter()
+            .filter(|e| matches!(e, DisplayEntry::Cast(_))).count(), 2, "{rows:#?}");
     }
 
     /// Issue #261: `m` is drawn on any menu taller than the pane, and the

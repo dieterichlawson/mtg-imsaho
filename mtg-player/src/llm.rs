@@ -4119,13 +4119,9 @@ impl Player for LlmPlayer {
                             // apart from the copy in hand (issue #300).
                             let zone_note = if cs.from_graveyard { " from graveyard" } else { "" };
                             let mut extras = Vec::new();
-                            match &cs.alternative_cost {
-                                Some(alt) if !cs.is_flashback && alt.symbols.is_empty() =>
-                                    extras.push("without paying its mana cost".to_string()),
-                                Some(alt) if !cs.is_flashback =>
-                                    extras.push(format!("alternative cost {alt}")),
-                                _ => {}
-                            }
+                            // What the row charges, in the one wording every
+                            // surface uses (`crate::cast_cost_note`, #611).
+                            if let Some(note) = crate::cast_cost_note(cs) { extras.push(note); }
                             if !cost_note.is_empty() { extras.push(cost_note.to_string()); }
                             if !tap_str.is_empty() { extras.push(format!("tap {tap_str}")); }
                             let label = if extras.is_empty() {
@@ -5613,6 +5609,80 @@ mod tests {
             panic!("a cast row casts: {chosen:?}")
         };
         assert_eq!(alternative_cost, Some(dear), "index 2 is the second cost");
+    }
+
+    /// Issue #611: CR 702.33 lets one card in the graveyard carry several
+    /// instances of flashback at once — Past in Flames grants one equal to the
+    /// card's mana cost, alongside the printed one — and CR 601.2b makes which
+    /// to pay the caster's choice. The row's cost note was gated on
+    /// `!is_flashback`, so a flashback row never said what it charged and the
+    /// only thing telling two of them apart was the tap plan. Once the mana is
+    /// already in the pool there is no tap plan, so both rows rendered the
+    /// byte-identical string `Flashback Geistflame` and `seen_cast_labels`
+    /// dropped the second — a legal option gone, with `COLLAPSED` logging a
+    /// count and not which row went.
+    #[test]
+    fn two_flashback_costs_on_one_card_stay_two_rows_with_the_mana_floating() {
+        use mtg_engine::actions::{CastTargetSpec, CastableSpell};
+        use mtg_engine::types::{Color, ManaCost, ManaSymbol};
+
+        let granted = ManaCost::new(vec![ManaSymbol::Colored(Color::Red)]);
+        let printed = ManaCost::new(vec![
+            ManaSymbol::Generic(3), ManaSymbol::Colored(Color::Red)]);
+        let cast = |alt: &ManaCost| Action::CastSpell {
+            object_id: ObjectId(30),
+            targets: Vec::new(),
+            // The mana is already floating: nothing left to tap, which is
+            // what used to make the two rows indistinguishable.
+            tap_plan: Vec::new(),
+            alternative_cost: Some(alt.clone()),
+            exile_count: None,
+            exile_ids: Vec::new(),
+            sacrifice: None,
+        };
+        let castable = |alt: &ManaCost| CastableSpell {
+            object_id: ObjectId(30),
+            name: "Geistflame".to_string(),
+            is_flashback: true,
+            target_spec: CastTargetSpec::NoTargets,
+            tap_plan: Vec::new(),
+            exile_x_from_gy_max: None,
+            sacrifice_options: Vec::new(),
+            additional_cost_label: None,
+            alternative_cost: Some(alt.clone()),
+            from_graveyard: false,
+        };
+        let legal = mtg_engine::engine::LegalActions {
+            actions: vec![Action::PassPriority, cast(&granted), cast(&printed), Action::Concede],
+            combat_prompt: None,
+            castable_spells: vec![castable(&granted), castable(&printed)],
+            activatable_abilities: Vec::new(),
+            context: Some("MAIN PHASE 1".to_string()),
+            resolution_prompt: None,
+            set_prompt: None,
+        };
+
+        let view = empty_view();
+        let (mut player, prompts) = scripted_player(vec![serde_json::json!({"action": 2})]);
+        let chosen = player.choose_action(&view, &legal);
+
+        let asked = prompts.borrow();
+        let list = &asked[0][asked[0].find("Available actions:\n").expect("the list")..];
+        assert_eq!(
+            list,
+            "Available actions:\n\
+             0: Pass\n\
+             1: Flashback Geistflame (flashback cost {R})\n\
+             2: Flashback Geistflame (flashback cost {3}{R})\n\
+             3: Concede\n",
+            "each flashback cost is its own way to cast, and each row says \
+             which cost it charges:\n{}", asked[0]
+        );
+        let Action::CastSpell { alternative_cost, .. } = chosen else {
+            panic!("a cast row casts: {chosen:?}")
+        };
+        assert_eq!(alternative_cost, Some(printed),
+            "and the index the seat picked is the cost its row named");
     }
 
     /// A backend that answers `{}` — either because the model sent one, or

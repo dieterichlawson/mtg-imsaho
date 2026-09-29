@@ -7,7 +7,7 @@ pub mod game_log;
 pub mod watchdog;
 
 use mtg_engine::view::GameView;
-use mtg_engine::actions::{Action, CombatPrompt};
+use mtg_engine::actions::{Action, CastableSpell, CombatPrompt};
 use mtg_engine::engine::LegalActions;
 
 /// The answer to a combat prompt that has only one, or `None` when the
@@ -30,6 +30,38 @@ use mtg_engine::engine::LegalActions;
 ///
 /// One copy, applied at each seat's combat entry point, so the next seat
 /// gets it by asking rather than by remembering.
+/// What a cast row says about the cost it will pay, or `None` when the row
+/// pays the printed cost and there is nothing to add.
+///
+/// Three surfaces render a cast row and each had its own copy of this match,
+/// all three gated on `!is_flashback` — the verb "Flashback" says what KIND
+/// of cost it is, and calling a printed flashback cost an "alternative cost"
+/// read as a discount that was not there (issue #300). So no surface ever
+/// said the amount. CR 702.33 lets one card in the graveyard carry several
+/// instances of flashback at once — Past in Flames grants one equal to the
+/// card's mana cost, alongside the printed one — and CR 601.2b makes which
+/// to pay the caster's choice. The only other thing a flashback row carried
+/// was its tap plan, which is empty once the mana is already floating, so
+/// two different costs rendered one byte-identical string and each surface's
+/// label dedupe dropped one of them (issue #611).
+///
+/// A row states the cost it charges. One copy, so the next surface gets it
+/// by asking rather than by remembering.
+#[must_use]
+pub fn cast_cost_note(cs: &CastableSpell) -> Option<String> {
+    let alt = cs.alternative_cost.as_ref()?;
+    // An empty `ManaCost` Displays as nothing at all, so a free cost is
+    // named rather than trailing off after the word.
+    let amount = if alt.symbols.is_empty() { "{0}".to_string() } else { alt.to_string() };
+    Some(if cs.is_flashback {
+        format!("flashback cost {amount}")
+    } else if alt.symbols.is_empty() {
+        "without paying its mana cost".to_string()
+    } else {
+        format!("alternative cost {amount}")
+    })
+}
+
 #[must_use]
 pub fn forced_combat_answer(prompt: &CombatPrompt) -> Option<Action> {
     match prompt {
