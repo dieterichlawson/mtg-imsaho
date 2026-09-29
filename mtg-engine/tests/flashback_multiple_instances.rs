@@ -155,3 +155,51 @@ fn a_cards_existing_flashback_never_makes_it_an_illegal_snapcaster_target() {
     assert!(!behavior.is_valid_target(&state, P0, &Target::Object(creature), &reg),
         "a creature card in the graveyard is not a legal Snapcaster target");
 }
+
+/// The view has to carry every instance too, and for the same reason: the LLM
+/// seat's prompt names a flashback cost in exactly one place, and that place
+/// read a single `Option` that could only ever be the printed cost. So with a
+/// granted cost also on the card the prompt stated the cost of a way to cast
+/// the seat was not offered, and said nothing about the one it was — one mana
+/// spent against the `{3}{R}` the prompt had named (issue #611).
+#[test]
+fn the_view_carries_every_flashback_cost_the_card_has() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let card = named_card_in_graveyard(&mut state, &reg, "Geistflame", P0);
+    let data = reg.card_data(state.get_object(card).unwrap().card_id).unwrap();
+    let printed = data.flashback_cost.clone().expect("Geistflame has printed flashback");
+    let granted = data.cost.clone().expect("and a mana cost to grant");
+    assert_ne!(printed, granted, "test precondition: the two costs differ");
+
+    let seen = |state: &GameState| -> Vec<ManaCost> {
+        mtg_engine::view::GameView::for_player(state, P0, &reg).graveyards.iter()
+            .find(|(pid, _)| *pid == P0).expect("p0 has a graveyard").1.iter()
+            .find(|c| c.object_id == card).expect("the card is in it")
+            .flashback_costs.clone()
+    };
+
+    assert_eq!(seen(&state), vec![printed.clone()],
+        "with no grant out, the printed cost is the only instance");
+
+    // Past in Flames, resolved this turn: a second instance, equal to the
+    // card's mana cost.
+    state.until_end_of_turn.push(TemporaryEffect::GrantFlashback {
+        target: card, cost: granted.clone(),
+    });
+    assert_eq!(seen(&state), vec![granted, printed.clone()],
+        "both instances are payable and each is its own way to cast (CR 702.33, \
+         CR 601.2b), so the view names both — granted first, the order the \
+         action generator offers them in");
+
+    // Two identical costs are one option, not two: the same dedupe the action
+    // generator does, or the prompt reads "flashback {3}{R} or {3}{R}" for one
+    // row.
+    state.until_end_of_turn.clear();
+    state.until_end_of_turn.push(TemporaryEffect::GrantFlashback {
+        target: card, cost: printed.clone(),
+    });
+    assert_eq!(seen(&state), vec![printed],
+        "a granted cost equal to the printed one is still one way to cast");
+}

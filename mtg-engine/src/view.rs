@@ -61,7 +61,16 @@ pub struct CardView {
     pub toughness: Option<i32>,
     pub oracle_text: String,
     pub owner: PlayerId,
-    pub flashback_cost: Option<ManaCost>,
+    /// Every flashback cost this card carries right now, granted ones first
+    /// and the printed one last — the order the action generator offers them
+    /// in (`engine/legal/casting.rs`). Empty for a card with no flashback.
+    ///
+    /// CR 702.33: a card can have several instances of flashback at once — a
+    /// granted one (Past in Flames, Snapcaster Mage) alongside its printed one
+    /// — and the player may pay ANY of them. A single `Option` could only ever
+    /// be the printed cost, so the LLM prompt's "Flashback available:" section
+    /// named a cost the row it offered did not charge (issue #611).
+    pub flashback_costs: Vec<ManaCost>,
 }
 
 /// What an attacking creature is attacking (CR 508.1a).
@@ -624,6 +633,19 @@ fn card_view(state: &GameState, obj: &crate::state::GameObject, registry: &CardR
     // effective_power/toughness which consults dynamic_pt and continuous effects.
     let power = state.effective_power(obj.id, registry).or(obj.power);
     let toughness = state.effective_toughness(obj.id, registry).or(obj.toughness);
+    // CR 702.33: every instance the card has, not just the printed one.
+    // Granted first, then printed, deduplicated the way the action generator
+    // deduplicates them — two identical costs are one option, not two.
+    let mut flashback_costs: Vec<ManaCost> = state.until_end_of_turn.iter()
+        .filter_map(|e| match e {
+            crate::state::TemporaryEffect::GrantFlashback { target, cost }
+                if *target == obj.id => Some(cost.clone()),
+            _ => None,
+        })
+        .collect();
+    if let Some(printed) = data.as_ref().and_then(|d| d.flashback_cost.clone()) {
+        if !flashback_costs.contains(&printed) { flashback_costs.push(printed); }
+    }
     CardView {
         object_id: obj.id,
         card_id: obj.card_id,
@@ -636,6 +658,6 @@ fn card_view(state: &GameState, obj: &crate::state::GameObject, registry: &CardR
         toughness,
         oracle_text: data.as_ref().map(|d| d.oracle_text.clone()).unwrap_or_default(),
         owner: obj.owner,
-        flashback_cost: data.and_then(|d| d.flashback_cost),
+        flashback_costs,
     }
 }

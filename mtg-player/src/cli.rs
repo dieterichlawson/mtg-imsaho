@@ -2606,7 +2606,7 @@ impl CliPlayer {
         for (pid, cards) in &view.graveyards {
             if *pid == view.you {
                 for c in cards {
-                    if c.flashback_cost.is_some() {
+                    if !c.flashback_costs.is_empty() {
                         add(registry, &mut seen, &mut entries, &c.name, c.card_id);
                     }
                 }
@@ -9429,7 +9429,7 @@ Mark 1 of the 1 cards below to exile.");
             toughness: None,
             oracle_text: String::new(),
             owner: PlayerId(owner),
-            flashback_cost: None,
+            flashback_costs: vec![],
         }
     }
 
@@ -10042,7 +10042,7 @@ Mark 1 of the 1 cards below to exile.");
             toughness: None,
             oracle_text: String::new(),
             owner: PlayerId(0),
-            flashback_cost: None,
+            flashback_costs: vec![],
         };
         let mut v = view(Step::PrecombatMain, 5, true);
         v.exile = vec![card(24, "Dream Twist"), card(25, "Think Twice")];

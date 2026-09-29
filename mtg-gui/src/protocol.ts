@@ -39,7 +39,9 @@ export interface CardView {
   toughness: number | null;
   oracle_text: string;
   owner: PlayerId;
-  flashback_cost: ManaCost | null;
+  /** Every flashback cost the card carries now, granted ones first (CR
+   *  702.33 allows several instances at once), empty for a card with none. */
+  flashback_costs: ManaCost[];
 }
 
 export type AttackTarget = { Player: PlayerId } | { Planeswalker: ObjectId };

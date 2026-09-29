@@ -679,7 +679,7 @@ Hand:
 
 **Graveyards** (only if non-empty): a `Your graveyard:` / `Opp graveyard:` header with one indented card per line.
 
-**Flashback available** (only if relevant): cards in your graveyard you can cast for their flashback cost, one indented line each.
+**Flashback available** (only if relevant): cards in your graveyard you can cast for a flashback cost, one indented line each. A card can carry more than one flashback cost at once (a granted one alongside its printed one), and the line names each of them; the action list says which cost each row charges.
 
 **Opp's cards in view** (only if any): the rules text of every card in view that is not in your decklist — on the battlefield, on the stack, in a graveyard, in exile, or revealed — one entry per card name (basic lands excepted), in the same shape as the card reference:
 ```
@@ -2443,18 +2443,26 @@ impl LlmPlayer {
         }
 
         // Show flashback-eligible cards in your graveyard.
+        //
+        // Every cost the card carries, not just the printed one: CR 702.33
+        // lets a card have several instances of flashback at once, and this
+        // section is the only place in the prompt that names a flashback cost
+        // at all. Naming the printed one alone stated the cost of a row the
+        // seat was not offered while saying nothing about the one it was
+        // (issue #611).
         let your_gy = view.graveyards.iter()
             .find(|(pid, _)| *pid == view.you)
             .map(|(_, cards)| cards);
         if let Some(gy_cards) = your_gy {
             let fb_cards: Vec<&mtg_engine::view::CardView> = gy_cards.iter()
-                .filter(|c| c.flashback_cost.is_some())
+                .filter(|c| !c.flashback_costs.is_empty())
                 .collect();
             if !fb_cards.is_empty() {
                 s.push_str("Flashback available:\n");
                 for c in &fb_cards {
-                    let fb = c.flashback_cost.as_ref().unwrap();
-                    writeln!(s, "  {} (flashback {})", c.name, fb).unwrap();
+                    let costs: Vec<String> = c.flashback_costs.iter()
+                        .map(ToString::to_string).collect();
+                    writeln!(s, "  {} (flashback {})", c.name, costs.join(" or ")).unwrap();
                 }
             }
         }
@@ -6209,6 +6217,40 @@ mod tests {
             full_log: vec![],
             revealed_names: HashMap::new(),
         }
+    }
+
+    /// Issue #611: `Flashback available:` is the only place in the prompt that
+    /// names a flashback cost at all, and it printed the card's printed cost
+    /// and nothing else. With Past in Flames' granted cost also on the card
+    /// (CR 702.33 allows several instances at once) the section stated the
+    /// cost of a row the seat was NOT offered — picking the row it was
+    /// offered spent one mana against the `{3}{R}` the prompt had named.
+    #[test]
+    fn the_flashback_section_names_every_cost_the_card_carries() {
+        use mtg_engine::types::{Color, ManaCost, ManaSymbol};
+
+        let granted = ManaCost::new(vec![ManaSymbol::Colored(Color::Red)]);
+        let printed = ManaCost::new(vec![
+            ManaSymbol::Generic(3), ManaSymbol::Colored(Color::Red)]);
+        let mut view = empty_view();
+        view.graveyards = vec![(PlayerId(0), vec![mtg_engine::view::CardView {
+            object_id: ObjectId(30),
+            card_id: mtg_engine::ids::CardId(1),
+            name: "Geistflame".to_string(),
+            cost: Some(granted.clone()),
+            supertypes: vec![],
+            card_types: vec![mtg_engine::types::CardType::Instant],
+            power: None,
+            toughness: None,
+            oracle_text: String::new(),
+            owner: PlayerId(0),
+            flashback_costs: vec![granted, printed],
+        }])];
+
+        let body = LlmPlayer::format_state_body(&view);
+        assert!(body.contains("Geistflame (flashback {R} or {3}{R})"),
+            "both instances are payable and the seat is offered both, so the \
+             section that names the cost names both:\n{body}");
     }
 
     /// Issue #460: the engine offers one action per (object, ability_index),
