@@ -165,30 +165,37 @@ fn a_cards_existing_flashback_never_makes_it_an_illegal_snapcaster_target() {
 #[test]
 fn the_view_carries_every_flashback_cost_the_card_has() {
     let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let card = named_card_in_graveyard(&mut state, &reg, "Geistflame", P0);
-    let data = reg.card_data(state.get_object(card).unwrap().card_id).unwrap();
-    let printed = data.flashback_cost.clone().expect("Geistflame has printed flashback");
-    let granted = data.cost.clone().expect("and a mana cost to grant");
-    assert_ne!(printed, granted, "test precondition: the two costs differ");
-
-    let seen = |state: &GameState| -> Vec<ManaCost> {
-        mtg_engine::view::GameView::for_player(state, P0, &reg).graveyards.iter()
+    // Geistflame in p0's graveyard, with `grant` also on it if given — the
+    // shape Past in Flames leaves behind when it resolves. One state per case
+    // rather than clearing `until_end_of_turn`, which is a step's own work.
+    let costs_in_view = |grant: Option<&ManaCost>| -> Vec<ManaCost> {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let card = named_card_in_graveyard(&mut state, &reg, "Geistflame", P0);
+        if let Some(cost) = grant {
+            state.until_end_of_turn.push(TemporaryEffect::GrantFlashback {
+                target: card, cost: cost.clone(),
+            });
+        }
+        mtg_engine::view::GameView::for_player(&state, P0, &reg).graveyards.iter()
             .find(|(pid, _)| *pid == P0).expect("p0 has a graveyard").1.iter()
             .find(|c| c.object_id == card).expect("the card is in it")
             .flashback_costs.clone()
     };
 
-    assert_eq!(seen(&state), vec![printed.clone()],
+    let data = {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let card = named_card_in_graveyard(&mut state, &reg, "Geistflame", P0);
+        reg.card_data(state.get_object(card).unwrap().card_id).unwrap()
+    };
+    let printed = data.flashback_cost.clone().expect("Geistflame has printed flashback");
+    let granted = data.cost.clone().expect("and a mana cost to grant");
+    assert_ne!(printed, granted, "test precondition: the two costs differ");
+
+    assert_eq!(costs_in_view(None), vec![printed.clone()],
         "with no grant out, the printed cost is the only instance");
 
-    // Past in Flames, resolved this turn: a second instance, equal to the
-    // card's mana cost.
-    state.until_end_of_turn.push(TemporaryEffect::GrantFlashback {
-        target: card, cost: granted.clone(),
-    });
-    assert_eq!(seen(&state), vec![granted, printed.clone()],
+    assert_eq!(costs_in_view(Some(&granted)), vec![granted, printed.clone()],
         "both instances are payable and each is its own way to cast (CR 702.33, \
          CR 601.2b), so the view names both — granted first, the order the \
          action generator offers them in");
@@ -196,10 +203,6 @@ fn the_view_carries_every_flashback_cost_the_card_has() {
     // Two identical costs are one option, not two: the same dedupe the action
     // generator does, or the prompt reads "flashback {3}{R} or {3}{R}" for one
     // row.
-    state.until_end_of_turn.clear();
-    state.until_end_of_turn.push(TemporaryEffect::GrantFlashback {
-        target: card, cost: printed.clone(),
-    });
-    assert_eq!(seen(&state), vec![printed],
+    assert_eq!(costs_in_view(Some(&printed)), vec![printed],
         "a granted cost equal to the printed one is still one way to cast");
 }
