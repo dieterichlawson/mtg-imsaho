@@ -7221,11 +7221,21 @@ impl CliPlayer {
         // Each entry maps to either a direct action or an interactive casting flow.
         let mut display: Vec<DisplayEntry> = Vec::new();
         let mut display_labels: Vec<MenuLabel> = Vec::new();
-        // Keyed by (object, casting with an alternative cost): a spell that
-        // can be cast both normally and via Rooftop Storm's "without paying
-        // its mana cost" is TWO menu rows — collapsing on the object alone
-        // dropped the CR 601.2b choice (issue #128).
-        let mut seen_spell_objects: Vec<(mtg_engine::ids::ObjectId, bool)> = Vec::new();
+        // Keyed by (object, the cost it pays): a spell that can be cast both
+        // normally and via Rooftop Storm's "without paying its mana cost" is
+        // TWO menu rows — collapsing on the object alone dropped the
+        // CR 601.2b choice (issue #128).
+        //
+        // Keyed by what the cost *is*, not by whether there is one, and
+        // spelled the way the engine spells it (`invariants/legal.rs`,
+        // `distinct_offers` and `collapsed_views`) and the LLM seat does
+        // (`llm.rs`, fixed in #589). CR 702.33 lets one graveyard card carry
+        // several flashback instances at once — a granted one from Past in
+        // Flames alongside its printed one — and the engine offers each as
+        // its own way to cast. The bool could not tell them apart, so the
+        // second flashback cost was dropped from the menu and could not be
+        // chosen at all, while the LLM seat was offered both (issue #610).
+        let mut seen_spell_objects: Vec<(mtg_engine::ids::ObjectId, String)> = Vec::new();
         // Keyed the way an ability is identified: the permanent, which of its
         // abilities, and — for an ability an Aura granted — whose ability it
         // is. Two abilities on one permanent stay two rows (#61), and two
@@ -7241,12 +7251,12 @@ impl CliPlayer {
             match action {
                 Action::CastSpell { object_id, alternative_cost, .. } => {
                     // Skip expanded CastSpell entries — use castable_spells instead.
-                    let key = (*object_id, alternative_cost.is_some());
+                    let key = (*object_id, format!("{alternative_cost:?}"));
                     if !seen_spell_objects.contains(&key) {
                         // Find the CastableSpell entry for this way to cast.
                         if let Some(cs_idx) = legal.castable_spells.iter()
                             .position(|cs| cs.object_id == *object_id
-                                && cs.alternative_cost.is_some() == alternative_cost.is_some())
+                                && format!("{:?}", cs.alternative_cost) == key.1)
                         {
                             seen_spell_objects.push(key);
                             let cs = &legal.castable_spells[cs_idx];
@@ -8388,6 +8398,77 @@ Mark 1 of the 1 cards below to exile.");
         let row = CliPlayer::cast_row_label(&v, &cs).full();
         assert!(!row.contains("sacrificing"), "got {row:?}");
         assert!(row.contains("sacrifice a creature"), "got {row:?}");
+    }
+
+    /// A `CastableSpell` for one way to cast `name`, paying `alt`, tapping
+    /// `taps` copies of object 1.
+    fn flashback_of(id: u64, name: &str, alt: mtg_engine::types::ManaCost, taps: usize)
+        -> mtg_engine::actions::CastableSpell
+    {
+        mtg_engine::actions::CastableSpell {
+            object_id: ObjectId(id),
+            name: name.to_string(),
+            is_flashback: true,
+            from_graveyard: false,
+            target_spec: mtg_engine::actions::CastTargetSpec::NoTargets,
+            tap_plan: vec![(ObjectId(1), 0); taps],
+            exile_x_from_gy_max: None,
+            sacrifice_options: vec![],
+            additional_cost_label: None,
+            alternative_cost: Some(alt),
+        }
+    }
+
+    /// Issue #610: CR 702.33 lets one card carry several instances of
+    /// flashback at once — Past in Flames grants one equal to the card's mana
+    /// cost, alongside the printed one — and CR 601.2b makes which cost to
+    /// pay the caster's choice. The engine offers each as its own cast and
+    /// keys them on the cost (`invariants/legal.rs`); this menu keyed on
+    /// `alternative_cost.is_some()`, one bit for two costs, and both the
+    /// `contains` and the `position` lookup then resolved to the first — so
+    /// the second cost was dropped from the screen and could not be chosen at
+    /// all, while the LLM seat, keyed on the cost since #589, offered both.
+    #[test]
+    fn two_different_alternative_costs_on_one_object_stay_two_cast_rows() {
+        use mtg_engine::types::{Color, ManaCost, ManaSymbol};
+
+        let granted = ManaCost::new(vec![ManaSymbol::Colored(Color::Red)]);
+        let printed = ManaCost::new(vec![
+            ManaSymbol::Generic(3), ManaSymbol::Colored(Color::Red)]);
+
+        let mut v = view(Step::PrecombatMain, 19, true);
+        v.battlefield = vec![creature(1, "Mountain", 0)];
+
+        let mut legal = legal(vec![
+            Action::PassPriority,
+            Action::CastSpell {
+                object_id: ObjectId(30), targets: vec![], sacrifice: None,
+                exile_count: None, exile_ids: vec![],
+                alternative_cost: Some(granted.clone()),
+                tap_plan: vec![(ObjectId(1), 0)],
+            },
+            Action::CastSpell {
+                object_id: ObjectId(30), targets: vec![], sacrifice: None,
+                exile_count: None, exile_ids: vec![],
+                alternative_cost: Some(printed.clone()),
+                tap_plan: vec![(ObjectId(1), 0); 4],
+            },
+            Action::Concede,
+        ]);
+        legal.castable_spells = vec![
+            flashback_of(30, "Geistflame", granted, 1),
+            flashback_of(30, "Geistflame", printed, 4),
+        ];
+
+        let (display, labels) = CliPlayer::build_action_menu(&v, &legal);
+        let casts: Vec<usize> = display.iter()
+            .filter_map(|e| match e { DisplayEntry::Cast(i) => Some(*i), _ => None })
+            .collect();
+        let rows: Vec<String> = labels.iter().map(MenuLabel::full).collect();
+        assert_eq!(casts.len(), 2,
+            "both flashback costs are payable and each is its own way to cast              (CR 601.2b), so each is its own row: {rows:#?}");
+        assert_eq!(casts, vec![0, 1],
+            "and the rows point at the two DIFFERENT castable entries, not              twice at the first: {rows:#?}");
     }
 
     /// Issue #261: `m` is drawn on any menu taller than the pane, and the
