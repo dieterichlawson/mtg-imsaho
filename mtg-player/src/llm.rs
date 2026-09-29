@@ -4200,15 +4200,34 @@ impl Player for LlmPlayer {
                             _ => None,
                         })
                         .collect();
+                    // "One per copy" is a claim about the board: n copies of
+                    // one permanent, one index each, each told apart by its
+                    // `#id`. Two entries on the SAME object are not copies —
+                    // they are two ways of paying one ability's cost that
+                    // happen to render alike — and the row then asserted a
+                    // second permanent that is not there: "one per copy:
+                    // 4=#37, 5=#37" with one #37 on the board, and no way to
+                    // tell index 4 from index 5 (issue #612). A row that
+                    // repeats an id says nothing true, so each entry keeps its
+                    // own row instead; the engine-side invariant is what stops
+                    // two rows of one permanent reading alike in the first
+                    // place.
+                    let mut ids: Vec<ObjectId> = Vec::new();
+                    for (_, id) in &members {
+                        if !ids.contains(id) { ids.push(*id); }
+                    }
                     if members.len() == 1 {
                         rows.push(ActionRow::One(label.clone()));
                         display_entries.push(*entry);
+                    } else if ids.len() < members.len() {
+                        grouped.push(key);
+                        for (e, _) in &members {
+                            rows.push(ActionRow::One(label.clone()));
+                            display_entries.push(*e);
+                        }
                     } else {
                         grouped.push(key);
-                        rows.push(ActionRow::Copies {
-                            label: key.1.clone(),
-                            ids: members.iter().map(|(_, id)| *id).collect(),
-                        });
+                        rows.push(ActionRow::Copies { label: key.1.clone(), ids });
                         display_entries.extend(members.iter().map(|(e, _)| *e));
                     }
                 }
@@ -5514,6 +5533,72 @@ mod tests {
                 object_id: ObjectId(2), ability_index: 0, source_card_id: Some(CardId(77)), .. }),
             "index 4 is the granted ability on #2: {chosen:?}"
         );
+    }
+
+    /// Issue #612: a "one per copy" row is a claim about the board — n copies
+    /// of one permanent, one index each, each told apart by its `#id`. Two
+    /// activations of ONE permanent that render the same string are not
+    /// copies: they are two ways of paying one ability's cost, and the row
+    /// asserted a second permanent that is not there. Skirsdag High Priest's
+    /// two-creature tap cost, with two Demon tokens on the board, produced
+    /// `— one per copy: 4=#37, 5=#37` for the single Priest, giving the seat
+    /// no way to tell index 4 from index 5.
+    ///
+    /// The engine-side fix stops the labels colliding; this is the surface
+    /// refusing to state something false if one ever collides again.
+    #[test]
+    fn a_row_that_would_name_one_permanent_twice_is_not_a_copies_row() {
+        use mtg_engine::actions::{ActivatableAbility, ActivatableAbilityOption};
+
+        // One permanent, two activations, one description — the shape a card
+        // that encodes its cost payment in `ability_index` produces when two
+        // payments render alike.
+        let same = "Morbid — {T}, Tap two creatures: Create a 5/5 Demon with flying (tap Demon & Demon)";
+        let activate = |index: usize| Action::ActivateAbility {
+            object_id: ObjectId(37),
+            ability_index: index,
+            targets: Vec::new(),
+            tap_plan: Vec::new(),
+            sacrifice: None,
+            x_value: None,
+            source_card_id: None,
+        };
+        let ability = |index: usize| ActivatableAbility {
+            object_id: ObjectId(37),
+            ability_index: index,
+            source_card_id: None,
+            name: "Skirsdag High Priest (#37)".to_string(),
+            description: same.to_string(),
+            target_options: Vec::new(),
+            tap_plan: Vec::new(),
+            option_combos: vec![ActivatableAbilityOption { targets: Vec::new(), sacrifice: None }],
+        };
+        let legal = mtg_engine::engine::LegalActions {
+            actions: vec![Action::PassPriority, activate(0), activate(1), Action::Concede],
+            combat_prompt: None,
+            castable_spells: Vec::new(),
+            activatable_abilities: vec![ability(0), ability(1)],
+            context: Some("MAIN PHASE 1".to_string()),
+            resolution_prompt: None,
+            set_prompt: None,
+        };
+
+        let view = empty_view();
+        let (mut player, prompts) = scripted_player(vec![serde_json::json!({"action": 2})]);
+        let chosen = player.choose_action(&view, &legal);
+
+        let asked = prompts.borrow();
+        let list = &asked[0][asked[0].find("Available actions:\n").expect("the list")..];
+        assert!(!list.contains("one per copy"),
+            "there is one #37 on the board, so no row may say the board holds \
+             two of it:\n{}", asked[0]);
+        assert_eq!(list.matches("Skirsdag High Priest").count(), 2,
+            "both activations are still offered, one index each — a row that \
+             cannot be told from its neighbour is still better than a row that \
+             is gone:\n{}", asked[0]);
+        assert!(matches!(chosen,
+            Action::ActivateAbility { object_id: ObjectId(37), ability_index: 1, .. }),
+            "and index 2 is the second activation, not the first again: {chosen:?}");
     }
 
     /// The other half of #589: restoring the row is not enough if the row
