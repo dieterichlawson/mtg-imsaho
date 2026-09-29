@@ -789,3 +789,22 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   positions with an Aura-granted ability, a graveyard cast, two ways to pay, and
   duplicate permanents — the four places the two copies are known to diverge —
   and extend it to the GUI seat if the page will resume a save
+- H23 [proposed 2026-09-29, from #610's fourth surface] the random seat's
+  grouping keys, against the engine's. H19 audited the collapse keys the LLM
+  seat and the CLI own; there is a fourth copy nobody has read. `random.rs`
+  groups `legal.actions` into `Decision`s and rolls the decision before the
+  way of taking it (#472), and its `Decision::of` carries its own keys —
+  `Cast` was `(object_id, alternative_cost.is_some())`, the same one bit
+  `cli.rs` had, so two flashback costs on one card were one decision and each
+  drew half the share it should. Nothing was *lost* there, which is why no
+  issue found it: the seat still rolls inside the group. That is the point —
+  this surface fails by **distribution** rather than by a missing row, so it is
+  invisible to every method that reads a menu. Method: for each arm of
+  `Decision::of`, build the `LegalActions` the engine would emit for the case
+  the key cannot tell apart, draw a few thousand times, and compare the shares
+  against one-per-decision (`random::decisions` has the pattern). `Itself(index)`
+  is the arm to read hardest — it keys on position in the list, so anything the
+  engine enumerates as a product and does not route through `castable_spells`
+  or `activatable_abilities` is back to drawing over encodings. Worth asking of
+  the resolution prompts too, which this seat answers with a roll and which
+  CLAUDE.md's second rule is about
