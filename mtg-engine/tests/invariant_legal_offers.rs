@@ -1270,6 +1270,54 @@ fn the_collapsed_views_offer_the_same_game_as_the_flat_list() {
     let _ = pump;
 }
 
+/// Two activations of one permanent that render the same description are one
+/// row to every surface, so the checker says so.
+///
+/// Where the cost payment is encoded in `ability_index` and appears nowhere on
+/// the action — Skirsdag High Priest's pair of creatures to tap, decoded in
+/// `pay_activation_cost` — the description is all a surface has. Naming the
+/// creatures by card name made two different pairs one string: two
+/// byte-identical CLI rows, and an LLM row claiming two copies of a permanent
+/// the board holds one of ("one per copy: 4=#37, 5=#37"). Both halves of
+/// `LegalActions` agreed, so no clause could see it (issue #612).
+#[test]
+fn two_activations_of_one_permanent_may_not_read_the_same() {
+    let (mut state, reg) = base();
+    let priest = named_permanent(&mut state, &reg, "Avacynian Priest", P0);
+    state.get_object_mut(priest).unwrap().summoning_sick = false;
+    named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    add_mana(&mut state, P0, &[(ManaType::White, 2)]);
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    assert!(!legal.activatable_abilities.is_empty(), "precondition: an activation is offered");
+    clean(&state, P0, &legal, &reg);
+
+    // A second activation of the same permanent, a different way of paying,
+    // rendered with the same text.
+    let mut l = legal.clone();
+    let mut twin = l.activatable_abilities[0].clone();
+    twin.ability_index += 1;
+    l.activatable_abilities.push(twin.clone());
+    flags(&state, P0, &l, &reg, "render the same description");
+
+    // A different description on the same permanent is fine — that is two
+    // abilities, which is what #61 asked for.
+    let mut l = legal.clone();
+    let mut other = twin.clone();
+    other.description = format!("{} (the other one)", other.description);
+    l.activatable_abilities.push(other);
+    quiet_about(&state, P0, &l, &reg, "render the same description");
+
+    // And so is the same description from a DIFFERENT source: two copies of one
+    // Equipment granting one ability to one creature really are two rows with
+    // one description, told apart by which copy they come from (issue #257).
+    let mut l = legal.clone();
+    let mut granted = twin;
+    granted.source_card_id = Some(mtg_engine::ids::CardId(4242));
+    l.activatable_abilities.push(granted);
+    quiet_about(&state, P0, &l, &reg, "render the same description");
+}
+
 /// CR 601.2b/605.3a: an X-funding prompt offers the acting player's own
 /// untapped sources, each in one group, matched to the stash that raised it.
 #[test]

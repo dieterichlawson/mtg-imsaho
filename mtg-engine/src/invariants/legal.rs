@@ -228,6 +228,26 @@ fn distinct_offers(legal: &LegalActions, v: &mut Violations) {
             v.push(format!("activatable ability #{}/{} listed twice", a.object_id.0, a.ability_index));
         }
     }
+    // Two activations of one permanent, from one source, that render the same
+    // description are one row to every surface: the CLI prints two
+    // byte-identical lines, and the LLM seat groups them as copies of one
+    // permanent and says "one per copy: 4=#37, 5=#37" about a board holding a
+    // single #37. The description is all a surface has when the cost payment
+    // is encoded in `ability_index` and appears nowhere on the action —
+    // Skirsdag High Priest named the two creatures it taps by card name, so
+    // two Demon tokens made two different pairs one string (issue #612).
+    //
+    // Keyed on the source as well, because two copies of one Equipment
+    // granting the same ability to one creature really are two rows with one
+    // description, told apart by which Equipment they come from (issue #257).
+    let mut labels = HashSet::new();
+    for a in &legal.activatable_abilities {
+        if !labels.insert((a.object_id, a.source_card_id, a.description.clone())) {
+            v.push(format!(
+                "two activations of #{} render the same description, so no \
+                 surface can tell them apart: {:?}", a.object_id.0, a.description));
+        }
+    }
 }
 
 /// CR 305.1/305.2.
