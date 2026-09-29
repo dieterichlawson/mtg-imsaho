@@ -1106,3 +1106,29 @@ whether it told the truth.
   a prompt that honours is fine; a prompt that quietly substitutes needs a
   number. Start with `pick_set`'s five callers and the two combat prompts,
   since those are where a substitution would be invisible in the same way
+- V52 [proposed 2026-09-29, from #610 and #612, both found on a harness night]
+  the menu row as an identifier, re-asked. #257 established that a row must
+  identify its action and fixed it by naming the source and the targets. Two
+  ways round that fix turned up in one evening, both on this surface, neither
+  visible from the harness side alone:
+  (a) **a row that is never built.** `build_action_menu` keys the cast collapse
+  on `(object_id, alternative_cost.is_some())` (`cli.rs:7244`) where the engine
+  and the LLM seat key on the cost itself, so a graveyard card carrying two
+  flashback costs (CR 702.33 — Past in Flames plus any printed-flashback
+  instant) gets one row and the other cost cannot be chosen (#610).
+  (b) **a row whose text cannot distinguish it**, because the thing that
+  distinguishes it is inside a card's own ability description rather than in
+  the action: Skirsdag High Priest's `(tap {name_i} & {name_j})` with two
+  identically-named tokens prints two byte-identical rows, and `MenuLabel.ids`
+  cannot help because the tapped creatures are in neither `targets` nor
+  `sacrifice` (#612).
+  Method: `build_action_menu` is documented as pure precisely so "every row
+  names a different action" is testable — so test it. Build boards with two
+  ways to pay for one object and with two identically-named permanents, assert
+  no two `MenuLabel`s are equal, and assert the row count against
+  `legal.castable_spells` + `legal.activatable_abilities` rather than against
+  `legal.actions`. Then ask the question `MenuLabel` was invented for and that
+  `full()` currently answers "no": `full()` returns `self.text` and throws the
+  `ids` away, so the dedupe the struct's own doc comment describes ("two rows
+  with different ids are not [interchangeable], however alike they read") is
+  not the dedupe the cast arm performs
