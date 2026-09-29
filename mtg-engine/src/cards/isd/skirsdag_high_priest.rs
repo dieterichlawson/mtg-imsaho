@@ -55,12 +55,28 @@ impl CardBehavior for SkirsdagHighPriest {
         }
         // Return one ActivatedAbilityDef per C(n, 2) combination, each with a
         // unique ability_index encoding the combination index (0-based).
+        //
+        // Which two creatures a combination taps is not on the action — not in
+        // `targets`, not in `sacrifice` — it is encoded in `ability_index` and
+        // decoded in `pay_activation_cost`. So this description is the ONLY
+        // thing either surface can tell two combinations apart by, and naming
+        // the creatures by card name made two different cost payments one
+        // string: two Demon tokens gave the CLI two byte-identical menu rows,
+        // and the LLM seat grouped the pair as copies of one permanent and
+        // rendered "one per copy: 4=#37, 5=#37" for the single Priest on the
+        // board. Tapping a creature is an irreversible cost that decides
+        // whether an untapped 5/5 flier is still there to block, so the two
+        // are not interchangeable (issue #612).
+        //
+        // `obj_name` is the house spelling — "Name (#id)", the same one the log
+        // and the board listing use, so the id on the row is the id the player
+        // reads beside that creature's counters and damage.
         let mut abilities = Vec::new();
         let mut combo_index = 0usize;
         for i in 0..n {
             for j in (i + 1)..n {
-                let name_i = state.get_object(candidates[i]).map_or_else(|| "?".to_string(), |o| o.name.clone());
-                let name_j = state.get_object(candidates[j]).map_or_else(|| "?".to_string(), |o| o.name.clone());
+                let name_i = state.obj_name(candidates[i]);
+                let name_j = state.obj_name(candidates[j]);
                 abilities.push(ActivatedAbilityDef {
                     ability_index: combo_index,
                     description: format!(

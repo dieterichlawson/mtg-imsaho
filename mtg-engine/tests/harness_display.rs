@@ -125,6 +125,65 @@ fn no_ability_label_renders_an_internal_object_id() {
          anything:\n  {}", offenders.len(), offenders.join("\n  "));
 }
 
+/// No permanent offers two activations that read the same.
+///
+/// When an ability's cost payment is encoded in `ability_index` and appears
+/// nowhere on the action — Skirsdag High Priest's "Tap two creatures", whose
+/// pair is decoded in `pay_activation_cost` — the description is the only
+/// thing either surface can tell two payments apart by. Naming the creatures
+/// by card name made two different pairs one string: two Demon tokens gave
+/// the CLI two byte-identical menu rows, and the LLM seat grouped the pair as
+/// copies of one permanent, rendering "one per copy: 4=#37, 5=#37" for the
+/// single Priest on the board (issue #612). Tapping a creature is an
+/// irreversible cost — which of two Demons stays untapped to block is not a
+/// cosmetic difference.
+///
+/// Swept over the pool rather than over that one card, on a board where three
+/// of the creatures share a name, which is the shape that collides.
+#[test]
+fn no_permanent_offers_two_activations_that_read_the_same() {
+    let reg = registry();
+    let mut offenders = Vec::new();
+    let mut checked = 0;
+
+    let mut names: Vec<String> = reg.all_names().iter().map(|s| (*s).to_string()).collect();
+    names.sort();
+    for name in names {
+        let card_id = reg.get_id_by_name(&name).expect("named card has an id");
+        let Some(behavior) = reg.get(card_id) else { continue };
+
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        state.creature_died_this_turn = true; // unlock the morbid ones
+        let id = named_permanent(&mut state, &reg, &name, P0);
+        // Three same-named creatures, the way two Demon tokens are the same
+        // name, plus one that differs so a description that names nothing at
+        // all is not mistaken for one that names the right thing.
+        for _ in 0..3 {
+            let other = ready_creature(&mut state, P0, 2, 2);
+            state.get_object_mut(other).unwrap().name = "Demon".into();
+        }
+        let odd = ready_creature(&mut state, P0, 1, 1);
+        state.get_object_mut(odd).unwrap().name = "Spirit".into();
+
+        let mut seen: Vec<String> = Vec::new();
+        for ability in behavior.activated_abilities(&state, id, &reg) {
+            checked += 1;
+            if seen.contains(&ability.description) {
+                offenders.push(format!("{name}: {:?}", ability.description));
+            } else {
+                seen.push(ability.description.clone());
+            }
+        }
+    }
+
+    assert!(checked >= 20,
+        "expected to have looked at a good number of ability labels, got {checked}");
+    assert!(offenders.is_empty(),
+        "{} activation(s) read exactly like another activation of the same \
+         permanent, so neither surface can offer them as the different costs \
+         they are:\n  {}", offenders.len(), offenders.join("\n  "));
+}
+
 /// A loyalty ability is offered with the cost the card prints.
 ///
 /// The view builds each label from the ability's loyalty change, adding the
