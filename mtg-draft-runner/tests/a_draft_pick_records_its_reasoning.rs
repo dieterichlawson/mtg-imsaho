@@ -25,7 +25,7 @@ fn reasoning_seat(dir: &Path) -> PathBuf {
     std::fs::write(
         &bin,
         r##"#!/usr/bin/env python3
-import hashlib, json, os, sys
+import hashlib, json, os, sys, uuid
 argv = sys.argv[1:]
 if argv and argv[0] == "--version":
     print("1.0.0 (stub)"); sys.exit(0)
@@ -38,9 +38,14 @@ raw = flag("--json-schema") or "{}"
 schema = json.loads(raw)
 props = schema.get("properties") or {}
 d = os.environ["STUB_SCHEMAS"]
-n = len(os.listdir(d))
+# One file per call, named so that two calls cannot land on one name. The
+# draft's pick workers run a seat per thread, so several of these processes
+# are alive at once: naming by len(os.listdir(d)) let two of them compute the
+# same index and one silently overwrite the other, which read as a lost call
+# ("saw 85 draft calls" for a run that made 86) whenever the machine was busy
+# enough to interleave them.
 json.dump({"schema": schema, "system": flag("--system-prompt") or "", "prompt": message},
-          open(os.path.join(d, "call_%04d.json" % n), "w"))
+          open(os.path.join(d, "call_%d_%s.json" % (os.getpid(), uuid.uuid4().hex)), "w"))
 def h(*p): return int(hashlib.sha256("\x00".join(map(str, p)).encode()).hexdigest(), 16)
 def fill(name, spec):
     t = spec.get("type")
