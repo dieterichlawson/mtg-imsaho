@@ -1672,9 +1672,10 @@ impl CliPlayer {
                     let _ = execute!(out, cursor::MoveTo(1, srow), Print(&line));
                     srow += 1;
                 }
-                for target in &item.targets {
+                for line in item.targets.iter()
+                    .flat_map(|t| Self::stack_target_pane_lines(view, t, max_w))
+                {
                     if srow as usize >= body_h { fitted = false; break; }
-                    let line = clip_cols(&Self::stack_target_line(view, target), max_w);
                     let _ = execute!(out, cursor::MoveTo(1, srow),
                         SetAttribute(Attribute::Dim), Print(&line), SetAttribute(Attribute::Reset));
                     srow += 1;
@@ -5108,6 +5109,25 @@ return",
             Some(x) => format!("{}{id} (X={x}) ({who})", item.name),
             None => format!("{}{id} ({who})", item.name),
         }
+    }
+
+    /// One target's line in the STACK pane, wrapped to `width` under a
+    /// hanging indent.
+    ///
+    /// It was clipped, and the pane is a fifth of the terminal: at 40
+    /// columns "-> Shimmering Grotto (opp) (#82)" lost its last two
+    /// characters and printed "(#8", which is a real and different object
+    /// (issue #620). An id cut short is worse than no id, so nothing is cut
+    /// — the entry takes another line, the way its headline already did.
+    fn stack_target_pane_lines(view: &GameView, target: &Target, width: usize) -> Vec<String> {
+        const LEAD: &str = " -> ";
+        const HANG: &str = "    ";
+        let full = Self::stack_target_line(view, target);
+        let body = full.strip_prefix(LEAD).unwrap_or(&full);
+        Self::word_wrap(body, width.saturating_sub(LEAD.len()).max(1))
+            .into_iter().enumerate()
+            .map(|(i, l)| format!("{}{l}", if i == 0 { LEAD } else { HANG }))
+            .collect()
     }
 
     /// " -> Grizzly Bears 2/2 (opp)" for one chosen target.
@@ -9781,6 +9801,35 @@ Mark 1 of the 1 cards below to exile.");
         item.name = "Geistflame".to_string();
         item.controller = PlayerId(1);
         assert_eq!(CliPlayer::stack_entry_headline(&v, &item), "Geistflame (#22) (opp)");
+    }
+
+    /// Issue #620: the STACK pane clipped a target line at its width, and
+    /// "Shimmering Grotto (opp) (#82)" came out as "... (#8" — the id of a
+    /// different object. A target line wraps now, every line fits, and the
+    /// id arrives whole at every width the pane can have.
+    #[test]
+    fn a_stack_target_line_wraps_rather_than_cutting_its_id() {
+        let mut v = view(Step::PrecombatMain, 9, true);
+        let mut grotto = creature(82, "Shimmering Grotto", 1);
+        grotto.card_types = vec![CardType::Land];
+        grotto.effective_power = None;
+        grotto.effective_toughness = None;
+        v.battlefield = vec![grotto];
+        let target = Target::Object(ObjectId(82));
+        let whole = CliPlayer::stack_target_line(&v, &target);
+        assert_eq!(whole, " -> Shimmering Grotto (opp) (#82)");
+        for width in 12..=60 {
+            let lines = CliPlayer::stack_target_pane_lines(&v, &target, width);
+            for l in &lines {
+                assert!(str_cols(l) <= width, "width {width}: {l:?} overflows the pane");
+            }
+            assert!(lines.iter().any(|l| l.trim_end().ends_with("(#82)")),
+                "width {width}: the id is printed whole: {lines:?}");
+            assert!(!lines.iter().any(|l| l.trim_end().ends_with("(#8")),
+                "width {width}: never a shorter, different id: {lines:?}");
+            assert!(lines[0].starts_with(" -> ") && lines[1..].iter().all(|l| l.starts_with("    ")),
+                "width {width}: continuation lines hang under the arrow: {lines:?}");
+        }
     }
 
     /// Issue #555: CR 405.1 makes the stack public IN FULL, and it was the
