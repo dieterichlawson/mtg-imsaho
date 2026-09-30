@@ -83,7 +83,13 @@ impl CardBehavior for MentorOfTheMeek {
             state.log(LogLevel::Event, "Mentor of the Meek: could not pay {1}".into());
             return;
         }
-        let _ = crate::engine::draw_cards(state, controller, 1, registry);
-        state.log(LogLevel::Event, "Mentor of the Meek: paid {1}, drew a card".into());
+        // Logged from what the draw did: paying does not put a card in an
+        // empty library (issue #623).
+        let msg = if crate::engine::draw_cards(state, controller, 1, registry) == 0 {
+            "Mentor of the Meek: paid {1}, but drew no card (empty library)"
+        } else {
+            "Mentor of the Meek: paid {1}, drew a card"
+        };
+        state.log(LogLevel::Event, msg.into());
     }
 }

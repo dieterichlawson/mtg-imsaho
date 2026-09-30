@@ -161,6 +161,40 @@ fn bloodgift_demons_trigger_resolves_even_if_the_demon_dies_in_response() {
     assert_eq!(state.get_player(P0).life, 19, "and the life is still lost");
 }
 
+/// A target with an empty library draws nothing (CR 121.3), and the Demon's
+/// summary says so. It printed "drew a card and lost 1 life" directly under
+/// "tried to draw from an empty library", discarding `draw_cards`' count
+/// (issue #623).
+#[test]
+fn bloodgift_demons_summary_does_not_claim_a_draw_from_an_empty_library() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+    named_permanent(&mut state, &reg, "Bloodgift Demon", P0);
+    stock_library(&mut state, &reg, P0, 1);
+
+    state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::Upkeep });
+    triggers::collect_triggers(&mut state, &reg);
+    let mut state = mtg_engine::engine::submit_action(
+        &state,
+        &mtg_engine::actions::Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(
+                Some(mtg_engine::actions::Target::Player(P1))),
+        },
+        &reg,
+    );
+    assert!(state.get_player(P1).library_order.is_empty(), "test setup: p1 has no library");
+
+    triggers::resolve_next_trigger(&mut state, &reg);
+
+    assert!(state.get_player(P1).has_drawn_from_empty, "the draw failed");
+    assert_eq!(state.get_player(P1).life, 19, "the life is lost either way");
+    let summary = state.game_log.iter().map(|e| e.message.as_str())
+        .find(|m| m.starts_with("Bloodgift Demon:"))
+        .expect("the Demon's summary line");
+    assert!(!summary.contains("drew a card"),
+        "no card was drawn, so the summary does not say one was: {summary:?}");
+}
+
 /// Bloodgift Demon draws a card and loses 1 life on upkeep.
 #[test]
 fn bloodgift_demon_draws_and_loses_life() {

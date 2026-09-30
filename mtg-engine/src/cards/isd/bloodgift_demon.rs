@@ -60,9 +60,14 @@ impl CardBehavior for BloodgiftDemon {
     /// 1 life." The card count and the life loss are this card's numbers.
     fn resolve_card_effect(&self, state: &mut GameState, _source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
         let Target::Player(pid) = target else { return };
-        let _ = crate::engine::draw_cards(state, *pid, 1, registry);
+        // The summary says what happened, not what was asked: with an empty
+        // library no card is drawn (CR 121.3), and "drew a card" under "tried
+        // to draw from an empty library" contradicted the line above it
+        // (issue #623).
+        let drawn = crate::engine::draw_cards(state, *pid, 1, registry);
         state.lose_life(*pid, 1);
+        let drew = if drawn == 0 { "drew no card (empty library)" } else { "drew a card" };
         state.log(crate::state::LogLevel::Event,
-            format!("Bloodgift Demon: p{} drew a card and lost 1 life", pid.0));
+            format!("Bloodgift Demon: p{} {drew} and lost 1 life", pid.0));
     }
 }

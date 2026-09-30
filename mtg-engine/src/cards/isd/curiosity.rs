@@ -75,7 +75,12 @@ impl CardBehavior for Curiosity {
             return;
         }
         let controller = crate::cards::helpers::controller_of(state, self_id);
-        let _ = draw_cards(state, controller, 1, registry);
-        state.log(LogLevel::Event, "Curiosity: drew a card".into());
+        // Logged from what the draw did, not what was asked (issue #623).
+        let msg = if draw_cards(state, controller, 1, registry) == 0 {
+            "Curiosity: drew no card (empty library)"
+        } else {
+            "Curiosity: drew a card"
+        };
+        state.log(LogLevel::Event, msg.into());
     }
 }
