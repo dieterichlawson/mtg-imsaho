@@ -3790,7 +3790,7 @@ fn turn_and_result_clauses_each_have_a_violating_state() {
     // "Lost because the opponent won" names the opponent who won.
     let mut s = state.clone();
     s.get_player_mut(P1).lost = true;
-    s.get_player_mut(P1).loss_reason = Some(mtg_engine::events::LossReason::OpponentWon);
+    s.get_player_mut(P1).loss_reason = Some(mtg_engine::events::LossReason::OpponentWon { source: mtg_engine::ids::ObjectId(0) });
     s.result = Some(mtg_engine::state::GameResult::Winner(P1));
     flags_settled(&s, &reg, "lost because the opponent won, but the result is");
     s.result = Some(mtg_engine::state::GameResult::Winner(P0));
@@ -4416,7 +4416,7 @@ fn every_loss_says_why_in_a_way_the_state_bears_out() {
     flags_transition(&p, None, &s, &reg, "conceded without holding priority on a Concede action");
 
     // "The opponent won" is a claim about the result.
-    let mut s = lost(20, mtg_engine::events::LossReason::OpponentWon, &prev);
+    let mut s = lost(20, mtg_engine::events::LossReason::OpponentWon { source: mtg_engine::ids::ObjectId(0) }, &prev);
     s.result = Some(mtg_engine::state::GameResult::Winner(P1));
     flags_transition(&prev, None, &s, &reg, "lost because the opponent won, but the result is");
 

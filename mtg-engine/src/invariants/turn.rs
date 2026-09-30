@@ -126,7 +126,7 @@ pub(super) fn check_settled(state: &GameState, registry: &CardRegistry, v: &mut 
         None => {}
     }
     for p in &state.players {
-        if p.loss_reason == Some(LossReason::OpponentWon)
+        if matches!(p.loss_reason, Some(LossReason::OpponentWon { .. }))
             && state.result != Some(GameResult::Winner(state.opponent(p.id)))
         {
             v.push(format!("p{} lost because the opponent won, but the result is {:?}", p.id.0, state.result));

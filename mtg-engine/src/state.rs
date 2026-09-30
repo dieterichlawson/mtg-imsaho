@@ -2851,7 +2851,7 @@ impl GameState {
         }
         self.get_player_mut(player).lost = true;
         self.get_player_mut(player).loss_reason = Some(reason);
-        self.log(LogLevel::Milestone, format!("p{} {}", player.0, reason.describe()));
+        self.log(LogLevel::Milestone, format!("p{} {}", player.0, reason.describe(self)));
         self.events.push(crate::events::GameEvent::PlayerLost { player, reason });
     }
 

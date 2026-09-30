@@ -978,7 +978,7 @@ use --save if you need a resumable file.");
     let losses: Vec<String> = state.players.iter()
         .filter(|p| p.lost)
         .filter_map(|p| p.loss_reason.map(|r|
-            format!("{} {}", seat_label(p.id), r.describe())))
+            format!("{} {}", seat_label(p.id), r.describe(&state))))
         .collect();
     let loss_suffix = if losses.is_empty() {
         String::new()

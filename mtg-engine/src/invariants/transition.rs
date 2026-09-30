@@ -538,7 +538,7 @@ fn life_and_loss(prev: &GameState, cur: &GameState, action: Option<&Action>, eve
                         v.push(format!("p{} conceded without holding priority on a Concede action", p.0));
                     }
                 }
-                Some(LossReason::OpponentWon) => {
+                Some(LossReason::OpponentWon { .. }) => {
                     if cur.result != Some(crate::state::GameResult::Winner(cur.opponent(p))) {
                         v.push(format!("p{} lost because the opponent won, but the result is {:?}", p.0, cur.result));
                     }

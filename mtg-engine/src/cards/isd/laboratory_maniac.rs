@@ -40,7 +40,7 @@ impl CardBehavior for LaboratoryManiac {
         // stops the state-based action from killing them for it first.
         state.get_player_mut(*player).has_drawn_from_empty = false;
         let opponent = state.opponent(*player);
-        state.player_loses(opponent, crate::events::LossReason::OpponentWon);
+        state.player_loses(opponent, crate::events::LossReason::OpponentWon { source: self_id });
         // Announced before `end_game`: that is the instant the game stops,
         // and anything written after it is discarded (CR 104.1, #622).
         let name = state.obj_name(self_id);

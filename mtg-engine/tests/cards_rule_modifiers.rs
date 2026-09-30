@@ -105,6 +105,28 @@ fn a_spell_stops_resolving_when_laboratory_maniac_wins_mid_resolution() {
         "no card left the hand after the game ended");
 }
 
+/// An effect that says a player wins is CR 104.2b, and the loser's line says
+/// which effect it was. It cited CR 104.2a — a player wins when every opponent
+/// has left the game, the inverse of what happened — and said only "the
+/// opponent won", so the runner's result line never said how (#624).
+#[test]
+fn a_laboratory_maniac_loss_names_the_maniac_and_cr_104_2b() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let maniac = named_permanent(&mut state, &reg, "Laboratory Maniac", P0);
+
+    let _ = engine::draw_cards(&mut state, P0, 1, &reg);
+
+    assert_eq!(state.get_player(P1).loss_reason,
+        Some(mtg_engine::events::LossReason::OpponentWon { source: maniac }),
+        "the loss records the effect that won");
+    let why = state.get_player(P1).loss_reason.unwrap().describe(&state);
+    assert!(why.contains(&state.obj_name(maniac)) && why.contains("CR 104.2b"),
+        "the account names the Maniac and the rule for an effect's win: {why:?}");
+    assert!(state.game_log.iter().any(|e| e.message == format!("p1 {why}")),
+        "and the log's loss line is that account");
+}
+
 // ── Parallel Lives ──────────────────────────────────────────
 
 /// "If one or more tokens would be created under your control, twice that many

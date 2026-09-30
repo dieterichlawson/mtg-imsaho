@@ -71,10 +71,17 @@ pub enum LossReason {
     LifeReachedZero,
     DrewFromEmptyLibrary,
     Conceded,
-    /// CR 104.2a: in a two-player game, a player loses when their opponent
-    /// wins. Nothing happened to *them* — Laboratory Maniac used to report
-    /// this as `LifeReachedZero`, which is simply untrue of a player on 20.
-    OpponentWon,
+    /// CR 104.2b: an effect stated that the opponent wins the game, and in a
+    /// two-player game that ends it (CR 104.1). Nothing happened to *them* —
+    /// Laboratory Maniac used to report this as `LifeReachedZero`, which is
+    /// simply untrue of a player on 20.
+    ///
+    /// `source` is the object whose effect it was, so the account of the game
+    /// can say how it was won. It used to carry nothing and cite CR 104.2a —
+    /// "a player wins when all their opponents have left the game", the
+    /// inverse of what happened — and the result line read "lost the game:
+    /// the opponent won", which says who and not how (#624).
+    OpponentWon { source: ObjectId },
 }
 
 impl LossReason {
@@ -82,14 +89,18 @@ impl LossReason {
     /// for both the game log's loss line and the runner's result summary
     /// (issue #86: the reason was constructed and then discarded — no log
     /// line, and the result named only the winner).
+    ///
+    /// Takes the game so an effect that won it can be named.
     #[must_use]
-    pub fn describe(self) -> &'static str {
+    pub fn describe(self, state: &crate::state::GameState) -> String {
         match self {
-            LossReason::LifeReachedZero => "lost the game: life total reached 0 (CR 704.5a)",
+            LossReason::LifeReachedZero => "lost the game: life total reached 0 (CR 704.5a)".into(),
             LossReason::DrewFromEmptyLibrary =>
-                "lost the game: tried to draw from an empty library (CR 704.5b)",
-            LossReason::Conceded => "conceded",
-            LossReason::OpponentWon => "lost the game: the opponent won (CR 104.2a)",
+                "lost the game: tried to draw from an empty library (CR 704.5b)".into(),
+            LossReason::Conceded => "conceded".into(),
+            LossReason::OpponentWon { source } => format!(
+                "lost the game: the opponent won by the effect of {} (CR 104.2b)",
+                state.obj_name(source)),
         }
     }
 }
