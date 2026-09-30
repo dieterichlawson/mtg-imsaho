@@ -148,11 +148,12 @@ Two different things pass for you, and they stop at different places.
 - an action of yours — a **cast or an activated ability** — on **your own turn**, once that turn is reached;
 - something **on the stack** that you have a real answer to (a mana ability alone does not count);
 - the opponent **actually attacking** (an opponent who declares no attackers is not a stop);
-- your **own** postcombat main phase, so removal can be aimed at damaged creatures.
+- your **own** postcombat main phase, so removal can be aimed at damaged creatures;
+- a **declare-attackers or declare-blockers prompt** with anything eligible on it — combat is always yours to declare, and answering it leaves auto-pass off.
 
 Two consequences worth knowing:
 
-- Pressing `f` **at your own main phase** is a deliberate skip of the rest of your turn: it declines the casts and activations on that menu, and says how many it declined on the next screen. Decline them yourself with `0` first if you would rather it did not.
+- Pressing `f` **at your own main phase** is a deliberate skip of the rest of your turn: it declines the casts and activations on that menu, and says how many spells, abilities and land plays it declined on the next menu (one per spell, however many targets it had). If auto-pass has already stopped by then, that menu says so rather than "Auto-pass on". Decline them yourself with `0` first if you would rather it did not.
 - Pressing `f` where one of the stops above already applies is **refused**, and the message names which stop it was.
 
 An empty turn (play land, nothing else) takes **1–2 keypresses**. A full combat turn takes **3–5 keypresses**.

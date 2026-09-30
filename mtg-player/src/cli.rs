@@ -1035,11 +1035,18 @@ pub struct CliPlayer {
     pass_mode: Option<PassMode>,
     /// Filter string for the card reference panel.
     card_filter: String,
-    /// A message for the NEXT prompt shown. Pressing 'f' answers the current
-    /// one immediately, so its confirmation has nowhere to go but forward —
-    /// and without it engaging auto-pass produced no feedback at all
-    /// (issue #296).
-    pending_notice: Option<String>,
+    /// Auto-pass was just engaged, declining this many spells, abilities and
+    /// land plays: said on the NEXT menu shown. Pressing 'f' answers the
+    /// current one immediately, so its confirmation has nowhere to go but
+    /// forward — and without it engaging auto-pass produced no feedback at
+    /// all (issue #296).
+    ///
+    /// Kept as the count, not as finished text, because what the sentence
+    /// has to say depends on whether auto-pass is still on when it is
+    /// shown. The next menu is often the one it stopped at — or the one
+    /// after the attack prompt that switched it off — and a notice composed
+    /// at the keypress told that screen auto-pass was on (issue #618).
+    pending_autopass: Option<usize>,
 }
 
 impl CliPlayer {
@@ -1049,7 +1056,50 @@ impl CliPlayer {
             name: name.to_string(),
             pass_mode: None,
             card_filter: String::new(),
-            pending_notice: None,
+            pending_autopass: None,
+        }
+    }
+
+    /// How many things auto-pass declines at `actions`: one per land, per
+    /// spell and per ability — not one per offered action. The engine
+    /// offers one `CastSpell` per target, so one Geistflame with seven
+    /// legal targets was reported as seven declined actions (issue #618).
+    fn declined_by_auto_pass(actions: &[Action]) -> usize {
+        let mut seen: std::collections::HashSet<(u8, u64, usize)> = std::collections::HashSet::new();
+        for a in actions {
+            let key = match a {
+                Action::PlayLand { object_id } => (0, object_id.0, 0),
+                Action::CastSpell { object_id, .. } => (1, object_id.0, 0),
+                Action::ActivateAbility { object_id, ability_index, .. } =>
+                    (2, object_id.0, *ability_index),
+                _ => continue,
+            };
+            seen.insert(key);
+        }
+        seen.len()
+    }
+
+    /// The line the first menu after engaging auto-pass shows, worded for
+    /// whether auto-pass is still on at that menu. `None` when there is
+    /// nothing left worth saying.
+    ///
+    /// "Main Phase 1" is joined by a no-break space: wrapped at the ordinary
+    /// one, the "1." began a line and read as a numbered list item (issue
+    /// #618).
+    fn auto_pass_notice(declined: usize, still_on: bool) -> Option<String> {
+        const MAIN_1: &str = "Main Phase\u{a0}1";
+        let what = |n: usize| format!("{n} spell{}/abilit{}/land play{}",
+            if n == 1 { "" } else { "s" }, if n == 1 { "y" } else { "ies" },
+            if n == 1 { "" } else { "s" });
+        match (still_on, declined) {
+            (true, 0) => Some(format!("Auto-pass on — passing to your next {MAIN_1}. \
+                                       Press f again to turn it off.")),
+            (true, n) => Some(format!("Auto-pass on — it declined {} at that prompt, and \
+                                       passes to your next {MAIN_1}. Press f again to turn \
+                                       it off.", what(n))),
+            (false, 0) => None,
+            (false, n) => Some(format!("Auto-pass has stopped. When it was turned on it \
+                                        declined {}.", what(n))),
         }
     }
 
@@ -7516,7 +7566,8 @@ impl Player for CliPlayer {
         let kind = if has_pass { "priority" } else { legal.context.as_deref().unwrap_or("") };
         begin_decision(view.you, kind);
 
-        let mut notice: Option<String> = self.pending_notice.take();
+        let mut notice: Option<String> = self.pending_autopass.take()
+            .and_then(|n| Self::auto_pass_notice(n, self.pass_mode.is_some()));
         let mut menu_offset = 0usize;
         loop {
             let pass_label = self.pass_mode.as_ref().map(|m| match m {
@@ -7599,19 +7650,8 @@ impl Player for CliPlayer {
                             // step later refused with a message that named the
                             // spell it had just declined (issue #294). Say
                             // what it declined, on the next screen shown.
-                            let declined = legal.actions.iter().filter(|a| matches!(a,
-                                Action::PlayLand { .. }
-                                | Action::CastSpell { .. }
-                                | Action::ActivateAbility { .. })).count();
                             self.pass_mode = Some(mode);
-                            self.pending_notice = Some(if declined == 0 {
-                                "Auto-pass on — passing to your next Main Phase 1. \
-                                 Press f again to turn it off.".to_string()
-                            } else {
-                                format!("Auto-pass on — it declined {declined} action(s) at that \
-                                         prompt, and passes to your next Main Phase 1. \
-                                         Press f again to turn it off.")
-                            });
+                            self.pending_autopass = Some(Self::declined_by_auto_pass(&legal.actions));
                             return Action::PassPriority;
                         }
                         Err(reason) => {
@@ -7848,6 +7888,54 @@ mod tests {
         assert!(str_cols(&line) <= 44, "the line must fit the panel: {line:?}");
         assert!(line.starts_with("0, 2, 4"), "the low end is stated: {line:?}");
         assert!(line.ends_with("\u{2026} 40"), "the ceiling is stated: {line:?}");
+    }
+
+    /// Issue #618: one Geistflame offered at seven targets is seven
+    /// `CastSpell` actions and one spell auto-pass declines.
+    #[test]
+    fn auto_pass_counts_spells_not_targets() {
+        let cast = |t: Target| Action::CastSpell {
+            object_id: ObjectId(40), targets: vec![t], sacrifice: None, exile_count: None,
+            exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
+        };
+        let mut actions: Vec<Action> = (50..55).map(|id| cast(Target::Object(ObjectId(id)))).collect();
+        actions.push(cast(Target::Player(mtg_engine::ids::PlayerId(0))));
+        actions.push(cast(Target::Player(mtg_engine::ids::PlayerId(1))));
+        actions.push(Action::PassPriority);
+        assert_eq!(CliPlayer::declined_by_auto_pass(&actions), 1, "one spell, seven targets");
+
+        let ability = |idx: usize, t: u64| Action::ActivateAbility {
+            object_id: ObjectId(9), ability_index: idx, targets: vec![Target::Object(ObjectId(t))],
+            tap_plan: vec![], sacrifice: None, x_value: None, source_card_id: None,
+        };
+        actions.extend([ability(0, 50), ability(0, 51), ability(1, 50),
+            Action::PlayLand { object_id: ObjectId(12) }]);
+        assert_eq!(CliPlayer::declined_by_auto_pass(&actions), 4,
+            "a spell, two abilities of one permanent, and a land");
+    }
+
+    /// Issue #618: the notice is composed when it is SHOWN, and a menu shown
+    /// because auto-pass stopped (at a break, or after the attack prompt
+    /// switched it off) is not told auto-pass is on.
+    #[test]
+    fn the_auto_pass_notice_says_whether_it_is_still_on() {
+        let on = CliPlayer::auto_pass_notice(1, true).expect("engaging is always said");
+        assert!(on.starts_with("Auto-pass on"), "{on:?}");
+        let off = CliPlayer::auto_pass_notice(1, false).expect("what it declined is still said");
+        assert!(!off.contains("Auto-pass on") && !off.contains("passes to"),
+            "a stopped auto-pass is not described as on: {off:?}");
+        assert!(off.contains("stopped"), "{off:?}");
+        assert_eq!(CliPlayer::auto_pass_notice(0, false), None, "nothing to say");
+        // Wrapped at any width, no line begins with the "1." of Main Phase 1.
+        for n in [0, 1, 7] {
+            let text = CliPlayer::auto_pass_notice(n, true).unwrap();
+            for width in 20..=120 {
+                for line in CliPlayer::wrap_row(&text, width) {
+                    assert!(!line.trim_start().starts_with("1."),
+                        "width {width}: a line reads as a list item: {line:?}");
+                }
+            }
+        }
     }
 
     /// Issue #613: Kessig Wolf Run's X prompt offered to "cancel the cast".
