@@ -97,8 +97,13 @@ pub(crate) fn pay_activation_costs(
     cost: &crate::state::DeferredActivationCost,
     registry: &CardRegistry,
 ) {
+    // A filter in the plan pays its own cost with mana the ability does not
+    // need, as a spell's plan does (issue #252): paying Shimmering Grotto's
+    // `{1}` "colorless first, then white" spent the {W} of Gavony Township's
+    // `{2}{G}{W}` and the activation the menu offered was refused.
     for &(source_id, ma_idx) in &cost.tap_plan {
-        activate_mana_source(&mut *state, source_id, ma_idx, registry);
+        activate_mana_source_reserving(
+            &mut *state, source_id, ma_idx, Some(&cost.non_x_mana_cost), registry);
     }
     let _ = mana::auto_pay(&mut state.get_player_mut(player).mana_pool, &cost.non_x_mana_cost);
     if cost.requires_tap {
@@ -243,7 +248,7 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
             // 602.2b). Same rule as the cast path.
             let mut probe = state.clone();
             for &(source_id, ma_idx) in tap_plan {
-                activate_mana_source(&mut probe, source_id, ma_idx, registry);
+                activate_mana_source_reserving(&mut probe, source_id, ma_idx, Some(&pay), registry);
             }
             if !mana::can_pay(&probe.get_player(player).mana_pool, &pay) {
                 state.log(crate::state::LogLevel::Debug, format!(

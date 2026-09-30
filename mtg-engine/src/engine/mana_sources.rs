@@ -89,7 +89,7 @@ pub fn pay_cost_with_sources(
         };
         let Some(plan) = plan else { return false };
         for (source_id, ability_index) in plan {
-            activate_mana_source(state, source_id, ability_index, registry);
+            activate_mana_source_reserving(state, source_id, ability_index, Some(cost), registry);
         }
     }
     mana::auto_pay(&mut state.get_player_mut(player).mana_pool, cost).is_ok()

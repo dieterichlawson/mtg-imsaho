@@ -548,7 +548,8 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
 
                         // Step 1: execute tap_plan for the non-X cost.
                         for (src_id, ability_index) in &pending.tap_plan {
-                            activate_mana_source(&mut *state, *src_id, *ability_index, registry);
+                            activate_mana_source_reserving(&mut *state, *src_id, *ability_index,
+                                Some(&pending.non_x_mana_cost), registry);
                         }
 
                         // Step 2: pay the non-X mana portion.

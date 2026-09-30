@@ -289,6 +289,34 @@ fn an_unfundable_spell_is_not_offered() {
         "one filter and one Forest make one white mana, not two");
 }
 
+/// Issue #252's rule holds for an activated ability's tap plan, not only a
+/// spell's. Gavony Township's `{2}{G}{W}` off Plains, three Mountains and
+/// Shimmering Grotto: the Grotto's filter is the only green, and its `{1}`
+/// has to be paid with a Mountain's red. Paying it "colorless first, then W"
+/// spent the Plains' white, the rehearsal refused the activation, and the
+/// ability the menu offered did nothing.
+#[test]
+fn an_ability_plan_pays_a_filter_with_mana_the_ability_does_not_need() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let township = named_permanent(&mut state, &reg, "Gavony Township", P0);
+    named_permanent(&mut state, &reg, "Plains", P0);
+    for _ in 0..3 {
+        named_permanent(&mut state, &reg, "Mountain", P0);
+    }
+    named_permanent(&mut state, &reg, "Shimmering Grotto", P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+
+    let action = mtg_engine::engine::legal_actions(&state, &reg).actions.into_iter()
+        .find(|a| matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == township))
+        .expect("five other sources fund {2}{G}{W} with the Grotto making the green");
+    let after = resolve_activated(mtg_engine::engine::submit_action(&state, &action, &reg), &reg);
+    assert_eq!(after.get_object(bear).unwrap().counters.get(&CounterType::PlusOnePlusOne).copied(),
+        Some(1),
+        "the offered activation has to happen. Pool after: {:?}",
+        after.get_player(P0).mana_pool.mana);
+}
+
 /// The `CastSpell` for `spell`, as the menu offers it.
 fn offered_cast(state: &mtg_engine::state::GameState, reg: &CardRegistry,
                 spell: mtg_engine::ids::ObjectId) -> Option<Action> {
