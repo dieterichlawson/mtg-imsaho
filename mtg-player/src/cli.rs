@@ -984,6 +984,13 @@ struct MenuLabel {
     /// ids are interchangeable; two rows with different ids are not, however
     /// alike they read (issue #257).
     ids: Vec<u64>,
+    /// Where in `text` each of `ids` is named: the byte offset just past
+    /// that object's name, so an id added to tell two rows apart sits next
+    /// to the name it identifies. An id with no entry here goes at the end
+    /// of the row. Everything went at the end once, and the source's id —
+    /// which is what differs between two Avacynian Priests — landed right
+    /// after the TARGET's name and read as the target's (issue #619).
+    anchors: Vec<usize>,
 }
 
 impl MenuLabel {
@@ -3083,15 +3090,15 @@ impl CliPlayer {
         // to — two Wooden Stakes, or one Stake against two identical tokens,
         // collide on the SOURCE as readily as on the target (issue #257).
         let mut ids = vec![ab.object_id.0];
-        let target_suffix = match targets.as_slice() {
+        let (target_suffix, target_anchors) = match targets.as_slice() {
             [only] => {
                 ids.extend(only.iter().filter_map(|t| match t {
                     Target::Object(id) => Some(id.0),
                     _ => None,
                 }));
-                Self::targets_suffix(view, only)
+                Self::targets_suffix_anchored(view, only)
             }
-            _ => String::new(),
+            _ => (String::new(), Vec::new()),
         };
         // A sacrifice cost with a choice in it (CR 601.2h) is part of what
         // this entry does: Grimgrin's two "Sacrifice another creature"
@@ -3110,17 +3117,40 @@ impl CliPlayer {
             _ => String::new(),
         };
         let name = Self::perm_name(view, ab.object_id);
-        let text = if ab.description.is_empty() {
+        let (head, source_at) = if ab.description.is_empty() {
             // The ability's own text is what tells a 2-mana ability from a
             // 5-mana one on the same permanent (#61); without it, say at
             // least which permanent is being activated.
-            format!("Activate ability: {name}{}{target_suffix}{sac_suffix}",
-                Self::tap_suffix(view, &ab.tap_plan))
+            let lead = "Activate ability: ";
+            (format!("{lead}{name}{}", Self::tap_suffix(view, &ab.tap_plan)),
+                lead.len() + name.len())
         } else {
-            format!("{name}: {}{}{target_suffix}{sac_suffix}", ab.description,
-                Self::tap_suffix(view, &ab.tap_plan))
+            (format!("{name}: {}{}", ab.description, Self::tap_suffix(view, &ab.tap_plan)),
+                name.len())
         };
-        MenuLabel { text, ids }
+        Self::anchored_label(head, source_at, &target_suffix, &target_anchors, &sac_suffix, ids)
+    }
+
+    /// A row of the shape `<head naming the source><targets><sacrifice>`,
+    /// with each of `ids` — source, then object targets, then any
+    /// sacrifice — anchored just past its own name (issue #619).
+    fn anchored_label(
+        head: String,
+        source_at: usize,
+        target_suffix: &str,
+        target_anchors: &[usize],
+        sac_suffix: &str,
+        ids: Vec<u64>,
+    ) -> MenuLabel {
+        let mut anchors = vec![source_at];
+        anchors.extend(target_anchors.iter().map(|a| head.len() + a));
+        let mut text = head;
+        text.push_str(target_suffix);
+        text.push_str(sac_suffix);
+        if !sac_suffix.is_empty() {
+            anchors.push(text.len());
+        }
+        MenuLabel { text, ids, anchors }
     }
 
     /// Ask an activated ability's slots one at a time and build the
@@ -3199,6 +3229,7 @@ impl CliPlayer {
             mtg_engine::actions::Target::Object(id) => MenuLabel {
                 text: Self::perm_name(view, *id),
                 ids: vec![id.0],
+                anchors: Vec::new(),
             },
 
             mtg_engine::actions::Target::Player(pid) => MenuLabel::plain(
@@ -3608,7 +3639,8 @@ impl CliPlayer {
     /// convention — two Wooden Stakes, or one Stake offered against two
     /// identical tokens, read the same and are not the same (issue #257).
     fn menu_row_texts(labels: &[MenuLabel]) -> Vec<String> {
-        let mut out: Vec<String> = labels.iter().map(MenuLabel::full).collect();
+        let plain: Vec<String> = labels.iter().map(MenuLabel::full).collect();
+        let mut out = plain.clone();
         let mut handled = vec![false; out.len()];
         for k in 0..out.len() {
             if handled[k] { continue; }
@@ -3623,12 +3655,33 @@ impl CliPlayer {
                 .collect();
             if differing.is_empty() { continue; }
             for &j in &group {
-                let named: Vec<String> = differing.iter()
-                    .filter_map(|&p| labels[j].ids.get(p))
-                    .map(|id| format!("#{id}"))
+                // Each id goes next to the name it identifies (#619); one
+                // with no known place goes at the end, as they all used to.
+                let text = &plain[j];
+                let mut placed: Vec<(usize, u64)> = differing.iter()
+                    .filter_map(|&p| labels[j].ids.get(p).map(|&id|
+                        (labels[j].anchors.get(p).copied()
+                            .filter(|&a| a <= text.len() && text.is_char_boundary(a))
+                            .unwrap_or(text.len()), id)))
                     .collect();
-                if named.is_empty() { continue; }
-                out[j] = format!("{} ({})", out[j], named.join(" "));
+                if placed.is_empty() { continue; }
+                placed.sort_by_key(|&(at, _)| at);
+                let mut row = String::new();
+                let mut from = 0;
+                let mut k = 0;
+                while k < placed.len() {
+                    let at = placed[k].0;
+                    let mut here = Vec::new();
+                    while k < placed.len() && placed[k].0 == at {
+                        here.push(format!("#{}", placed[k].1));
+                        k += 1;
+                    }
+                    row.push_str(&text[from..at]);
+                    row.push_str(&format!(" ({})", here.join(" ")));
+                    from = at;
+                }
+                row.push_str(&text[from..]);
+                out[j] = row;
             }
         }
         out
@@ -3707,16 +3760,33 @@ impl CliPlayer {
     /// silently decides who gets hit — twice a self-hit in real games
     /// (issue #36).
     fn targets_suffix(view: &GameView, targets: &[Target]) -> String {
+        Self::targets_suffix_anchored(view, targets).0
+    }
+
+    /// `targets_suffix`, plus where each OBJECT target's name ends in it
+    /// (byte offsets into the suffix) — the places a disambiguating id
+    /// belongs (issue #619). Players carry no id and get no entry.
+    fn targets_suffix_anchored(view: &GameView, targets: &[Target]) -> (String, Vec<usize>) {
         if targets.is_empty() {
-            return String::new();
+            return (String::new(), Vec::new());
         }
-        let names: Vec<String> = targets.iter().map(|t| match t {
-            Target::Object(id) => Self::perm_name(view, *id),
-            Target::Player(pid) =>
-                if *pid == view.you { "you".into() } else { "opponent".into() },
-            Target::Illegal => unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
-        }).collect();
-        format!(" targeting {}", names.join(", "))
+        let mut text = String::from(" targeting ");
+        let mut anchors = Vec::new();
+        for (i, t) in targets.iter().enumerate() {
+            if i > 0 {
+                text.push_str(", ");
+            }
+            match t {
+                Target::Object(id) => {
+                    text.push_str(&Self::perm_name(view, *id));
+                    anchors.push(text.len());
+                }
+                Target::Player(pid) =>
+                    text.push_str(if *pid == view.you { "you" } else { "opponent" }),
+                Target::Illegal => unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
+            }
+        }
+        (text, anchors)
     }
 
     /// The targets a cast row will hit WITHOUT asking, or empty when a
@@ -3789,12 +3859,13 @@ impl CliPlayer {
         } else {
             format!(" ({})", notes.join(", "))
         };
-        MenuLabel {
-            text: format!("{verb} {}{zone_note}{notes}{}{}", cs.name,
-                Self::targets_suffix(view, &forced_targets),
-                Self::sacrifice_suffix(view, forced_sac)),
-            ids,
-        }
+        let (target_suffix, target_anchors) = Self::targets_suffix_anchored(view, &forced_targets);
+        Self::anchored_label(
+            format!("{verb} {}{zone_note}{notes}", cs.name),
+            verb.len() + 1 + cs.name.len(),
+            &target_suffix, &target_anchors,
+            &Self::sacrifice_suffix(view, forced_sac),
+            ids)
     }
 
 
@@ -6171,6 +6242,7 @@ impl CliPlayer {
                 Target::Object(id) => vec![id.0],
                 _ => Vec::new(),
             },
+            anchors: Vec::new(),
         }).collect()
     }
 
@@ -6180,7 +6252,7 @@ impl CliPlayer {
         -> Vec<MenuLabel>
     {
         permanents.iter()
-            .map(|id| MenuLabel { text: Self::perm_name(view, *id), ids: vec![id.0] })
+            .map(|id| MenuLabel { text: Self::perm_name(view, *id), ids: vec![id.0], anchors: Vec::new() })
             .collect()
     }
 
@@ -7256,6 +7328,7 @@ impl CliPlayer {
         MenuLabel {
             text: Self::format_action(view, action),
             ids: Self::action_object_ids(action),
+            anchors: Vec::new(),
         }
     }
 
@@ -7955,6 +8028,7 @@ mod tests {
                 "Demonmail Hauberk (your): Equip—Sacrifice a creature targeting Champion of the Parish {t}/{t} (your), sacrificing Champion of the Parish {s}/{s} (your)",
                 t = target, s = sacrifice),
             ids: vec![7, target, sacrifice],
+            anchors: Vec::new(),
         }
     }
 
@@ -7999,6 +8073,7 @@ mod tests {
         let stake = |target: u64| MenuLabel {
             text: "Wooden Stake (your): Equip targeting Zombie 2/2 (opp)".to_string(),
             ids: vec![7, target],
+            anchors: Vec::new(),
         };
         let texts = CliPlayer::menu_row_texts(&[stake(3), stake(4)]);
         assert_ne!(texts[0], texts[1], "different targets, different rows: {texts:#?}");
@@ -11022,6 +11097,56 @@ Mark 1 of the 1 cards below to exile.");
             .find(|l| l.contains("Equip")).expect("the equip ability is on the menu");
         assert!(equip.contains("targeting"), "the forced target is named: {equip}");
         assert!(equip.contains("sacrificing"), "and the forced sacrifice: {equip}");
+    }
+
+    /// Issue #619: two Avacynian Priests aimed at the one Darkthicket Wolf
+    /// read alike, and the id that tells them apart is the PRIEST's. It used
+    /// to be appended after the target clause, where "#47" read as the
+    /// Wolf's id. It sits by the name it identifies now — and an id that
+    /// does belong to a target still sits by the target.
+    #[test]
+    fn a_disambiguating_id_sits_next_to_the_name_it_identifies() {
+        let mut v = view(Step::PrecombatMain, 9, true);
+        v.battlefield = vec![creature(47, "Avacynian Priest", 0), creature(48, "Avacynian Priest", 0),
+            creature(119, "Darkthicket Wolf", 1)];
+        let priest = |id: u64| mtg_engine::actions::ActivatableAbility {
+            object_id: ObjectId(id),
+            ability_index: 0,
+            source_card_id: None,
+            name: "Avacynian Priest".to_string(),
+            description: "{1}, {T}: Tap target non-Human creature".to_string(),
+            target_options: vec![Target::Object(ObjectId(119))],
+            tap_plan: vec![],
+            option_combos: vec![mtg_engine::actions::ActivatableAbilityOption {
+                targets: vec![Target::Object(ObjectId(119))],
+                sacrifice: None,
+            }],
+        };
+        let rows = [CliPlayer::ability_row_label(&v, &priest(47)),
+            CliPlayer::ability_row_label(&v, &priest(48))];
+        let texts = CliPlayer::menu_row_texts(&rows);
+        assert_ne!(texts[0], texts[1], "{texts:#?}");
+        for (text, id) in texts.iter().zip([47, 48]) {
+            assert!(text.starts_with(&format!("Avacynian Priest 2/2 (your) (#{id}): ")),
+                "the source's id follows the source's name: {text:?}");
+            assert!(text.ends_with("targeting Darkthicket Wolf 2/2 (opp)"),
+                "and nothing is hung on the target's name: {text:?}");
+        }
+
+        // One source, two same-named targets: the id is the target's, and
+        // goes after it.
+        let mut v = v;
+        v.battlefield.push(creature(120, "Darkthicket Wolf", 1));
+        let at = |t: u64| {
+            let mut p = priest(47);
+            p.target_options = vec![Target::Object(ObjectId(t))];
+            p.option_combos[0].targets = vec![Target::Object(ObjectId(t))];
+            CliPlayer::ability_row_label(&v, &p)
+        };
+        let texts = CliPlayer::menu_row_texts(&[at(119), at(120)]);
+        assert!(texts[0].ends_with("Darkthicket Wolf 2/2 (opp) (#119)"), "{texts:#?}");
+        assert!(texts[1].ends_with("Darkthicket Wolf 2/2 (opp) (#120)"), "{texts:#?}");
+        assert!(texts[0].starts_with("Avacynian Priest 2/2 (your): "), "{texts:#?}");
     }
 
     /// Issue #61: two abilities on one permanent are two decisions, and the
