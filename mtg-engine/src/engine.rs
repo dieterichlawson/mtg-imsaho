@@ -454,6 +454,8 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
 /// bookkeeping either side of it.
 pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry) -> GameState {
     let mut new_state = submit_action_inner(state, action, registry);
+    // CR 104.1: if the action ended the game, nothing after the end happened.
+    new_state.settle_game_end(state.is_game_over());
     // Counted once per action the caller submits; a cast that re-enters
     // through its own cost prompt is still one action.
     new_state.submit_seq = state.submit_seq + 1;
@@ -1139,7 +1141,12 @@ pub fn run_game_loop<F>(
 {
     // If we're still in the opening-hand mulligan phase, run it first.
     // The phase clears itself when done and we fall through to turn 1.
+    let over_on_entry = state.is_game_over();
     run_game_loop_inner(state, registry, &mut choose_action);
+    // CR 104.1: whatever the loop did after the game ended — the rest of a
+    // turn-based draw's step, a trigger collected on the way out — did not
+    // happen.
+    state.settle_game_end(over_on_entry);
 }
 
 /// Drive the opening-hand London mulligan phase to completion, asking each
@@ -1155,7 +1162,9 @@ pub fn run_mulligan_phase<F>(
 ) where
     F: FnMut(&GameState, PlayerId, &LegalActions) -> Action,
 {
+    let over_on_entry = state.is_game_over();
     let _stopped = run_mulligan_phase_inner(state, registry, &mut choose_action);
+    state.settle_game_end(over_on_entry);
 }
 
 /// Returns `true` when the harness stopped the game (an `AbandonGame`),
@@ -1251,7 +1260,12 @@ pub fn resume_game_loop<F>(
 ) where
     F: FnMut(&GameState, PlayerId, &LegalActions) -> Action,
 {
+    let over_on_entry = state.is_game_over();
     run_game_loop_inner(state, registry, &mut choose_action);
+    // CR 104.1: whatever the loop did after the game ended — the rest of a
+    // turn-based draw's step, a trigger collected on the way out — did not
+    // happen.
+    state.settle_game_end(over_on_entry);
 }
 
 fn run_game_loop_inner<F>(

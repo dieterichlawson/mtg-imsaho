@@ -75,6 +75,36 @@ fn laboratory_maniac_replaces_the_empty_draw_loss_for_its_controller() {
     }
 }
 
+/// CR 104.1: "a game ends immediately when a player wins". A spell whose
+/// draw is replaced by the Maniac's win stops there — Desperate Ravings' "then
+/// discard a card at random" used to run after "wins the game", logging a
+/// discard and moving a card in a game that was already over (issue #622).
+/// The check is the engine's, at resolution, not the card's: nothing in
+/// Desperate Ravings knows the game can end under it.
+#[test]
+fn a_spell_stops_resolving_when_laboratory_maniac_wins_mid_resolution() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_permanent(&mut state, &reg, "Laboratory Maniac", P0);
+    stock_library(&mut state, &reg, P0, 1);
+    let bystander = spell_in_hand(&mut state, &reg, "Divination", P0);
+    let ravings = castable_spell(&mut state, &reg, "Desperate Ravings", P0);
+
+    let state = cast_and_resolve(&state, &reg, ravings, vec![]);
+
+    assert_eq!(state.result, Some(mtg_engine::state::GameResult::Winner(P0)),
+        "the second draw found the library empty and the Maniac won");
+    let messages: Vec<&str> = state.game_log.iter().map(|e| e.message.as_str()).collect();
+    let won = messages.iter().position(|m| m.contains("wins the game"))
+        .unwrap_or_else(|| panic!("the win is logged: {messages:?}"));
+    assert_eq!(won, messages.len() - 1,
+        "nothing is logged after the game is won: {messages:?}");
+    assert!(!messages.iter().any(|m| m.contains("discarded")),
+        "the discard never happened: {messages:?}");
+    assert_eq!(state.get_object(bystander).map(|o| o.zone), Some(Zone::Hand),
+        "no card left the hand after the game ended");
+}
+
 // ── Parallel Lives ──────────────────────────────────────────
 
 /// "If one or more tokens would be created under your control, twice that many

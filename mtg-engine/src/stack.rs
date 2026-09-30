@@ -193,8 +193,13 @@ pub(crate) fn is_target_legal(state: &GameState, target: &Target, target_req: &c
 /// For spells: checks target legality (CR 608.2b fizzle), calls `on_resolve`.
 /// For triggers: delegates to `triggers::resolve_next_trigger`.
 pub fn resolve_top_of_stack(state: &mut GameState, registry: &CardRegistry) {
+    let over_on_entry = state.is_game_over();
     resolve_top_of_stack_inner(state, registry);
     state.prune_effects_on_departed_objects();
+    // CR 104.1: a resolution that ends the game (a draw replaced by
+    // Laboratory Maniac's win) stops there — the rest of the card's
+    // `on_resolve` did not happen (issue #622).
+    state.settle_game_end(over_on_entry);
 }
 
 fn resolve_top_of_stack_inner(state: &mut GameState, registry: &CardRegistry) {

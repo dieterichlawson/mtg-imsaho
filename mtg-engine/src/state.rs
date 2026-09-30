@@ -207,6 +207,22 @@ pub struct GameState {
     /// Game result, if the game is over.
     pub result: Option<GameResult>,
 
+    /// The game as it stood the instant it ended (CR 104.1: "a game ends
+    /// immediately when a player wins"), captured by `end_game`.
+    ///
+    /// A game can end in the middle of something: Laboratory Maniac ends it
+    /// from inside a draw, and the spell or ability that asked for the draw
+    /// is a card's `on_resolve` that simply carries on when `draw_cards`
+    /// returns — Desperate Ravings discarded and Bloodgift Demon drained
+    /// after "wins the game" (issue #622). Nothing a card writes can be
+    /// trusted to check `is_game_over` after every step, so the engine does
+    /// it at its entry points instead: `settle_game_end` puts this snapshot
+    /// back, and whatever ran after the end is discarded — log lines, zone
+    /// moves, life changes, RNG draws and prompts alike. Not saved: a game
+    /// loaded from a file has already been settled.
+    #[serde(skip)]
+    pub final_state: Option<Box<GameState>>,
+
     /// Number of consecutive priority passes (resets on any non-pass action).
     pub consecutive_passes: u32,
 
@@ -575,6 +591,7 @@ impl GameState {
             resolving_ability_activator: None,
             resolving_spell: None,
             result: None,
+            final_state: None,
             consecutive_passes: 0,
             is_first_turn: true,
             events: Vec::new(),
@@ -2804,6 +2821,28 @@ impl GameState {
         }
         self.events.push(crate::events::GameEvent::GameEnded { result: result.clone() });
         self.result = Some(result);
+        self.final_state = Some(Box::new(self.clone()));
+    }
+
+    /// Put the game back the way it was when it ended, discarding anything
+    /// that ran after `end_game` (CR 104.1; see `final_state`). A no-op for
+    /// a game still in progress.
+    ///
+    /// Called by an engine entry point on its way out, with whether the game
+    /// was already over when it was entered. Only a game that ended *during*
+    /// the call is settled: a caller that deliberately drives a finished game
+    /// onward — a test stepping through turns after a deck-out it does not
+    /// care about — gets what it asked for, as before. Idempotent, so entry
+    /// points nest: a resolution inside a pass settles, and the pass's own
+    /// post-game work is discarded again when it settles in turn.
+    pub fn settle_game_end(&mut self, over_on_entry: bool) {
+        if over_on_entry {
+            return;
+        }
+        if let Some(frozen) = self.final_state.take() {
+            *self = (*frozen).clone();
+            self.final_state = Some(frozen);
+        }
     }
 
     pub fn player_loses(&mut self, player: PlayerId, reason: crate::events::LossReason) {
