@@ -1345,5 +1345,22 @@ fn load_deck_file(path: &str, registry: &CardRegistry) -> Decklist {
         die(&format!("Deck file '{path}' is empty"));
     }
 
+    // The runner deliberately enforces no deck minimum (CR 100.2a's 60 is for
+    // constructed play; small decks are how a playtester reaches the empty
+    // library). But a game cannot start from fewer cards than an opening
+    // hand: the opening draw of seven (CR 103.5) ran the library out, the
+    // player was recorded as drawing from an empty library before turn 1,
+    // and `--check-invariants` aborted at action 1 while a plain run lost
+    // the game on it with no turn played (#625). Refused here, with the
+    // reason, rather than found out that way.
+    let total: u64 = entries.iter().map(|(_, n)| u64::from(*n)).sum();
+    let hand = mtg_engine::state::OPENING_HAND_SIZE as u64;
+    if total < hand {
+        die(&format!(
+            "Deck file '{path}' has {total} card{} — fewer than the {hand} of an opening hand \
+             (CR 103.5), so the game could not start",
+            if total == 1 { "" } else { "s" }));
+    }
+
     Decklist { entries }
 }

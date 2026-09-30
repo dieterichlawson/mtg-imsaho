@@ -151,6 +151,41 @@ fn unknown_card_in_deck_file_panics() {
     fs::remove_file(deck_path).ok();
 }
 
+/// A deck smaller than an opening hand cannot start a game: the opening draw
+/// ran the library out before turn 1, so `--check-invariants` aborted at
+/// action 1 and a plain run lost without a turn played (#625). Refused at
+/// load, naming the reason; a deck of exactly seven is still accepted.
+#[test]
+fn deck_file_smaller_than_an_opening_hand_is_refused() {
+    let deck_path = "/tmp/test_deck_too_small.txt";
+    fs::write(deck_path, "3 Island\n2 Laboratory Maniac\n").unwrap();
+    let output = runner()
+        .args(["--p1", "random", "--p2", "random", "--deck1", deck_path, "--deck2", "rg",
+               "--seed", "5", "--check-invariants", "-q"])
+        .output()
+        .expect("failed to run");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!output.status.success(), "a five-card deck is refused: {stdout}");
+    assert!(stderr.contains("has 5 cards") && stderr.contains("opening hand"),
+        "the refusal says why: {stderr}");
+    assert!(!stdout.contains("INVARIANT VIOLATION") && !stderr.contains("INVARIANT VIOLATION"),
+        "it is refused, not found out by the invariant checker: {stdout}{stderr}");
+    fs::remove_file(deck_path).ok();
+
+    let deck_path = "/tmp/test_deck_exactly_seven.txt";
+    fs::write(deck_path, "7 Island\n").unwrap();
+    let output = runner()
+        .args(["--p1", "random", "--p2", "random", "--deck1", deck_path, "--deck2", "rg",
+               "--seed", "5", "--check-invariants", "-q"])
+        .output()
+        .expect("failed to run");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(output.status.success(), "seven cards is an opening hand: {stdout}{stderr}");
+    fs::remove_file(deck_path).ok();
+}
+
 #[test]
 fn missing_deck_file_panics() {
     let output = runner()
