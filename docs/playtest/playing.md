@@ -1178,3 +1178,14 @@ illegal or dubious resolutions do.
   hand-castable spell and ability offered, no plan tapping more mana than the
   cost, floating mana used before new taps, and no ability plan spending the only
   source of a colour the hand needs. Recheck the fixes for #615-#617 first
+- L54 [proposed 2026-09-30, from L31 and #626] the response window that isn't
+  there. Auto-pass skips any window whose only actions are mana abilities, so an
+  action that needs a mana tap to BECOME visible is never reachable in response.
+  Give a seat a sacrifice-cost ability (Disciple of Griselbrand `{1}`, Skirsdag
+  Cultist `{R},{T}`; Blazing Torch or Selfless Cathar as controls without a
+  free-sacrifice cost), untapped lands, an empty pool and no instants. Have the
+  opponent point removal at a creature, attack, or cast anything, and check the
+  seat is prompted (CR 117.3c) with the ability on the menu. Repeat in its own
+  main phase with nothing castable. Then look for any other ability family that
+  `legal/abilities.rs` offers only with mana already floating — each is the same
+  hole. The fuzzer cannot see this: the random seat only floats mana by chance
