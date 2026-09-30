@@ -608,3 +608,73 @@ fn a_two_mana_rock_pays_an_odd_x_the_lands_cannot() {
     let dp_obj = funded.get_object(dp).expect("Devil's Play is on the stack");
     assert_eq!(dp_obj.x_value, Some(2), "the announced X is the X that was cast");
 }
+
+/// The description a funding prompt was raised with.
+fn funding_description(state: &GameState) -> String {
+    match state.awaiting_action.as_ref() {
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseXFunding { description, .. }, ..
+        }) => description.clone(),
+        other => panic!("expected ChooseXFunding awaiting_action, got {other:?}"),
+    }
+}
+
+/// Issue #613: the X prompt is the whole decision for Devil's Play — 2 for a
+/// 2/2, everything at the opponent's face, zero at yourself — and the spell
+/// is held off the stack while it is asked, so no view shows its target.
+/// The prompt itself names what it funds, for each of the three.
+#[test]
+fn a_spell_funding_prompt_names_the_target_it_funds() {
+    use mtg_engine::actions::Target;
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let dp = spell_in_hand(&mut state, &registry, "Devil's Play", P0);
+    for _ in 0..3 {
+        named_permanent(&mut state, &registry, "Mountain", P0);
+    }
+    let bear = ready_creature(&mut state, P1, 2, 2);
+    let legal = engine::legal_actions(&state, &registry);
+    let cast_at = |t: &Target| legal.actions.iter()
+        .find(|a| matches!(a, Action::CastSpell { object_id, targets, .. }
+            if *object_id == dp && targets.as_slice() == std::slice::from_ref(t)))
+        .unwrap_or_else(|| panic!("Devil's Play is offered at {t:?}"))
+        .clone();
+
+    let bear_says = format!("targeting {}", state.obj_name(bear));
+    for (target, says) in [
+        (Target::Object(bear), bear_says.as_str()),
+        (Target::Player(P1), "targeting your opponent (p1)"),
+        (Target::Player(P0), "targeting you:"),
+    ] {
+        let post = engine::submit_action(&state, &cast_at(&target), &registry);
+        let desc = funding_description(&post);
+        assert!(desc.contains(says), "the X prompt aimed at {target:?} says so: {desc:?}");
+        assert!(desc.contains("choose X funding"), "and is still the X prompt: {desc:?}");
+    }
+}
+
+/// Issue #613, the ability half: Kessig Wolf Run's target is held in
+/// `pending_ability_effect` while X is asked, and is named in the prompt.
+#[test]
+fn an_ability_funding_prompt_names_the_target_it_funds() {
+    use mtg_engine::actions::Target;
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let run = named_permanent(&mut state, &registry, "Kessig Wolf Run", P0);
+    named_permanent(&mut state, &registry, "Mountain", P0);
+    named_permanent(&mut state, &registry, "Forest", P0);
+    named_permanent(&mut state, &registry, "Mountain", P0);
+    let bear = ready_creature(&mut state, P0, 2, 2);
+    state.priority_player = Some(P0);
+
+    let legal = engine::legal_actions(&state, &registry);
+    let act = legal.actions.iter().find(|a|
+        matches!(a, Action::ActivateAbility { object_id, ability_index: 1, targets, .. }
+            if *object_id == run && targets.as_slice() == [Target::Object(bear)]))
+        .expect("the {X}{R}{G} ability is offered at the bear")
+        .clone();
+    let post = engine::submit_action(&state, &act, &registry);
+    let desc = funding_description(&post);
+    assert!(desc.contains(&format!("targeting {}", state.obj_name(bear))),
+        "the X prompt names the creature it pumps: {desc:?}");
+}

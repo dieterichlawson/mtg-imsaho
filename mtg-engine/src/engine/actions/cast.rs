@@ -190,7 +190,8 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
                     player,
                     source: object_id,
                     choice: crate::state::ResolutionChoiceKind::ChooseXFunding {
-                        description: format!("{spell_name}: choose X funding (0-{})",
+                        description: format!("{spell_name}{}: choose X funding (0-{})",
+                            announced_targets_suffix(&state, player, targets),
                             probe_options.max_announceable_x()),
                         options: probe_options,
                         source_id: object_id,

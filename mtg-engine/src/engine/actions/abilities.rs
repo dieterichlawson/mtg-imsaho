@@ -284,7 +284,8 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
                         player,
                         source: object_id,
                         choice: crate::state::ResolutionChoiceKind::ChooseXFunding {
-                            description: format!("{name}: choose X funding (0-{})",
+                            description: format!("{name}{}: choose X funding (0-{})",
+                                announced_targets_suffix(state, player, targets),
                                 options.max_announceable_x()),
                             options,
                             source_id: object_id,

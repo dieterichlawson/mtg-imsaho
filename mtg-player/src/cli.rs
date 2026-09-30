@@ -3272,9 +3272,11 @@ impl CliPlayer {
                 // A silent re-render is indistinguishable from a hung game —
                 // same rule as the main menu (#76, issue #122).
                 TargetInput::Invalid => {
+                    // The Cancel row's own words: at an ability's chooser it
+                    // abandons an activation, not a cast (#613).
                     notice = Some(format!(
-                        "Invalid input '{}' — enter a number 0-{}, or c to cancel the cast",
-                        quote_input(&input), labels.len() - 1));
+                        "Invalid input '{}' — enter a number 0-{}, or c to {}",
+                        quote_input(&input), labels.len() - 1, cancel.to_lowercase()));
                 }
             }
         }
@@ -5926,11 +5928,20 @@ impl CliPlayer {
     /// pool mana (first) and then by source category (lands → rocks → dorks).
     /// Pool drains prefer colors the pool has the most of so the player's
     /// "scarce" colored mana is preserved when possible.
+    /// The reader line of the X prompt. Both funding prompts are
+    /// cancellable (#123, #290), and what cancelling abandons is named for
+    /// what it is: Kessig Wolf Run's `{X}{R}{G}, {T}` is an activation, and
+    /// the engine logs it as one — the prompt called it a cast (#613).
+    fn x_funding_hint(max_x: u32, is_ability: bool) -> String {
+        let what = if is_ability { "activation" } else { "cast" };
+        format!("  X (0-{max_x}, c = cancel the {what}) = ")
+    }
+
     fn prompt_x_funding(
         view: &GameView,
         options: &mtg_engine::funding::FundingOptions,
         description: &str,
-        can_cancel: bool,
+        is_ability: bool,
     ) -> Action {
         begin_decision(view.you, "x-funding");
         use mtg_engine::actions::ResolvedChoice;
@@ -5993,11 +6004,7 @@ impl CliPlayer {
         let _ = execute!(out, cursor::MoveTo(col, r));
         let _ = out.flush();
 
-        let hint = if can_cancel {
-            format!("  X (0-{}, c = cancel the cast) = ", options.max_announceable_x())
-        } else {
-            format!("  X (0-{}) = ", options.max_announceable_x())
-        };
+        let hint = Self::x_funding_hint(options.max_announceable_x(), is_ability);
         // The refusal goes on its own row and stays there while the player
         // retypes. It used to be written over the PROMPT row and slept on,
         // so the message and the prompt were never on screen together —
@@ -6019,7 +6026,7 @@ impl CliPlayer {
             let input = input.trim();
             // Cancelling a spell's X prompt backs out of the whole cast —
             // the engine un-stashes it with nothing spent (issue #123).
-            if can_cancel && (input == "c" || input == "cancel") {
+            if input == "c" || input == "cancel" {
                 return Action::ResolveChoice {
                     choice: ResolvedChoice::ChosenTarget(None),
                 };
@@ -7362,14 +7369,15 @@ impl Player for CliPlayer {
         // X-cost funding: prompt the user for an X value and auto-distribute
         // across pool mana and tap sources (pool first, then by category).
         // A richer per-source UI could be added later.
-        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseXFunding { options, description, .. }) =
-            legal.resolution_prompt.as_ref()
+        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseXFunding {
+            options, description, is_ability, ..
+        }) = legal.resolution_prompt.as_ref()
         {
             // Nothing is spent at either funding prompt now: an X-cost
             // ability announces X before it pays, the way a spell does
             // (CR 601.2b before 601.2h via 602.2b, issue #290), so both are
             // cancellable (#123).
-            return Self::prompt_x_funding(view, options, description, true);
+            return Self::prompt_x_funding(view, options, description, *is_ability);
         }
 
         // Exile-from-graveyard: prompt for a space-separated list of indices.
@@ -7840,6 +7848,14 @@ mod tests {
         assert!(str_cols(&line) <= 44, "the line must fit the panel: {line:?}");
         assert!(line.starts_with("0, 2, 4"), "the low end is stated: {line:?}");
         assert!(line.ends_with("\u{2026} 40"), "the ceiling is stated: {line:?}");
+    }
+
+    /// Issue #613: Kessig Wolf Run's X prompt offered to "cancel the cast".
+    /// It is an activation, and the engine logs it as one.
+    #[test]
+    fn the_x_prompt_names_what_cancelling_abandons() {
+        assert_eq!(CliPlayer::x_funding_hint(2, false), "  X (0-2, c = cancel the cast) = ");
+        assert_eq!(CliPlayer::x_funding_hint(3, true), "  X (0-3, c = cancel the activation) = ");
     }
 
     /// One equip label per Champion, differing only in whom it targets and

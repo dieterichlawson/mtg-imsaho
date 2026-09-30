@@ -10,6 +10,34 @@ pub(crate) fn card_name(state: &GameState, _registry: &CardRegistry, obj_id: Obj
     state.obj_name(obj_id)
 }
 
+/// " targeting Grizzly Bears (#57)" — what an announced spell or ability is
+/// aimed at, worded for `viewer`, the player the prompt is put to.
+///
+/// The announcement asks its questions after the targets are chosen, and
+/// while it does the spell is held off the stack (`pending_spell_cast`,
+/// `pending_ability_effect`), where no view shows it. So a prompt raised
+/// mid-announcement — how big X is — has to say what it is funding, or a
+/// seat that did not just type the target (a resumed game, a model reading
+/// the prompt cold) sizes a burn spell without knowing whether it hits a
+/// Bear, the opponent or its own caster (issue #613).
+pub(crate) fn announced_targets_suffix(
+    state: &GameState,
+    viewer: PlayerId,
+    targets: &[crate::actions::Target],
+) -> String {
+    use crate::actions::Target;
+    if targets.is_empty() {
+        return String::new();
+    }
+    let names: Vec<String> = targets.iter().map(|t| match t {
+        Target::Object(id) => state.obj_name(*id),
+        Target::Player(p) if *p == viewer => "you".to_string(),
+        Target::Player(p) => format!("your opponent (p{})", p.0),
+        Target::Illegal => "(no longer a legal target)".to_string(),
+    }).collect();
+    format!(" targeting {}", names.join(", "))
+}
+
 /// The tail that tells two same-named permanents apart in a prompt:
 /// ` [source 2/2, #42]`, the same tail the target pickers and the CR 603.3b
 /// trigger-ordering menu use.
