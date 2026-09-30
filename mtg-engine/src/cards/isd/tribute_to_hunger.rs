@@ -73,9 +73,7 @@ impl CardBehavior for TributeToHunger {
         crate::destruction::sacrifice_by(state, *id, "to Tribute to Hunger", registry);
 
         if toughness > 0 {
-            state.gain_life(beneficiary, toughness);
-            state.log(crate::state::LogLevel::Event,
-                format!("Tribute to Hunger: p{} gained {toughness} life", beneficiary.0));
+            state.change_life_for(beneficiary, toughness, "Tribute to Hunger");
         }
     }
 }

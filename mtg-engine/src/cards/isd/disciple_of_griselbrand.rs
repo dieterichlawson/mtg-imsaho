@@ -58,9 +58,7 @@ impl CardBehavior for DiscipleOfGriselbrand {
             .max(0);
 
         if toughness > 0 {
-            state.change_life(controller, toughness);
-            state.log(crate::state::LogLevel::Event,
-                format!("Disciple of Griselbrand: gained {toughness} life"));
+            state.change_life_for(controller, toughness, "Disciple of Griselbrand");
         }
     }
 }

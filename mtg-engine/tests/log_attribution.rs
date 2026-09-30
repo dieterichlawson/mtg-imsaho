@@ -712,6 +712,26 @@ fn a_loyalty_activation_names_its_target_before_paying_its_cost() {
     assert!(activated < paid, "announced before the cost is paid: {lines:#?}");
 }
 
+/// A card's life change is one line, naming the card and carrying the total.
+/// It was two: the generic "p0 gained 4 life (24)" and then the card's own
+/// "Maw of the Mire: p0 gained 4 life" restating it (#628, which saw it on
+/// Tribute to Hunger and Falkenrath Noble).
+#[test]
+fn a_cards_life_gain_is_logged_once_with_its_source_and_total() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let land = named_permanent(&mut state, &reg, "Forest", P1);
+    let maw = castable_spell(&mut state, &reg, "Maw of the Mire", P0);
+
+    let state = cast_and_resolve(&state, &reg, maw, vec![Target::Object(land)]);
+
+    assert_eq!(state.get_player(P0).life, 24, "test setup: the life was gained");
+    let lines = log_lines(&state);
+    let gains: Vec<&String> = lines.iter().filter(|l| l.contains("gained 4 life")).collect();
+    assert_eq!(gains, vec!["Maw of the Mire: p0 gained 4 life (24)"],
+        "one line, attributed, with the total: {lines:#?}");
+}
+
 // ---------------------------------------------------------------------------
 // #467 — a destroy reports what happened, and names the cause before it
 // ---------------------------------------------------------------------------

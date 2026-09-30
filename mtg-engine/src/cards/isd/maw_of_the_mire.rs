@@ -52,8 +52,6 @@ impl CardBehavior for MawOfTheMire {
 
         crate::destruction::try_destroy_by(state, *land_id, "Maw of the Mire", registry);
 
-        state.change_life(controller, 4);
-        state.log(crate::state::LogLevel::Event,
-            format!("Maw of the Mire: p{} gained 4 life", controller.0));
+        state.change_life_for(controller, 4, "Maw of the Mire");
     }
 }

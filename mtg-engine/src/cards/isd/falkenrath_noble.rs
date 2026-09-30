@@ -61,8 +61,6 @@ impl CardBehavior for FalkenrathNoble {
 /// runs directly instead of round-tripping through `apply_pending_effect`.
 fn drain(state: &mut GameState, controller: PlayerId, chosen_targets: &[Target], _registry: &CardRegistry) {
     let Some(Target::Player(pid)) = chosen_targets.first() else { return };
-    state.lose_life(*pid, 1);
-    state.gain_life(controller, 1);
-    state.log(crate::state::LogLevel::Event,
-        format!("Falkenrath Noble: p{} lost 1 life, p{} gained 1 life", pid.0, controller.0));
+    state.change_life_for(*pid, -1, "Falkenrath Noble");
+    state.change_life_for(controller, 1, "Falkenrath Noble");
 }

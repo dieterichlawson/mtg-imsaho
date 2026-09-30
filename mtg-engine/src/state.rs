@@ -3243,6 +3243,21 @@ impl GameState {
     /// the event — which meant a site that forgot the event silently broke any
     /// "whenever you gain life" watcher. `delta` is signed: negative loses.
     pub fn change_life(&mut self, player: crate::ids::PlayerId, delta: i32) {
+        self.change_life_inner(player, delta, None);
+    }
+
+    /// `change_life`, naming the effect that caused it: "Tribute to Hunger:
+    /// p1 gained 3 life (23)". One line, with the source and the total.
+    ///
+    /// A card that wanted its name on a life change used to call
+    /// `change_life` and then write its own line, so every such change was
+    /// logged twice — "p1 gained 3 life (23)" and then "Tribute to Hunger: p1
+    /// gained 3 life" (#628). Same shape as `discard_card_for`.
+    pub fn change_life_for(&mut self, player: crate::ids::PlayerId, delta: i32, source: &str) {
+        self.change_life_inner(player, delta, Some(source));
+    }
+
+    fn change_life_inner(&mut self, player: crate::ids::PlayerId, delta: i32, source: Option<&str>) {
         self.change_life_quiet(player, delta);
         if delta == 0 {
             return;
@@ -3255,8 +3270,9 @@ impl GameState {
         // pipeline) use `change_life_quiet`.
         let verb = if delta > 0 { "gained" } else { "lost" };
         let new_life = self.get_player(player).life;
+        let prefix = source.map_or_else(String::new, |s| format!("{s}: "));
         self.log(LogLevel::Info,
-            format!("p{} {} {} life ({})", player.0, verb, delta.abs(), new_life));
+            format!("{prefix}p{} {} {} life ({})", player.0, verb, delta.abs(), new_life));
     }
 
     /// `change_life` without the generic log line, for callers that log the

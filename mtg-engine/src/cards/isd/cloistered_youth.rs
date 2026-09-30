@@ -111,9 +111,7 @@ impl CardBehavior for CloisteredYouth {
         // this is only reached for a permanent that was an Unholy Fiend when
         // the end step began.
         let controller = state.last_known_controller(self_id);
-        state.change_life(controller, -1);
-        state.log(LogLevel::Event,
-            format!("Unholy Fiend: p{} loses 1 life", controller.0));
+        state.change_life_for(controller, -1, "Unholy Fiend");
     }
 
     fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool {

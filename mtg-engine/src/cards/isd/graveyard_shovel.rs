@@ -102,9 +102,7 @@ impl CardBehavior for GraveyardShovel {
 
         if was_creature {
             let controller = crate::cards::helpers::ability_controller(state, source_id);
-            state.gain_life(controller, 2);
-            state.log(crate::state::LogLevel::Event,
-                format!("Graveyard Shovel: p{} gained 2 life (creature exiled)", controller.0));
+            state.change_life_for(controller, 2, "Graveyard Shovel (creature exiled)");
         }
     }
 }

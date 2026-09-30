@@ -46,10 +46,8 @@ impl CardBehavior for Paraselene {
                 .count()).unwrap_or(u32::MAX);
 
         if destroyed_count > 0 {
-            state.change_life(controller, i32::try_from(destroyed_count).unwrap_or(i32::MAX));
-            state.log(crate::state::LogLevel::Event,
-                format!("Paraselene destroyed {} enchantments, p{} gained {} life",
-                    destroyed_count, controller.0, destroyed_count));
+            state.change_life_for(controller, i32::try_from(destroyed_count).unwrap_or(i32::MAX),
+                &format!("Paraselene ({destroyed_count} enchantments destroyed)"));
         } else {
             state.log(crate::state::LogLevel::Event,
                 "Paraselene: no enchantments to destroy".into());
