@@ -1189,3 +1189,14 @@ illegal or dubious resolutions do.
   main phase with nothing castable. Then look for any other ability family that
   `legal/abilities.rs` offers only with mana already floating — each is the same
   hole. The fuzzer cannot see this: the random seat only floats mana by chance
+- L55 [proposed 2026-09-30, from L30, #622 and #236] nothing happens after
+  "wins the game" (CR 104.1). `end_game` returns into whatever called it, and a
+  card's `on_resolve` carries on. Go through every card whose effect continues
+  after a step that can end the game — draw-then-X (Desperate Ravings, Bloodgift
+  Demon, Civilized Scholar, Murder of Crows), damage-then-X (Olivia Voldaren,
+  Brimstone Volley), life-loss-then-X (Tribute to Hunger's gain, Falkenrath Noble)
+  — set up the kill (Laboratory Maniac and an empty library, or exactly lethal
+  life) and check that no log line, zone move, life change, RNG draw or prompt
+  follows the win or loss line. Civilized Scholar's discard prompt is only hidden
+  because `legal_actions` is empty after game over — check the LLM and GUI
+  seats are not handed it anyway
