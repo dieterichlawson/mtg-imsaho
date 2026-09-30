@@ -32,7 +32,9 @@ pub(crate) fn announced_targets_suffix(
     let names: Vec<String> = targets.iter().map(|t| match t {
         Target::Object(id) => state.obj_name(*id),
         Target::Player(p) if *p == viewer => "you".to_string(),
-        Target::Player(p) => format!("your opponent (p{})", p.0),
+        // No seat number: the LLM seat's prompt speaks only of "you" and
+        // "your opponent" (#465), and it reads this description as it is.
+        Target::Player(_) => "your opponent".to_string(),
         Target::Illegal => "(no longer a legal target)".to_string(),
     }).collect();
     format!(" targeting {}", names.join(", "))

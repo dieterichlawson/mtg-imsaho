@@ -687,7 +687,7 @@ fn a_spell_funding_prompt_names_the_target_it_funds() {
     let bear_says = format!("targeting {}", state.obj_name(bear));
     for (target, says) in [
         (Target::Object(bear), bear_says.as_str()),
-        (Target::Player(P1), "targeting your opponent (p1)"),
+        (Target::Player(P1), "targeting your opponent:"),
         (Target::Player(P0), "targeting you:"),
     ] {
         let post = engine::submit_action(&state, &cast_at(&target), &registry);
