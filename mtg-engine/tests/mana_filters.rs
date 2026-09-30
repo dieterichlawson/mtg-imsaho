@@ -288,3 +288,66 @@ fn an_unfundable_spell_is_not_offered() {
     assert!(!castable(&state, &reg, spell),
         "one filter and one Forest make one white mana, not two");
 }
+
+/// The `CastSpell` for `spell`, as the menu offers it.
+fn offered_cast(state: &mtg_engine::state::GameState, reg: &CardRegistry,
+                spell: mtg_engine::ids::ObjectId) -> Option<Action> {
+    mtg_engine::engine::legal_actions(state, reg).actions.into_iter()
+        .find(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == spell))
+}
+
+/// Issue #615: Shimmering Grotto and an untapped Avacyn's Pilgrim cast
+/// Avacynian Priest `{1}{W}` — the Pilgrim's `{W}` and the Grotto's `{C}`.
+/// The planner took the Grotto's filter for the `{W}` (it out-ranks a
+/// creature), then had nothing to fund the filter's own `{1}`, and the Priest
+/// was missing from the menu until the player tapped the Pilgrim by hand.
+#[test]
+fn a_mana_creature_pays_the_pip_a_filter_would_need_funding_for() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_permanent(&mut state, &reg, "Shimmering Grotto", P0);
+    named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
+    let priest = spell_in_hand(&mut state, &reg, "Avacynian Priest", P0);
+
+    let action = offered_cast(&state, &reg, priest)
+        .expect("Pilgrim for {W} and Grotto for {C} pay {1}{W}; the cast has to be offered");
+    let after = mtg_engine::engine::submit_action(&state, &action, &reg);
+    assert!(after.stack.iter().any(|e| matches!(e,
+            mtg_engine::state::StackEntry::Spell(id) if *id == priest)),
+        "and the offered cast happens");
+}
+
+/// Issue #615, the same mechanism with a Forest beside them: the plan for
+/// `{1}{W}` tapped all three sources for two mana.
+#[test]
+fn a_two_mana_spell_taps_two_sources_not_three() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_permanent(&mut state, &reg, "Forest", P0);
+    named_permanent(&mut state, &reg, "Shimmering Grotto", P0);
+    named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
+    let priest = spell_in_hand(&mut state, &reg, "Avacynian Priest", P0);
+
+    let Some(Action::CastSpell { tap_plan, .. }) = offered_cast(&state, &reg, priest) else {
+        panic!("Avacynian Priest is castable");
+    };
+    assert_eq!(tap_plan.len(), 2, "{{1}}{{W}} needs two sources, the plan was {tap_plan:?}");
+}
+
+/// Issue #615: mana already floating funds the filter's `{1}`. With `{W}`
+/// floating, Shimmering Grotto alone makes the `{R}`; tapping a Forest to pay
+/// the filter wastes a land.
+#[test]
+fn floating_mana_funds_the_filter() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_permanent(&mut state, &reg, "Forest", P0);
+    named_permanent(&mut state, &reg, "Shimmering Grotto", P0);
+    add_mana(&mut state, P0, &[(ManaType::White, 1)]);
+    let spell = spell_in_hand(&mut state, &reg, "Geistflame", P0);
+
+    let Some(Action::CastSpell { tap_plan, .. }) = offered_cast(&state, &reg, spell) else {
+        panic!("Geistflame is castable off the floating {{W}} and the Grotto");
+    };
+    assert_eq!(tap_plan.len(), 1, "the Grotto alone, funded by the floating {{W}}: {tap_plan:?}");
+}

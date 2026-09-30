@@ -111,6 +111,14 @@ fn ability_producing(source: &ManaSource, mana_type: ManaType) -> Option<usize> 
     None
 }
 
+/// The cheapest ability of `source` that produces `mana_type`: a free one
+/// over a filter, when a source has both.
+fn cheapest_ability_producing(source: &ManaSource, mana_type: ManaType) -> Option<&ManaAbilityDef> {
+    source.abilities.iter()
+        .filter(|a| a.produced.iter().any(|&(mt, amount)| mt == mana_type && amount > 0))
+        .min_by_key(|a| ability_cost(a))
+}
+
 /// Check if a source can produce a specific color.
 fn can_produce_color(source: &ManaSource, color: Color) -> bool {
     ability_producing(source, ManaType::from(color)).is_some()
@@ -306,15 +314,25 @@ pub fn compute_autotap(
     for color in colored_needs {
         let mt = ManaType::from(color);
         // Find the best available source that can produce this color.
+        //
+        // What the ability costs ranks ahead of the opportunity-cost tier. A
+        // filter ("{1}, {T}: Add one mana of any color") paying a pip takes a
+        // second source to fund it, so it is two taps where a source that
+        // makes the colour for free is one. Ranking by tier alone let
+        // Shimmering Grotto (tier 1) beat Avacyn's Pilgrim (tier 3) for {W}:
+        // a {1}{W} spell off Grotto + Pilgrim was then unpayable and missing
+        // from the menu, and off Forest + Pilgrim + Grotto it tapped all
+        // three (issue #615).
         let best = available.iter()
             .enumerate()
-            .filter(|&(_, &src_idx)| ability_producing(&sources[src_idx], mt).is_some())
-            .min_by_key(|&(_, &src_idx)| source_sort_key(&sources[src_idx], &hand_demand));
+            .filter_map(|(pos, &src_idx)| cheapest_ability_producing(&sources[src_idx], mt)
+                .map(|ability| (pos, src_idx, ability_cost(ability))))
+            .min_by_key(|&(_, src_idx, cost)| (cost, source_sort_key(&sources[src_idx], &hand_demand)));
 
-        if let Some((avail_pos, &src_idx)) = best {
+        if let Some((avail_pos, src_idx, _)) = best {
             let source = &sources[src_idx];
-            let ability_idx = ability_producing(source, mt).unwrap();
-            let ability = source.abilities.iter().find(|a| a.ability_index == ability_idx).unwrap();
+            let ability = cheapest_ability_producing(source, mt).unwrap();
+            let ability_idx = ability.ability_index;
             let total_produced = ability_total_mana(ability);
             // 1 mana used for the colored pip, rest is excess.
             excess_mana += total_produced - 1;
@@ -328,9 +346,17 @@ pub fn compute_autotap(
     }
 
     // Phase 3: Satisfy generic mana.
-    // First use excess from already-tapped sources.
+    // First use excess from already-tapped sources, then whatever floating
+    // mana Phase 0 left over. The pool is only left over when Phase 0 paid
+    // the spell's own generic in full, so what it can still pay is the `{1}`
+    // a filter added above: a floating {W} funds Shimmering Grotto's `{1}`
+    // for {R} without tapping a Forest to do it (issue #615).
     if remaining.generic > 0 {
         let used = excess_mana.min(remaining.generic);
+        remaining.generic -= used;
+    }
+    if remaining.generic > 0 {
+        let used = sim_pool.total().min(remaining.generic);
         remaining.generic -= used;
     }
 
@@ -927,7 +953,37 @@ mod tests {
             }, vec![
                 make_source(1, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)]),
             ]),
+            // Issue #615: the filter out-ranked the creature for the pip and
+            // then had nothing left to fund its own {1}.
+            ("a Shimmering Grotto and a mana creature", ManaPool::new(), vec![
+                make_source(1, ManaSourceKind::NonBasicMana, grotto_abilities()),
+                make_source(2, ManaSourceKind::Creature, vec![mono_ability(ManaType::Green)]),
+            ]),
+            ("a Shimmering Grotto, a Plains and a mana creature", ManaPool::new(), vec![
+                make_source(1, ManaSourceKind::NonBasicMana, grotto_abilities()),
+                make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::White)]),
+                make_source(3, ManaSourceKind::Creature, vec![mono_ability(ManaType::Green)]),
+            ]),
+            // Issue #615: mana left floating can fund the filter's {1}.
+            ("a Shimmering Grotto, with a floating W", {
+                let mut p = ManaPool::new();
+                p.add(ManaType::White, 1);
+                p
+            }, vec![
+                make_source(1, ManaSourceKind::NonBasicMana, grotto_abilities()),
+            ]),
         ]
+    }
+
+    /// Shimmering Grotto: `{T}: Add {C}` and `{1}, {T}: Add one mana of any
+    /// color`, one entry per colour, as the card declares them.
+    fn grotto_abilities() -> Vec<ManaAbilityDef> {
+        let mut abilities = vec![mono_ability(ManaType::Colorless)];
+        for (i, mt) in [ManaType::White, ManaType::Blue, ManaType::Black,
+                        ManaType::Red, ManaType::Green].into_iter().enumerate() {
+            abilities.push(filter_ability(i + 1, mt));
+        }
+        abilities
     }
 
     fn planner_costs() -> Vec<ManaCost> {
@@ -974,6 +1030,33 @@ mod tests {
                     .collect();
                 assert!(worked.is_empty(),
                     "{label}: no plan offered for {cost}, but {:?} pays it", worked.first());
+            }
+        }
+    }
+
+    /// A plan taps no more sources than the fewest that would have paid.
+    ///
+    /// Issue #615: a `{1}{W}` spell off Forest, Avacyn's Pilgrim and
+    /// Shimmering Grotto tapped all three — the filter took the pip, which
+    /// the Pilgrim could have paid for free, and then its own `{1}` needed a
+    /// third source. Which sources are tapped is the heuristic's business;
+    /// how many is not.
+    #[test]
+    fn a_plan_taps_no_more_sources_than_the_fewest_that_would_pay() {
+        for (label, pool, sources) in planner_cases() {
+            for cost in planner_costs() {
+                let Some(plan) = compute_autotap(&cost, &pool, &sources, &[]) else { continue };
+                // Funded abilities after the free ones that fund them, as a
+                // real plan runs.
+                let fewest = every_plan(&sources).into_iter()
+                    .map(|mut p| { free_abilities_first(&mut p, &sources); p })
+                    .filter(|p| plan_pays(p, &pool, &sources, &cost))
+                    .map(|p| p.len())
+                    .min()
+                    .expect("the planner's own plan pays");
+                assert_eq!(plan.len(), fewest,
+                    "{label}: {plan:?} taps {} sources for {cost}, but {fewest} would do",
+                    plan.len());
             }
         }
     }
