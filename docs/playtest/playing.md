@@ -1167,3 +1167,14 @@ illegal or dubious resolutions do.
   path in `cast.rs` returns before the "up to N" slot and the exile prompt, so
   a future card with X AND either would skip a question — re-walk this the day
   such a card is added
+- L53 [proposed 2026-09-30, from L10 and #615/#616/#617] planner vs hand-tap
+  parity. The menu offers a cast only when `compute_autotap` finds a plan, so a
+  planner miss is a MISSING legal action that no invariant sees (they check that
+  offered actions execute, not that executable ones are offered). Build a board
+  mixing Shimmering Grotto, a mana creature (Avacyn's Pilgrim), a basic and a
+  utility land, with a hand of 2-3 mana spells and a mana-costed activated
+  ability. At every main phase write down what you could cast by tapping by hand,
+  then compare that list and each `(tap …)` plan against the menu: every
+  hand-castable spell and ability offered, no plan tapping more mana than the
+  cost, floating mana used before new taps, and no ability plan spending the only
+  source of a colour the hand needs. Recheck the fixes for #615-#617 first
