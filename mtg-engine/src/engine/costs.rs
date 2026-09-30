@@ -227,14 +227,25 @@ pub fn additional_cost_plan(
             sacrifice_options: vec![],
             exile_x_max: None,
         },
-        AdditionalCost::ExileXFromGraveyard => AdditionalCostPlan {
-            // X may be zero, so this is always payable.
-            payable: true,
-            exile_x_max: Some(u32::try_from(graveyard(false)).unwrap_or(u32::MAX)),
-            label: Some("exile cards from GY".into()),
-            cost: Some(cost),
-            sacrifice_options: vec![],
-        },
+        AdditionalCost::ExileXFromGraveyard => {
+            let available = graveyard(false);
+            AdditionalCostPlan {
+                // X may be zero, so this is always payable.
+                payable: true,
+                exile_x_max: Some(u32::try_from(available).unwrap_or(u32::MAX)),
+                // With nothing to exile the cast asks nothing about it (see
+                // `exile_prompt`), so the row has to say what it will do —
+                // it read "exile cards from GY" over a graveyard of none
+                // (issue #614, the #254 rule for a forced choice).
+                label: Some(if available == 0 {
+                    "nothing in GY to exile, X=0".into()
+                } else {
+                    "exile cards from GY".into()
+                }),
+                cost: Some(cost),
+                sacrifice_options: vec![],
+            }
+        }
     }
 }
 
@@ -281,6 +292,15 @@ pub(crate) fn exile_prompt(
             }
             let options = gy(false);
             let max = options.len();
+            // An empty graveyard leaves exactly one answer — exile nothing,
+            // X = 0 — and a question with one answer is not asked, the way
+            // the funding prompt is not raised when no mana can pay for X.
+            // It used to put up a "choose 0-0 cards" screen that refused
+            // Enter and asked the player to mark cards that did not exist
+            // (issue #614). The cast row says what happens instead.
+            if options.is_empty() {
+                return None;
+            }
             Some(ExilePrompt {
                 description: format!(
                     "{spell_name}: choose 0-{max} cards to exile from your graveyard \

@@ -400,6 +400,50 @@ fn an_exile_cost_prompt_can_be_cancelled_with_nothing_spent() {
         cancelled.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
 }
 
+/// Issue #614: Harvest Pyre over an empty graveyard has one legal answer to
+/// "which cards do you exile" — none, X = 0 — and was asked it anyway, on a
+/// "choose 0-0 cards" screen. A question with one answer is not asked: the
+/// offered cast goes straight to the stack, and the row it was offered
+/// under says what it will do rather than "exile cards from GY".
+#[test]
+fn an_exile_x_cost_with_nothing_to_exile_is_not_asked() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.priority_player = Some(P0);
+    let pyre = spell_in_hand(&mut state, &registry, "Harvest Pyre", P0);
+    for _ in 0..2 {
+        named_permanent(&mut state, &registry, "Mountain", P0);
+    }
+    let bear = ready_creature(&mut state, P1, 2, 2);
+
+    let legal = engine::legal_actions(&state, &registry);
+    let row = legal.castable_spells.iter().find(|c| c.object_id == pyre)
+        .expect("Harvest Pyre is castable for X = 0");
+    let label = row.additional_cost_label.clone().unwrap_or_default();
+    assert!(!label.contains("exile cards"), "the row does not promise an exile: {label:?}");
+    let cast = legal.actions.iter().find(|a| matches!(a, Action::CastSpell { object_id, targets, .. }
+            if *object_id == pyre && targets.as_slice() == [mtg_engine::actions::Target::Object(bear)]))
+        .expect("offered at the bear").clone();
+
+    let post = engine::submit_action(&state, &cast, &registry);
+    assert!(post.awaiting_action.is_none(),
+        "nothing to choose, nothing asked: {:?}", post.awaiting_action);
+    assert_eq!(post.get_object(pyre).unwrap().zone, Zone::Stack, "the spell is cast");
+
+    // With a card to exile it is a choice again, and is asked.
+    let mut state = state;
+    let dead = ready_creature(&mut state, P0, 1, 1);
+    state.move_object(dead, Zone::Graveyard, &registry);
+    let legal = engine::legal_actions(&state, &registry);
+    let cast = legal.actions.iter().find(|a| matches!(a, Action::CastSpell { object_id, .. }
+            if *object_id == pyre)).expect("still offered").clone();
+    let post = engine::submit_action(&state, &cast, &registry);
+    assert!(matches!(post.awaiting_action,
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseExileFromGraveyard { .. }, .. })),
+        "one card in the graveyard is a choice of 0 or 1");
+}
+
 /// Issue #290: an X-cost ability announces X BEFORE it pays (CR 601.2b
 /// precedes 601.2h, via 602.2b). While the prompt is up the permanent is
 /// untapped, the mana unspent and nothing sacrificed — so the prompt is
