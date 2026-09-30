@@ -254,3 +254,42 @@ fn olivia_puts_nothing_on_the_stack_when_she_leaves() {
     assert_eq!(state.get_object(victim).unwrap().controller, P1,
         "and the Vampire is back with its owner regardless");
 }
+
+/// The log says what the ability did, not what it asked for (#627, the same
+/// defect as #592). Olivia killed in response gets no counter (CR 400.7), and
+/// damage Unbreathing Horde prevents was not dealt (CR 615) — her summary line
+/// claimed both anyway, under the lines saying otherwise.
+#[test]
+fn olivias_log_reports_the_counter_and_damage_that_actually_happened() {
+    let reg = registry();
+
+    // Olivia leaves in response: the damage still happens (the ability is
+    // independent of its source), the counter does not.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let olivia = named_permanent(&mut state, &reg, "Olivia Voldaren", P0);
+    let victim = ready_creature(&mut state, P1, 3, 3);
+    activate_via_hooks(&mut state, &reg, olivia, 0, &[Target::Object(victim)]);
+    state.move_object(olivia, Zone::Graveyard, &reg);
+    let before = state.game_log.len();
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    let lines: Vec<&str> = state.game_log[before..].iter().map(|e| e.message.as_str()).collect();
+    assert!(!lines.iter().any(|m| m.contains("+1/+1 counter")),
+        "Olivia is gone, so no line says she got a counter: {lines:?}");
+
+    // The damage is prevented: no line says it was dealt.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let olivia = named_permanent(&mut state, &reg, "Olivia Voldaren", P0);
+    let horde = named_permanent(&mut state, &reg, "Unbreathing Horde", P1);
+    state.add_counters(horde, CounterType::PlusOnePlusOne, 2);
+    activate_via_hooks(&mut state, &reg, olivia, 0, &[Target::Object(horde)]);
+    let before = state.game_log.len();
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert_eq!(state.get_object(horde).unwrap().damage_marked, 0,
+        "test setup: the Horde prevented the damage");
+    let lines: Vec<&str> = state.game_log[before..].iter().map(|e| e.message.as_str()).collect();
+    assert!(lines.iter().any(|m| m.contains("prevented")), "the prevention is logged: {lines:?}");
+    assert!(!lines.iter().any(|m| m.contains("deals 1 damage") || m.contains("dealt 1 damage")),
+        "and nothing claims the prevented damage was dealt: {lines:?}");
+    assert_eq!(lines.iter().filter(|m| m.contains("gets a +1/+1 counter")).count(), 1,
+        "Olivia's counter is reported once: {lines:?}");
+}

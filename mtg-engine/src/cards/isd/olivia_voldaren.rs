@@ -116,14 +116,27 @@ impl CardBehavior for OliviaVoldaren {
                         &effect,
                         registry,
                     );
-                    if let Some(obj) = state.get_object_mut(*target_id) {
-                        if !obj.subtypes.contains(&"Vampire".to_string()) {
-                            obj.subtypes.push("Vampire".to_string());
+                    let became_vampire = state.get_object_mut(*target_id).is_some_and(|obj| {
+                        if obj.subtypes.contains(&"Vampire".to_string()) {
+                            return false;
                         }
+                        obj.subtypes.push("Vampire".to_string());
+                        true
+                    });
+                    // Each part says what happened, where it happened. The
+                    // damage pipeline writes the damage (or its prevention),
+                    // and `add_counters` writes the counter only if Olivia is
+                    // still there to take it (CR 121.1, 400.7). A summary here
+                    // restated the request — "deals 1 damage … and gets a
+                    // +1/+1 counter" — under a prevention line, and after
+                    // Olivia had died in response (#627, the same defect as
+                    // #592). The type change is the one part nothing else
+                    // reports.
+                    if became_vampire {
+                        state.log(crate::state::LogLevel::Event,
+                            format!("Olivia Voldaren makes {} a Vampire", state.obj_name(*target_id)));
                     }
                     state.add_counters(object_id, CounterType::PlusOnePlusOne, 1);
-                    state.log(crate::state::LogLevel::Event,
-                        format!("Olivia Voldaren deals 1 damage to {}, makes it a Vampire, and gets a +1/+1 counter", state.obj_name(*target_id)));
                 }
             }
             1 => {
