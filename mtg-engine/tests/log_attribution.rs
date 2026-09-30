@@ -687,6 +687,31 @@ fn a_loyalty_ability_logs_the_loyalty_change_with_the_total() {
     assert_line(&log_lines(&minus), &format!("Liliana of the Veil (#{}) loses 2 loyalty counters (now 1)", liliana.0));
 }
 
+/// A loyalty activation is announced with its targets, before its cost is
+/// paid (CR 602.2b via 601.2a), the way `announce_activation` writes every
+/// other activation (#135). Liliana's -2 may target either player, and the
+/// line named neither — and it came after the loyalty payment it announces
+/// (#628).
+#[test]
+fn a_loyalty_activation_names_its_target_before_paying_its_cost() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
+    set_loyalty(&mut state, liliana, 3);
+
+    let minus = mtg_engine::engine::submit_action(&state, &Action::ActivateLoyaltyAbility {
+        object_id: liliana, ability_index: 1, targets: vec![Target::Player(P1)],
+    }, &reg);
+    let lines = log_lines(&minus);
+    let activated = index_of(&lines, "activated loyalty ability on Liliana of the Veil")
+        .unwrap_or_else(|| panic!("the activation is logged: {lines:#?}"));
+    assert!(lines[activated].ends_with("targeting p1"),
+        "the activation names its target: {:?}", lines[activated]);
+    let paid = index_of(&lines, "loses 2 loyalty counters")
+        .unwrap_or_else(|| panic!("the cost is logged: {lines:#?}"));
+    assert!(activated < paid, "announced before the cost is paid: {lines:#?}");
+}
+
 // ---------------------------------------------------------------------------
 // #467 — a destroy reports what happened, and names the cause before it
 // ---------------------------------------------------------------------------

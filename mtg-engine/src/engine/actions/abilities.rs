@@ -56,6 +56,24 @@ pub(crate) fn put_ability_on_stack(
 /// `x` is `Some` for an X-cost ability. It used to be absent from this line
 /// because the line was written before X was chosen, which made the ability
 /// public in a state CR 601.2b says cannot exist (issue #290).
+/// " targeting p1, Grizzly Bears (#5)", or nothing for an untargeted ability.
+///
+/// The ability's targets are logged the way a spell's are — they were
+/// announced with the activation (CR 602.2b) and the log recorded none of
+/// them (issue #135). Shared with loyalty abilities, whose line had its own
+/// copy of the format without the targets (issue #628).
+fn targeting_suffix(state: &GameState, targets: &[Target]) -> String {
+    if targets.is_empty() {
+        return String::new();
+    }
+    let names: Vec<String> = targets.iter().map(|t| match t {
+        crate::actions::Target::Object(id) => state.obj_name(*id),
+        crate::actions::Target::Player(p) => format!("p{}", p.0),
+        crate::actions::Target::Illegal => "an illegal target".into(),
+    }).collect();
+    format!(" targeting {}", names.join(", "))
+}
+
 pub(crate) fn announce_activation(
     state: &mut GameState,
     player: crate::ids::PlayerId,
@@ -66,19 +84,7 @@ pub(crate) fn announce_activation(
     registry: &CardRegistry,
 ) {
     let name = card_name(&*state, registry, object_id);
-    // The ability's targets are logged the way a spell's are — they were
-    // announced with the activation (CR 602.2b) and the log recorded none of
-    // them (issue #135).
-    let target_suffix = if targets.is_empty() {
-        String::new()
-    } else {
-        let names: Vec<String> = targets.iter().map(|t| match t {
-            crate::actions::Target::Object(id) => state.obj_name(*id),
-            crate::actions::Target::Player(p) => format!("p{}", p.0),
-            crate::actions::Target::Illegal => "an illegal target".into(),
-        }).collect();
-        format!(" targeting {}", names.join(", "))
-    };
+    let target_suffix = targeting_suffix(state, targets);
     let x_suffix = x.map_or_else(String::new, |n| format!(" (X={n})"));
     state.log(LogLevel::Event, format!(
         "p{} activated ability on {name}: {description}{target_suffix}{x_suffix}", player.0));
@@ -348,6 +354,14 @@ pub(crate) fn activate_loyalty_ability(state: &mut GameState, object_id: ObjectI
         ) {
             let abilities = behavior.loyalty_abilities(&state, object_id);
             if let Some(ab) = abilities.iter().find(|a| a.ability_index == ability_index) {
+                // CR 601.2a via 602.2b: announced, with its targets, before
+                // its cost is paid — the loyalty line used to follow the
+                // counter change it paid for and name no target, so a -2
+                // that may target either player never said which (#628).
+                let name = card_name(&state, registry, object_id);
+                let target_suffix = targeting_suffix(state, targets);
+                state.log(LogLevel::Event, format!("p{} activated loyalty ability on {}: {}{target_suffix}",
+                    player.0, name, ab.description));
                 // Pay loyalty cost: add or remove loyalty counters.
                 let change = ab.loyalty_change;
                 // Both directions through the counter helpers, so the loyalty
@@ -366,8 +380,6 @@ pub(crate) fn activate_loyalty_ability(state: &mut GameState, object_id: ObjectI
                 if let Some(obj) = state.get_object_mut(object_id) {
                     obj.abilities_activated_this_turn.insert(999); // sentinel for "used loyalty this turn"
                 }
-                let name = card_name(&state, registry, object_id);
-                state.log(LogLevel::Event, format!("p{} activated loyalty ability on {}: {}", player.0, name, ab.description));
                 // CR 606.5: a loyalty ability is an activated ability and uses
                 // the stack. Resolving it on the spot meant its effect read
                 // the battlefield before state-based actions had seen the
