@@ -100,27 +100,25 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
             // appear as legal actions in main phase even when no mana is currently floating —
             // the resulting tap plan is bundled into the action and executed at apply time.
             //
-            // EXCEPTION: abilities with `SacrificeCreature` / `SacrificeAnotherCreature`
-            // don't get auto-tap. The player has to manually tap their lands and float
-            // the mana before activating. Otherwise the planner can pick a creature
-            // mana source as part of the tap plan and then the player sacrifices that
-            // same creature for the cost — the orderings get weird and lead to bugs.
-            // Requiring manual mana for these abilities is rare enough (mostly
-            // Demonmail Hauberk, Disciple of Griselbrand, Skirsdag Cultist) that the
-            // tradeoff is acceptable.
+            // "Sacrifice a creature" abilities (Disciple of Griselbrand,
+            // Skirsdag Cultist, Demonmail Hauberk) are funded the same way.
+            // They used to be offered only with the mana already floating, on
+            // the worry that the plan might tap a mana creature the player then
+            // sacrifices — but that is a legal activation (mana abilities are
+            // activated before costs are paid, CR 601.2g/601.2h) and
+            // `pay_activation_costs` runs the tap plan before the sacrifice.
+            // Hiding the ability cost more than it saved: with only bare mana
+            // abilities left on the menu, an opponent's-turn window was
+            // auto-passed and Disciple never got to answer a Lightning Bolt
+            // (issue #626).
             //
-            // `SacrificeThis` DOES get auto-tap: the sacrifice target is fixed (the
-            // source permanent itself), so there's no "which creature to sac" conflict.
-            // We just exclude the source from the autotap plan's source pool so it
-            // can't be used as a mana source for its own activation.
+            // `SacrificeThis` excludes the source from the autotap plan's
+            // source pool, so it can't be used as a mana source for its own
+            // activation.
             //
             // NOTE: If you change this behavior, also update the "Sacrifice-cost activated
             // abilities" bullet in GAME_RULES in mtg-player/src/llm.rs.
             use crate::cards::SacrificeCost;
-            let ability_has_free_sac_cost = matches!(
-                ab.sacrifice_cost,
-                SacrificeCost::SacrificeCreature | SacrificeCost::SacrificeAnotherCreature
-            );
             let ability_has_sac_this = matches!(ab.sacrifice_cost, SacrificeCost::SacrificeThis);
             let has_x_cost = ab.cost.has_x();
             // Autotap sources to consider for this specific ability.
@@ -141,17 +139,7 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
             } else {
                 early_mana_sources.clone()
             };
-            let ability_tap_plan: Vec<(ObjectId, usize)> = if ability_has_free_sac_cost {
-                // No auto-tap for "sacrifice a creature" abilities — require mana
-                // already in the pool (see comment above).
-                let cost_to_check = if has_x_cost {
-                    ab.cost.without_x()
-                } else {
-                    ab.cost.clone()
-                };
-                if !mana::can_pay(mana_pool, &cost_to_check) { continue; }
-                Vec::new()
-            } else if has_x_cost {
+            let ability_tap_plan: Vec<(ObjectId, usize)> = if has_x_cost {
                 let non_x_cost = ab.cost.without_x();
                 if mana::can_pay(mana_pool, &non_x_cost) {
                     Vec::new()

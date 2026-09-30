@@ -376,31 +376,93 @@ fn skirsdag_cultist_may_sacrifice_the_creature_it_targeted() {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// No-mana-autotap-with-sacrifice rule
+// A "sacrifice a creature" ability is funded like any other
 // ════════════════════════════════════════════════════════════════════
 
+/// CR 601.2g via 602.2b: mana abilities are activated while the cost is being
+/// paid, so Disciple of Griselbrand's `{1}, Sacrifice a creature` is
+/// activatable with an untapped land and an empty pool. It used to be offered
+/// only with the `{1}` already floating, and since the only other actions in
+/// an opponent's-turn window were bare mana abilities, the window was
+/// auto-passed: Lightning Bolt resolved on a Diregraf Ghoul the player could
+/// have sacrificed for life (issue #626).
 #[test]
-fn disciple_does_not_appear_with_only_untapped_lands_and_no_floating_mana() {
-    // Disciple's {1} cost: with 1 untapped land and no floating mana, the
-    // ability should NOT auto-tap (sacrifice abilities require manual mana).
-    // This protects against the engine tapping a creature mana source for the
-    // {1} and then sacrificing that same creature, or other autotap weirdness.
+fn disciple_is_offered_with_a_tap_plan_off_untapped_lands() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let disciple = named_permanent(&mut state, &reg, "Disciple of Griselbrand", P0);
-    let _fodder = ready_creature(&mut state, P0, 1, 1);
-    // 1 untapped Forest, but no mana floating in the pool.
-    let forest_id = reg.get_id_by_name("Forest").unwrap();
-    let forest = state.create_object(forest_id, P0, Zone::Battlefield, None, None);
-    state.get_object_mut(forest).unwrap().name = "Forest".into();
+    let fodder = ready_creature(&mut state, P0, 1, 3);
+    let forest = named_permanent(&mut state, &reg, "Forest", P0);
     assert!(state.get_player(P0).mana_pool.is_empty());
 
-    let legal = engine::legal_actions(&state, &reg);
-    let any_disciple = legal.actions.iter().any(|a| matches!(a,
-        Action::ActivateAbility { object_id, .. } if *object_id == disciple));
-    assert!(!any_disciple,
-        "disciple's ability should NOT appear when only untapped lands are available — \
-         the player must manually tap their lands first to float the mana");
+    let action = engine::legal_actions(&state, &reg).actions.into_iter()
+        .find(|a| matches!(a,
+            Action::ActivateAbility { object_id, sacrifice: Some(s), .. }
+                if *object_id == disciple && *s == fodder))
+        .expect("the Forest pays the {1}; the ability has to be offered");
+    let Action::ActivateAbility { tap_plan, .. } = &action else { unreachable!() };
+    assert_eq!(tap_plan.iter().map(|&(id, _)| id).collect::<Vec<_>>(), vec![forest],
+        "the Forest funds it");
+
+    let life_before = state.get_player(P0).life;
+    let after = resolve_activated(engine::submit_action(&state, &action, &reg), &reg);
+    assert_eq!(after.get_object(fodder).unwrap().zone, Zone::Graveyard, "the sacrifice is paid");
+    assert!(after.get_object(forest).unwrap().tapped, "the Forest is tapped for the {{1}}");
+    assert_eq!(after.get_player(P0).life, life_before + 3,
+        "and the life equals the sacrificed creature's toughness");
+}
+
+/// The worry the old rule was written against: the plan taps a mana creature
+/// for the `{1}` and the player sacrifices that same creature. That is a legal
+/// activation — mana abilities are activated before costs are paid (CR
+/// 601.2g, 601.2h) — and the engine has to carry it out.
+#[test]
+fn a_mana_creature_can_fund_the_ability_that_sacrifices_it() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let disciple = named_permanent(&mut state, &reg, "Disciple of Griselbrand", P0);
+    let pilgrim = named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
+
+    let action = engine::legal_actions(&state, &reg).actions.into_iter()
+        .find(|a| matches!(a,
+            Action::ActivateAbility { object_id, sacrifice: Some(s), tap_plan, .. }
+                if *object_id == disciple && *s == pilgrim
+                && tap_plan.iter().any(|&(id, _)| id == pilgrim)))
+        .expect("tap the Pilgrim for {W}, then sacrifice it");
+    let life_before = state.get_player(P0).life;
+    let after = resolve_activated(engine::submit_action(&state, &action, &reg), &reg);
+    assert_eq!(after.get_object(pilgrim).unwrap().zone, Zone::Graveyard);
+    assert_eq!(after.get_player(P0).life, life_before + 1,
+        "Avacyn's Pilgrim's toughness is 1");
+}
+
+/// Issue #626's window, end to end: the opponent's Lightning Bolt is on the
+/// stack, and the player holding Disciple, a creature and an untapped Swamp is
+/// given priority to respond rather than auto-passed.
+#[test]
+fn a_sacrifice_ability_the_lands_can_fund_opens_the_response_window() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P1);
+    named_permanent(&mut state, &reg, "Disciple of Griselbrand", P0);
+    let ghoul = named_permanent(&mut state, &reg, "Diregraf Ghoul", P0);
+    named_permanent(&mut state, &reg, "Swamp", P0);
+    add_mana(&mut state, P1, &[(ManaType::Red, 1)]);
+    let bolt = spell_in_hand(&mut state, &reg, "Lightning Bolt", P1);
+    let mut state = cast_onto_stack(&state, &reg, bolt, vec![Target::Object(ghoul)]);
+    assert!(!state.stack.is_empty(), "test precondition: the Bolt is on the stack");
+
+    let mut p0_asked = false;
+    mtg_engine::engine::run_game_loop(&mut state, &reg, |gs, player, _legal| {
+        if player == P0 && !gs.stack.is_empty() {
+            p0_asked = true;
+            return Action::Concede;
+        }
+        if gs.stack.is_empty() {
+            return Action::Concede;
+        }
+        Action::PassPriority
+    });
+    assert!(p0_asked, "P0 can sacrifice the doomed Ghoul in response and must be asked");
 }
 
 #[test]
