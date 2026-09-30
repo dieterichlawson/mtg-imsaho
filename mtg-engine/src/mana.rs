@@ -452,6 +452,48 @@ pub fn compute_autotap(
     Some(tap_plan)
 }
 
+/// Whether `cost` (its non-X part) is within reach of `pool` plus `sources`
+/// by counting alone — a necessary condition for any tap plan to pay it, not
+/// a plan.
+///
+/// Each source is tapped once, for one of its abilities, so it counts once:
+/// for the total, what its best ability nets after its own cost (a filter's
+/// `{1}, {T}: Add one mana of any color` nets nothing, so Shimmering Grotto is
+/// one mana — its free `{C}` — and not six); for each colour, what the best
+/// ability making that colour makes. Summing every ability of every source
+/// counted a lone Grotto as six mana and a dual land as two, and stopped the
+/// seat at every main phase for a spell it could not cast (issue #617).
+///
+/// Being necessary rather than exact is the point for its one caller, the
+/// auto-pass gate: it can stop for a spell the planner missed, and it never
+/// passes a seat past a spell the sources really could pay for.
+#[must_use]
+pub fn within_reach(cost: &ManaCost, pool: &ManaPool, sources: &[ManaSource]) -> bool {
+    let cost = cost.without_x();
+    let net = |a: &ManaAbilityDef| ability_total_mana(a).saturating_sub(ability_cost(a));
+    let total: u32 = pool.total()
+        + sources.iter()
+            .map(|s| s.abilities.iter().map(net).max().unwrap_or(0))
+            .sum::<u32>();
+    if total < cost.mana_value() {
+        return false;
+    }
+    let reach = |mana_type: ManaType| -> u32 {
+        pool.get(mana_type)
+            + sources.iter()
+                .map(|s| s.abilities.iter()
+                    .flat_map(|a| a.produced.iter())
+                    .filter(|&&(mt, _)| mt == mana_type)
+                    .map(|&(_, amount)| amount)
+                    .max()
+                    .unwrap_or(0))
+                .sum::<u32>()
+    };
+    let colored_ok = cost.colored_requirements().into_iter()
+        .all(|(color, count)| reach(ManaType::from(color)) >= count);
+    colored_ok && reach(ManaType::Colorless) >= cost.colorless_amount()
+}
+
 /// Check if a mana pool can pay a given cost.
 #[must_use]
 pub fn can_pay(pool: &ManaPool, cost: &ManaCost) -> bool {
@@ -1032,6 +1074,41 @@ mod tests {
                     "{label}: no plan offered for {cost}, but {:?} pays it", worked.first());
             }
         }
+    }
+
+    /// `within_reach` is a necessary condition: whenever some tap plan pays a
+    /// cost, the count says it is within reach. The auto-pass gate relies on
+    /// that — a `false` there passes the seat.
+    #[test]
+    fn within_reach_never_rules_out_a_cost_some_plan_pays() {
+        for (label, pool, sources) in planner_cases() {
+            for cost in planner_costs() {
+                let paid = every_plan(&sources).into_iter()
+                    .map(|mut p| { free_abilities_first(&mut p, &sources); p })
+                    .any(|p| plan_pays(&p, &pool, &sources, &cost));
+                if paid {
+                    assert!(within_reach(&cost, &pool, &sources),
+                        "{label}: a plan pays {cost}, but within_reach says no");
+                }
+            }
+        }
+    }
+
+    /// Issue #617: a source counts once, for one ability, net of its cost. A
+    /// lone Shimmering Grotto is one mana, not six; a dual land is one, not
+    /// two.
+    #[test]
+    fn within_reach_counts_each_source_once_net_of_its_cost() {
+        let one_w = ManaCost::new(vec![ManaSymbol::Generic(1), ManaSymbol::Colored(Color::White)]);
+        let grotto = vec![make_source(1, ManaSourceKind::NonBasicMana, grotto_abilities())];
+        assert!(!within_reach(&one_w, &ManaPool::new(), &grotto),
+            "one Grotto cannot pay {{1}}{{W}}");
+        let dual = vec![make_source(1, ManaSourceKind::NonBasicMana,
+            dual_abilities(ManaType::Red, ManaType::White))];
+        assert!(!within_reach(&one_w, &ManaPool::new(), &dual),
+            "one dual land cannot pay {{1}}{{W}}");
+        let w = ManaCost::new(vec![ManaSymbol::Colored(Color::White)]);
+        assert!(within_reach(&w, &ManaPool::new(), &dual), "but it pays {{W}}");
     }
 
     /// A plan taps no more sources than the fewest that would have paid.

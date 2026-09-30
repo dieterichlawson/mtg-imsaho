@@ -118,6 +118,61 @@ fn a_bare_mana_ability_is_still_not_a_meaningful_action() {
         "an empty board with two lands should pass through its steps, got {stops} stops");
 }
 
+/// A spell the lands cannot pay for is not a reason to stop, however many
+/// mana abilities those lands have (issue #617).
+///
+/// The gate's "could the player cast something after tapping" summed the
+/// output of *every* mana ability of every source and ignored what a filter
+/// costs: a lone Shimmering Grotto counted as six mana, and a dual land as
+/// two. With one Grotto and Avacynian Priest `{1}{W}` in hand the game stopped
+/// at both main phases with nothing to do but tap the Grotto for `{C}`. A
+/// source is tapped once, for one ability, and a filter's `{1}` is spent.
+#[test]
+fn one_land_is_one_mana_to_the_gate() {
+    let reg = registry();
+    for land in ["Shimmering Grotto", "Clifftop Retreat"] {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        named_permanent(&mut state, &reg, land, P0);
+        spell_in_hand(&mut state, &reg, "Avacynian Priest", P0);
+        // The opponent's draw ends the probe on turn 2 by asking them to
+        // play the land they drew.
+        stock_library(&mut state, &reg, P1, 3);
+
+        let mut asked_on: Option<Step> = None;
+        mtg_engine::engine::run_game_loop(&mut state, &reg, |gs, player, _legal| {
+            if player == P0 && gs.turn_number == 1 {
+                asked_on.get_or_insert(gs.step);
+            }
+            Action::Concede
+        });
+        assert_eq!(asked_on, None,
+            "one {land} makes one mana, and a {{1}}{{W}} spell it cannot pay for \
+             is not a reason to stop the seat");
+    }
+}
+
+/// The gate must still stop for a spell a filter really does make castable.
+/// Three Plains and Shimmering Grotto pay Orchard Spirit `{2}{G}` (a Plains
+/// funds the filter), so the main phase is worth stopping in.
+#[test]
+fn a_spell_a_filter_makes_castable_still_stops_the_seat() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    for _ in 0..3 { named_permanent(&mut state, &reg, "Plains", P0); }
+    named_permanent(&mut state, &reg, "Shimmering Grotto", P0);
+    spell_in_hand(&mut state, &reg, "Orchard Spirit", P0);
+
+    let mut asked = false;
+    let mut probe = state.clone();
+    mtg_engine::engine::run_game_loop(&mut probe, &reg, |gs, player, _legal| {
+        if player == P0 && gs.step == Step::PrecombatMain && gs.turn_number == 1 {
+            asked = true;
+        }
+        Action::Concede
+    });
+    assert!(asked, "Orchard Spirit is castable; the seat must be asked");
+}
+
 /// The safety valve counts passes, not spinning.
 ///
 /// `run_game_loop` breaks an infinite auto-pass loop by advancing or resolving

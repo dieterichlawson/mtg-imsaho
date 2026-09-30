@@ -252,15 +252,12 @@ pub(crate) fn has_castable_with_potential_mana(
     player: PlayerId,
     registry: &CardRegistry,
 ) -> bool {
-    // Build potential mana pool: current pool + all activatable mana abilities.
-    let mut potential = state.get_player(player).mana_pool.clone();
-    for obj in state.objects_in_zone(Zone::Battlefield, player) {
-        for ma in available_mana_abilities(state, obj.id, registry) {
-            for &(mana_type, amount) in &ma.produced {
-                potential.add(mana_type, amount);
-            }
-        }
-    }
+    // What the player could produce: the pool plus the sources the auto-tap
+    // planner would see. `mana::within_reach` counts each source once, for
+    // one ability, net of a filter's own cost (issue #617).
+    let pool = &state.get_player(player).mana_pool;
+    let sources = gather_mana_sources(state, player, registry,
+        prevents_artifact_abilities(state, registry));
 
     // Check if any spell in hand could be cast with this potential mana.
     // For instant-speed spells, only count them as meaningful when something
@@ -300,7 +297,7 @@ pub(crate) fn has_castable_with_potential_mana(
 
             // Check if potential mana could pay the cost.
             if let Some(cost) = &data.cost {
-                if !mana::can_pay(&potential, cost) {
+                if !mana::within_reach(cost, pool, &sources) {
                     continue;
                 }
             }
