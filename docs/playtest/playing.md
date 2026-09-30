@@ -400,7 +400,8 @@ illegal or dubious resolutions do.
   event (damage prevention/redirection, enters-with-counters vs a static
   buff); verify the affected player/object's controller chooses the order
   (CR 616) and only one applies per layer of the event
-- L10 mana ability edges: tap-for-mana abilities that don't use the stack;
+- L10 [tried 2026-09-30 → #615, #616, #617; every CR 605 claim held — the
+  auto-tap planner is what breaks, see L53] mana ability edges: tap-for-mana abilities that don't use the stack;
   activate mana abilities in response to a targeted spell/ability to
   verify no missed priority window and correct fizzle/cost-payment timing
 - L11 [tried 2026-09-15 -> #504, #505, #506; the ARITHMETIC is done for this pool,
@@ -574,7 +575,9 @@ illegal or dubious resolutions do.
   menu — while self-targeting stays legal, and its ETB destroys only the Curses
   attached to its controller. Every rule here passed on 2026-09-05; the defects
   were in how the CLI presents them (#254, #255)
-- L30 alternate win and loss conditions at the empty library (CR 104.2b,
+- L30 [tried 2026-09-30 → #622, #623, #624, #625; every CR claim held, the
+  defects are what happens AFTER the win, see L55] alternate win and loss
+  conditions at the empty library (CR 104.2b,
   104.3c, 614, 704.5b, 121.3): Laboratory Maniac replaces the draw, so with an
   empty library the draw must WIN immediately as a replacement — not on an SBA,
   not at the next priority. Kill the Maniac first and verify the ordinary
@@ -582,7 +585,9 @@ illegal or dubious resolutions do.
   verify draws are sequential with exactly one replacement; verify the Maniac
   never fires for the opponent's empty draw. The runner enforces no minimum
   deck size, so a 14-card deck empties by turn 9 — build one
-- L31 the sacrifice family and who does the choosing (CR 701.17, 601.2h,
+- L31 [tried 2026-09-30 → #626, #627, #628; every rule passed again, the
+  find is a response window that never opens, see L54] the sacrifice family
+  and who does the choosing (CR 701.17, 601.2h,
   700.2, 603.10a, 115.7, 404.3): a sacrifice paid as a COST happens at
   announcement, so countering Altar's Reap does not give the creature back and
   its dies-trigger resolves first; only permanents you CONTROL are in the
@@ -1135,7 +1140,8 @@ illegal or dubious resolutions do.
   only prevention effect in the pool** (`PreventDamageRemoveCounter`), which is
   what makes every probe in this family a zombie board, so build it once and
   run both cards past it
-- L52 [proposed 2026-09-25, from the L51 board] the ORDER the announcement asks
+- L52 [tried 2026-09-30 → #613, #614; the order table is in
+  `reports/playtests/2026-09-30.md`, don't redo it] [proposed 2026-09-25, from the L51 board] the ORDER the announcement asks
   its questions in. CR 601.2b chooses modes and the value of X; CR 601.2c
   chooses targets, after it. The CLI asks the reverse: casting Devil's Play
   opened `Devil's Play: select a target` and only then `Devil's Play (#37):
@@ -1151,3 +1157,13 @@ illegal or dubious resolutions do.
   and of the GUI, where the two prompts are separate widgets. The answer is
   worth having written down even if the order stays as it is, because nothing
   in the repo states it
+  **What the night found.** The order is the engine's, not the CLI's: every
+  surface submits target (601.2c) and sacrifice (601.2h) inside the action,
+  then answers X or the exile count (601.2b) at a prompt the cast raises, and
+  modes are never asked (Ghoulcaller's Chant's is read off its target count).
+  Harmless in this pool. What it costs is that the spell stays in hand rather
+  than on the stack (601.2a), so at the X prompt the chosen target is on no
+  surface and a resumed seat cannot recover it (#613). Left open: the X-spell
+  path in `cast.rs` returns before the "up to N" slot and the exile prompt, so
+  a future card with X AND either would skip a question — re-walk this the day
+  such a card is added
