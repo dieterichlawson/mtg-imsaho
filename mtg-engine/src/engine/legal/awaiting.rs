@@ -191,6 +191,37 @@ pub(crate) fn legal_actions_while_awaiting(
             use crate::actions::ResolvedChoice;
             use crate::state::ResolutionChoiceKind;
             let source_name = card_name(state, registry, *source);
+            // "Pay" taps whatever the engine's plan picks (CR 608.2g), so the
+            // question says what that is, the way every cast row names its
+            // tap plan. Said in the description rather than a row label
+            // because the description is the one text every seat shows —
+            // the terminal's heading, the model's prompt, the page's title —
+            // and `PayDecision(true)` carries nothing to label (issue #621).
+            let annotated;
+            let choice = match choice {
+                ResolutionChoiceKind::PayOrNot { description, cost, spell_id, source_spell_id } => {
+                    match crate::engine::mana_sources::payment_plan_with_sources(
+                        state, *player, cost, registry)
+                    {
+                        Some(plan) => {
+                            let how = if plan.is_empty() {
+                                "paid from your mana pool".to_string()
+                            } else {
+                                crate::cards::helpers::format_tap_plan_names(state, &plan)
+                            };
+                            annotated = ResolutionChoiceKind::PayOrNot {
+                                description: format!("{description} (Pay: {how})"),
+                                cost: cost.clone(),
+                                spell_id: *spell_id,
+                                source_spell_id: *source_spell_id,
+                            };
+                            &annotated
+                        }
+                        None => choice,
+                    }
+                }
+                _ => choice,
+            };
             let actions = match choice {
                 ResolutionChoiceKind::PayOrNot { cost, .. } => {
                     // Declining is always available; paying is offered only

@@ -65,12 +65,28 @@ pub fn can_pay_with_sources(
     cost: &ManaCost,
     registry: &CardRegistry,
 ) -> bool {
+    payment_plan_with_sources(state, player, cost, registry).is_some()
+}
+/// What paying `cost` right now would tap: an empty plan when floating mana
+/// covers it, `None` when it cannot be paid at all.
+///
+/// One function for the plan a prompt names and the plan
+/// `pay_cost_with_sources` runs, so "Pay" cannot say one land and tap
+/// another. A "Pay {1}?" answer used to tap a source the player was never
+/// shown — where every cast row names its tap plan — and the only untapped
+/// source could as well have been a blocker (issue #621).
+pub fn payment_plan_with_sources(
+    state: &GameState,
+    player: PlayerId,
+    cost: &ManaCost,
+    registry: &CardRegistry,
+) -> Option<Vec<(ObjectId, usize)>> {
     let pool = &state.get_player(player).mana_pool;
     if mana::can_pay(pool, cost) {
-        return true;
+        return Some(Vec::new());
     }
     let sources = gather_mana_sources(state, player, registry, prevents_artifact_abilities(state, registry));
-    mana::compute_autotap(cost, pool, &sources, &[]).is_some()
+    mana::compute_autotap(cost, pool, &sources, &[])
 }
 /// Pay `cost`, tapping sources if the pool alone can't cover it. Returns false
 /// and leaves the game state untouched when it cannot be paid — the tap plan
@@ -81,16 +97,9 @@ pub fn pay_cost_with_sources(
     cost: &ManaCost,
     registry: &CardRegistry,
 ) -> bool {
-    if !mana::can_pay(&state.get_player(player).mana_pool, cost) {
-        let sources = gather_mana_sources(state, player, registry, prevents_artifact_abilities(state, registry));
-        let plan = {
-            let pool = &state.get_player(player).mana_pool;
-            mana::compute_autotap(cost, pool, &sources, &[])
-        };
-        let Some(plan) = plan else { return false };
-        for (source_id, ability_index) in plan {
-            activate_mana_source_reserving(state, source_id, ability_index, Some(cost), registry);
-        }
+    let Some(plan) = payment_plan_with_sources(state, player, cost, registry) else { return false };
+    for (source_id, ability_index) in plan {
+        activate_mana_source_reserving(state, source_id, ability_index, Some(cost), registry);
     }
     mana::auto_pay(&mut state.get_player_mut(player).mana_pool, cost).is_ok()
 }

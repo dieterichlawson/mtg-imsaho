@@ -28,7 +28,7 @@ pub use costs::{
 };
 pub use mana_sources::{
     activate_mana_source, activate_mana_source_reserving, available_mana_abilities,
-    can_pay_with_sources, pay_cost_with_sources,
+    can_pay_with_sources, pay_cost_with_sources, payment_plan_with_sources,
 };
 pub use targeting::can_be_targeted_by;
 pub(crate) use targeting::can_target_player;

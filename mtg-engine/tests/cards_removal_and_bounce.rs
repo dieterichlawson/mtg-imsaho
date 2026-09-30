@@ -104,6 +104,52 @@ fn frightful_delusion_counters_and_discards() {
         "Controller of countered spell should discard a card");
 }
 
+/// Issue #621: "Pay" at Frightful Delusion's "unless its controller pays
+/// {1}" taps whatever the engine's plan picks, and the question never said
+/// what that was — a cast row always names its tap plan. The question names
+/// it now (in the description every seat shows), and paying taps exactly
+/// the source it named.
+#[test]
+fn a_pay_or_not_question_names_what_paying_will_tap() {
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bears = castable_spell(&mut state, &reg, "Grizzly Bears", P0);
+    state = cast_onto_stack(&state, &reg, bears, vec![]);
+    let forest = named_permanent(&mut state, &reg, "Forest", P0);
+    let fd = castable_spell(&mut state, &reg, "Frightful Delusion", P1);
+    state.priority_player = Some(P1);
+    state = cast_and_resolve(&state, &reg, fd, vec![Target::Object(bears)]);
+
+    let legal = engine::legal_actions(&state, &reg);
+    let context = legal.context.clone().unwrap_or_default();
+    let forest_name = state.obj_name(forest);
+    assert!(context.contains(&format!("tap {forest_name}")),
+        "the question names the land paying taps: {context:?}");
+    match &legal.resolution_prompt {
+        Some(ResolutionChoiceKind::PayOrNot { description, .. }) =>
+            assert_eq!(description, &context, "the page's title says the same"),
+        other => panic!("expected the pay-or-not prompt, got {other:?}"),
+    }
+    // The description in the state is the card's; the plan is the
+    // engine's, read off the board each time it is offered.
+    assert!(matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::PayOrNot { .. }, .. })));
+
+    let paid = engine::submit_action(&state, &Action::ResolveChoice {
+        choice: mtg_engine::actions::ResolvedChoice::PayDecision(true),
+    }, &reg);
+    assert!(paid.get_object(forest).unwrap().tapped, "it taps the land it named");
+    assert_eq!(paid.get_object(bears).unwrap().zone, Zone::Stack, "and the spell is not countered");
+
+    // Floating mana pays it without a tap, and the question says that too.
+    let mut floating = state.clone();
+    floating.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
+    let context = engine::legal_actions(&floating, &reg).context.unwrap_or_default();
+    assert!(context.contains("paid from your mana pool") && !context.contains("tap "),
+        "{context:?}");
+}
+
 // ── What a removal spell is allowed to point at ─────────────────────
 
 /// A candidate for a removal spell to consider, built fresh per row.
