@@ -4,7 +4,7 @@ use super::Ctx;
 use super::super::*;
 use crate::actions::Action;
 use crate::ids::{CardId, ObjectId};
-use crate::types::{Zone, CardType, CounterType};
+use crate::types::{Zone, CardType, CounterType, ManaCost};
 
 /// Activated abilities of permanents the player controls, including ones
 /// granted by attached auras and equipment.
@@ -12,6 +12,12 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
     let Ctx { state, registry, player, prevent_artifact_abilities, is_sorcery_speed, .. } = *ctx;
     let early_mana_sources = &ctx.mana_sources;
     let mana_pool = &state.get_player(player).mana_pool;
+    // Every spell in hand is "another spell" to an ability, so the whole hand
+    // is the colour demand its tap plan protects — the same map a cast plans
+    // against. Planning abilities against an empty hand let Darkthicket
+    // Wolf's `{2}{G}` tap the only Mountain while a second Forest could pay,
+    // stranding the Geistflame in hand (issue #616).
+    let hand_costs: Vec<ManaCost> = ctx.hand_costs.iter().map(|(_, c)| c.clone()).collect();
     // Non-mana activated abilities: can activate anytime you have priority (if you can pay).
     // Check attached permanents too (auras granting abilities to creatures).
     for obj in state.objects_in_zone(Zone::Battlefield, player) {
@@ -150,7 +156,7 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
                 if mana::can_pay(mana_pool, &non_x_cost) {
                     Vec::new()
                 } else {
-                    match mana::compute_autotap(&non_x_cost, mana_pool, &ability_sources, &[]) {
+                    match mana::compute_autotap(&non_x_cost, mana_pool, &ability_sources, &hand_costs) {
                         Some(plan) => plan,
                         None => continue,
                     }
@@ -158,7 +164,7 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
             } else if mana::can_pay(mana_pool, &ab.cost) {
                 Vec::new()
             } else {
-                match mana::compute_autotap(&ab.cost, mana_pool, &ability_sources, &[]) {
+                match mana::compute_autotap(&ab.cost, mana_pool, &ability_sources, &hand_costs) {
                     Some(plan) => plan,
                     None => continue,
                 }

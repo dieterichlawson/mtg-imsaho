@@ -483,3 +483,34 @@ fn bug_mask_of_avacyn_duplicate_equip_action() {
         "both creatures the player controls are legal equip targets, including \
          the one already wearing the Mask (CR 702.6a); got {equip_targets:?}");
 }
+
+/// An ability's tap plan keeps the colours the hand still needs, as a spell's
+/// does (issue #616).
+///
+/// Mountain, two Forests and Kessig Wolf Run, with Darkthicket Wolf's
+/// `{2}{G}` pump on offer and Geistflame `{R}` in hand. Forest, Forest and
+/// Wolf Run pay the pump and keep the Mountain. The ability path planned with
+/// an empty hand, so the second Forest and the Mountain tied and source order
+/// tapped the Mountain — Geistflame was stranded by the engine's own plan.
+#[test]
+fn an_ability_tap_plan_keeps_a_colour_a_spell_in_hand_needs() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let mountain = untapped_land(&mut state, &reg, "Mountain", P0);
+    untapped_lands(&mut state, &reg, "Forest", P0, 2);
+    named_permanent(&mut state, &reg, "Kessig Wolf Run", P0);
+    let wolf = named_permanent(&mut state, &reg, "Darkthicket Wolf", P0);
+    let geistflame = spell_in_hand(&mut state, &reg, "Geistflame", P0);
+
+    let pump = engine::legal_actions(&state, &reg).actions.into_iter()
+        .find(|a| matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == wolf))
+        .expect("the pump is payable off the lands");
+    let Action::ActivateAbility { tap_plan, .. } = &pump else { unreachable!() };
+    assert!(!tap_plan.iter().any(|&(id, _)| id == mountain),
+        "the Mountain is the only red source and Geistflame is in hand; the plan \
+         was {tap_plan:?}");
+
+    let after = engine::submit_action(&state, &pump, &reg);
+    assert!(can_cast(&after, &reg, geistflame),
+        "Geistflame is still castable after the pump");
+}
