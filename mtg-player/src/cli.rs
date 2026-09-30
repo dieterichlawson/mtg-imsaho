@@ -6069,6 +6069,51 @@ impl CliPlayer {
     /// pool mana (first) and then by source category (lands → rocks → dorks).
     /// Pool drains prefer colors the pool has the most of so the player's
     /// "scarce" colored mana is preserved when possible.
+    /// Whether a prompt is answered in the full-screen card browser rather
+    /// than as a numbered menu.
+    ///
+    /// The browser is for cards the player cannot otherwise see: a library
+    /// search, cards looked at, a long list of card names. The size
+    /// threshold — more than three cards — is deliberate there: three
+    /// numbered rows read better than a search box.
+    ///
+    /// A card out of the player's own HAND is never that. The hand is on the
+    /// screen already, and "discards two cards" is asked one card at a time,
+    /// so the threshold split one decision across two widgets: Brain
+    /// Weevil's first card from four in the browser, the second from three
+    /// as a menu (issue #629). A hand choice is always the menu, whatever
+    /// the size of the hand, so every pick of one decision looks the same.
+    fn uses_card_browser(legal: &mtg_engine::engine::LegalActions) -> bool {
+        let actions = &legal.actions;
+        if actions.len() < 2 || !actions.iter().all(|a| matches!(a, Action::ResolveChoice { .. })) {
+            return false;
+        }
+        if matches!(legal.resolution_prompt,
+            Some(mtg_engine::state::ResolutionChoiceKind::ChooseCardFromHand { .. }))
+        {
+            return false;
+        }
+        // ChosenCard choices (library/revealed search), with an optional
+        // search's decline allowed alongside — that entry used to disqualify
+        // the browser and dump the most common kind of search as a flat
+        // numbered list (issue #111).
+        let is_decline = |a: &Action| matches!(a,
+            Action::ResolveChoice { choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(None) });
+        let all_chosen_cards = actions.iter().all(|a| is_decline(a) || matches!(a,
+            Action::ResolveChoice { choice: mtg_engine::actions::ResolvedChoice::ChosenCard(_) }));
+        let card_count = actions.len() - usize::from(actions.iter().any(is_decline));
+        // A long list of card NAMES is the same kind of question and
+        // wants the same browser (issue #255). Kept to genuinely long
+        // ones: a modal choice or a card-type choice is also `ChosenIndex`
+        // and reads better as three numbered rows. And kept to prompts
+        // that ARE about card names: any flat `ChosenIndex` list past
+        // eight entries used to qualify, which is how a trigger-ordering
+        // prompt with nine triggers turned into a card search (#325).
+        let naming_cards = card_count > 8 && matches!(legal.resolution_prompt,
+            Some(mtg_engine::state::ResolutionChoiceKind::ChooseCardName { .. }));
+        (all_chosen_cards && card_count > 3) || naming_cards
+    }
+
     /// The reader line of the X prompt. Both funding prompts are
     /// cancellable (#123, #290), and what cancelling abandons is named for
     /// what it is: Kessig Wolf Run's `{X}{R}{G}, {T}` is an activation, and
@@ -7590,39 +7635,15 @@ impl Player for CliPlayer {
         }
 
         // Special case: library search — show interactive card browser.
-        if legal_actions.iter().all(|a| matches!(a, Action::ResolveChoice { .. }))
-            && legal_actions.len() > 1
-        {
-            // ChosenCard choices (library/revealed search). An OPTIONAL
-            // search (CR 701.19b: "you may search...") carries one trailing
-            // ChosenTarget(None) decline — that entry used to disqualify the
-            // browser and dump the most common kind of search as a flat
-            // numbered list (issue #111). The browser now takes the decline
-            // along and offers it on Esc.
+        if Self::uses_card_browser(legal) {
+            // An OPTIONAL search (CR 701.19b: "you may search...") carries
+            // one trailing ChosenTarget(None) decline, which the browser
+            // takes along and offers on Esc (issue #111).
             let decline = legal_actions.iter().find(|a| matches!(a,
                 Action::ResolveChoice { choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(None) }
             )).cloned();
-            let all_chosen_cards = legal_actions.iter().all(|a| matches!(a,
-                Action::ResolveChoice {
-                    choice: mtg_engine::actions::ResolvedChoice::ChosenCard(_)
-                        | mtg_engine::actions::ResolvedChoice::ChosenTarget(None)
-                }
-            ));
-            let card_count = legal_actions.len() - usize::from(decline.is_some());
-            // A long list of card NAMES is the same kind of question and
-            // wants the same browser (issue #255). Kept to genuinely long
-            // ones: a modal choice or a card-type choice is also `ChosenIndex`
-            // and reads better as three numbered rows. And kept to prompts
-            // that ARE about card names: any flat `ChosenIndex` list past
-            // eight entries used to qualify, which is how a trigger-ordering
-            // prompt with nine triggers turned into a card search (#325).
-            let naming_cards = card_count > 8 && matches!(legal.resolution_prompt,
-                Some(mtg_engine::state::ResolutionChoiceKind::ChooseCardName { .. }));
-
-            if (all_chosen_cards && card_count > 3) || naming_cards {
-                let title = legal.context.as_deref().unwrap_or("Choose a card");
-                return Self::library_search_ui(view, legal_actions, title, decline);
-            }
+            let title = legal.context.as_deref().unwrap_or("Choose a card");
+            return Self::library_search_ui(view, legal_actions, title, decline);
         }
 
         let has_pass = legal_actions.iter().any(|a| matches!(a, Action::PassPriority));
@@ -8029,6 +8050,32 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// Issue #629: Brain Weevil's "discards two cards" is two hand choices,
+    /// and the first (four cards) went to the full-screen browser while the
+    /// second (three) was a numbered menu. A hand choice is the menu at
+    /// every size; the browser keeps the cards a player cannot see.
+    #[test]
+    fn one_discard_decision_is_one_widget_at_every_hand_size() {
+        use mtg_engine::actions::ResolvedChoice;
+        let picks = |n: u64| (1..=n).map(|id| Action::ResolveChoice {
+            choice: ResolvedChoice::ChosenCard(ObjectId(id)) }).collect::<Vec<_>>();
+        for (n, remaining) in [(4_u64, 2_usize), (3, 1), (7, 2), (12, 1)] {
+            let mut l = legal(picks(n));
+            l.resolution_prompt = Some(mtg_engine::state::ResolutionChoiceKind::ChooseCardFromHand {
+                description: "Brain Weevil: choose a card to discard".into(),
+                player: PlayerId(1),
+                cards: (1..=n).map(ObjectId).collect(),
+                discard_immediately: true,
+                remaining,
+            });
+            assert!(!CliPlayer::uses_card_browser(&l),
+                "a hand of {n} is answered from the menu, like every other pick of it");
+        }
+        // The browser is still what a search of more than three cards gets.
+        assert!(CliPlayer::uses_card_browser(&legal(picks(4))));
+        assert!(!CliPlayer::uses_card_browser(&legal(picks(3))));
     }
 
     /// Issue #613: Kessig Wolf Run's X prompt offered to "cancel the cast".
