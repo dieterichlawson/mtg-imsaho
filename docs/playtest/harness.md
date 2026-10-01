@@ -808,3 +808,18 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   or `activatable_abilities` is back to drawing over encodings. Worth asking of
   the resolution prompts too, which this seat answers with a roll and which
   CLAUDE.md's second rule is about
+
+- H24 [proposed 2026-10-01, from #635, found on a CLI night (V51)] the schema
+  looser than its parser. `attacker_indices` had `minimum: 0` and no
+  `maximum`, and the parser `.filter`ed out-of-range indices away — so the
+  API accepted a bad answer, `log_rejected` never saw it, and the seat
+  silently did not attack. Every structured request has the same two halves
+  that can disagree. Method: list every schema `llm.rs` and
+  `mtg-draft-runner/src/llm_client.rs` build (index arrays, integer fields,
+  string enums, objects with optional keys) and, beside each, what its
+  parser does with a value the schema permits but the decision cannot use —
+  out of range, repeated, a number where a string was expected (#596), an
+  extra key. For each mismatch, run a `CLAUDE_CODE_BIN` stub that answers
+  with exactly that value and check that a MALFORMED line is written and the
+  `TOKEN_USAGE` rejection clause counts it. A filter, `unwrap_or` or `min`
+  between parse and submit that has no log line is the finding
