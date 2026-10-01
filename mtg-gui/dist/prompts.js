@@ -310,7 +310,7 @@ export function beginDecision(state, send) {
             }
             case "DividePermanentsIntoPiles": {
                 const perms = rp.permanents ?? [];
-                return beginMark(state, ui, { title: desc + " (mark pile 1)", options: perms, min: 0, max: perms.length,
+                return beginMark(state, ui, { title: desc + " (mark pile A)", options: perms, min: 0, max: perms.length,
                     onConfirm: (chosen) => send(resolve({ ChosenSubset: chosen })) });
             }
             case "ChooseTriggerOrder":
