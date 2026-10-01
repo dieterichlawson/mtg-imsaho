@@ -1268,3 +1268,33 @@ fn a_pump_with_no_permanent_left_to_land_on_says_so() {
     assert!(lines.iter().any(|l| l.contains("Mindshrieker") && l.contains("left the battlefield")),
         "the ability resolved and pumped nothing, and says which; log was {lines:#?}");
 }
+
+// ---------------------------------------------------------------------------
+// #638 — a card that taps something as its effect says what it tapped
+// ---------------------------------------------------------------------------
+
+/// Feeling of Dread and Avacynian Priest tapped their targets and logged
+/// nothing, so the log said "resolved" while the board showed `[T]`. With
+/// one of two targets gone illegal, nothing said which creature was tapped.
+#[test]
+fn a_tap_effect_names_what_it_tapped() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let a = named_permanent(&mut state, &reg, "Savannah Lions", P1);
+    let b = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let dread = spell_in_hand(&mut state, &reg, "Feeling of Dread", P0);
+    add_mana(&mut state, P0, &[(ManaType::White, 2)]);
+    let state = cast_and_resolve(&state, &reg, dread,
+        vec![Target::Object(a), Target::Object(b)]);
+    let lines = log_lines(&state);
+    assert_line(&lines, &format!("Feeling of Dread taps Savannah Lions (#{})", a.0));
+    assert_line(&lines, &format!("Feeling of Dread taps Grizzly Bears (#{})", b.0));
+
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let priest = named_permanent(&mut state, &reg, "Avacynian Priest", P0);
+    state.get_object_mut(priest).unwrap().summoning_sick = false;
+    let bears = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    add_mana(&mut state, P0, &[(ManaType::White, 1)]);
+    let state = activate_offered(&state, &reg, priest, Some(Target::Object(bears)));
+    assert_line(&log_lines(&state), &format!("Avacynian Priest taps Grizzly Bears (#{})", bears.0));
+}

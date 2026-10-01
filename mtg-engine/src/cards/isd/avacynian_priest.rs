@@ -65,7 +65,7 @@ impl CardBehavior for AvacynianPriest {
     fn resolve_activated_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
         for target in targets {
             if let Target::Object(target_id) = target {
-                state.tap(*target_id);
+                state.tap_for(*target_id, "Avacynian Priest");
             }
         }
     }

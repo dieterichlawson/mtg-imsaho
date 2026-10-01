@@ -34,7 +34,7 @@ impl CardBehavior for FeelingOfDread {
         for target in targets {
             if let Target::Object(target_id) = target {
                 if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                    state.tap(*target_id);
+                    state.tap_for(*target_id, "Feeling of Dread");
                 }
             }
         }

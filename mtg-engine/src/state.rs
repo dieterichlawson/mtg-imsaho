@@ -2744,6 +2744,22 @@ impl GameState {
     /// This is for a permanent *becoming* tapped. A permanent that arrives on
     /// the battlefield tapped was never untapped there and is not tapped by
     /// anything — see [`GameState::arrives_tapped`].
+    /// Tap `id` as an effect of `source`, and say so: "Feeling of Dread taps
+    /// Savannah Lions (#91)". A card that taps something as its effect called
+    /// `tap` and wrote nothing, so the log read "resolved" while the board
+    /// showed the creatures `[T]` — and for a two-target spell with one target
+    /// gone illegal, nothing said which creature it was (#638). Nothing is
+    /// logged when nothing was tapped (CR 701.21a, #359). Same shape as
+    /// `change_life_for`.
+    pub fn tap_for(&mut self, id: ObjectId, source: &str) -> bool {
+        let tapped = self.tap(id);
+        if tapped {
+            let name = self.obj_name(id);
+            self.log(LogLevel::Event, format!("{source} taps {name}"));
+        }
+        tapped
+    }
+
     pub fn tap(&mut self, id: ObjectId) -> bool {
         match self.get_object_mut(id) {
             // CR 110.5: tapped is a status of permanents. An effect resolving

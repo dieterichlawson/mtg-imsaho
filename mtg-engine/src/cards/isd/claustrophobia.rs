@@ -58,11 +58,7 @@ impl CardBehavior for Claustrophobia {
             // Claustrophobia on a creature the first is already holding down
             // taps nothing, and saying so anyway is a log line about a state
             // change that did not happen (issue #359).
-            if state.tap(target_id) {
-                let name = state.obj_name(target_id);
-                state.log(crate::state::LogLevel::Event,
-                    format!("Claustrophobia taps {name}"));
-            }
+            state.tap_for(target_id, "Claustrophobia");
         }
     }
 }
