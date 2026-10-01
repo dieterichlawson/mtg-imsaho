@@ -836,3 +836,26 @@ fn the_views_ability_descriptions_belong_to_the_ability_asked_about() {
     assert_eq!(distinct.len(), words.len(),
         "three indices, three different abilities, not one repeated: {words:?}");
 }
+
+/// CR 113.7a: an ability's source is the object that has it. A granted
+/// ability on the stack was named after the Equipment or Aura granting it
+/// but carried the id of the creature that has it, so every surface printed
+/// "Blazing Torch ability (#44)" with #44 a Grizzly Bears — a name beside an
+/// id it does not identify, and not what the log calls the same ability
+/// ("Grizzly Bears ability resolved") (issue #632).
+#[test]
+fn a_granted_ability_on_the_stack_is_named_after_the_object_that_has_it() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bears = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    state.get_object_mut(bears).unwrap().summoning_sick = false;
+    let torch = named_permanent(&mut state, &reg, "Blazing Torch", P0);
+    state.get_object_mut(torch).unwrap().attached_to = Some(bears);
+
+    let state = activate_onto_stack(&state, &reg, bears, Some(Target::Player(P1)));
+    let view = mtg_engine::view::GameView::for_player(&state, P0, &reg);
+    let item = view.stack.last().expect("the ability is on the stack");
+    assert_eq!(item.source_id, Some(bears));
+    assert_eq!(item.name, "Grizzly Bears ability",
+        "the name and the id beside it must be the same object");
+}

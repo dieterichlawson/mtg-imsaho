@@ -541,8 +541,23 @@ impl GameView {
                         Some(StackItemView {
                             object_id: *source_id,
                             card_id: *behavior_card_id,
-                            name: registry.card_data(*behavior_card_id)
-                                .map_or_else(|| "Ability".into(), |d| format!("{} ability", d.name)),
+                            // CR 113.7a: the ability's source is the object
+                            // that has it, and that is what the id beside the
+                            // name says and what the log calls it. Naming a
+                            // granted ability after its Aura or Equipment put
+                            // the grantor's name beside the creature's id —
+                            // "Skeletal Grimace ability (#47)" with #47 the
+                            // Priest (issue #632). The grantor's name is only
+                            // the fallback for a source that no longer exists.
+                            name: {
+                                let source = state.name_of(*source_id, registry);
+                                if source.is_empty() {
+                                    registry.card_data(*behavior_card_id)
+                                        .map_or_else(|| "Ability".into(), |d| format!("{} ability", d.name))
+                                } else {
+                                    format!("{source} ability")
+                                }
+                            },
                             source_id: Some(*source_id),
                             controller: *activator,
                             targets: targets.clone(),
