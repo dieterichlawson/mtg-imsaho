@@ -18,7 +18,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
         // the prompt and dropping it would resume a resolution that never got
         // its choice.
         let unanswered = awaiting.clone();
-        if let Some(AwaitingAction::ResolutionChoice { choice: kind, source: choice_source, .. }) = awaiting {
+        if let Some(AwaitingAction::ResolutionChoice { choice: kind, source: choice_source, player: chooser, .. }) = awaiting {
             match (&kind, resolved) {
                 (ResolutionChoiceKind::PayOrNot { spell_id, source_spell_id, cost, .. },
                  ResolvedChoice::PayDecision(pay)) => {
@@ -393,7 +393,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         .map(|id| state.obj_name(*id))
                         .collect();
                     state.log(LogLevel::Event,
-                        format!("{}: Pile 1: [{}], Pile 2: [{}]",
+                        format!("{}: Pile A: [{}], Pile B: [{}]",
                             state.obj_name(*source_id),
                             if pile_1_names.is_empty() { "empty".into() } else { pile_1_names.join(", ") },
                             if pile_2_names.is_empty() { "empty".into() } else { pile_2_names.join(", ") }));
@@ -404,7 +404,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         source: *source_id,
                         choice: ResolutionChoiceKind::ChoosePile {
                             description: format!(
-                                "{}: Choose a pile to sacrifice.\nPile 1: [{}]\nPile 2: [{}]",
+                                "{}: Choose a pile to sacrifice.\nPile A: [{}]\nPile B: [{}]",
                                 state.obj_name(*source_id),
                                 if pile_1_names.is_empty() { "empty".into() } else { pile_1_names.join(", ") },
                                 if pile_2_names.is_empty() { "empty".into() } else { pile_2_names.join(", ") }),
@@ -426,9 +426,12 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     }
                     // Target player chose which pile to sacrifice.
                     let chosen_pile = if *index == 0 { pile_1 } else { pile_2 };
-                    let pile_label = if *index == 0 { "Pile 1" } else { "Pile 2" };
+                    let pile_label = if *index == 0 { "Pile A" } else { "Pile B" };
+                    // The player who chose, not the card that asked: the
+                    // line used to credit Liliana with her opponent's choice
+                    // (issue #636).
                     state.log(LogLevel::Event,
-                        format!("{}: chose to sacrifice {pile_label}", state.obj_name(choice_source)));
+                        format!("p{} chose to sacrifice {pile_label} ({})", chooser.0, state.obj_name(choice_source)));
                     let reason = format!("to {}", state.obj_name(choice_source));
                     for &perm_id in chosen_pile {
                         crate::destruction::sacrifice_by(&mut *state, perm_id, &reason, registry);

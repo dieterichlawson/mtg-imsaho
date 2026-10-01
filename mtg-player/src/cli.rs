@@ -4019,7 +4019,7 @@ impl CliPlayer {
                         let names: Vec<String> = ids.iter()
                             .map(|id| Self::perm_name(view, *id))
                             .collect();
-                        format!("Pile 1: [{}]", if names.is_empty() { "empty".into() } else { names.join(", ") })
+                        format!("Pile A: [{}]", if names.is_empty() { "empty".into() } else { names.join(", ") })
                     }
                     ResolvedChoice::XFunding(response) => format!("Fund X = {}", response.x_value()),
                     ResolvedChoice::ChosenTargetSet(ts) => {
@@ -6407,7 +6407,7 @@ impl CliPlayer {
         let pick = SetPick {
             title,
             question: Self::question_after(detail,
-                &format!("Mark the permanents for pile 1; the {} you leave form pile 2.",
+                &format!("Mark the permanents for pile A; the {} you leave form pile B.",
                     if permanents.len() == 1 { "one" } else { "rest" })),
             rows,
             min: 0,

@@ -2292,6 +2292,47 @@ fn liliana_minus_six_pile_division_and_choice() {
     assert_eq!(state.get_object(c3).unwrap().zone, Zone::Battlefield, "c3 should survive");
 }
 
+/// The pile choice used to number its piles two ways: the heading said
+/// "0: […], 1: […]" while the rows and the log said "Pile 1"/"Pile 2", so
+/// the menu's `1` was "Pile 2" and a player who typed the number on the row
+/// sacrificed the other pile. And the log credited the choice to Liliana,
+/// not to the opponent who made it (issue #636). One lettered name now runs
+/// through the heading, the rows and the log, and the log names the chooser.
+#[test]
+fn liliana_minus_six_names_each_pile_one_way_and_credits_the_chooser() {
+    use mtg_engine::actions::ResolvedChoice;
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let liliana = named_permanent(&mut state, &reg, "Liliana of the Veil", P0);
+    set_loyalty(&mut state, liliana, 9);
+    let c1 = ready_creature(&mut state, P1, 3, 3);
+    ready_creature(&mut state, P1, 2, 2);
+    let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
+    behavior.on_loyalty_ability(&mut state, liliana, 2, &[Target::Player(P1)], &reg);
+    state = engine::submit_action(&state, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenSubset(vec![c1]),
+    }, &reg);
+
+    let legal = engine::legal_actions(&state, &reg);
+    let heading = legal.context.clone().unwrap_or_default();
+    let rows: Vec<String> = legal.actions.iter().filter_map(|a| match a {
+        Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(_, label) } => Some(label.clone()),
+        _ => None,
+    }).collect();
+    assert!(heading.contains("Pile A: [") && heading.contains("Pile B: ["), "{heading}");
+    assert!(!heading.contains("0: [") && !heading.contains("1: ["),
+        "the heading must not number the piles a second way: {heading}");
+    assert!(rows[0].starts_with("Pile A:") && rows[1].starts_with("Pile B:"), "{rows:?}");
+
+    let pick = legal.actions.iter().find(|a| matches!(a,
+        Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(1, _) })).unwrap();
+    state = engine::submit_action(&state, pick, &reg);
+    let line = state.game_log.iter().map(|e| e.message.as_str())
+        .find(|m| m.contains("chose to sacrifice")).expect("the choice is logged");
+    assert!(line.starts_with("p1 chose to sacrifice Pile B"), "{line}");
+}
+
 /// There are exactly two piles, so 0 and 1 are the answers and nothing else
 /// is — an index past the end used to mean "pile 2" by falling off the
 /// comparison. Neither client picks a whole offered action, so a

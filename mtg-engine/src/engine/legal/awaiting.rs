@@ -317,13 +317,13 @@ pub(crate) fn legal_actions_while_awaiting(
                         Action::ResolveChoice {
                             choice: ResolvedChoice::ChosenIndex(
                                 0,
-                                format!("Pile 1: [{}]", fmt_pile(pile_1)),
+                                format!("Pile A: [{}]", fmt_pile(pile_1)),
                             ),
                         },
                         Action::ResolveChoice {
                             choice: ResolvedChoice::ChosenIndex(
                                 1,
-                                format!("Pile 2: [{}]", fmt_pile(pile_2)),
+                                format!("Pile B: [{}]", fmt_pile(pile_2)),
                             ),
                         },
                     ]
@@ -410,8 +410,13 @@ pub(crate) fn legal_actions_while_awaiting(
                             .collect::<Vec<_>>()
                             .join(", ")
                     };
+                    // The piles are lettered, not numbered, here and on the
+                    // rows and in the log: the heading said "0:"/"1:" while
+                    // the rows said "Pile 1"/"Pile 2", so the menu's `1` was
+                    // "Pile 2" and a player who typed the number they read
+                    // sacrificed the other pile (issue #636).
                     format!(
-                        "{}: choose which pile to sacrifice (0: [{}], 1: [{}])",
+                        "{}: choose which pile to sacrifice (Pile A: [{}], Pile B: [{}])",
                         source_name,
                         fmt_pile(pile_1),
                         fmt_pile(pile_2)

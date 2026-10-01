@@ -2794,7 +2794,7 @@ impl LlmPlayer {
                         let names: Vec<String> = ids.iter()
                             .map(|id| Self::obj_name(view, *id))
                             .collect();
-                        format!("Pile 1: [{}]", if names.is_empty() { "empty".into() } else { names.join(", ") })
+                        format!("Pile A: [{}]", if names.is_empty() { "empty".into() } else { names.join(", ") })
                     }
                     ResolvedChoice::XFunding(response) => format!("Fund X = {}", response.x_value()),
                     ResolvedChoice::ChosenTargetSet(ts) => {
@@ -3238,7 +3238,7 @@ impl LlmPlayer {
 
         let action_text = format!(
             "{context_desc}\n{who_sacrifices}\n\
-             For each permanent, set true to put it in pile 1 or false for pile 2.\n\n\
+             For each permanent, set true to put it in pile A or false for pile B.\n\n\
              Permanents:\n{perm_list}"
         );
         let prompt = self.build_prompt(view, &action_text);
@@ -3248,7 +3248,7 @@ impl LlmPlayer {
         for label in &labels {
             pile_props.insert(label.clone(), serde_json::json!({
                 "type": "boolean",
-                "description": format!("true = pile 1, false = pile 2")
+                "description": "true = pile A, false = pile B"
             }));
         }
         let mut all_props = serde_json::Map::new();
@@ -3256,7 +3256,7 @@ impl LlmPlayer {
             "type": "string",
             "description": "Concise but complete summary of your internal thoughts"
         }));
-        all_props.insert("pile_1".to_string(), serde_json::json!({
+        all_props.insert("pile_a".to_string(), serde_json::json!({
             "type": "object",
             "properties": pile_props
         }));
@@ -3264,21 +3264,21 @@ impl LlmPlayer {
         let schema = serde_json::json!({
             "type": "object",
             "properties": all_props,
-            "required": ["thoughts", "pile_1"]
+            "required": ["thoughts", "pile_a"]
         });
 
         let response = self.send_message_structured(&prompt, &schema);
 
-        // Parse response: collect IDs where the model chose true (pile 1)
+        // Parse response: collect IDs where the model chose true (pile A)
         let mut pile_1_ids: Vec<mtg_engine::ids::ObjectId> = Vec::new();
-        if !response["pile_1"].is_object() {
-            // Everything into pile 2 is a legal division, and it is also
+        if !response["pile_a"].is_object() {
+            // Everything into pile B is a legal division, and it is also
             // what an unanswered prompt produces (#399).
             self.log_rejected(&format!(
-                "no usable 'pile_1' object ({}); putting all {} permanents in pile 2",
-                response["pile_1"], all_ids.len()));
+                "no usable 'pile_a' object ({}); putting all {} permanents in pile B",
+                response["pile_a"], all_ids.len()));
         }
-        if let Some(pile_obj) = response["pile_1"].as_object() {
+        if let Some(pile_obj) = response["pile_a"].as_object() {
             for (i, label) in labels.iter().enumerate() {
                 if pile_obj.get(label).and_then(serde_json::Value::as_bool).unwrap_or(false)
                     && i < all_ids.len()
@@ -3288,7 +3288,7 @@ impl LlmPlayer {
             }
         }
 
-        self.log("CHOSE", &format!("pile division: {} in pile 1, {} in pile 2",
+        self.log("CHOSE", &format!("pile division: {} in pile A, {} in pile B",
             pile_1_ids.len(), all_ids.len() - pile_1_ids.len()));
 
         Action::ResolveChoice { choice: ResolvedChoice::ChosenSubset(pile_1_ids) }

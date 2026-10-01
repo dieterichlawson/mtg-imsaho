@@ -27,7 +27,7 @@ fn the_thinking_parameter_matches_what_the_model_accepts() {
 /// the card's display name, so a `claude -p` seat could not cast Skaab
 /// Goliath at all — six attempts in one game, every one rejected before it
 /// was asked. The two top-level ones are index arrays now; the third
-/// (`choose_pile_division`) nests its per-card keys under `pile_1`, where
+/// (`choose_pile_division`) nests its per-card keys under `pile_a`, where
 /// the pattern does not apply.
 ///
 /// The failure is invisible from inside a normal run: only a real API
@@ -39,7 +39,7 @@ fn no_schema_keys_a_top_level_property_by_a_card_name() {
     use mtg_player::llm::schema_key_is_legal;
 
     // The rule itself, on the shapes that matter.
-    for legal in ["thoughts", "indices", "card_indices", "obj_62", "pile_1", "x.y-z"] {
+    for legal in ["thoughts", "indices", "card_indices", "obj_62", "pile_a", "x.y-z"] {
         assert!(schema_key_is_legal(legal), "{legal} is a legal key");
     }
     for illegal in ["Spectral Rider (#62)", "0: Grizzly Bears", "Forbidden Alchemy", "", &"a".repeat(65)] {
