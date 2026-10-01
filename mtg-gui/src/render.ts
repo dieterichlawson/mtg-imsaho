@@ -100,12 +100,20 @@ export function wrapCapped(ctx: Ctx, s: string, maxW: number, font: string, maxL
   return kept;
 }
 
-function clip(ctx: Ctx, s: string, maxW: number, font = "8px Silkscreen"): string {
+// The longest prefix that fits with its "…", found by bisection. Trimming one
+// character per `measureText` was O(L²) in the string's length, and a
+// "declared attackers" line names every creature: 14,000 characters at 2,000
+// permanents, 8 s to show the ~100 that fit, on every frame (#640). Width is
+// monotonic in prefix length, so log₂(L) measurements find the same cut.
+export function clip(ctx: Ctx, s: string, maxW: number, font = "8px Silkscreen"): string {
   ctx.font = font;
   if (ctx.measureText(s).width <= maxW) return s;
-  let t = s;
-  while (t.length > 1 && ctx.measureText(t + "…").width > maxW) t = t.slice(0, -1);
-  return t + "…";
+  let lo = 1, hi = Math.max(1, s.length - 1);
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (ctx.measureText(s.slice(0, mid) + "…").width <= maxW) lo = mid; else hi = mid - 1;
+  }
+  return s.slice(0, lo) + "…";
 }
 
 function panel(ctx: Ctx, x: number, y: number, w: number, h: number, fill = "#1a1620", stroke = "#5a4a6a"): void {

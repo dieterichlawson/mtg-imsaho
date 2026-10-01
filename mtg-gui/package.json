@@ -7,7 +7,8 @@
     "check": "tsc -p . --noEmit",
     "smoke": "node tests/smoke.js",
     "widgets": "node tests/widgets.js",
-    "twotabs": "node tests/twotabs.js"
+    "twotabs": "node tests/twotabs.js",
+    "clip": "node tests/clip.mjs"
   },
   "devDependencies": {
     "typescript": "^5.4"
