@@ -368,6 +368,25 @@ progress at turn {turn} {step}; the game is forfeit"),
         );
     }
 
+    /// A game the runner stopped at its action budget. Neither seat won it,
+    /// and nothing else in the log would say why it has no winner (#630).
+    pub fn abandoned_game(
+        seat_a: usize,
+        seat_b: usize,
+        max_actions: u64,
+        turn: u32,
+        step: &str,
+        file: &str,
+        line: u32,
+    ) {
+        mtg_player::game_log::write(
+            file, line,
+            &format!("ABANDONED (Seat {seat_a} vs Seat {seat_b}) — {max_actions} actions without \
+a result at turn {turn} {step}; the runner stopped the game and neither seat wins it"),
+            "",
+        );
+    }
+
     pub fn standings(standings: &[Standing], file: &str, line: u32) {
         let mut content = String::new();
         for (rank, s) in standings.iter().enumerate() {

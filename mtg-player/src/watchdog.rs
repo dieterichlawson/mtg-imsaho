@@ -211,6 +211,19 @@ pub fn forfeit_move() -> mtg_engine::actions::Action {
     mtg_engine::actions::Action::Concede
 }
 
+/// The move a runner sends when a game has run past its action budget.
+///
+/// That is the HARNESS stopping, not a seat quitting, so it is not
+/// [`forfeit_move`]: a concede there is recorded against whichever seat
+/// happens to hold the decision at the budget's last action — a loss nobody
+/// chose, decided by the parity of a counter (issue #233). `mtg-runner`
+/// stopped doing that and `mtg-draft-runner` kept doing it, because each
+/// had its own copy of the answer (issue #630). Both call this now.
+#[must_use]
+pub fn ceiling_move() -> mtg_engine::actions::Action {
+    mtg_engine::actions::Action::AbandonGame
+}
+
 /// What a stalled game is stuck on: the seat, the question, where in the
 /// game it is, and the last thing that happened. Without it the operator
 /// gets a run that never ends and an empty stderr.

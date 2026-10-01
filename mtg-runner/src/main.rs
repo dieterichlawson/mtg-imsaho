@@ -686,7 +686,7 @@ stops here — pass --save {path} to keep writing it");
         // `Concede`, which the engine recorded and the summary reported as
         // "<deck> conceded" — a loss nobody chose (issue #233).
         if action_count >= max_actions {
-            return mtg_engine::actions::Action::AbandonGame;
+            return mtg_player::watchdog::ceiling_move();
         }
 
         // The registry the run already built, not a new one. Each of these

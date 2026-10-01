@@ -49,6 +49,11 @@ pub struct GameOutcome {
     /// A game nobody played must not read like one that was (#488).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stalled_seat: Option<usize>,
+    /// The runner stopped the game at its action budget with no result.
+    /// Neither seat won it; it used to be recorded as a concede by
+    /// whichever seat was acting at that moment (#630).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub abandoned: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -342,7 +347,7 @@ mod tests {
             wins_a,
             wins_b,
             games: (0..(wins_a + wins_b))
-                .map(|_| GameOutcome { winner: None, turns: 1, game_log: vec![], stalled_seat: None })
+                .map(|_| GameOutcome { winner: None, turns: 1, game_log: vec![], stalled_seat: None, abandoned: false })
                 .collect(),
         }
     }
@@ -569,9 +574,9 @@ mod tests {
                 wins_a: 2,
                 wins_b: 1,
                 games: vec![
-                    GameOutcome { winner: Some(0), turns: 10, game_log: vec![], stalled_seat: None },
-                    GameOutcome { winner: Some(1), turns: 8, game_log: vec![], stalled_seat: None },
-                    GameOutcome { winner: Some(0), turns: 12, game_log: vec![], stalled_seat: None },
+                    GameOutcome { winner: Some(0), turns: 10, game_log: vec![], stalled_seat: None, abandoned: false },
+                    GameOutcome { winner: Some(1), turns: 8, game_log: vec![], stalled_seat: None, abandoned: false },
+                    GameOutcome { winner: Some(0), turns: 12, game_log: vec![], stalled_seat: None, abandoned: false },
                 ],
             },
             MatchResult {
@@ -580,8 +585,8 @@ mod tests {
                 wins_a: 0,
                 wins_b: 2,
                 games: vec![
-                    GameOutcome { winner: Some(3), turns: 7, game_log: vec![], stalled_seat: None },
-                    GameOutcome { winner: Some(3), turns: 9, game_log: vec![], stalled_seat: None },
+                    GameOutcome { winner: Some(3), turns: 7, game_log: vec![], stalled_seat: None, abandoned: false },
+                    GameOutcome { winner: Some(3), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false },
                 ],
             },
         ];
@@ -606,15 +611,15 @@ mod tests {
                 MatchResult {
                     player_a: 0, player_b: 1, wins_a: 2, wins_b: 0,
                     games: vec![
-                        GameOutcome { winner: Some(0), turns: 5, game_log: vec![], stalled_seat: None },
-                        GameOutcome { winner: Some(0), turns: 5, game_log: vec![], stalled_seat: None },
+                        GameOutcome { winner: Some(0), turns: 5, game_log: vec![], stalled_seat: None, abandoned: false },
+                        GameOutcome { winner: Some(0), turns: 5, game_log: vec![], stalled_seat: None, abandoned: false },
                     ],
                 },
                 MatchResult {
                     player_a: 2, player_b: 3, wins_a: 2, wins_b: 0,
                     games: vec![
-                        GameOutcome { winner: Some(2), turns: 5, game_log: vec![], stalled_seat: None },
-                        GameOutcome { winner: Some(2), turns: 5, game_log: vec![], stalled_seat: None },
+                        GameOutcome { winner: Some(2), turns: 5, game_log: vec![], stalled_seat: None, abandoned: false },
+                        GameOutcome { winner: Some(2), turns: 5, game_log: vec![], stalled_seat: None, abandoned: false },
                     ],
                 },
             ],

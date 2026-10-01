@@ -47,6 +47,24 @@ pub(crate) fn standings_row(rank: usize, s: &Standing) -> String {
     )
 }
 
+/// What the score line adds about the match's games that were not played
+/// out: a forfeit is a seat the watchdog caught (#488), an abandoned game is
+/// one the runner stopped at its action budget with no winner (#630).
+fn unplayed_games_note(games: &[GameOutcome]) -> String {
+    let count = |n: usize, what: &str| match n {
+        0 => String::new(),
+        1 => format!(" [1 game {what}]"),
+        n => format!(" [{n} games {what}]"),
+    };
+    let forfeits = games.iter().filter(|g| g.stalled_seat.is_some()).count();
+    let abandoned = games.iter().filter(|g| g.abandoned).count();
+    format!(
+        "{}{}",
+        count(forfeits, "forfeited: a seat stalled"),
+        count(abandoned, "abandoned: the action budget ran out, no winner"),
+    )
+}
+
 /// Per-seat configuration used by [`play_match`].
 struct PlayerSpec<'a> {
     seat: usize,
@@ -1312,12 +1330,7 @@ and the FINAL STANDINGS below record none",
             if !args.quiet {
                 // A forfeited game is a game nobody played; the score line
                 // is where a reader is looking when it happens (#488).
-                let forfeits = result.games.iter().filter(|g| g.stalled_seat.is_some()).count();
-                let forfeited = match forfeits {
-                    0 => String::new(),
-                    1 => " [1 game forfeited: a seat stalled]".to_string(),
-                    n => format!(" [{n} games forfeited: a seat stalled]"),
-                };
+                let forfeited = unplayed_games_note(&result.games);
                 eprintln!(
                     "  Seat {} vs Seat {}: {}-{} (winner: Seat {}){forfeited}",
                     result.player_a,
@@ -1392,6 +1405,21 @@ progress (the same unusable answer over and over), so the game was awarded to it
             }
         }
         eprintln!("  (grep the log for STALLED to see each one)");
+    }
+
+    // A game the runner stopped at its action budget is in the standings as
+    // a game neither seat won; say which, next to them (#630).
+    let abandoned: Vec<(usize, usize)> = tournament.rounds.iter()
+        .flat_map(|r| r.results.iter())
+        .flat_map(|m| m.games.iter().filter(|g| g.abandoned).map(|_| (m.player_a, m.player_b)))
+        .collect();
+    if !abandoned.is_empty() {
+        eprintln!("\n=== Abandoned Games ===");
+        for (a, b) in &abandoned {
+            eprintln!("    Seat {a} vs Seat {b}: the game ran past the runner's action budget \
+with no result, so the runner stopped it — neither seat won it");
+        }
+        eprintln!("  (grep the log for ABANDONED to see each one)");
     }
 
     if played_nothing {
@@ -1737,6 +1765,7 @@ fn play_game(
     // reported, rather than killing the tournament around it (#488).
     let mut watchdog = mtg_player::watchdog::ProgressWatchdog::new();
     let mut stalled_seat: Option<usize> = None;
+    let mut abandoned = false;
 
     let mut game_callback =
         |game_state: &GameState,
@@ -1763,16 +1792,20 @@ fn play_game(
                 );
             }
 
-            if stalled || action_count >= max_actions {
-                // Sent, not looked up. `legal.actions` lists `Concede` only
-                // on the normal-priority path, so reaching for it there made
-                // both the forfeit and the 50,000-action ceiling no-ops at
-                // every prompt — a mulligan, a discard, a declaration, any
-                // resolution choice — which is where a spinning seat usually
-                // is, leaving the game with no termination condition at all
-                // (issue #559). The engine accepts a concede at any decision
-                // point (CR 104.3a, `LegalActions::permits`).
-                return mtg_player::watchdog::forfeit_move();
+            if let Some(stop) = harness_move(stalled, action_count, max_actions) {
+                if matches!(stop, mtg_engine::actions::Action::AbandonGame) && !abandoned {
+                    abandoned = true;
+                    eprintln!("\nWARN: Seat {seat_a} vs Seat {seat_b}: the game reached \
+{max_actions} actions without a result at turn {} {:?}; the runner abandoned it — no winner.",
+                        game_state.turn_number, game_state.step);
+                    draft_log::DraftLogger::abandoned_game(
+                        seat_a, seat_b, max_actions,
+                        game_state.turn_number,
+                        &format!("{:?}", game_state.step),
+                        file!(), line!(),
+                    );
+                }
+                return stop;
             }
 
             let view = GameView::for_player(game_state, acting_player, registry);
@@ -1819,6 +1852,33 @@ fn play_game(
         turns: state.turn_number,
         game_log,
         stalled_seat,
+        abandoned,
+    }
+}
+
+/// The move the runner itself makes, when it makes one, before the acting
+/// seat is asked anything.
+///
+/// The two reasons to stop are not the same event. A seat the watchdog
+/// caught spinning forfeits: the loss is that seat's, and the report says
+/// so. A game that is still moving but has run out of budget is the
+/// harness stopping, and nobody wins it — sending the forfeit there handed
+/// the game to whichever seat was *not* acting at action 50,000 (#630,
+/// the draft runner's copy of #233).
+///
+/// Either is sent, not looked up. `legal.actions` lists `Concede` only on
+/// the normal-priority path, so reaching for it there made both no-ops at
+/// every prompt — a mulligan, a discard, a declaration, any resolution
+/// choice — which is where a spinning seat usually is, leaving the game
+/// with no termination condition at all (issue #559). The engine accepts
+/// either at any decision point (CR 104.3a, `LegalActions::permits`).
+fn harness_move(stalled: bool, action_count: u64, max_actions: u64) -> Option<mtg_engine::actions::Action> {
+    if stalled {
+        Some(mtg_player::watchdog::forfeit_move())
+    } else if action_count >= max_actions {
+        Some(mtg_player::watchdog::ceiling_move())
+    } else {
+        None
     }
 }
 
@@ -2037,5 +2097,38 @@ mod pick_parsing_tests {
         ).expect("an older snapshot is still a snapshot");
         assert_eq!(save.picks.len(), 1);
         assert!(!save.picks[0].substituted);
+    }
+}
+
+#[cfg(test)]
+mod harness_stop_tests {
+    use super::{harness_move, unplayed_games_note};
+    use mtg_draft::tournament::GameOutcome;
+    use mtg_engine::actions::Action;
+
+    /// #630: the action ceiling and the stall forfeit shared one move, so a
+    /// game still progressing at action 50,000 was conceded on behalf of
+    /// whichever seat held the decision — the loss #233 removed from
+    /// `mtg-runner`. The ceiling is the harness stopping; nobody wins it.
+    #[test]
+    fn the_action_ceiling_abandons_the_game_rather_than_conceding_it() {
+        assert!(harness_move(false, 49_999, 50_000).is_none());
+        assert!(matches!(harness_move(false, 50_000, 50_000), Some(Action::AbandonGame)),
+            "the ceiling must not be a seat's concede");
+        // A stalled seat still forfeits: that loss is the stuck seat's.
+        assert!(matches!(harness_move(true, 10, 50_000), Some(Action::Concede)));
+        assert!(matches!(harness_move(true, 50_000, 50_000), Some(Action::Concede)));
+    }
+
+    #[test]
+    fn an_abandoned_game_is_named_on_the_score_line() {
+        let game = |stalled_seat, abandoned| GameOutcome {
+            winner: None, turns: 30, game_log: vec![], stalled_seat, abandoned,
+        };
+        assert_eq!(unplayed_games_note(&[game(None, false)]), "");
+        assert_eq!(unplayed_games_note(&[game(None, true)]),
+            " [1 game abandoned: the action budget ran out, no winner]");
+        assert_eq!(unplayed_games_note(&[game(Some(1), false), game(None, true), game(None, true)]),
+            " [1 game forfeited: a seat stalled] [2 games abandoned: the action budget ran out, no winner]");
     }
 }
