@@ -9,6 +9,15 @@
 #   FUZZ_DECKS      space-separated deck files to pair up instead of the
 #                   default set (e.g. FUZZ_DECKS="decks/gw-humans.txt ...")
 #   FUZZ_JOBS       parallel games (default: number of CPUs)
+#   FUZZ_GAME_TIMEOUT  seconds one game may run before it is a finding
+#                   (default 300). The slowest coverage game takes under
+#                   2 s; a game still going at the limit is either a
+#                   performance cliff or a loop the watchdog cannot see,
+#                   and a game with no limit held its worker until the
+#                   job's 90-minute cap cancelled the shard — which files
+#                   nothing, so it surfaced with no seed attached (#644).
+#   FUZZ_RUNNER     runner binary to use instead of building the release
+#                   one (the script's own test drives it with a stub)
 #
 # The default deck set is decks/coverage/ — ten decks that together contain
 # every castable card the engine implements (pinned by
@@ -24,10 +33,15 @@ cd "$(dirname "$0")/.."
 GAMES="${1:-100}"
 START="${2:-1}"
 JOBS="${FUZZ_JOBS:-$(nproc 2>/dev/null || echo 2)}"
-RUNNER=target/release/mtg-runner
+GAME_TIMEOUT="${FUZZ_GAME_TIMEOUT:-300}"
 OUT="logs/fuzz-$(date +%Y%m%d-%H%M%S)"
 
-cargo build --release -p mtg-runner || exit 1
+if [ -n "${FUZZ_RUNNER:-}" ]; then
+  RUNNER="$FUZZ_RUNNER"
+else
+  RUNNER=target/release/mtg-runner
+  cargo build --release -p mtg-runner || exit 1
+fi
 mkdir -p "$OUT"
 
 if [ -n "${FUZZ_DECKS:-}" ]; then
@@ -53,12 +67,19 @@ for ((i = 0; i < ${#DECKS[@]}; i++)); do
 done > "$jobs_file"
 total=$(wc -l < "$jobs_file")
 
-export RUNNER OUT
+export RUNNER OUT GAME_TIMEOUT
 xargs -P "$JOBS" -n 4 bash -c '
   d1=$0; d2=$1; s=$2; pair=$3
   log="$OUT/$pair-seed$s.txt"
-  if ! "$RUNNER" --p1 random --p2 random --deck1 "$d1" --deck2 "$d2" \
-      --seed "$s" --check-invariants --quiet > "$log" 2>&1; then
+  timeout --kill-after=10 "$GAME_TIMEOUT" "$RUNNER" --p1 random --p2 random \
+      --deck1 "$d1" --deck2 "$d2" --seed "$s" --check-invariants --quiet > "$log" 2>&1
+  status=$?
+  if [ "$status" -eq 124 ] || [ "$status" -eq 137 ]; then
+    # Said in the log, not only here: a --quiet game that is killed has
+    # written nothing, and the filing step skips an empty log.
+    echo "TIMEOUT: the game was still running after ${GAME_TIMEOUT}s and was killed" >> "$log"
+    echo "FAIL: $pair seed $s timed out after ${GAME_TIMEOUT}s (log: $log)"
+  elif [ "$status" -ne 0 ]; then
     echo "FAIL: $pair seed $s (log: $log)"
   else
     rm -f "$log"
@@ -71,10 +92,11 @@ for ((i = 0; i < ${#DECKS[@]}; i++)); do
   for ((j = i; j < ${#DECKS[@]}; j++)); do
     d1="${DECKS[$i]}"; d2="${DECKS[$j]}"
     pair="$(basename "$d1" .txt)-vs-$(basename "$d2" .txt)"
-    "$RUNNER" --p1 random --p2 random --deck1 "$d1" --deck2 "$d2" \
-        --seed "$START" --quiet > "$OUT/det-a.txt" 2>&1
-    "$RUNNER" --p1 random --p2 random --deck1 "$d1" --deck2 "$d2" \
-        --seed "$START" --quiet > "$OUT/det-b.txt" 2>&1
+    # Bounded too: the same game as above, run twice more.
+    timeout --kill-after=10 "$GAME_TIMEOUT" "$RUNNER" --p1 random --p2 random \
+        --deck1 "$d1" --deck2 "$d2" --seed "$START" --quiet > "$OUT/det-a.txt" 2>&1
+    timeout --kill-after=10 "$GAME_TIMEOUT" "$RUNNER" --p1 random --p2 random \
+        --deck1 "$d1" --deck2 "$d2" --seed "$START" --quiet > "$OUT/det-b.txt" 2>&1
     if ! diff -q "$OUT/det-a.txt" "$OUT/det-b.txt" > /dev/null; then
       cp "$OUT/det-a.txt" "$OUT/$pair-seed$START-replay-a.txt"
       cp "$OUT/det-b.txt" "$OUT/$pair-seed$START-replay-b.txt"

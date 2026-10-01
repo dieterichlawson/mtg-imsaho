@@ -107,7 +107,7 @@ jobs:
             [ "$filed" -ge 5 ] && { echo "cap reached; remaining failures are in the artifact"; break; }
             seed="${base##*-seed}"; rest="${base%-seed*}"
             d1="${rest%%-vs-*}"; d2="${rest##*-vs-}"
-            symptom=$(grep -m1 -E 'INVARIANT VIOLATION|panicked' "$log" || head -1 "$log" || echo "game failed")
+            symptom=$(grep -m1 -E 'INVARIANT VIOLATION|panicked|^TIMEOUT:' "$log" || head -1 "$log" || echo "game failed")
             title="[fuzz] $d1-vs-$d2 seed $seed: $(echo "$symptom" | cut -c1-120)"
             if [ -n "$(gh issue list --state open --search "\"$base\" in:title" --json number --jq '.[0].number // empty')" ]; then
               echo "dedupe: open issue already covers $base"
