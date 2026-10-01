@@ -1142,6 +1142,26 @@ whether it told the truth.
   a prompt that honours is fine; a prompt that quietly substitutes needs a
   number. Start with `pick_set`'s five callers and the two combat prompts,
   since those are where a substitution would be invisible in the same way
+
+  **Answered 2026-10-01: the CLI half is clean — every value prompt refuses
+  out loud or honours; the substitution lives in the seat that never sees a
+  refusal.** Five hotseat games walked damage-assignment order, set screens,
+  blockers, X and pile division with off-by-one, repeated, out-of-range and
+  over-max answers: no prompt changed an answer and carried on, and the
+  engine re-validates every set answer behind them. Part (a) found it
+  instead in `llm.rs`: `attacker_indices` and `planeswalker_attacks` are the
+  only index arrays with `minimum: 0` and no `maximum`/`enum`, and the parser
+  filters out-of-range indices without a word — so a bad index is
+  schema-legal, never reaches `log_rejected`, and becomes "did not attack"
+  (32 of 32 on a stub, 0 rejections; #635). So for the next sweep: for each
+  index array a schema hands out, compare the schema's bound with the
+  parser's — a schema looser than its parser is a silent substitution the
+  API will never refuse for you. Also from the night: Liliana's piles are
+  numbered 0/1 in the heading and "Pile 1/2" in rows and log (#636); damage
+  amounts are never asked (#637, CR 510.1c-d); and two log gaps (#638,
+  #639). Add "can the log alone rebuild the answer I typed?" to every
+  position — it catches what the program left out, not only what it changed
+
 - V52 [proposed 2026-09-29, from #610 and #612, both found on a harness night]
   the menu row as an identifier, re-asked. #257 established that a row must
   identify its action and fixed it by naming the source and the targets. Two
