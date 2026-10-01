@@ -89,17 +89,7 @@ pub(crate) fn legal_actions_while_awaiting(
                 .as_ref()
                 .map(|c| c.attackers.keys().copied().collect())
                 .unwrap_or_default();
-            let mut legal_blocks = std::collections::HashMap::new();
-            for &blocker_id in &eligible_blockers {
-                let can_block: Vec<_> = attacker_ids
-                    .iter()
-                    .filter(|&&att_id| {
-                        combat::can_block_attacker(state, blocker_id, att_id, registry)
-                    })
-                    .copied()
-                    .collect();
-                legal_blocks.insert(blocker_id, can_block);
-            }
+            let legal_blocks = combat::legal_blocks(state, &eligible_blockers, &attacker_ids, registry);
             // CR 509.1b: tell the defender up front which attackers need 2+
             // blockers (menace, Terror of Kruin Pass), so clients can refuse
             // an under-minimum declaration instead of the engine silently

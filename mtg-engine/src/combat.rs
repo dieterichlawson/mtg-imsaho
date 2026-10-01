@@ -776,68 +776,130 @@ pub fn can_block_at_all(state: &GameState, blocker_id: ObjectId, registry: &Card
 /// combat context (`declare_blockers_with_registry`).
 #[must_use]
 pub fn can_block_attacker(state: &GameState, blocker_id: ObjectId, attacker_id: ObjectId, registry: &CardRegistry) -> bool {
-    if !can_block_at_all(state, blocker_id, registry) {
-        return false;
-    }
+    AttackerEvasion::of(state, attacker_id, registry)
+        .admits(state, &BlockerReach::of(state, blocker_id, registry), registry)
+}
 
-    // Flying: can only be blocked by creatures with flying or reach.
-    if state.has_keyword(attacker_id, Keyword::Flying, registry)
-        && !state.has_keyword(blocker_id, Keyword::Flying, registry)
-        && !state.has_keyword(blocker_id, Keyword::Reach, registry)
-    {
-        return false;
-    }
+/// Every attacker each blocker may block, for the declare-blockers prompt.
+///
+/// Each attacker's evasion and each blocker's reach are read off the board
+/// once, and only the pair-dependent part — a filter or protection matched
+/// against this blocker — is evaluated per pair. Calling
+/// [`can_block_attacker`] per pair walked the battlefield's effects several
+/// times for every (blocker, attacker), O(blockers × attackers × board):
+/// 27 s for one decision at 2,000 permanents, in every seat (#641).
+#[must_use]
+pub fn legal_blocks(
+    state: &GameState,
+    blockers: &[ObjectId],
+    attackers: &[ObjectId],
+    registry: &CardRegistry,
+) -> std::collections::HashMap<ObjectId, Vec<ObjectId>> {
+    let evasions: Vec<AttackerEvasion> = attackers.iter()
+        .map(|&a| AttackerEvasion::of(state, a, registry))
+        .collect();
+    blockers.iter().map(|&b| {
+        let reach = BlockerReach::of(state, b, registry);
+        let can: Vec<ObjectId> = evasions.iter()
+            .filter(|e| e.admits(state, &reach, registry))
+            .map(|e| e.id)
+            .collect();
+        (b, can)
+    }).collect()
+}
 
-    // Intimidate: can only be blocked by artifact creatures or creatures that share a color.
-    if state.has_keyword(attacker_id, Keyword::Intimidate, registry) {
-        let is_artifact = state.has_card_type(blocker_id, crate::types::CardType::Artifact, registry);
-        if !is_artifact {
-            let attacker_colors = state.colors_of(attacker_id, registry);
-            let blocker_colors = state.colors_of(blocker_id, registry);
-            let shares_color = attacker_colors.iter().any(|c| blocker_colors.contains(c));
-            if !shares_color {
-                return false;
-            }
+/// What an attacker's evasion asks of any blocker.
+struct AttackerEvasion {
+    id: ObjectId,
+    flying: bool,
+    intimidate: bool,
+    colors: Vec<crate::types::Color>,
+    unblockable: bool,
+    /// `CanOnlyBeBlockedBy` filters, with the source each is read against.
+    only_by: Vec<(crate::types::CreatureFilter, ObjectId, PlayerId)>,
+    protections: crate::state::Protections,
+}
+
+/// What a blocker brings to any attacker.
+struct BlockerReach {
+    id: ObjectId,
+    able: bool,
+    flying_or_reach: bool,
+    artifact: bool,
+    colors: Vec<crate::types::Color>,
+}
+
+impl BlockerReach {
+    fn of(state: &GameState, id: ObjectId, registry: &CardRegistry) -> Self {
+        let able = can_block_at_all(state, id, registry);
+        BlockerReach {
+            id,
+            able,
+            flying_or_reach: able && (state.has_keyword(id, Keyword::Flying, registry)
+                || state.has_keyword(id, Keyword::Reach, registry)),
+            artifact: able && state.has_card_type(id, crate::types::CardType::Artifact, registry),
+            colors: if able { state.colors_of(id, registry) } else { Vec::new() },
+        }
+    }
+}
+
+impl AttackerEvasion {
+    fn of(state: &GameState, id: ObjectId, registry: &CardRegistry) -> Self {
+        let intimidate = state.has_keyword(id, Keyword::Intimidate, registry);
+        let mut only_by = Vec::new();
+        // Block restriction (e.g., Orchard Spirit: only flying/reach can
+        // block). The filter is read against the effect source's controller,
+        // which is why this keeps the source and not just the effect.
+        state.walk_effects(
+            id,
+            &|e| matches!(e, ContinuousEffect::CanOnlyBeBlockedBy { .. }),
+            registry,
+            &mut |e, source| {
+                if let ContinuousEffect::CanOnlyBeBlockedBy { allowed_blockers, .. } = e {
+                    only_by.push((allowed_blockers.clone(), source.id, source.controller));
+                }
+                true
+            },
+        );
+        AttackerEvasion {
+            id,
+            flying: state.has_keyword(id, Keyword::Flying, registry),
+            intimidate,
+            colors: if intimidate { state.colors_of(id, registry) } else { Vec::new() },
+            // "Can't be blocked" (e.g., Invisible Stalker).
+            unblockable: state.cant_be_blocked(id, registry),
+            only_by,
+            protections: state.protection_set(id, registry),
         }
     }
 
-    // Menace: must be blocked by two or more creatures (handled at validation, not per-blocker).
-
-    // Block restriction (e.g., Orchard Spirit: only flying/reach can block).
-    // The filter is read against the effect source's controller, which is why
-    // this needs the source and not just the effect.
-    let mut restricted = false;
-    state.walk_effects(
-        attacker_id,
-        &|e| matches!(e, ContinuousEffect::CanOnlyBeBlockedBy { .. }),
-        registry,
-        &mut |e, source| {
-            if let ContinuousEffect::CanOnlyBeBlockedBy { allowed_blockers, .. } = e {
-                if !state.matches_filter(blocker_id, allowed_blockers, source.id, source.controller, registry) {
-                    restricted = true;
-                    return false;
-                }
-            }
-            true
-        },
-    );
-    if restricted {
-        return false;
+    fn admits(&self, state: &GameState, blocker: &BlockerReach, registry: &CardRegistry) -> bool {
+        if !blocker.able || self.unblockable {
+            return false;
+        }
+        // Flying: can only be blocked by creatures with flying or reach.
+        if self.flying && !blocker.flying_or_reach {
+            return false;
+        }
+        // Intimidate: can only be blocked by artifact creatures or creatures
+        // that share a color.
+        if self.intimidate && !blocker.artifact
+            && !self.colors.iter().any(|c| blocker.colors.contains(c))
+        {
+            return false;
+        }
+        // Menace: must be blocked by two or more creatures (handled at
+        // validation, not per-blocker).
+        if self.only_by.iter().any(|(filter, source, controller)|
+            !state.matches_filter(blocker.id, filter, *source, *controller, registry))
+        {
+            return false;
+        }
+        // Protection: a creature with protection from X can't be BLOCKED BY
+        // X. Only the ATTACKER's protection from the blocker prevents it; a
+        // BLOCKER with protection from the attacker may still block.
+        !self.protections.covers(state, blocker.id, registry)
     }
-
-    // "Can't be blocked" (e.g., Invisible Stalker) — check continuous effects.
-    if state.cant_be_blocked(attacker_id, registry) {
-        return false;
-    }
-
-    // Protection: a creature with protection from X can't be BLOCKED BY X.
-    // Only check if the ATTACKER has protection from the blocker — that prevents the block.
-    // A BLOCKER having protection from the attacker does NOT prevent it from blocking.
-    if state.has_protection_from(attacker_id, blocker_id, registry) {
-        return false;
-    }
-
-    true
 }
 
 #[cfg(test)]
@@ -948,5 +1010,38 @@ mod tests {
         let eligible = eligible_attackers(&state, p0, &registry);
         assert_eq!(eligible.len(), 1);
         assert_eq!(eligible[0], a);
+    }
+
+    /// Building the declare-blockers offer walks the battlefield's effects a
+    /// bounded number of times per attacker and per blocker, not per pair:
+    /// per pair it was O(blockers × attackers × board) and took 27 s for
+    /// one decision at 2,000 permanents (#641).
+    #[test]
+    fn the_blocks_offer_walks_the_board_per_creature_not_per_pair() {
+        let registry = CardRegistry::with_all_cards();
+        let mut state = GameState::new(2);
+        let make = |state: &mut GameState, p: u8| {
+            let id = state.create_object(CardId(1), PlayerId(p), Zone::Battlefield, Some(2), Some(2));
+            let o = state.get_object_mut(id).unwrap();
+            o.summoning_sick = false;
+            o.card_types = vec![crate::types::CardType::Creature];
+            id
+        };
+        let attackers: Vec<_> = (0..30).map(|_| make(&mut state, 0)).collect();
+        let blockers: Vec<_> = (0..30).map(|_| make(&mut state, 1)).collect();
+
+        let before = crate::state::EFFECT_WALKS.with(std::cell::Cell::get);
+        let blocks = legal_blocks(&state, &blockers, &attackers, &registry);
+        let walks = crate::state::EFFECT_WALKS.with(std::cell::Cell::get) - before;
+        assert!(blocks.values().all(|v| v.len() == attackers.len()), "every blocker may block every attacker");
+        assert!(walks <= 20 * (attackers.len() + blockers.len()) as u64,
+            "{walks} effect walks for {} attackers x {} blockers — per pair, not per creature",
+            attackers.len(), blockers.len());
+        // And it is the same answer the per-pair question gives.
+        for (&b, can) in &blocks {
+            for &a in &attackers {
+                assert_eq!(can.contains(&a), can_block_attacker(&state, b, a, &registry));
+            }
+        }
     }
 }

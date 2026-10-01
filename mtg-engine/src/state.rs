@@ -1966,6 +1966,8 @@ impl GameState {
         registry: &crate::cards::CardRegistry,
         visit: &mut dyn FnMut(&crate::types::ContinuousEffect, &GameObject) -> bool,
     ) {
+        #[cfg(test)]
+        EFFECT_WALKS.with(|n| n.set(n.get() + 1));
         for source in self.objects.values() {
             if source.zone != Zone::Battlefield {
                 continue;
@@ -2595,65 +2597,53 @@ impl GameState {
     /// a `ProtectionFrom` filter. Used for targeting, blocking, and damage prevention.
     #[must_use]
     pub fn has_protection_from(&self, target_id: ObjectId, source_id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
+        self.protection_set(target_id, registry).covers(self, source_id, registry)
+    }
+
+    /// Everything `target_id` has protection from, read off the board once,
+    /// to be asked about any number of sources with [`Protections::covers`].
+    ///
+    /// `has_protection_from` walked the battlefield's effects for every
+    /// (target, source) pair it was asked about, and declaring blockers asks
+    /// it for every (attacker, blocker) pair — cubic in the board, 27 s for
+    /// one decision at 2,000 permanents (#641). The walk depends only on the
+    /// protected permanent; only the match depends on the source.
+    #[must_use]
+    pub fn protection_set(&self, target_id: ObjectId, registry: &crate::cards::CardRegistry) -> Protections {
         use crate::types::ContinuousEffect;
-
-        // Get the source's subtypes (active face — transform-aware).
-        let source_subtypes: Vec<String> = self.subtypes_of(source_id, registry);
-
-        // Check ProtectionFromSubtype effects on the target.
-        let has_subtype_protection = self.has_effect(target_id,
-            &|e| matches!(e, ContinuousEffect::ProtectionFromSubtype { subtype, .. }
-                if source_subtypes.iter().any(|s| s == subtype)),
-            registry);
-        if has_subtype_protection {
-            return true;
-        }
-
-        // Check filter-based static ProtectionFrom effects (e.g., protection
-        // from a color or card type granted by a permanent). The filter is
-        // read against the granting permanent's controller, so this needs the
-        // source the walk found it on.
-        let mut protected = false;
+        let mut p = Protections {
+            target: target_id,
+            target_controller: self.get_object(target_id)
+                .map_or(crate::ids::PlayerId(0), |o| o.controller),
+            subtypes: Vec::new(),
+            statics: Vec::new(),
+            grants: Vec::new(),
+        };
         self.walk_effects(
             target_id,
-            &|e| matches!(e, ContinuousEffect::ProtectionFrom { .. }),
+            &|e| matches!(e, ContinuousEffect::ProtectionFrom { .. } | ContinuousEffect::ProtectionFromSubtype { .. }),
             registry,
             &mut |e, src_obj| {
-                if let ContinuousEffect::ProtectionFrom { filter, .. } = e {
-                    if self.matches_filter(source_id, filter, src_obj.id, src_obj.controller, registry) {
-                        protected = true;
-                        return false;
-                    }
+                match e {
+                    ContinuousEffect::ProtectionFromSubtype { subtype, .. } => p.subtypes.push(subtype.clone()),
+                    // The filter is read against the granting permanent's
+                    // controller, so this keeps the source the walk found it on.
+                    ContinuousEffect::ProtectionFrom { filter, .. } =>
+                        p.statics.push((filter.clone(), src_obj.id, src_obj.controller)),
+                    _ => {}
                 }
                 true
             },
         );
-        if protected {
-            return true;
-        }
-
-        let target_controller = self.get_object(target_id)
-            .map_or(crate::ids::PlayerId(0), |o| o.controller);
-
-        // Check until-end-of-turn protection grants (e.g., Spare from Evil).
+        // Until-end-of-turn protection grants (e.g., Spare from Evil).
         for effect in &self.until_end_of_turn {
-            match effect {
-                TemporaryEffect::GrantProtection { target, filter } if *target == target_id => {
-                    // An until-end-of-turn grant has no permanent behind it any
-                    // more (Spare from Evil is a spell that has resolved), so
-                    // the protected creature stands in as the source. Only
-                    // `ControlledByAttachedPlayer` would notice, and no grant
-                    // in the set uses it — a Curse's filter is a static
-                    // ability, not a grant.
-                    if self.matches_filter(source_id, filter, target_id, target_controller, registry) {
-                        return true;
-                    }
+            if let TemporaryEffect::GrantProtection { target, filter } = effect {
+                if *target == target_id {
+                    p.grants.push(filter.clone());
                 }
-                _ => {}
             }
         }
-
-        false
+        p
     }
 
     /// Evaluate an `EffectCondition` for a given controller.
@@ -4985,4 +4975,52 @@ mod tests {
         assert_eq!(state.effective_toughness(id, &registry), None,
             "equipment must not have effective toughness from its own dynamic_pt");
     }
+}
+
+/// What one permanent has protection from (CR 702.16), as
+/// [`GameState::protection_set`] read it.
+#[derive(Debug, Clone)]
+pub struct Protections {
+    target: ObjectId,
+    target_controller: PlayerId,
+    /// `ProtectionFromSubtype` — from any source with one of these subtypes.
+    subtypes: Vec<String>,
+    /// Static `ProtectionFrom` filters, with the permanent granting each and
+    /// its controller.
+    statics: Vec<(crate::types::CreatureFilter, ObjectId, PlayerId)>,
+    /// Until-end-of-turn grants.
+    grants: Vec<crate::types::CreatureFilter>,
+}
+
+impl Protections {
+    /// Whether this permanent has protection from `source_id`.
+    #[must_use]
+    pub fn covers(&self, state: &GameState, source_id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
+        if !self.subtypes.is_empty() {
+            // The source's subtypes, active face — transform-aware.
+            let source_subtypes = state.subtypes_of(source_id, registry);
+            if self.subtypes.iter().any(|s| source_subtypes.contains(s)) {
+                return true;
+            }
+        }
+        if self.statics.iter().any(|(filter, by, by_controller)|
+            state.matches_filter(source_id, filter, *by, *by_controller, registry))
+        {
+            return true;
+        }
+        // An until-end-of-turn grant has no permanent behind it any more
+        // (Spare from Evil is a spell that has resolved), so the protected
+        // creature stands in as the source. Only `ControlledByAttachedPlayer`
+        // would notice, and no grant in the set uses it — a Curse's filter is
+        // a static ability, not a grant.
+        self.grants.iter().any(|filter|
+            state.matches_filter(source_id, filter, self.target, self.target_controller, registry))
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many times `walk_effects` has run on this thread, so a test can
+    /// hold a query to the number of battlefield walks it costs (#641).
+    pub(crate) static EFFECT_WALKS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
