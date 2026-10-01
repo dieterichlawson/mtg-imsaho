@@ -2274,11 +2274,7 @@ impl CliPlayer {
 
         // Helper: render creatures, enchantments, artifacts
         let render_nonlands = |out: &mut io::Stdout, row: &mut u16| {
-            let creature_parts: Vec<_> = creatures.iter()
-                .map(|c| Self::creature_row_parts(c, aura_map.get(&c.object_id)))
-                .collect();
-
-            for (n, parts) in Self::collapse_rows(creature_parts) {
+            for (n, parts) in Self::creature_rows(&creatures, &aura_map) {
                 let _ = execute!(out, cursor::MoveTo(col, *row),
                     SetForegroundColor(color), Print(Self::counted_row(n, &parts, max_w)), ResetColor);
                 *row += 1;
@@ -2553,6 +2549,42 @@ impl CliPlayer {
         (format!("{}{}{}", c.name, pt, CliPlayer::counters_suffix(&c.counters)),
          format!("{auras}{kw}"),
          flags)
+    }
+
+    /// The creature rows of one side of the battlefield, identical ones
+    /// collapsed to `Nx`.
+    ///
+    /// A row that shares its name with another row it is *not* collapsed
+    /// with carries the creature's id, the way the menu does: since #612
+    /// a menu row tells two Grizzly Bears apart only by `(#45)`, and the
+    /// pane printed both as plain "Grizzly Bears 2/2", so which one wore the
+    /// Torch could not be read off the main screen (issue #634). Rows that
+    /// collapse are interchangeable and stay id-free; a name nothing else
+    /// shares needs no id to be matched.
+    fn creature_rows(creatures: &[&&PermanentView], aura_map: &HashMap<ObjectId, String>)
+        -> Vec<(usize, (String, String, String))>
+    {
+        let parts: Vec<_> = creatures.iter()
+            .map(|c| Self::creature_row_parts(c, aura_map.get(&c.object_id)))
+            .collect();
+        let mut groups: Vec<(usize, (String, String, String), ObjectId, &str)> = Vec::new();
+        for (c, p) in creatures.iter().zip(parts) {
+            match groups.iter_mut().find(|(_, q, _, _)| *q == p) {
+                Some((n, _, _, _)) => *n += 1,
+                None => groups.push((1, p, c.object_id, c.name.as_str())),
+            }
+        }
+        let shared = |name: &str| groups.iter().filter(|g| g.3 == name).count() > 1;
+        groups.iter()
+            .map(|(n, (head, mid, tail), id, name)| {
+                let head = if *n == 1 && shared(name) {
+                    format!("{head} (#{})", id.0)
+                } else {
+                    head.clone()
+                };
+                (*n, (head, mid.clone(), tail.clone()))
+            })
+            .collect()
     }
 
     fn is_legendary(p: &PermanentView) -> bool {
@@ -8252,6 +8284,28 @@ mod tests {
         assert_eq!(CliPlayer::wrap_row("", 10), vec![""], "an empty row is one empty line");
         assert_eq!(CliPlayer::wrap_row("anything at all", 0), vec!["anything at all"],
             "no width is no wrapping, not an endless loop");
+    }
+
+    /// The menu tells two same-named creatures apart by id (#612), so the
+    /// board has to print that id wherever the two rows differ — or "tap
+    /// Grizzly Bears (#45)" cannot be matched to the Bears holding the
+    /// Torch (issue #634). Identical rows still collapse with no id, and a
+    /// creature nothing shares a name with gets none.
+    #[test]
+    fn a_same_named_creature_on_its_own_row_carries_its_id() {
+        let plain_a = creature(45, "Grizzly Bears", 0);
+        let plain_b = creature(46, "Grizzly Bears", 0);
+        let mut armed = creature(47, "Grizzly Bears", 0);
+        armed.tapped = true;
+        let priest = creature(55, "Avacynian Priest", 0);
+        let all = [&plain_a, &plain_b, &armed, &priest];
+        let refs: Vec<&&PermanentView> = all.iter().collect();
+        let rows = CliPlayer::creature_rows(&refs, &HashMap::new());
+        let heads: Vec<(usize, &str)> = rows.iter().map(|(n, p)| (*n, p.0.as_str())).collect();
+        assert_eq!(heads[0].0, 2);
+        assert!(!heads[0].1.contains('#'), "interchangeable copies need no id: {heads:?}");
+        assert!(heads[1].1.ends_with("(#47)"), "{heads:?}");
+        assert!(!heads[2].1.contains('#'), "a unique name needs no id: {heads:?}");
     }
 
     /// An activation cost's commas are not list separators: breaking at
