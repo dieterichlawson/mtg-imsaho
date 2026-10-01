@@ -1298,3 +1298,33 @@ fn a_tap_effect_names_what_it_tapped() {
     let state = activate_offered(&state, &reg, priest, Some(Target::Object(bears)));
     assert_line(&log_lines(&state), &format!("Avacynian Priest taps Grizzly Bears (#{})", bears.0));
 }
+
+// ---------------------------------------------------------------------------
+// #639 — an exile-X additional cost names who paid it, for what, and with what
+// ---------------------------------------------------------------------------
+
+/// Harvest Pyre's cost was logged as "Exiled 2 cards from graveyard as
+/// additional cost": no player, no spell, none of the cards the player
+/// marked, and the cast line carried no X while Devil's Play's did.
+#[test]
+fn an_exile_x_cost_names_the_cards_and_the_cast_carries_x() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bears = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
+    let bolt = named_card_in_graveyard(&mut state, &reg, "Lightning Bolt", P0);
+    let target = ready_creature(&mut state, P1, 5, 5);
+    add_mana_for(&mut state, &reg, "Harvest Pyre", P0);
+    let pyre = spell_in_hand(&mut state, &reg, "Harvest Pyre", P0);
+    let state = cast_and_resolve(&state, &reg, pyre, vec![Target::Object(target)]);
+
+    let lines = log_lines(&state);
+    let exile = lines.iter().find(|l| l.contains("additional cost"))
+        .unwrap_or_else(|| panic!("the cost is logged; log was {lines:#?}"));
+    assert!(exile.starts_with("p0 exiled "), "{exile}");
+    assert!(exile.contains(&format!("Grizzly Bears (#{})", bears.0))
+        && exile.contains(&format!("Lightning Bolt (#{})", bolt.0)), "{exile}");
+    assert!(exile.contains("of Harvest Pyre"), "{exile}");
+    let cast = lines.iter().find(|l| l.starts_with("p0 cast Harvest Pyre"))
+        .unwrap_or_else(|| panic!("the cast is logged; log was {lines:#?}"));
+    assert!(cast.contains("(X=2)"), "{cast}");
+}

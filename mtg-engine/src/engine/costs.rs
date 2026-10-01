@@ -447,6 +447,10 @@ pub(crate) fn pay_additional_cost(
                 exile_ids.to_vec()
             };
             let count = u32::try_from(chosen.len()).unwrap_or(u32::MAX);
+            // Named before they move: the answer the player gave on the mark
+            // screen is these cards, and "Exiled 2 cards" — no player, no
+            // spell, no card — could not be read back from the log (#639).
+            let names: Vec<String> = chosen.iter().map(|id| state.obj_name(*id)).collect();
             for id in &chosen {
                 state.move_object(*id, Zone::Exile, registry);
             }
@@ -454,8 +458,11 @@ pub(crate) fn pay_additional_cost(
             if let Some(obj) = state.get_object_mut(spell) {
                 obj.card_state.insert(crate::cards::EXILE_COUNT.into(), ObjectId(u64::from(count)));
             }
-            state.log(crate::state::LogLevel::Event,
-                format!("Exiled {count} cards from graveyard as additional cost"));
+            let spell_name = super::card_name(state, registry, spell);
+            let what = if names.is_empty() { "nothing".to_string() } else { names.join(", ") };
+            state.log(crate::state::LogLevel::Event, format!(
+                "p{} exiled {what} from graveyard as an additional cost of {spell_name} (X={count})",
+                player.0));
         }
     }
 }

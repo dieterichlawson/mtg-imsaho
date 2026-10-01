@@ -399,7 +399,17 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
             },
             printed: printed.as_ref(),
             paid: Some(&cost),
-            x: if has_x { Some(0) } else { None },
+            // An X announced by the cost rather than the mana — Harvest
+            // Pyre's "exile X cards" — is the spell's X too, and the cast
+            // line said nothing of it while Devil's Play's said `(X=3)`
+            // (#639).
+            x: if has_x {
+                Some(0)
+            } else {
+                state.get_object(object_id)
+                    .and_then(|o| o.card_state.get(crate::cards::EXILE_COUNT))
+                    .and_then(|n| u32::try_from(n.0).ok())
+            },
             from_graveyard: is_cast_from_graveyard,
         };
         finalize_spell_cast(&mut *state, player, object_id, &payment, targets, registry);
