@@ -1098,6 +1098,27 @@ whether it told the truth.
   full save rewrite — 13.46 MB per keypress at turn 22), since that is the
   configuration CI runs in
 
+  **Answered 2026-10-01: #565's fix holds; the walls moved to three other
+  places.** Flood mirror seed 7, pruned to 100-2,000 permanents. Random vs
+  random at 1,000 is 47 ms per decision (#565 had 15-23 s per keypress), the
+  `--check-invariants` multiplier is 1.2-2.2x, and no frame on the wire tops
+  1.9 MB. What does not scale: the page's `clip()` trims a log line one
+  character per `measureText`, and a declaration line names every creature
+  (17,000 characters at 2,000), so one render is 1.9 s at 1,000 and 21 s at
+  2,000 (#640); declare-blockers legal actions are blockers x attackers x
+  board, 27 s for one decision at 2,000 (#641); the LLM blockers schema is
+  an attacker enum per blocker, 2 MB at 2,000 (#642). The page has no
+  attack-all (#643), and `fuzz.sh` has no per-game timeout (#644, latent:
+  300 coverage games, slowest 1.58 s, because Endless Ranks and Parallel
+  Lives sit in different coverage decks). Two method notes. Measure the
+  page's own render (`window.mtgDebug.render()` and a CDP profile), not just
+  the wire: the payload was harmless at every size, and the cost was one
+  string. Set `summoning_sick=false` on a pruned flood save before you time
+  combat — the raw save's tokens are mostly fresh, random seats attacked
+  with 97 of 1,349, and the cubic path only showed once they could all
+  swing. `--log` timestamps are when a line is streamed at the next
+  decision, not when the event happened
+
 - V51 [proposed 2026-09-26, from tonight's V49 and #593/#594/#596] the
   answer the program changed. Every reader in this repo does one of three
   things with what it is given: honours it, refuses it by name, or **changes
