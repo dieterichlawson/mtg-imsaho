@@ -69,7 +69,10 @@ fn a_seat_the_harness_answered_for_is_reported_as_one() {
 
     // The substitutions are in the log, named, and say what was put in the
     // seat's place.
-    let substituted = logged.matches("no usable 'attacker_indices'").count();
+    // Both combat prompts: the attackers it declared, and the blockers it
+    // declared once the blockers answer became a list (#642).
+    let substituted = logged.matches("no usable 'attacker_indices'").count()
+        + logged.matches("no usable 'blocks'").count();
     assert!(substituted > 0,
         "the seat was mute at every declare-attackers prompt and the log \
          says so; found none in:\n{}",

@@ -4902,9 +4902,6 @@ offered; {} not declared",
     ) -> (Vec<(ObjectId, ObjectId)>, Vec<String>) {
         let mut assignments: Vec<(ObjectId, ObjectId)> = Vec::new();
         let mut errors = Vec::new();
-        if !response["blocks"].is_array() {
-            errors.push(format!("no usable 'blocks' list ({})", response["blocks"]));
-        }
         for entry in response["blocks"].as_array().into_iter().flatten() {
             let index = |k: &str| entry[k].as_u64().and_then(|n| usize::try_from(n).ok());
             let (Some(bi), Some(ai)) = (index("blocker"), index("attacker")) else {
@@ -4998,6 +4995,15 @@ offered; {} not declared",
             };
 
             let response = self.send_message_structured(&prompt, &schema);
+
+            // Blocking with nobody is a real decision, and it is also what a
+            // seat that gave no usable list gets — said once, as the attack
+            // prompt says it, not re-asked (#399).
+            if !response["blocks"].is_array() {
+                self.log_rejected(&format!(
+                    "no usable 'blocks' ({}); declaring no blockers", response["blocks"]));
+                return Action::DeclareBlockers { assignments: Vec::new() };
+            }
 
             // Parse response into assignments. A pair the board does not
             // allow is refused by name and kept out of the answer: the
