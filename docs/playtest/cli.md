@@ -960,6 +960,21 @@ whether it told the truth.
   a fix lands in one copy and not the other — which is the failure mode all
   three issues share
 
+  **Answered 2026-10-01: one divergence left, and it is #233 again.** Read
+  side by side, the two callbacks now share the watchdog, its report and the
+  stall forfeit, but not the ceiling: `mtg-runner` answers action 50,000
+  with `AbandonGame` (#233, "a loss nobody chose") and the draft loop with
+  `forfeit_move()` — a `Concede` for whichever seat holds the decision at
+  that instant, with `stalled_seat` left `None`, so the standings count a
+  normal win and nothing is logged (#630). #559 fixed the branch's
+  mechanism and, in passing, gave its two arms one move. Checked, correct:
+  the draft seat's card reference is the whole set, not the opponent's
+  deck, so #466's leak does not apply; `--check-invariants`, `--save` and
+  the streamed log are absent from the draft loop by design (it has no
+  flags for them). The lesson for the next read: when a fix collapses two
+  arms of an `if a || b` onto one action, check that both arms meant the
+  same thing — here the stuck seat and the stopping harness did not
+
 - V48 [proposed 2026-09-21, from tonight's V46 and #561] one number, four
   readers: sweep the text-to-number readers across the whole repo and
   compare what each ACCEPTS, not what each selects. V46 checked the CLI's
