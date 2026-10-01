@@ -4621,6 +4621,47 @@ from your hand to put on the bottom of your library.\n\
         out
     }
 
+    /// The declare-attackers answer's schema, bounded by what the prompt
+    /// offers. It was the one index array in the seat with only a
+    /// `minimum`, so an index past the end was schema-valid — the API passed
+    /// it and the parser dropped it (issue #635). Every index here is an
+    /// `enum` of the offered ones, as `mark_indices` and the blockers are;
+    /// with no planeswalker to attack the array admits no entry at all.
+    fn attackers_schema(attackers: usize, planeswalkers: usize) -> serde_json::Value {
+        let attacker_enum: Vec<usize> = (0..attackers).collect();
+        let walker_attack = if planeswalkers == 0 {
+            serde_json::json!({"type": "array", "maxItems": 0, "items": {"type": "object"},
+                "description": "No planeswalker can be attacked: leave empty"})
+        } else {
+            let walker_enum: Vec<usize> = (0..planeswalkers).collect();
+            serde_json::json!({
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "attacker": {"type": "integer", "enum": attacker_enum},
+                        "planeswalker": {"type": "integer", "enum": walker_enum}
+                    },
+                    "required": ["attacker", "planeswalker"]
+                },
+                "description": "Attackers sent at a defending planeswalker instead of the player (attacker index + pw index); omit or empty if none"
+            })
+        };
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+                "attacker_indices": {
+                    "type": "array",
+                    "items": {"type": "integer", "enum": attacker_enum},
+                    "description": "Indices of creatures to attack with (empty array for none)"
+                },
+                "planeswalker_attacks": walker_attack
+            },
+            "required": ["thoughts", "attacker_indices"]
+        })
+    }
+
     pub fn choose_combat(&mut self, view: &GameView, prompt: &CombatPrompt) -> Action {
         // A combat prompt with one legal answer is not worth a round trip to
         // the model. One rule, shared with the other three seats (#517).
@@ -4668,30 +4709,7 @@ from your hand to put on the bottom of your library.\n\
 
                 let full_prompt = self.build_prompt(view, &combat_text);
 
-                let schema = serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
-                        "attacker_indices": {
-                            "type": "array",
-                            "items": {"type": "integer", "minimum": 0},
-                            "description": "Indices of creatures to attack with (empty array for none)"
-                        },
-                        "planeswalker_attacks": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "attacker": {"type": "integer", "minimum": 0},
-                                    "planeswalker": {"type": "integer", "minimum": 0}
-                                },
-                                "required": ["attacker", "planeswalker"]
-                            },
-                            "description": "Attackers sent at a defending planeswalker instead of the player (attacker index + pw index); omit or empty if none"
-                        }
-                    },
-                    "required": ["thoughts", "attacker_indices"]
-                });
+                let schema = Self::attackers_schema(eligible.len(), defending_planeswalkers.len());
 
                 let response = self.send_message_structured(&full_prompt, &schema);
 
@@ -4702,11 +4720,18 @@ from your hand to put on the bottom of your library.\n\
                         "no usable 'attacker_indices' ({}); declaring no attackers",
                         response["attacker_indices"]));
                 }
+                // An index the prompt did not offer is an answer the harness
+                // cannot use, and is said so: dropping it silently turned
+                // "attack with #4" into "#4 stays home" with no MALFORMED
+                // line and no rejection counted (issue #635).
+                let mut dropped: Vec<String> = Vec::new();
                 let mut indices: Vec<usize> = response["attacker_indices"]
                     .as_array()
                     .map(|arr| arr.iter()
-                        .filter_map(|v| v.as_u64().map(|n| usize::try_from(n).unwrap_or(usize::MAX)))
-                        .filter(|&i| i < eligible.len())
+                        .filter_map(|v| match v.as_u64().and_then(|n| usize::try_from(n).ok()) {
+                            Some(i) if i < eligible.len() => Some(i),
+                            _ => { dropped.push(v.to_string()); None }
+                        })
                         .collect())
                     .unwrap_or_default();
 
@@ -4728,15 +4753,21 @@ from your hand to put on the bottom of your library.\n\
                 let walker_attacks: Vec<(mtg_engine::ids::ObjectId, mtg_engine::ids::ObjectId)> =
                     response["planeswalker_attacks"].as_array().map(|arr| arr.iter()
                         .filter_map(|v| {
-                            let a = usize::try_from(v["attacker"].as_u64()?).ok()?;
-                            let w = usize::try_from(v["planeswalker"].as_u64()?).ok()?;
-                            if a < eligible.len() && w < defending_planeswalkers.len() {
-                                Some((eligible[a], defending_planeswalkers[w]))
-                            } else {
-                                None
+                            let index = |k: &str| v[k].as_u64().and_then(|n| usize::try_from(n).ok());
+                            match (index("attacker"), index("planeswalker")) {
+                                (Some(a), Some(w)) if a < eligible.len() && w < defending_planeswalkers.len() =>
+                                    Some((eligible[a], defending_planeswalkers[w])),
+                                _ => { dropped.push(v.to_string()); None }
                             }
                         })
                         .collect()).unwrap_or_default();
+                if !dropped.is_empty() {
+                    self.log_rejected(&format!(
+                        "attack answer names {} outside the {} attacker(s) and {} planeswalker(s) \
+offered; {} not declared",
+                        dropped.join(", "), eligible.len(), defending_planeswalkers.len(),
+                        if dropped.len() == 1 { "it is" } else { "they are" }));
+                }
                 indices.retain(|&i| !walker_attacks.iter().any(|&(a, _)| a == eligible[i]));
 
                 let attackers = indices.iter()
@@ -5855,6 +5886,37 @@ mod tests {
         assert_eq!(unanswered_note(0), "");
         assert_eq!(unanswered_note(1), ", 1 decision the backend never answered → fallback");
         assert_eq!(unanswered_note(39), ", 39 decisions the backend never answered → fallback");
+    }
+
+    /// The attack schema bounds every index by what the prompt offered, and
+    /// an index outside it — which used to be schema-valid and silently
+    /// became "did not attack" — is a rejected answer (issue #635).
+    #[test]
+    fn an_attack_index_the_prompt_did_not_offer_is_refused_not_dropped() {
+        let schema = LlmPlayer::attackers_schema(2, 1);
+        assert_eq!(schema["properties"]["attacker_indices"]["items"]["enum"], serde_json::json!([0, 1]));
+        let pw = &schema["properties"]["planeswalker_attacks"]["items"]["properties"];
+        assert_eq!(pw["attacker"]["enum"], serde_json::json!([0, 1]));
+        assert_eq!(pw["planeswalker"]["enum"], serde_json::json!([0]));
+        assert_eq!(LlmPlayer::attackers_schema(2, 0)["properties"]["planeswalker_attacks"]["maxItems"], 0);
+
+        let view = empty_view();
+        let prompt = CombatPrompt::ChooseAttackers {
+            eligible: vec![ObjectId(22), ObjectId(23)],
+            must_attack: vec![],
+            defending_player: PlayerId(1),
+            defending_planeswalkers: vec![ObjectId(40)],
+        };
+        // Off by one: index 2 of two attackers, and a planeswalker that is not there.
+        let mut seat = fixed_player("Seat-635", "model-635", serde_json::json!({
+            "thoughts": "t", "attacker_indices": [1, 2],
+            "planeswalker_attacks": [{"attacker": 0, "planeswalker": 1}]}));
+        let Action::DeclareAttackers { attackers, planeswalker_attacks } = seat.choose_combat(&view, &prompt)
+            else { panic!("an attack declaration") };
+        assert_eq!(attackers, vec![(ObjectId(23), PlayerId(1))], "the offered index still attacks");
+        assert!(planeswalker_attacks.is_empty());
+        assert_eq!(get_rejected_by_seat().get("Seat-635"), Some(&1),
+            "the dropped indices are one rejected answer, not a silent no-attack");
     }
 
     /// A backend that answers one fixed object, whatever it is asked.
