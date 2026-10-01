@@ -813,7 +813,7 @@ struct AttackerEvasion {
     id: ObjectId,
     flying: bool,
     intimidate: bool,
-    colors: Vec<crate::types::Color>,
+    palette: Vec<crate::types::Color>,
     unblockable: bool,
     /// `CanOnlyBeBlockedBy` filters, with the source each is read against.
     only_by: Vec<(crate::types::CreatureFilter, ObjectId, PlayerId)>,
@@ -826,7 +826,7 @@ struct BlockerReach {
     able: bool,
     flying_or_reach: bool,
     artifact: bool,
-    colors: Vec<crate::types::Color>,
+    palette: Vec<crate::types::Color>,
 }
 
 impl BlockerReach {
@@ -838,7 +838,7 @@ impl BlockerReach {
             flying_or_reach: able && (state.has_keyword(id, Keyword::Flying, registry)
                 || state.has_keyword(id, Keyword::Reach, registry)),
             artifact: able && state.has_card_type(id, crate::types::CardType::Artifact, registry),
-            colors: if able { state.colors_of(id, registry) } else { Vec::new() },
+            palette: if able { state.colors_of(id, registry) } else { Vec::new() },
         }
     }
 }
@@ -865,7 +865,7 @@ impl AttackerEvasion {
             id,
             flying: state.has_keyword(id, Keyword::Flying, registry),
             intimidate,
-            colors: if intimidate { state.colors_of(id, registry) } else { Vec::new() },
+            palette: if intimidate { state.colors_of(id, registry) } else { Vec::new() },
             // "Can't be blocked" (e.g., Invisible Stalker).
             unblockable: state.cant_be_blocked(id, registry),
             only_by,
@@ -884,7 +884,7 @@ impl AttackerEvasion {
         // Intimidate: can only be blocked by artifact creatures or creatures
         // that share a color.
         if self.intimidate && !blocker.artifact
-            && !self.colors.iter().any(|c| blocker.colors.contains(c))
+            && !self.palette.iter().any(|c| blocker.palette.contains(c))
         {
             return false;
         }
