@@ -1188,3 +1188,23 @@ whether it told the truth.
   `ids` away, so the dedupe the struct's own doc comment describes ("two rows
   with different ids are not [interchangeable], however alike they read") is
   not the dedupe the cast arm performs
+
+  **Answered 2026-10-01: #610 and #612 hold in play; the same pattern was one
+  file over.** Past in Flames gives one row per flashback cost and charges
+  the one picked; Skirsdag rows name each tapped creature by id, tokens
+  included; #619's source ids separate same-named sources; duplicate grants
+  collapse. The find came from grepping the pool for the pattern rather than
+  playing the reported card: Back from the Brink describes each graveyard
+  creature by name with its ObjectId in `ability_index`, so two Bears are
+  byte-identical rows on all three surfaces and 13413a2's invariant aborts
+  26 of 41 random games (#631). Two lessons. When an issue names a pattern,
+  grep `activated_abilities` + `format!` + `.name` across `cards/` before
+  choosing a board. And **singleton coverage decks hide every "two of the
+  same name" defect** — 100 ur-coverage mirror games found nothing; a deck of
+  four copies of the card plus 14 of one creature found it in its first
+  game. Editing a `--save` (move objects between zones, keep
+  `library_order`/`graveyard_order` in step) builds such boards in seconds;
+  say so in the issue and back it with an unedited repro. Also filed: a
+  stack entry named for the grantor but carrying the holder's id (#632),
+  `wrap_row` breaking inside a cost (#633), and row ids the battlefield pane
+  never prints (#634)
