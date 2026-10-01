@@ -867,6 +867,13 @@ function beginAttackers(state: LiveState, c: AttackersPrompt, send: Send): Ui {
     send({ DeclareAttackers: { attackers, planeswalker_attacks } });
   };
   ui.buttons.push({ label: "Attack", primary: true, run: ui.onConfirm });
+  // The CLI's `all`. Without it a wide board was one click per creature —
+  // 649 on a flood board, 13 after one Army of the Damned (#643). Marks
+  // every creature not already attacking, at the player; those already
+  // marked keep the defender they were given.
+  ui.buttons.push({ label: "All", run: () => {
+    for (const id of c.eligible) { const key = `o${id}`; if (!ui.marked.includes(key)) { ui.marked.push(key); attackTarget.set(key, 0); } }
+  } });
   ui.buttonLabel = () => (ui.marked.length ? `Attack with ${ui.marked.length}` : "No attackers");
   state.ui = ui;
   state.selected = null;

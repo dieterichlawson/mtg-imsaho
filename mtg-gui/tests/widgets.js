@@ -316,6 +316,12 @@ async function main() {
             await expectSent("attackers", a => a.DeclareAttackers && a.DeclareAttackers.attackers.length === 1);
           }
         }
+        // "All" is the CLI's `all`: every eligible creature in one click (#643).
+        if (await stage("attack-all", legal({ context: "DECLARE ATTACKERS" }), { ChooseAttackers: { eligible: mineCreatures, must_attack: [], defending_player: ids.opp, defending_planeswalkers: [] } }, "attackers")) {
+          await clickHit("(h) => h.kind === 'button' && h.label === 'All'");
+          await clickHit("(h) => h.kind === 'button' && h.label.startsWith('Attack')");
+          await expectSent("attack-all", a => a.DeclareAttackers && a.DeclareAttackers.attackers.length === mineCreatures.length);
+        }
         const attackers = theirCreatures.length ? theirCreatures : [ids.theirs[0]].filter(Boolean);
         if (attackers.length) {
           const legalBlocks = {}; for (const b of mineCreatures) legalBlocks[b] = attackers;
