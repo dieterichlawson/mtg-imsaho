@@ -3728,8 +3728,11 @@ impl CliPlayer {
                 cols += w;
                 match c {
                     ' ' if i > 0 => last_space = Some(i),
-                    // A comma that separates items, not one inside a number.
-                    ',' if i > 0 && it.peek().is_none_or(|&(_, next)| next == ' ') => {
+                    // A comma that separates items, not one inside a number
+                    // or inside an activation cost.
+                    ',' if i > 0
+                        && it.peek().is_none_or(|&(_, next)| next == ' ')
+                        && !Self::comma_is_inside_a_cost(&rest[i + 1..]) => {
                         last_comma = Some(i + 1);
                     }
                     _ => {}
@@ -3744,6 +3747,20 @@ impl CliPlayer {
                 return lines;
             }
         }
+    }
+
+    /// Whether the comma just before `after` separates the parts of an
+    /// activation cost — `{1}, {T}: …`, `Morbid — {T}, Tap two untapped
+    /// creatures you control: …` — rather than items of a list. The cost
+    /// clause runs to its `:`, so a comma is inside one when that colon
+    /// comes before anything that would close or separate a list item.
+    /// Breaking there left the source and half its cost on one line and the
+    /// rest of the cost and the whole effect on the next, with most of the
+    /// first line empty (issue #633).
+    fn comma_is_inside_a_cost(after: &str) -> bool {
+        after.chars()
+            .find(|c| matches!(c, ':' | ',' | '(' | ')'))
+            .is_some_and(|c| c == ':')
     }
 
     /// Every menu row wrapped to `width` columns: one `Vec` of lines per row,
@@ -8235,6 +8252,23 @@ mod tests {
         assert_eq!(CliPlayer::wrap_row("", 10), vec![""], "an empty row is one empty line");
         assert_eq!(CliPlayer::wrap_row("anything at all", 0), vec!["anything at all"],
             "no width is no wrapping, not an endless loop");
+    }
+
+    /// An activation cost's commas are not list separators: breaking at
+    /// one split `{1},` from `{T}: …` and left most of the line empty
+    /// (issue #633). The list commas after the cost still break.
+    #[test]
+    fn a_row_does_not_break_inside_an_activation_cost() {
+        let row = "3: Avacynian Priest 1/2 (your) (#55): {1}, {T}: Tap target non-Human creature \
+(tap Plains (your)) targeting Grizzly Bears 2/2 (opp)";
+        let lines = CliPlayer::wrap_row(row, 60);
+        assert_eq!(lines[0], "3: Avacynian Priest 1/2 (your) (#55): {1}, {T}: Tap target", "{lines:?}");
+        let row = "Skirsdag High Priest (your): Morbid — {T}, Tap two untapped creatures you \
+control: Create a 5/5 black Demon";
+        let lines = CliPlayer::wrap_row(row, 50);
+        assert!(!lines[0].ends_with("{T},"), "{lines:?}");
+        assert_eq!(CliPlayer::wrap_row("Kessig Wolf Run: {X}{R}{G}, {T}: pump (tap Mountain (your), Forest (your))", 66),
+            vec!["Kessig Wolf Run: {X}{R}{G}, {T}: pump (tap Mountain (your),", "Forest (your))"]);
     }
 
     /// Marking cards is toggling, and the idle key confirms rather than
