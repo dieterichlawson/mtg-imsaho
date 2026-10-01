@@ -1001,7 +1001,7 @@ Opp board:
 
 Attackers: 0:Kalonian Tusker (#30) 3/3 1:Kalonian Tusker (#31) 3/3
 Your blockers: 0:Goblin Piker (#52) 2/1 1:Goblin Piker (#53) 2/1
-Assign each blocker (0..1) to an attacker index, or -1 for no block.
+Declare blocks as a list of {"blocker": <blocker index>, "attacker": <attacker index>} pairs, at most one per blocker; a blocker you leave out does not block.
 ```
 **Block both Tuskers** — chump-block both. Your 2/1s die but you prevent 6 damage. Better than taking 6 to the face when you're at 17.
 "#;
@@ -4806,7 +4806,7 @@ offered; {} not declared",
             if let Some(blockers) = blocker_counts.get(&attacker_id) {
                 if !blockers.is_empty() && blockers.len() < min as usize {
                     errors.push(format!(
-                        "Attacker {} ({}) can't be blocked by fewer than {} creatures, but you only assigned {}. Either assign more blockers to it or set those blockers to -1 (don't block it at all).",
+                        "Attacker {} ({}) can't be blocked by fewer than {} creatures, but you only assigned {}. Either assign more blockers to it or leave those blockers out (don't block it at all).",
                         att_idx, Self::format_combat_creature(view, attacker_id),
                         min, blockers.len()
                     ));
@@ -4819,6 +4819,115 @@ offered; {} not declared",
 
     /// Declare blockers using structured output with per-blocker integer enum
     /// constraints and a validation retry loop.
+    /// The declare-blockers answer's schema: one array of
+    /// `{blocker, attacker}` index pairs, each index an `enum` of the
+    /// offered ones.
+    ///
+    /// It used to be one required property per blocker, each an `enum` of
+    /// the attackers that blocker could block — |blockers| × |attackers|
+    /// values, 95,000 (0.48 MB, ~190k tokens) at 1,000 permanents and 2 MB
+    /// at 2,000 (#642). This grows with the two lists, not their product;
+    /// which pairs the board allows is said in the prompt, grouped, and
+    /// checked on the way back.
+    fn blockers_schema(blockers: usize, attackers: usize) -> serde_json::Value {
+        let blocker_enum: Vec<usize> = (0..blockers).collect();
+        let attacker_enum: Vec<usize> = (0..attackers).collect();
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+                "blocks": {
+                    "type": "array",
+                    "maxItems": blockers,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "blocker": {"type": "integer", "enum": blocker_enum},
+                            "attacker": {"type": "integer", "enum": attacker_enum}
+                        },
+                        "required": ["blocker", "attacker"]
+                    },
+                    "description": "One entry per blocking creature (blocker index + attacker index); empty for no blocks"
+                }
+            },
+            "required": ["thoughts", "blocks"]
+        })
+    }
+
+    /// Which attackers each blocker may block, grouped by the set it may
+    /// block so the text is one line per distinct set rather than one entry
+    /// per pair. Nothing when every blocker may block every attacker.
+    fn block_reach_text(
+        blockers: &[ObjectId],
+        attackers: &[ObjectId],
+        legal_blocks: &std::collections::HashMap<ObjectId, Vec<ObjectId>>,
+    ) -> String {
+        let mut groups: Vec<(Vec<usize>, Vec<usize>)> = Vec::new();
+        for (bi, b) in blockers.iter().enumerate() {
+            let can: Vec<usize> = attackers.iter().enumerate()
+                .filter(|(_, a)| legal_blocks.get(b).is_some_and(|l| l.contains(a)))
+                .map(|(ai, _)| ai)
+                .collect();
+            match groups.iter_mut().find(|(set, _)| *set == can) {
+                Some((_, members)) => members.push(bi),
+                None => groups.push((can, vec![bi])),
+            }
+        }
+        if groups.iter().all(|(set, _)| set.len() == attackers.len()) {
+            return String::new();
+        }
+        let list = |v: &[usize]| v.iter().map(ToString::to_string).collect::<Vec<_>>().join(",");
+        let mut out = String::from("\nWhat each blocker can block:");
+        for (set, members) in &groups {
+            let what = if set.len() == attackers.len() {
+                "any attacker".to_string()
+            } else if set.is_empty() {
+                "no attacker".to_string()
+            } else {
+                format!("attackers {}", list(set))
+            };
+            write!(out, "\n  blockers {}: {what}", list(members)).unwrap();
+        }
+        out
+    }
+
+    /// The `blocks` answer as assignments, and a message for every pair the
+    /// board does not allow — an index out of range, a blocker that cannot
+    /// block that attacker, or a blocker named twice.
+    fn parse_blocks(
+        response: &serde_json::Value,
+        blockers: &[ObjectId],
+        attackers: &[ObjectId],
+        legal_blocks: &std::collections::HashMap<ObjectId, Vec<ObjectId>>,
+    ) -> (Vec<(ObjectId, ObjectId)>, Vec<String>) {
+        let mut assignments: Vec<(ObjectId, ObjectId)> = Vec::new();
+        let mut errors = Vec::new();
+        if !response["blocks"].is_array() {
+            errors.push(format!("no usable 'blocks' list ({})", response["blocks"]));
+        }
+        for entry in response["blocks"].as_array().into_iter().flatten() {
+            let index = |k: &str| entry[k].as_u64().and_then(|n| usize::try_from(n).ok());
+            let (Some(bi), Some(ai)) = (index("blocker"), index("attacker")) else {
+                errors.push(format!("{entry} is not a {{blocker, attacker}} pair of indices"));
+                continue;
+            };
+            let (Some(&b), Some(&a)) = (blockers.get(bi), attackers.get(ai)) else {
+                errors.push(format!("blocker {bi} / attacker {ai}: no such creature in this prompt"));
+                continue;
+            };
+            if !legal_blocks.get(&b).is_some_and(|l| l.contains(&a)) {
+                errors.push(format!("blocker {bi} cannot block attacker {ai}"));
+                continue;
+            }
+            if assignments.iter().any(|&(x, _)| x == b) {
+                errors.push(format!("blocker {bi} is named twice; a creature blocks one attacker"));
+                continue;
+            }
+            assignments.push((b, a));
+        }
+        (assignments, errors)
+    }
+
     fn choose_blockers_structured(
         &mut self,
         view: &GameView,
@@ -4827,38 +4936,7 @@ offered; {} not declared",
         legal_blocks: &std::collections::HashMap<ObjectId, Vec<ObjectId>>,
         min_blockers: &std::collections::HashMap<ObjectId, u32>,
     ) -> Action {
-        // Build per-blocker integer enum of legal attacker indices.
-        // -1 means "don't block".
-        let mut schema_properties = serde_json::json!({
-            "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"}
-        });
-        let mut required_fields = vec!["thoughts".to_string()];
-
-        for (i, &blocker_id) in eligible_blockers.iter().enumerate() {
-            let blocker_legal = legal_blocks.get(&blocker_id);
-            let mut legal_indices: Vec<serde_json::Value> = attackers.iter()
-                .enumerate()
-                .filter(|(_, &att_id)| {
-                    blocker_legal.is_some_and(|legal| legal.contains(&att_id))
-                })
-                .map(|(idx, _)| serde_json::json!(idx))
-                .collect();
-            legal_indices.push(serde_json::json!(-1));
-
-            let key = i.to_string();
-            schema_properties[&key] = serde_json::json!({
-                "type": "integer",
-                "enum": legal_indices,
-                "description": format!("Attacker index for blocker {} to block, or -1 for no block", i)
-            });
-            required_fields.push(key);
-        }
-
-        let schema = serde_json::json!({
-            "type": "object",
-            "properties": schema_properties,
-            "required": required_fields
-        });
+        let schema = Self::blockers_schema(eligible_blockers.len(), attackers.len());
 
         // Build combat text for the prompt with disambiguated labels so the
         // model can tell apart two attackers/blockers that share a name.
@@ -4881,10 +4959,10 @@ offered; {} not declared",
         for (i, _id) in eligible_blockers.iter().enumerate() {
             write!(combat_text, "{}:{} ", i, blocker_labels[i]).unwrap();
         }
-        write!(combat_text,
-            "\nAssign each blocker (0..{}) to an attacker index, or -1 for no block.",
-            eligible_blockers.len().saturating_sub(1)
-        ).unwrap();
+        combat_text.push_str(&Self::block_reach_text(eligible_blockers, attackers, legal_blocks));
+        combat_text.push_str(
+            "\nDeclare blocks as a list of {\"blocker\": <blocker index>, \"attacker\": <attacker index>} \
+             pairs, at most one per blocker; a blocker you leave out does not block.");
 
         let base_prompt = self.build_prompt(view, &combat_text);
 
@@ -4921,21 +4999,15 @@ offered; {} not declared",
 
             let response = self.send_message_structured(&prompt, &schema);
 
-            // Parse response into assignments.
-            let mut assignments: Vec<(ObjectId, ObjectId)> = Vec::new();
-            for (i, &blocker_id) in eligible_blockers.iter().enumerate() {
-                let key = i.to_string();
-                if let Some(att_idx) = response[&key].as_i64() {
-                    if let Ok(idx) = usize::try_from(att_idx) {
-                        if idx < attackers.len() {
-                            assignments.push((blocker_id, attackers[idx]));
-                        }
-                    }
-                }
-            }
+            // Parse response into assignments. A pair the board does not
+            // allow is refused by name and kept out of the answer: the
+            // schema bounds each index but, being O(blockers + attackers),
+            // cannot say which pairs are legal (#642).
+            let (assignments, mut errors) =
+                Self::parse_blocks(&response, eligible_blockers, attackers, legal_blocks);
 
             // Validate.
-            let errors = Self::validate_blocker_assignments(view, &assignments, attackers, min_blockers);
+            errors.extend(Self::validate_blocker_assignments(view, &assignments, attackers, min_blockers));
             if errors.is_empty() {
                 return Action::DeclareBlockers { assignments };
             }
@@ -6477,7 +6549,7 @@ mod tests {
         // One blocker on the menace attacker (illegal on its own), one good
         // block on the other attacker, one declining.
         let (mut player, prompts) = recording_player_answering(serde_json::json!({
-            "thoughts": "t", "0": 0, "1": 1, "2": -1,
+            "thoughts": "t", "blocks": [{"blocker": 0, "attacker": 0}, {"blocker": 1, "attacker": 1}],
         }));
         let action = player.choose_blockers_structured(
             &view, &blockers, &attackers, &legal_blocks, &min_blockers);
@@ -6495,6 +6567,35 @@ mod tests {
         assert_eq!(assignments, vec![(ObjectId(31), ObjectId(21))],
             "the under-minimum pair is dropped and the legal block kept, \
              which is what the engine does with the same answer (#72)");
+    }
+
+    /// The blockers schema grows with the two lists, not their product: it
+    /// was one property per blocker, each an enum of the attackers it could
+    /// block — 95,000 values at 1,000 permanents (#642). And a pair the
+    /// board does not allow, which the schema can no longer rule out, is
+    /// refused rather than declared.
+    #[test]
+    fn the_blockers_schema_grows_with_the_creatures_not_their_pairs() {
+        let size = |b: usize, a: usize| LlmPlayer::blockers_schema(b, a).to_string().len();
+        let small = size(10, 10);
+        let large = size(100, 100);
+        assert!(large < small * 20,
+            "10x the creatures must not be 100x the schema: {small} -> {large} bytes");
+
+        let attackers = [ObjectId(20), ObjectId(21)];
+        let blockers = [ObjectId(30), ObjectId(31)];
+        // Blocker 30 cannot block the flier 21.
+        let legal: HashMap<ObjectId, Vec<ObjectId>> = HashMap::from([
+            (ObjectId(30), vec![ObjectId(20)]),
+            (ObjectId(31), vec![ObjectId(20), ObjectId(21)]),
+        ]);
+        let text = LlmPlayer::block_reach_text(&blockers, &attackers, &legal);
+        assert!(text.contains("blockers 0: attackers 0") && text.contains("blockers 1: any attacker"), "{text}");
+        let (kept, errors) = LlmPlayer::parse_blocks(&serde_json::json!({"blocks": [
+            {"blocker": 0, "attacker": 1}, {"blocker": 1, "attacker": 1}, {"blocker": 1, "attacker": 0},
+            {"blocker": 5, "attacker": 0}]}), &blockers, &attackers, &legal);
+        assert_eq!(kept, vec![(ObjectId(31), ObjectId(21))]);
+        assert_eq!(errors.len(), 3, "{errors:?}");
     }
 
     /// The repair is the engine's rule, not a second copy of it: two
