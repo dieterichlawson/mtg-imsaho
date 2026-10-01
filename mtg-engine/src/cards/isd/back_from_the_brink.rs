@@ -8,8 +8,8 @@ use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 /// Exile a creature card from your graveyard and pay its mana cost:
 /// Create a token that's a copy of that card. Activate only as a sorcery.
 ///
-/// Implementation: generates one activated ability per creature card in the
-/// controller's graveyard. Each ability's mana cost matches the creature's
+/// Implementation: generates one activated ability per distinct creature card
+/// (by name) in the controller's graveyard. Each ability's mana cost matches the creature's
 /// mana cost, and the `ability_index` encodes the creature's `ObjectId` so that
 /// `pay_activation_cost` can identify which creature to exile.
 pub struct BackFromTheBrink;
@@ -36,7 +36,14 @@ impl CardBehavior for BackFromTheBrink {
         }
         let controller = obj.controller;
 
-        // Generate one ability per creature card in the controller's graveyard.
+        // Generate one ability per distinct creature card in the controller's
+        // graveyard. Two cards of one name are the same choice: same mana
+        // cost, same copiable values, so the same token (CR 707.2). One row
+        // per *object* offered N byte-identical rows for N copies — a menu no
+        // surface could tell apart, an `--check-invariants` abort on any
+        // non-singleton deck, and a random seat that weighted this ability N
+        // times over everything else (issue #631).
+        let mut seen = std::collections::HashSet::new();
         let creatures: Vec<_> = state.objects_in_zone(Zone::Graveyard, controller)
             .into_iter()
             .filter(|o| {
@@ -50,6 +57,7 @@ impl CardBehavior for BackFromTheBrink {
                 // active face's card types.
                 state.is_card(o.id) && state.is_creature(o.id, registry)
             })
+            .filter(|o| seen.insert(o.name.clone()))
             .collect();
 
         creatures.into_iter().map(|creature| {

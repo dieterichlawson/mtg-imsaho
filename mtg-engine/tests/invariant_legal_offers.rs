@@ -1318,6 +1318,30 @@ fn two_activations_of_one_permanent_may_not_read_the_same() {
     quiet_about(&state, P0, &l, &reg, "render the same description");
 }
 
+/// Back from the Brink offered one activation per creature *object* in the
+/// graveyard, each described by the card's name, so two Grizzly Bears there
+/// were two byte-identical rows and the checker above aborted a legal game
+/// (26 of 41 random games with a non-singleton deck, issue #631). Two cards
+/// of one name are one choice — same cost, same token — so they are one
+/// offer; a different creature is still its own.
+#[test]
+fn same_named_graveyard_cards_are_one_back_from_the_brink_offer() {
+    let (mut state, reg) = base();
+    let brink = named_permanent(&mut state, &reg, "Back from the Brink", P0);
+    named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
+    named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
+    named_card_in_graveyard(&mut state, &reg, "Goblin Piker", P0);
+    add_mana(&mut state, P0, &[(ManaType::Green, 2), (ManaType::Red, 2)]);
+    state.priority_player = Some(P0);
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let offers: Vec<_> = legal.activatable_abilities.iter()
+        .filter(|a| a.object_id == brink)
+        .map(|a| a.description.clone())
+        .collect();
+    assert_eq!(offers.len(), 2, "one offer per distinct creature card: {offers:?}");
+    clean(&state, P0, &legal, &reg);
+}
+
 /// CR 601.2b/605.3a: an X-funding prompt offers the acting player's own
 /// untapped sources, each in one group, matched to the stash that raised it.
 #[test]
