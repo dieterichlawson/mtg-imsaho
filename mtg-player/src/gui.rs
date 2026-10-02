@@ -491,9 +491,7 @@ fn pump_websocket(
                         }
                     }
                     Err(e) => {
-                        let msg = serde_json::to_string(&Outbound::Notice {
-                            seq: 0, text: format!("unreadable message: {e}"),
-                        }).expect("a notice serializes");
+                        let msg = unreadable_notice(&text, &e);
                         if ws.send(tungstenite::Message::Text(msg.into())).is_err() {
                             return;
                         }
@@ -507,6 +505,21 @@ fn pump_websocket(
             Err(_) => return,
         }
     }
+}
+
+/// The notice for a message from the page that is not one the seat reads.
+///
+/// It carries the `seq` the message names whenever that can be read. The
+/// page clears its decision when it sends and restores it only on a notice
+/// for the `seq` it sent, so a fixed `seq: 0` — which no decision has —
+/// left the page with no prompt and the seat still waiting for an answer
+/// (#648). Only a message with no readable `seq` falls back to 0.
+fn unreadable_notice(text: &str, e: &serde_json::Error) -> String {
+    let seq = serde_json::from_str::<serde_json::Value>(text).ok()
+        .and_then(|v| v.get("seq").and_then(serde_json::Value::as_u64))
+        .unwrap_or(0);
+    serde_json::to_string(&Outbound::Notice { seq, text: format!("unreadable message: {e}") })
+        .expect("a notice serializes")
 }
 
 #[cfg(test)]
@@ -615,5 +628,23 @@ mod tests {
         assert!(matches!(taken, Some(Action::PassPriority)));
         assert!(a_rx.try_recv().unwrap().contains("answered"));
         assert!(b_rx.try_recv().unwrap().contains("answered"));
+    }
+
+    /// #648: a message the seat cannot read is answered with a notice for
+    /// the decision it names, so the page that sent it gets its prompt
+    /// back; `seq: 0` matched no decision and left the page empty.
+    #[test]
+    fn an_unreadable_answer_is_refused_against_the_decision_it_names() {
+        for (text, seq) in [
+            (r#"{"type":"action","seq":3}"#, 3),
+            (r#"{"type":"nonsense","seq":7}"#, 7),
+            (r#"not json"#, 0),
+        ] {
+            let e = serde_json::from_str::<Inbound>(text).err().expect("unreadable");
+            let notice: serde_json::Value = serde_json::from_str(&unreadable_notice(text, &e)).unwrap();
+            assert_eq!(notice["type"], "notice");
+            assert_eq!(notice["seq"], seq, "{text}");
+            assert!(notice["text"].as_str().unwrap().starts_with("unreadable message: "));
+        }
     }
 }
