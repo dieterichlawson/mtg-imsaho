@@ -9926,6 +9926,8 @@ Mark 1 of the 1 cards below to exile.");
             controller: PlayerId(0),
             targets: vec![],
             x_value: Some(3),
+            cost: None, supertypes: vec![], card_types: vec![],
+            power: None, toughness: None, oracle_text: String::new(),
         };
         assert_eq!(CliPlayer::stack_entry_headline(&v, &item), "Devil's Play (#22) (X=3) (you)");
         item.x_value = Some(0);
@@ -9990,6 +9992,8 @@ Mark 1 of the 1 cards below to exile.");
             controller: PlayerId(0),
             targets: vec![],
             x_value: None,
+            cost: None, supertypes: vec![], card_types: vec![],
+            power: None, toughness: None, oracle_text: String::new(),
         };
         let rows: Vec<String> = [27, 31, 81, 82, 83].iter()
             .map(|&id| CliPlayer::stack_entry_headline(&v, &trigger(id)))

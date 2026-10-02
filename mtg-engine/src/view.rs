@@ -295,6 +295,27 @@ pub struct StackItemView {
     /// no view could show it, so a Devil's Play for 12 and one for 0 were
     /// character-for-character identical on screen (issue #259).
     pub x_value: Option<u32>,
+    /// A spell's characteristics, which are public on the stack (CR 400.2,
+    /// CR 405.1) as they are in hand: mana cost, type line, P/T. `None` and
+    /// empty for an ability, which has none (CR 113.1).
+    pub cost: Option<ManaCost>,
+    pub supertypes: Vec<Supertype>,
+    pub card_types: Vec<CardType>,
+    pub power: Option<i32>,
+    pub toughness: Option<i32>,
+    /// The rules text this entry does what it does by: the spell's own, or
+    /// for an ability the text of the card it is printed on (for a granted
+    /// ability, the Aura or Equipment that grants it). The stack entry was
+    /// the one public object the page could not read: hovering the
+    /// opponent's Doom Blade showed its name and "In stack", and nothing
+    /// that said what it would do — at exactly the moment the player decides
+    /// whether to respond (issue #646).
+    pub oracle_text: String,
+}
+
+/// The rules text of the card an ability on the stack is printed on.
+fn ability_text(registry: &CardRegistry, behavior: CardId) -> String {
+    registry.card_data(behavior).map(|d| d.oracle_text).unwrap_or_default()
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -509,15 +530,21 @@ impl GameView {
                 match entry {
                     crate::state::StackEntry::Spell(obj_id) => {
                         let obj = state.get_object(*obj_id)?;
+                        let card = card_view(state, obj, registry);
                         Some(StackItemView {
                             object_id: obj.id,
                             card_id: obj.card_id,
-                            name: registry.card_data(obj.card_id)
-                                .map_or_else(|| "Unknown".into(), |d| d.name),
+                            name: card.name,
                             source_id: Some(obj.id),
                             controller: obj.controller,
                             targets: obj.targets.clone(),
                             x_value: obj.x_value,
+                            cost: card.cost,
+                            supertypes: card.supertypes,
+                            card_types: card.card_types,
+                            power: card.power,
+                            toughness: card.toughness,
+                            oracle_text: card.oracle_text,
                         })
                     }
                     crate::state::StackEntry::Trigger(trigger) => {
@@ -535,6 +562,12 @@ impl GameView {
                             targets: trigger.chosen_targets().to_vec(),
                             // A triggered ability announces no X.
                             x_value: None,
+                            cost: None,
+                            supertypes: Vec::new(),
+                            card_types: Vec::new(),
+                            power: None,
+                            toughness: None,
+                            oracle_text: ability_text(registry, trigger.behavior_card_id()),
                         })
                     }
                     crate::state::StackEntry::Ability { source_id, behavior_card_id, activator, targets, x_value, .. } => {
@@ -562,6 +595,12 @@ impl GameView {
                             controller: *activator,
                             targets: targets.clone(),
                             x_value: *x_value,
+                            cost: None,
+                            supertypes: Vec::new(),
+                            card_types: Vec::new(),
+                            power: None,
+                            toughness: None,
+                            oracle_text: ability_text(registry, *behavior_card_id),
                         })
                     }
                 }

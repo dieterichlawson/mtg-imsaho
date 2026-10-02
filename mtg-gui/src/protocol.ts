@@ -106,6 +106,17 @@ export interface StackItemView {
   controller: PlayerId;
   targets: Target[];
   x_value: number | null;
+  /** A spell's characteristics, public on the stack (CR 400.2) as in hand;
+   *  null and empty for an ability, which has none (CR 113.1). */
+  cost: ManaCost | null;
+  supertypes: Supertype[];
+  card_types: CardType[];
+  power: number | null;
+  toughness: number | null;
+  /** The spell's rules text, or for an ability the text of the card it is
+   *  printed on — so hovering the opponent's spell says what it will do
+   *  (issue #646). */
+  oracle_text: string;
 }
 
 export interface OpponentView {

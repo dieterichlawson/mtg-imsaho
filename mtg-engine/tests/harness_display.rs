@@ -859,3 +859,57 @@ fn a_granted_ability_on_the_stack_is_named_after_the_object_that_has_it() {
     assert_eq!(item.name, "Grizzly Bears ability",
         "the name and the id beside it must be the same object");
 }
+
+/// CR 400.2/405.1: the stack is public, and so is everything a spell on it
+/// says. The stack view carried a name and nothing a person could read the
+/// spell by, so on the page — the one surface with no card reference to
+/// fall back on — hovering the opponent's spell showed its name and "In
+/// stack" at exactly the moment the player decides whether to respond
+/// (issue #646).
+///
+/// A spell carries its own characteristics; an ability, which has none
+/// (CR 113.1), carries the text of the card it is printed on — for a
+/// granted one, the card that grants it.
+#[test]
+fn every_stack_entry_carries_the_text_it_does_what_it_does_by() {
+    let reg = registry();
+    let text_of = |state: &GameState, id| reg.card_data(state.get_object(id).unwrap().card_id).unwrap();
+
+    // A spell, read from the seat that did not cast it.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let spell = castable_spell(&mut state, &reg, "Geistflame", P0);
+    let printed = text_of(&state, spell);
+    let state = cast_onto_stack(&state, &reg, spell, vec![Target::Object(bear)]);
+    let view = mtg_engine::view::GameView::for_player(&state, P1, &reg);
+    let item = view.stack.iter().find(|s| s.object_id == spell).expect("the spell is on the stack");
+    assert!(!printed.oracle_text.is_empty());
+    assert_eq!(item.oracle_text, printed.oracle_text, "the opponent can read what it will do");
+    assert_eq!(item.cost, printed.cost, "and what it cost");
+    assert_eq!(item.card_types, printed.card_types, "and what it is");
+
+    // A granted activated ability: the grantor's text, and no card's cost.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bears = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    state.get_object_mut(bears).unwrap().summoning_sick = false;
+    let torch = named_permanent(&mut state, &reg, "Blazing Torch", P0);
+    state.get_object_mut(torch).unwrap().attached_to = Some(bears);
+    let torch_text = text_of(&state, torch).oracle_text;
+    let state = activate_onto_stack(&state, &reg, bears, Some(Target::Player(P1)));
+    let view = mtg_engine::view::GameView::for_player(&state, P1, &reg);
+    let item = view.stack.last().expect("the ability is on the stack");
+    assert_eq!(item.oracle_text, torch_text, "a granted ability reads as the card that grants it");
+    assert_eq!(item.cost, None, "an ability has no mana cost (CR 113.1)");
+    assert!(item.card_types.is_empty(), "and no type line");
+
+    // A triggered ability: its source card's text.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let hunter = named_permanent(&mut state, &reg, "Fiend Hunter", P0);
+    let card_id = state.get_object(hunter).unwrap().card_id;
+    state.stack.push(mtg_engine::state::StackEntry::Trigger(PendingTrigger::new(
+        TriggerSource::new(hunter, card_id, P0, "you may exile another target creature"),
+        TriggerEvent::SelfEntered)));
+    let view = mtg_engine::view::GameView::for_player(&state, P1, &reg);
+    let item = view.stack.iter().find(|s| s.source_id == Some(hunter)).expect("the trigger");
+    assert_eq!(item.oracle_text, text_of(&state, hunter).oracle_text);
+}
