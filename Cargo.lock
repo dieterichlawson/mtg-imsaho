@@ -861,6 +861,7 @@ dependencies = [
  "mtg-player",
  "serde",
  "serde_json",
+ "tungstenite",
 ]
 
 [[package]]

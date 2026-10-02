@@ -606,6 +606,7 @@ stops here — pass --save {path} to keep writing it");
     }
 
     let has_human = matches!(p1, PlayerKind::Cli(_)) || matches!(p2, PlayerKind::Cli(_));
+    let has_gui = matches!(p1, PlayerKind::Gui(_)) || matches!(p2, PlayerKind::Gui(_));
 
     // A signal (closed window, kill, timeout) landing while a CLI prompt
     // holds the terminal in raw mode must not leave the pty raw for the
@@ -872,7 +873,14 @@ use --save if you need a resumable file.");
 
     // Under the checker every submitted action is a decision point, so the
     // event ledgers see the passes the loop would otherwise make silently.
-    state.observe_every_submit = check_invariants;
+    //
+    // A gui seat needs the same: whether to stop at a priority with nothing
+    // to do is the page's setting (`s`), and the page answers such a pass
+    // for the player unless it is set. Left to the loop, those passes were
+    // made before the seat was asked, so `s` had nothing to stop at — and an
+    // opponent's spell the seat could not answer was never on screen as a
+    // decision at all (#645).
+    state.observe_every_submit = check_invariants || has_gui;
     if resume_file.is_some() {
         engine::resume_game_loop(&mut state, &registry, &mut game_callback);
     } else {
