@@ -271,12 +271,26 @@ random game happened to reach.
   restores the decision when `lastSent.seq === msg.seq`. With two tabs open,
   make tab A send `window.mtgSend({Nope: 1})` and read what tab B shows. Also
   check the `seq: 0` "unreadable message" notice, which no tab can ever match.
+  [2026-10-02] **Both halves confirmed** (#647, #648). With two tabs at the
+  mulligan, `{Nope: 1}` and `"AbandonGame"` from tab A put the refusal text on
+  tab B, which had sent nothing. `mtgSend(undefined)` gets the `seq: 0`
+  notice, and the sending tab sits at `decision: null` with no widget until
+  someone else answers. Its notice then stays on screen over the next prompt.
+  Both are reachable only from the console, so re-probe them after a fix, not
+  before. Still unasked: whether any *page* code path can send a message the
+  seat cannot parse (an `Action` built from a staged or stale widget is the
+  place to look).
 
 - G19 [proposed 2026-09-17, from G9] the typed field after a refusal:
   `main.ts`'s notice branch calls `beginDecision` but not `syncField`, and
   `send()` already called `hideField()`. At a `ChooseXFunding` (`number`) or a
   filtered `list` prompt, send `window.mtgSend("AbandonGame")` and check
   whether the DOM input comes back before the next canvas click.
+  [2026-10-02] **Checked, correct; drop it after one more quiet run.** A
+  `number` staged at the live `seq`, then `AbandonGame`: the refusal
+  restores the decision, and the next frame's `syncField()` (every `draw()`
+  ends in it) brings the X box back, visible and focused, before any click.
+  The missing `syncField` in the notice branch does not matter.
 
 **The Reader** cares about what the inspector says.
 
@@ -296,6 +310,12 @@ random game happened to reach.
   person at the page can find out what a spell they cannot respond to is about
   to do. If it is filed, it is an engine issue (the field is missing from the
   view), not a page one.
+  [2026-10-02] **Confirmed, filed against the engine view** (#646). Push a
+  chip onto `view.stack` over a live board, set `m.hover` to its hit and call
+  `mtgDebug.inspectHover()`: you get `facts: ["In stack"]` and nothing else.
+  The art loads lazily, so a screenshot taken straight after the first render
+  shows the lettered placeholder. Wait ~2 s and render again before calling
+  it an art bug (G11).
 
 - G21 [proposed 2026-09-17, from tonight's G10 probe] `s` cannot keep its
   promise: the README says `s` "stops at every priority instead of passing when
@@ -306,6 +326,13 @@ random game happened to reach.
   where `view.stack.length > 0`: tonight it was 246 with the flag and **0**
   without. Decide whether `s` should be documented as needing it or whether the
   runner should set it for a gui seat.
+  [2026-10-02] **Confirmed** (#645). The same seed with `s` pressed gives 473
+  pass-only stops with the flag and **0** without it. Without it, the stack is
+  visible at only 2 decisions, both when the seat held an instant. The
+  measurement to copy is a patched `autoplay.js` that sets `NOCI` to drop
+  `--check-invariants` and counts `view.stack.length > 0` per new `seq`. It
+  also answers G8's open half: without the flag, `f`'s stack clause cannot
+  fire, because the page never sees an opponent's spell it cannot answer.
 
 - G22 [proposed 2026-09-17, from #525] the three-badge strip: `drawPerm` draws
   `permBadges(p, state).slice(0, 3)` (`render.ts:203`), and `permBadges` orders
