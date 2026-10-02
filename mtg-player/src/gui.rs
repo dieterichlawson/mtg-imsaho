@@ -90,6 +90,9 @@ enum Inbound {
 struct Answer {
     seq: u64,
     action: serde_json::Value,
+    /// The connection it came from, which is the only page a refusal is
+    /// about (#647).
+    from: u64,
 }
 
 /// State shared between the seat and its connection threads.
@@ -113,6 +116,15 @@ impl Shared {
     fn broadcast(&self, msg: &str) {
         let mut clients = self.clients.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         clients.retain(|(_, c)| c.send(msg.to_string()).is_ok());
+    }
+
+    /// Send to one page only. A gone page is reaped by its own connection
+    /// thread, so a failed send here needs no cleanup.
+    fn send_to(&self, id: u64, msg: &str) {
+        let clients = self.clients.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some((_, c)) = clients.iter().find(|(cid, _)| *cid == id) {
+            let _ = c.send(msg.to_string());
+        }
     }
 
     fn connected(&self) -> usize {
@@ -271,34 +283,49 @@ impl GuiPlayer {
                     continue;
                 }
             };
-            if answer.seq != seq {
-                // An answer to an earlier decision (issue #71's rule: a
-                // stale keystroke never lands on a new prompt).
-                continue;
-            }
-            match serde_json::from_value::<Action>(answer.action) {
-                Ok(Action::AbandonGame) => {
-                    self.notice(seq, "AbandonGame is the harness's, not a player's");
-                }
-                Ok(action) => {
-                    // Every other page is holding this same decision. Tell
-                    // them it is taken, before the next board arrives, so
-                    // none of them leaves a live prompt over a game that has
-                    // moved on (issue #516).
-                    if let Ok(msg) = serde_json::to_string(&Outbound::Answered { seq }) {
-                        self.shared.broadcast(&msg);
-                    }
-                    return action;
-                }
-                Err(e) => self.notice(seq, &format!("not an action: {e}")),
+            if let Some(action) = self.take(seq, answer) {
+                return action;
             }
         }
     }
 
-    fn notice(&self, seq: u64, text: &str) {
+    /// Judge one answer against decision `seq`: the action it carries, or
+    /// `None` with the page that sent it told why.
+    fn take(&self, seq: u64, answer: Answer) -> Option<Action> {
+        if answer.seq != seq {
+            // An answer to an earlier decision (issue #71's rule: a
+            // stale keystroke never lands on a new prompt).
+            return None;
+        }
+        match serde_json::from_value::<Action>(answer.action) {
+            Ok(Action::AbandonGame) => {
+                self.notice(answer.from, seq, "AbandonGame is the harness's, not a player's");
+                None
+            }
+            Ok(action) => {
+                // Every other page is holding this same decision. Tell
+                // them it is taken, before the next board arrives, so
+                // none of them leaves a live prompt over a game that has
+                // moved on (issue #516).
+                if let Ok(msg) = serde_json::to_string(&Outbound::Answered { seq }) {
+                    self.shared.broadcast(&msg);
+                }
+                Some(action)
+            }
+            Err(e) => {
+                self.notice(answer.from, seq, &format!("not an action: {e}"));
+                None
+            }
+        }
+    }
+
+    /// A refusal goes to the page that sent the refused answer and no
+    /// other: every other tab sent nothing, and broadcasting it put an
+    /// error about somebody else's answer over their prompt (#647).
+    fn notice(&self, to: u64, seq: u64, text: &str) {
         let msg = serde_json::to_string(&Outbound::Notice { seq, text: text.to_string() })
             .expect("a notice serializes");
-        self.shared.broadcast(&msg);
+        self.shared.send_to(to, &msg);
     }
 
     /// Declare attackers or blockers.
@@ -401,7 +428,7 @@ fn serve_websocket(stream: TcpStream, shared: &Shared) {
     let _ = ws.get_ref().set_read_timeout(Some(Duration::from_millis(50)));
     let (tx, rx) = mpsc::channel::<String>();
     let id = shared.add_client(tx);
-    pump_websocket(&mut ws, &rx, shared);
+    pump_websocket(&mut ws, &rx, shared, id);
     // However this page went — closed, errored, or read to EOF — it is no
     // longer attached. Saying so here rather than leaving it to the next
     // `broadcast` is what makes `connected()` true while the seat sits in
@@ -415,6 +442,7 @@ fn pump_websocket(
     ws: &mut tungstenite::WebSocket<TcpStream>,
     rx: &mpsc::Receiver<String>,
     shared: &Shared,
+    id: u64,
 ) {
     loop {
         // Everything the seat has broadcast since last time.
@@ -458,7 +486,7 @@ fn pump_websocket(
                         }
                     }
                     Ok(Inbound::Action { seq, action }) => {
-                        if shared.answers.send(Answer { seq, action }).is_err() {
+                        if shared.answers.send(Answer { seq, action, from: id }).is_err() {
                             return;
                         }
                     }
@@ -543,5 +571,49 @@ mod tests {
         assert!(a_rx.try_recv().is_err(), "and is not sent to");
         assert_eq!(b_rx.try_recv().ok().as_deref(), Some("board"),
             "while the one still attached is");
+    }
+
+    fn test_seat() -> GuiPlayer {
+        let (answers, answers_rx) = mpsc::channel();
+        GuiPlayer {
+            name: "P1".into(),
+            shared: Arc::new(Shared {
+                latest: Mutex::new(None),
+                clients: Mutex::new(Vec::new()),
+                next_client: std::sync::atomic::AtomicU64::new(0),
+                answers,
+                web_dir: PathBuf::from("."),
+                settings: Mutex::new((false, None)),
+            }),
+            answers: answers_rx,
+            seq: 1,
+            url: String::new(),
+            said_waiting: false,
+        }
+    }
+
+    /// #647: a refused answer is told to the page that sent it, and to no
+    /// other tab on the seat — those sent nothing, and are still holding
+    /// the decision.
+    #[test]
+    fn a_refusal_reaches_only_the_page_that_sent_the_answer() {
+        let seat = test_seat();
+        let (a_tx, a_rx) = mpsc::channel();
+        let (b_tx, b_rx) = mpsc::channel();
+        let a = seat.shared.add_client(a_tx);
+        let _b = seat.shared.add_client(b_tx);
+
+        for action in [serde_json::json!({"Nope": 1}), serde_json::json!("AbandonGame")] {
+            assert!(seat.take(1, Answer { seq: 1, action, from: a }).is_none());
+            let to_a = a_rx.try_recv().expect("the sender is told its answer was refused");
+            assert!(to_a.contains("\"notice\"") && to_a.contains("\"seq\":1"), "{to_a}");
+            assert!(b_rx.try_recv().is_err(), "a tab that sent nothing is told nothing");
+        }
+
+        // An accepted answer is still everybody's business (#516).
+        let taken = seat.take(1, Answer { seq: 1, action: serde_json::json!("PassPriority"), from: a });
+        assert!(matches!(taken, Some(Action::PassPriority)));
+        assert!(a_rx.try_recv().unwrap().contains("answered"));
+        assert!(b_rx.try_recv().unwrap().contains("answered"));
     }
 }
