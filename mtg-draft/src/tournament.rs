@@ -290,9 +290,17 @@ impl Tournament {
         // Handle byes (sentinel value BYE)
         for &(a, b) in &pairings {
             if b == BYE {
-                // Bye: auto-win for player a, scored 2-0 the way MTR 6.4 does.
-                // Counted separately as well, so the standings can say which
-                // wins were played and which were awarded.
+                // Bye: an auto-win for player a, scored as a clean sweep of
+                // a match of this length — `wins_needed` games to none. That
+                // is the MTR's 2-0 at best-of-3, and it is the scaled rule
+                // rather than a literal 2-0 on purpose: at best-of-1 no
+                // played win is worth 2 game wins, and at best-of-5 a sweep
+                // is 3, so a literal 2-0 would rank a bye above every played
+                // win in the one format and below a sweep in the other (#651).
+                // Game wins are the first tiebreaker, so a bye ranks with
+                // the best result a played match can have and never above
+                // it. Counted separately as well, so the standings can say
+                // which wins were played and which were awarded.
                 self.standings[a].match_wins += 1;
                 self.standings[a].game_wins += wins_needed(self.config.best_of);
                 self.standings[a].byes += 1;
@@ -384,6 +392,24 @@ mod tests {
             assert!(
                 !t.played_pairs.contains(&pair),
                 "round 3 pairs {pair:?} again: {pairings:?}"
+            );
+        }
+    }
+
+    /// #651: the comment said a bye is scored 2-0 and the code credited
+    /// `wins_needed(best_of)`. The rule is the code's — a bye is a clean
+    /// sweep at this match length — and this pins it: at every length, a
+    /// bye stands exactly where a played sweep stands, tiebreakers included.
+    #[test]
+    fn a_bye_is_scored_as_a_played_clean_sweep() {
+        for best_of in 1..=7 {
+            let mut t = Tournament::new(3, TournamentConfig { best_of });
+            t.record_round(vec![(0, 1), (2, BYE)], vec![mr(0, 1, wins_needed(best_of), 0)]);
+            let (swept, byed) = (&t.standings[0], &t.standings[2]);
+            assert_eq!(
+                (byed.match_points(), byed.game_wins, byed.game_losses),
+                (swept.match_points(), swept.game_wins, swept.game_losses),
+                "best-of-{best_of}: a bye and a played sweep stand differently"
             );
         }
     }
