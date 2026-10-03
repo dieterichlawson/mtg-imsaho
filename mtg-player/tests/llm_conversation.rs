@@ -458,6 +458,79 @@ fn a_tournament_seat_is_told_which_game_it_is_playing_and_the_score() {
     assert!(g3.contains("loser of game 2 chose to go first"), "{g3}");
 }
 
+/// #649: once a game can be drawn, a match can reach a game that cannot
+/// change it — 2-0 into game 4 of a best-of-4 is the leader's however game
+/// 4 goes — and both seats were told it decided the match.
+///
+/// Checked against the match itself rather than case by case: for every
+/// position a best-of-2..7 can reach, play out every continuation under the
+/// runner's stopping rule (#484), and require the stake the text states to
+/// be the stake the continuations bear out.
+#[test]
+fn the_stated_stake_of_a_game_is_its_real_stake() {
+    #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+    enum End { Won, Lost, Drawn }
+    // Every way the match can end from here, `played` games in.
+    fn ends(n: usize, played: usize, y: usize, t: usize, out: &mut Vec<End>) {
+        let needed = n / 2 + 1;
+        if y >= needed || t >= needed || played == n {
+            out.push(match y.cmp(&t) {
+                std::cmp::Ordering::Greater => End::Won,
+                std::cmp::Ordering::Less => End::Lost,
+                std::cmp::Ordering::Equal => End::Drawn,
+            });
+            return;
+        }
+        ends(n, played + 1, y + 1, t, out);
+        ends(n, played + 1, y, t + 1, out);
+        ends(n, played + 1, y, t, out);
+    }
+    let after = |n, game: usize, y, t| {
+        let mut v = Vec::new();
+        ends(n, game, y, t, &mut v);
+        v
+    };
+
+    let mut settled_seen = 0;
+    for n in 2..=7usize {
+        for game in 1..=n {
+            for y in 0..game {
+                for t in 0..game - y {
+                    let needed = n / 2 + 1;
+                    if y >= needed || t >= needed {
+                        continue; // the match is over; there is no game to prompt
+                    }
+                    let text = MatchFormat::BestOf { best_of: n, game, your_wins: y, their_wins: t }
+                        .match_section();
+                    let on_win = after(n, game, y + 1, t);
+                    let on_loss = after(n, game, y, t + 1);
+                    let on_draw = after(n, game, y, t);
+                    let all: Vec<End> = [&on_win, &on_loss, &on_draw].iter().flat_map(|v| v.iter().copied()).collect();
+                    let settled = all.iter().all(|&e| e == all[0]);
+                    let at = format!("bo{n} game {game} at {y}-{t}");
+                    assert_eq!(text.contains("already decided"), settled, "{at}:\n{text}");
+                    if settled {
+                        settled_seen += 1;
+                        let ours = all[0] == End::Won;
+                        assert!(text.contains(if ours { "you have won it" } else { "your opponent has won it" }), "{at}:\n{text}");
+                        for claim in ["wins you the match", "loses you the match", "decides the match", "Neither of you"] {
+                            assert!(!text.contains(claim), "{at} is settled, yet says {claim:?}:\n{text}");
+                        }
+                        continue;
+                    }
+                    if text.contains("Winning this game wins you the match") || text.contains("win it and the match is yours") {
+                        assert!(on_win.iter().all(|&e| e == End::Won), "{at}: a win is not the match:\n{text}");
+                    }
+                    if text.contains("Losing this game loses you the match") || text.contains("lose it and it is theirs") {
+                        assert!(on_loss.iter().all(|&e| e == End::Lost), "{at}: a loss is not the match:\n{text}");
+                    }
+                }
+            }
+        }
+    }
+    assert!(settled_seen > 0, "the sweep never reached a settled game, so it checked nothing about #649");
+}
+
 #[test]
 fn a_single_game_seat_is_never_told_it_has_a_game_two() {
     let registry = CardRegistry::with_all_cards();

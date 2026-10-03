@@ -562,6 +562,13 @@ tells you which you are.\n",
                 // The last game, where the result only levels the score.
                 let win_levels = left == 0 && your_wins + 1 == their_wins;
                 let loss_levels = left == 0 && their_wins + 1 == your_wins;
+                // A drawn game wins nothing but still uses up one of the n,
+                // so a match can reach a game that cannot change it: 2-0
+                // into game 4 of a best-of-4 is the leader's whatever game 4
+                // does. Even winning this game and every one after it leaves
+                // the trailer behind (#649).
+                let already_won = your_wins > their_wins + left + 1;
+                let already_lost = their_wins > your_wins + left + 1;
 
                 // The last game is game n, not game 3: a seat told its match
                 // ends at game 3 when it does not plays the end of a longer
@@ -574,7 +581,13 @@ Whoever has won more games then wins the match.").unwrap();
                 writeln!(s, "\n**This is game {game} of at most {n}.** The score so far is \
 **you {your_wins}, your opponent {their_wins}**.").unwrap();
 
-                if win_takes_it && loss_loses_it {
+                if already_won || already_lost {
+                    let who = if already_won { "you have" } else { "your opponent has" };
+                    writeln!(s, "**The match is already decided:** {who} won it whatever \
+happens in this game{}. The game still counts toward the standings, where game wins \
+break ties between seats on the same match points.",
+                        if left == 0 { "" } else { " and the rest" }).unwrap();
+                } else if win_takes_it && loss_loses_it {
                     s.push_str("This game decides the match either way: win it and the \
 match is yours, lose it and it is theirs.\n");
                 } else if win_takes_it {
@@ -594,9 +607,11 @@ match is yours, lose it and it is theirs.\n");
                         else { &format!("{left} more games follow it") };
                     writeln!(s, "Neither of you can win the match with this game; {more}.").unwrap();
                 }
-                s.push_str("A match that ends with the score level is a **draw** — 1 \
+                if !(already_won || already_lost) {
+                    s.push_str("A match that ends with the score level is a **draw** — 1 \
 tournament point each, against 3 for a match win — so a game that cannot win you the \
 match is still worth not losing.\n");
+                }
 
                 if game == 1 {
                     s.push_str("\nThe starting player for game 1 is randomised (a fair \
