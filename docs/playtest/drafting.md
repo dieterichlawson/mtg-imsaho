@@ -690,3 +690,18 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   `wins_needed` game wins rather than 2-0 (#651). A real `cc` seat
   playing for a draw was not tried; it is the half of this idea still
   open.
+
+- D25 [proposed 2026-10-03, from #655 and #656] the snapshot's shape, not
+  just its cards: `--resume` refuses a replayed pick naming a card that is
+  not in the pack, but it counts records rather than seats, so a save
+  with two records for one seat replays both and exits 0 (#655), and a
+  round with one seat missing is silently re-asked live (#656). Take a
+  real `--save` and corrupt it every way a crash or a hand edit could —
+  a seat index past `--players`, a negative or duplicated `pick`, a
+  round's records out of order, a pick from pack 2 before pack 1 is
+  complete, a different `--players` or set from the one it was drafted
+  at, a truncated last line, a file from a newer version — and for each
+  record whether the run refuses with a message naming the bad record,
+  or replays something and draws a different draft in silence. Compare
+  the "N picks came from a snapshot" summary against the number actually
+  replayed every time.
