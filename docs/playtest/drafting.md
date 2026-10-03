@@ -670,3 +670,23 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   visible tell. The engine-side truth to compare against is
   `MatchResult::winner` (more game wins, `None` if level) and `match_is_over`
   (`wins_needed` **or** `best_of` games played, #484), not `wins_needed` alone.
+
+  **Run 2026-10-03: correct in every position without a drawn game.**
+  Eight runs at best-of 1-5 under a stub that reads the game number from
+  `**This is game G of at most N.**` and the seat from a hash of the
+  system prompt minus `## This match`, conceding on a plan. Checked:
+
+  - every game number;
+  - the score mirror;
+  - the stake sentence, including 2-1 into game 4 of a best-of-4, played
+    to both 3-1 and a 2-2 Draw.
+
+  The stake breaks only once a game is drawn: 2-0 going into the last
+  game is told it decides the match (#649). A stub cannot reach a drawn
+  game cheaply, so check it by calling `MatchFormat::match_section` from
+  a scratch crate.
+
+  Side finds: `(winner: Seat draw)` on stderr (#650), and a bye credited
+  `wins_needed` game wins rather than 2-0 (#651). A real `cc` seat
+  playing for a draw was not tried; it is the half of this idea still
+  open.
