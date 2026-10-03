@@ -174,6 +174,16 @@ fn a_quit_takes_every_seats_call_with_it() {
     signal_takes_every_call_with_it("QUIT", 4);
 }
 
+/// #654: SIGKILL (the OOM killer, a container stop) runs no handler at all,
+/// and every call in flight ran on under init. The kernel's parent-death
+/// signal takes the process the runner started; the stub is that process,
+/// as the real CLI is.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_kill_takes_every_seats_call_with_it() {
+    signal_takes_every_call_with_it("KILL", 4);
+}
+
 /// Start a run of `seats` hanging seats, wait until all are mid-call, send
 /// the runner `signal`, and require that no call outlives it.
 fn signal_takes_every_call_with_it(signal: &str, seats: usize) {

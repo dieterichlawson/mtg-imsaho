@@ -142,17 +142,7 @@ pub fn available() -> bool {
 
     // Its own process group, so the deadline below and the signal handler
     // reach everything it spawns and not just the wrapper we launched.
-    #[cfg(unix)]
-    unsafe {
-        use std::os::unix::process::CommandExt;
-        cmd.pre_exec(|| {
-            if libc::setpgid(0, 0) == 0 {
-                Ok(())
-            } else {
-                Err(std::io::Error::last_os_error())
-            }
-        });
-    }
+    own_group_tied_to_us(&mut cmd);
 
     let Ok(mut child) = cmd.spawn() else { return false };
     let pgid = i32::try_from(child.id()).unwrap_or(0);
@@ -270,6 +260,47 @@ fn snapshot(buf: &Arc<Mutex<Vec<u8>>>) -> String {
     buf.lock()
         .map(|b| String::from_utf8_lossy(&b).into_owned())
         .unwrap_or_default()
+}
+
+/// Start `cmd` as the leader of its own process group, and tie its life to
+/// this process's.
+///
+/// The group is what lets the deadline and the signal handler reach
+/// everything a call spawns, not just the wrapper we launched (#203,
+/// #206). It also means nothing reaches the call as a group when this
+/// process dies of something it cannot handle — SIGKILL, the OOM killer, a
+/// container stop — and every call in flight ran on under init (#654).
+/// `PR_SET_PDEATHSIG` closes that for the process we start, which for the
+/// real CLI is the CLI itself: the kernel kills it when we go, however we
+/// go. It does not reach a *wrapper's* own children, which would need a
+/// watchdog process outliving us; a stub or a shell wrapper around the CLI
+/// keeps that gap, the CLI does not.
+fn own_group_tied_to_us(cmd: &mut Command) {
+    #[cfg(unix)]
+    unsafe {
+        use std::os::unix::process::CommandExt;
+        #[cfg(target_os = "linux")]
+        let parent = libc::getpid();
+        cmd.pre_exec(move || {
+            // setpgid(0, 0): the child becomes leader of a new group
+            // whose id is its own pid.
+            if libc::setpgid(0, 0) != 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+            #[cfg(target_os = "linux")]
+            {
+                if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                // We may have died between the fork and the prctl, in
+                // which case the signal it arms will never come.
+                if libc::getppid() != parent {
+                    libc::_exit(1);
+                }
+            }
+            Ok(())
+        });
+    }
 }
 
 /// Kill every in-flight `claude -p` group, then die of the signal we were
@@ -642,19 +673,7 @@ pub fn run_print_mode(
     // Give the child its own process group, so the timeout and the
     // signal handler can reach everything it spawns and not just the
     // wrapper script we launched (issues #203, #206).
-    #[cfg(unix)]
-    unsafe {
-        use std::os::unix::process::CommandExt;
-        cmd.pre_exec(|| {
-            // setpgid(0, 0): the child becomes leader of a new group
-            // whose id is its own pid.
-            if libc::setpgid(0, 0) == 0 {
-                Ok(())
-            } else {
-                Err(std::io::Error::last_os_error())
-            }
-        });
-    }
+    own_group_tied_to_us(cmd);
 
     let mut child = cmd.spawn().map_err(|e| format!("cannot run {binary}: {e}"))?;
     {
