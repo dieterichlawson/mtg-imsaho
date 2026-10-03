@@ -21,6 +21,8 @@ use mtg_player::Player;
 mod card_lines;
 mod draft_log;
 mod llm_client;
+mod progress;
+use progress::{draw_progress, end_progress_line};
 
 /// One row of the final standings, written once and printed by both surfaces
 /// that show them — stderr and the log's FINAL STANDINGS block.
@@ -134,16 +136,6 @@ draft and the games.";
 
 /// A user error: report it and exit without a Rust panic/backtrace.
 fn die(msg: &str) -> ! {
-    eprintln!("Error: {msg}");
-    // A run that stopped still spent what it spent. The usage summary was
-    // printed only at the end of the happy path, so a seat's fatal, a
-    // worker panic or a config error published no account of the
-    // `claude -p` calls already paid for, and the resume that finished
-    // reported a fragment labelled like a whole run (issue #578).
-    llm_client::print_usage_summary(llm_client::RunOutcome::Stopped);
-    // The summary's own log record is owed to the file now, for the same
-    // reason the caller flushed before getting here.
-    mtg_player::game_log::flush_here();
     // `process::exit` runs no destructors and raises no signal, so nothing
     // else takes this run's in-flight `claude -p` subprocesses down with
     // it. Every other seat is mid-call when one seat fatals — all seats
@@ -151,7 +143,28 @@ fn die(msg: &str) -> ! {
     // one kept its whole process tree, orphaned to init and still spending
     // against a draft that had stopped (issue #537). Ctrl-C has swept them
     // since #206; the fatal path now sweeps the same registry.
+    //
+    // First, before any I/O: the runtime ignores SIGPIPE, so a write to a
+    // closed stderr panics instead of killing the process. When `die`'s own
+    // `eprintln!` came first and panicked, the sweep and the exit were
+    // never reached, and every other thread had already parked for good in
+    // `report_worker_failure` — a run wedged at 0% CPU forever (#652).
     mtg_player::llm::claude_code_kill_live_calls();
+    // Everything else is a report, and a report that cannot be written must
+    // not stop the exit.
+    let _ = std::panic::catch_unwind(|| {
+        use std::io::Write;
+        let _ = writeln!(std::io::stderr(), "{}Error: {msg}", end_progress_line());
+        // A run that stopped still spent what it spent. The usage summary
+        // was printed only at the end of the happy path, so a seat's fatal,
+        // a worker panic or a config error published no account of the
+        // `claude -p` calls already paid for, and the resume that finished
+        // reported a fragment labelled like a whole run (issue #578).
+        llm_client::print_usage_summary(llm_client::RunOutcome::Stopped);
+    });
+    // The summary's own log record is owed to the file now, for the same
+    // reason the caller flushed before getting here.
+    let _ = std::panic::catch_unwind(mtg_player::game_log::flush_here);
     std::process::exit(1);
 }
 
@@ -1034,7 +1047,7 @@ this draft will be made under {} — this draft is a mixture of the two",
             }
 
             if !args.quiet {
-                eprint!("\rPack {} Pick {}/{}", round + 1, pick_num + 1, initial_cards);
+                draw_progress(&format!("Pack {} Pick {}/{}", round + 1, pick_num + 1, initial_cards));
             }
 
             // Gather inputs for each player before spawning threads
@@ -1122,9 +1135,9 @@ this draft will be made under {} — this draft is a mixture of the two",
                     // unusable answers read exactly like 42 deliberate picks
                     // (issue #195).
                     substituted_picks[seat] += 1;
-                    eprintln!("\nWARN: seat {} pack {} pick {}: could not use the response, \
+                    eprintln!("{}WARN: seat {} pack {} pick {}: could not use the response, \
 substituting {} (the first card). Response: {}",
-                        seat, round + 1, pick_num + 1, pick.card(),
+                        end_progress_line(), seat, round + 1, pick_num + 1, pick.card(),
                         response.trim().replace('\n', " "));
                     log_draft_warning!(log, seat, round + 1, pick_num + 1, pick.card(), &response);
                 }
@@ -1154,7 +1167,7 @@ substituting {} (the first card). Response: {}",
     }
 
     if !args.quiet {
-        eprintln!("\nDraft complete!");
+        eprintln!("{}Draft complete!", end_progress_line());
     }
 
     // Where the protection ends, said where it matters rather than only in

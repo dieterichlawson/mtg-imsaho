@@ -243,3 +243,74 @@ fn signal_takes_every_call_with_it(signal: &str, seats: usize) {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// #652: with stderr closed, a seat's failure wedged the run forever. The
+/// runtime ignores SIGPIPE, so the failing seat's own `eprintln!` panicked,
+/// `die`'s first `eprintln!` panicked again before it swept or exited, and
+/// every other thread parked in `report_worker_failure` for good — 0% CPU,
+/// no exit, and the other seats' calls left running.
+#[test]
+fn a_fatal_with_stderr_closed_still_exits_and_sweeps() {
+    if !have_python() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    use std::io::Read;
+
+    let dir = std::env::temp_dir().join(format!("mtg-draft-epipe-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let pids = dir.join("pids");
+    std::fs::create_dir_all(&pids).unwrap();
+    let bin = hanging_seat(&dir);
+
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_mtg-draft-runner"))
+        .args(["--model", "cc", "--players", "2", "--best-of", "1", "--seed", "7"])
+        .args(["--log", dir.join("run.log").to_str().unwrap()])
+        .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
+        .env("CLAUDE_CODE_BIN", &bin)
+        .env("STUB_PIDS", &pids)
+        .env("STUB_FAIL_SEAT", "0")
+        .env("MTG_DRAFT_RETRY_BUDGET_SECS", "5")
+        .env("MTG_CLAUDE_CODE_TIMEOUT_SECS", "900")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("the runner runs");
+
+    // Read until the pick loop has started, then close our end — what
+    // `| head` does to an operator's pipe.
+    let mut stderr = child.stderr.take().unwrap();
+    let mut seen = Vec::new();
+    let mut byte = [0u8; 1];
+    while !String::from_utf8_lossy(&seen).contains("Pack 1 Pick 1") {
+        match stderr.read(&mut byte) {
+            Ok(1) => seen.push(byte[0]),
+            _ => break,
+        }
+    }
+    drop(stderr);
+
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break Some(status);
+        }
+        if Instant::now() > deadline {
+            break None;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    let hung = recorded_pids(&pids);
+    if status.is_none() {
+        let _ = child.kill();
+        let _ = child.wait();
+        reap(&hung);
+        panic!("the runner was still running 60s after its stderr closed — wedged");
+    }
+    assert!(!status.unwrap().success(), "a seat's fatal is still a failed run");
+
+    let left = survivors(&hung, Duration::from_secs(10));
+    reap(&left);
+    assert!(left.is_empty(), "{} in-flight calls outlived the run (pids {left:?})", left.len());
+    let _ = std::fs::remove_dir_all(&dir);
+}

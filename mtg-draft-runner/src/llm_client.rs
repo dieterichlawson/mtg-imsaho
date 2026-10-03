@@ -641,7 +641,7 @@ impl AnthropicDraftBackend {
                         .to_string();
                     if text.is_empty() {
                         let msg = format!("Anthropic returned empty text (attempt {}/6)", attempt + 1);
-                        eprintln!("WARN: {msg}");
+                        crate::progress::say(&format!("WARN: {msg}"));
                         mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_WARN", &msg);
                         continue;
                     }
@@ -651,7 +651,7 @@ impl AnthropicDraftBackend {
                     let code = resp.status().as_u16();
                     if code == 529 || code == 429 {
                         let msg = format!("Anthropic {} (attempt {}/6)", code, attempt + 1);
-                        eprintln!("{msg}");
+                        crate::progress::say(&msg);
                         mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_RETRY", &msg);
                         continue;
                     }
@@ -661,7 +661,7 @@ impl AnthropicDraftBackend {
                 }
                 Err(e) => {
                     let msg = format!("Anthropic request failed (attempt {}/6): {}", attempt + 1, e);
-                    eprintln!("{msg}");
+                    crate::progress::say(&msg);
                     mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
                 }
             }
@@ -873,7 +873,7 @@ impl ClaudeCodeDraftBackend {
                             attempt, started.elapsed().as_millis(),
                             json["result"].as_str().unwrap_or("").chars().take(200).collect::<String>()
                         );
-                        eprintln!("{msg}");
+                        crate::progress::say(&msg);
                         mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_RETRY", &msg);
                         last_failure = format!("reported an error: {}",
                             json["result"].as_str().unwrap_or("").chars().take(200).collect::<String>());
@@ -915,7 +915,7 @@ impl ClaudeCodeDraftBackend {
                         attempt,
                         json["result"].as_str().unwrap_or("").chars().take(200).collect::<String>()
                     );
-                    eprintln!("WARN: {msg}");
+                    crate::progress::say(&format!("WARN: {msg}"));
                     mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_WARN", &msg);
                     last_failure = format!("returned no structured object: {}",
                         json["result"].as_str().unwrap_or("").chars().take(200).collect::<String>());
@@ -925,7 +925,7 @@ impl ClaudeCodeDraftBackend {
                         "claude -p failed (attempt {}, {}ms): {e}",
                         attempt, started.elapsed().as_millis()
                     );
-                    eprintln!("{msg}");
+                    crate::progress::say(&msg);
                     mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
                     last_failure = e;
                 }
@@ -1139,7 +1139,7 @@ impl GeminiDraftBackend {
                     }
                     if text.is_empty() {
                         let msg = format!("Gemini returned empty text (attempt {}/6, interaction_id: {:?})", attempt + 1, id);
-                        eprintln!("WARN: {msg}");
+                        crate::progress::say(&format!("WARN: {msg}"));
                         mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_WARN", &msg);
                         continue;
                     }
@@ -1150,7 +1150,7 @@ impl GeminiDraftBackend {
                     if code == 429 || code == 503 {
                         let err_text = resp.text().unwrap_or_default();
                         let msg = format!("Gemini {} (attempt {}/6): {}", code, attempt + 1, &err_text[..err_text.len().min(150)]);
-                        eprintln!("{msg}");
+                        crate::progress::say(&msg);
                         mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_RETRY", &msg);
                         continue;
                     }
@@ -1158,7 +1158,7 @@ impl GeminiDraftBackend {
                     // If the interaction ID is invalid, fall back to a fresh conversation.
                     if code == 400 && text.contains("previous_interaction_id") && !fresh_retry {
                         let msg = format!("Invalid interaction ID, falling back to fresh conversation ({})", &text[..text.len().min(150)]);
-                        eprintln!("WARN: {msg}");
+                        crate::progress::say(&format!("WARN: {msg}"));
                         mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_WARN", &msg);
                         body.as_object_mut().unwrap().remove("previous_interaction_id");
                         body["system_instruction"] = serde_json::json!(&self.system_prompt);
@@ -1179,7 +1179,7 @@ impl GeminiDraftBackend {
                 }
                 Err(e) => {
                     let msg = format!("Gemini request failed (attempt {}/6): {}", attempt + 1, e);
-                    eprintln!("{msg}");
+                    crate::progress::say(&msg);
                     mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
                 }
             }
