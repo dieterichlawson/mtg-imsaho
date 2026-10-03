@@ -739,7 +739,8 @@ pub fn run_print_mode(
 
     // A timed-out call that had its answer has no status to check.
     if let Some(status) = status.filter(|s| !s.success()) {
-        return Err(format!("exit {status}: {}", failure_reason(&out, &err_text)));
+        // `ExitStatus` says "exit status: N" (or "signal: N") itself (#660).
+        return Err(format!("{status}: {}", failure_reason(&out, &err_text)));
     }
 
     serde_json::from_str(out.trim())

@@ -201,6 +201,18 @@ fn a_failing_cli_is_retried_then_falls_back_to_pass() {
     assert_eq!(p.conversation_len_for_test(), 0, "a failed call is not an exchange");
 }
 
+/// #660: the reason read "exit exit status: 3", because `ExitStatus`
+/// already prints the words it was prefixed with.
+#[test]
+fn a_failed_call_names_its_exit_status_once() {
+    let fake = Fake::new("exit-status", "echo 'boom' >&2; exit 3");
+    let mut cmd = std::process::Command::new(fake.bin());
+    let err = mtg_player::llm::claude_code_run(&mut cmd, "claude", "pick")
+        .expect_err("a non-zero exit is a failed call");
+    assert!(err.starts_with("exit status: 3: "), "got {err:?}");
+    assert!(err.contains("boom"), "the CLI's own reason follows: {err:?}");
+}
+
 #[test]
 fn an_error_result_is_retried_and_a_later_success_wins() {
     // First call: is_error; second call: fine.
