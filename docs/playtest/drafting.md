@@ -537,6 +537,27 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   so the question underneath is whether the guard can be one place every exit
   goes through rather than a signal handler plus three ad-hoc paths
 
+  **Run 2026-10-03: the signal and seat-fatal paths are fixed; the
+  other exits are not.** SIGINT, SIGTERM and a seat-fatal `die` swept all
+  eight groups at `--players 8`. `die` from `--seed`/`--guide` comes
+  before any seat exists. Leaked scratch dirs are reaped by the next
+  run's `prepare_seat`. All of that is **checked, correct**.
+
+  What still orphans or wedges:
+  - SIGQUIT (#653) and SIGKILL (#654).
+  - A closed stderr (#652): Rust ignores SIGPIPE, so `eprintln!` panics,
+    `die`'s own first `eprintln!` panics before the sweep, and
+    `REPORTED` parks every thread for ever. That is the concrete case for
+    making `die` do the sweep first and its I/O infallibly.
+
+  Two method notes:
+  - Launch the runner under test from something that resets SIGQUIT to
+    `SIG_DFL`. A bash `&` job inherits it ignored and SIGQUIT will look
+    handled.
+  - Put a unique marker in the stub's path, so
+    `ps -eo pid,ppid,pgid,cmd | grep <marker>` finds only your trees
+    while other probes run.
+
 - D22 [proposed 2026-09-18, from #541, #538 and the join loop in `main.rs:861`]
   the tournament phase as a concurrency surface: every probe so far has run
   `--players 2`, where the tournament is one match on one thread and nothing is
