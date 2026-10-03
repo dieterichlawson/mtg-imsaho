@@ -631,6 +631,23 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   each new call site has to remember to be inside, because the convention has now
   been broken once by a fix that had no reason to know about it
 
+  **Run 2026-10-03: #586 is fixed, and Error records are the one class
+  the buffer was designed to miss.** The pick loop now buffers
+  (`main.rs:1000/1027`), and every Info/Debug write reachable from a
+  worker is inside one of the three scopes. Thirteen eight-seat
+  best-of-3 runs gave a sorted diff of 0 on every pair, including
+  STALLED, FALLBACK, NO_ANSWER and every API_* record.
+
+  The ordered diff is never empty, because `game_log.rs` writes Error
+  records through on the premise that a clean run has none (#658). A
+  schema-walking stub that ignores `minItems` gets about 25 MALFORMED
+  per run, which is enough to show it. Game-side API records name no
+  seat (#659).
+
+  A re-probe after #658 is fixed should require the **ordered** diff
+  empty, with forced errors in both runs. It should also check that a
+  match's MALFORMED lines sit inside that match's block.
+
 - D24 [proposed 2026-09-28, from #609's fix] does a seat play the match it is
   now told it is in? #609 gave the system prompt the game number, the score
   from the seat's own side, and what winning or losing this game settles — so
