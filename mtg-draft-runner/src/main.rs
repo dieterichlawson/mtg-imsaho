@@ -65,6 +65,24 @@ fn unplayed_games_note(games: &[GameOutcome]) -> String {
     )
 }
 
+/// The per-match progress line on stderr. A forfeited game is a game nobody
+/// played; the score line is where a reader is looking when it happens
+/// (#488). A level match has no winner to name (#650).
+fn match_score_line(result: &MatchResult) -> String {
+    let outcome = match result.winner() {
+        Some(w) => format!("winner: Seat {w}"),
+        None => "drawn".to_string(),
+    };
+    format!(
+        "  Seat {} vs Seat {}: {}-{} ({outcome}){}",
+        result.player_a,
+        result.player_b,
+        result.wins_a,
+        result.wins_b,
+        unplayed_games_note(&result.games),
+    )
+}
+
 /// Per-seat configuration used by [`play_match`].
 struct PlayerSpec<'a> {
     seat: usize,
@@ -1328,17 +1346,7 @@ and the FINAL STANDINGS below record none",
             }
 
             if !args.quiet {
-                // A forfeited game is a game nobody played; the score line
-                // is where a reader is looking when it happens (#488).
-                let forfeited = unplayed_games_note(&result.games);
-                eprintln!(
-                    "  Seat {} vs Seat {}: {}-{} (winner: Seat {}){forfeited}",
-                    result.player_a,
-                    result.player_b,
-                    result.wins_a,
-                    result.wins_b,
-                    result.winner().map_or("draw".to_string(), |w| w.to_string())
-                );
+                eprintln!("{}", match_score_line(result));
             }
         }
 
@@ -2097,6 +2105,23 @@ mod pick_parsing_tests {
         ).expect("an older snapshot is still a snapshot");
         assert_eq!(save.picks.len(), 1);
         assert!(!save.picks[0].substituted);
+    }
+}
+
+#[cfg(test)]
+mod match_score_line_tests {
+    use super::match_score_line;
+    use mtg_draft::tournament::MatchResult;
+
+    fn result(wins_a: usize, wins_b: usize) -> MatchResult {
+        MatchResult { player_a: 0, player_b: 1, wins_a, wins_b, games: Vec::new() }
+    }
+
+    /// #650: a level match printed "(winner: Seat draw)".
+    #[test]
+    fn a_drawn_match_names_no_winner() {
+        assert_eq!(match_score_line(&result(1, 1)), "  Seat 0 vs Seat 1: 1-1 (drawn)");
+        assert_eq!(match_score_line(&result(0, 2)), "  Seat 0 vs Seat 1: 0-2 (winner: Seat 1)");
     }
 }
 
