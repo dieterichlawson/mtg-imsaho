@@ -292,7 +292,7 @@ extern "C" fn handle_fatal_signal(sig: libc::c_int) {
 
 /// Kill every in-flight `claude -p` group, for an exit that is not a signal.
 ///
-/// `handle_fatal_signal` covers Ctrl-C, SIGTERM and SIGHUP. It does not
+/// `handle_fatal_signal` covers Ctrl-C, Ctrl-\, SIGTERM and SIGHUP. It does not
 /// cover the runner's *fatal* path: `die` is `eprintln!` + `process::exit`,
 /// which runs no destructors and raises no signal, so nothing swept this
 /// registry and every other seat still mid-call kept its whole `claude -p`
@@ -310,7 +310,8 @@ pub fn kill_live_calls() {
     }
 }
 
-/// Take in-flight subprocesses down with the run on Ctrl-C or SIGTERM.
+/// Take in-flight subprocesses down with the run on Ctrl-C, Ctrl-\,
+/// SIGTERM or SIGHUP.
 ///
 /// Without this the runner exits and its `claude -p` child (and whatever
 /// that spawned) is reparented to init and keeps going — with a real seat,
@@ -323,6 +324,12 @@ fn install_signal_handlers() {
         libc::signal(libc::SIGINT, handle_fatal_signal as *const () as libc::sighandler_t);
         libc::signal(libc::SIGTERM, handle_fatal_signal as *const () as libc::sighandler_t);
         libc::signal(libc::SIGHUP, handle_fatal_signal as *const () as libc::sighandler_t);
+        // Ctrl-\ too. The children are in their own process groups, so the
+        // terminal's SIGQUIT never reaches them; without this the runner
+        // dumped core and left every call running under init (#653). The
+        // handler re-raises at the default disposition, so the core dump
+        // and the exit status are what they would have been.
+        libc::signal(libc::SIGQUIT, handle_fatal_signal as *const () as libc::sighandler_t);
     });
 }
 

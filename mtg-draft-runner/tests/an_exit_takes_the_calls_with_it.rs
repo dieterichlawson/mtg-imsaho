@@ -1,7 +1,7 @@
 //! However a run stops, it stops its `claude -p` subprocesses too.
 //!
-//! #206 made Ctrl-C and SIGTERM take a run's in-flight calls down with it,
-//! by putting each child in its own process group and recording the group
+//! #206 made Ctrl-C and SIGTERM (and, since #653, Ctrl-\) take a run's
+//! in-flight calls down with it, by putting each child in its own process group and recording the group
 //! in a fixed registry the signal handler walks. Two holes in that, both
 //! found the same night:
 //!
@@ -162,24 +162,38 @@ fn a_seats_fatal_takes_the_other_seats_calls_with_it() {
 
 #[test]
 fn an_interrupt_takes_every_seats_call_with_it_at_the_default_player_count() {
+    // 8 is `--players`' default, which is the whole point: the registry was
+    // sized for four and the shipped configuration runs eight.
+    signal_takes_every_call_with_it("TERM", 8);
+}
+
+/// #653: Ctrl-\ is a signal a terminal sends too, and the handler did not
+/// cover it — the runner dumped core and every call ran on under init.
+#[test]
+fn a_quit_takes_every_seats_call_with_it() {
+    signal_takes_every_call_with_it("QUIT", 4);
+}
+
+/// Start a run of `seats` hanging seats, wait until all are mid-call, send
+/// the runner `signal`, and require that no call outlives it.
+fn signal_takes_every_call_with_it(signal: &str, seats: usize) {
     if !have_python() {
         eprintln!("skipping: no python3 to run the stub seat with");
         return;
     }
 
-    // 8 is `--players`' default, which is the whole point: the registry was
-    // sized for four and the shipped configuration runs eight.
-    const SEATS: usize = 8;
-
-    let dir = std::env::temp_dir().join(format!("mtg-draft-sigterm-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("mtg-draft-sig{signal}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let pids = dir.join("pids");
     std::fs::create_dir_all(&pids).unwrap();
     let bin = hanging_seat(&dir);
 
-    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_mtg-draft-runner"))
+    // Through a shell only to turn core dumps off: SIGQUIT's default
+    // action writes one, and a test should not leave it behind.
+    let mut child = std::process::Command::new("sh")
+        .args(["-c", "ulimit -c 0; exec \"$0\" \"$@\"", env!("CARGO_BIN_EXE_mtg-draft-runner")])
         .args(["--model", "cc", "--best-of", "1", "--seed", "7", "-q"])
-        .args(["--players", &SEATS.to_string()])
+        .args(["--players", &seats.to_string()])
         .args(["--log", dir.join("run.log").to_str().unwrap()])
         .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
         .env("CLAUDE_CODE_BIN", &bin)
@@ -195,14 +209,14 @@ fn an_interrupt_takes_every_seats_call_with_it_at_the_default_player_count() {
     let deadline = Instant::now() + Duration::from_secs(60);
     let hung = loop {
         let seen = recorded_pids(&pids);
-        if seen.len() >= SEATS {
+        if seen.len() >= seats {
             break seen;
         }
         if Instant::now() > deadline {
             let _ = child.kill();
             reap(&seen);
             panic!(
-                "only {} of {SEATS} seats reached a call in 60s — the fixture never \
+                "only {} of {seats} seats reached a call in 60s — the fixture never \
                  got the run into the state this is about",
                 seen.len()
             );
@@ -210,9 +224,8 @@ fn an_interrupt_takes_every_seats_call_with_it_at_the_default_player_count() {
         std::thread::sleep(Duration::from_millis(100));
     };
 
-    // What Ctrl-C does.
     let killed = std::process::Command::new("kill")
-        .args(["-TERM", &child.id().to_string()])
+        .args([format!("-{signal}"), child.id().to_string()])
         .status()
         .expect("kill runs");
     assert!(killed.success(), "the runner could not be signalled");
@@ -222,8 +235,9 @@ fn an_interrupt_takes_every_seats_call_with_it_at_the_default_player_count() {
     reap(&left);
     assert!(
         left.is_empty(),
-        "{} of {} in-flight `claude -p` calls survived SIGTERM (pids {left:?}) — \
-         the signal handler's registry does not cover a run of {SEATS} seats",
+        "{} of {} in-flight `claude -p` calls survived SIG{signal} (pids {left:?}) — \
+         the signal handler does not cover this signal, or its registry does not \
+         cover a run of {seats} seats",
         left.len(),
         hung.len()
     );
