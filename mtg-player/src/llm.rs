@@ -1089,6 +1089,22 @@ trait LlmBackend {
     /// backend that has one. `None` for a backend whose history it holds
     /// itself, which is every backend but the `claude -p` CLI seat.
     fn session_id(&self) -> Option<&str> { None }
+    /// The seat this backend answers for, so the records it writes itself —
+    /// `API_RETRY`, `API_ERROR` and the rest — say whose call it was. A
+    /// tournament match runs both seats' backends on one thread, so the
+    /// thread name does not (#659).
+    fn set_seat(&mut self, _seat: &str) {}
+}
+
+/// A backend record's label, naming the seat the way `LlmPlayer`'s own
+/// records do (`MALFORMED [Seat3]`), when the backend knows it (#659).
+pub(crate) fn api_label(kind: &str, seat: &str) -> String {
+    if seat.is_empty() { kind.to_string() } else { format!("{kind} [{seat}]") }
+}
+
+/// The same seat, ahead of a backend's line on stderr.
+pub(crate) fn seat_tag(seat: &str) -> String {
+    if seat.is_empty() { String::new() } else { format!("[{seat}] ") }
 }
 
 /// The response intro for a backend whose reasoning the harness can only see
@@ -1198,6 +1214,8 @@ struct AnthropicBackend {
     /// Set when the retries run out, so the caller can tell "no answer"
     /// from an answer it could not use (#587).
     last_call_failure: Option<String>,
+    /// The seat this backend answers for; see `LlmBackend::set_seat`.
+    seat: String,
 }
 
 impl AnthropicBackend {
@@ -1212,6 +1230,7 @@ impl AnthropicBackend {
             conversation: Vec::new(),
             last_thinking: None,
             last_call_failure: None,
+            seat: String::new(),
         }
     }
 
@@ -1296,16 +1315,16 @@ impl AnthropicBackend {
                             "Anthropic HTTP {} (attempt {}/{}, {}ms): {}",
                             code, attempt + 1, MAX_ATTEMPTS, elapsed_ms, snippet
                         );
-                        eprintln!("{msg}");
-                        crate::game_log::write(file!(), line!(), "API_RETRY", &msg);
+                        eprintln!("{}{msg}", seat_tag(&self.seat));
+                        crate::game_log::write(file!(), line!(), &api_label("API_RETRY", &self.seat), &msg);
                         continue;
                     }
                     let msg = format!(
                         "Anthropic HTTP {} (attempt {}/{}, {}ms): {}",
                         code, attempt + 1, MAX_ATTEMPTS, elapsed_ms, snippet
                     );
-                    eprintln!("{msg}");
-                    crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
+                    eprintln!("{}{msg}", seat_tag(&self.seat));
+                    crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
                     return "0".to_string();
                 }
                 Err(e) => {
@@ -1313,14 +1332,14 @@ impl AnthropicBackend {
                         "Anthropic request failed (attempt {}/{}, {}ms): {}",
                         attempt + 1, MAX_ATTEMPTS, elapsed_ms, format_reqwest_error(&e)
                     );
-                    eprintln!("{msg}");
-                    crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
+                    eprintln!("{}{msg}", seat_tag(&self.seat));
+                    crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
                 }
             }
         }
         let msg = format!("Anthropic game API exhausted all {MAX_ATTEMPTS} retries");
-        crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
-        eprintln!("{msg}");
+        crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
+        eprintln!("{}{msg}", seat_tag(&self.seat));
         self.last_call_failure = Some(msg);
         "0".to_string()
     }
@@ -1372,6 +1391,10 @@ impl AnthropicBackend {
 }
 
 impl LlmBackend for AnthropicBackend {
+    fn set_seat(&mut self, seat: &str) {
+        seat.clone_into(&mut self.seat);
+    }
+
     fn take_call_failure(&mut self) -> Option<String> {
         self.last_call_failure.take()
     }
@@ -1438,6 +1461,8 @@ struct GeminiBackend {
     last_thinking: Option<String>,
     /// See `AnthropicBackend::last_call_failure` (#587).
     last_call_failure: Option<String>,
+    /// The seat this backend answers for; see `LlmBackend::set_seat`.
+    seat: String,
 }
 
 impl GeminiBackend {
@@ -1453,6 +1478,7 @@ impl GeminiBackend {
             interaction_id: None,
             last_thinking: None,
             last_call_failure: None,
+            seat: String::new(),
         }
     }
 
@@ -1527,8 +1553,8 @@ impl GeminiBackend {
                         }
 
                         let msg = format!("Gemini returned non-JSON response: {:?}", &output_text[..output_text.len().min(100)]);
-                        eprintln!("WARN: {msg}");
-                        crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
+                        eprintln!("{}WARN: {msg}", seat_tag(&self.seat));
+                        crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
                         return serde_json::json!({});
                     }
 
@@ -1540,15 +1566,15 @@ impl GeminiBackend {
                             "Gemini HTTP {} (attempt {}/{}, {}ms): {}",
                             code, attempt + 1, MAX_ATTEMPTS, elapsed_ms, snippet
                         );
-                        eprintln!("{msg}");
-                        crate::game_log::write(file!(), line!(), "API_RETRY", &msg);
+                        eprintln!("{}{msg}", seat_tag(&self.seat));
+                        crate::game_log::write(file!(), line!(), &api_label("API_RETRY", &self.seat), &msg);
                         continue;
                     }
                     // If the interaction ID is invalid, fall back to a fresh conversation.
                     if code == 400 && text.contains("previous_interaction_id") && !fresh_retry {
                         let msg = "Invalid interaction ID, falling back to fresh conversation";
-                        eprintln!("WARN: {msg}");
-                        crate::game_log::write(file!(), line!(), "API_WARN", msg);
+                        eprintln!("{}WARN: {msg}", seat_tag(&self.seat));
+                        crate::game_log::write(file!(), line!(), &api_label("API_WARN", &self.seat), msg);
                         body.as_object_mut().unwrap().remove("previous_interaction_id");
                         body["system_instruction"] = serde_json::json!(&self.system_prompt);
                         self.interaction_id = None;
@@ -1558,16 +1584,16 @@ impl GeminiBackend {
                     // Fatal config errors — abort loudly so we don't silently produce garbage.
                     if code == 400 && (text.contains("thinking level") || text.contains("not a supported")) {
                         let msg = format!("Gemini config error: {}", &text[..text.len().min(300)]);
-                        eprintln!("FATAL: {msg}");
-                        crate::game_log::write(file!(), line!(), "API_FATAL", &msg);
+                        eprintln!("{}FATAL: {msg}", seat_tag(&self.seat));
+                        crate::game_log::write(file!(), line!(), &api_label("API_FATAL", &self.seat), &msg);
                         std::process::exit(1);
                     }
                     let msg = format!(
                         "Gemini HTTP {} (attempt {}/{}, {}ms): {}",
                         code, attempt + 1, MAX_ATTEMPTS, elapsed_ms, snippet
                     );
-                    eprintln!("{msg}");
-                    crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
+                    eprintln!("{}{msg}", seat_tag(&self.seat));
+                    crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
                     return serde_json::json!({});
                 }
                 Err(e) => {
@@ -1575,14 +1601,14 @@ impl GeminiBackend {
                         "Gemini request failed (attempt {}/{}, {}ms): {}",
                         attempt + 1, MAX_ATTEMPTS, elapsed_ms, format_reqwest_error(&e)
                     );
-                    eprintln!("{msg}");
-                    crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
+                    eprintln!("{}{msg}", seat_tag(&self.seat));
+                    crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
                 }
             }
         }
         let msg = format!("Gemini API exhausted all {MAX_ATTEMPTS} retries");
-        eprintln!("WARN: {msg}");
-        crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
+        eprintln!("{}WARN: {msg}", seat_tag(&self.seat));
+        crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
         self.last_call_failure = Some(msg);
         serde_json::json!({})
     }
@@ -1604,6 +1630,10 @@ impl GeminiBackend {
 }
 
 impl LlmBackend for GeminiBackend {
+    fn set_seat(&mut self, seat: &str) {
+        seat.clone_into(&mut self.seat);
+    }
+
     fn take_call_failure(&mut self) -> Option<String> {
         self.last_call_failure.take()
     }
@@ -2000,11 +2030,13 @@ impl LlmPlayer {
 
     /// Drive the backend's plain action call directly, for backend tests.
     pub fn backend_send_for_test(&mut self, message: &str) -> String {
+        self.backend.set_seat(&self.name);
         self.backend.send(message)
     }
 
     /// Drive the backend's structured call directly, for backend tests.
     pub fn backend_send_with_schema_for_test(&mut self, message: &str, schema: &serde_json::Value) -> serde_json::Value {
+        self.backend.set_seat(&self.name);
         self.backend.send_with_schema(message, schema)
     }
 
@@ -3124,6 +3156,7 @@ impl LlmPlayer {
                 .map(|p| p.keys().filter(|k| !schema_key_is_legal(k))
                     .cloned().collect::<Vec<_>>()));
         self.log("PROMPT", user_message);
+        self.backend.set_seat(&self.name);
         let result = self.backend.send_with_schema(user_message, schema);
         // Whether this decision got an answer at all, before anything
         // downstream reads the value it was handed (#587).

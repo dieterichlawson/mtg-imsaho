@@ -24,7 +24,7 @@ use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use super::{LlmBackend, GAME_RULES, THOUGHTS_IN_JSON_FORMAT};
+use super::{api_label, seat_tag, LlmBackend, GAME_RULES, THOUGHTS_IN_JSON_FORMAT};
 
 /// Environment variable naming the Claude Code binary; defaults to `claude`
 /// on `PATH`.
@@ -472,6 +472,8 @@ pub(super) struct ClaudeCodeBackend {
     last_thinking: Option<String>,
     /// Why the last call produced no answer at all (#587).
     last_call_failure: Option<String>,
+    /// The seat this backend answers for; see `LlmBackend::set_seat`.
+    seat: String,
 }
 
 impl ClaudeCodeBackend {
@@ -495,6 +497,7 @@ impl ClaudeCodeBackend {
             workdir,
             last_thinking: None,
             last_call_failure: None,
+            seat: String::new(),
         }
     }
 
@@ -529,8 +532,8 @@ impl ClaudeCodeBackend {
                             attempt + 1, MAX_ATTEMPTS, elapsed_ms,
                             json["result"].as_str().unwrap_or("").chars().take(200).collect::<String>()
                         );
-                        eprintln!("{msg}");
-                        crate::game_log::write(file!(), line!(), "API_RETRY", &msg);
+                        eprintln!("{}{msg}", seat_tag(&self.seat));
+                        crate::game_log::write(file!(), line!(), &api_label("API_RETRY", &self.seat), &msg);
                         continue;
                     }
                     if let Some(sid) = json["session_id"].as_str() {
@@ -554,14 +557,14 @@ impl ClaudeCodeBackend {
                         "claude -p failed (attempt {}/{}, {}ms): {e}",
                         attempt + 1, MAX_ATTEMPTS, started.elapsed().as_millis()
                     );
-                    eprintln!("{msg}");
-                    crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
+                    eprintln!("{}{msg}", seat_tag(&self.seat));
+                    crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
                 }
             }
         }
         let msg = format!("claude -p exhausted all {MAX_ATTEMPTS} attempts");
-        eprintln!("{msg}");
-        crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
+        eprintln!("{}{msg}", seat_tag(&self.seat));
+        crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
         // The caller is about to be handed an empty answer. Say that no
         // answer happened, so it is not reported as one the model gave
         // (issue #587).
@@ -795,6 +798,10 @@ impl Drop for ClaudeCodeBackend {
 }
 
 impl LlmBackend for ClaudeCodeBackend {
+    fn set_seat(&mut self, seat: &str) {
+        seat.clone_into(&mut self.seat);
+    }
+
     fn send(&mut self, message: &str) -> String {
         let schema = serde_json::json!({
             "type": "object",
