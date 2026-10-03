@@ -397,6 +397,60 @@ struct PickRecord {
     substituted: bool,
 }
 
+/// Whether a snapshot's picks are whole pick steps in draft order: one
+/// record per seat at every step from pack 1 pick 1 up to where it stops,
+/// and nothing after that.
+///
+/// The runner only ever writes a snapshot at a pick boundary, through a
+/// rename, so anything else is a hand edit or corruption. The replay used to
+/// count records rather than seats: two records for one seat replayed both
+/// into it and the run exited 0 with pools of 42 and 41 (#655), and a step
+/// missing one seat was re-asked live for every seat, dropping the other
+/// seats' records in silence while the summary still counted them as
+/// replayed (#656). A save that would draw a different draft from the one
+/// it records is refused, naming the record, the way an impossible card is.
+fn check_snapshot_shape(picks: &[PickRecord], players: usize, pack_size: usize) -> Result<(), String> {
+    const PACKS: usize = 3;
+    let mut seen = vec![vec![false; players]; PACKS * pack_size];
+    for r in picks {
+        if !(1..=PACKS).contains(&r.round) || !(1..=pack_size).contains(&r.pick) {
+            return Err(format!(
+                "it has a record for pack {} pick {}, and the draft has {PACKS} packs of {pack_size} picks",
+                r.round, r.pick
+            ));
+        }
+        if r.seat >= players {
+            return Err(format!(
+                "it has a record for seat {} at pack {} pick {}, and the draft has {players} seats",
+                r.seat, r.round, r.pick
+            ));
+        }
+        let slot = &mut seen[(r.round - 1) * pack_size + r.pick - 1][r.seat];
+        if *slot {
+            return Err(format!("it has two records for seat {} at pack {} pick {}", r.seat, r.round, r.pick));
+        }
+        *slot = true;
+    }
+    let whole = seen.iter().take_while(|step| step.iter().all(|&s| s)).count();
+    let Some(last) = seen.iter().rposition(|step| step.iter().any(|&s| s)) else { return Ok(()) };
+    if last < whole {
+        return Ok(());
+    }
+    let (round, pick) = (whole / pack_size + 1, whole % pack_size + 1);
+    let seats = |want: bool| -> Vec<String> {
+        (0..players).filter(|&s| seen[whole][s] == want).map(|s| s.to_string()).collect()
+    };
+    if seats(true).is_empty() {
+        Err(format!("it has no records for pack {round} pick {pick} but has records after it"))
+    } else {
+        Err(format!(
+            "at pack {round} pick {pick} it has records for seat(s) {} and none for seat(s) {}",
+            seats(true).join(", "),
+            seats(false).join(", ")
+        ))
+    }
+}
+
 /// What one seat was told to do while it was making the recorded picks.
 ///
 /// A guide changes what a seat does more than any other flag, and none of
@@ -907,6 +961,10 @@ this draft will be made under {} — this draft is a mixture of the two",
     // the picks replayed out of one.
     let mut recorded: Vec<PickRecord> = Vec::new();
     let replaying: Vec<PickRecord> = resumed.map(|s| s.picks).unwrap_or_default();
+    if let Err(e) = check_snapshot_shape(&replaying, args.players, draft.cards_remaining(0)) {
+        die(&format!("draft save '{}' cannot be replayed: {e}",
+            args.resume.as_deref().unwrap_or_default()));
+    }
     if !replaying.is_empty() && !args.quiet {
         eprintln!("Replaying {} recorded pick(s) from the snapshot...", replaying.len());
     }
@@ -2105,6 +2163,62 @@ mod pick_parsing_tests {
         ).expect("an older snapshot is still a snapshot");
         assert_eq!(save.picks.len(), 1);
         assert!(!save.picks[0].substituted);
+    }
+}
+
+#[cfg(test)]
+mod snapshot_shape_tests {
+    use super::{check_snapshot_shape, PickRecord};
+
+    fn rec(round: usize, pick: usize, seat: usize) -> PickRecord {
+        PickRecord { round, pick, seat, card: "Moon Heron".into(), substituted: false }
+    }
+
+    /// Whole steps for `players` seats, from pack 1 pick 1, `steps` of them.
+    fn whole(players: usize, pack_size: usize, steps: usize) -> Vec<PickRecord> {
+        (0..steps)
+            .flat_map(|i| (0..players).map(move |seat| rec(i / pack_size + 1, i % pack_size + 1, seat)))
+            .collect()
+    }
+
+    #[test]
+    fn a_save_the_runner_writes_is_accepted() {
+        assert_eq!(check_snapshot_shape(&[], 2, 14), Ok(()));
+        assert_eq!(check_snapshot_shape(&whole(2, 14, 5), 2, 14), Ok(()));
+        // Across a pack boundary, and the whole draft.
+        assert_eq!(check_snapshot_shape(&whole(8, 14, 16), 8, 14), Ok(()));
+        assert_eq!(check_snapshot_shape(&whole(2, 14, 42), 2, 14), Ok(()));
+    }
+
+    /// #655: two records for seat 0 and none for seat 1 replayed both picks
+    /// into seat 0.
+    #[test]
+    fn two_records_for_one_seat_are_refused() {
+        let save = vec![rec(1, 1, 0), rec(1, 1, 0)];
+        let err = check_snapshot_shape(&save, 2, 14).unwrap_err();
+        assert!(err.contains("two records for seat 0 at pack 1 pick 1"), "{err}");
+    }
+
+    /// #656: a step missing a seat silently dropped the other seat's record.
+    #[test]
+    fn a_step_missing_a_seat_is_refused() {
+        let mut save = whole(2, 14, 5);
+        save.retain(|r| !(r.pick == 5 && r.seat == 1));
+        let err = check_snapshot_shape(&save, 2, 14).unwrap_err();
+        assert!(err.contains("pack 1 pick 5 it has records for seat(s) 0 and none for seat(s) 1"), "{err}");
+
+        let mut gap = whole(2, 14, 5);
+        gap.retain(|r| r.pick != 3);
+        let err = check_snapshot_shape(&gap, 2, 14).unwrap_err();
+        assert!(err.contains("no records for pack 1 pick 3 but has records after it"), "{err}");
+    }
+
+    #[test]
+    fn a_record_outside_the_draft_is_refused() {
+        assert!(check_snapshot_shape(&[rec(1, 1, 2)], 2, 14).unwrap_err().contains("seat 2"));
+        assert!(check_snapshot_shape(&[rec(4, 1, 0)], 2, 14).unwrap_err().contains("pack 4 pick 1"));
+        assert!(check_snapshot_shape(&[rec(1, 15, 0)], 2, 14).unwrap_err().contains("pack 1 pick 15"));
+        assert!(check_snapshot_shape(&[rec(1, 0, 0)], 2, 14).unwrap_err().contains("pack 1 pick 0"));
     }
 }
 
