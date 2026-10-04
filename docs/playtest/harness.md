@@ -749,6 +749,12 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   rendered rows, which `build_action_menu` is pure enough to test directly.
   Record any card whose description names an object but *cannot* be made
   ambiguous, and say why
+  — **played 2026-10-04: the card descriptions are clean; the ambiguity moved
+  to the label helper.** #612, #631, #634 hold (0 repeated ids in ~2,670
+  prompts), but `obj_name` names lands, stack, graveyard, hand and exile objects
+  by bare name, so a seat destroyed its own Mountain and countered its own
+  Dissipate (#668); the CLI's graveyard ids appear in no pane (#669); and
+  Skirsdag High Priest is still `C(n,2)` rows, 190 at 20 creatures (#670). See H25
 - H21 [proposed 2026-09-29, from #611] the tap plan is load-bearing, and it
   disappears. #611's mechanism generalises past flashback: the only thing
   telling two same-named rows apart was the `(tap …)` suffix, and
@@ -841,3 +847,18 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   an object with nested keys needs `required` at *every* level, not just the
   top, and a schema can be loose *across* fields where each field's own `enum`
   is tight — look for two fields that can name the same thing
+
+- H25 [proposed 2026-10-04, from H20's #668 and #670] every zone through every
+  label helper, and the products that live in a cost. Two halves. (a) For each
+  zone an object can be named from — battlefield land and non-land, stack,
+  each graveyard, hand, exile, library — build a board where *both* players
+  hold a same-named object there, and render a target in it through
+  `llm.rs` `obj_name`/`target_labels`, `cli.rs`'s target label and the page's.
+  Each row must carry an owner or an id that some pane of that surface also
+  prints; #668 was the seat's helper covering one zone of seven, and #669 the
+  CLI printing an id no pane shows. (b) `mtg-engine/tests/prompt_shapes.rs`
+  sweeps `TargetRequirement`s only, so a card that encodes a choice in
+  `ability_index` (Skirsdag High Priest's pairs) is invisible to it: count rows
+  per source object across boards of 2..20 creatures for every card whose
+  `activated_abilities` length depends on the board, and flag anything
+  superlinear
