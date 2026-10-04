@@ -1183,3 +1183,23 @@ same rule cited by `illegality`'s variant. The oracle is not blinded, which
 is the test worth writing in this file; the phrasing is not (the guide's
 accept bucket 5, and the same call the campaign made for `log_attribution`'s
 neighbours).
+
+**2026-10-03 run 37125189830, shard 1 (#661): one deleted, one killed, one
+accepted.**
+
+- `compute_autotap`, `== → !=` at the generic-from-floating loop of Phase 0:
+  **deleted.** Phase 3 pays generic from what floats in the pool anyway
+  (`sim_pool.total()`), so Phase 0's own generic deduction was a second copy
+  that no test could distinguish from the first, which is why breaking out of
+  it at once changed nothing. The copy is gone; Phase 0 now checks whether
+  the floating pool covers the generic remainder before it returns early. The
+  planner's two property tests (an offered plan pays; `None` means no plan
+  would) hold unchanged.
+- `within_reach`, `&& → ||` in the final per-colour check: **killed.** With
+  `||`, any cost with no `{C}` pip was "within reach" whenever the total
+  sufficed, so two Forests "could pay" `{R}` and the auto-pass gate stopped
+  the seat every main phase for a spell it could not cast: #617's symptom by
+  another route. `mana::tests::a_colour_no_source_makes_is_out_of_reach_however_much_mana_there_is`
+  was watched failing under the mutant.
+- `change_life_inner`, `> → >=` on `delta`: **accepted, equivalent.** A zero
+  delta returns early on the line above.

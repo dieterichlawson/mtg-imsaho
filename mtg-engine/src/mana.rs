@@ -241,26 +241,14 @@ pub fn compute_autotap(
         }
     }
 
-    // Deduct floating mana: generic (colorless first, then colors).
-    if remaining.generic > 0 {
-        let types = [
-            ManaType::Colorless,
-            ManaType::White, ManaType::Blue, ManaType::Black,
-            ManaType::Red, ManaType::Green,
-        ];
-        for mt in types {
-            if remaining.generic == 0 { break; }
-            let available = sim_pool.get(mt);
-            let deduct = available.min(remaining.generic);
-            if deduct > 0 {
-                sim_pool.mana.insert(mt, available - deduct);
-                remaining.generic -= deduct;
-            }
-        }
-    }
-
-    // If everything is satisfied by floating mana, done.
-    if remaining.colored.is_empty() && remaining.colorless == 0 && remaining.generic == 0 {
+    // Generic is paid from what floats after the sources are chosen, in
+    // Phase 3: any mana pays it, so nothing is gained by spending the pool
+    // on it first. (This phase used to deduct it here as well, and the
+    // copy no test could tell apart from Phase 3's was a surviving mutant,
+    // issue #661.)
+    if remaining.colored.is_empty() && remaining.colorless == 0
+        && remaining.generic <= sim_pool.total()
+    {
         return Some(vec![]);
     }
 
@@ -347,9 +335,8 @@ pub fn compute_autotap(
 
     // Phase 3: Satisfy generic mana.
     // First use excess from already-tapped sources, then whatever floating
-    // mana Phase 0 left over. The pool is only left over when Phase 0 paid
-    // the spell's own generic in full, so what it can still pay is the `{1}`
-    // a filter added above: a floating {W} funds Shimmering Grotto's `{1}`
+    // mana Phase 0 left over — the spell's own generic, and any `{1}` a
+    // filter added above: a floating {W} funds Shimmering Grotto's `{1}`
     // for {R} without tapping a Forest to do it (issue #615).
     if remaining.generic > 0 {
         let used = excess_mana.min(remaining.generic);
@@ -1109,6 +1096,27 @@ mod tests {
             "one dual land cannot pay {{1}}{{W}}");
         let w = ManaCost::new(vec![ManaSymbol::Colored(Color::White)]);
         assert!(within_reach(&w, &ManaPool::new(), &dual), "but it pays {{W}}");
+    }
+
+    /// Reach is per colour as well as in total: two Forests are two mana
+    /// and still cannot pay {R}, nor {C}. A count that let enough mana of
+    /// the wrong kind stand in stopped the auto-pass gate at every main
+    /// phase for a spell the seat could not cast — #617's symptom by
+    /// another route (issue #661).
+    #[test]
+    fn a_colour_no_source_makes_is_out_of_reach_however_much_mana_there_is() {
+        let forests = vec![
+            make_source(1, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)]),
+            make_source(2, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)]),
+        ];
+        for (cost, what) in [
+            (ManaCost::new(vec![ManaSymbol::Colored(Color::Red)]), "{R}"),
+            (ManaCost::new(vec![ManaSymbol::Colorless(1)]), "{C}"),
+        ] {
+            assert!(!within_reach(&cost, &ManaPool::new(), &forests), "two Forests cannot pay {what}");
+        }
+        let gg = ManaCost::new(vec![ManaSymbol::Colored(Color::Green), ManaSymbol::Colored(Color::Green)]);
+        assert!(within_reach(&gg, &ManaPool::new(), &forests), "but they pay {{G}}{{G}}");
     }
 
     /// A plan taps no more sources than the fewest that would have paid.

@@ -624,3 +624,9 @@ mtg-engine/src/view.rs: replace != with == in GameView::for_player
 # variant. The oracle is not blinded; the phrasing is not the contract.
 mtg-engine/src/invariants/permanents.rs: delete ! in describe
 mtg-engine/src/invariants/permanents.rs: replace match guard is_equipment with false in describe
+
+# ── 2026-10-03 run 37125189830, shard 1 (issue #661) ────────────────
+# `change_life_inner`'s verb choice, `delta > 0`. A `delta == 0` returns
+# early on the line above, so `>= 0` cannot be reached with a different
+# value: equivalent.
+mtg-engine/src/state.rs: replace > with >= in GameState::change_life_inner
