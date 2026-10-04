@@ -823,3 +823,12 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   with exactly that value and check that a MALFORMED line is written and the
   `TOKEN_USAGE` rejection clause counts it. A filter, `unwrap_or` or `min`
   between parse and submit that has no log line is the finding
+  — **played 2026-10-04: two found, the rest sound.** `choose_pile_division`'s
+  inner `pile_a` has no `required`, so `{}` is schema-valid and reads as "all in
+  pile B" with no MALFORMED (#662); an attacker named in both `attacker_indices`
+  and `planeswalker_attacks` is moved to the walker by an unlogged `retain`, the
+  opposite of what the engine's own dedupe would keep (#663). The table of every
+  caller is in `reports/playtests/2026-10-04.md`. Two lessons for the next pass:
+  an object with nested keys needs `required` at *every* level, not just the
+  top, and a schema can be loose *across* fields where each field's own `enum`
+  is tight — look for two fields that can name the same thing
