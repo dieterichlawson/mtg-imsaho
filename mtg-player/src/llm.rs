@@ -3291,30 +3291,7 @@ impl LlmPlayer {
         );
         let prompt = self.build_prompt(view, &action_text);
 
-        // Build schema: one boolean per permanent, keyed by disambiguated name
-        let mut pile_props = serde_json::Map::new();
-        for label in &labels {
-            pile_props.insert(label.clone(), serde_json::json!({
-                "type": "boolean",
-                "description": "true = pile A, false = pile B"
-            }));
-        }
-        let mut all_props = serde_json::Map::new();
-        all_props.insert("thoughts".to_string(), serde_json::json!({
-            "type": "string",
-            "description": "Concise but complete summary of your internal thoughts"
-        }));
-        all_props.insert("pile_a".to_string(), serde_json::json!({
-            "type": "object",
-            "properties": pile_props
-        }));
-
-        let schema = serde_json::json!({
-            "type": "object",
-            "properties": all_props,
-            "required": ["thoughts", "pile_a"]
-        });
-
+        let schema = Self::pile_division_schema(&labels);
         let response = self.send_message_structured(&prompt, &schema);
 
         // Parse response: collect IDs where the model chose true (pile A)
@@ -3327,12 +3304,24 @@ impl LlmPlayer {
                 response["pile_a"], all_ids.len()));
         }
         if let Some(pile_obj) = response["pile_a"].as_object() {
+            // Every permanent is named, and named with a boolean: the schema
+            // requires each key, and an answer that skips one anyway is
+            // counted. The default for a missing key (pile B) is a strategic
+            // decision made for the seat, and it used to be made in silence —
+            // `{"pile_a": {}}` read in the log exactly like a seat that chose
+            // to put the whole board in pile B (#662).
+            let mut unnamed: Vec<&str> = Vec::new();
             for (i, label) in labels.iter().enumerate() {
-                if pile_obj.get(label).and_then(serde_json::Value::as_bool).unwrap_or(false)
-                    && i < all_ids.len()
-                {
-                    pile_1_ids.push(all_ids[i]);
+                match pile_obj.get(label).and_then(serde_json::Value::as_bool) {
+                    Some(true) => pile_1_ids.push(all_ids[i]),
+                    Some(false) => {}
+                    None => unnamed.push(label),
                 }
+            }
+            if !unnamed.is_empty() {
+                self.log_rejected(&format!(
+                    "'pile_a' gave no true/false for {} of {} permanents ({}); putting them in pile B",
+                    unnamed.len(), labels.len(), unnamed.join(", ")));
             }
         }
 
@@ -4645,6 +4634,36 @@ from your hand to put on the bottom of your library.\n\
         } else {
             format!("{} (#{})", Self::obj_name(view, id), id.0)
         }
+    }
+
+    /// The pile-division answer's schema: one boolean per permanent under
+    /// `pile_a`, keyed by its disambiguated label one level down (a top-level
+    /// key may not be a card name, #398). Every label is `required` — the
+    /// prompt asks for each permanent, and without the list `{}` was a
+    /// schema-valid answer (#662).
+    fn pile_division_schema(labels: &[String]) -> serde_json::Value {
+        let mut pile_props = serde_json::Map::new();
+        for label in labels {
+            pile_props.insert(label.clone(), serde_json::json!({
+                "type": "boolean",
+                "description": "true = pile A, false = pile B"
+            }));
+        }
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "thoughts": {
+                    "type": "string",
+                    "description": "Concise but complete summary of your internal thoughts"
+                },
+                "pile_a": {
+                    "type": "object",
+                    "properties": pile_props,
+                    "required": labels
+                }
+            },
+            "required": ["thoughts", "pile_a"]
+        })
     }
 
     /// Build labels for a list of permanent IDs, each with its object ID for
@@ -6043,6 +6062,43 @@ mod tests {
         assert!(planeswalker_attacks.is_empty());
         assert_eq!(get_rejected_by_seat().get("Seat-635"), Some(&1),
             "the dropped indices are one rejected answer, not a silent no-attack");
+    }
+
+    /// The pile-division schema requires a boolean for every permanent, and
+    /// an answer that names only some of them anyway is a rejected answer,
+    /// not a silent "everything else in pile B" (issue #662).
+    #[test]
+    fn a_pile_division_that_skips_a_permanent_is_counted_not_filled_in() {
+        use mtg_engine::actions::ResolvedChoice;
+        let view = empty_view();
+        let ids = [ObjectId(10), ObjectId(11), ObjectId(12)];
+        let labels = LlmPlayer::format_combat_creature_list(&view, &ids);
+        let schema = LlmPlayer::pile_division_schema(&labels);
+        let required: Vec<&str> = schema["properties"]["pile_a"]["required"].as_array()
+            .expect("pile_a lists its required keys")
+            .iter().map(|v| v.as_str().expect("a label")).collect();
+        assert_eq!(required, labels.iter().map(String::as_str).collect::<Vec<_>>(),
+            "every permanent must be named: {schema}");
+
+        // A complete answer is taken as given and counts nothing.
+        let mut whole = fixed_player("Seat-662-whole", "model-662-whole", serde_json::json!({
+            "thoughts": "t", "pile_a": {&labels[0]: true, &labels[1]: false, &labels[2]: true}}));
+        let Action::ResolveChoice { choice: ResolvedChoice::ChosenSubset(a) } =
+            whole.choose_pile_division(&view, &ids, "divide", PlayerId(1))
+            else { panic!("a pile division") };
+        assert_eq!(a, vec![ObjectId(10), ObjectId(12)]);
+        assert_eq!(get_rejected_by_seat().get("Seat-662-whole"), None);
+
+        // An empty object, and one that names a single permanent.
+        for (seat, pile_a) in [
+            ("Seat-662-empty", serde_json::json!({})),
+            ("Seat-662-half", serde_json::json!({&labels[0]: true})),
+        ] {
+            let mut p = fixed_player(seat, "model-662", serde_json::json!({"thoughts": "t", "pile_a": pile_a}));
+            let _ = p.choose_pile_division(&view, &ids, "divide", PlayerId(1));
+            assert_eq!(get_rejected_by_seat().get(seat), Some(&1),
+                "{seat}: the unnamed permanents were put in pile B for the seat — one rejected answer");
+        }
     }
 
     /// A backend that answers one fixed object, whatever it is asked.
