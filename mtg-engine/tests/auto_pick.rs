@@ -1084,3 +1084,32 @@ fn one_permanent_of_a_name_is_prompted_for_without_an_id() {
     assert!(!context.contains(" [source "),
         "one of a name needs no id, got {context:?}");
 }
+
+/// Issue #673: a library search offers one card per card, not one per copy.
+/// Copies in a library are interchangeable (a hidden zone, shuffled after
+/// the search, CR 701.19a), and listing each made Ghost Quarter's search 17
+/// rows for 3 distinct answers. Every distinct card is still offered.
+#[test]
+fn a_library_search_offers_each_card_once_however_many_copies() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let mut put = |name: &str| {
+        let card_id = registry.get_id_by_name(name).unwrap();
+        let id = state.create_object(card_id, P0, Zone::Library, None, None);
+        state.get_player_mut(P0).library_order.push(id);
+        id
+    };
+    let mountains: Vec<_> = (0..5).map(|_| put("Mountain")).collect();
+    let swamps: Vec<_> = (0..3).map(|_| put("Swamp")).collect();
+    let plains = put("Plains");
+    let candidates: Vec<_> = mountains.iter().chain(&swamps).copied().chain([plains]).collect();
+    let source = put("Forest");
+
+    mtg_engine::cards::helpers::search_library(
+        &mut state, source, P0, candidates, Zone::Hand, false, false, "search for a basic land card");
+    let (_, options) = pending_object_choices(&state, "the search");
+    assert_eq!(options.len(), 3, "three distinct cards, three offers: {options:?}");
+    for (name, copies) in [("Mountain", &mountains), ("Swamp", &swamps), ("Plains", &vec![plains])] {
+        assert!(options.iter().any(|id| copies.contains(id)), "{name} is still offered: {options:?}");
+    }
+}

@@ -974,6 +974,15 @@ pub fn search_library(
             format!("{}: no matching card in library; search declined", state.obj_name(source_id)));
         return;
     }
+    // One offer per card, not per copy. Copies of a card in a library are
+    // interchangeable — the zone is hidden and is shuffled after the search
+    // (CR 701.19a) — so "which Mountain" is not a choice anyone makes, and
+    // listing each copy made Ghost Quarter's search 17 rows for 3 distinct
+    // answers, byte-identical in the LLM prompt (issue #673).
+    let mut seen_cards = std::collections::HashSet::new();
+    let candidates: Vec<ObjectId> = candidates.into_iter()
+        .filter(|&id| state.get_object(id).is_none_or(|o| seen_cards.insert(o.card_id)))
+        .collect();
     if optional {
         let options: Vec<Target> = candidates.into_iter().map(Target::Object).collect();
         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
