@@ -745,7 +745,7 @@ Options:
 0: Reckless Waif (#44)
 ```
 For variable-X cards (Harvest Pyre: pick 0–N, damage scales with X), any subset is legal. For fixed-count cards (Stitched Drake: exile exactly 1 creature; Skaab Ruinator: exactly 3) you MUST pick the exact count or the cast is cancelled (spell stays in hand, no mana paid). Per CR 601.2h → 601.2i the spell only formally "becomes cast" after the prompt resolves — so SpellCast triggers fire after exile, not before. Corpse Lunge stores the highest effective power among exiled creatures as the damage it deals.
-- **Sacrifice-cost activated abilities**: Activated abilities whose cost includes "Sacrifice a creature" (pick one — Demonmail Hauberk, Disciple of Griselbrand, Skirsdag Cultist, etc.) auto-tap like any other ability: the option is listed once per creature you could sacrifice, and its label shows which sources will be tapped. The tap plan may include a mana creature, and you may still pick that same creature as the sacrifice — its mana is produced before the sacrifice is paid. If you would rather keep a particular creature untapped, tap other sources manually first. Abilities that sacrifice *this* permanent specifically (e.g. Selfless Cathar's `{1}{W}, Sacrifice this: Creatures you control get +1/+1`) auto-tap too, and never tap the permanent being sacrificed for its own cost.
+- **Sacrifice-cost activated abilities**: Activated abilities whose cost includes "Sacrifice a creature" (pick one — Demonmail Hauberk, Disciple of Griselbrand, Skirsdag Cultist, etc.) auto-tap like any other ability: the ability is listed once (once per copy of its source), and its label shows which sources will be tapped. After you pick it, and its target if it has one, a follow-up prompt — `<source>: choose a creature to sacrifice` — asks which creature to sacrifice; with only one candidate it is chosen for you. The tap plan may include a mana creature, and you may still pick that same creature as the sacrifice — its mana is produced before the sacrifice is paid. If you would rather keep a particular creature untapped, tap other sources manually first. Abilities that sacrifice *this* permanent specifically (e.g. Selfless Cathar's `{1}{W}, Sacrifice this: Creatures you control get +1/+1`) auto-tap too, and never tap the permanent being sacrificed for its own cost.
 - **Mana pools empty between steps**: You can tap lands at any time you have priority, but the mana disappears when the step ends. Only tap if you'll spend the mana in the same step (cast a sorcery/creature in main, or an instant in any step).
 - **Spells use the stack**: Your spell goes on the stack and resolves only after both players pass priority. Opponents can respond. The Stack section shows what's pending.
 - **Land drops**: One land per turn, only during your main phase.
@@ -7303,6 +7303,18 @@ this Aura deals 1 damage to that player.";
         assert_eq!(labels[0], "Grizzly Bears (#30) 2/2");
         assert_eq!(labels[1], "Grizzly Bears (#31) 2/2");
         assert_eq!(labels[2], "Llanowar Elves (#32) 1/1");
+    }
+
+    /// GAME_RULES describes the sacrifice-cost flow the seat really gets: one
+    /// row, then a sacrifice prompt (#471). It went on saying "listed once
+    /// per creature you could sacrifice" long after that stopped being true
+    /// (issue #672).
+    #[test]
+    fn game_rules_describes_the_sacrifice_prompt_the_seat_is_sent() {
+        assert!(!GAME_RULES.contains("listed once per creature you could sacrifice"),
+            "the one-row-per-sacrifice listing is gone");
+        assert!(GAME_RULES.contains("choose a creature to sacrifice"),
+            "and the follow-up prompt is named the way choose_ability_targets words it");
     }
 
     /// Two objects that share a name in a public zone are never the same
