@@ -30,6 +30,13 @@ the contract it is supposed to satisfy, and find where the two disagree.
 When you find a way to look that the list doesn't have, take it — and
 then add it, per "Adding an idea" in `docs/playtest/README.md`.
 
+Parallel probes share more than a tmux socket: subagents spawned from one
+session share its scratchpad directory, and on 2026-10-04 one probe's
+`stub.py` overwrote another's mid-run, so a game was answered by the wrong
+stub (it mulliganed to five and conceded on turn 1). Give every probe its own
+subdirectory and a uniquely named stub, and check `THOUGHT` lines in the log
+say what your stub says.
+
 ## Where to look
 
 - `mtg-player/src/llm.rs` is the whole harness: `GAME_RULES` (the prompt
