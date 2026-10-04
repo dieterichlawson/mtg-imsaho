@@ -303,7 +303,7 @@ impl Player for RandomPlayer {
         // each slot.
         let mut groups: Vec<(Decision, Vec<usize>)> = Vec::new();
         for &i in &candidates {
-            let key = Decision::of(&legal_actions[i], i);
+            let key = Decision::of(&legal_actions[i], i, view);
             match groups.iter_mut().find(|(k, _)| *k == key) {
                 Some((_, members)) => members.push(i),
                 None => groups.push((key, vec![i])),
@@ -335,17 +335,42 @@ enum Decision {
     /// whether there *was* an alternative cost, two flashback costs were one
     /// decision here and one menu row on the CLI (issue #610); the engine
     /// keys the offer on the cost itself (`invariants/legal.rs`).
-    Cast(mtg_engine::ids::ObjectId, String),
+    ///
+    /// WHICH copy in hand is cast is not: copies of a card in hand are
+    /// interchangeable, and the engine already offers an untargeted spell
+    /// once however many copies there are. Keyed on the object, three
+    /// Lightning Bolts were three decisions to three Kalonian Tuskers' one
+    /// (issue #667). A card cast from anywhere else keeps its object, since
+    /// where it sits is part of what is being done.
+    Cast(CastSource, String),
+    /// A loyalty ability is an activated ability (CR 606.3) whose target is
+    /// a slot of the one decision (CR 602.2b), as it is for `Ability`. The
+    /// engine emits one entry per target, so keyed on the entry Garruk
+    /// Relentless's fight took a share per creature on the battlefield
+    /// (issue #664).
+    Loyalty(mtg_engine::ids::ObjectId, usize),
     Itself(usize),
 }
 
+#[derive(PartialEq, Eq)]
+enum CastSource {
+    Hand(mtg_engine::ids::CardId),
+    Object(mtg_engine::ids::ObjectId),
+}
+
 impl Decision {
-    fn of(action: &Action, index: usize) -> Self {
+    fn of(action: &Action, index: usize, view: &GameView) -> Self {
         match action {
             Action::ActivateAbility { object_id, ability_index, source_card_id, .. } =>
                 Decision::Ability(*object_id, *ability_index, *source_card_id),
-            Action::CastSpell { object_id, alternative_cost, .. } =>
-                Decision::Cast(*object_id, format!("{alternative_cost:?}")),
+            Action::ActivateLoyaltyAbility { object_id, ability_index, .. } =>
+                Decision::Loyalty(*object_id, *ability_index),
+            Action::CastSpell { object_id, alternative_cost, .. } => {
+                let source = view.your_hand.iter()
+                    .find(|c| c.object_id == *object_id)
+                    .map_or(CastSource::Object(*object_id), |c| CastSource::Hand(c.card_id));
+                Decision::Cast(source, format!("{alternative_cost:?}"))
+            }
             _ => Decision::Itself(index),
         }
     }
