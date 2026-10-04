@@ -3616,10 +3616,8 @@ impl CliPlayer {
             .or_else(|| view.your_library_cards.iter()
                 .find(|c| c.object_id == id)
                 .map(|c| c.name.clone()))
-            .or_else(|| view.graveyards.iter()
-                .flat_map(|(_, cards)| cards.iter())
-                .find(|c| c.object_id == id)
-                .map(|c| c.name.clone()))
+            .or_else(|| Self::graveyard_owner(view, id).map(|(c, tag)|
+                format!("{} ({tag})", c.name)))
             // Exile is a public zone and belongs on this list beside the
             // graveyards — it was the one zone missing, and Runic Repetition
             // is the only card in the pool whose targets live there, so the
@@ -6371,22 +6369,34 @@ impl CliPlayer {
     }
 
     /// A target object as the pane that holds it writes it: a card in a
-    /// graveyard or hand with its cost and P/T, a permanent by name.
+    /// graveyard or hand with its cost and P/T, a permanent by name. A
+    /// graveyard card says whose graveyard, as a permanent says whose it is.
     fn target_label(view: &GameView, id: mtg_engine::ids::ObjectId) -> String {
-        let card = view.your_hand.iter()
-            .chain(view.graveyards.iter().flat_map(|(_, cards)| cards.iter()))
-            .find(|c| c.object_id == id);
+        let card = view.your_hand.iter().find(|c| c.object_id == id).map(|c| (c, None))
+            .or_else(|| Self::graveyard_owner(view, id).map(|(c, tag)| (c, Some(tag))));
         match card {
-            Some(c) => {
+            Some((c, tag)) => {
                 let cost = c.cost.as_ref().map(|mc| format!(" {mc}")).unwrap_or_default();
                 let pt = match (c.power, c.toughness) {
                     (Some(p), Some(t)) => format!(" {p}/{t}"),
                     _ => String::new(),
                 };
-                format!("{}{}{}", c.name, cost, pt)
+                let tag = tag.map(|t| format!(" ({t})")).unwrap_or_default();
+                format!("{}{}{}{tag}", c.name, cost, pt)
             }
             None => Self::perm_name(view, id),
         }
+    }
+
+    /// A graveyard card and which graveyard it is in, as a row tag. The
+    /// graveyard pane lists cards under "Your graveyard" / "Opponent's
+    /// graveyard" with no ids, so a target row told apart only by `(#12)`
+    /// and `(#64)` could not be matched to either (issue #669): Purify the
+    /// Grave could exile your own flashback card for the opponent's.
+    fn graveyard_owner(view: &GameView, id: ObjectId) -> Option<(&mtg_engine::view::CardView, &'static str)> {
+        view.graveyards.iter().find_map(|(owner, cards)| cards.iter()
+            .find(|c| c.object_id == id)
+            .map(|c| (c, if *owner == view.you { "your graveyard" } else { "opp graveyard" })))
     }
 
     /// Divide the permanents into two piles (Liliana of the Veil's -6).
@@ -10397,6 +10407,33 @@ Mark 1 of the 1 cards below to exile.");
     /// "targeting obj#17", the chooser listed "0: obj#24 / 1: obj#25", and no
     /// pane anywhere shows object ids (issue #332).
     #[test]
+    fn a_graveyard_target_row_says_whose_graveyard_it_is_in() {
+        let card = |id: u64, owner: PlayerId| mtg_engine::view::CardView {
+            object_id: ObjectId(id),
+            card_id: mtg_engine::ids::CardId(0),
+            name: "Mountain".into(),
+            cost: None,
+            supertypes: vec![],
+            card_types: vec![CardType::Land],
+            power: None,
+            toughness: None,
+            oracle_text: String::new(),
+            owner,
+            flashback_costs: vec![],
+        };
+        let mut v = view(Step::PrecombatMain, 5, true);
+        v.graveyards = vec![(PlayerId(0), vec![card(12, PlayerId(0))]), (PlayerId(1), vec![card(64, PlayerId(1))])];
+        let targets = [mtg_engine::actions::Target::Object(ObjectId(12)),
+            mtg_engine::actions::Target::Object(ObjectId(64))];
+        let rows: Vec<String> = CliPlayer::target_menu_labels(&v, &targets).into_iter().map(|l| l.text).collect();
+        assert_eq!(rows, vec!["Mountain (your graveyard)", "Mountain (opp graveyard)"],
+            "the graveyard pane prints no ids, so the row says which graveyard (#669)");
+        let set: Vec<String> = CliPlayer::target_set_rows(&v, &targets).into_iter().map(|l| l.text).collect();
+        assert_eq!(set, vec!["Mountain (your graveyard)", "Mountain (opp graveyard)"],
+            "and so does a target-set screen's row");
+    }
+
+    #[test]
     fn a_card_in_exile_is_named_the_way_one_in_a_graveyard_is() {
         let card = |id: u64, name: &str| mtg_engine::view::CardView {
             object_id: ObjectId(id),
@@ -10417,8 +10454,8 @@ Mark 1 of the 1 cards below to exile.");
 
         assert_eq!(CliPlayer::perm_name(&v, ObjectId(24)), "Dream Twist");
         assert_eq!(CliPlayer::perm_name(&v, ObjectId(25)), "Think Twice");
-        assert_eq!(CliPlayer::perm_name(&v, ObjectId(30)), "Armored Skaab",
-            "the zone next door, which already worked");
+        assert_eq!(CliPlayer::perm_name(&v, ObjectId(30)), "Armored Skaab (your graveyard)",
+            "the zone next door, which already worked (and says whose, #669)");
         // An id in no visible zone still falls back, so the resolver has not
         // started inventing names.
         assert_eq!(CliPlayer::perm_name(&v, ObjectId(99)), format!("{}", ObjectId(99)));
