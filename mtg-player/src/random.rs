@@ -218,6 +218,33 @@ impl Player for RandomPlayer {
             return Action::ResolveChoice { choice: ResolvedChoice::ChosenObjectSet(chosen) };
         }
 
+        // An ordering prompt (CR 603.3b triggers, CR 509.2 blockers) is
+        // answered two ways by the seats people and models sit at: the
+        // CLI, the LLM seat and the page all send the whole order at once
+        // as `ChosenOrder`, while `legal.actions` enumerates only "this one
+        // next". Answering only from the list left the whole-order engine
+        // path — the permutation check, lifting the group out of its queue,
+        // `log_completed_order` — to the unit tests, and no fuzz game
+        // reached it (issue #665). Roll the shape, then roll the order.
+        let ordering_len = match legal.resolution_prompt.as_ref() {
+            Some(mtg_engine::state::ResolutionChoiceKind::ChooseTriggerOrder { options, .. }) =>
+                Some(options.len()),
+            Some(mtg_engine::state::ResolutionChoiceKind::ChooseDamageAssignmentOrder {
+                remaining, ..
+            }) => Some(remaining.len()),
+            _ => None,
+        };
+        if let Some(n) = ordering_len.filter(|&n| n > 1) {
+            if self.rng.gen_bool(0.5) {
+                use rand::seq::SliceRandom;
+                let mut order: Vec<usize> = (0..n).collect();
+                order.shuffle(&mut self.rng);
+                return Action::ResolveChoice {
+                    choice: mtg_engine::actions::ResolvedChoice::ChosenOrder(order),
+                };
+            }
+        }
+
         // Pile division (Liliana of the Veil -6): no enumerated actions —
         // 2^N subsets don't fit in memory on a wide board. Flip a coin per
         // permanent, mirroring the 50% conventions used for combat.

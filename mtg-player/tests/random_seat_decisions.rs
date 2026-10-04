@@ -87,3 +87,47 @@ fn copies_of_a_targeted_spell_in_hand_are_one_decision() {
         assert!(about(*v, 1.0 / 3.0), "{k} is one of three decisions, not {v:.3}: {s:?}");
     }
 }
+
+/// Issue #665: every interactive seat answers an ordering prompt with the
+/// whole order (`ChosenOrder`, #325), and the engine runs that answer
+/// through arms of its own. The random seat answered only from
+/// `legal.actions`, which enumerates "this one next", so no fuzz game
+/// reached the whole-order path. It now rolls both shapes, and the order
+/// it sends is one the engine accepts (CR 509.2).
+#[test]
+fn an_ordering_prompt_is_sometimes_answered_with_the_whole_order() {
+    use mtg_engine::actions::ResolvedChoice;
+    use mtg_engine::engine::submit_action;
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    let blockers: Vec<_> = (0..4).map(|_| ready_creature(&mut state, P1, 1, 1)).collect();
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    let pairs: Vec<_> = blockers.iter().map(|&b| (b, attacker)).collect();
+    submit_declare_blockers(&mut state, P1, &pairs, &reg);
+    let legal = legal_actions(&state, &reg);
+    assert!(matches!(legal.resolution_prompt,
+        Some(mtg_engine::state::ResolutionChoiceKind::ChooseDamageAssignmentOrder { .. })), "{:?}", legal.resolution_prompt);
+
+    let view = GameView::for_player(&state, P0, &reg);
+    let mut seat = RandomPlayer::with_seed("r", 1);
+    let (mut one, mut whole) = (0, 0);
+    for _ in 0..400 {
+        let answer = seat.choose_action(&view, &legal);
+        match &answer {
+            Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(..) } => one += 1,
+            Action::ResolveChoice { choice: ResolvedChoice::ChosenOrder(order) } => {
+                whole += 1;
+                let after = submit_action(&state, &answer, &reg);
+                let placed = after.combat.as_ref()
+                    .and_then(|c| c.damage_assignment_order.get(&attacker))
+                    .cloned().unwrap_or_default();
+                let expected: Vec<_> = order.iter().map(|&i| blockers[i]).collect();
+                assert_eq!(placed, expected, "the engine took the order {order:?} as sent");
+            }
+            other => panic!("an ordering answer, not {other:?}"),
+        }
+    }
+    assert!(one > 100 && whole > 100,
+        "both answer shapes are rolled: {one} one-at-a-time, {whole} whole orders");
+}
