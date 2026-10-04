@@ -808,6 +808,15 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   or `activatable_abilities` is back to drawing over encodings. Worth asking of
   the resolution prompts too, which this seat answers with a roll and which
   CLAUDE.md's second rule is about
+  — **played 2026-10-04: four found (#664-#667).** Loyalty abilities fall to
+  `Itself` and are drawn once per target (Garruk's fight 0.80 against his Wolf
+  0.10 on an 8-creature board); `ChosenOrder` is never sent, so the whole-order
+  path every other surface uses is unfuzzed; per-copy decisions for targeted
+  spells and abilities. The strongest find came from a step the idea did not
+  name: **submit each drawn answer to the engine and count refusals**, not just
+  the shares — Ghoulcaller's Chant's merged mode prompt refused 46% of answers
+  at Debug level (#666). Also ask, per prompt kind, which answer *shapes* the
+  engine accepts that this seat never sends
 
 - H24 [proposed 2026-10-01, from #635, found on a CLI night (V51)] the schema
   looser than its parser. `attacker_indices` had `minimum: 0` and no
