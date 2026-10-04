@@ -678,11 +678,12 @@ Lands are grouped by name. `(tapped)` or `(N tapped)` shows tap status. Non-land
 A legendary permanent says `legendary` after its P/T (creatures, alongside the keywords) or in its flags (other permanents). The legend rule (CR 704.5j): if you control two or more legendary permanents with the same name, you choose one and the rest go to their owners' graveyards — so casting a second copy of a legend you already control gets you a choice, not two of them.
 
 
-**Stack** (only if non-empty): a `Stack:` header with one indented entry per object, each tagged with its controller and its targets:
+**Stack** (only if non-empty): a `Stack:` header with one indented entry per object, each with the id of the spell (or of the ability's source), its controller, and its targets:
 ```
 Stack:
-  Lightning Bolt targeting Goblin Piker (opp's)
+  Lightning Bolt (#41) (opponent's) targeting Goblin Piker (#45) (your)
 ```
+Wherever an object is named — a target on the stack, a row in the action list — it carries its id and whose it is, so two objects that share a name are never the same row: `(your)` / `(opponent's)` for a permanent or a stack object (by controller), `(in your graveyard)` / `(in opponent's graveyard)` for a graveyard card, `(exiled)` for an exiled one. Lands too: the board groups them by name, but a land named as a target says which one it is.
 
 **Hand**: a `Hand:` header with one indented card per line, with mana costs and (for creatures) base P/T:
 ```
@@ -956,7 +957,7 @@ Your board:
   3x Island
   Kalonian Tusker (#30) 3/3
 Stack:
-  Lightning Bolt targeting Kalonian Tusker (opp's)
+  Lightning Bolt (#41) (opponent's) targeting Kalonian Tusker (#30) (your)
 Hand:
   Counterspell {U}{U}
   Island
@@ -2432,7 +2433,7 @@ impl LlmPlayer {
         if !view.stack.is_empty() {
             s.push_str("Stack:\n");
             for i in &view.stack {
-                let who = if i.controller == view.you { "your" } else { "opp's" };
+                let who = if i.controller == view.you { "your" } else { "opponent's" };
                 let targets_str = if i.targets.is_empty() {
                     String::new()
                 } else {
@@ -2457,7 +2458,10 @@ impl LlmPlayer {
                 // targets line already did; the entry itself did not, so N
                 // triggers from N same-named sources were N identical lines.
                 let id = i.source_id.map(|s| format!(" (#{})", s.0)).unwrap_or_default();
-                writeln!(s, "  {}{id}{x}{} ({})", i.name, targets_str, who).unwrap();
+                // The entry's controller sits by the entry, not after the
+                // targets: there it read as one phrase with the target's own
+                // tag — "Grizzly Bears (#228) (opponent's) (your)" (#671).
+                writeln!(s, "  {}{id}{x} ({who}){}", i.name, targets_str).unwrap();
             }
         }
 
@@ -2777,7 +2781,7 @@ impl LlmPlayer {
     fn format_single_action(view: &GameView, action: &Action) -> String {
         match action {
             Action::PassPriority => "Pass".into(),
-            Action::PlayLand { object_id } => format!("Play {}", Self::obj_name(view, *object_id)),
+            Action::PlayLand { object_id } => format!("Play {}", Self::own_land_name(view, *object_id)),
             // Name the mana this entry makes. The engine offers one action
             // per (object, ability_index), so dropping the description
             // rendered a dual land's two abilities as byte-identical rows
@@ -2787,8 +2791,8 @@ impl LlmPlayer {
             // lookup the CLI has had since #118 (issue #460).
             Action::ActivateManaAbility { object_id, ability_index } => {
                 match view.mana_ability_description(*object_id, *ability_index) {
-                    Some(d) => format!("Tap {}: {}", Self::obj_name(view, *object_id), d),
-                    None => format!("Tap {} for mana", Self::obj_name(view, *object_id)),
+                    Some(d) => format!("Tap {}: {}", Self::own_land_name(view, *object_id), d),
+                    None => format!("Tap {} for mana", Self::own_land_name(view, *object_id)),
                 }
             }
             Action::ActivateAbility { object_id, .. } => format!("Activate {}", Self::obj_name(view, *object_id)),
@@ -3104,33 +3108,54 @@ impl LlmPlayer {
             .join(", ")
     }
 
+    /// How the seat names an object: in a public zone two objects can share
+    /// a name and belong to different players, so the name carries its id
+    /// and whose it is — a permanent and a stack object by controller, a
+    /// graveyard card by whose graveyard. Only lands on the battlefield used
+    /// to go without, and nothing on the stack or in a graveyard had either:
+    /// "Destroy target land" listed your Mountain and the opponent's as two
+    /// identical rows, and a seat countered its own Dissipate (#668). Hand
+    /// and library cards are yours, and copies of one are interchangeable,
+    /// so they stay bare.
     fn obj_name(view: &GameView, id: ObjectId) -> String {
+        let whose = |p: mtg_engine::ids::PlayerId| if p == view.you { "your" } else { "opponent's" };
         if let Some(p) = view.battlefield.iter().find(|p| p.object_id == id) {
-            let is_land = p.card_types.iter().all(|t| matches!(t, mtg_engine::types::CardType::Land));
-            if !is_land {
-                let owner = if p.controller == view.you { "your" } else { "opponent's" };
-                return format!("{} (#{}) ({})", p.name, id.0, owner);
-            }
-            return p.name.clone();
+            return format!("{} (#{}) ({})", p.name, id.0, whose(p.controller));
+        }
+        if let Some(s) = view.stack.iter().find(|s| s.object_id == id) {
+            return format!("{} (#{}) ({})", s.name, id.0, whose(s.controller));
+        }
+        if let Some((owner, c)) = view.graveyards.iter()
+            .find_map(|(owner, cards)| cards.iter().find(|c| c.object_id == id).map(|c| (*owner, c)))
+        {
+            return format!("{} (#{}) (in {} graveyard)", c.name, id.0, whose(owner));
+        }
+        if let Some(c) = view.exile.iter().find(|c| c.object_id == id) {
+            return format!("{} (#{}) (exiled)", c.name, id.0);
         }
         view.your_hand.iter()
             .find(|c| c.object_id == id)
             .map(|c| c.name.clone())
-            .or_else(|| view.stack.iter()
-                .find(|s| s.object_id == id)
-                .map(|s| s.name.clone()))
-            .or_else(|| view.graveyards.iter()
-                .flat_map(|(_, cards)| cards.iter())
-                .find(|c| c.object_id == id)
-                .map(|c| c.name.clone()))
-            .or_else(|| view.exile.iter()
-                .find(|c| c.object_id == id)
-                .map(|c| c.name.clone()))
             .or_else(|| view.your_library_cards.iter()
                 .find(|c| c.object_id == id)
                 .map(|c| c.name.clone()))
             .or_else(|| view.revealed_names.get(&id).cloned())
             .unwrap_or_else(|| format!("{id}"))
+    }
+
+    /// The bare name of a land you play or a source you tap for mana. Both
+    /// are yours, and the engine offers one row per kind of land or per
+    /// mana ability, so neither the id nor the owner tells two rows apart.
+    fn own_land_name(view: &GameView, id: ObjectId) -> String {
+        view.battlefield.iter().find(|p| p.object_id == id).map(|p| p.name.clone())
+            .unwrap_or_else(|| Self::obj_name(view, id))
+    }
+
+    /// `obj_name` with the id always present, for rows that must tell any
+    /// two objects apart wherever they are.
+    fn obj_label(view: &GameView, id: ObjectId) -> String {
+        let name = Self::obj_name(view, id);
+        if name.contains(&format!("(#{})", id.0)) { name } else { format!("{name} (#{})", id.0) }
     }
 
     /// Log thinking from the last backend call, if any, at info level.
@@ -4632,7 +4657,7 @@ from your hand to put on the bottom of your library.\n\
                 format!("{} (#{}){} {}", p.name, id.0, pt, kw)
             }
         } else {
-            format!("{} (#{})", Self::obj_name(view, id), id.0)
+            Self::obj_label(view, id)
         }
     }
 
@@ -4844,13 +4869,13 @@ offered; {} not declared",
                 let mut at_walker = std::collections::HashSet::new();
                 let mut twice: Vec<String> = Vec::new();
                 walker_attacks.retain(|&(a, _)| at_walker.insert(a) || {
-                    twice.push(format!("{} (#{})", Self::obj_name(view, a), a.0));
+                    twice.push(Self::obj_label(view, a));
                     false
                 });
                 let both: Vec<String> = answered.iter()
                     .map(|&i| eligible[i])
                     .filter(|a| at_walker.contains(a))
-                    .map(|a| format!("{} (#{})", Self::obj_name(view, a), a.0))
+                    .map(|a| Self::obj_label(view, a))
                     .collect();
                 if !both.is_empty() {
                     self.log_rejected(&format!(
@@ -7278,6 +7303,60 @@ this Aura deals 1 damage to that player.";
         assert_eq!(labels[0], "Grizzly Bears (#30) 2/2");
         assert_eq!(labels[1], "Grizzly Bears (#31) 2/2");
         assert_eq!(labels[2], "Llanowar Elves (#32) 1/1");
+    }
+
+    /// Two objects that share a name in a public zone are never the same
+    /// row: a land on the battlefield, a stack object and a graveyard card
+    /// each carry their id and whose they are (issue #668), and a stack
+    /// line puts the entry's controller by the entry rather than after its
+    /// target's own tag (issue #671).
+    #[test]
+    fn same_named_objects_in_public_zones_are_told_apart_by_id_and_owner() {
+        let (state, registry) = view_for_contract_test();
+        let mut view = GameView::for_player(&state, PlayerId(0), &registry);
+        let land = |id: u64, controller| {
+            let mut p = perm(id, "Mountain", 0, 0, controller);
+            p.card_types = vec![CardType::Land];
+            p.power = None;
+            p.toughness = None;
+            p
+        };
+        view.battlefield = vec![land(12, PlayerId(0)), land(64, PlayerId(1))];
+        let card = view.your_hand.first().cloned().expect("the opening hand was drawn");
+        let in_yard = |id: u64| {
+            let mut c = card.clone();
+            c.object_id = ObjectId(id);
+            c.name = "Dissipate".into();
+            c
+        };
+        view.graveyards = vec![(PlayerId(0), vec![in_yard(28)]), (PlayerId(1), vec![in_yard(82)])];
+        let spell = |id: u64, controller, targets| mtg_engine::view::StackItemView {
+            object_id: ObjectId(id),
+            card_id: CardId(0),
+            name: "Geistflame".to_string(),
+            source_id: Some(ObjectId(id)),
+            controller,
+            targets,
+            x_value: None,
+            cost: None, supertypes: vec![], card_types: vec![],
+            power: None, toughness: None, oracle_text: String::new(),
+        };
+        view.stack = vec![
+            spell(100, PlayerId(1), vec![mtg_engine::actions::Target::Object(ObjectId(12))]),
+            spell(101, PlayerId(0), vec![]),
+        ];
+
+        let name = |id| LlmPlayer::obj_name(&view, ObjectId(id));
+        assert_eq!(name(12), "Mountain (#12) (your)");
+        assert_eq!(name(64), "Mountain (#64) (opponent's)");
+        assert_eq!(name(100), "Geistflame (#100) (opponent's)");
+        assert_eq!(name(101), "Geistflame (#101) (your)");
+        assert_eq!(name(28), "Dissipate (#28) (in your graveyard)");
+        assert_eq!(name(82), "Dissipate (#82) (in opponent's graveyard)");
+
+        let body = LlmPlayer::format_state_body(&view);
+        assert!(body.contains("  Geistflame (#100) (opponent's) targeting Mountain (#12) (your)\n"),
+            "the entry's controller sits by the entry, the target's by the target: {body}");
     }
 
     #[test]
