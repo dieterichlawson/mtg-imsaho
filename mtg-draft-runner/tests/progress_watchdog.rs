@@ -98,7 +98,7 @@ fn a_tournament_game_that_stops_moving_is_forfeited_and_said_so() {
     // first one that stalls. About a quarter of seeds do. Losing ALL of
     // them is still a failure, because then the fixture no longer
     // exercises what it is for and a human has to find a seed that does.
-    const SEEDS: [&str; 5] = ["107", "108", "101", "102", "103"];
+    const SEEDS: [&str; 5] = ["106", "107", "108", "101", "102"];
     let mut played_out: Vec<&str> = Vec::new();
 
     for seed in SEEDS {
