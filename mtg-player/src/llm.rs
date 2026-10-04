@@ -4801,6 +4801,7 @@ from your hand to put on the bottom of your library.\n\
                         })
                         .collect())
                     .unwrap_or_default();
+                let answered = indices.clone();
 
                 // Always include forced attackers.
                 for &id in must_attack {
@@ -4817,7 +4818,7 @@ from your hand to put on the bottom of your library.\n\
 
                 // Planeswalker attacks: (attacker index, pw index) pairs. An
                 // attacker named here must not also attack the player.
-                let walker_attacks: Vec<(mtg_engine::ids::ObjectId, mtg_engine::ids::ObjectId)> =
+                let mut walker_attacks: Vec<(mtg_engine::ids::ObjectId, mtg_engine::ids::ObjectId)> =
                     response["planeswalker_attacks"].as_array().map(|arr| arr.iter()
                         .filter_map(|v| {
                             let index = |k: &str| v[k].as_u64().and_then(|n| usize::try_from(n).ok());
@@ -4835,7 +4836,33 @@ offered; {} not declared",
                         dropped.join(", "), eligible.len(), defending_planeswalkers.len(),
                         if dropped.len() == 1 { "it is" } else { "they are" }));
                 }
-                indices.retain(|&i| !walker_attacks.iter().any(|&(a, _)| a == eligible[i]));
+                // A self-contradictory answer is read one way and said so:
+                // the walker entry is the specific one ("instead of putting
+                // its index in attacker_indices"), and a creature sent at two
+                // walkers attacks the first, as the engine would keep it.
+                // Both used to be decided in silence (issue #663).
+                let mut at_walker = std::collections::HashSet::new();
+                let mut twice: Vec<String> = Vec::new();
+                walker_attacks.retain(|&(a, _)| at_walker.insert(a) || {
+                    twice.push(format!("{} (#{})", Self::obj_name(view, a), a.0));
+                    false
+                });
+                let both: Vec<String> = answered.iter()
+                    .map(|&i| eligible[i])
+                    .filter(|a| at_walker.contains(a))
+                    .map(|a| format!("{} (#{})", Self::obj_name(view, a), a.0))
+                    .collect();
+                if !both.is_empty() {
+                    self.log_rejected(&format!(
+                        "attack answer sends {} both at the player and at a planeswalker; \
+attacking the planeswalker", both.join(", ")));
+                }
+                if !twice.is_empty() {
+                    self.log_rejected(&format!(
+                        "attack answer sends {} at more than one planeswalker; attacking the first",
+                        twice.join(", ")));
+                }
+                indices.retain(|&i| !at_walker.contains(&eligible[i]));
 
                 let attackers = indices.iter()
                     .map(|&i| (eligible[i], *defending_player))
@@ -6062,6 +6089,51 @@ mod tests {
         assert!(planeswalker_attacks.is_empty());
         assert_eq!(get_rejected_by_seat().get("Seat-635"), Some(&1),
             "the dropped indices are one rejected answer, not a silent no-attack");
+    }
+
+    /// An attacker named in both `attacker_indices` and `planeswalker_attacks`,
+    /// or at two planeswalkers, is a contradictory answer: it is read one way
+    /// (the planeswalker; the first one) and counted, not reinterpreted in
+    /// silence (issue #663).
+    #[test]
+    fn a_contradictory_attack_answer_is_counted_not_silently_reread() {
+        let view = empty_view();
+        let prompt = CombatPrompt::ChooseAttackers {
+            eligible: vec![ObjectId(22), ObjectId(23)],
+            must_attack: vec![],
+            defending_player: PlayerId(1),
+            defending_planeswalkers: vec![ObjectId(40), ObjectId(41)],
+        };
+        let declare = |seat: &str, reply: serde_json::Value| {
+            let mut p = fixed_player(seat, "model-663", reply);
+            let Action::DeclareAttackers { attackers, planeswalker_attacks } = p.choose_combat(&view, &prompt)
+                else { panic!("an attack declaration") };
+            (attackers, planeswalker_attacks, get_rejected_by_seat().get(seat).copied())
+        };
+
+        // The control: a consistent split counts nothing.
+        let (players, walkers, rejected) = declare("Seat-663-ok", serde_json::json!({
+            "thoughts": "t", "attacker_indices": [1],
+            "planeswalker_attacks": [{"attacker": 0, "planeswalker": 0}]}));
+        assert_eq!(players, vec![(ObjectId(23), PlayerId(1))]);
+        assert_eq!(walkers, vec![(ObjectId(22), ObjectId(40))]);
+        assert_eq!(rejected, None);
+
+        // The same attacker at the player and at a walker.
+        let (players, walkers, rejected) = declare("Seat-663-both", serde_json::json!({
+            "thoughts": "t", "attacker_indices": [0],
+            "planeswalker_attacks": [{"attacker": 0, "planeswalker": 0}]}));
+        assert!(players.is_empty(), "it attacks once");
+        assert_eq!(walkers, vec![(ObjectId(22), ObjectId(40))]);
+        assert_eq!(rejected, Some(1), "the contradiction is one rejected answer");
+
+        // The same attacker at two walkers.
+        let (players, walkers, rejected) = declare("Seat-663-twice", serde_json::json!({
+            "thoughts": "t", "attacker_indices": [],
+            "planeswalker_attacks": [{"attacker": 0, "planeswalker": 0}, {"attacker": 0, "planeswalker": 1}]}));
+        assert!(players.is_empty());
+        assert_eq!(walkers, vec![(ObjectId(22), ObjectId(40))], "it attacks the first walker only");
+        assert_eq!(rejected, Some(1));
     }
 
     /// The pile-division schema requires a boolean for every permanent, and
