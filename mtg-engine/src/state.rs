@@ -4698,6 +4698,12 @@ pub enum ResolutionChoiceKind {
         /// The targets already fixed by the earlier slots of the
         /// requirement — Memory's Journey names a player first.
         fixed: Vec<crate::actions::Target>,
+        /// For a modal spell whose count is its mode, what each count may
+        /// name (Ghoulcaller's Chant: one creature card, or two Zombie
+        /// cards). A set of that size must come from that list. Empty when
+        /// every count draws from all of `options`.
+        #[serde(default)]
+        by_count: Vec<(usize, Vec<crate::actions::Target>)>,
     },
     /// Choose a set of objects while something resolves, and run the
     /// source's effect on each of them.

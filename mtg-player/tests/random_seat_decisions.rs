@@ -131,3 +131,39 @@ fn an_ordering_prompt_is_sometimes_answered_with_the_whole_order() {
     assert!(one > 100 && whole > 100,
         "both answer shapes are rolled: {one} one-at-a-time, {whole} whole orders");
 }
+
+/// Issue #666: a modal set's count is its mode, and each mode names from its
+/// own candidates. Rolling a count over the union, the seat drew a legal
+/// two-Zombie pair for Ghoulcaller's Chant 1 time in 28 and nearly half its
+/// answers were refused. It now rolls the mode and names from that mode's
+/// list, so every answer it gives is a cast.
+#[test]
+fn a_modal_set_is_answered_one_mode_at_a_time() {
+    use mtg_engine::actions::ResolvedChoice;
+    use mtg_engine::engine::submit_action;
+    let (mut state, reg) = main_phase();
+    named_card_in_graveyard(&mut state, &reg, "Diregraf Ghoul", P0);
+    named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    for _ in 0..6 { named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0); }
+    let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
+    let asked = submit_action(&state, &cast_action(chant, vec![]), &reg);
+    let legal = legal_actions(&asked, &reg);
+    let view = GameView::for_player(&asked, P0, &reg);
+    let mut seat = RandomPlayer::with_seed("r", 42);
+    let mut modes: BTreeMap<String, usize> = BTreeMap::new();
+    for _ in 0..600 {
+        let answer = seat.choose_action(&view, &legal);
+        if matches!(answer, Action::ResolveChoice { choice: ResolvedChoice::CancelCast }) {
+            continue;
+        }
+        let after = submit_action(&asked, &answer, &reg);
+        let key = match after.get_object(chant) {
+            Some(o) if o.zone == Zone::Stack => format!("mode {:?}", o.chosen_mode),
+            _ => format!("refused {answer:?}"),
+        };
+        *modes.entry(key).or_insert(0) += 1;
+    }
+    assert!(modes.keys().all(|k| k.starts_with("mode")), "every answer is a cast: {modes:?}");
+    let two = modes.get("mode Some(1)").copied().unwrap_or(0);
+    assert!(two > 150, "mode two is one of two modes, not a 1-in-28 accident: {modes:?}");
+}

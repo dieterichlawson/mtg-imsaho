@@ -381,3 +381,46 @@ fn a_target_set_prompt_says_whether_the_count_is_a_choice() {
     assert!(two.contains("up to 2 targets"),
         "a count the player picks is stated as a ceiling, plural: {two:?}");
 }
+
+/// A modal set whose modes name from different candidates says which count
+/// may name what, and a set that fits no mode is refused where the player
+/// can see it (issue #666). Ghoulcaller's Chant's two-card mode takes two
+/// Zombies only; the prompt said "choose up to 2 targets" over every
+/// creature card, and a Zombie with a Grizzly Bears was refused at Debug
+/// level by the cast handler, so the cast vanished with no message.
+#[test]
+fn a_modal_set_states_each_modes_candidates_and_refuses_a_mixed_set_visibly() {
+    let (mut state, reg) = base();
+    let ghoul = named_card_in_graveyard(&mut state, &reg, "Diregraf Ghoul", P0);
+    let corpse = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
+    let bears = named_card_in_graveyard(&mut state, &reg, "Grizzly Bears", P0);
+    let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
+
+    let asked = cast_onto_stack(&state, &reg, chant, vec![]);
+    let Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+        choice: mtg_engine::state::ResolutionChoiceKind::ChooseTargetSet {
+            description, by_count, .. }, .. }) = &asked.awaiting_action else {
+        panic!("expected a target prompt, got {:?}", asked.awaiting_action);
+    };
+    let two = by_count.iter().find(|(n, _)| *n == 2).map(|(_, t)| t.clone()).expect("mode two is live");
+    assert!(two.contains(&Target::Object(ghoul)) && two.contains(&Target::Object(corpse))
+        && !two.contains(&Target::Object(bears)), "two targets name Zombies only: {by_count:?}");
+    assert!(description.contains("only from") && description.contains("Walking Corpse")
+        && !description.contains("up to"),
+        "the prompt says what two targets may be: {description:?}");
+
+    let answer = |chosen: Vec<Target>| mtg_engine::engine::submit_action(&asked,
+        &mtg_engine::actions::Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTargetSet(chosen) }, &reg);
+
+    let mixed = answer(vec![Target::Object(ghoul), Target::Object(bears)]);
+    assert_eq!(mixed.get_object(chant).map(|o| o.zone), Some(Zone::Hand), "the mixed pair is no cast");
+    let said: Vec<_> = mixed.game_log[asked.game_log.len()..].iter()
+        .filter(|e| e.level >= mtg_engine::state::LogLevel::Event)
+        .map(|e| e.message.clone()).collect();
+    assert!(said.iter().any(|m| m.contains("rejected")),
+        "and the refusal is said at a level a player sees: {said:?}");
+
+    let zombies = answer(vec![Target::Object(ghoul), Target::Object(corpse)]);
+    assert_eq!(zombies.get_object(chant).map(|o| o.zone), Some(Zone::Stack), "two Zombies cast mode two");
+}

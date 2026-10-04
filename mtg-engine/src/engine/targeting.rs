@@ -150,15 +150,16 @@ fn modal_set(
     // the bounds follow the modes that are: one Zombie in the graveyard
     // beside two other creature cards is mode one only. All of them empty
     // and there is no cast to make.
-    let live: Vec<usize> = arities.iter().zip(&per_mode)
+    let live: Vec<(usize, Vec<crate::actions::Target>)> = arities.iter().zip(per_mode)
         .filter(|(n, opts)| opts.len() >= **n)
-        .map(|(n, _)| *n)
+        .map(|(n, opts)| (*n, opts))
         .collect();
     Some(SetSlot {
         options,
-        min: *live.iter().min()?,
-        max: *live.iter().max()?,
+        min: live.iter().map(|(n, _)| *n).min()?,
+        max: live.iter().map(|(n, _)| *n).max()?,
         fixed_len: 0,
+        by_count: live,
     })
 }
 
@@ -196,6 +197,11 @@ pub(crate) struct SetSlot {
     pub max: usize,
     /// How many of the cast's targets precede the slot and stay as given.
     pub fixed_len: usize,
+    /// For a modal set, what each count may name: the count is the mode,
+    /// and the modes' candidates differ (Ghoulcaller's Chant: one creature
+    /// card, or two Zombie cards). Empty when every count draws from all of
+    /// `options`.
+    pub by_count: Vec<(usize, Vec<crate::actions::Target>)>,
 }
 
 /// The first-slot targets of a two-slot spell that can actually be paired.
@@ -254,7 +260,7 @@ pub(crate) fn set_slot(
         R::UpToTargets(max, _) => {
             let options = valid_targets_for_req(state, caster, spell_id, req, behavior, registry);
             let max = (*max).min(options.len());
-            Some(SetSlot { options, min: 0, max, fixed_len: 0 })
+            Some(SetSlot { options, min: 0, max, fixed_len: 0, by_count: Vec::new() })
         }
         R::TwoTargets(_, second) if matches!(**second, R::UpToTargets(..)) => {
             // The first slot has to be named before the second's options
@@ -263,7 +269,7 @@ pub(crate) fn set_slot(
             let first = chosen.first()?;
             let options = second_slot_options(state, caster, spell_id, second, first, behavior, registry);
             let max = most_targets(second).min(options.len());
-            Some(SetSlot { options, min: fewest_targets(second), max, fixed_len: 1 })
+            Some(SetSlot { options, min: fewest_targets(second), max, fixed_len: 1, by_count: Vec::new() })
         }
         // Two single slots, asked one at a time. Which slot a target went in
         // is the answer — Prey Upon's creature you control fights the one
@@ -275,7 +281,7 @@ pub(crate) fn set_slot(
                 Some(t1) =>
                     second_slot_options(state, caster, spell_id, second, t1, behavior, registry),
             };
-            Some(SetSlot { options, min: 1, max: 1, fixed_len: chosen.len().min(1) })
+            Some(SetSlot { options, min: 1, max: 1, fixed_len: chosen.len().min(1), by_count: Vec::new() })
         }
         R::ModalChoice(modes) => modal_set(state, caster, spell_id, modes, behavior, registry),
         _ => None,

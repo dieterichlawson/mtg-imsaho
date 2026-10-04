@@ -218,7 +218,7 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
         // named them (a test, a replay, a resumed cast) has more than that
         // and goes straight through.
         if let Some(slot) = pending_slot {
-            let crate::engine::targeting::SetSlot { options, min, max, fixed_len: _ } = slot;
+            let crate::engine::targeting::SetSlot { options, min, max, fixed_len: _, by_count } = slot;
             {
                 let non_x_mana_cost = if has_x { cost.without_x() } else { cost.clone() };
                 state.pending_spell_cast = Some(crate::state::PendingSpellCast {
@@ -248,14 +248,26 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
                             } else {
                                 format!("up to {max}")
                             };
-                            format!("{}: choose {how_many} target{}",
-                                data.name, if max == 1 { "" } else { "s" })
+                            if by_count.iter().any(|(_, a)| !options.iter().all(|t| a.contains(t))) {
+                                // The count is the mode, and "up to 2" would
+                                // not say that two must both be Zombies: the
+                                // pair that is not was refused with nothing
+                                // on screen (issue #666).
+                                let ways: Vec<String> = by_count.iter()
+                                    .map(|(n, opts)| set_mode_phrase(state, *n, opts, &options))
+                                    .collect();
+                                format!("{}: choose {}", data.name, ways.join(", or "))
+                            } else {
+                                format!("{}: choose {how_many} target{}",
+                                    data.name, if max == 1 { "" } else { "s" })
+                            }
                         },
                         options,
                         min,
                         max,
                         source_id: object_id,
                         fixed: targets.to_vec(),
+                        by_count,
                     },
                 });
                 // Spell stays where it is; no mana tapped or paid yet.
@@ -414,4 +426,26 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
         };
         finalize_spell_cast(&mut *state, player, object_id, &payment, targets, registry);
     Applied::Continue
+}
+
+/// One way of filling a modal set, in words: "1 target" when that count may
+/// name anything offered, "2 targets, only from Diregraf Ghoul (#1), Walking
+/// Corpse (#2)" when it may not.
+fn set_mode_phrase(
+    state: &GameState,
+    n: usize,
+    allowed: &[crate::actions::Target],
+    offered: &[crate::actions::Target],
+) -> String {
+    let noun = if n == 1 { "target" } else { "targets" };
+    if offered.iter().all(|t| allowed.contains(t)) {
+        return format!("{n} {noun}");
+    }
+    let names: Vec<String> = allowed.iter().map(|t| match t {
+        crate::actions::Target::Object(id) => state.get_object(*id)
+            .map_or_else(|| format!("#{}", id.0), |o| format!("{} (#{})", o.name, id.0)),
+        crate::actions::Target::Player(p) => format!("player {}", p.0),
+        crate::actions::Target::Illegal => "an illegal target".to_string(),
+    }).collect();
+    format!("{n} {noun}, only from {}", names.join(", "))
 }

@@ -184,13 +184,24 @@ impl Player for RandomPlayer {
         // with it, and never resolves the half of those cards that does
         // something — and this seat is what the invariant fuzzer plays.
         if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseTargetSet {
-            options, min, max, ..
+            options, min, max, by_count, ..
         }) = legal.resolution_prompt.as_ref()
         {
             use mtg_engine::actions::ResolvedChoice;
             use rand::seq::SliceRandom;
             if self.cancels_the_cast() {
                 return Action::ResolveChoice { choice: ResolvedChoice::CancelCast };
+            }
+            // A modal set's count is its mode, and each mode names from its
+            // own list: roll the mode, then the targets from that list. A
+            // count rolled over the union drew a legal two-Zombie pair for
+            // Ghoulcaller's Chant 1 time in 28, so mode two was fuzzed in
+            // 1.8% of casts (issue #666).
+            if !by_count.is_empty() {
+                let (n, allowed) = &by_count[self.rng.gen_range(0..by_count.len())];
+                let chosen: Vec<mtg_engine::actions::Target> =
+                    allowed.choose_multiple(&mut self.rng, *n).cloned().collect();
+                return Action::ResolveChoice { choice: ResolvedChoice::ChosenTargetSet(chosen) };
             }
             let how_many = if max > min { self.rng.gen_range(*min..=*max) } else { *min };
             // A random subset, not the first `how_many`: taking them in
@@ -1038,6 +1049,7 @@ mod rolls {
                 min: 0,
                 max: 2,
                 source_id: ObjectId(99),
+                by_count: vec![],
             })),
         ] {
             let n = cancels(&legal, 400);

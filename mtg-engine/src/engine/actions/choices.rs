@@ -667,13 +667,23 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                             &mut *state, &crate::actions::Target::Object(id), &effect, registry);
                     }
                 }
-                (ResolutionChoiceKind::ChooseTargetSet { min, max, options, fixed, .. },
+                (ResolutionChoiceKind::ChooseTargetSet { min, max, options, fixed, by_count, .. },
                  ResolvedChoice::ChosenTargetSet(chosen)) => {
                     let n = chosen.len();
+                    // A modal set's count is its mode, and each mode names
+                    // from its own candidates (CR 700.2a, 601.2c): a Zombie
+                    // and a Grizzly Bears is no mode of Ghoulcaller's Chant.
+                    // Passed through, the cast handler refused it at Debug
+                    // and the cast vanished with nothing on screen (#666).
+                    let outside_its_mode = !by_count.is_empty()
+                        && !by_count.iter().any(|(k, allowed)|
+                            *k == n && chosen.iter().all(|t| allowed.contains(t)));
                     let refusal = if n < *min || n > *max {
                         Some(format!("chose {n} targets, required {min}..={max}"))
                     } else if chosen.iter().any(|t| !options.contains(t)) {
                         Some("chosen target is not one the spell offered".to_string())
+                    } else if outside_its_mode {
+                        Some(format!("no mode takes those {n} targets (CR 700.2a, 601.2c)"))
                     } else if chosen.iter().enumerate().any(|(i, t)| chosen[..i].contains(t)) {
                         Some("the same target twice (CR 601.2c)".to_string())
                     } else {
