@@ -1167,7 +1167,9 @@ illegal or dubious resolutions do.
   path in `cast.rs` returns before the "up to N" slot and the exile prompt, so
   a future card with X AND either would skip a question — re-walk this the day
   such a card is added
-- L53 [proposed 2026-09-30, from L10 and #615/#616/#617] planner vs hand-tap
+- L53 [tried 2026-10-05 → #674, #678, #679; every hand-castable action was
+  offered and no plan over-tapped — a plan that strands the NEXT cast is what
+  breaks, see L56] planner vs hand-tap
   parity. The menu offers a cast only when `compute_autotap` finds a plan, so a
   planner miss is a MISSING legal action that no invariant sees (they check that
   offered actions execute, not that executable ones are offered). Build a board
@@ -1178,7 +1180,8 @@ illegal or dubious resolutions do.
   hand-castable spell and ability offered, no plan tapping more mana than the
   cost, floating mana used before new taps, and no ability plan spending the only
   source of a colour the hand needs. Recheck the fixes for #615-#617 first
-- L54 [proposed 2026-09-30, from L31 and #626] the response window that isn't
+- L54 [tried 2026-10-05 → #680, #681 (CLI layout only); #626 holds and no
+  ability family needs floating mana any more] the response window that isn't
   there. Auto-pass skips any window whose only actions are mana abilities, so an
   action that needs a mana tap to BECOME visible is never reachable in response.
   Give a seat a sacrifice-cost ability (Disciple of Griselbrand `{1}`, Skirsdag
@@ -1189,7 +1192,8 @@ illegal or dubious resolutions do.
   main phase with nothing castable. Then look for any other ability family that
   `legal/abilities.rs` offers only with mana already floating — each is the same
   hole. The fuzzer cannot see this: the random seat only floats mana by chance
-- L55 [proposed 2026-09-30, from L30, #622 and #236] nothing happens after
+- L55 [tried 2026-10-05 → #675, #676, #677; #622 holds on every path — the
+  final STATE is the defect, see L58] nothing happens after
   "wins the game" (CR 104.1). `end_game` returns into whatever called it, and a
   card's `on_resolve` carries on. Go through every card whose effect continues
   after a step that can end the game — draw-then-X (Desperate Ravings, Bloodgift
