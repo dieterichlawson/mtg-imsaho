@@ -105,6 +105,31 @@ fn a_spell_stops_resolving_when_laboratory_maniac_wins_mid_resolution() {
         "no card left the hand after the game ended");
 }
 
+/// The game ends with Desperate Ravings mid-resolution — CR 608.2n's last
+/// step, leaving the stack, never comes (CR 104.1) — and that final
+/// position is one the engine accepts. Its own invariants rejected it, so
+/// `--resume` called the final save invalid instead of finished (#675).
+#[test]
+fn a_game_won_mid_resolution_ends_in_a_position_the_engine_accepts() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_permanent(&mut state, &reg, "Laboratory Maniac", P0);
+    stock_library(&mut state, &reg, P0, 1);
+    let ravings = castable_spell(&mut state, &reg, "Desperate Ravings", P0);
+
+    let state = cast_and_resolve(&state, &reg, ravings, vec![]);
+
+    assert!(state.result.is_some());
+    assert_eq!(state.resolving_spell, Some(ravings), "the game ended mid-resolution");
+    // Only the resolution bookkeeping is this position's: the fixture takes
+    // shortcuts (an unset name cache, a cast and its resolution sharing one
+    // action's events) that a real game does not.
+    let v: Vec<String> = mtg_engine::invariants::check_core(&state, &reg).into_iter()
+        .filter(|m| m.contains("resolving"))
+        .collect();
+    assert!(v.is_empty(), "the final position is a valid state: {v:?}");
+}
+
 /// An effect that says a player wins is CR 104.2b, and the loser's line says
 /// which effect it was. It cited CR 104.2a — a player wins when every opponent
 /// has left the game, the inverse of what happened — and said only "the

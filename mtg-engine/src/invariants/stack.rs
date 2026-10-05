@@ -218,7 +218,14 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
 
     // ── Resolution bookkeeping (CR 608.2m/n, 602.2a, 603.4) ─────────────
     if let Some(id) = state.resolving_spell {
-        if state.awaiting_action.is_none() {
+        // Resolution stops part-way for one of two reasons: a player choice
+        // (`awaiting_action`), or the game ending under it — Laboratory
+        // Maniac winning from inside Desperate Ravings' draw. CR 104.1 ends
+        // the game immediately, so CR 608.2n's last step never comes, and
+        // the position the game ended in is a valid one. Rejecting it made
+        // every such final save "an invalid game state" to `--resume`,
+        // where any other finished game is refused as finished (issue #675).
+        if state.awaiting_action.is_none() && state.result.is_none() {
             v.push(format!("resolving_spell #{} with no choice pending", id.0));
         }
         match state.get_object(id) {
