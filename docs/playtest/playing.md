@@ -1225,3 +1225,12 @@ illegal or dubious resolutions do.
   set is added, grep the new mana costs for these shapes, rerun the brute force
   over them, and file the miss the day such a card exists (Dark Ascension's
   Stromkirk Captain and Diregraf Captain are the first to watch)
+- L58 [proposed 2026-10-05, from L55 and #675] the final position is a real
+  position. For every way a game can end (a Maniac win inside a spell, an
+  ability, a trigger and the draw step; a first-strike kill; an SBA drain; a
+  concession at priority and at a prompt; a decking loss), take the `--save`
+  the runner leaves and: `--resume` it, expecting the #316 "finished game"
+  refusal and nothing else; run `invariants::check_core` on it; and check that
+  every object the log last moved (a spell still resolving, a searched card, a
+  created token) is in some zone of the final GameView on the CLI and the GUI's
+  `game_over`. The fuzzer never checks the state after the last decision
