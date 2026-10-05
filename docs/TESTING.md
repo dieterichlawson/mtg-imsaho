@@ -32,7 +32,7 @@ Put it in the file for that rule. If none fits, make one, named for the rule.
 | whose upkeep / whose permanent a trigger watches (CR 603.2) | `your_upkeep_scope.rs`, `curse_and_equip_scope.rs` |
 | continuous effects (CR 611) | `continuous_effects.rs`, `snapshot_anthems.rs`, `attacking_creatures_anthem.rs`, `equipment_human_conditional.rs` |
 | costs (CR 601.2b/f) | `spell_costs.rs`, `tap_cost_legality.rs`, `counter_costs.rs`, `xcost_mana.rs`, `x_cost_spells.rs`, `x_cost_funding_flow.rs`, `funding_build_options.rs` |
-| mana | `lands_and_mana.rs`, `mana_filters.rs`, `mana_ability_offers.rs`, `equipment_autotap.rs` |
+| mana | `lands_and_mana.rs`, `mana_filters.rs`, `mana_ability_offers.rs`, `equipment_autotap.rs`, `autotap_brute_force.rs` (the planner against a hand-tap oracle over seeded boards) |
 | casting and resolution (CR 601, 608) | `spells.rs`, `spell_cleanup.rs`, `multi_target_and_mill.rs`, `instant_interaction.rs` |
 | flashback (CR 702.33) | `flashback.rs`, `flashback_multiple_instances.rs` |
 | targeting and legality | `characteristics_targeting.rs`, `ability_target_protection.rs`, `hexproof_filter.rs`, `player_protection.rs`, `resolution_time_checks.rs`, `submitted_targets.rs`, `cast_target_specs.rs`, `targeting_vocabulary.rs`, `prompt_shapes.rs` |
