@@ -72,12 +72,44 @@ Options:
                          seeds the random/AI seats — keep it to replay a
                          resume. Pass --save to keep writing the file
   --check-invariants     Check structural invariants at every decision point
+  --decision-stats <path> Write a JSON count of every kind of question the seats
+                         were asked (priority menus, combat, set and resolution
+                         prompts) — the fuzz campaign's reach report reads it
   --quiet, -q            Suppress the pre-game banner
   --help, -h             Print this help and exit
   --version              Print the version and exit
 
 Built-in decks: red-green (rg), white-black (wb), blue-white (uw),
 black-aggro (ba), innistrad-white (iw), innistrad-blue (iu), innistrad-green (ig)";
+
+/// The name of the question `legal` asks, spelled the way the page's
+/// protocol test spells it (`mtg-player/tests/gui_protocol.rs`): a
+/// resolution prompt by its variant (`resolution:ChooseXFunding`), a combat
+/// prompt by its variant (`combat:ChooseAttackers`), the set prompt, or a
+/// priority menu — `priority` when it offers something to do and
+/// `priority:pass-only` when it does not. `scripts/fuzz_reach.py` compares
+/// the names a campaign reached against the variants the engine defines.
+fn decision_kind_name(legal: &engine::LegalActions) -> String {
+    fn variant<T: serde::Serialize>(value: &T) -> String {
+        match serde_json::to_value(value) {
+            Ok(serde_json::Value::String(s)) => s,
+            Ok(serde_json::Value::Object(o)) => o.keys().next().cloned().unwrap_or_else(|| "?".into()),
+            _ => "?".into(),
+        }
+    }
+    if let Some(prompt) = &legal.resolution_prompt {
+        return format!("resolution:{}", variant(prompt));
+    }
+    if legal.set_prompt.is_some() {
+        return "set_prompt".into();
+    }
+    if let Some(prompt) = &legal.combat_prompt {
+        return format!("combat:{}", variant(prompt));
+    }
+    let pass_only = legal.actions.iter().all(|a| matches!(a,
+        mtg_engine::actions::Action::PassPriority | mtg_engine::actions::Action::Concede));
+    if pass_only { "priority:pass-only".into() } else { "priority".into() }
+}
 
 /// A user error: report it and exit without a Rust panic/backtrace.
 fn die(msg: &str) -> ! {
@@ -214,7 +246,7 @@ fn sweep_stale_hot_reload_saves() {
 /// a typo'd --deck1 quietly played the wrong deck (issue #55).
 fn validate_args(args: &[String]) {
     const VALUE_FLAGS: &[&str] = &["--p1", "--p2", "--deck1", "--deck2",
-        "--seed", "--log", "--save", "--resume", "--on-the-play"];
+        "--seed", "--log", "--save", "--resume", "--on-the-play", "--decision-stats"];
     const BOOL_FLAGS: &[&str] = &["--check-invariants", "--quiet", "-q"];
     let mut i = 1;
     while i < args.len() {
@@ -265,6 +297,9 @@ fn main() {
     let log_file = args.iter().position(|a| a == "--log")
         .and_then(|i| args.get(i + 1))
         .map(std::string::String::as_str);
+    let decision_stats_file = args.iter().position(|a| a == "--decision-stats")
+        .and_then(|i| args.get(i + 1))
+        .cloned();
 
     // Deck specs: --deck1 <name-or-file> --deck2 <name-or-file>
     // Built-in deck names: red-green, white-black, blue-white,
@@ -734,8 +769,23 @@ stops here — pass --save {path} to keep writing it");
     // draft runner's copy of this loop (#488).
     let mut watchdog = mtg_player::watchdog::ProgressWatchdog::new();
 
+    // What kind of question each decision was, for --decision-stats. The
+    // fuzz campaign's only oracle is the invariant checker, which says
+    // nothing about a prompt it never reaches: the random seat went weeks
+    // without sending a ChosenOrder and reached Ghoulcaller's Chant's second
+    // mode in 1.8% of casts (#664-#667), and nothing was red. Counting the
+    // kinds asked lets the campaign say which ones it never was.
+    let mut decision_kinds: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
+    // The widest board the game reached, for the same report: the walls at
+    // 500-2,000 permanents (#565, #640-#642) were found on boards no fuzz
+    // game ever built, and nothing said so.
+    let mut max_permanents: usize = 0;
+
     let mut game_callback = |game_state: &GameState, acting_player: PlayerId, legal: &engine::LegalActions| -> mtg_engine::actions::Action {
         action_count += 1;
+        *decision_kinds.entry(decision_kind_name(legal)).or_insert(0) += 1;
+        max_permanents = max_permanents.max(
+            game_state.all_objects_in_zone(mtg_engine::types::Zone::Battlefield).len());
 
         if watchdog.observe(game_state) {
             let seat = player_names_ref.get(acting_player.0 as usize)
@@ -887,6 +937,18 @@ use --save if you need a resumable file.");
         engine::run_game_loop(&mut state, &registry, &mut game_callback);
     }
     drop(game_callback);
+
+    if let Some(path) = &decision_stats_file {
+        let stats = serde_json::json!({
+            "decisions": decision_kinds.values().sum::<u64>(),
+            "max_permanents": max_permanents,
+            "kinds": decision_kinds,
+        });
+        let text = serde_json::to_string_pretty(&stats).unwrap_or_default();
+        if let Err(e) = fs::write(path, text) {
+            eprintln!("warning: could not write --decision-stats {path}: {e}");
+        }
+    }
 
     // Flush log entries written after the last decision point (final combat
     // damage, "wins the game") — the callback never sees them (issue #77).

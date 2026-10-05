@@ -66,6 +66,11 @@ jobs:
           {
             echo "### Fuzz shard ${{ matrix.shard }}"
             echo "- failing games: $failures"
+            echo
+            # Which kinds of question the shard asked, and which it never
+            # did (scripts/fuzz_reach.py). Green says the instrument ran;
+            # this says what it covered.
+            cat logs/fuzz-reach-*.md 2>/dev/null || echo "- no reach report written"
           } >> "$GITHUB_STEP_SUMMARY"
           # Failing games are findings, not failures — the next step files
           # them as issues. Red is reserved for the script itself breaking
@@ -107,6 +112,9 @@ jobs:
             [ "$filed" -ge 5 ] && { echo "cap reached; remaining failures are in the artifact"; break; }
             seed="${base##*-seed}"; rest="${base%-seed*}"
             d1="${rest%%-vs-*}"; d2="${rest##*-vs-}"
+            # The deck's file, wherever the campaign took it from.
+            deck_path() { ls "decks/coverage/$1.txt" "decks/fuzz/$1.txt" "decks/fuzz/flood/$1.txt" 2>/dev/null | head -1; }
+            f1=$(deck_path "$d1"); f2=$(deck_path "$d2")
             symptom=$(grep -m1 -E 'INVARIANT VIOLATION|panicked|^TIMEOUT:' "$log" || head -1 "$log" || echo "game failed")
             title="[fuzz] $d1-vs-$d2 seed $seed: $(echo "$symptom" | cut -c1-120)"
             if [ -n "$(gh issue list --state open --search "\"$base\" in:title" --json number --jq '.[0].number // empty')" ]; then
@@ -120,7 +128,7 @@ jobs:
               '```' \
               "cargo build --release -p mtg-runner" \
               "target/release/mtg-runner --p1 random --p2 random \\" \
-              "  --deck1 decks/coverage/$d1.txt --deck2 decks/coverage/$d2.txt \\" \
+              "  --deck1 ${f1:-decks/coverage/$d1.txt} --deck2 ${f2:-decks/coverage/$d2.txt} \\" \
               "  --seed $seed --check-invariants" \
               '```' \
               "" \
@@ -133,11 +141,55 @@ jobs:
           done
           echo "filed $filed issues"
 
+      - name: File issues for prompt kinds the campaign never reached
+        # One shard files them (every shard plays the same deck set over
+        # different seeds, so the gaps are the same); dedupe on the kind
+        # in the title; cap at 3 so a broken stats path cannot flood the
+        # tracker. A kind no game reached is a finding against the random
+        # seat or the fuzz decks, not against the engine: the fuzzer's
+        # oracle covers nothing it never asks (#664-#667).
+        if: matrix.shard == 0 && (success() || failure())
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          report=$(ls logs/fuzz-reach-*.md 2>/dev/null | head -1)
+          [ -n "$report" ] || { echo "no reach report — nothing to file"; exit 0; }
+          games=$(grep -oE 'reach: [0-9]+ games' "$report" | grep -oE '[0-9]+' || echo 0)
+          # A shard that played almost nothing (cancelled, or the runner
+          # broke) reached nothing, and that is not a finding about reach.
+          [ "${games:-0}" -ge 100 ] || { echo "only $games games in the report; not filing reach gaps"; exit 0; }
+          filed=0
+          for kind in $(awk '/Never reached/{f=1; next} /^$/{f=0} f && /^- `/{sub(/^- `/, ""); sub(/`$/, ""); print}' "$report"); do
+            [ "$filed" -ge 3 ] && { echo "cap reached; the rest are in the step summary"; break; }
+            title="[fuzz] prompt kind $kind was asked in no game of the nightly campaign"
+            if [ -n "$(gh issue list --state open --search "\"prompt kind $kind\" in:title" --json number --jq '.[0].number // empty')" ]; then
+              echo "dedupe: open issue already covers $kind"
+              continue
+            fi
+            body=$(printf '%s\n' \
+              "**Found-by**: phase:fuzz — nightly-fuzz shard 0 reach report, run $RUN_URL" \
+              "" \
+              "**Target**: the random seat or the fuzz deck sets (not the engine): the campaign's $games games never asked this question, so nothing in them exercised the engine's handling of it. Either no card in decks/coverage, decks/fuzz or decks/fuzz/flood can raise it under random play, or the random seat never answers its way into it (compare #664-#667)." \
+              "" \
+              "**Repro**: run scripts/fuzz.sh and read logs/fuzz-reach-<date>.md; or play seeded random games with --decision-stats and look for \`$kind\` in the JSON." \
+              "" \
+              "**Evidence** (the shard's reach report):" \
+              '```' \
+              "$(cat "$report")" \
+              '```')
+            gh issue create --title "$title" --body "$body" --label bug --label phase:fuzz \
+              && filed=$((filed + 1))
+          done
+          echo "filed $filed reach issues"
+
       - name: Upload failure logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: fuzz-failures-shard-${{ matrix.shard }}
-          path: logs/fuzz-*/
+          path: |
+            logs/fuzz-*/
+            logs/fuzz-reach-*.md
           if-no-files-found: ignore
           retention-days: 14
