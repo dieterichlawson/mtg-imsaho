@@ -28,6 +28,26 @@ weeks is a reasonable floor unless you are re-probing a fresh fix). One
 subject a night is normal; two or three probes within it is a night's
 work.
 
+**Every night opens with the propagation sweep, R1, before the subject's
+probes.** The most common defect of the last two weeks was not a new bug
+but a fix that reached one surface and not the others: #139's haste badge
+fixed on the CLI and still wrong on the page (#604) and in the harness
+(#605); #213's reasoning capture never reaching the draft crate (#607);
+#233's AbandonGame fix never reaching the draft runner's copy of the game
+loop (#630); #633's cost wrapping fixed for two-part costs and not three
+(#681); #471's sacrifice flow changed and GAME_RULES still describing the
+old one (#672). So the sweep is: list the issues closed since this
+subject's last night (at least the last seven days), and for each fix
+that touched a prompt, a row, a label, a schema, a log line or one of the
+two game loops, ask the same question on the surfaces and the copy the
+fix did not name — CLI, LLM prompt and schema, random seat, page, and
+`mtg-draft-runner` beside `mtg-runner`. File what you find, citing the
+fix it escaped, and record the sweep as one ledger row with mission id
+`R1` and the window it covered. It usually takes an hour and it is the
+most productive hour of the night (the 2026-10-05 crew did it unprompted
+and it found #680 and #681). The fixer is asked to do this check before
+closing (see "Filing"); the sweep is the audit of that.
+
 **The floor is per idea, not per subject, and "already played" is a fact
 to look up rather than infer.** The ledger's Mission column starts with
 the id, so this says which ids in a series have ever been run:
@@ -153,8 +173,8 @@ easy to confuse, fixed here, and used in every issue's **Target** line:
   the conversation an LLM seat plays a game through (`mtg-player/src/llm.rs`
   and its backends). Documented in `docs/llm-harness.md`.
 
-One issue per distinct defect, labels `bug` + `phase:playtest`, title
-`[playtest] <short symptom>`, body with:
+One issue per distinct defect, labels `bug` + `phase:playtest` + one
+severity label, title `[playtest] <short symptom>`, body with:
 
 - **Found-by** — this crew, the date, the subject and the idea id (or a
   sentence describing the probe, if you invented it).
@@ -168,7 +188,23 @@ One issue per distinct defect, labels `bug` + `phase:playtest`, title
 
 Search open issues for the same symptom first and comment there rather
 than duplicating. UX judgments are worth filing; label the severity
-honestly.
+honestly, with exactly one of:
+
+- `sev:rules` — the engine disagrees with the Comprehensive Rules, or
+  offers an illegal action, or withholds a legal one. A wrong answer to
+  "what may I do, and what happens when I do it."
+- `sev:game-affecting` — the rules are right, but a person or a seat loses
+  a decision, a game or a run anyway: a legal option no surface can reach,
+  an answer silently changed or dropped, a hang, a wedge, a response window
+  skipped, work re-billed.
+- `sev:presentation` — the behaviour is right and described wrongly: a
+  label, a log line, a summary, wrapping, clipping, a stale sentence in a
+  prompt.
+
+The label is what lets the fixer work severe-first and what lets anyone
+ask "are the bugs getting smaller" of the tracker instead of of thirty
+reports. Unsure between two? Pick the higher one and say so under
+**Confidence**.
 
 **Observed is filed.** There is no such thing as "observed but not
 filed", "noted, out of scope", or "smaller observations" at the end of a
@@ -191,9 +227,14 @@ You are one of three finders, and the labels tell them apart: the
 the `weekly-mutants` workflow files `phase:mutants` issues for survivors
 beyond `reports/mutants-accepted.txt`; you file `phase:playtest`. Every
 issue also carries `bug`. One fixer — the "Daily bug fixer" routine —
-works every open `phase:*` issue oldest-first: reproduce, root-cause, fix
-the mechanism (never a per-card special case), regression test, merge to
-master, close citing the commit. Its **Repro** section is what the fixer
+works every open `phase:*` issue severe-first (`sev:rules`, then
+`sev:game-affecting`, then `sev:presentation`, oldest first within a
+level): reproduce, root-cause, fix the mechanism (never a per-card special
+case), regression test, merge to master, close citing the commit. Before
+closing, a fix that touched a prompt, a row, a label, a schema, a log line
+or a game loop is checked on the other three surfaces and in the draft
+runner's copy, and the closing comment says which were checked — the
+propagation sweep above is the audit of that. Its **Repro** section is what the fixer
 starts from, which is why it has to be runnable by a fresh reader.
 
 ## Afterwards
