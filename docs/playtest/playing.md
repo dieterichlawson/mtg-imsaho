@@ -1234,3 +1234,11 @@ illegal or dubious resolutions do.
   every object the log last moved (a spell still resolving, a searched card, a
   created token) is in some zone of the final GameView on the CLI and the GUI's
   `game_over`. The fuzzer never checks the state after the last decision
+- L59 [proposed 2026-10-05, from L55 and #676] CR 104.3a at every prompt kind,
+  on all four surfaces. List the prompt kinds the engine can raise (mulligan,
+  bottom, attackers, blockers, every `ResolutionChoiceKind`, discard to hand
+  size, entry choices) and, for each, find the way to concede on the CLI, the
+  page, the LLM schema and the random seat. Then concede there through whatever
+  path exists (the GUI WebSocket accepts a raw `"Concede"`) and check that the
+  half-finished resolution does nothing more, that the loss reason names the
+  concession, and that the final save passes L58
