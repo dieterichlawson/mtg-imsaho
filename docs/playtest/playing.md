@@ -1242,3 +1242,13 @@ illegal or dubious resolutions do.
   path exists (the GUI WebSocket accepts a raw `"Concede"`) and check that the
   half-finished resolution does nothing more, that the loss reason names the
   concession, and that the final save passes L58
+- L60 [proposed 2026-10-05, from L54 and the Grimoire/Moorland cost choosers]
+  costs that ask a question halfway through paying. Some non-mana costs prompt
+  after the tap plan has already run: Grimoire of the Dead's discard, Moorland
+  Haunt's exile with two or more creature cards in the graveyard, Skirsdag High
+  Priest's pair, the sacrifice screens, X funding. Stage each with an empty
+  pool and record whether a cancel row is offered. Where there is one, cancel
+  and check the plan's lands are untapped again or their mana floats and
+  empties at the step's end (CR 500.4), and that no "activated" line is logged.
+  Where there is none, check the costs are paid in CR 601.2h order and the log
+  shows them in that order. #290 fixed this for X abilities only
