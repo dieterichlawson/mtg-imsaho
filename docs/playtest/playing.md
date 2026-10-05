@@ -1216,3 +1216,12 @@ illegal or dubious resolutions do.
   in a real game. After each fix, re-read `GAME_RULES` in `llm.rs`, which
   promises the LLM seat "redundant sources" and "which colors your other hand
   spells need"
+- L57 [proposed 2026-10-05, from L53's brute force] the cost shapes the planner
+  has never met. `compute_autotap` sorts coloured pips by scarcity once and then
+  picks greedily, and it misses real plans for three-colour costs, for
+  two-colour costs with a repeated pip (`{1}{B}{R}{R}`, `{1}{U}{B}{B}`), and for
+  `{C}` pips (Phase 1 takes Grotto's `{C}`, then needs Grotto's filter). No card
+  in the 2026-10-05 pool has such a cost, so nothing was filed. Whenever a card
+  set is added, grep the new mana costs for these shapes, rerun the brute force
+  over them, and file the miss the day such a card exists (Dark Ascension's
+  Stromkirk Captain and Diregraf Captain are the first to watch)
