@@ -1,0 +1,36 @@
+# Fuzz deck ub-doubles: decks/coverage/ub-coverage.txt with every nonland
+# card twice. The coverage decks are singleton, so a board with two
+# same-named permanents, two same-named graveyard cards or two copies of
+# one spell in hand never arises in the nightly fuzz — the class of
+# byte-identical-row defects (#612, #631) was invisible to it. Generated
+# by scripts/make_fuzz_decks.sh; regenerate rather than edit.
+
+16 Island
+16 Swamp
+2 Nephalia Drownyard
+2 Abattoir Ghoul
+2 Battleground Geist
+2 Cackling Counterpart
+2 Coral Merfolk
+2 Dead Weight
+2 Delver of Secrets
+2 Dissipate
+2 Endless Ranks of the Dead
+2 Evil Twin
+2 Ghoulraiser
+2 Grasp of Phantoms
+2 Grimgrin, Corpse-Born
+2 Heartless Summoning
+2 Hysterical Blindness
+2 Ludevic's Test Subject
+2 Maw of the Mire
+2 One-Eyed Scarecrow
+2 Reaper from the Abyss
+2 Screeching Bat
+2 Selhoff Occultist
+2 Sever the Bloodline
+2 Spectral Flight
+2 Sturmgeist
+2 Traveler's Amulet
+2 Typhoid Rats
+2 Vampire Interloper

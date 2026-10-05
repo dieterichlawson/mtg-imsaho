@@ -1,0 +1,35 @@
+# Fuzz deck br-doubles: decks/coverage/br-coverage.txt with every nonland
+# card twice. The coverage decks are singleton, so a board with two
+# same-named permanents, two same-named graveyard cards or two copies of
+# one spell in hand never arises in the nightly fuzz — the class of
+# byte-identical-row defects (#612, #631) was invisible to it. Generated
+# by scripts/make_fuzz_decks.sh; regenerate rather than edit.
+
+16 Swamp
+16 Mountain
+2 Stensia Bloodhall
+2 Altar's Reap
+2 Army of the Damned
+2 Bitterheart Witch
+2 Bloodline Keeper
+2 Brimstone Volley
+2 Curse of Stalked Prey
+2 Diregraf Ghoul
+2 Falkenrath Marauders
+2 Falkenrath Noble
+2 Feral Ridgewolf
+2 Galvanic Juggernaut
+2 Geistflame
+2 Graveyard Shovel
+2 Harvest Pyre
+2 Instigator Gang
+2 Liliana of the Veil
+2 Manor Skeleton
+2 Morkrut Banshee
+2 Olivia Voldaren
+2 Pitchburn Devils
+2 Rage Thrower
+2 Rakish Heir
+2 Stromkirk Noble
+2 Tribute to Hunger
+2 Victim of Night

@@ -1,0 +1,35 @@
+# Fuzz deck wg-doubles: decks/coverage/wg-coverage.txt with every nonland
+# card twice. The coverage decks are singleton, so a board with two
+# same-named permanents, two same-named graveyard cards or two copies of
+# one spell in hand never arises in the nightly fuzz — the class of
+# byte-identical-row defects (#612, #631) was invisible to it. Generated
+# by scripts/make_fuzz_decks.sh; regenerate rather than edit.
+
+16 Plains
+16 Forest
+2 Gavony Township
+2 Abbey Griffin
+2 Avacyn's Pilgrim
+2 Butcher's Cleaver
+2 Creeping Renaissance
+2 Darkthicket Wolf
+2 Elder Cathar
+2 Elder of Laurels
+2 Elite Inquisitor
+2 Festerhide Boar
+2 Gallows Warden
+2 Hamlet Captain
+2 Kessig Cagebreakers
+2 Kindercatch
+2 Mentor of the Meek
+2 Mikaeus, the Lunarch
+2 Mulch
+2 Pacifism
+2 Parallel Lives
+2 Rally the Peasants
+2 Ranger's Guile
+2 Smite the Monstrous
+2 Sol Ring
+2 Spidery Grasp
+2 Stony Silence
+2 Swords to Plowshares

@@ -1,0 +1,39 @@
+# Fuzz deck wu-doubles: decks/coverage/wu-coverage.txt with every nonland
+# card twice. The coverage decks are singleton, so a board with two
+# same-named permanents, two same-named graveyard cards or two copies of
+# one spell in hand never arises in the nightly fuzz — the class of
+# byte-identical-row defects (#612, #631) was invisible to it. Generated
+# by scripts/make_fuzz_decks.sh; regenerate rather than edit.
+
+18 Plains
+16 Island
+2 Moorland Haunt
+2 Ghost Quarter
+2 Armored Skaab
+2 Avacynian Priest
+2 Blazing Torch
+2 Champion of the Parish
+2 Creepy Doll
+2 Curiosity
+2 Curse of the Bloody Tome
+2 Divine Reckoning
+2 Feeling of Dread
+2 Fiend Hunter
+2 Fortress Crab
+2 Frightful Delusion
+2 Geist of Saint Traft
+2 Geist-Honored Monk
+2 Invisible Stalker
+2 Midnight Haunting
+2 Murder of Crows
+2 Purify the Grave
+2 Rebuke
+2 Runechanter's Pike
+2 Runic Repetition
+2 Silent Departure
+2 Silverchase Fox
+2 Skaab Goliath
+2 Snapcaster Mage
+2 Thraben Sentry
+2 Undead Alchemist
+2 Unruly Mob

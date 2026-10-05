@@ -1,0 +1,33 @@
+# Fuzz deck bg-doubles: decks/coverage/bg-coverage.txt with every nonland
+# card twice. The coverage decks are singleton, so a board with two
+# same-named permanents, two same-named graveyard cards or two copies of
+# one spell in hand never arises in the nightly fuzz — the class of
+# byte-identical-row defects (#612, #631) was invisible to it. Generated
+# by scripts/make_fuzz_decks.sh; regenerate rather than edit.
+
+14 Swamp
+14 Forest
+2 Woodland Cemetery
+2 Ambush Viper
+2 Bloodgift Demon
+2 Brain Weevil
+2 Disciple of Griselbrand
+2 Gatstaf Shepherd
+2 Ghoulcaller's Chant
+2 Giant Growth
+2 Grave Bramble
+2 Grimoire of the Dead
+2 Gutter Grime
+2 Inquisitor's Flail
+2 Lumberknot
+2 Markov Patrician
+2 Mayor of Avabruck
+2 Moan of the Unhallowed
+2 Skeletal Grimace
+2 Spider Spawning
+2 Stromkirk Patrol
+2 Travel Preparations
+2 Ulvenwald Mystics
+2 Unbreathing Horde
+2 Villagers of Estwald
+2 Walking Corpse

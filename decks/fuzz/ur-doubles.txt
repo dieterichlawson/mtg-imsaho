@@ -1,0 +1,34 @@
+# Fuzz deck ur-doubles: decks/coverage/ur-coverage.txt with every nonland
+# card twice. The coverage decks are singleton, so a board with two
+# same-named permanents, two same-named graveyard cards or two copies of
+# one spell in hand never arises in the nightly fuzz — the class of
+# byte-identical-row defects (#612, #631) was invisible to it. Generated
+# by scripts/make_fuzz_decks.sh; regenerate rather than edit.
+
+16 Island
+14 Mountain
+2 Sulfur Falls
+2 Back from the Brink
+2 Bloodcrazed Neonate
+2 Cellar Door
+2 Civilized Scholar
+2 Counterspell
+2 Curse of the Nightly Hunt
+2 Divination
+2 Dream Twist
+2 Furor of the Bitten
+2 Goblin Piker
+2 Into the Maw of Hell
+2 Kruin Outlaw
+2 Laboratory Maniac
+2 Lost in the Mist
+2 Makeshift Mauler
+2 Memory's Journey
+2 Night Revelers
+2 Reckless Waif
+2 Skaab Ruinator
+2 Stitcher's Apprentice
+2 Tormented Pariah
+2 Traitorous Blood
+2 Trepanation Blade
+2 Village Ironsmith

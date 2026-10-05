@@ -1,0 +1,35 @@
+# Fuzz deck ug-doubles: decks/coverage/ug-coverage.txt with every nonland
+# card twice. The coverage decks are singleton, so a board with two
+# same-named permanents, two same-named graveyard cards or two copies of
+# one spell in hand never arises in the nightly fuzz — the class of
+# byte-identical-row defects (#612, #631) was invisible to it. Generated
+# by scripts/make_fuzz_decks.sh; regenerate rather than edit.
+
+16 Island
+16 Forest
+2 Hinterland Harbor
+2 Caravan Vigil
+2 Claustrophobia
+2 Cobbled Wings
+2 Demonmail Hauberk
+2 Deranged Assistant
+2 Forbidden Alchemy
+2 Full Moon's Rise
+2 Garruk Relentless
+2 Gnaw to the Bone
+2 Grizzled Outcasts
+2 Kalonian Tusker
+2 Lantern Spirit
+2 Mindshrieker
+2 Mirror-Mad Phantasm
+2 Moldgraf Monstrosity
+2 Moon Heron
+2 Naturalize
+2 Rooftop Storm
+2 Sensory Deprivation
+2 Somberwald Spider
+2 Splinterfright
+2 Stitched Drake
+2 Think Twice
+2 Tree of Redemption
+2 Wreath of Geists

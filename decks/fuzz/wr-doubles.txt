@@ -1,0 +1,37 @@
+# Fuzz deck wr-doubles: decks/coverage/wr-coverage.txt with every nonland
+# card twice. The coverage decks are singleton, so a board with two
+# same-named permanents, two same-named graveyard cards or two copies of
+# one spell in hand never arises in the nightly fuzz — the class of
+# byte-identical-row defects (#612, #631) was invisible to it. Generated
+# by scripts/make_fuzz_decks.sh; regenerate rather than edit.
+
+18 Plains
+16 Mountain
+2 Clifftop Retreat
+2 Angelic Overseer
+2 Ashmouth Hound
+2 Blasphemous Act
+2 Chapel Geist
+2 Charmbreaker Devils
+2 Cloistered Youth
+2 Crossway Vampire
+2 Dearly Departed
+2 Desperate Ravings
+2 Devil's Play
+2 Geistcatcher's Rig
+2 Glorious Anthem
+2 Holy Strength
+2 Kessig Wolf
+2 Lava Axe
+2 Lightning Bolt
+2 Moment of Heroism
+2 Paraselene
+2 Rolling Temblor
+2 Selfless Cathar
+2 Silver-Inlaid Dagger
+2 Skirsdag Cultist
+2 Slayer of the Wicked
+2 Spectral Rider
+2 Vampiric Fury
+2 Voiceless Spirit
+2 Wooden Stake

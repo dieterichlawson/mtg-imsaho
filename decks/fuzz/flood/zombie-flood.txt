@@ -1,0 +1,21 @@
+# Fuzz flood deck: a token engine that grows the board past what the coverage
+# decks can reach. Endless Ranks of the Dead and Parallel Lives compound each
+# upkeep; Army of the Damned and Moan of the Unhallowed seed them. The
+# coverage fuzz's slowest game is under 2 s, so the walls found by hand at
+# 500-2,000 permanents (#565, #640, #641, #642) never showed up in it.
+# scripts/fuzz.sh plays this deck as a mirror, a few seeds per night, under
+# the per-game timeout: a game that cannot finish inside it is the finding.
+4 Endless Ranks of the Dead
+4 Parallel Lives
+4 Moan of the Unhallowed
+2 Army of the Damned
+4 Diregraf Ghoul
+4 Walking Corpse
+4 Ghoulraiser
+3 Rotting Fensnake
+3 Unbreathing Horde
+2 Cellar Door
+2 Ghoulcaller's Bell
+12 Swamp
+8 Forest
+4 Island
