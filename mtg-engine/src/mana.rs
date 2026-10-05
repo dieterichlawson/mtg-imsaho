@@ -173,19 +173,6 @@ fn free_abilities_first(plan: &mut [(ObjectId, usize)], sources: &[ManaSource]) 
     }
 }
 
-/// The pips of `hand_costs` that only one kind of mana pays — coloured and
-/// `{C}` — as one cost: what a payment out of the pool should spend last, so
-/// the rest of the hand keeps the mana it needs. Generic plays no part:
-/// anything pays it.
-#[must_use]
-pub fn hand_reserve(hand_costs: &[ManaCost]) -> ManaCost {
-    ManaCost::new(hand_costs.iter()
-        .flat_map(|c| c.symbols.iter())
-        .filter(|s| matches!(s, ManaSymbol::Colored(_) | ManaSymbol::Colorless(_)))
-        .cloned()
-        .collect())
-}
-
 /// Compute the optimal set of mana sources to tap in order to pay a cost.
 ///
 /// Returns `Some(tap_plan)` with (`object_id`, `ability_index`) pairs, or `None` if
@@ -200,6 +187,156 @@ pub fn hand_reserve(hand_costs: &[ManaCost]) -> ManaCost {
 /// source filtering and ability lookup).
 #[must_use]
 pub fn compute_autotap(
+    cost: &ManaCost,
+    pool: &ManaPool,
+    sources: &[ManaSource],
+    hand_costs: &[ManaCost],
+) -> Option<Vec<(ObjectId, usize)>> {
+    let plan = greedy_autotap(cost, pool, sources, hand_costs)?;
+    Some(keep_the_hand_castable(plan, cost, pool, sources, hand_costs))
+}
+
+/// The pips of `hand_costs` that only one kind of mana pays — coloured and
+/// `{C}` — as one cost: what a payment out of the pool should spend last, so
+/// the rest of the hand keeps the mana it needs. Generic plays no part:
+/// anything pays it.
+#[must_use]
+pub fn hand_reserve(hand_costs: &[ManaCost]) -> ManaCost {
+    ManaCost::new(hand_costs.iter()
+        .flat_map(|c| c.symbols.iter())
+        .filter(|s| matches!(s, ManaSymbol::Colored(_) | ManaSymbol::Colorless(_)))
+        .cloned()
+        .collect())
+}
+
+/// Run `plan` and pay `cost` the way the engine executes a cast or an
+/// activation — each filter's own cost paid around what `cost` needs, then
+/// `cost` paid around what `reserve` (the rest of the hand) needs — and
+/// return what is left in the pool, or `None` if the plan does not pay.
+fn pool_after(
+    plan: &[(ObjectId, usize)],
+    pool: &ManaPool,
+    sources: &[ManaSource],
+    cost: &ManaCost,
+    reserve: &ManaCost,
+) -> Option<ManaPool> {
+    let mut pool = pool.clone();
+    for &(object_id, ability_index) in plan {
+        let ability = sources.iter()
+            .find(|s| s.object_id == object_id)
+            .and_then(|s| s.abilities.iter().find(|a| a.ability_index == ability_index))?;
+        auto_pay_reserving(&mut pool, &ability.cost, cost).ok()?;
+        for &(mana_type, amount) in &ability.produced {
+            pool.add(mana_type, amount);
+        }
+    }
+    auto_pay_reserving(&mut pool, cost, reserve).ok()?;
+    Some(pool)
+}
+
+/// Repair a plan that leaves a spell in hand uncastable when another plan
+/// for the same cost would not.
+///
+/// The greedy planner ranks each source by a fixed key — what an ability
+/// costs, opportunity-cost tier, colours lost, hand demand last — and each
+/// fix to that key has been met by a board the next key down decides
+/// wrongly: an unfunded Shimmering Grotto filter counted as still covering
+/// White, so a {1}{G} plan spent the only Plains (issue #674); the creature
+/// tier kept Avacyn's Pilgrim untapped by tapping the only red source
+/// (#679); floating {R} paid a generic pip while an untapped Forest could
+/// have (#678). Each time the plan paid what it was asked and a castable
+/// spell silently left the menu.
+///
+/// So the promise is checked on the plan itself rather than on the key: a
+/// hand spell the board could pay before is still payable from what the
+/// plan leaves. Only when the greedy plan strands one is anything else
+/// tried — every plan with one source swapped (or one source's ability
+/// changed), and failing a full repair, every plan with one more source —
+/// and the plan stranding fewest wins, then the one tapping lower tiers.
+/// Never at the price of a side effect, though: a plan that taps more
+/// sources with one (Deranged Assistant milling a card) is never preferred,
+/// as Phase 3 already holds — milling a card to save a colour is not a win.
+/// A greedy plan that strands nothing is returned untouched, so the tiers
+/// keep deciding everything they decided before.
+fn keep_the_hand_castable(
+    plan: Vec<(ObjectId, usize)>,
+    cost: &ManaCost,
+    pool: &ManaPool,
+    sources: &[ManaSource],
+    hand_costs: &[ManaCost],
+) -> Vec<(ObjectId, usize)> {
+    let castable_before: Vec<&ManaCost> = hand_costs.iter()
+        .filter(|h| greedy_autotap(h, pool, sources, &[]).is_some())
+        .collect();
+    if castable_before.is_empty() {
+        return plan;
+    }
+    let reserve = hand_reserve(hand_costs);
+    let tapped = |p: &[(ObjectId, usize)]| -> Vec<&ManaSource> {
+        p.iter()
+            .filter_map(|(id, _)| sources.iter().find(|s| s.object_id == *id))
+            .collect()
+    };
+    let side_effects = |p: &[(ObjectId, usize)]| -> usize {
+        tapped(p).iter().filter(|s| s.source_kind == ManaSourceKind::HasSideEffects).count()
+    };
+    let tier_sum = |p: &[(ObjectId, usize)]| -> u32 {
+        tapped(p).iter().map(|s| s.source_kind as u32).sum()
+    };
+    let stranded = |p: &[(ObjectId, usize)]| -> Option<usize> {
+        let left = pool_after(p, pool, sources, cost, &reserve)?;
+        let untapped: Vec<ManaSource> = sources.iter()
+            .filter(|s| !p.iter().any(|(id, _)| *id == s.object_id))
+            .cloned()
+            .collect();
+        Some(castable_before.iter()
+            .filter(|h| greedy_autotap(h, &left, &untapped, &[]).is_none())
+            .count())
+    };
+    let Some(base) = stranded(&plan) else { return plan };
+    if base == 0 {
+        return plan;
+    }
+    let mut best = ((side_effects(&plan), base, tier_sum(&plan)), plan.clone());
+    let consider = |mut candidate: Vec<(ObjectId, usize)>,
+                        best: &mut ((usize, usize, u32), Vec<(ObjectId, usize)>)| {
+        free_abilities_first(&mut candidate, sources);
+        if let Some(n) = stranded(&candidate) {
+            let key = (side_effects(&candidate), n, tier_sum(&candidate));
+            if key < best.0 {
+                *best = (key, candidate);
+            }
+        }
+    };
+    let untapped: Vec<&ManaSource> = sources.iter()
+        .filter(|s| !plan.iter().any(|(id, _)| *id == s.object_id))
+        .collect();
+    for i in 0..plan.len() {
+        let own = sources.iter().find(|s| s.object_id == plan[i].0);
+        for source in untapped.iter().copied().chain(own) {
+            for ability in &source.abilities {
+                let mut candidate = plan.clone();
+                candidate[i] = (source.object_id, ability.ability_index);
+                consider(candidate, &mut best);
+            }
+        }
+    }
+    if best.0 .1 > 0 {
+        for source in &untapped {
+            for ability in &source.abilities {
+                let mut candidate = plan.clone();
+                candidate.push((source.object_id, ability.ability_index));
+                consider(candidate, &mut best);
+            }
+        }
+    }
+    best.1
+}
+
+/// The planner's first answer: one pass over the cost, choosing each
+/// source by a fixed priority key. [`compute_autotap`] checks it against
+/// the hand.
+fn greedy_autotap(
     cost: &ManaCost,
     pool: &ManaPool,
     sources: &[ManaSource],
@@ -1355,6 +1492,68 @@ mod tests {
             assert!(compute_autotap(&in_hand, &ManaPool::new(), &left, &[]).is_some(),
                 "{board}: {in_hand} was still castable off the untapped sources before \
                  the plan for {casting} took them — it is not now (issue #114)");
+        }
+    }
+
+    /// The same promise on the boards where the tier key decided wrongly
+    /// and a plan paid its cost while silently taking a castable spell off
+    /// the menu — checked after the payment, out of what the plan leaves:
+    /// - an unfunded Shimmering Grotto filter counted as still making White,
+    ///   so `{1}{G}` spent the Plains (or the Pilgrim) the `{W}` needed and
+    ///   not the Grotto's free `{C}` (issue #674, and its comment's Gavony
+    ///   Township board);
+    /// - the creature tier kept Avacyn's Pilgrim untapped by tapping the
+    ///   only red source for Chapel Geist's second `{W}` (issue #679);
+    /// - floating `{R}` paid a generic pip that a floating or untapped
+    ///   `{G}` could have (issue #678).
+    #[test]
+    fn a_plan_keeps_the_hand_castable_when_some_plan_would() {
+        use ManaSymbol::{Colored, Generic};
+        let w = || mono_ability(ManaType::White);
+        let floating = |e: &[(ManaType, u32)]| pool_of(e);
+        let forest = |id| make_source(id, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)]);
+        let plains = |id| make_source(id, ManaSourceKind::BasicMana, vec![w()]);
+        let mountain = |id| make_source(id, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Red)]);
+        let grotto = |id| make_source(id, ManaSourceKind::NonBasicMana, grotto_abilities());
+        let pilgrim = |id| make_source(id, ManaSourceKind::Creature, vec![w()]);
+        let clifftop = |id| make_source(id, ManaSourceKind::NonBasicMana,
+            dual_abilities(ManaType::Red, ManaType::White));
+        let bears = ManaCost::new(vec![Generic(1), Colored(Color::Green)]);
+        let traveler = ManaCost::new(vec![Colored(Color::White)]);
+        let geistflame = ManaCost::new(vec![Colored(Color::Red)]);
+        let chapel_geist = ManaCost::new(vec![Generic(1), Colored(Color::White), Colored(Color::White)]);
+        let township = ManaCost::new(vec![Generic(2), Colored(Color::Green), Colored(Color::White)]);
+        // (board, pool, cast this, with this in hand)
+        let cases: Vec<(&str, ManaPool, Vec<ManaSource>, ManaCost, ManaCost)> = vec![
+            ("#674 Forest, Plains, Grotto", ManaPool::new(),
+             vec![forest(1), plains(2), grotto(3)], bears.clone(), traveler.clone()),
+            ("#674 Forest, Pilgrim, Grotto", ManaPool::new(),
+             vec![forest(1), pilgrim(2), grotto(3)], bears.clone(), traveler.clone()),
+            ("#674 Township's cost off Grotto, Forest, Plains, Pilgrim, Mountain", ManaPool::new(),
+             vec![grotto(1), forest(2), plains(3), pilgrim(4), mountain(5)], township, traveler),
+            ("#679 Plains, Pilgrim, Clifftop Retreat, Forest", ManaPool::new(),
+             vec![plains(1), pilgrim(2), clifftop(3), forest(4)], chapel_geist.clone(), geistflame.clone()),
+            ("#678 R G G floating", floating(&[(ManaType::Red, 1), (ManaType::Green, 2)]),
+             vec![], bears.clone(), geistflame.clone()),
+            ("#678 W R floating, Plains, Forest", floating(&[(ManaType::White, 1), (ManaType::Red, 1)]),
+             vec![plains(1), forest(2)], chapel_geist, geistflame.clone()),
+            ("#678 R floating, two Forests", floating(&[(ManaType::Red, 1)]),
+             vec![forest(1), forest(2)], bears, geistflame),
+        ];
+        for (board, pool, sources, casting, in_hand) in cases {
+            assert!(compute_autotap(&in_hand, &pool, &sources, &[]).is_some(),
+                "{board}: {in_hand} is castable to begin with");
+            let plan = compute_autotap(&casting, &pool, &sources, &[in_hand.clone()])
+                .unwrap_or_else(|| panic!("{board}: {casting} is payable"));
+            let left = pool_after(&plan, &pool, &sources, &casting, &hand_reserve(&[in_hand.clone()]))
+                .unwrap_or_else(|| panic!("{board}: the plan {plan:?} pays {casting}"));
+            let untapped: Vec<ManaSource> = sources.iter()
+                .filter(|s| !plan.iter().any(|(id, _)| *id == s.object_id))
+                .cloned()
+                .collect();
+            assert!(compute_autotap(&in_hand, &left, &untapped, &[]).is_some(),
+                "{board}: after {plan:?} pays {casting}, {in_hand} is no longer castable \
+                 (pool left {left:?})");
         }
     }
 

@@ -149,9 +149,11 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
                         None => continue,
                     }
                 }
-            } else if mana::can_pay(mana_pool, &ab.cost) {
-                Vec::new()
             } else {
+                // No shortcut for a cost the pool already covers: the planner
+                // returns no taps itself then, unless spending the pool would
+                // strand a spell an untapped source could have kept castable
+                // (issue #678).
                 match mana::compute_autotap(&ab.cost, mana_pool, &ability_sources, &hand_costs) {
                     Some(plan) => plan,
                     None => continue,

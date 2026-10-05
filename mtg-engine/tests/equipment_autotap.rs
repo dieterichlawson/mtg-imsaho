@@ -514,3 +514,62 @@ fn an_ability_tap_plan_keeps_a_colour_a_spell_in_hand_needs() {
     assert!(can_cast(&after, &reg, geistflame),
         "Geistflame is still castable after the pump");
 }
+
+/// Cast `spell` through the action the menu offers for it.
+fn cast_offered(state: &GameState, reg: &CardRegistry, spell: ObjectId) -> GameState {
+    let cast = engine::legal_actions(state, reg).actions.into_iter()
+        .find(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == spell))
+        .expect("the spell is offered");
+    engine::submit_action(state, &cast, reg)
+}
+
+/// A spell's plan, and the payment that executes it, keep the other spell
+/// in hand castable when some way of paying would (issues #674, #678, #679).
+/// Each board pays the first spell and leaves exactly what the second needs;
+/// the engine's plan or its payment spent that instead:
+/// - Forest, Plains, Shimmering Grotto: `{1}{G}` tapped the Plains, not the
+///   Grotto's free `{C}`, as if the unfunded filter still made White;
+/// - Plains, Avacyn's Pilgrim, Clifftop Retreat, Forest: Chapel Geist's
+///   second `{W}` came from the only red source, keeping the Pilgrim free;
+/// - `{R}{G}{G}` floating: Grizzly Bears' `{1}` was paid with the `{R}`.
+#[test]
+fn casting_one_spell_leaves_the_other_castable_when_the_mana_allows() {
+    let reg = registry();
+
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    untapped_land(&mut state, &reg, "Forest", P0);
+    untapped_land(&mut state, &reg, "Plains", P0);
+    named_permanent(&mut state, &reg, "Shimmering Grotto", P0);
+    let bears = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
+    let traveler = spell_in_hand(&mut state, &reg, "Doomed Traveler", P0);
+    let mut after = cast_offered(&state, &reg, bears);
+    assert!(after.stack.iter().any(|e| e.as_spell() == Some(bears)), "Bears was cast");
+    // Doomed Traveler is cast at sorcery speed, so Bears resolves first.
+    mtg_engine::stack::resolve_top_of_stack(&mut after, &reg);
+    assert!(can_cast(&after, &reg, traveler),
+        "Forest + Grotto's {{C}} pay Bears and the Plains is left for Doomed Traveler (#674)");
+
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    untapped_land(&mut state, &reg, "Plains", P0);
+    named_permanent(&mut state, &reg, "Avacyn's Pilgrim", P0);
+    named_permanent(&mut state, &reg, "Clifftop Retreat", P0);
+    untapped_land(&mut state, &reg, "Forest", P0);
+    let geist = spell_in_hand(&mut state, &reg, "Chapel Geist", P0);
+    let geistflame = spell_in_hand(&mut state, &reg, "Geistflame", P0);
+    let after = cast_offered(&state, &reg, geist);
+    assert!(after.stack.iter().any(|e| e.as_spell() == Some(geist)), "Chapel Geist was cast");
+    assert!(can_cast(&after, &reg, geistflame),
+        "Plains + Pilgrim + Forest pay Chapel Geist and Clifftop is left for Geistflame (#679)");
+
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let pool = &mut state.get_player_mut(P0).mana_pool;
+    pool.add(ManaType::Red, 1);
+    pool.add(ManaType::Green, 2);
+    let bears = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
+    let geistflame = spell_in_hand(&mut state, &reg, "Geistflame", P0);
+    let after = cast_offered(&state, &reg, bears);
+    assert!(after.stack.iter().any(|e| e.as_spell() == Some(bears)), "Bears was cast");
+    assert_eq!(after.get_player(P0).mana_pool.get(ManaType::Red), 1,
+        "Bears' {{1}} is paid with the spare {{G}}, not the {{R}} Geistflame needs (#678)");
+    assert!(can_cast(&after, &reg, geistflame));
+}
