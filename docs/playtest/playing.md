@@ -1204,3 +1204,15 @@ illegal or dubious resolutions do.
   follows the win or loss line. Civilized Scholar's discard prompt is only hidden
   because `legal_actions` is empty after game over — check the LLM and GUI
   seats are not handed it anyway
+- L56 [proposed 2026-10-05, from L53 and #674/#678/#679] the stranding sweep.
+  A missing cast is now rare; the live defect is a plan that pays spell A and
+  leaves spell B unpayable when some other tap pays both. For each board, write
+  down the PAIR of casts a person would make by hand, take the planner's row for
+  one, and check the other is still on the menu. Do it from untapped sources,
+  from mana floated by hand (which goes through `auto_pay`'s fixed colour
+  order, #678), and for ability plans, which pay out of the same pool. A scratch
+  crate that path-depends on `mtg-engine` can brute-force `compute_autotap`
+  against every hand-tap in seconds — use it to find boards, then confirm each
+  in a real game. After each fix, re-read `GAME_RULES` in `llm.rs`, which
+  promises the LLM seat "redundant sources" and "which colors your other hand
+  spells need"
