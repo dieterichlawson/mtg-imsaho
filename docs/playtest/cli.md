@@ -1208,3 +1208,14 @@ whether it told the truth.
   stack entry named for the grantor but carrying the holder's id (#632),
   `wrap_row` breaking inside a cost (#633), and row ids the battlefield pane
   never prints (#634)
+- V53 [proposed 2026-10-05, from #680 and #681, found on a game night (L54)]
+  the widest board at every width. Stage one board by editing a save: eight or
+  more distinct land names on one side, an equipped creature carrying an Aura
+  and counters, and every permanent with a three-part cost (Moorland Haunt,
+  Grimoire of the Dead, Skirsdag Cultist). Resume it at widths 80 to 200 in
+  steps of 10. At every width, check that each permanent is either printed or
+  counted in a "+N more" (#680: at 160 columns the marker didn't fit and the
+  land vanished), that no menu row breaks inside a cost (#681), and that no
+  line crosses a pane border. Staging takes about 15 lines of Python over
+  `state.objects[*].zone` and `players[*].library_order`; give a planeswalker
+  its loyalty in `counters`, or the SBA check kills it on resume
