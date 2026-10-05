@@ -207,6 +207,37 @@ impl LegalActions {
 
 
 
+
+/// The mana cost of every spell in `player`'s hand, as it would be cast now
+/// (cost changes applied). What the auto-tapper protects when it plans a
+/// payment, and what paying from the pool spends around when it executes
+/// one — the two have to agree, or a plan that keeps a spell castable is
+/// paid in a way that does not (issue #678).
+pub(crate) fn hand_costs(state: &GameState, registry: &CardRegistry, player: PlayerId)
+    -> Vec<(ObjectId, crate::types::ManaCost)>
+{
+    state.objects_in_zone(Zone::Hand, player).iter()
+        .filter_map(|obj| {
+            let data = registry.get(obj.card_id)?.card_data();
+            data.cost.as_ref()
+                .map(|c| (obj.id, effective_spell_cost(state, registry, obj.card_id, c, player)))
+        })
+        .collect()
+}
+
+/// What paying from `player`'s pool should spend last: the pips the rest of
+/// the hand needs, leaving out `casting` (the spell being paid for, which is
+/// no longer "the rest of the hand").
+pub(crate) fn hand_reserve(state: &GameState, registry: &CardRegistry, player: PlayerId,
+    casting: Option<ObjectId>) -> crate::types::ManaCost
+{
+    let costs: Vec<crate::types::ManaCost> = hand_costs(state, registry, player).into_iter()
+        .filter(|(id, _)| Some(*id) != casting)
+        .map(|(_, c)| c)
+        .collect();
+    crate::mana::hand_reserve(&costs)
+}
+
 /// Compute all legal actions for the player who currently needs to act.
 ///
 /// # Panics
@@ -258,13 +289,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             && state.stack.is_empty()
             && state.active_player == player,
         mana_sources: gather_mana_sources(state, player, registry, prevent_artifact_abilities),
-        hand_costs: state.objects_in_zone(Zone::Hand, player).iter()
-            .filter_map(|obj| {
-                let data = registry.get(obj.card_id)?.card_data();
-                data.cost.as_ref()
-                    .map(|c| (obj.id, effective_spell_cost(state, registry, obj.card_id, c, player)))
-            })
-            .collect(),
+        hand_costs: hand_costs(state, registry, player),
         // Nevermore stores its chosen name as an instance effect, but reading
         // only instance effects meant a card that declared the ban on its face
         // would have been ignored.

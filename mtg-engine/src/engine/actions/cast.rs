@@ -351,15 +351,14 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
                 &mut *state, source_id, ability_index, Some(&pay), registry);
         }
 
-        if has_x {
-            // max_x == 0 case: pay only the non-X portion.
-            let non_x_cost = cost.without_x();
-            mana::auto_pay(&mut state.get_player_mut(player).mana_pool, &non_x_cost)
-                .expect("legal_actions should have verified mana availability");
-        } else {
-            mana::auto_pay(&mut state.get_player_mut(player).mana_pool, &cost)
-                .expect("legal_actions should have verified mana availability");
-        }
+        // The generic part is paid with what the rest of the hand needs
+        // least, as the plan was chosen assuming (CR 601.2h leaves the
+        // choice to the player). The fixed "C, W, U, B, R, G" order paid
+        // Grizzly Bears' {1} with the floating {R} and left {G} spare,
+        // taking Geistflame off the menu (issue #678).
+        let reserve = hand_reserve(state, registry, player, Some(object_id));
+        mana::auto_pay_reserving(&mut state.get_player_mut(player).mana_pool, &pay, &reserve)
+            .expect("legal_actions should have verified mana availability");
 
         // CR 601.2b: additional costs are paid before the spell goes on the
         // stack. One dispatch on the kind, shared with the exile-choice handler.

@@ -173,6 +173,19 @@ fn free_abilities_first(plan: &mut [(ObjectId, usize)], sources: &[ManaSource]) 
     }
 }
 
+/// The pips of `hand_costs` that only one kind of mana pays — coloured and
+/// `{C}` — as one cost: what a payment out of the pool should spend last, so
+/// the rest of the hand keeps the mana it needs. Generic plays no part:
+/// anything pays it.
+#[must_use]
+pub fn hand_reserve(hand_costs: &[ManaCost]) -> ManaCost {
+    ManaCost::new(hand_costs.iter()
+        .flat_map(|c| c.symbols.iter())
+        .filter(|s| matches!(s, ManaSymbol::Colored(_) | ManaSymbol::Colorless(_)))
+        .cloned()
+        .collect())
+}
+
 /// Compute the optimal set of mana sources to tap in order to pay a cost.
 ///
 /// Returns `Some(tap_plan)` with (`object_id`, `ability_index`) pairs, or `None` if
