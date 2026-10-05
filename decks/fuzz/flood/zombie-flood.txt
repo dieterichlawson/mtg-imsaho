@@ -5,6 +5,12 @@
 # 500-2,000 permanents (#565, #640, #641, #642) never showed up in it.
 # scripts/fuzz.sh plays this deck as a mirror, a few seeds per night, under
 # the per-game timeout: a game that cannot finish inside it is the finding.
+#
+# Measured 2026-10-05 over twelve random-vs-random seeds: the widest board
+# was 18-90 permanents (the coverage decks reach 25-31), because random
+# seats race with the tokens rather than let them compound. That is wider,
+# not wide; the 500-2,000-permanent boards still need a staged save
+# (cli.md, V50). The reach report prints each night's widest board.
 4 Endless Ranks of the Dead
 4 Parallel Lives
 4 Moan of the Unhallowed

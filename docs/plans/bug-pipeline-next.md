@@ -90,8 +90,10 @@ open tickets are recorded on the tickets themselves.
 - Whether the nightly fuzz files reach gaps and the random seat gets
   fixed to close them, or whether the gaps are deck-set gaps.
 - Whether the doubles and flood campaigns find anything in their first
-  week. If the flood mirror never passes a few hundred permanents under
-  random play, the deck needs a different engine or a staged save.
+  week. Under random play the flood mirror reached 18-90 permanents on
+  twelve seeds against the coverage decks' 25-31: wider, not wide. The
+  reach report prints the widest board each night; if it never passes a
+  few hundred, the campaign needs a staged save rather than a deck.
 - Whether R1 keeps finding escaped fixes. If it goes quiet for two
   weeks, the fixer's propagation step is doing its job and R1 can drop to
   weekly.
