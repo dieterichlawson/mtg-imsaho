@@ -3787,9 +3787,15 @@ impl CliPlayer {
     /// Breaking there left the source and half its cost on one line and the
     /// rest of the cost and the whole effect on the next, with most of the
     /// first line empty (issue #633).
+    ///
+    /// The scan runs past further commas: a cost can have three parts —
+    /// `{W}{U}, {T}, Exile a creature from graveyard: …` — and its first
+    /// comma is followed by another before the colon (issue #681). A list
+    /// item is closed by a parenthesis (`tap Mountain (your), …`) or by the
+    /// end of the row, never by a colon, so a list still breaks.
     fn comma_is_inside_a_cost(after: &str) -> bool {
         after.chars()
-            .find(|c| matches!(c, ':' | ',' | '(' | ')'))
+            .find(|c| matches!(c, ':' | '(' | ')'))
             .is_some_and(|c| c == ':')
     }
 
@@ -8333,6 +8339,27 @@ control: Create a 5/5 black Demon";
         assert!(!lines[0].ends_with("{T},"), "{lines:?}");
         assert_eq!(CliPlayer::wrap_row("Kessig Wolf Run: {X}{R}{G}, {T}: pump (tap Mountain (your), Forest (your))", 66),
             vec!["Kessig Wolf Run: {X}{R}{G}, {T}: pump (tap Mountain (your),", "Forest (your))"]);
+    }
+
+    /// A three-part cost has a second comma before its colon; the first is
+    /// still inside the cost and must not break the row (issue #681).
+    #[test]
+    fn a_row_does_not_break_inside_a_three_part_cost() {
+        for (row, width) in [
+            ("3: Moorland Haunt (your): {W}{U}, {T}, Exile a creature from graveyard: Create 1/1 \
+white Spirit with flying (tap Plains (your), Island (your))", 92),
+            ("3: Grimoire of the Dead (your): {1}, {T}, Discard a card: Put a study counter on \
+Grimoire (tap Swamp (your))", 92),
+            ("2: Skirsdag Cultist 2/2 (your): {R}, {T}, Sacrifice a creature: Deal 2 damage to \
+any target (tap Mountain (your))", 92),
+        ] {
+            let lines = CliPlayer::wrap_row(row, width);
+            assert!(lines[0].contains("{T},") && lines[0].len() > 60, "{lines:?}");
+            assert!(lines.iter().all(|l| str_cols(l) <= width), "{lines:?}");
+        }
+        // A list after the cost still breaks at its commas.
+        assert_eq!(CliPlayer::wrap_row("X: {1}, {T}, Pay 1 life: pump (tap Mountain (your), Forest (your))", 52),
+            vec!["X: {1}, {T}, Pay 1 life: pump (tap Mountain (your),", "Forest (your))"]);
     }
 
     /// Marking cards is toggling, and the idle key confirms rather than
