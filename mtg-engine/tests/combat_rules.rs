@@ -604,6 +604,11 @@ fn first_strike_creates_second_combat_damage_step_with_window() {
     assert!(state.game_log.iter().any(|e|
         e.message.contains("Regular combat damage step")),
         "the regular half is named in the log");
+    // A line logged before the step's damage says what the step is, not
+    // what will follow it: a first-strike kill can end the game, and then
+    // no regular step happens (issue #677).
+    assert!(!state.game_log.iter().any(|e| e.message.contains("follows")),
+        "no log line forecasts a step that may never happen");
 }
 
 /// Without first strikers, the combat damage step happens exactly once.

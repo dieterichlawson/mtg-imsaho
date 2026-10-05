@@ -978,9 +978,12 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
                     // first/double strikers deal damage now. advance_step
                     // repeats Step::CombatDamage after this step's SBA /
                     // trigger / priority round. Say which step this is —
-                    // the two logged identically (issue #140).
+                    // the two logged identically (issue #140). Name the
+                    // step, don't forecast the next one: when this step's
+                    // damage ends the game no regular step happens, and the
+                    // log promised one right above the result (issue #677).
                     state.log(LogLevel::Debug,
-                        "First-strike combat damage step (CR 510.4); regular damage follows".into());
+                        "First-strike combat damage step (first of two, CR 510.4)".into());
                     combat::deal_first_strike_damage_pass(state, registry);
                     state.combat_damage_step_pending = true;
                 } else {
