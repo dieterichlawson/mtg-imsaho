@@ -2229,30 +2229,35 @@ impl CliPlayer {
                 // a real nonbasic mana base was on the battlefield (issue
                 // #244). The entries are coloured individually, so the budget
                 // is spent entry by entry rather than clipping one string.
-                let mut spent = "  Lands: ".chars().count();
+                let suffix_of = |untapped: usize, tapped: usize| if tapped > 0 && untapped > 0 {
+                    format!(" ({tapped} tapped)")
+                } else if tapped > 0 {
+                    " (tapped)".to_string()
+                } else {
+                    String::new()
+                };
+                let entry_lens: Vec<usize> = summary.iter().enumerate()
+                    .map(|(i, (name, untapped, tapped))| {
+                        let sep = if i > 0 { 2 } else { 0 };
+                        sep + format!("{}x ", untapped + tapped).chars().count()
+                            + name.chars().count()
+                            + suffix_of(*untapped, *tapped).chars().count()
+                    })
+                    .collect();
+                let shown = Self::lands_that_fit("  Lands: ".chars().count(), &entry_lens, max_w);
                 for (i, (name, untapped, tapped)) in summary.iter().enumerate() {
                     let total = untapped + tapped;
-                    let suffix = if *tapped > 0 && *untapped > 0 {
-                        format!(" ({tapped} tapped)")
-                    } else if *tapped > 0 {
-                        " (tapped)".to_string()
-                    } else {
-                        String::new()
-                    };
-                    let sep = if i > 0 { ", " } else { "" };
-                    let entry_len = sep.chars().count()
-                        + format!("{total}x ").chars().count()
-                        + name.chars().count()
-                        + suffix.chars().count();
-                    if spent + entry_len > max_w {
-                        let left = summary.len() - i;
-                        let more = format!("{sep}+{left} more");
-                        if spent + more.chars().count() <= max_w {
+                    let suffix = suffix_of(*untapped, *tapped);
+                    if i == shown {
+                        let sep = if i > 0 { ", " } else { "" };
+                        let more = format!("{sep}+{} more", summary.len() - i);
+                        // Past the first entry the marker is known to fit;
+                        // a pane too narrow for even "+N more" gets none.
+                        if i > 0 || "  Lands: ".chars().count() + more.chars().count() <= max_w {
                             let _ = execute!(out, SetForegroundColor(color), Print(more), ResetColor);
                         }
                         break;
                     }
-                    spent += entry_len;
                     if i > 0 {
                         let _ = execute!(out, SetForegroundColor(color), Print(", "), ResetColor);
                     }
@@ -3716,6 +3721,30 @@ impl CliPlayer {
             }
         }
         out
+    }
+
+    /// How many lands-summary entries to print on a line of `max_w`
+    /// columns that starts `prefix` columns in, given each entry's width
+    /// (its leading ", " included). When not all fit, enough are dropped
+    /// that ", +N more" fits after the last one shown: printing nothing
+    /// when the marker did not fit made the line read as complete with a
+    /// land missing from it (issue #680).
+    fn lands_that_fit(prefix: usize, entry_lens: &[usize], max_w: usize) -> usize {
+        let total: usize = entry_lens.iter().sum();
+        if prefix + total <= max_w {
+            return entry_lens.len();
+        }
+        let mut spent: Vec<usize> = vec![prefix];
+        for len in entry_lens {
+            spent.push(spent.last().unwrap() + len);
+        }
+        (0..entry_lens.len()).rev()
+            .find(|&k| {
+                let sep = if k > 0 { 2 } else { 0 };
+                let more = sep + format!("+{} more", entry_lens.len() - k).chars().count();
+                spent[k] + more <= max_w
+            })
+            .unwrap_or(0)
     }
 
     /// One menu row broken into lines of at most `width` display columns,
@@ -8339,6 +8368,39 @@ control: Create a 5/5 black Demon";
         assert!(!lines[0].ends_with("{T},"), "{lines:?}");
         assert_eq!(CliPlayer::wrap_row("Kessig Wolf Run: {X}{R}{G}, {T}: pump (tap Mountain (your), Forest (your))", 66),
             vec!["Kessig Wolf Run: {X}{R}{G}, {T}: pump (tap Mountain (your),", "Forest (your))"]);
+    }
+
+    /// The lands line either shows every entry or ends with a "+N more"
+    /// that fits — never a list that stops short with nothing to say so
+    /// (issue #680). The board is the issue's: at the width where all but
+    /// Moorland Haunt fit and ", +1 more" did not, the Haunt vanished.
+    #[test]
+    fn the_lands_line_always_says_what_it_left_out() {
+        let names = ["2x Forest", "2x Mountain", "1x Plains", "1x Island",
+            "1x Kessig Wolf Run", "1x Gavony Township", "1x Moorland Haunt"];
+        let lens: Vec<usize> = names.iter().enumerate()
+            .map(|(i, n)| n.chars().count() + if i > 0 { 2 } else { 0 }).collect();
+        let prefix = "  Lands: ".chars().count();
+        let full = prefix + lens.iter().sum::<usize>();
+        for max_w in 20..=full + 5 {
+            let shown = CliPlayer::lands_that_fit(prefix, &lens, max_w);
+            let used = prefix + lens[..shown].iter().sum::<usize>();
+            if shown == lens.len() {
+                assert!(full <= max_w, "width {max_w}");
+                continue;
+            }
+            let sep = if shown > 0 { 2 } else { 0 };
+            let more = sep + format!("+{} more", lens.len() - shown).chars().count();
+            assert!(used + more <= max_w, "width {max_w}: {shown} shown, marker does not fit");
+            // And no more was dropped than the marker needed.
+            let next = used + lens[shown];
+            let next_more = 2 + format!("+{} more", lens.len() - shown - 1).chars().count();
+            assert!(shown + 1 == lens.len() || next + next_more > max_w,
+                "width {max_w}: one more entry and its marker would have fit");
+        }
+        // The issue's case: all but the Haunt fit, and ", +1 more" after them does not.
+        let w = prefix + lens[..6].iter().sum::<usize>() + 4;
+        assert_eq!(CliPlayer::lands_that_fit(prefix, &lens, w), 5);
     }
 
     /// A three-part cost has a second comma before its colon; the first is
