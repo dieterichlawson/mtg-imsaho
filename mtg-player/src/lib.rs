@@ -9,6 +9,11 @@ pub mod watchdog;
 use mtg_engine::view::GameView;
 use mtg_engine::actions::{Action, CastableSpell, CombatPrompt};
 use mtg_engine::engine::LegalActions;
+use mtg_engine::ids::{CardId, ObjectId};
+use mtg_engine::types::ManaCost;
+
+#[cfg(test)]
+mod surface_parity;
 
 /// The answer to a combat prompt that has only one, or `None` when the
 /// player has a choice to make.
@@ -80,6 +85,48 @@ pub fn forced_combat_answer(prompt: &CombatPrompt) -> Option<Action> {
             Some(Action::DeclareBlockers { assignments: vec![] }),
         _ => None,
     }
+}
+
+/// The key the engine files a cast offer under: the object, and the cost
+/// it pays spelled the way `invariants/legal.rs` (`distinct_offers`,
+/// `collapsed_views`) spells it.
+pub type CastOfferKey = (ObjectId, String);
+
+/// The key the engine files an activation offer under: the permanent,
+/// which of its abilities, and — for an ability an Aura granted — whose
+/// ability it is.
+pub type AbilityOfferKey = (ObjectId, usize, Option<CardId>);
+
+/// The offer key of a way to cast, from either half of `LegalActions`: a
+/// `CastSpell` action's fields, or a `CastableSpell`'s.
+///
+/// Two surfaces collapse `legal.actions` into one row per way to cast, and
+/// each carried its own copy of this key. The copies drifted from the
+/// engine's at different times — the LLM seat's until #589, the CLI's
+/// until #610, each keyed on `alternative_cost.is_some()`, one bit for the
+/// two flashback costs CR 702.33 lets one card carry — and each drift
+/// dropped a legal option from one surface while the other still offered
+/// it. Nothing failed: both of the engine's lists agree with each other, so
+/// `--check-invariants` cannot see a row a surface never rendered (the
+/// 2026-09-29 playtest's method notes). One copy, so the next surface gets
+/// it by asking, and `surface_parity.rs` holds the surfaces to it.
+#[must_use]
+pub fn cast_offer_key(object_id: ObjectId, alternative_cost: Option<&ManaCost>) -> CastOfferKey {
+    (object_id, format!("{alternative_cost:?}"))
+}
+
+/// The offer key of an activation, from either half of `LegalActions`: an
+/// `ActivateAbility` action's fields, or an `ActivatableAbility`'s.
+///
+/// The LLM seat keyed on the pair without `source_card_id` and so dropped
+/// every Aura- or Equipment-granted ability whose index collided with one
+/// the host already had natively (#589). See `cast_offer_key` for why one
+/// copy.
+#[must_use]
+pub fn ability_offer_key(
+    object_id: ObjectId, ability_index: usize, source_card_id: Option<CardId>,
+) -> AbilityOfferKey {
+    (object_id, ability_index, source_card_id)
 }
 
 /// The Player trait: given a view of the game and legal actions, pick one.

@@ -954,7 +954,7 @@ impl CombatRowLayout {
 /// What a menu row stands for: an action to submit, or a spell to walk
 /// through the casting flow.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum DisplayEntry {
+pub(crate) enum DisplayEntry {
 
 
     /// Index into `LegalActions::actions`.
@@ -977,7 +977,7 @@ enum DisplayEntry {
 /// its line now wraps onto the next, under a hanging indent, and nothing on
 /// it is ever cut.
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
-struct MenuLabel {
+pub(crate) struct MenuLabel {
     text: String,
     /// The objects that give this row its identity, in a fixed order:
     /// source, then each target, then the sacrifice. Two rows with the same
@@ -999,7 +999,7 @@ impl MenuLabel {
         MenuLabel { text: s.into(), ..MenuLabel::default() }
     }
 
-    fn full(&self) -> String {
+    pub(crate) fn full(&self) -> String {
         self.text.clone()
     }
 }
@@ -3674,7 +3674,7 @@ impl CliPlayer {
     /// that name different objects get those objects' ids, the #136/#100
     /// convention — two Wooden Stakes, or one Stake offered against two
     /// identical tokens, read the same and are not the same (issue #257).
-    fn menu_row_texts(labels: &[MenuLabel]) -> Vec<String> {
+    pub(crate) fn menu_row_texts(labels: &[MenuLabel]) -> Vec<String> {
         let plain: Vec<String> = labels.iter().map(MenuLabel::full).collect();
         let mut out = plain.clone();
         let mut handled = vec![false; out.len()];
@@ -7497,8 +7497,9 @@ impl CliPlayer {
     /// Pure — no terminal, no input — so "every row names a different action"
     /// is a testable contract. It was inline in `choose_action` above a
     /// blocking read, which is how a menu that renders two different equips
-    /// as one line kept shipping (issues #257, #258).
-    fn build_action_menu(view: &GameView, legal: &mtg_engine::engine::LegalActions)
+    /// as one line kept shipping (issues #257, #258). Crate-visible so
+    /// `surface_parity.rs` can hold its rows against the LLM seat's.
+    pub(crate) fn build_action_menu(view: &GameView, legal: &mtg_engine::engine::LegalActions)
         -> (Vec<DisplayEntry>, Vec<MenuLabel>)
     {
         let legal_actions = &legal.actions;
@@ -7511,22 +7512,21 @@ impl CliPlayer {
         // TWO menu rows — collapsing on the object alone dropped the
         // CR 601.2b choice (issue #128).
         //
-        // Keyed by what the cost *is*, not by whether there is one, and
-        // spelled the way the engine spells it (`invariants/legal.rs`,
-        // `distinct_offers` and `collapsed_views`) and the LLM seat does
-        // (`llm.rs`, fixed in #589). CR 702.33 lets one graveyard card carry
-        // several flashback instances at once — a granted one from Past in
-        // Flames alongside its printed one — and the engine offers each as
-        // its own way to cast. The bool could not tell them apart, so the
-        // second flashback cost was dropped from the menu and could not be
-        // chosen at all, while the LLM seat was offered both (issue #610).
-        let mut seen_spell_objects: Vec<(mtg_engine::ids::ObjectId, String)> = Vec::new();
+        // Keyed by what the cost *is*, not by whether there is one. CR
+        // 702.33 lets one graveyard card carry several flashback instances
+        // at once — a granted one from Past in Flames alongside its printed
+        // one — and the engine offers each as its own way to cast. The bool
+        // could not tell them apart, so the second flashback cost was
+        // dropped from the menu and could not be chosen at all, while the
+        // LLM seat was offered both (issue #610). The key is the engine's
+        // own, shared with the LLM seat (`crate::cast_offer_key`).
+        let mut seen_spell_objects: Vec<crate::CastOfferKey> = Vec::new();
         // Keyed the way an ability is identified: the permanent, which of its
         // abilities, and — for an ability an Aura granted — whose ability it
-        // is. Two abilities on one permanent stay two rows (#61), and two
-        // copies of one equipment stay two rows (#257).
-        let mut seen_abilities: Vec<(mtg_engine::ids::ObjectId, usize, Option<mtg_engine::ids::CardId>)>
-            = Vec::new();
+        // is (`crate::ability_offer_key`). Two abilities on one permanent
+        // stay two rows (#61), and two copies of one equipment stay two rows
+        // (#257).
+        let mut seen_abilities: Vec<crate::AbilityOfferKey> = Vec::new();
 
         // Ordering: non-tap actions, cast spells, tap actions, concede last.
         let mut deferred_taps: Vec<(usize, MenuLabel)> = Vec::new();
@@ -7536,12 +7536,11 @@ impl CliPlayer {
             match action {
                 Action::CastSpell { object_id, alternative_cost, .. } => {
                     // Skip expanded CastSpell entries — use castable_spells instead.
-                    let key = (*object_id, format!("{alternative_cost:?}"));
+                    let key = crate::cast_offer_key(*object_id, alternative_cost.as_ref());
                     if !seen_spell_objects.contains(&key) {
                         // Find the CastableSpell entry for this way to cast.
                         if let Some(cs_idx) = legal.castable_spells.iter()
-                            .position(|cs| cs.object_id == *object_id
-                                && format!("{:?}", cs.alternative_cost) == key.1)
+                            .position(|cs| crate::cast_offer_key(cs.object_id, cs.alternative_cost.as_ref()) == key)
                         {
                             seen_spell_objects.push(key);
                             let cs = &legal.castable_spells[cs_idx];
@@ -7584,10 +7583,10 @@ impl CliPlayer {
                     // `activatable_abilities`: the engine already publishes
                     // that collapsed view with `option_combos` on it, and the
                     // LLM seat has always answered through it.
-                    let key = (*object_id, *ability_index, *source_card_id);
+                    let key = crate::ability_offer_key(*object_id, *ability_index, *source_card_id);
                     if seen_abilities.contains(&key) { continue; }
                     let found = legal.activatable_abilities.iter().position(|ab|
-                        (ab.object_id, ab.ability_index, ab.source_card_id) == key);
+                        crate::ability_offer_key(ab.object_id, ab.ability_index, ab.source_card_id) == key);
                     seen_abilities.push(key);
                     match found {
                         Some(ab_idx) => {
@@ -8071,8 +8070,10 @@ impl CliPlayer {
     }
 }
 
+// Crate-visible for the fixtures `surface_parity.rs` replays against both
+// surfaces.
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use mtg_engine::engine::LegalActions;
     use mtg_engine::ids::PlayerId;
@@ -8831,7 +8832,7 @@ Mark 1 of the 1 cards below to exile.");
 
     /// A `CastableSpell` for one way to cast `name`, paying `alt`, tapping
     /// `taps` copies of object 1.
-    fn flashback_of(id: u64, name: &str, alt: mtg_engine::types::ManaCost, taps: usize)
+    pub(crate) fn flashback_of(id: u64, name: &str, alt: mtg_engine::types::ManaCost, taps: usize)
         -> mtg_engine::actions::CastableSpell
     {
         mtg_engine::actions::CastableSpell {
@@ -9824,7 +9825,7 @@ Mark 1 of the 1 cards below to exile.");
             "a sentence mentioning flashback is not the flashback line");
     }
 
-    fn view(step: Step, turn_number: u32, our_turn: bool) -> GameView {
+    pub(crate) fn view(step: Step, turn_number: u32, our_turn: bool) -> GameView {
         let you = PlayerId(0);
         GameView {
             you,
@@ -9930,7 +9931,7 @@ Mark 1 of the 1 cards below to exile.");
         }
     }
 
-    fn legal(actions: Vec<Action>) -> LegalActions {
+    pub(crate) fn legal(actions: Vec<Action>) -> LegalActions {
         LegalActions {
             actions,
             combat_prompt: None,

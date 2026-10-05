@@ -1684,9 +1684,23 @@ enum Provider {
     ClaudeCode,
 }
 
+/// What a row of the action list stands for: an action to submit, a spell
+/// to cast through the target prompts, or an ability to activate through
+/// them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum DisplayEntry {
+    /// Index into `LegalActions::actions`.
+    Direct(usize),
+    /// Index into `LegalActions::castable_spells`.
+    Cast(usize),
+    /// Index into `LegalActions::activatable_abilities`.
+    Ability(usize),
+}
+
 /// One line of the action list an LLM seat is offered. Every line takes
 /// one display index per option it holds, in order.
-enum ActionRow {
+#[derive(Debug)]
+pub(crate) enum ActionRow {
     /// A single option, `i: label`.
     One(String),
     /// Copies of one permanent that offer the same ability with the same
@@ -1698,7 +1712,7 @@ enum ActionRow {
 
 impl ActionRow {
     /// The row's text, whichever shape it is.
-    fn label(&self) -> &str {
+    pub(crate) fn label(&self) -> &str {
         match self {
             ActionRow::One(label) | ActionRow::Copies { label, .. } => label,
         }
@@ -4004,28 +4018,6 @@ impl Player for LlmPlayer {
     }
 
     fn choose_action(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
-        #[derive(Clone, Copy)]
-        enum DisplayEntry {
-            Direct(usize),   // index into legal_actions
-            Cast(usize),     // index into legal.castable_spells
-            Ability(usize),  // index into legal.activatable_abilities
-        }
-        /// What a display entry is shown as, before copies are grouped.
-        enum Seed {
-            One(String),
-            /// An activated ability of a permanent, keyed by everything but
-            /// which copy: the granting card and the label without the
-            /// `(#id)`, so copies of one card offering the same ability the
-            /// same way share a row.
-            ///
-            /// The key carries `source_card_id` and the row does not. An
-            /// Aura can grant an ability that reads and costs exactly like
-            /// the host's own, and grouping those together would put one
-            /// copy in the range twice and claim the unenchanted copies
-            /// offer it too (issue #589).
-            AbilityCopy { key: (Option<mtg_engine::ids::CardId>, String), label: String, id: ObjectId },
-        }
-
         let legal_actions = &legal.actions;
         // The engine labels the other seat `p1`, and the context line is the
         // one line of the prompt that used to pass that through: every log
@@ -4141,6 +4133,73 @@ impl Player for LlmPlayer {
             return Action::PassPriority;
         }
 
+        let (display_entries, rows) = Self::build_action_rows(view, legal);
+
+        let action_prompt = Self::format_action_prompt(context.as_deref(), &rows, view.you);
+
+        if display_entries.len() != legal_actions.len() {
+            self.log_debug("COLLAPSED", &format!("{} actions → {} options", legal_actions.len(), display_entries.len()));
+        }
+        let idx = self.pick_action_index(view, &action_prompt, display_entries.len());
+
+        if idx >= display_entries.len() {
+            return Action::PassPriority;
+        }
+
+        // Confirm a concede here, where the index has been resolved back to
+        // the action it stands for. A priority offer always carries exactly
+        // one Concede and exactly one PassPriority (the engine's legal
+        // -actions invariant), so cancelling means passing.
+        if let DisplayEntry::Direct(action_idx) = &display_entries[idx] {
+            if matches!(legal_actions[*action_idx], Action::Concede) && !self.confirm_concede() {
+                return Action::PassPriority;
+            }
+        }
+
+        match &display_entries[idx] {
+            DisplayEntry::Direct(action_idx) => {
+                legal_actions[*action_idx].clone()
+            }
+            DisplayEntry::Cast(cs_idx) => {
+                let cs = &legal.castable_spells[*cs_idx];
+                self.choose_cast_targets(view, cs, legal_actions)
+            }
+            DisplayEntry::Ability(ab_idx) => {
+                let ab = &legal.activatable_abilities[*ab_idx];
+                self.choose_ability_targets(view, ab, legal_actions)
+            }
+        }
+    }
+}
+
+impl LlmPlayer {
+    /// The rows of a priority offer, and what each row stands for.
+    ///
+    /// Pure — no backend, no log — so the rows can be held against the
+    /// CLI's for the same `LegalActions` (`surface_parity.rs`). They were
+    /// built inline in `choose_action` above the call to the model, which
+    /// is where a key that dropped a legal row (#589, #610) could ship
+    /// without any test seeing the menu it produced.
+    pub(crate) fn build_action_rows(view: &GameView, legal: &mtg_engine::engine::LegalActions)
+        -> (Vec<DisplayEntry>, Vec<ActionRow>)
+    {
+        /// What a display entry is shown as, before copies are grouped.
+        enum Seed {
+            One(String),
+            /// An activated ability of a permanent, keyed by everything but
+            /// which copy: the granting card and the label without the
+            /// `(#id)`, so copies of one card offering the same ability the
+            /// same way share a row.
+            ///
+            /// The key carries `source_card_id` and the row does not. An
+            /// Aura can grant an ability that reads and costs exactly like
+            /// the host's own, and grouping those together would put one
+            /// copy in the range twice and claim the unenchanted copies
+            /// offer it too (issue #589).
+            AbilityCopy { key: (Option<mtg_engine::ids::CardId>, String), label: String, id: ObjectId },
+        }
+
+        let legal_actions = &legal.actions;
         // Build collapsed display: non-CastSpell/ActivateAbility actions + one per
         // castable spell + one per activatable ability.
         let mut seeds: Vec<(DisplayEntry, Seed)> = Vec::new();
@@ -4149,26 +4208,27 @@ impl Player for LlmPlayer {
         // by whether there is one: two different alternative costs on one
         // object are two ways to cast it, and the engine's own key
         // (`invariants/legal.rs`, `collapsed_views`) says so. Same shape as
-        // the activation key below, found in the same reading (#589).
-        let mut seen_spell_objects: Vec<(mtg_engine::ids::ObjectId, String)> = Vec::new();
-        // The triple the engine keys an activation offer on. Keying on the
-        // pair instead dropped every Aura- or Equipment-granted ability
-        // whose index collided with one the host already had natively —
-        // always the granted one, since natives are collected first — and
-        // did it silently: the two halves of `LegalActions` agree, so no
-        // invariant could see it (issue #589).
-        let mut seen_ability_keys: Vec<(mtg_engine::ids::ObjectId, Option<mtg_engine::ids::CardId>, usize)> =
-            Vec::new();
+        // the activation key below, found in the same reading (#589). The
+        // key is the engine's own, shared with the CLI
+        // (`crate::cast_offer_key`).
+        let mut seen_spell_objects: Vec<crate::CastOfferKey> = Vec::new();
+        // The triple the engine keys an activation offer on
+        // (`crate::ability_offer_key`). Keying on the pair instead dropped
+        // every Aura- or Equipment-granted ability whose index collided
+        // with one the host already had natively — always the granted one,
+        // since natives are collected first — and did it silently: the two
+        // halves of `LegalActions` agree, so no invariant could see it
+        // (issue #589).
+        let mut seen_ability_keys: Vec<crate::AbilityOfferKey> = Vec::new();
 
         let mut seen_cast_labels: Vec<String> = Vec::new();
         for (i, action) in legal_actions.iter().enumerate() {
             match action {
                 Action::CastSpell { object_id, alternative_cost, .. } => {
-                    let key = (*object_id, format!("{alternative_cost:?}"));
+                    let key = crate::cast_offer_key(*object_id, alternative_cost.as_ref());
                     if !seen_spell_objects.contains(&key) {
                         if let Some(cs_idx) = legal.castable_spells.iter()
-                            .position(|cs| cs.object_id == *object_id
-                                && format!("{:?}", cs.alternative_cost) == key.1)
+                            .position(|cs| crate::cast_offer_key(cs.object_id, cs.alternative_cost.as_ref()) == key)
                         {
                             seen_spell_objects.push(key);
                             let cs = &legal.castable_spells[cs_idx];
@@ -4207,12 +4267,10 @@ impl Player for LlmPlayer {
                     }
                 }
                 Action::ActivateAbility { object_id, ability_index, source_card_id, .. } => {
-                    let key = (*object_id, *source_card_id, *ability_index);
+                    let key = crate::ability_offer_key(*object_id, *ability_index, *source_card_id);
                     if !seen_ability_keys.contains(&key) {
                         if let Some(ab_idx) = legal.activatable_abilities.iter()
-                            .position(|ab| ab.object_id == *object_id
-                                && ab.source_card_id == *source_card_id
-                                && ab.ability_index == *ability_index)
+                            .position(|ab| crate::ability_offer_key(ab.object_id, ab.ability_index, ab.source_card_id) == key)
                         {
                             seen_ability_keys.push(key);
                             let ab = &legal.activatable_abilities[ab_idx];
@@ -4296,44 +4354,9 @@ impl Player for LlmPlayer {
             }
         }
 
-        let action_prompt = Self::format_action_prompt(context.as_deref(), &rows, view.you);
-
-        if display_entries.len() != legal_actions.len() {
-            self.log_debug("COLLAPSED", &format!("{} actions → {} options", legal_actions.len(), display_entries.len()));
-        }
-        let idx = self.pick_action_index(view, &action_prompt, display_entries.len());
-
-        if idx >= display_entries.len() {
-            return Action::PassPriority;
-        }
-
-        // Confirm a concede here, where the index has been resolved back to
-        // the action it stands for. A priority offer always carries exactly
-        // one Concede and exactly one PassPriority (the engine's legal
-        // -actions invariant), so cancelling means passing.
-        if let DisplayEntry::Direct(action_idx) = &display_entries[idx] {
-            if matches!(legal_actions[*action_idx], Action::Concede) && !self.confirm_concede() {
-                return Action::PassPriority;
-            }
-        }
-
-        match &display_entries[idx] {
-            DisplayEntry::Direct(action_idx) => {
-                legal_actions[*action_idx].clone()
-            }
-            DisplayEntry::Cast(cs_idx) => {
-                let cs = &legal.castable_spells[*cs_idx];
-                self.choose_cast_targets(view, cs, legal_actions)
-            }
-            DisplayEntry::Ability(ab_idx) => {
-                let ab = &legal.activatable_abilities[*ab_idx];
-                self.choose_ability_targets(view, ab, legal_actions)
-            }
-        }
+        (display_entries, rows)
     }
-}
 
-impl LlmPlayer {
     /// Format a card for the mulligan prompt: `Name {cost}[ P/T]`.
     fn format_hand_card(c: &mtg_engine::view::CardView) -> String {
         let cost = c.cost.as_ref().map(|co| format!(" {co}")).unwrap_or_default();
@@ -5159,8 +5182,10 @@ attacking the planeswalker", both.join(", ")));
     }
 }
 
+// Crate-visible for the fixtures `surface_parity.rs` replays against both
+// surfaces.
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use mtg_engine::cards::CardRegistry;
     use mtg_engine::types::CounterType;
@@ -5669,7 +5694,7 @@ mod tests {
     ///
     /// The engine collects native abilities before attached ones, which is
     /// why it is always the granted ability that a coarser key drops.
-    fn granted_ability_offer(copies: &[u64], enchanted: &[u64], granted: &str)
+    pub(crate) fn granted_ability_offer(copies: &[u64], enchanted: &[u64], granted: &str)
         -> mtg_engine::engine::LegalActions
     {
         use mtg_engine::actions::{ActivatableAbility, ActivatableAbilityOption};
@@ -6620,7 +6645,7 @@ mod tests {
     use mtg_engine::types::{CardType, Step, ManaPool};
     use mtg_engine::view::{GameView, PermanentView};
 
-    fn empty_view() -> GameView {
+    pub(crate) fn empty_view() -> GameView {
         GameView {
             you: PlayerId(0),
             your_hand: vec![],
