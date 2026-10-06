@@ -49,7 +49,9 @@ blockers are clicked, then the attacker they block.
 
 Keys: Enter passes or confirms, Esc or right-click backs out, `f`
 passes to your next precombat main phase (and stops for any prompt, a
-spell on the stack, or that main phase), `l` opens the log, `g`/`G` a
+spell on the stack, a land you can play, or that main phase; it will
+not start with a land drop on offer, and says what it passed up), `l`
+opens the log, `g`/`G` a
 graveyard, `e` exile, `d` your library, `s` stops at every priority
 instead of passing when there is nothing to do.
 

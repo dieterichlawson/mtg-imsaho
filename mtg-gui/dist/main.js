@@ -1,7 +1,7 @@
 // The page: one WebSocket to the seat, one canvas, one state object.
 import { loadManifest, fontsReady, artNames } from "./assets.js";
 import { render, inspecting, inspectorFacts, inspectorPt, wrap, wrapCapped, bandTurnLine, bandLogLines, badgeStrip, permBadges, clampScroll, outcomeHeadline, BAND_W, BADGE_ROOM, W, H, PANEL_X } from "./render.js";
-import { beginDecision, indexView, beginList, inOurWords } from "./prompts.js";
+import { beginDecision, indexView, beginList, inOurWords, offersLandPlay, autoPassDeclines, autoPassNotice } from "./prompts.js";
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const field = document.getElementById("field");
@@ -154,11 +154,19 @@ function autoPassDecides() {
     const ui = state.ui;
     if (!ap || !v || !ui)
         return false;
-    const stop = ui.mode !== "menu" || !ui.canPass || v.stack.length > 0
+    const actions = (state.decision && state.decision.legal.actions) || [];
+    // A land drop is never auto-passed, whatever the phase: once a turn and
+    // free, it is always worth stopping for — the CLI's #39, which the page
+    // never had, so `f` at Main Phase 1 passed through Main Phase 2 with the
+    // land still in hand (#691).
+    const land = offersLandPlay(actions);
+    const stop = ui.mode !== "menu" || !ui.canPass || v.stack.length > 0 || land
         || (v.active_player === v.you && v.step === "PrecombatMain" && v.turn_number > ap.sinceTurn);
     if (stop) {
         state.autoPass = null;
-        state.notice = ui.mode !== "menu" ? "Auto-pass off: you are asked something." : v.stack.length > 0 ? "Auto-pass off: something is on the stack." : "Auto-pass off: your main phase.";
+        const why = ui.mode !== "menu" ? "Auto-pass off: you are asked something." : v.stack.length > 0 ? "Auto-pass off: something is on the stack." : land ? "Auto-pass off: you have a land to play." : "Auto-pass off: your main phase.";
+        const declined = autoPassNotice(ap.declined ?? 0, false);
+        state.notice = declined ? `${why} ${declined}` : why;
         pushSettings();
         return false;
     }
@@ -180,8 +188,18 @@ function toggleAutoPass() {
         state.notice = "Auto-pass passes priority, and this is not a pass.";
         return;
     }
-    state.autoPass = { sinceTurn: v.turn_number };
-    state.notice = null;
+    const actions = (state.decision && state.decision.legal.actions) || [];
+    // Engaging here would pass over the land drop it promises to stop for:
+    // say so instead, as the CLI refuses it (#48, #39, #691).
+    if (offersLandPlay(actions)) {
+        state.notice = "Auto-pass would pass up your land drop — play a land first, or pass.";
+        return;
+    }
+    // And say what this pass turns down: it used to clear the notice, so a
+    // castable spell passed up on the way in was mentioned nowhere (#618, #691).
+    const declined = autoPassDeclines(actions);
+    state.autoPass = { sinceTurn: v.turn_number, declined };
+    state.notice = autoPassNotice(declined, true);
     pushSettings();
     send("PassPriority");
 }

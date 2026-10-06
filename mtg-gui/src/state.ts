@@ -126,7 +126,8 @@ export interface State {
   scale: number;
   stopAtPass?: boolean;
   /** Auto-pass to your next precombat main phase, engaged with `f`. */
-  autoPass?: { sinceTurn: number } | null;
+  /** `declined`: what the prompt it was engaged at offered and it passed up. */
+  autoPass?: { sinceTurn: number; declined?: number } | null;
   draw?: () => void;
 }
 

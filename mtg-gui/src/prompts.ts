@@ -105,6 +105,30 @@ export function targetLabel(state: LiveState, t: Target | null | undefined): str
   return JSON.stringify(t);
 }
 
+/** Whether a priority offer includes playing a land. */
+export function offersLandPlay(actions: Action[]): boolean {
+  return actions.some(a => typeof a === "object" && a !== null && "PlayLand" in a);
+}
+
+/**
+ * How many things passing this priority turns down: spells, non-mana
+ * abilities and land plays. What auto-pass declines when it is engaged
+ * here, and so what it has to say it declined — the CLI's #296/#618.
+ */
+export function autoPassDeclines(actions: Action[]): number {
+  return actions.filter(a => typeof a === "object" && a !== null
+    && ("PlayLand" in a || "CastSpell" in a || "ActivateAbility" in a)).length;
+}
+
+/** The notice for engaging (`stillOn`) or ending auto-pass, as the CLI words it. */
+export function autoPassNotice(declined: number, stillOn: boolean): string | null {
+  const what = (n: number) => `${n} spell${n === 1 ? "" : "s"}/abilit${n === 1 ? "y" : "ies"}/land play${n === 1 ? "" : "s"}`;
+  if (stillOn && declined === 0) return "Auto-pass on — passing to your next Main Phase 1. Press f again to turn it off.";
+  if (stillOn) return `Auto-pass on — it declined ${what(declined)} at that prompt, and passes to your next Main Phase 1. Press f again to turn it off.`;
+  if (declined === 0) return null;
+  return `Auto-pass has stopped. When it was turned on it declined ${what(declined)}.`;
+}
+
 /** Mana cost as text: {1}{R}. */
 export function costText(cost: ManaCost | null | undefined): string {
   if (!cost || !cost.symbols) return "";
