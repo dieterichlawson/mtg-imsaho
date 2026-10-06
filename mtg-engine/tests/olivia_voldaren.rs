@@ -293,3 +293,44 @@ fn olivias_log_reports_the_counter_and_damage_that_actually_happened() {
     assert_eq!(lines.iter().filter(|m| m.contains("gets a +1/+1 counter")).count(), 1,
         "Olivia's counter is reported once: {lines:?}");
 }
+
+/// Issue #682: Olivia blocks beside a lifelinker she stole, and dies in the
+/// same combat damage. The lifelink gain is her controller's — whoever
+/// controlled the Vampire when it dealt the damage (CR 702.15b) — and the
+/// control effect ends afterwards, as a state-based action. The invariant
+/// checker asked the Vampire's controller *now*, after it had gone home, and
+/// called a correct game a violation (fuzz seed 20731200056).
+#[test]
+fn a_lifelinker_that_goes_home_after_its_damage_gained_life_for_the_thief() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.turn_number = 3;
+
+    let olivia = named_permanent(&mut state, &reg, "Olivia Voldaren", P1);
+    let vampire = ready_creature(&mut state, P0, 1, 4);
+    state.get_object_mut(vampire).unwrap().subtypes = vec!["Vampire".into()];
+    state.get_object_mut(vampire).unwrap().keywords.push(Keyword::Lifelink);
+    activate_via_hooks(&mut state, &reg, olivia, 1, &[Target::Object(vampire)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert_eq!(state.get_object(vampire).unwrap().controller, P1, "stolen");
+
+    // P0 attacks with a 3/3; Olivia and the stolen Vampire block it, and
+    // Olivia takes the damage first.
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    state.step = Step::CombatDamage;
+    attacks_blocked_by(&mut state, attacker, P1, &[olivia, vampire]);
+    state.combat.as_mut().unwrap().damage_assignment_order.insert(attacker, vec![olivia, vampire]);
+    state.events.clear();
+    state.trigger_event_index = 0;
+    let p1_life = state.players[1].life;
+
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+    while mtg_engine::sba::check_state_based_actions(&mut state, &reg) {}
+
+    assert_eq!(state.players[1].life, p1_life + 1, "the thief gained the lifelink life");
+    assert_eq!(state.get_object(vampire).unwrap().controller, P0, "and the Vampire went home after");
+    let complaints: Vec<String> = mtg_engine::invariants::check_settled(&state, &reg).into_iter()
+        .filter(|c| c.contains("lifelink"))
+        .collect();
+    assert!(complaints.is_empty(), "{complaints:?}");
+}

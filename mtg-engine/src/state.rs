@@ -2799,17 +2799,19 @@ impl GameState {
     pub fn change_control(&mut self, id: ObjectId, new_controller: PlayerId) {
         let changed = match self.get_object_mut(id) {
             Some(obj) if obj.controller != new_controller => {
+                let from = obj.controller;
                 obj.controller = new_controller;
                 obj.summoning_sick = true;
-                true
+                Some(from)
             }
-            _ => false,
+            _ => None,
         };
         // CR 506.4d: an attacking or blocking creature whose controller
         // changes is removed from combat — a stolen attacker deals no combat
         // damage for its old controller's attack.
-        if changed {
+        if let Some(from) = changed {
             self.remove_from_combat(id);
+            self.events.push(crate::events::GameEvent::ControlChanged { object: id, from, to: new_controller });
         }
     }
 

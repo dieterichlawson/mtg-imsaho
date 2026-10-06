@@ -25,6 +25,12 @@ pub enum GameEvent {
     /// the player who controlled the permanent before it left).
     LeftBattlefield { object: ObjectId, to: Zone, last_controller: PlayerId },
     ObjectMoved { object: ObjectId, from: Zone, to: Zone },
+    /// A permanent changed controller (CR 108.4). Recorded so that what an
+    /// object's controller WAS at an earlier event can be read back: a
+    /// control effect ending as a state-based action moves the permanent
+    /// after the damage it dealt, and the event window is checked after
+    /// that (issue #682).
+    ControlChanged { object: ObjectId, from: PlayerId, to: PlayerId },
     Tapped { object: ObjectId },
     Untapped { object: ObjectId },
     AttackersDeclared { attackers: Vec<(ObjectId, PlayerId)> },

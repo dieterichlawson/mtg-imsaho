@@ -370,7 +370,16 @@ fn damage(state: &GameState, registry: &CardRegistry, events: &[GameEvent], quie
         }
         // CR 702.15b: lifelink damage gains life for the source's controller.
         if on_bf(state, source) && state.has_keyword(source, Keyword::Lifelink, registry) {
-            let controller = state.get_object(source).map(|o| o.controller);
+            // The controller when the damage was dealt, which is not always
+            // the controller now: a control effect whose condition ended in
+            // the same window — Olivia Voldaren dying in the combat where her
+            // stolen Markov Patrician dealt its damage — gives the permanent
+            // back afterwards (issue #682). The first change after this event
+            // says who had it; with none, it is who has it now.
+            let controller = events.iter().skip(i + 1).find_map(|x| match x {
+                GameEvent::ControlChanged { object, from, .. } if *object == source => Some(*from),
+                _ => None,
+            }).or_else(|| state.get_object(source).map(|o| o.controller));
             let gain = events.iter().enumerate().skip(i + 1).find(|(j, x)| !consumed[*j] && matches!(x,
                 GameEvent::LifeChanged { player, old, new_life } if Some(*player) == controller && new_life - old == amount as i32));
             match gain {
