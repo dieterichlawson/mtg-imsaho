@@ -115,6 +115,30 @@ export function clip(ctx, s, maxW, font = "8px Silkscreen") {
     }
     return s.slice(0, lo) + "…";
 }
+/**
+ * `clip`, keeping a verb's ` → target` tail whole and cutting the
+ * description before it instead.
+ *
+ * Two verbs of one permanent often differ only in what they point at:
+ * Liliana of the Veil's -6 is "-6: Separate all permanents target player
+ * controls into two piles … → You" and the same "… → Opponent". Clipped
+ * from the end, both rows read "-6: Separate all permanents target player
+ * co…", and the one that divides your own board was a coin flip (#689,
+ * the page's half of #633 and #681).
+ */
+export function clipKeepingTail(ctx, s, maxW, font = "8px Silkscreen") {
+    ctx.font = font;
+    if (ctx.measureText(s).width <= maxW)
+        return s;
+    const at = s.lastIndexOf(" → ");
+    if (at < 0)
+        return clip(ctx, s, maxW, font);
+    const tail = s.slice(at);
+    const room = maxW - ctx.measureText(tail).width;
+    if (room <= ctx.measureText("x…").width)
+        return clip(ctx, s, maxW, font);
+    return clip(ctx, s.slice(0, at), room, font) + tail;
+}
 function panel(ctx, x, y, w, h, fill = "#1a1620", stroke = "#5a4a6a") {
     ctx.fillStyle = fill;
     ctx.fillRect(x, y, w, h);
@@ -1203,7 +1227,7 @@ function popover(ctx, hits, state) {
             ctx.fillStyle = "#3a3048";
             ctx.fillRect(x + 2, ry, w - 4, 11);
         }
-        text(ctx, clip(ctx, it.label, w - 8, "8px Silkscreen"), x + 5, ry + 2, { color: "#f0e8d8" });
+        text(ctx, clipKeepingTail(ctx, it.label, w - 8, "8px Silkscreen"), x + 5, ry + 2, { color: "#f0e8d8" });
     });
 }
 function zoneOverlay(ctx, hits, state) {

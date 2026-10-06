@@ -10,7 +10,7 @@
 
 globalThis.Image ??= class { };
 globalThis.document ??= { createElement: () => ({ getContext: () => null }) };
-const { clip } = await import("../dist/render.js");
+const { clip, clipKeepingTail } = await import("../dist/render.js");
 
 let failures = 0;
 const fail = m => { console.error("FAIL: " + m); failures++; };
@@ -36,5 +36,16 @@ for (const len of [0, 1, 5, 50, 101, 500, 17183]) {
     if (ctx.calls > 2 + Math.ceil(Math.log2(len + 2))) fail(`len ${len} maxW ${maxW}: ${ctx.calls} measurements`);
   }
 }
+// #689: a verb's " → target" tail survives the clip, so two verbs that
+// differ only in their target still read differently.
+{
+  const lili = "-6: Separate all permanents target player controls into two piles. That player sacrifices all permanents in the pile of their choice";
+  const you = clipKeepingTail(fakeCtx(), lili + " → You", 246);
+  const opp = clipKeepingTail(fakeCtx(), lili + " → Opponent", 246);
+  if (you === opp) fail(`the two -6 verbs clip to one string: ${you}`);
+  if (!you.endsWith(" → You") || !opp.endsWith(" → Opponent")) fail(`a target was cut: ${you} / ${opp}`);
+  for (const t of [you, opp]) if ([...t].length * 4 > 246) fail(`over width: ${t}`);
+  if (clipKeepingTail(fakeCtx(), "Pass", 246) !== "Pass") fail("a short label was changed");
+}
 if (failures) { console.error(`${failures} failure(s)`); process.exit(1); }
-console.log("ok: clip cuts where the slow loop did, in O(log L) measurements");
+console.log("ok: clip cuts where the slow loop did, in O(log L) measurements; verb targets survive");
