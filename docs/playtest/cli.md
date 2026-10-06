@@ -1248,5 +1248,14 @@ whether it told the truth.
   call and every `&|| {}` redraw, open each of those prompts in tmux, shrink
   the pane by 20 columns and then grow it by 20 rows, and capture before
   any keystroke. Pass if the frame is redrawn at the new size; a frame
-  hard-wrapped by the terminal or a blank band is a #250 escape
+  hard-wrapped by the terminal or a blank band is a #250 escape- V56 [proposed 2026-10-06, from #701, the third comma after #633 and
+  #681] commas that are not cost separators. `wrap_row` prefers the longest
+  comma-terminated prefix, and `comma_is_inside_a_cost` guards only costs.
+  List every pool card whose name contains a comma (Mikaeus, Grimgrin,
+  Urza, Ragavan, Yawgmoth, Omnath, Tourach…) or whose ability text has a
+  sentence comma ("…target creature, it fights back", "…a basic land, put
+  it…"), put them on the battlefield, and read their menu, target, attack
+  and block rows at 80-200 columns. Pass if no first line ends inside a
+  name or leaves a fragment under a quarter of the width. Cheaper still:
+  run `wrap_row` from a scratch test over every label the pool produces
 
