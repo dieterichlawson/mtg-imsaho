@@ -1257,5 +1257,14 @@ whether it told the truth.
   it…"), put them on the battlefield, and read their menu, target, attack
   and block rows at 80-200 columns. Pass if no first line ends inside a
   name or leaves a fragment under a quarter of the width. Cheaper still:
-  run `wrap_row` from a scratch test over every label the pool produces
+  run `wrap_row` from a scratch test over every label the pool produces- V57 [proposed 2026-10-06, from #704 and #705] the untap half and the
+  LOG pane's wrap, without playing a game. (1) Grep `mtg-engine/src` for
+  every `.untap(` and bare `.tap(` caller (not `tap_for`); stage each card
+  by save edit, use it, and check `--log` and the LOG pane both get a line
+  between the spell or trigger and the next event. A triggered ability
+  writes no "resolved" line, so "goes on the stack" followed by an
+  unrelated line is a hit. (2) Resume one save with a long history at every
+  width from 80 to 200 in steps of 1 and grep the LOG pane for a
+  continuation row (two-space indent) holding a single word — the resumed
+  pane redraws the whole history, so one save covers every line length
 
