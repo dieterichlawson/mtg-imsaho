@@ -56,6 +56,12 @@ fn a_mana_pool_empties_at_every_step_boundary() {
         assert_eq!(state.step, to, "test setup: {from:?} is followed by {to:?}");
         assert_eq!(state.get_player(P0).mana_pool.total(), 0,
             "mana floated in {from:?} is gone by {to:?}");
+        // And the log says so: its last word on the pool was "(pool:
+        // Green:3)", which went false with nothing to say why (#708).
+        assert!(state.game_log.iter().any(|e|
+                e.message == "p0's unspent mana empties from their pool (Green:3)"),
+            "the emptying is logged at {from:?} -> {to:?}: {:#?}",
+            state.game_log.iter().map(|e| e.message.as_str()).collect::<Vec<_>>());
     }
 }
 

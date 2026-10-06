@@ -818,16 +818,36 @@ AwaitingAction::BottomAfterMulligan { .. }))
 
 
 
+/// Empty every mana pool (CR 500.4), and say what went.
+///
+/// The last word the log had on a pool was "tapped Swamp for mana (pool:
+/// Black:1)"; when the step ended the mana was gone and nothing said so,
+/// so the log's own claim went false while the screen's `Mana:` row just
+/// disappeared (#708). Cleanup emptied the pools with no event either.
+fn empty_mana_pools(state: &mut GameState) {
+    let mut emptied = Vec::new();
+    for player in &mut state.players {
+        if !player.mana_pool.is_empty() {
+            let went: Vec<String> = player.mana_pool.mana.iter()
+                .filter(|(_, &v)| v > 0)
+                .map(|(t, v)| format!("{t:?}:{v}"))
+                .collect();
+            emptied.push((player.id, went.join(" ")));
+            player.mana_pool.empty();
+        }
+    }
+    for (player, went) in emptied {
+        state.events.push(GameEvent::ManaPoolEmptied { player });
+        state.log(crate::state::LogLevel::Info,
+            format!("p{}'s unspent mana empties from their pool ({went})", player.0));
+    }
+}
+
 /// Advance the game by one step. Performs turn-based actions for the new step.
 /// Returns the updated state.
 pub fn advance_step(state: &mut GameState, registry: &CardRegistry) {
     // Empty mana pools between steps.
-    for player in &mut state.players {
-        if !player.mana_pool.is_empty() {
-            state.events.push(GameEvent::ManaPoolEmptied { player: player.id });
-            player.mana_pool.empty();
-        }
-    }
+    empty_mana_pools(state);
 
     // CR 510.5: with first/double strikers in combat there are TWO combat
     // damage steps. The first instance set combat_damage_step_pending; repeat
@@ -1100,9 +1120,7 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
             }
 
             // Empty mana pools.
-            for player in &mut state.players {
-                player.mana_pool.empty();
-            }
+            empty_mana_pools(state);
 
             // CR 514.3a: Check SBAs after clearing effects. If any SBA
             // fires, players get priority (the cleanup step essentially restarts).
