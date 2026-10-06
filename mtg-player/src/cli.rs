@@ -2818,9 +2818,13 @@ impl CliPlayer {
         for c in &view.your_hand {
             add(registry, &mut seen, &mut entries, &c.name, c.card_id);
         }
-        // Priority 2: cards on the stack
+        // Priority 2: cards on the stack, under the card's printed name. An
+        // ability's stack name is "X ability", which put nothing for X in
+        // `seen`, so the permanent was listed a second time while one of
+        // its abilities was on the stack (#697).
         for s in &view.stack {
-            add(registry, &mut seen, &mut entries, &s.name, s.card_id);
+            let name = registry.card_data(s.card_id).map_or_else(|| s.name.clone(), |d| d.name);
+            add(registry, &mut seen, &mut entries, &name, s.card_id);
         }
         // Priority 3 and 4: the battlefield, opponent's first (skip basic
         // lands). A permanent showing its back face is described by that
@@ -10947,6 +10951,35 @@ Mark 1 of the 1 cards below to exile.");
             mana_abilities: vec![],
             named_card: None,
         }
+    }
+
+    /// Issue #697: a permanent with one of its abilities on the stack is
+    /// one CARDS entry. The stack entry was keyed by its stack name,
+    /// "Nephalia Drownyard ability", so the permanent's own name was not yet
+    /// seen and the card was listed twice.
+    #[test]
+    fn a_permanent_whose_ability_is_on_the_stack_is_listed_once() {
+        let registry = mtg_engine::cards::CardRegistry::with_all_cards();
+        let drownyard = registry.get_id_by_name("Nephalia Drownyard").expect("in the pool");
+        let mut v = view(Step::PrecombatMain, 5, true);
+        let mut land = creature(8, "Nephalia Drownyard", 0);
+        land.card_id = drownyard;
+        land.card_types = vec![CardType::Land];
+        v.battlefield = vec![land];
+        v.stack = vec![mtg_engine::view::StackItemView {
+            object_id: ObjectId(30),
+            card_id: drownyard,
+            name: "Nephalia Drownyard ability".to_string(),
+            source_id: Some(ObjectId(8)),
+            controller: PlayerId(0),
+            targets: vec![Target::Player(PlayerId(1))],
+            x_value: None,
+            cost: None, supertypes: vec![], card_types: vec![],
+            power: None, toughness: None, oracle_text: String::new(),
+        }];
+        let refs = CliPlayer::build_card_refs(&v, &registry, "");
+        let named: Vec<&str> = refs.iter().map(|r| r.data.name.as_str()).collect();
+        assert_eq!(named, vec!["Nephalia Drownyard"], "one entry for one card");
     }
 
     /// Issue #512: every numbered prompt drawn through `render_paged` runs
