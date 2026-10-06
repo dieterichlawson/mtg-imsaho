@@ -1233,4 +1233,13 @@ whether it told the truth.
   they wrap (#698); `wrap_row`'s comma preference splits card names
   ("Mikaeus," / "the Lunarch", #701). Width alone is now well covered —
   vary the height and which side is wide
+- V54 [proposed 2026-10-06, from V53 and #695] the tall side. V53 swept
+  widths; the screen broke on height. Stage a board where ONE side is taller
+  than the pane (26 distinct creatures for the opponent — V53's staging in
+  #701 does it), then at 120x40 and 80x24 list what the player at the
+  keyboard can see of their OWN half: life line, lands, creatures, hand.
+  Repeat at every prompt kind (priority menu, target, sacrifice, attackers,
+  blockers, mulligan), then with the tall side being yours. Pass if
+  everything is shown or something says the rest exists. A stray `├` tee on
+  a prompt row is the trace of a row drawn below the last line — count them
 
