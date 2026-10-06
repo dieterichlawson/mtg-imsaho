@@ -688,49 +688,37 @@ fn the_planner_matches_tapping_by_hand_on_random_boards() {
 /// And its plan strands no more of the hand than the best hand-tap that
 /// taps no more side-effect sources would.
 ///
-/// Ignored until issue #683 is fixed, because the planner does not promise
-/// this much yet. What it does promise (`keep_the_hand_castable`'s doc
-/// comment) is the best plan within one swapped source or one extra source
-/// of its greedy plan — and the greedy plan is private to `mana.rs`, so
-/// that promise cannot be stated here in its own terms. The global property
-/// fails on 2 of the default sweep's 2,000 boards (228 and 493), both
-/// repairs two moves from the greedy plan; #683 carries the shrunk repro.
-/// When the planner keeps the global promise, drop the `#[ignore]`. Board 493 shrinks to: Forest, Pilgrim(B), Mountain and
-/// a W/B dual, `{W}{U}` floating, casting `{2}{B}{R}` with `{W}{W}` in
-/// hand. The planner taps Mountain and the dual for `{B}` and pays the
-/// generic from the pool, so no White is left anywhere; tapping Forest,
-/// Pilgrim and Mountain instead leaves the `{W}` floating and the dual
-/// untapped for the second. That is a swap (dual for Pilgrim) and an extra
-/// source (Forest) at once. Run with `-- --ignored` for the current list.
+/// This was ignored while the planner promised only the best plan within
+/// one swapped or one extra source of its greedy plan: it failed on 2 of
+/// the default sweep's 2,000 boards (228 and 493), both repairs two moves
+/// away (#683). Board 493 shrinks to Forest, Pilgrim(B), Mountain and a W/B
+/// dual, `{W}{U}` floating, casting `{2}{B}{R}` with `{W}{W}` in hand: the
+/// greedy plan taps Mountain and the dual for `{B}` and pays the generic
+/// from the pool, so no White is left anywhere, where Forest, Pilgrim and
+/// Mountain leave the `{W}` floating and the dual untapped. A board small
+/// enough to enumerate is now searched whole when the one-move repair
+/// falls short.
 #[test]
-#[ignore = "issue #683: the planner promises a one-move repair, not the global optimum; see the doc comment"]
 fn a_plan_strands_no_more_of_the_hand_than_any_hand_tap_would() {
     report(&sweep(Shapes::Pool, Checks { completeness: false, stranding: true }),
         "a hand-tap would have stranded less");
 }
 
 /// The same sweep with costs no card in the pool has yet — three colours,
-/// `{C}` pips, two colours with a repeated pip. Only soundness is asserted,
-/// because the planner is known to fall short of the rest on these and
-/// nothing in the pool can meet them yet (the 2026-10-05 playtest recorded
-/// them as an idea rather than a bug; the `{C}` misses are issue #684 and
-/// the stranding is #683). Set either check to true to see the current
-/// list; on the default sweep it is:
+/// `{C}` pips, two colours with a repeated pip — held to the whole contract.
+///
+/// It used to assert soundness only, because the planner fell short on two
+/// counts the first card with such a cost would have met:
 /// - no plan for a `{C}` pip when the free `{C}` is also the only route to
 ///   the colour: Grotto and Assistant, `{G}` floating, casting `{C}{R}`.
-///   Phase 1 spends the Grotto's free `{C}` on the pip (tier 1 beats the
-///   Assistant's tier 4) and nothing is left to make the `{R}`, where the
-///   Assistant's `{C}` and the Grotto filtering `{G}` into `{R}` would pay.
-///   Four boards, all `{C}`; three-colour and repeated-pip costs missed no
-///   plan on any board.
+///   Phase 1 spent the Grotto's free `{C}` on the pip and nothing was left to
+///   make the `{R}` (issue #684). Phase 1 now spares the only route to a
+///   colour the cost still needs.
 /// - stranding a three-colour or repeated-pip hand spell that two more
-///   sources would have kept castable: Pilgrim(B), Mountain, Mountain and
-///   an R/G dual, `{U}{U}{G}` floating, casting `{1}{U}{R}{G}` with
-///   `{B}{R}{U}` in hand. One Mountain pays, and the pool's `{U}` goes on
-///   the generic; tapping both Mountains and the dual leaves `{U}{R}`
-///   floating for the Pilgrim's `{B}`. Five boards.
+///   sources would have kept castable (issue #683), which the whole-board
+///   repair search now finds.
 #[test]
-fn a_plan_for_an_unmet_cost_shape_still_executes() {
-    report(&sweep(Shapes::Unmet, Checks { completeness: false, stranding: false }),
+fn a_plan_for_an_unmet_cost_shape_keeps_the_whole_contract() {
+    report(&sweep(Shapes::Unmet, Checks { completeness: true, stranding: true }),
         "the planner broke its contract on an unmet shape");
 }

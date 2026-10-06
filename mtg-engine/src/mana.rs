@@ -251,8 +251,10 @@ fn pool_after(
 /// hand spell the board could pay before is still payable from what the
 /// plan leaves. Only when the greedy plan strands one is anything else
 /// tried — every plan with one source swapped (or one source's ability
-/// changed), and failing a full repair, every plan with one more source —
-/// and the plan stranding fewest wins, then the one tapping lower tiers.
+/// changed), and failing a full repair, every plan with one more source,
+/// and failing that, on a board small enough, every plan there is (#683)
+/// — and the plan stranding fewest wins, then the one tapping lower tiers,
+/// then the one tapping fewer sources.
 /// Never at the price of a side effect, though: a plan that taps more
 /// sources with one (Deranged Assistant milling a card) is never preferred,
 /// as Phase 3 already holds — milling a card to save a colour is not a win.
@@ -297,12 +299,30 @@ fn keep_the_hand_castable(
     if base == 0 {
         return plan;
     }
-    let mut best = ((side_effects(&plan), base, tier_sum(&plan)), plan.clone());
+    // A floor under what any plan strands: a hand spell the whole board
+    // cannot pay together with `cost` is stranded by every plan. Counted
+    // with `within_reach`, which is necessary for a payment and never says
+    // no to one that exists — the greedy planner would do, except that it
+    // misses joint payments a person finds, and a floor set too high stops
+    // the repair short of a plan it would have found. When the greedy plan
+    // strands no more than the floor, nothing can do better, and the search
+    // below, which would otherwise run on every offer while such a spell
+    // sits in hand, is skipped.
+    let floor = castable_before.iter()
+        .filter(|h| {
+            let both = ManaCost::new(cost.symbols.iter().chain(h.symbols.iter()).cloned().collect());
+            !within_reach(&both, pool, sources)
+        })
+        .count();
+    if base <= floor {
+        return plan;
+    }
+    let mut best = ((side_effects(&plan), base, tier_sum(&plan), plan.len()), plan.clone());
     let consider = |mut candidate: Vec<(ObjectId, usize)>,
-                        best: &mut ((usize, usize, u32), Vec<(ObjectId, usize)>)| {
+                        best: &mut ((usize, usize, u32, usize), Vec<(ObjectId, usize)>)| {
         free_abilities_first(&mut candidate, sources);
         if let Some(n) = stranded(&candidate) {
-            let key = (side_effects(&candidate), n, tier_sum(&candidate));
+            let key = (side_effects(&candidate), n, tier_sum(&candidate), candidate.len());
             if key < best.0 {
                 *best = (key, candidate);
             }
@@ -321,7 +341,7 @@ fn keep_the_hand_castable(
             }
         }
     }
-    if best.0 .1 > 0 {
+    if best.0 .1 > floor {
         for source in &untapped {
             for ability in &source.abilities {
                 let mut candidate = plan.clone();
@@ -330,7 +350,52 @@ fn keep_the_hand_castable(
             }
         }
     }
+    // Still above the floor: the repair is more than one move away — a
+    // swap and an extra source at once (issue #683: Forest, Pilgrim(B),
+    // Mountain and a W/B dual paying {2}{B}{R} out of a floating {W}{U}).
+    // A board small enough to enumerate is searched whole, every source
+    // tapped for any one of its abilities or left alone; a bigger one is
+    // left with the one-move repair rather than charged a search that
+    // grows with it.
+    if best.0 .1 > floor {
+        let plans: usize = sources.iter()
+            .map(|s| s.abilities.len() + 1)
+            .try_fold(1usize, usize::checked_mul)
+            .unwrap_or(usize::MAX);
+        if plans <= EXHAUSTIVE_REPAIR_PLANS {
+            let mut candidate = Vec::new();
+            every_plan(sources, 0, &mut candidate, &mut |c: &[(ObjectId, usize)]| {
+                consider(c.to_vec(), &mut best);
+            });
+        }
+    }
     best.1
+}
+
+/// How many plans `keep_the_hand_castable` will try one by one when the
+/// one-move repair falls short: every source tapped for one of its
+/// abilities or left alone. Seven sources of two abilities each is 2,187;
+/// twelve single-ability sources is 4,096.
+const EXHAUSTIVE_REPAIR_PLANS: usize = 4_096;
+
+/// Visit every plan over `sources[i..]`: each source left alone or tapped
+/// for one of its abilities.
+fn every_plan(
+    sources: &[ManaSource],
+    i: usize,
+    plan: &mut Vec<(ObjectId, usize)>,
+    visit: &mut dyn FnMut(&[(ObjectId, usize)]),
+) {
+    if i == sources.len() {
+        visit(plan);
+        return;
+    }
+    every_plan(sources, i + 1, plan, visit);
+    for ability in &sources[i].abilities {
+        plan.push((sources[i].object_id, ability.ability_index));
+        every_plan(sources, i + 1, plan, visit);
+        plan.pop();
+    }
 }
 
 /// The planner's first answer: one pass over the cost, choosing each
@@ -1330,6 +1395,38 @@ mod tests {
     }
 
     // ---- autotap tests ----
+
+    /// Issue #683: the repair that keeps a hand spell castable can be two
+    /// moves from the greedy plan. Forest, Pilgrim(B), Mountain and a W/B
+    /// dual, `{W}{U}` floating, casting `{2}{B}{R}` with `{W}{W}` in hand:
+    /// the greedy plan taps the dual for `{B}` and spends the floating `{W}`
+    /// on the generic. Tapping Forest, Pilgrim and Mountain instead — a swap
+    /// and an extra source — leaves the `{W}` and the dual for `{W}{W}`.
+    #[test]
+    fn a_two_move_repair_keeps_the_hand_castable() {
+        let mut pool = ManaPool::new();
+        pool.add(ManaType::White, 1);
+        pool.add(ManaType::Blue, 1);
+        let mut dual = mono_ability(ManaType::White);
+        let mut dual_b = mono_ability(ManaType::Black);
+        dual.ability_index = 0;
+        dual_b.ability_index = 1;
+        let sources = vec![
+            make_source(1, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Green)]),
+            make_source(2, ManaSourceKind::Creature, vec![mono_ability(ManaType::Black)]),
+            make_source(3, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Red)]),
+            make_source(4, ManaSourceKind::NonBasicMana, vec![dual, dual_b]),
+        ];
+        let cost = ManaCost::new(vec![ManaSymbol::Generic(2), ManaSymbol::Colored(Color::Black),
+            ManaSymbol::Colored(Color::Red)]);
+        let hand = vec![ManaCost::new(vec![ManaSymbol::Colored(Color::White), ManaSymbol::Colored(Color::White)])];
+        let plan = compute_autotap(&cost, &pool, &sources, &hand).expect("payable");
+        let left = pool_after(&plan, &pool, &sources, &cost, &hand_reserve(&hand)).expect("the plan pays");
+        let untapped: Vec<ManaSource> = sources.iter()
+            .filter(|s| !plan.iter().any(|(id, _)| *id == s.object_id)).cloned().collect();
+        assert!(greedy_autotap(&hand[0], &left, &untapped, &[]).is_some(),
+            "{{W}}{{W}} is still castable after {plan:?}");
+    }
 
     /// Issue #684: a `{C}` pip paid with the free `{C}` of the only source
     /// that could also make the coloured pip left the colour unpayable.
