@@ -132,7 +132,7 @@ impl CardBehavior for CivilizedScholar {
             if is_creature {
                 // "untap this creature, **then** transform it" — in that order,
                 // with no priority in between (ruling, 2011-09-22).
-                state.untap(object_id);
+                state.untap_for(object_id, "Civilized Scholar");
                 crate::cards::helpers::apply_transform(state, object_id, registry);
             }
         } else {
@@ -155,7 +155,7 @@ impl CardBehavior for CivilizedScholar {
         let is_creature = Self::is_creature_card(state, discarded_id, registry);
         if is_creature {
             // "untap this creature, **then** transform it", in that order.
-            state.untap(self_id);
+            state.untap_for(self_id, "Civilized Scholar");
             crate::cards::helpers::apply_transform(state, self_id, registry);
         }
     }
@@ -188,7 +188,7 @@ impl CardBehavior for CivilizedScholar {
         // The condition is checked a second time on resolution (CR 603.4).
         if !state.attacked_this_turn(self_id) {
             // "tap Homicidal Brute, then transform it"
-            state.tap(self_id);
+            state.tap_for(self_id, "Homicidal Brute");
             // Through the helper rather than flipping the flag by hand, so
             // this cannot drift from what transforming means.
             crate::cards::helpers::apply_transform(state, self_id, _registry);

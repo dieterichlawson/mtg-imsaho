@@ -2714,6 +2714,21 @@ impl GameState {
         true
     }
 
+    /// Untap `id` as an effect of `source`, and say so: "Spidery Grasp
+    /// untaps Grizzly Bears (#49)". `tap_for`'s other half: a card that
+    /// untapped something called `untap` and wrote nothing, so the board lost
+    /// a `[T]` between two lines that never mentioned it — five creatures at
+    /// once under Village Bell-Ringer (#704). Nothing is logged when nothing
+    /// was untapped (CR 701.20a, #359).
+    pub fn untap_for(&mut self, id: ObjectId, source: &str) -> bool {
+        let untapped = self.untap(id);
+        if untapped {
+            let name = self.obj_name(id);
+            self.log(LogLevel::Event, format!("{source} untaps {name}"));
+        }
+        untapped
+    }
+
     /// Tap a permanent (CR 701.21a), emitting `Tapped`. Returns whether it
     /// actually became tapped.
     ///

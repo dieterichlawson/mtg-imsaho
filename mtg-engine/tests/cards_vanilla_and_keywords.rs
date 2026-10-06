@@ -152,6 +152,12 @@ fn spidery_grasp_untaps_and_buffs() {
     state = cast_and_resolve(&state, &reg, sg, vec![Target::Object(creature)]);
 
     assert!(!state.get_object(creature).unwrap().tapped, "Should be untapped");
+    // The untap is logged: the board lost a [T] between "cast" and
+    // "resolved" with nothing saying so (#704).
+    let name = state.obj_name(creature);
+    assert!(state.game_log.iter().any(|e| e.message == format!("Spidery Grasp untaps {name}")),
+        "the untap has a line: {:#?}",
+        state.game_log.iter().map(|e| e.message.as_str()).collect::<Vec<_>>());
     assert_eq!(state.effective_power(creature, &reg), Some(4));
     assert_eq!(state.effective_toughness(creature, &reg), Some(6));
     assert!(state.has_keyword(creature, Keyword::Reach, &reg));

@@ -48,7 +48,7 @@ impl CardBehavior for TraitorousBlood {
                 // Gain control (summoning-sick for the new controller) and untap.
                 // The haste grant below lets it attack this turn anyway.
                 state.change_control(*creature_id, controller);
-                state.untap(*creature_id);
+                state.untap_for(*creature_id, "Traitorous Blood");
                 // Grant haste and trample.
                 state.until_end_of_turn.push(TemporaryEffect::GrantKeyword {
                     target: *creature_id,

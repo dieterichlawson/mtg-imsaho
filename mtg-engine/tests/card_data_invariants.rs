@@ -1278,6 +1278,65 @@ fn no_card_narrates_a_token_or_life_change_the_engine_logs() {
         offenders.len(), offenders.join("\n  "));
 }
 
+/// A card that taps or untaps a permanent as its effect says so.
+///
+/// `tap_for` and `untap_for` write "Source taps X" / "Source untaps X" when
+/// the status changed. A bare `state.tap` or `state.untap` with no line of
+/// the card's own after it changed the board between two log lines that
+/// never mentioned it: Spidery Grasp, Village Bell-Ringer, Civilized
+/// Scholar and Traitorous Blood untapped silently, and Homicidal Brute
+/// tapped itself silently (#638, #704).
+#[test]
+fn no_card_taps_or_untaps_without_a_line() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cards");
+    let mut files = Vec::new();
+    let mut stack = vec![src];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let p = entry.path();
+            if p.is_dir() { stack.push(p); }
+            else if p.extension().is_some_and(|e| e == "rs") { files.push(p); }
+        }
+    }
+    files.sort();
+
+    let mut offenders = Vec::new();
+    let mut scanned = 0usize;
+    for path in files {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        for (n, line) in lines.iter().enumerate() {
+            let code = line.trim_start();
+            if code.starts_with("//") {
+                continue;
+            }
+            let bare = ["state.tap(", "state.untap(", "state.tap_for(", "state.untap_for("]
+                .iter().any(|c| code.contains(c));
+            if !bare {
+                continue;
+            }
+            scanned += 1;
+            if code.contains("tap_for(") {
+                continue;
+            }
+            // A bare call is fine when the card writes its own line about
+            // it (Grimgrin's, Galvanic Juggernaut's) — within a few lines.
+            let window: String = lines[n..].iter().take(6).copied().collect::<Vec<_>>().join(" ");
+            if !window.contains("state.log") {
+                offenders.push(format!("{name}:{}: {}", n + 1, code));
+            }
+        }
+    }
+    assert!(scanned >= 8,
+        "only {scanned} tap/untap call(s) in src/cards — this invariant has stopped covering anything");
+    assert!(offenders.is_empty(),
+        "{} card(s) tap or untap a permanent without a log line:\n  {}\n\n\
+         Use `tap_for` / `untap_for`, which name the source and write a line \
+         only when the status changed.",
+        offenders.len(), offenders.join("\n  "));
+}
+
 /// Strip parenthesised reminder text and collapse the leftover whitespace.
 ///
 /// Reminder text is printed on the card but says nothing the rules do not

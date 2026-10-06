@@ -41,7 +41,7 @@ impl CardBehavior for VillageBellRinger {
             .map(|o| o.id)
             .collect();
         for id in to_untap {
-            state.untap(id);
+            state.untap_for(id, "Village Bell-Ringer");
         }
     }
 }

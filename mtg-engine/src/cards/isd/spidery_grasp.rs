@@ -28,8 +28,7 @@ impl CardBehavior for SpideryGrasp {
     fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
             if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                // Untap the target creature.
-                state.untap(*target_id);
+                state.untap_for(*target_id, "Spidery Grasp");
                 state.until_end_of_turn.push(
                     crate::state::TemporaryEffect::ModifyPT {
                         target: *target_id,
