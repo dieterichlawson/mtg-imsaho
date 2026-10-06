@@ -1208,7 +1208,7 @@ whether it told the truth.
   stack entry named for the grantor but carrying the holder's id (#632),
   `wrap_row` breaking inside a cost (#633), and row ids the battlefield pane
   never prints (#634)
-- V53 [proposed 2026-10-05, from #680 and #681, found on a game night (L54)]
+- V53 [tried 2026-10-06 → #698, #699, #700, #701, #702, comment on #695]
   the widest board at every width. Stage one board by editing a save: eight or
   more distinct land names on one side, an equipped creature carrying an Aura
   and counters, and every permanent with a three-part cost (Moorland Haunt,
@@ -1219,3 +1219,18 @@ whether it told the truth.
   line crosses a pane border. Staging takes about 15 lines of Python over
   `state.objects[*].zone` and `players[*].library_order`; give a planeswalker
   its loyalty in `counters`, or the SBA check kills it on resume
+
+  **Answered 2026-10-06: #680 and #681 hold at every width; what breaks is
+  the other axis and the other comma.** Three boards were staged (one side
+  wide; both sides wide with 26 distinct long-named creatures and all 17
+  lands; seats swapped) and captured at 80-200 columns by 24/40/60 rows, 78
+  main screens and 1,053 menu rows, every one checked by script for its
+  borders and for "printed or counted in +N more". All passed. The finds:
+  a wide *opponent* board pushes the bottom-anchored prompt over the
+  player's own battlefield, life line and hand (the #695 mechanism, much
+  larger), and the stray `├` tees left on prompt rows are the trace of rows
+  drawn below the screen; the block's reserved hint rows are overwritten when
+  they wrap (#698); `wrap_row`'s comma preference splits card names
+  ("Mikaeus," / "the Lunarch", #701). Width alone is now well covered —
+  vary the height and which side is wide
+
