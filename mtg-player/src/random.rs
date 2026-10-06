@@ -256,6 +256,23 @@ impl Player for RandomPlayer {
             }
         }
 
+        // Dividing combat damage among blockers (CR 510.1c-d): roll the
+        // amount uniformly over everything the prompt allows. Index 0 is
+        // exactly lethal — the division the engine makes without asking —
+        // so a seat that answered the minimum would never reach an
+        // over-assignment, or a trampler holding its damage back (#637).
+        if let Some(mtg_engine::state::ResolutionChoiceKind::AssignCombatDamage {
+            options, ..
+        }) = legal.resolution_prompt.as_ref()
+        {
+            if !options.is_empty() {
+                let i = self.rng.gen_range(0..options.len());
+                return Action::ResolveChoice {
+                    choice: mtg_engine::actions::ResolvedChoice::ChosenIndex(i, options[i].clone()),
+                };
+            }
+        }
+
         // Pile division (Liliana of the Veil -6): no enumerated actions —
         // 2^N subsets don't fit in memory on a wide board. Flip a coin per
         // permanent, mirroring the 50% conventions used for combat.

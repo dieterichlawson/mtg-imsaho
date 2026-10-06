@@ -167,3 +167,43 @@ fn a_modal_set_is_answered_one_mode_at_a_time() {
     let two = modes.get("mode Some(1)").copied().unwrap_or(0);
     assert!(two > 150, "mode two is one of two modes, not a 1-in-28 accident: {modes:?}");
 }
+
+/// Issue #637: dividing combat damage among blockers (CR 510.1c-d) is
+/// rolled over the whole range, not answered with the minimum. Index 0 is
+/// exactly lethal — the division the engine makes without asking — so a
+/// seat that took it would never put more than lethal on a blocker, and
+/// the fuzzer would never reach the over-assignment the prompt exists for.
+#[test]
+fn a_combat_damage_division_is_rolled_over_its_whole_range() {
+    use mtg_engine::actions::ResolvedChoice;
+    use mtg_engine::engine::submit_action;
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    let attacker = ready_creature(&mut state, P0, 6, 6);
+    let first = ready_creature(&mut state, P1, 1, 2);
+    let second = ready_creature(&mut state, P1, 1, 2);
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    submit_declare_blockers(&mut state, P1, &[(first, attacker), (second, attacker)], &reg);
+    state = submit_action(&state, &Action::ResolveChoice { choice: ResolvedChoice::ChosenOrder(vec![0, 1]) }, &reg);
+    state.priority_player = None;
+    mtg_engine::engine::advance_step(&mut state, &reg);
+    let legal = legal_actions(&state, &reg);
+    let Some(mtg_engine::state::ResolutionChoiceKind::AssignCombatDamage { min, max, .. }) = legal.resolution_prompt
+    else { panic!("the damage step asks for the division: {:?}", legal.resolution_prompt) };
+    assert_eq!((min, max), (2, 6));
+
+    let view = GameView::for_player(&state, P0, &reg);
+    let mut seat = RandomPlayer::with_seed("r", 3);
+    let mut seen = std::collections::BTreeMap::<u32, usize>::new();
+    for _ in 0..2000 {
+        let answer = seat.choose_action(&view, &legal);
+        let after = submit_action(&state, &answer, &reg);
+        assert!(after.awaiting_action.is_none(), "the engine took {answer:?}: {:?}", after.awaiting_action);
+        *seen.entry(after.get_object(first).unwrap().damage_marked).or_default() += 1;
+    }
+    assert_eq!(seen.keys().copied().collect::<Vec<_>>(), (2..=6).collect::<Vec<_>>(),
+        "every amount from lethal to all of it is reached: {seen:?}");
+    for (amount, n) in &seen {
+        assert!(about(*n as f64 / 2000.0, 0.2), "{amount} is one of five amounts, drawn {n}/2000: {seen:?}");
+    }
+}
