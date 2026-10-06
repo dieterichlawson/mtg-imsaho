@@ -997,7 +997,7 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
                     // Second combat damage step (CR 510.5): regular damage
                     // from creatures that didn't deal first-strike damage,
                     // plus double strikers.
-                    combat::deal_regular_damage_pass(state, registry);
+                    combat::combat_damage_step(state, registry, false);
                 } else if combat::any_first_strike_in_combat(state, registry) {
                     // First of two combat damage steps (CR 510.5): only
                     // first/double strikers deal damage now. advance_step
@@ -1009,10 +1009,10 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
                     // log promised one right above the result (issue #677).
                     state.log(LogLevel::Debug,
                         "First-strike combat damage step (first of two, CR 510.4)".into());
-                    combat::deal_first_strike_damage_pass(state, registry);
+                    combat::combat_damage_step(state, registry, true);
                     state.combat_damage_step_pending = true;
                 } else {
-                    combat::deal_combat_damage(state, registry);
+                    combat::combat_damage_step(state, registry, false);
                 }
             }
             // Players get priority after combat damage is dealt (CR 510.4).

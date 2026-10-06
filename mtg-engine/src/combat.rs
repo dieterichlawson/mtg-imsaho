@@ -386,9 +386,10 @@ pub fn deal_combat_damage(state: &mut GameState, registry: &CardRegistry) {
         // NOTE: this combined entry point runs both damage steps with no
         // priority window and is kept for tests and direct callers. The game
         // loop instead runs the two steps as two Step::CombatDamage
-        // instances (CR 510.5) via deal_first_strike_damage_pass /
-        // deal_regular_damage_pass, with SBAs, triggers, and priority
-        // between them.
+        // instances (CR 510.5) via `combat_damage_step`, with SBAs,
+        // triggers, and priority between them — and asks the attacking
+        // player how to divide damage among blockers, which this entry
+        // point never does: it always makes the default division.
         while crate::sba::check_state_based_actions(state, registry) {}
         // Normal damage step: non-first-strikers + double strikers.
         deal_damage_step(state, &combat, registry, false);
@@ -411,19 +412,21 @@ pub fn any_first_strike_in_combat(state: &GameState, registry: &CardRegistry) ->
         })
 }
 
-/// Deal the FIRST-STRIKE combat damage step's damage (CR 510.5). Used by the
-/// turn machinery, which then gives players a full SBA/trigger/priority
-/// round before the regular combat damage step.
-pub fn deal_first_strike_damage_pass(state: &mut GameState, registry: &CardRegistry) {
+/// Run one combat damage step for the turn machinery (CR 510.1-510.2,
+/// with `first_strike_only` choosing the first-strike step of CR 510.4).
+///
+/// Before any damage is dealt the attacking player divides each blocked
+/// attacker's damage among its blockers (CR 510.1c-d), one blocker at a
+/// time, wherever there is a choice to make. This sets `awaiting_action`
+/// and returns with nothing dealt when a choice is needed; the answer
+/// comes back through `AssignCombatDamage`, which records it and calls this
+/// again. With every choice made, the step's damage is dealt.
+pub fn combat_damage_step(state: &mut GameState, registry: &CardRegistry, first_strike_only: bool) {
+    if ask_next_damage_division(state, registry, first_strike_only) {
+        return;
+    }
     let Some(combat) = state.combat.clone() else { return };
-    deal_damage_step(state, &combat, registry, true);
-}
-
-/// Deal the REGULAR combat damage step's damage: creatures that didn't deal
-/// first-strike damage, plus double strikers.
-pub fn deal_regular_damage_pass(state: &mut GameState, registry: &CardRegistry) {
-    let Some(combat) = state.combat.clone() else { return };
-    deal_damage_step(state, &combat, registry, false);
+    deal_damage_step(state, &combat, registry, first_strike_only);
 }
 
 /// Fight: each creature deals damage equal to its power to the other.
@@ -499,24 +502,14 @@ fn queue_damage_step(
             continue;
         }
 
-        let has_first_strike = state.has_keyword(attacker_id, Keyword::FirstStrike, registry);
-        let has_double_strike = state.has_keyword(attacker_id, Keyword::DoubleStrike, registry);
-        let attacker_deals = if first_strike_only {
-            let deals = has_first_strike || has_double_strike;
-            if deals {
-                // CR 510.5: record membership so the regular step knows this
-                // creature already dealt its damage (unless double strike).
-                if let Some(c) = state.combat.as_mut() {
-                    c.dealt_first_strike.insert(attacker_id);
-                }
+        let attacker_deals = deals_in_step(state, attacker_id, first_strike_only, registry);
+        if attacker_deals && first_strike_only {
+            // CR 510.5: record membership so the regular step knows this
+            // creature already dealt its damage (unless double strike).
+            if let Some(c) = state.combat.as_mut() {
+                c.dealt_first_strike.insert(attacker_id);
             }
-            deals
-        } else {
-            // Regular step: creatures that didn't deal first-strike damage,
-            // plus double strikers (CR 510.5).
-            has_double_strike
-                || !state.combat.as_ref().is_some_and(|c| c.dealt_first_strike.contains(&attacker_id))
-        };
+        }
 
         let attacker_power = if attacker_deals {
             u32::try_from(state.effective_power(attacker_id, registry).unwrap_or(0).max(0)).unwrap_or(0)
@@ -525,27 +518,7 @@ fn queue_damage_step(
         };
 
         let has_trample = state.has_keyword(attacker_id, Keyword::Trample, registry);
-        let has_deathtouch_attacker = state.has_keyword(attacker_id, Keyword::Deathtouch, registry);
-
-        // CR 510.1c: damage is assigned to the blockers in the damage
-        // assignment order the attacking player announced in the declare
-        // blockers step (CR 509.2) — not in the order the blocks happened
-        // to be declared in. Both damage steps use the same announced
-        // order (CR 510.4). Anything the announcement did not cover (a
-        // state saved before it existed) keeps declaration order, and any
-        // blocker missing from the order is assigned last rather than
-        // dropped.
-        let declared = combat.blocker_assignments.get(&attacker_id)
-            .cloned()
-            .unwrap_or_default();
-        let announced = combat.damage_assignment_order.get(&attacker_id);
-        let mut blockers: Vec<ObjectId> = announced
-            .map(|order| order.iter().copied().filter(|b| declared.contains(b)).collect())
-            .unwrap_or_default();
-        let unannounced: Vec<ObjectId> = declared.iter().copied()
-            .filter(|b| !blockers.contains(b))
-            .collect();
-        blockers.extend(unannounced);
+        let blockers = assignment_order(combat, attacker_id);
 
         let was_blocked = combat.blocked_attackers.contains(&attacker_id)
             || state.combat.as_ref().is_some_and(|c| c.blocked_attackers.contains(&attacker_id));
@@ -583,40 +556,25 @@ fn queue_damage_step(
                 }
             }
         } else {
-            // Blocked: distribute damage to blockers, with trample overflow.
-            let mut remaining_power = attacker_power;
+            // Blocked: the blockers deal their damage to the attacker, and
+            // the attacker's is divided among them as the attacking player
+            // chose (CR 510.1c-d), with any trample overflow beyond them.
+            let live = live_blockers(state, attacker_id, &blockers);
+            let division = divide_combat_damage(
+                attacker_power,
+                &with_lethal(state, attacker_id, &live, registry),
+                has_trample,
+                combat.chosen_damage.get(&attacker_id).map_or(&[], Vec::as_slice),
+            );
 
-            let blocker_count = blockers.len();
-            for (idx, &blocker_id) in blockers.iter().enumerate() {
-                if state.get_object(blocker_id).is_none_or(|o| o.zone != Zone::Battlefield) {
-                    continue;
-                }
-                // A blocker removed from combat since the snapshot (e.g. it
-                // regenerated between damage steps) neither deals nor
-                // receives combat damage (CR 506.4c). The attacker remains
-                // blocked (CR 510.1c) — handled by the snapshot itself.
-                if state.combat.as_ref().is_some_and(|c|
-                    !c.blocker_assignments.get(&attacker_id).is_some_and(|v| v.contains(&blocker_id))) {
-                    continue;
-                }
-                let is_last_blocker = idx == blocker_count - 1;
-
+            for (&blocker_id, &(_, assigned)) in live.iter().zip(&division.to_blockers) {
                 // Blocker deals damage to attacker.
-                let blocker_has_first_strike = state.has_keyword(blocker_id, Keyword::FirstStrike, registry);
-                let blocker_has_double_strike = state.has_keyword(blocker_id, Keyword::DoubleStrike, registry);
-                let blocker_deals = if first_strike_only {
-                    let deals = blocker_has_first_strike || blocker_has_double_strike;
-                    if deals {
-                        if let Some(c) = state.combat.as_mut() {
-                            c.dealt_first_strike.insert(blocker_id);
-                        }
+                let blocker_deals = deals_in_step(state, blocker_id, first_strike_only, registry);
+                if blocker_deals && first_strike_only {
+                    if let Some(c) = state.combat.as_mut() {
+                        c.dealt_first_strike.insert(blocker_id);
                     }
-                    deals
-                } else {
-                    blocker_has_double_strike
-                        || !state.combat.as_ref().is_some_and(|c| c.dealt_first_strike.contains(&blocker_id))
-                };
-
+                }
                 if blocker_deals {
                     let blocker_power = u32::try_from(state.effective_power(blocker_id, registry).unwrap_or(0).max(0)).unwrap_or(0);
                     if blocker_power > 0 {
@@ -625,29 +583,8 @@ fn queue_damage_step(
                 }
 
                 // Attacker deals damage to blocker.
-                if remaining_power > 0 {
-                    let blocker_toughness = state.effective_toughness(blocker_id, registry).unwrap_or(0);
-                    let blocker_damage = state.get_object(blocker_id).map_or(0, |o| o.damage_marked);
-                    let lethal = if has_deathtouch_attacker {
-                        1 // deathtouch: 1 damage is lethal
-                    } else {
-                        u32::try_from((blocker_toughness - i32::try_from(blocker_damage).unwrap_or(i32::MAX)).max(0)).unwrap_or(0)
-                    };
-
-                    // CR 510.1c/d: at least lethal damage to each blocker in
-                    // damage assignment order. Excess damage goes to the next
-                    // blocker (or to player if trample). For the last blocker,
-                    // dump all remaining damage on it (no point holding back).
-                    let assigned = if is_last_blocker && !has_trample {
-                        remaining_power
-                    } else {
-                        remaining_power.min(lethal)
-                    };
-
-                    if assigned > 0 {
-                        queue_combat_damage_to_creature(state, attacker_id, blocker_id, assigned);
-                        remaining_power -= assigned;
-                    }
+                if assigned > 0 {
+                    queue_combat_damage_to_creature(state, attacker_id, blocker_id, assigned);
                 }
             }
 
@@ -655,18 +592,208 @@ fn queue_damage_step(
             // the rest goes to what is being attacked — the defending
             // player, or the attacked planeswalker, and never both
             // (CR 702.19b).
-            if has_trample && remaining_power > 0 {
+            if division.overflow > 0 {
                 match attacked_walker {
                     Some(walker) if walker_still_there => {
                         queue_combat_damage_to_creature(
-                            state, attacker_id, walker, remaining_power);
+                            state, attacker_id, walker, division.overflow);
                     }
                     Some(_) => {} // attacked walker is gone: overflow lands nowhere
                     None => queue_combat_damage_to_player(
-                        state, attacker_id, defending_player, remaining_power),
+                        state, attacker_id, defending_player, division.overflow),
                 }
             }
         }
+    }
+    // The step's choices are spent: the regular step after a first-strike
+    // step asks again, against the damage the first one marked (CR 510.4).
+    if let Some(c) = state.combat.as_mut() {
+        c.chosen_damage.clear();
+    }
+}
+
+/// Whether `id` deals combat damage in this step (CR 510.4-510.5): in the
+/// first-strike step, creatures with first or double strike; in the
+/// regular step, double strikers and every creature that dealt none in the
+/// first-strike step.
+fn deals_in_step(state: &GameState, id: ObjectId, first_strike_only: bool, registry: &CardRegistry) -> bool {
+    let double_strike = state.has_keyword(id, Keyword::DoubleStrike, registry);
+    if first_strike_only {
+        double_strike || state.has_keyword(id, Keyword::FirstStrike, registry)
+    } else {
+        double_strike
+            || !state.combat.as_ref().is_some_and(|c| c.dealt_first_strike.contains(&id))
+    }
+}
+
+/// An attacker's blockers in damage assignment order.
+///
+/// CR 510.1c: damage is assigned to the blockers in the damage assignment
+/// order the attacking player announced in the declare blockers step
+/// (CR 509.2) — not in the order the blocks happened to be declared in.
+/// Both damage steps use the same announced order (CR 510.4). Anything the
+/// announcement did not cover (a state saved before it existed) keeps
+/// declaration order, and any blocker missing from the order is assigned
+/// last rather than dropped.
+fn assignment_order(combat: &CombatState, attacker: ObjectId) -> Vec<ObjectId> {
+    let declared = combat.blocker_assignments.get(&attacker).cloned().unwrap_or_default();
+    let mut blockers: Vec<ObjectId> = combat.damage_assignment_order.get(&attacker)
+        .map(|order| order.iter().copied().filter(|b| declared.contains(b)).collect())
+        .unwrap_or_default();
+    let unannounced: Vec<ObjectId> = declared.iter().copied()
+        .filter(|b| !blockers.contains(b))
+        .collect();
+    blockers.extend(unannounced);
+    blockers
+}
+
+/// The blockers that are still in this combat: on the battlefield and
+/// still blocking `attacker`. One removed since blockers were declared
+/// (it regenerated between damage steps, or left the battlefield) neither
+/// deals nor is assigned combat damage (CR 506.4c); the attacker remains
+/// blocked (CR 510.1c), and its damage is divided among the rest.
+fn live_blockers(state: &GameState, attacker: ObjectId, blockers: &[ObjectId]) -> Vec<ObjectId> {
+    blockers.iter().copied()
+        .filter(|&b| state.get_object(b).is_some_and(|o| o.zone == Zone::Battlefield))
+        .filter(|&b| state.combat.as_ref().is_some_and(|c|
+            c.blocker_assignments.get(&attacker).is_some_and(|v| v.contains(&b))))
+        .collect()
+}
+
+/// Each blocker with the lethal damage it must be assigned (CR 510.1c):
+/// its toughness less the damage already marked on it, or 1 from a source
+/// with deathtouch (CR 702.2c).
+fn with_lethal(state: &GameState, attacker: ObjectId, blockers: &[ObjectId], registry: &CardRegistry) -> Vec<(ObjectId, u32)> {
+    let deathtouch = state.has_keyword(attacker, Keyword::Deathtouch, registry);
+    blockers.iter().map(|&b| {
+        let lethal = if deathtouch {
+            1
+        } else {
+            let toughness = state.effective_toughness(b, registry).unwrap_or(0);
+            let marked = state.get_object(b).map_or(0, |o| o.damage_marked);
+            u32::try_from((toughness - i32::try_from(marked).unwrap_or(i32::MAX)).max(0)).unwrap_or(0)
+        };
+        (b, lethal)
+    }).collect()
+}
+
+/// One attacker's combat damage divided among its blockers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DamageDivision {
+    /// Each blocker, in damage assignment order, with the damage assigned
+    /// to it.
+    pub to_blockers: Vec<(ObjectId, u32)>,
+    /// What tramples over to the player or planeswalker being attacked.
+    /// Always 0 without trample.
+    pub overflow: u32,
+    /// The first blocker whose amount is still the attacking player's to
+    /// choose, with the least and most it may be assigned. `to_blockers`
+    /// gives it, and every blocker after it, the default.
+    pub open: Option<(ObjectId, u32, u32)>,
+}
+
+/// Divide `power` among `blockers` — each paired with its lethal damage, in
+/// damage assignment order — as CR 510.1c-d allows, taking the attacking
+/// player's `chosen` amounts where they have made them.
+///
+/// Every blocker is assigned at least lethal damage before the next is
+/// assigned any; one may be assigned more, up to everything left. The last
+/// blocker of an attacker without trample takes everything left; with
+/// trample, everything left after the last blocker is overflow.
+///
+/// The player is asked only when there is a choice: the power exceeds the
+/// total lethal damage, and there is somewhere else for a surplus to go —
+/// a second blocker, or trample. Otherwise, and for any blocker not yet
+/// chosen, each blocker gets exactly lethal and the rest goes forward.
+#[must_use]
+pub fn divide_combat_damage(
+    power: u32,
+    blockers: &[(ObjectId, u32)],
+    trample: bool,
+    chosen: &[(ObjectId, u32)],
+) -> DamageDivision {
+    let total_lethal = blockers.iter().fold(0u32, |sum, &(_, l)| sum.saturating_add(l));
+    let choice = power > total_lethal && (trample || blockers.len() >= 2);
+    let mut remaining = power;
+    let mut open = None;
+    let mut to_blockers = Vec::with_capacity(blockers.len());
+    for (i, &(blocker, lethal)) in blockers.iter().enumerate() {
+        let least = remaining.min(lethal);
+        let amount = if i + 1 == blockers.len() && !trample {
+            remaining
+        } else if !choice || remaining == least {
+            least
+        } else if let Some(&(_, a)) = chosen.iter().find(|&&(b, _)| b == blocker) {
+            a.clamp(least, remaining)
+        } else {
+            open.get_or_insert((blocker, least, remaining));
+            least
+        };
+        to_blockers.push((blocker, amount));
+        remaining -= amount;
+    }
+    DamageDivision {
+        to_blockers,
+        overflow: if trample { remaining } else { 0 },
+        open,
+    }
+}
+
+/// Ask the attacking player the next open division of this step's combat
+/// damage, if there is one (CR 510.1c-d). True when a prompt was raised.
+fn ask_next_damage_division(state: &mut GameState, registry: &CardRegistry, first_strike_only: bool) -> bool {
+    let Some(combat) = state.combat.clone() else { return false };
+    for (&attacker, &defending_player) in &combat.attackers {
+        if state.get_object(attacker).is_none_or(|o| o.zone != Zone::Battlefield)
+            || !deals_in_step(state, attacker, first_strike_only, registry)
+        {
+            continue;
+        }
+        let live = live_blockers(state, attacker, &assignment_order(&combat, attacker));
+        if live.is_empty() {
+            continue;
+        }
+        let power = u32::try_from(state.effective_power(attacker, registry).unwrap_or(0).max(0)).unwrap_or(0);
+        let trample = state.has_keyword(attacker, Keyword::Trample, registry);
+        let chosen = combat.chosen_damage.get(&attacker).map_or(&[][..], Vec::as_slice);
+        let division = divide_combat_damage(power, &with_lethal(state, attacker, &live, registry), trample, chosen);
+        let Some((blocker, min, max)) = division.open else { continue };
+
+        // What a surplus left here goes on to: the next blocker, or what
+        // the trampler is attacking.
+        let position = live.iter().position(|&b| b == blocker).unwrap_or(0);
+        let onward = match live.get(position + 1) {
+            Some(&next) => state.obj_name(next),
+            None => match combat.planeswalker_defenders.get(&attacker) {
+                Some(&walker) => state.obj_name(walker),
+                None => format!("p{}", defending_player.0),
+            },
+        };
+        let blocker_name = state.obj_name(blocker);
+        let options: Vec<String> = (min..=max).map(|a| {
+            let note = if a == min { " (lethal)" } else { "" };
+            format!("{a} to {blocker_name}{note}, {} on to {onward}", max - a)
+        }).collect();
+        let description = format!(
+            "Combat damage from {} ({power} power, CR 510.1c): how much of the {max} left goes to {blocker_name}? At least {min} (lethal), at most {max}; the rest goes on to {onward}",
+            state.obj_name(attacker),
+        );
+        state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
+            player: state.active_player,
+            source: attacker,
+            choice: crate::state::ResolutionChoiceKind::AssignCombatDamage {
+                description, attacker, blocker, min, max, options, first_strike_only,
+            },
+        });
+        return true;
+    }
+    false
+}
+
+/// Record the attacking player's answer at an `AssignCombatDamage` prompt.
+pub(crate) fn record_damage_assignment(state: &mut GameState, attacker: ObjectId, blocker: ObjectId, amount: u32) {
+    if let Some(c) = state.combat.as_mut() {
+        c.chosen_damage.entry(attacker).or_default().push((blocker, amount));
     }
 }
 

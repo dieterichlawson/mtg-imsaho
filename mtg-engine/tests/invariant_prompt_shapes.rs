@@ -827,6 +827,80 @@ fn the_damage_assignment_order_prompt_orders_one_attackers_blockers() {
     flags(&s, &reg, "which is not blocking #");
 }
 
+/// CR 510.1c-d: the combat damage division is the attacking player's, about
+/// a blocker of the attacker being divided, in the combat damage step, and
+/// only where more than lethal is left to place (issue #637).
+#[test]
+fn the_combat_damage_division_prompt_divides_one_attackers_damage() {
+    let (mut state, reg) = base();
+    let attacker = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let first = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let second = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    state.step = Step::DeclareAttackers;
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    state.step = Step::DeclareBlockers;
+    submit_declare_blockers(&mut state, P1, &[(first, attacker), (second, attacker)], &reg);
+    state.awaiting_action = None;
+    state.step = Step::CombatDamage;
+    state.events.clear();
+    state.trigger_event_index = 0;
+    state.priority_player = Some(P0);
+
+    let divide = |source: ObjectId, blocker: ObjectId, min: u32, max: u32, n: usize, who: PlayerId|
+        AwaitingAction::ResolutionChoice {
+            player: who, source,
+            choice: ResolutionChoiceKind::AssignCombatDamage {
+                description: "d".into(), attacker, blocker, min, max,
+                options: (0..n).map(|i| i.to_string()).collect(), first_strike_only: false } };
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(divide(attacker, first, 1, 2, 2, P0));
+    quiet_about(&s, &reg, "combat-damage division prompt");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(divide(attacker, first, 2, 2, 1, P0));
+    flags(&s, &reg, "which is no choice");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(divide(attacker, first, 1, 2, 3, P0));
+    flags(&s, &reg, "with 3 options for the amounts 1..=2");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(divide(attacker, first, 1, 2, 2, P1));
+    flags(&s, &reg, "not the attacking player p0");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(divide(first, first, 1, 2, 2, P0));
+    flags(&s, &reg, "while dividing #");
+
+    let mut s = state.clone();
+    s.awaiting_action = Some(divide(attacker, first, 1, 3, 3, P0));
+    flags(&s, &reg, "from a 2-power attacker");
+
+    let mut s = state.clone();
+    s.step = Step::DeclareBlockers;
+    s.awaiting_action = Some(divide(attacker, first, 1, 2, 2, P0));
+    flags(&s, &reg, "outside the combat damage step");
+
+    let mut s = state.clone();
+    let bystander = named_permanent(&mut s, &reg, "Grizzly Bears", P1);
+    s.awaiting_action = Some(divide(attacker, bystander, 1, 2, 2, P0));
+    flags(&s, &reg, "which is not blocking #");
+
+    // An answer already given is not asked again.
+    let mut s = state.clone();
+    s.combat.as_mut().unwrap().chosen_damage.insert(attacker, vec![(first, 2)]);
+    s.awaiting_action = Some(divide(attacker, first, 1, 2, 2, P0));
+    flags(&s, &reg, "already assigned");
+
+    // And a division held with no prompt open is a leak into the next step.
+    let mut s = state.clone();
+    s.combat.as_mut().unwrap().chosen_damage.insert(attacker, vec![(first, 2)]);
+    let v = mtg_engine::invariants::check_settled(&s, &reg);
+    assert!(v.iter().any(|m| m.contains("division held with no division prompt open")), "{v:?}");
+    let _ = second;
+}
+
 /// CR 601.2b/608.2: a pay-or-not prompt is about a spell on the stack,
 /// raised by the spell that is resolving, for a cost with no unannounced X.
 #[test]

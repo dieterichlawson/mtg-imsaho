@@ -4308,6 +4308,14 @@ pub struct CombatState {
     /// but the steps still happen).
     #[serde(default)]
     pub any_attackers_declared: bool,
+    /// The amounts the attacking player chose at `AssignCombatDamage`
+    /// prompts in the combat damage step under way (CR 510.1c-d): attacker
+    /// -> (blocker, amount), in the order they were asked. A blocker with
+    /// no entry takes the default — exactly lethal, the rest forward.
+    /// Consumed and cleared when the step's damage is queued, so the
+    /// first-strike step's answers never carry into the regular step.
+    #[serde(default)]
+    pub chosen_damage: std::collections::BTreeMap<ObjectId, Vec<(ObjectId, u32)>>,
 }
 
 impl CombatState {
@@ -4599,6 +4607,35 @@ pub enum ResolutionChoiceKind {
         remaining: Vec<ObjectId>,
         /// Display names of those blockers.
         options: Vec<String>,
+    },
+    /// CR 510.1c-d: the attacking player divides a blocked attacker's
+    /// combat damage among its blockers, one blocker at a time in damage
+    /// assignment order. Each blocker must be assigned at least lethal
+    /// damage (`min`, which counts damage already marked and deathtouch)
+    /// before the next is assigned any, but may be assigned more, up to
+    /// all that is left (`max`). Whatever is not assigned here goes on to
+    /// the next blocker, or past the last one with trample.
+    ///
+    /// Answered by `ChosenIndex` over `options`: index `i` assigns
+    /// `min + i`, so index 0 is the default — exactly lethal, the division
+    /// the engine makes without asking. Raised only when there is a
+    /// choice: the attacker's power exceeds the lethal damage of all its
+    /// blockers, and it either has trample or two or more blockers.
+    AssignCombatDamage {
+        description: String,
+        /// The attacker whose damage is being divided.
+        attacker: ObjectId,
+        /// The blocker this prompt assigns to.
+        blocker: ObjectId,
+        /// Lethal damage for `blocker`: the least it may be assigned.
+        min: u32,
+        /// All the attacker's damage not yet assigned: the most it may be.
+        max: u32,
+        /// One label per amount, `min..=max` in order.
+        options: Vec<String>,
+        /// Which combat damage step this is (CR 510.4): the first-strike
+        /// step, or the regular one.
+        first_strike_only: bool,
     },
     /// CR 616.1: two or more replacement and/or prevention effects apply to
     /// one damage event and the order changes what happens, so the affected

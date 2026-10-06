@@ -327,6 +327,7 @@ pub(crate) fn legal_actions_while_awaiting(
                     .collect(),
                 ResolutionChoiceKind::ChooseTriggerOrder { options, .. }
                 | ResolutionChoiceKind::ChooseDamageAssignmentOrder { options, .. }
+                | ResolutionChoiceKind::AssignCombatDamage { options, .. }
                 | ResolutionChoiceKind::ChooseDamageEffect { options, .. } => options
                     .iter()
                     .enumerate()
@@ -356,6 +357,7 @@ pub(crate) fn legal_actions_while_awaiting(
                 | ResolutionChoiceKind::ChooseObjectSet { description, .. }
                 | ResolutionChoiceKind::ChooseTriggerOrder { description, .. }
                 | ResolutionChoiceKind::ChooseDamageAssignmentOrder { description, .. }
+                | ResolutionChoiceKind::AssignCombatDamage { description, .. }
                 | ResolutionChoiceKind::ChooseDamageEffect { description, .. } => {
                     description.clone()
                 }

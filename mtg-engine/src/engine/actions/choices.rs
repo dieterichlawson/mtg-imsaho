@@ -215,6 +215,30 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         return Applied::ReturnNow;
                     }
                 }
+                (ResolutionChoiceKind::AssignCombatDamage { attacker, blocker, min, options, first_strike_only, .. },
+                 ResolvedChoice::ChosenIndex(index, _)) => {
+                    // CR 510.1c-d: index `i` assigns `min + i` to this
+                    // blocker. The step asks about the next open division,
+                    // or deals its damage once none is left.
+                    let Some(amount) = (*index < options.len())
+                        .then(|| u32::try_from(*index).ok().map(|i| min + i))
+                        .flatten()
+                    else {
+                        state.log(LogLevel::Debug, format!(
+                            "choice refused, {index} is not one of the {} amounts offered", options.len()));
+                        state.awaiting_action = unanswered;
+                        return Applied::ReturnNow;
+                    };
+                    let (attacker, blocker, first_strike_only) = (*attacker, *blocker, *first_strike_only);
+                    state.log(LogLevel::Event, format!(
+                        "p{} assigned {amount} of {}'s combat damage to {} (CR 510.1c)",
+                        chooser.0, state.obj_name(attacker), state.obj_name(blocker)));
+                    crate::combat::record_damage_assignment(&mut *state, attacker, blocker, amount);
+                    crate::combat::combat_damage_step(&mut *state, registry, first_strike_only);
+                    if state.awaiting_action.is_some() {
+                        return Applied::ReturnNow;
+                    }
+                }
                 (ResolutionChoiceKind::ChooseDamageEffect { effects, options, source, target, amount, kind, .. },
                  ResolvedChoice::ChosenIndex(index, _)) => {
                     // CR 616.1: the chosen effect applies to the damage

@@ -296,6 +296,7 @@ pub fn check_core(state: &GameState, _registry: &CardRegistry) -> Vec<String> {
                 K::ChooseCardFromHand { cards, .. } => cards.is_empty(),
                 K::ChooseTriggerOrder { options, .. } => options.is_empty(),
                 K::ChooseDamageAssignmentOrder { options, .. } => options.is_empty(),
+                K::AssignCombatDamage { options, .. } => options.is_empty(),
                 K::ChooseDamageEffect { options, .. } => options.is_empty(),
                 K::DividePermanentsIntoPiles { permanents, .. } => permanents.is_empty(),
                 _ => false,
@@ -490,6 +491,19 @@ pub fn check_settled(state: &GameState, registry: &CardRegistry) -> Vec<String> 
         v.push(format!(
             "{} damage event(s) queued with no damage-effect choice open",
             state.pending_damage.len()));
+    }
+
+    // The attacking player's division of combat damage (CR 510.1c-d) lives
+    // only across the prompts that build it: the step that asked consumes
+    // it when it queues its damage. An answer still held at any other
+    // decision would be spent by the next damage step, against blockers and
+    // damage it was never chosen for.
+    if state.combat.as_ref().is_some_and(|c| !c.chosen_damage.is_empty())
+        && !matches!(&state.awaiting_action,
+            Some(crate::state::AwaitingAction::ResolutionChoice {
+                choice: crate::state::ResolutionChoiceKind::AssignCombatDamage { .. }, .. }))
+    {
+        v.push("combat damage division held with no division prompt open".into());
     }
 
     // A battlefield creature has a power and a toughness — state-based

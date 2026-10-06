@@ -54,6 +54,7 @@ Put it in the file for that rule. If none fits, make one, named for the rule.
 | an answer the prompt never offered is not played (CR 508.1, 104.3a) | `unoffered_answers.rs` |
 | a set of cards is checked against the prompt that asked for it (CR 514.2, 103.4) | `set_prompt_contents.rs` |
 | damage assignment order (CR 509.2, 510.1c) | `damage_assignment_order.rs` |
+| combat damage division among blockers (CR 510.1c-d) | `combat_damage_division.rs` |
 | attacking planeswalkers (CR 508.1a, 702.19d/i) | `planeswalker_combat.rs` |
 | damage | `damage_pipeline.rs`, `damage_helper.rs` (any target includes planeswalkers), `inline_damage.rs` |
 | choosing among replacement and prevention effects on one damage event (CR 616.1) | `damage_effect_choice.rs` |

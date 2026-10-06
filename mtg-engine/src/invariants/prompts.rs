@@ -466,6 +466,46 @@ fn check_choice(state: &GameState, registry: &CardRegistry, player: crate::ids::
             }
             distinct(remaining, w, v);
         }
+        K::AssignCombatDamage { attacker, blocker, min, max, options, .. } => {
+            let w = "combat-damage division prompt";
+            // CR 510.1c-d: the attacking player divides one attacker's
+            // damage, a blocker at a time, and is asked only where the
+            // amount is theirs to choose: more than lethal is left.
+            if min >= max {
+                v.push(format!("{w} offers {min}..={max}, which is no choice"));
+            }
+            if options.len() as u64 != u64::from(max.saturating_sub(*min)) + 1 {
+                v.push(format!("{w} with {} options for the amounts {min}..={max}", options.len()));
+            }
+            if player != state.active_player {
+                v.push(format!("{w} asks p{}, not the attacking player p{}",
+                    player.0, state.active_player.0));
+            }
+            if source != *attacker {
+                v.push(format!("{w} sourced at #{} while dividing #{}'s damage", source.0, attacker.0));
+            }
+            if state.step != crate::types::Step::CombatDamage {
+                v.push(format!("{w} outside the combat damage step ({:?})", state.step));
+            }
+            match state.combat.as_ref() {
+                None => v.push(format!("{w} outside combat")),
+                Some(c) => {
+                    if !c.attackers.contains_key(attacker) {
+                        v.push(format!("{w} for #{} which is not attacking", attacker.0));
+                    }
+                    if !c.blocker_assignments.get(attacker).is_some_and(|b| b.contains(blocker)) {
+                        v.push(format!("{w} assigns to #{} which is not blocking #{}", blocker.0, attacker.0));
+                    }
+                    if c.chosen_damage.get(attacker).is_some_and(|d| d.iter().any(|(b, _)| b == blocker)) {
+                        v.push(format!("{w} asks again about #{}, already assigned", blocker.0));
+                    }
+                }
+            }
+            let power = state.effective_power(*attacker, registry).unwrap_or(0).max(0);
+            if i64::from(*max) > i64::from(power) {
+                v.push(format!("{w} offers up to {max} from a {power}-power attacker"));
+            }
+        }
         K::ChooseDamageEffect { effects, options, source: event_source, target, amount, kind, .. } => {
             let w = "damage-effect prompt";
             // CR 616.1: the choice is the affected player's, among two or

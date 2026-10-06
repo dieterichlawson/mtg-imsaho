@@ -734,7 +734,7 @@ fn prompt_offers(state: &GameState, acting: PlayerId, legal: &LegalActions, regi
                 }
                 K::ChooseCardType { options, .. } | K::ChooseCardName { options, .. }
                 | K::ChooseTriggerOrder { options, .. } | K::ChooseDamageAssignmentOrder { options, .. }
-                | K::ChooseDamageEffect { options, .. } => {
+                | K::AssignCombatDamage { options, .. } | K::ChooseDamageEffect { options, .. } => {
                     expect(v, options.iter().enumerate().map(|(i, n)| format!("{:?}", ResolvedChoice::ChosenIndex(i, n.clone()))).collect());
                 }
                 K::ChoosePile { .. } => {
