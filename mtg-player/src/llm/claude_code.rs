@@ -46,7 +46,9 @@ fn call_timeout() -> Duration {
         .map_or(CALL_TIMEOUT, Duration::from_secs)
 }
 
-const MAX_ATTEMPTS: u32 = 3;
+/// Overrides [`super::RETRY_BUDGET`] for a game seat, so the give-up path can
+/// be tested in seconds. Not something a run should set.
+pub const RETRY_BUDGET_ENV: &str = "MTG_GAME_RETRY_BUDGET_SECS";
 
 /// Environment variables the Claude Code CLI treats as an API-side auth
 /// source that overrides its claude.ai login. Removed from a seat's child
@@ -503,6 +505,10 @@ pub(super) struct ClaudeCodeBackend {
     last_thinking: Option<String>,
     /// Why the last call produced no answer at all (#587).
     last_call_failure: Option<String>,
+    /// Set, and never cleared, once a call has spent the whole retry budget
+    /// without an answer: the seat has stopped answering, and its runner
+    /// forfeits it rather than playing on with fallbacks (#587).
+    gave_up: Option<String>,
     /// The seat this backend answers for; see `LlmBackend::set_seat`.
     seat: String,
 }
@@ -528,6 +534,7 @@ impl ClaudeCodeBackend {
             workdir,
             last_thinking: None,
             last_call_failure: None,
+            gave_up: None,
             seat: String::new(),
         }
     }
@@ -545,22 +552,45 @@ impl ClaudeCodeBackend {
     }
 
     /// Run one `claude -p` call with `message` on stdin. Returns the CLI's
-    /// JSON result object. Retries on spawn failure, non-zero exit, a
-    /// timeout, unparsable output, or `is_error`; after the last attempt
-    /// returns `None` and the caller falls back like the API path does.
+    /// JSON result object. Retries a spawn failure, a non-zero exit, a
+    /// timeout, unparsable output or `is_error` for as long as the retry
+    /// budget lasts, backing off between attempts; past it, returns `None`,
+    /// records why, and marks the seat as having given up.
+    ///
+    /// This used to be three attempts over about six seconds, so a transient
+    /// outage cost a game seat its decisions while the draft seat, on a
+    /// ten-minute budget, rode the same outage out (#218, #587). One budget,
+    /// both phases.
     fn call(&mut self, message: &str, schema: Option<&serde_json::Value>) -> Option<serde_json::Value> {
-        for attempt in 0..MAX_ATTEMPTS {
+        if let Some(why) = &self.gave_up {
+            // Spent already: asking again would cost another whole budget
+            // per decision, and the runner forfeits this seat on its next
+            // look anyway.
+            self.last_call_failure = Some(why.clone());
+            return None;
+        }
+        let budget = super::retry_budget(RETRY_BUDGET_ENV);
+        let began = std::time::Instant::now();
+        let deadline = began + budget;
+        let mut attempt = 0u32;
+        loop {
             if attempt > 0 {
-                std::thread::sleep(Duration::from_secs(2u64.pow(attempt)));
+                let backoff = super::retry_backoff(attempt);
+                // Sleeping past the budget would spend the whole window on
+                // one wait; stop instead and report.
+                if std::time::Instant::now() + backoff > deadline {
+                    break;
+                }
+                std::thread::sleep(backoff);
             }
+            attempt += 1;
             let started = std::time::Instant::now();
             match self.call_once(message, schema) {
                 Ok(json) => {
                     let elapsed_ms = started.elapsed().as_millis();
                     if json["is_error"].as_bool() == Some(true) {
                         let msg = format!(
-                            "claude -p reported an error (attempt {}/{}, {}ms): {}",
-                            attempt + 1, MAX_ATTEMPTS, elapsed_ms,
+                            "claude -p reported an error (attempt {attempt}, {elapsed_ms}ms): {}",
                             json["result"].as_str().unwrap_or("").chars().take(200).collect::<String>()
                         );
                         eprintln!("{}{msg}", seat_tag(&self.seat));
@@ -585,21 +615,24 @@ impl ClaudeCodeBackend {
                 }
                 Err(e) => {
                     let msg = format!(
-                        "claude -p failed (attempt {}/{}, {}ms): {e}",
-                        attempt + 1, MAX_ATTEMPTS, started.elapsed().as_millis()
+                        "claude -p failed (attempt {attempt}, {}ms): {e}",
+                        started.elapsed().as_millis()
                     );
                     eprintln!("{}{msg}", seat_tag(&self.seat));
                     crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
                 }
             }
         }
-        let msg = format!("claude -p exhausted all {MAX_ATTEMPTS} attempts");
+        let msg = format!(
+            "claude -p gave up after {attempt} attempt{} over {}s (retry budget {}s)",
+            if attempt == 1 { "" } else { "s" }, began.elapsed().as_secs(), budget.as_secs());
         eprintln!("{}{msg}", seat_tag(&self.seat));
         crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
         // The caller is about to be handed an empty answer. Say that no
         // answer happened, so it is not reported as one the model gave
         // (issue #587).
-        self.last_call_failure = Some(msg);
+        self.last_call_failure = Some(msg.clone());
+        self.gave_up = Some(msg);
         None
     }
 
@@ -864,6 +897,10 @@ impl LlmBackend for ClaudeCodeBackend {
 
     fn take_call_failure(&mut self) -> Option<String> {
         self.last_call_failure.take()
+    }
+
+    fn gave_up(&self) -> Option<String> {
+        self.gave_up.clone()
     }
 
     fn session_id(&self) -> Option<&str> {

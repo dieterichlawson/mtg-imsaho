@@ -21,6 +21,9 @@ fn a_failed_call_is_logged_under_the_seat_that_made_it() {
     .unwrap();
     std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
     let log = dir.join("run.log");
+    // The retry budget is ten minutes by default (#587); a few seconds is
+    // enough to see the failed attempts logged.
+    std::env::set_var("MTG_GAME_RETRY_BUDGET_SECS", "3");
     mtg_player::game_log::init(log.to_str().unwrap()).unwrap();
 
     let mut seat = mtg_player::llm::LlmPlayer::new_claude_code_with_binary("Seat3", bin.to_str().unwrap());

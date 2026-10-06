@@ -758,11 +758,26 @@ stops here — pass --save {path} to keep writing it");
             None
         };
 
-        if let Some(prompt) = &legal.combat_prompt {
-            return choose_combat(player, &view, legal, prompt);
+        let answer = if let Some(prompt) = &legal.combat_prompt {
+            choose_combat(player, &view, legal, prompt)
+        } else {
+            choose_action(player, &view, legal)
+        };
+        // A seat whose backend spent its whole retry budget without an answer
+        // has stopped playing; the fallback it was just handed is not its
+        // move. It forfeits, as the tournament forfeits it (#587), rather
+        // than playing the rest of the game on fallbacks.
+        if let PlayerKind::Llm(p) = player {
+            if let Some(why) = mtg_player::Player::gave_up(p) {
+                let msg = format!("{}'s backend stopped answering ({why}); the seat forfeits the game",
+                    mtg_player::Player::name(p));
+                eprintln!("\nWARN: {msg}");
+                mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error,
+                    file!(), line!(), "STALLED", &msg);
+                return mtg_player::watchdog::forfeit_move();
+            }
         }
-
-        choose_action(player, &view, legal)
+        answer
     };
 
     // The progress watchdog (#462), one implementation shared with the

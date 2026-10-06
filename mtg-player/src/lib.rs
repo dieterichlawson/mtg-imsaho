@@ -137,4 +137,12 @@ pub trait Player {
     /// For most players, only `legal.actions` matters. The CLI uses
     /// `legal.castable_spells` for interactive target selection.
     fn choose_action(&mut self, view: &GameView, legal: &LegalActions) -> Action;
+
+    /// Why this seat has stopped answering for good, if it has — an LLM seat
+    /// whose backend spent its whole retry budget without an answer. A
+    /// runner forfeits such a seat rather than playing on with fallbacks
+    /// (#587). Every other seat always answers.
+    fn gave_up(&self) -> Option<String> {
+        None
+    }
 }

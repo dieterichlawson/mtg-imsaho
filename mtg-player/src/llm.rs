@@ -270,6 +270,36 @@ pub fn damage_amount_schema(min: u32, max: u32) -> serde_json::Value {
     })
 }
 
+/// How long a `claude -p` seat keeps retrying a failing call before it gives
+/// up, in the draft and in the games alike.
+///
+/// The failure a long run actually meets is a usage limit or a transient
+/// CLI or network outage, which lasts minutes. Three tries over six seconds
+/// ended a draft at pick 300 (#218); the game seat kept that shape after
+/// the draft lost it, so the same outage cost the games their decisions
+/// (#587). A wall-clock budget says what is meant: keep trying for ten
+/// minutes, backing off up to a minute between tries.
+pub const RETRY_BUDGET: std::time::Duration = std::time::Duration::from_secs(600);
+
+/// The longest wait between two attempts. Exponential up to here, then flat.
+pub const MAX_RETRY_BACKOFF: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// [`RETRY_BUDGET`], unless `env` names a number of seconds to use instead —
+/// which is how the give-up path is tested in seconds.
+#[must_use]
+pub fn retry_budget(env: &str) -> std::time::Duration {
+    std::env::var(env)
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .map_or(RETRY_BUDGET, std::time::Duration::from_secs)
+}
+
+/// How long to wait before attempt number `attempt` (1-based on retries).
+#[must_use]
+pub fn retry_backoff(attempt: u32) -> std::time::Duration {
+    MAX_RETRY_BACKOFF.min(std::time::Duration::from_secs(2u64.pow(attempt.min(6))))
+}
+
 pub fn thinking_param(model: &str) -> serde_json::Value {
     let wants_budget = model.contains("-4-5") || model.contains("haiku") || model.contains("-3-");
     if wants_budget {
@@ -1102,6 +1132,11 @@ trait LlmBackend {
     /// bad answers (issue #587). Taken, like `take_thinking`, so it belongs
     /// to exactly one decision.
     fn take_call_failure(&mut self) -> Option<String> { None }
+    /// Why the backend has stopped answering for good, once it has: a call
+    /// spent its whole retry budget without an answer (#587). Unlike
+    /// `take_call_failure` this is not taken — a seat that gave up stays
+    /// given up, and its runner forfeits it.
+    fn gave_up(&self) -> Option<String> { None }
     /// Get the conversation length (for tests).
     fn conversation_len(&self) -> usize { 0 }
     /// Get the system prompt (for tests).
@@ -4079,6 +4114,10 @@ impl LlmPlayer {
 impl Player for LlmPlayer {
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn gave_up(&self) -> Option<String> {
+        self.backend.gave_up()
     }
 
     fn choose_action(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {

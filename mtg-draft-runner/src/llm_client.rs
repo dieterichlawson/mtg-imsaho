@@ -712,34 +712,15 @@ impl DraftBackend for AnthropicDraftBackend {
 /// game seat uses, which is why nothing ever swept these (#206, #404).
 const CLAUDE_CODE_WORKDIR_PREFIX: &str = "mtg-draft-claude-code-";
 /// How long a seat keeps retrying a failing `claude -p` before the draft
-/// gives up.
-///
-/// This used to be three attempts with `2^attempt` backoff: three tries and
-/// six seconds. The failure a long draft actually meets is a usage limit or
-/// a transient CLI/network outage, which lasts minutes, and an eight-seat
-/// draft is 360 picks over about an hour — so any six-second hiccup at pick
-/// 300 ended the run (issue #218). A wall-clock budget says what is meant
-/// better than an attempt count does: keep trying for ten minutes, backing
-/// off up to a minute between tries.
-const RETRY_BUDGET: std::time::Duration = std::time::Duration::from_secs(600);
+/// gives up: the one budget the game seat uses too (#218, #587).
+use mtg_player::llm::retry_backoff;
 
-/// The longest wait between two attempts. Exponential up to here, then flat.
-const MAX_RETRY_BACKOFF: std::time::Duration = std::time::Duration::from_secs(60);
-
-/// Overrides [`RETRY_BUDGET`], so the give-up path can be tested in seconds.
+/// Overrides the retry budget, so the give-up path can be tested in seconds.
 /// Not something a run should set.
 const RETRY_BUDGET_ENV: &str = "MTG_DRAFT_RETRY_BUDGET_SECS";
 
 fn retry_budget() -> std::time::Duration {
-    std::env::var(RETRY_BUDGET_ENV)
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .map_or(RETRY_BUDGET, std::time::Duration::from_secs)
-}
-
-/// How long to wait before attempt number `attempt` (1-based on retries).
-fn retry_backoff(attempt: u32) -> std::time::Duration {
-    MAX_RETRY_BACKOFF.min(std::time::Duration::from_secs(2u64.pow(attempt.min(6))))
+    mtg_player::llm::retry_budget(RETRY_BUDGET_ENV)
 }
 
 /// Prefix on the panic payload of a fatal LLM failure.
@@ -1745,9 +1726,9 @@ printf '{"type":"result","subtype":"success","is_error":false,"session_id":"%s",
     /// The default budget is sized for an outage, not for a hiccup.
     #[test]
     fn the_retry_budget_outlasts_a_transient_outage() {
-        assert!(super::RETRY_BUDGET >= std::time::Duration::from_secs(300));
+        assert!(mtg_player::llm::RETRY_BUDGET >= std::time::Duration::from_secs(300));
         assert!(super::retry_backoff(1) < super::retry_backoff(3));
-        assert_eq!(super::retry_backoff(20), super::MAX_RETRY_BACKOFF, "backoff is capped");
+        assert_eq!(super::retry_backoff(20), mtg_player::llm::MAX_RETRY_BACKOFF, "backoff is capped");
     }
 
     #[test]

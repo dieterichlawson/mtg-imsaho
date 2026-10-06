@@ -1788,6 +1788,24 @@ fn play_match(
         }
 
         games.push(outcome);
+
+        // A seat whose backend gave up forfeits the rest of the match, not
+        // only the game it gave up in: the games it would have played are
+        // its opponent's, recorded as forfeits so the standings and
+        // `=== Forfeited Games ===` say so (#587). Nothing is asked of it.
+        let dead = [(seat_a, &p1), (seat_b, &p2)].into_iter()
+            .find(|(_, p)| mtg_player::Player::gave_up(*p).is_some())
+            .map(|(seat, _)| seat);
+        if let Some(dead) = dead {
+            let winner = if dead == seat_a { seat_b } else { seat_a };
+            while !match_is_over(best_of, games.len(), wins_a, wins_b) {
+                if winner == seat_a { wins_a += 1 } else { wins_b += 1 }
+                games.push(GameOutcome {
+                    winner: Some(winner), turns: 0, game_log: Vec::new(),
+                    stalled_seat: Some(dead), abandoned: false,
+                });
+            }
+        }
     }
 
     MatchResult {
@@ -1895,11 +1913,34 @@ fn play_game(
                 p2
             };
 
-            if let Some(prompt) = &legal.combat_prompt {
-                return player.choose_combat(&view, prompt);
+            let answer = if let Some(prompt) = &legal.combat_prompt {
+                player.choose_combat(&view, prompt)
+            } else {
+                player.choose_action(&view, legal)
+            };
+            // A seat whose backend spent its whole retry budget without an
+            // answer has stopped playing: it forfeits this game through the
+            // stall path, and `play_match` forfeits it the rest of the match.
+            // Not a silent degrade onto fallbacks, and not a fatal that stops
+            // every other match in the process (#587).
+            if let Some(why) = mtg_player::Player::gave_up(&*player) {
+                if stalled_seat.is_none() {
+                    let seat = if acting_player == PlayerId(0) { seat_a } else { seat_b };
+                    stalled_seat = Some(seat);
+                    let report = format!("Seat {seat}'s backend never answered within its retry \
+budget ({why}), so the seat forfeits its match");
+                    eprintln!("\nWARN: {report}.");
+                    draft_log::DraftLogger::stalled_game(
+                        seat_a, seat_b, seat,
+                        game_state.turn_number,
+                        &format!("{:?}", game_state.step),
+                        &report,
+                        file!(), line!(),
+                    );
+                }
+                return mtg_player::watchdog::forfeit_move();
             }
-
-            player.choose_action(&view, legal)
+            answer
         };
 
     engine::run_game_loop(&mut state, registry, &mut game_callback);

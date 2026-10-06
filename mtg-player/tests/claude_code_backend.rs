@@ -19,6 +19,10 @@ impl Fake {
     /// `script_body` runs with `$LOG` (argv/stdin recording file) and
     /// `$CALL` (1-based call counter) set.
     fn new(name: &str, script_body: &str) -> Fake {
+        // A failing call is retried for a wall-clock budget of ten minutes
+        // by default (#587). Seven seconds is three instant failures: the
+        // attempts at 0s, 2s and 6s, and the next backoff runs past it.
+        std::env::set_var("MTG_GAME_RETRY_BUDGET_SECS", "7");
         let dir = std::env::temp_dir().join(format!("mtg-fake-claude-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
@@ -197,12 +201,29 @@ fn a_failing_cli_is_retried_then_falls_back_to_pass() {
     let fake = Fake::new("fail", "echo 'boom' >&2; exit 3");
     let mut p = mtg_player::llm::LlmPlayer::new_claude_code_with_binary("t", &fake.bin());
     assert_eq!(p.backend_send_for_test("pick"), "0", "the API path's fallback: pass priority");
-    assert_eq!(fake.calls().len(), 3, "three attempts before giving up");
+    assert_eq!(fake.calls().len(), 3, "three attempts inside the test's seven-second budget");
     assert_eq!(p.conversation_len_for_test(), 0, "a failed call is not an exchange");
 }
 
 /// #660: the reason read "exit exit status: 3", because `ExitStatus`
 /// already prints the words it was prefixed with.
+/// Issue #587: a seat whose call spent the whole retry budget has stopped
+/// answering. It says so, and it does not spend another whole budget on
+/// every decision after — the runner forfeits it instead.
+#[test]
+fn a_seat_that_spent_its_retry_budget_has_given_up() {
+    use mtg_player::Player;
+    let fake = Fake::new("gave-up", "echo 'boom' >&2; exit 3");
+    let mut p = mtg_player::llm::LlmPlayer::new_claude_code_with_binary("t", &fake.bin());
+    assert!(p.gave_up().is_none(), "a fresh seat has not given up");
+    assert_eq!(p.backend_send_for_test("pick"), "0");
+    let why = p.gave_up().expect("a call that spent its budget gives the seat up");
+    assert!(why.contains("retry budget"), "{why}");
+    let attempts = fake.calls().len();
+    assert_eq!(p.backend_send_for_test("pick"), "0");
+    assert_eq!(fake.calls().len(), attempts, "a seat that gave up is not asked again");
+}
+
 #[test]
 fn a_failed_call_names_its_exit_status_once() {
     let fake = Fake::new("exit-status", "echo 'boom' >&2; exit 3");
@@ -273,7 +294,8 @@ fn a_hung_call_times_out_even_when_a_grandchild_holds_stdout() {
         let _ = tx.send(p.backend_send_for_test("pick"));
     });
 
-    // Three attempts of 2s each, plus the 2s and 4s retry backoffs.
+    // Attempts of 2s each and the 2s backoff between them, inside the
+    // seven-second retry budget `Fake::new` sets.
     let answer = rx
         .recv_timeout(std::time::Duration::from_secs(60))
         .expect("a hung call must give up and return, not block the game forever");
