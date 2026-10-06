@@ -1209,6 +1209,75 @@ fn no_card_announces_a_destruction_it_did_not_check() {
         offenders.len(), offenders.join("\n  "));
 }
 
+/// A card that creates tokens or changes a life total does not narrate it.
+///
+/// `create_token*` logs "pN created K P/T Name token(s)" counted from what
+/// entered, and `change_life*` logs "pN lost N life (T)" with the total —
+/// `change_life_for` naming the card. A card's own sentence beside either
+/// says the same thing twice, and with the printed number: "Skirsdag High
+/// Priest creates a 5/5 black Demon token" under "p0 created 2 5/5 Demon
+/// tokens" when Parallel Lives was out, "Bloodgift Demon: … lost 1 life"
+/// under "p1 lost 1 life (19)" (#329, #628, #706).
+#[test]
+fn no_card_narrates_a_token_or_life_change_the_engine_logs() {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cards");
+    let mut files = Vec::new();
+    let mut stack = vec![src];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap().flatten() {
+            let p = entry.path();
+            if p.is_dir() { stack.push(p); }
+            else if p.extension().is_some_and(|e| e == "rs") { files.push(p); }
+        }
+    }
+    files.sort();
+
+    // (what the call does, the call, what a duplicate line would say)
+    let watched: [(&str, &str, &str); 4] = [
+        ("token", "create_token", "token"),
+        ("life", "change_life(", " life"),
+        ("life", "lose_life(", " life"),
+        ("life", "gain_life(", " life"),
+    ];
+    let mut offenders = Vec::new();
+    let mut scanned = 0usize;
+    for path in files {
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        for (n, line) in lines.iter().enumerate() {
+            let code = line.trim_start();
+            if code.starts_with("//") {
+                continue;
+            }
+            for (what, call, said) in watched {
+                // A token copy is not counted by the engine's line; the
+                // card's own line is the only one.
+                if !code.contains(call) || code.contains("create_token_copy") || code.contains("fn ") {
+                    continue;
+                }
+                scanned += 1;
+                // The card's next log statement, if it comes within the
+                // same few lines, and the lines it spans.
+                let after: Vec<&str> = lines[n + 1..].iter().take(12).copied().collect();
+                let Some(at) = after.iter().position(|l| l.contains("state.log(")) else { continue };
+                let statement: String = after[at..].iter().take(5).copied().collect::<Vec<_>>().join(" ");
+                let statement = statement.split(");").next().unwrap_or("").to_lowercase();
+                if statement.contains(said) {
+                    offenders.push(format!("{name}:{}: {what} logged again after `{}`", n + 1, code));
+                }
+            }
+        }
+    }
+    assert!(scanned >= 20,
+        "only {scanned} token/life call(s) in src/cards — this invariant has stopped covering anything");
+    assert!(offenders.is_empty(),
+        "{} card(s) narrate a token or life change the engine already logs:\n  {}\n\n\
+         The engine's line is counted from what happened. Use `change_life_for` \
+         to put the card's name on a life change, and say nothing of a token.",
+        offenders.len(), offenders.join("\n  "));
+}
+
 /// Strip parenthesised reminder text and collapse the leftover whitespace.
 ///
 /// Reminder text is printed on the card but says nothing the rules do not

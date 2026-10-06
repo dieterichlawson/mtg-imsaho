@@ -193,6 +193,13 @@ fn bloodgift_demons_summary_does_not_claim_a_draw_from_an_empty_library() {
         .expect("the Demon's summary line");
     assert!(!summary.contains("drew a card"),
         "no card was drawn, so the summary does not say one was: {summary:?}");
+    // The loss is logged once, by the engine, naming the card. A summary
+    // line of the Demon's own beside `p1 lost 1 life (19)` said it twice
+    // (#706).
+    let losses: Vec<&str> = state.game_log.iter().map(|e| e.message.as_str())
+        .filter(|m| m.contains("lost 1 life")).collect();
+    assert_eq!(losses, vec!["Bloodgift Demon: p1 lost 1 life (19)"],
+        "one line for one life lost, with the total");
 }
 
 /// Bloodgift Demon draws a card and loses 1 life on upkeep.

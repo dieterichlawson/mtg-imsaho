@@ -62,7 +62,9 @@ impl CardBehavior for TreeOfRedemption {
         // An exchange is still a life change: through `change_life`, so the
         // LifeChanged event is emitted the same way as everywhere else.
         let old_life = current_life;
-        state.change_life(controller, current_toughness - current_life);
+        // The engine's line says the life half, naming the card, with the
+        // total; this card's own line says the toughness half (#706).
+        state.change_life_for(controller, current_toughness - current_life, "Tree of Redemption");
 
         // CR 613.4b: "exchange your life total with this creature's toughness"
         // SETS toughness in layer 7b. It does not touch the printed value,
@@ -73,6 +75,6 @@ impl CardBehavior for TreeOfRedemption {
         state.set_base_pt(object_id, None, Some(current_life));
 
         state.log(crate::state::LogLevel::Event,
-            format!("Tree of Redemption: exchanged life ({old_life}) with toughness ({current_toughness})"));
+            format!("Tree of Redemption: toughness {current_toughness} becomes {old_life}"));
     }
 }

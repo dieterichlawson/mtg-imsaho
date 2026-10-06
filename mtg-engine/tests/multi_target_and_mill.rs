@@ -183,6 +183,35 @@ fn cellar_door_emits_creature_card_milled() {
          milling from the bottom is still milling");
 }
 
+/// One token line for the tokens that entered, and the milled card named.
+///
+/// Cellar Door wrote its own "milled a creature, created a 2/2 Zombie token"
+/// under the engine's "p0 created 2 2/2 Zombie tokens" — the token logged
+/// twice, the second line one token short under Parallel Lives, and the
+/// milled card never named (#706).
+#[test]
+fn cellar_door_logs_its_tokens_once_and_names_the_milled_card() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let door = named_permanent(&mut state, &reg, "Cellar Door", P0);
+    named_permanent(&mut state, &reg, "Parallel Lives", P0);
+    card_in_library(&mut state, &reg, "Walking Corpse", P1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 3);
+
+    let before = state.game_log.len();
+    activate_via_hooks(&mut state, &reg, door, 0, &[Target::Player(P1)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(zombie_tokens(&state, &reg), 2, "test setup: Parallel Lives doubles the token");
+    let lines: Vec<&str> = state.game_log[before..].iter().map(|e| e.message.as_str()).collect();
+    let token_lines: Vec<&&str> = lines.iter().filter(|m| m.contains("token")).collect();
+    assert_eq!(token_lines.len(), 1, "one line for the tokens, got {lines:#?}");
+    assert!(token_lines[0].contains("created 2 2/2 Zombie tokens"),
+        "the line counts what entered: {:?}", token_lines[0]);
+    assert!(lines.iter().any(|m| m.starts_with("Cellar Door:") && m.contains("Walking Corpse")),
+        "the milled card is public and named: {lines:#?}");
+}
+
 /// "…then mill three cards." The cards leave *your* library for *your*
 /// graveyard, and an opponent's Undead Alchemist is exactly the watcher that
 /// cares — whether a watcher cares is the collector's decision (it skips

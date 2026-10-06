@@ -75,8 +75,8 @@ impl CardBehavior for SkirsdagHighPriest {
             vec!["Demon".into()],
             registry,
         );
-
-        state.log(crate::state::LogLevel::Event,
-            "Skirsdag High Priest creates a 5/5 black Demon token with flying".to_string());
+        // The token line is the engine's ("p0 created 2 5/5 Demon tokens"),
+        // counted from what entered. A line of this card's own with the
+        // printed count said "a" token beside it under Parallel Lives (#706).
     }
 }

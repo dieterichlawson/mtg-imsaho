@@ -64,10 +64,12 @@ impl CardBehavior for BloodgiftDemon {
         // library no card is drawn (CR 121.3), and "drew a card" under "tried
         // to draw from an empty library" contradicted the line above it
         // (issue #623).
-        let drawn = crate::engine::draw_cards(state, *pid, 1, registry);
-        state.lose_life(*pid, 1);
-        let drew = if drawn == 0 { "drew no card (empty library)" } else { "drew a card" };
-        state.log(crate::state::LogLevel::Event,
-            format!("Bloodgift Demon: p{} {drew} and lost 1 life", pid.0));
+        //
+        // The draw and the life loss each have the engine's line, and the
+        // loss names this card; a summary of both beside them logged the
+        // loss twice (#706).
+        // `draw_cards` logs an empty library's failed draw itself (#623).
+        let _drawn = crate::engine::draw_cards(state, *pid, 1, registry);
+        state.change_life_for(*pid, -1, "Bloodgift Demon");
     }
 }

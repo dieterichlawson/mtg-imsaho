@@ -73,6 +73,12 @@ impl CardBehavior for UndeadAlchemist {
             state.move_object(milled_object, Zone::Exile, registry);
         }
 
+        state.log(crate::state::LogLevel::Event, if still_in_a_graveyard {
+            format!("Undead Alchemist: exiled {name}")
+        } else {
+            format!("Undead Alchemist: {name} was no longer in the graveyard to exile")
+        });
+        // The token is the engine's line, counted from what entered (#706).
         state.create_token_with_subtypes(
             "", controller, 2, 2,
             vec![Color::Black],
@@ -81,11 +87,6 @@ impl CardBehavior for UndeadAlchemist {
             vec!["Zombie".into()],
             registry,
         );
-        state.log(crate::state::LogLevel::Event, if still_in_a_graveyard {
-            format!("Undead Alchemist: exiled {name} and created a Zombie token")
-        } else {
-            format!("Undead Alchemist: {name} was no longer in the graveyard to exile, created a Zombie token")
-        });
     }
 
     fn replacement_offer(

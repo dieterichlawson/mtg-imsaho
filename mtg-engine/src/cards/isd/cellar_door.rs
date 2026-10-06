@@ -67,7 +67,14 @@ impl CardBehavior for CellarDoor {
             // and emits CreatureCardMilled. Doing the move by hand meant
             // Undead Alchemist's trigger never fired for it.
             let is_creature = state.is_creature(milled_id, registry);
+            let milled_name = state.obj_name(milled_id);
             crate::engine::mill_one(state, milled_id, registry);
+            // Which card went is public, and the reason a token did or did
+            // not follow. The token itself is the engine's line, counted
+            // from what entered — this one used to claim "a 2/2 Zombie
+            // token" beside it, one token too few under Parallel Lives (#706).
+            state.log(crate::state::LogLevel::Event, format!(
+                "Cellar Door: p{} milled {milled_name} from the bottom of their library", player_id.0));
 
             if is_creature {
                 state.create_token_with_subtypes(
@@ -78,11 +85,6 @@ impl CardBehavior for CellarDoor {
                     vec!["Zombie".into()],
                     registry,
                 );
-                state.log(crate::state::LogLevel::Event,
-                    "Cellar Door milled a creature, created a 2/2 Zombie token".to_string());
-            } else {
-                state.log(crate::state::LogLevel::Event,
-                    "Cellar Door milled a non-creature card".to_string());
             }
         }
     }
