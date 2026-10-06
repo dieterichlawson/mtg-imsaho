@@ -982,7 +982,7 @@ fn a_step_boundary_leaves_nothing_straddling_it() {
             source_id: bear, ability_index: 0,
             behavior_card_id: c.get_object(bear).unwrap().card_id,
             targets: vec![], description: "an ability".into(), activator: P0,
-            target_requirement: None, unpaid: None,
+            target_requirement: None, unpaid: None, has_x: false,
         });
     }), &reg, "a cast or resolution straddles a step boundary");
 

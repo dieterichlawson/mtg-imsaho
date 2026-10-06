@@ -327,7 +327,7 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
         }
     }
     if let Some(a) = &state.pending_ability_effect {
-        let what = format!("pending X activation of #{}", a.source_id.0);
+        let what = format!("pending activation of #{}", a.source_id.0);
         if !player_ok(state, a.activator) {
             v.push(format!("{what} by p{} who is not a player", a.activator.0));
         }
@@ -339,7 +339,9 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
         match &state.awaiting_action {
             Some(AwaitingAction::ResolutionChoice {
                 player, source,
-                choice: ResolutionChoiceKind::ChooseXFunding { is_ability: true, source_id, .. },
+                choice: ResolutionChoiceKind::ChooseXFunding { is_ability: true, source_id, .. }
+                    | ResolutionChoiceKind::ChooseObjectSet {
+                        effect: crate::state::PendingEffect::PayActivationTaps { source_id }, .. },
             }) if *source_id == a.source_id && *source == a.source_id && *player == a.activator => {}
             Some(AwaitingAction::ResolutionChoice { .. }) => v.push(format!("{what} but the pending prompt is for something else")),
             _ => {} // the base check reports the missing prompt

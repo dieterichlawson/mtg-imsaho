@@ -176,6 +176,14 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
             }
             // Check once-per-turn.
             if ab.once_per_turn && activated_this_turn.contains(&ab.ability_index) { continue; }
+            // A "tap N creatures you control" cost needs N of them (CR
+            // 601.2h). Which N is asked when the ability is activated, not
+            // offered as one action per combination (issue #670).
+            if let Some(tap) = ab.tap_cost {
+                if crate::engine::actions::abilities::tap_cost_candidates(state, player, obj_id, registry).len() < tap.count {
+                    continue;
+                }
+            }
             // Check sorcery speed.
             if ab.sorcery_speed_only && !is_sorcery_speed { continue; }
             // Build the list of eligible sacrifices for this ability. We

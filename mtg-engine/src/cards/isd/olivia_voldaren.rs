@@ -59,6 +59,7 @@ impl CardBehavior for OliviaVoldaren {
                 once_per_turn: false,
                 sorcery_speed_only: false,
                 counter_cost: None,
+                tap_cost: None,
             },
             // Ability 1: {3}{B}{B}: Gain control of target Vampire.
             ActivatedAbilityDef {
@@ -75,6 +76,7 @@ impl CardBehavior for OliviaVoldaren {
                 once_per_turn: false,
                 sorcery_speed_only: false,
                 counter_cost: None,
+                tap_cost: None,
             },
         ]
     }

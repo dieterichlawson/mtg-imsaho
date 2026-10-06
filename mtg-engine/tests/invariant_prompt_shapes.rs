@@ -111,7 +111,7 @@ fn a_turn_based_prompt_is_raised_on_a_quiet_game() {
     s.pending_ability_effect = Some(mtg_engine::state::PendingAbilityEffect {
         source_id: bear, ability_index: 0, behavior_card_id: card_id,
         targets: vec![], description: "an ability".into(), activator: P0,
-        target_requirement: None, unpaid: None,
+        target_requirement: None, unpaid: None, has_x: false,
     });
     flags(&s, &reg, "with a cast or resolution in progress");
 

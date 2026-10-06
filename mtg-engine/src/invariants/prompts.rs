@@ -620,8 +620,27 @@ fn check_choice(state: &GameState, registry: &CardRegistry, player: crate::ids::
                 v.push(format!("{w} asks for up to {max} of {} options", options.len()));
             }
         }
-        K::ChooseObjectSet { options, min, max, .. } => {
+        K::ChooseObjectSet { options, min, max, effect, .. } => {
             let w = "object-set prompt";
+            // The creatures an activation's cost taps (CR 601.2h, #670):
+            // the activator's own other untapped creatures, exactly N of
+            // them, and the activation it pays for is the one waiting.
+            if let PendingEffect::PayActivationTaps { source_id } = effect {
+                if min != max {
+                    v.push(format!("activation cost prompt asks for {min}-{max} creatures, not a number"));
+                }
+                if *source_id != source {
+                    v.push(format!("activation cost prompt for #{} raised by #{}", source_id.0, source.0));
+                }
+                for id in options {
+                    let ok = state.get_object(*id).is_some_and(|o|
+                        o.zone == Zone::Battlefield && !o.tapped && o.controller == player && o.id != *source_id)
+                        && state.is_creature(*id, registry);
+                    if !ok {
+                        v.push(format!("activation cost prompt offers #{} which is not another untapped creature p{} controls", id.0, player.0));
+                    }
+                }
+            }
             for (i, id) in options.iter().enumerate() {
                 if state.get_object(*id).is_none() {
                     v.push(format!("{w} offers missing #{}", id.0));

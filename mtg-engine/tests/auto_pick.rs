@@ -915,7 +915,12 @@ fn mentor_of_the_meek_asks_before_paying() {
 }
 
 /// Bug: Skirsdag High Priest's ability costs "tap two untapped creatures
-/// you control" but the engine auto-selects which creatures to tap.
+/// you control" but the engine auto-selected which creatures to tap.
+///
+/// The choice is the player's. It was first given to them as one offer per
+/// pair, which grew as C(n, 2) with the board (#670); it is now asked as
+/// one set when the ability is activated, over every untapped creature that
+/// could pay.
 #[test]
 fn bug_skirsdag_high_priest_auto_selects_tap_targets() {
     let registry = CardRegistry::with_all_cards();
@@ -923,26 +928,20 @@ fn bug_skirsdag_high_priest_auto_selects_tap_targets() {
 
     // Place Skirsdag High Priest and 3 other creatures
     let priest = named_permanent(&mut state, &registry, "Skirsdag High Priest", P0);
-    let _c1 = ready_creature(&mut state, P0, 1, 1);
-    let _c2 = ready_creature(&mut state, P0, 2, 2);
-    let _c3 = ready_creature(&mut state, P0, 3, 3);
+    let c1 = ready_creature(&mut state, P0, 1, 1);
+    let c2 = ready_creature(&mut state, P0, 2, 2);
+    let c3 = ready_creature(&mut state, P0, 3, 3);
 
     // Morbid must be active
     state.creature_died_this_turn = true;
 
-    // Get legal actions
-    let legal = engine::legal_actions(&state, &registry);
-    let priest_abilities: Vec<_> = legal.actions.iter().filter(|a| {
-        matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == priest)
-    }).collect();
-
-    // With 3 untapped creatures (besides the priest who taps itself),
-    // there should be C(3,2) = 3 different tap combinations.
-    // If there's only 1, the engine auto-selected.
-    // BUG: Only 1 action (auto-selected tap targets)
-    assert!(priest_abilities.len() >= 3,
-        "Should have 3+ tap combinations for 3 creatures, got {}",
-        priest_abilities.len());
+    let asked = activate_onto_stack(&state, &registry, priest, None);
+    match &asked.awaiting_action {
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            choice: mtg_engine::state::ResolutionChoiceKind::ChooseObjectSet { options, min: 2, max: 2, .. }, ..
+        }) => assert_eq!(options, &vec![c1, c2, c3], "every creature that could pay is the player's to choose"),
+        other => panic!("the activation should ask which two to tap, not choose them: {other:?}"),
+    }
 }
 
 /// Bug: Brain Weevil says "Target player discards two cards" but only

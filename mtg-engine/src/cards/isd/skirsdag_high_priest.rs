@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost};
+use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TapCreaturesCost};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, Keyword};
@@ -26,108 +26,33 @@ impl CardBehavior for SkirsdagHighPriest {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let Some(obj) = state.get_object(object_id) else { return vec![]; };
         // The {T} part of the cost — untapped, and past summoning sickness
-        // unless hasty (CR 302.6) — is the engine's to check. Spelling it out
-        // here shadowed that check and dropped the haste exception, so a
-        // Priest holding Lightning Greaves couldn't be activated at all.
-        // What's particular to this ability: morbid, and two other untapped
-        // creatures to tap.
+        // unless hasty (CR 302.6) — is the engine's to check, and so is the
+        // "tap two untapped creatures you control" part: which two is asked
+        // as one set when the ability is activated (issue #670). It used to
+        // be one ability per pair, encoded in the ability index — 55 rows at
+        // eleven creatures, 190 at twenty, on every surface.
+        // What's particular to this ability: morbid.
         if obj.zone != Zone::Battlefield {
             return vec![];
         }
         if !state.creature_died_this_turn {
             return vec![];
         }
-        let controller = obj.controller;
-        // Collect the other untapped creatures the player controls, sorted by
-        // ID for a stable, deterministic ordering.
-        let mut candidates: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
-            .iter()
-            .filter(|o| o.id != object_id && state.is_creature(o.id, registry) && !o.tapped)
-            .map(|o| o.id)
-            .collect();
-        candidates.sort_by_key(|id| id.0);
-        let n = candidates.len();
-        if n < 2 {
-            return vec![];
-        }
-        // Return one ActivatedAbilityDef per C(n, 2) combination, each with a
-        // unique ability_index encoding the combination index (0-based).
-        //
-        // Which two creatures a combination taps is not on the action — not in
-        // `targets`, not in `sacrifice` — it is encoded in `ability_index` and
-        // decoded in `pay_activation_cost`. So this description is the ONLY
-        // thing either surface can tell two combinations apart by, and naming
-        // the creatures by card name made two different cost payments one
-        // string: two Demon tokens gave the CLI two byte-identical menu rows,
-        // and the LLM seat grouped the pair as copies of one permanent and
-        // rendered "one per copy: 4=#37, 5=#37" for the single Priest on the
-        // board. Tapping a creature is an irreversible cost that decides
-        // whether an untapped 5/5 flier is still there to block, so the two
-        // are not interchangeable (issue #612).
-        //
-        // `obj_name` is the house spelling — "Name (#id)", the same one the log
-        // and the board listing use, so the id on the row is the id the player
-        // reads beside that creature's counters and damage.
-        let mut abilities = Vec::new();
-        let mut combo_index = 0usize;
-        for i in 0..n {
-            for j in (i + 1)..n {
-                let name_i = state.obj_name(candidates[i]);
-                let name_j = state.obj_name(candidates[j]);
-                abilities.push(ActivatedAbilityDef {
-                    ability_index: combo_index,
-                    description: format!(
-                        "Morbid — {{T}}, Tap two creatures: Create a 5/5 Demon with flying (tap {name_i} & {name_j})",
-                    ),
-                    cost: ManaCost::new(vec![]),
-                    requires_tap: true,
-                    sacrifice_cost: SacrificeCost::None,
-                    target_requirement: None,
-                    once_per_turn: false,
-                    sorcery_speed_only: false,
-                    counter_cost: None,
-                });
-                combo_index += 1;
-            }
-        }
-        abilities
-    }
-
-    fn pay_activation_cost(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
-        let controller = match state.get_object(object_id) {
-            Some(o) => o.controller,
-            None => return,
-        };
-
-        // Tap the two chosen creatures (cost payment — happens before stack push).
-        let mut candidates: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
-            .iter()
-            .filter(|o| o.id != object_id && state.is_creature(o.id, registry) && !o.tapped)
-            .map(|o| o.id)
-            .collect();
-        candidates.sort_by_key(|id| id.0);
-        let n = candidates.len();
-
-        let mut combo_index = 0usize;
-        let mut to_tap: Option<(ObjectId, ObjectId)> = None;
-        'outer: for i in 0..n {
-            for j in (i + 1)..n {
-                if combo_index == ability_index {
-                    to_tap = Some((candidates[i], candidates[j]));
-                    break 'outer;
-                }
-                combo_index += 1;
-            }
-        }
-
-        if let Some((c1, c2)) = to_tap {
-            state.tap(c1);
-            state.tap(c2);
-        }
-
+        vec![ActivatedAbilityDef {
+            ability_index: 0,
+            description: "Morbid — {T}, Tap two untapped creatures you control: Create a 5/5 black Demon creature token with flying".into(),
+            cost: ManaCost::new(vec![]),
+            requires_tap: true,
+            sacrifice_cost: SacrificeCost::None,
+            target_requirement: None,
+            once_per_turn: false,
+            sorcery_speed_only: false,
+            counter_cost: None,
+            tap_cost: Some(TapCreaturesCost { count: 2 }),
+        }]
     }
 
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {

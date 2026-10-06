@@ -269,6 +269,20 @@ pub struct ActivatedAbilityDef {
     /// clears every counter at once. Removing three of four counters and
     /// losing the fourth to the zone change are different events.
     pub counter_cost: Option<(crate::types::CounterType, u32)>,
+    /// "Tap N untapped creatures you control" as part of the cost (Skirsdag
+    /// High Priest). Which creatures is the activating player's choice,
+    /// asked as one set when the ability is activated (CR 602.2b, 601.2h) —
+    /// not one ability per combination of them, which grew as `C(n, N)`
+    /// with the board (issue #670).
+    pub tap_cost: Option<TapCreaturesCost>,
+}
+
+/// Tap `count` untapped creatures you control, other than the source, as
+/// part of an activation cost. The source's own `{T}` is `requires_tap`;
+/// these are the others.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TapCreaturesCost {
+    pub count: usize,
 }
 
 /// A loyalty ability on a planeswalker.

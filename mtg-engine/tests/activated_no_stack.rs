@@ -240,9 +240,9 @@ fn skirsdag_high_priest_makes_its_demon_on_resolution() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let (priest, _c1, _c2) = setup_skirsdag(&mut state, &reg);
+    let (priest, c1, c2) = setup_skirsdag(&mut state, &reg);
 
-    activate_via_hooks(&mut state, &reg, priest, 0, &[]);
+    state = activate_tapping(&state, &reg, priest, &[c1, c2]);
 
     assert_eq!(
         count_tokens_named(&state, "Demon"), 0,
@@ -268,7 +268,7 @@ fn skirsdag_high_priests_tap_cost_is_paid_at_activation() {
 
     let (priest, creature1, creature2) = setup_skirsdag(&mut state, &reg);
 
-    activate_via_hooks(&mut state, &reg, priest, 0, &[]);
+    state = activate_tapping(&state, &reg, priest, &[creature1, creature2]);
 
     assert!(
         state.get_object(creature1).unwrap().tapped,
@@ -301,11 +301,11 @@ fn skirsdag_summoning_sick_creature_can_be_tapped() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let priest = named_permanent(&mut state, &reg, "Skirsdag High Priest", P0);
-    let _creature_nonsick = ready_creature(&mut state, P0, 2, 2);
+    let creature_nonsick = ready_creature(&mut state, P0, 2, 2);
     let creature_sick = sick_creature(&mut state, P0, 2, 2);
     state.creature_died_this_turn = true;
 
-    activate_via_hooks(&mut state, &reg, priest, 0, &[]);
+    state = activate_tapping(&state, &reg, priest, &[creature_nonsick, creature_sick]);
 
     assert!(
         state.get_object(creature_sick).unwrap().tapped,

@@ -47,6 +47,7 @@ impl CardBehavior for GrimoireOfTheDead {
                 once_per_turn: false,
                 sorcery_speed_only: false,
                 counter_cost: None,
+                tap_cost: None,
             });
         }
 
@@ -63,6 +64,7 @@ impl CardBehavior for GrimoireOfTheDead {
             once_per_turn: false,
             sorcery_speed_only: false,
             counter_cost: Some((CounterType::Study, 3)),
+            tap_cost: None,
         });
 
         abilities

@@ -4355,6 +4355,11 @@ pub struct PendingAbilityEffect {
     /// under it still loads.
     #[serde(default)]
     pub unpaid: Option<DeferredActivationCost>,
+    /// The ability has an X to announce once the creatures it taps are
+    /// chosen (issue #670). False for the X-funding stash itself, which is
+    /// already that announcement.
+    #[serde(default)]
+    pub has_x: bool,
 }
 
 /// The whole cost of an activation, held while its X is announced.
@@ -4381,6 +4386,10 @@ pub struct DeferredActivationCost {
     pub sacrifice: Option<ObjectId>,
     pub sacrifice_cost: crate::cards::SacrificeCost,
     pub once_per_turn: bool,
+    /// The creatures the player chose to tap for a "tap N creatures you
+    /// control" cost (issue #670). Empty for an ability without one.
+    #[serde(default)]
+    pub tapped_creatures: Vec<ObjectId>,
 }
 
 /// Context stashed between `CastSpell` action submission and the follow-up
@@ -4870,6 +4879,14 @@ pub enum PendingEffect {
     /// per token, per its ruling ("You declare which player or planeswalker
     /// **each** token is attacking"). `source_id` names the prompt.
     TokenAttacks { token_id: ObjectId, remaining: Vec<ObjectId>, source_id: ObjectId },
+    /// Not an effect: the creatures an activation taps as part of its cost
+    /// ("Tap two untapped creatures you control" — Skirsdag High Priest),
+    /// asked through `ChooseObjectSet` while the activation waits in
+    /// `pending_ability_effect` with nothing paid (CR 602.2b, 601.2h; issue
+    /// #670). The flag that tells every surface the set is a cost, and that
+    /// backing out (`CancelCast`) is allowed. `source_id` is the permanent
+    /// whose ability is being activated.
+    PayActivationTaps { source_id: ObjectId },
 }
 
 /// Game result.

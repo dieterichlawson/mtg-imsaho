@@ -296,15 +296,13 @@ fn skirsdag_high_priest_is_offered_only_with_morbid_and_two_helpers() {
         state.creature_died_this_turn = morbid;
 
         let priest = named_permanent(&mut state, &reg, "Skirsdag High Priest", P0);
-        for _ in 0..helpers {
-            ready_creature(&mut state, P0, 1, 1);
-        }
+        let helper_ids: Vec<_> = (0..helpers).map(|_| ready_creature(&mut state, P0, 1, 1)).collect();
 
         assert_eq!(offers_ability_of(&state, &reg, priest), offered,
             "morbid={morbid}, {helpers} other untapped creature(s)");
 
         if offered {
-            let state = activate_offered(&state, &reg, priest, None);
+            let state = resolve_activated(activate_tapping(&state, &reg, priest, &helper_ids), &reg);
             let demons: Vec<_> = state.objects.values()
                 .filter(|o| o.zone == Zone::Battlefield && o.name == "Demon")
                 .collect();
@@ -340,7 +338,7 @@ fn skirsdag_high_priests_helpers_may_be_summoning_sick() {
     assert!(offers_ability_of(&state, &reg, priest),
         "two creatures that arrived this turn can still be tapped for the cost");
 
-    let after = activate_offered(&state, &reg, priest, None);
+    let after = resolve_activated(activate_tapping(&state, &reg, priest, &[sick_a, sick_b]), &reg);
     assert!(after.get_object(sick_a).unwrap().tapped);
     assert!(after.get_object(sick_b).unwrap().tapped);
     assert_eq!(count_tokens_named_by(&after, "Demon", P0), 1);
@@ -359,11 +357,11 @@ fn skirsdag_high_priests_demon_goes_to_whoever_activated_it() {
     state.creature_died_this_turn = true;
 
     let priest = named_permanent(&mut state, &reg, "Skirsdag High Priest", P0);
-    ready_creature(&mut state, P0, 1, 1);
-    ready_creature(&mut state, P0, 1, 1);
+    let a = ready_creature(&mut state, P0, 1, 1);
+    let b = ready_creature(&mut state, P0, 1, 1);
 
     // P0 activates; the ability is on the stack.
-    let mut state = activate_onto_stack(&state, &reg, priest, None);
+    let mut state = activate_tapping(&state, &reg, priest, &[a, b]);
     // P1 takes the Priest in response.
     state.get_object_mut(priest).unwrap().controller = P1;
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);

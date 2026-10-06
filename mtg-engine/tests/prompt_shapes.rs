@@ -144,3 +144,51 @@ fn no_card_offers_a_menu_of_target_combinations() {
         Preparations, Prey Upon, Into the Maw of Hell, Lost in the Mist and \
         Ghoulcaller's Chant");
 }
+
+/// Issue #670: the same rule on the COST side. Skirsdag High Priest was one
+/// activated ability per pair of creatures it could tap, the pair encoded in
+/// the ability index, so the targeting sweep above never saw it: 55 rows at
+/// eleven creatures, 190 at twenty. A card's activated abilities are a
+/// fixed list; a choice among the board is a question the activation asks.
+///
+/// Swept, not named: every card in the pool, on a small board and on a wide
+/// one, with every condition that gates an ability switched on. A card
+/// whose number of abilities follows the board is enumerating a choice.
+#[test]
+fn no_card_offers_one_ability_per_way_of_paying() {
+    let reg = registry();
+    let board = |n: usize| {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        state.creature_died_this_turn = true;
+        for p in [P0, P1] {
+            for _ in 0..n {
+                named_permanent(&mut state, &reg, "Grizzly Bears", p);
+            }
+            for _ in 0..n {
+                named_permanent(&mut state, &reg, "Forest", p);
+            }
+        }
+        state
+    };
+    let (small, wide) = (board(3), board(12));
+    let mut grows: Vec<String> = Vec::new();
+    let mut checked = 0;
+    for name in reg.all_names().into_iter().map(String::from).collect::<Vec<_>>() {
+        let Some(card_id) = reg.get_id_by_name(&name) else { continue };
+        let Some(behavior) = reg.get(card_id) else { continue };
+        let count = |base: &mtg_engine::state::GameState| {
+            let mut state = base.clone();
+            let obj = state.create_object(card_id, P0, Zone::Battlefield, None, None);
+            behavior.activated_abilities(&state, obj, &reg).len()
+        };
+        let (a, b) = (count(&small), count(&wide));
+        checked += 1;
+        if a != b {
+            grows.push(format!("{name}: {a} abilities on a small board, {b} on a wide one"));
+        }
+    }
+    assert!(checked > 100, "only {checked} cards swept");
+    assert!(grows.is_empty(),
+        "these offer one ability per way of paying for it, a menu that grows with the board; \
+         ask the choice when the ability is activated instead:\n  {}", grows.join("\n  "));
+}

@@ -118,6 +118,17 @@ pub(crate) fn pay_activation_costs(
     if cost.requires_tap {
         state.tap(object_id);
     }
+    // The creatures a "tap N creatures you control" cost was paid with
+    // (issue #670), named in the log as a sacrifice cost's creature is.
+    if !cost.tapped_creatures.is_empty() {
+        let names: Vec<String> = cost.tapped_creatures.iter().map(|&id| state.obj_name(id)).collect();
+        for &id in &cost.tapped_creatures {
+            state.tap(id);
+        }
+        let source_name = state.obj_name(object_id);
+        state.log(LogLevel::Event, format!("p{} tapped {} to pay for {source_name}'s ability",
+            player.0, names.join(" and ")));
+    }
     // Before the sacrifice below, which moves the permanent to the graveyard
     // and clears every counter it has at once — "remove three" has to remove
     // three, leaving any surplus to be lost to the zone change rather than
@@ -279,74 +290,169 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
                 sacrifice,
                 sacrifice_cost: ab.sacrifice_cost.clone(),
                 once_per_turn: ab.once_per_turn,
+                tapped_creatures: Vec::new(),
             };
-            if has_x_cost {
-                // What is left to announce X with is what remains once the
-                // WHOLE non-X cost is paid — including the `{T}`, which for
-                // Kessig Wolf Run is the source's own mana ability. Probing
-                // before tapping it counted that mana twice.
-                pay_activation_costs(&mut probe, player, object_id, ability_index, &cost, registry);
-                let options = crate::funding::build_options(&probe, player, registry);
-                if options.max_announceable_x() > 0 {
-                    let name = card_name(&state, registry, object_id);
-                    state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
-                        player,
-                        source: object_id,
-                        choice: crate::state::ResolutionChoiceKind::ChooseXFunding {
-                            description: format!("{name}{}: choose X funding (0-{})",
-                                announced_targets_suffix(state, player, targets),
-                                options.max_announceable_x()),
-                            options,
-                            source_id: object_id,
-                            is_ability: true,
-                        },
-                    });
-                    state.pending_ability_effect = Some(crate::state::PendingAbilityEffect {
-                        source_id: object_id,
-                        ability_index,
-                        behavior_card_id,
-                        targets: targets.to_vec(),
-                        description: ab.description.clone(),
-                        activator: player,
-                        target_requirement: ab.target_requirement.clone(),
-                        unpaid: Some(cost),
-                    });
-                    // Nothing else happens until the player answers.
+            // "Tap two untapped creatures you control" is a choice the cost
+            // asks for, and it is asked as one set before anything is paid
+            // (CR 602.2b, 601.2h): the permanent is untapped, no mana is
+            // spent, and backing out costs nothing. It used to be one ability
+            // per pair of creatures, encoded in the ability index — C(n, 2)
+            // rows on every surface (issue #670).
+            if let Some(tap) = ab.tap_cost {
+                let options = tap_cost_candidates(state, player, object_id, registry);
+                if options.len() < tap.count {
+                    state.log(crate::state::LogLevel::Debug, format!(
+                        "activation refused, {} untapped creatures to tap for a cost of {} (CR 601.2h)",
+                        options.len(), tap.count));
                     return Applied::ReturnNow;
                 }
-                // No mana to announce X with: X is forced to 0, there is no
-                // choice, and the activation proceeds below as any other.
+                let name = card_name(state, registry, object_id);
+                let creatures = if tap.count == 1 { "creature" } else { "creatures" };
+                state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
+                    player,
+                    source: object_id,
+                    choice: crate::state::ResolutionChoiceKind::ChooseObjectSet {
+                        description: format!(
+                            "{name}: choose {} untapped {creatures} you control to tap — part of the ability's cost",
+                            tap.count),
+                        options,
+                        min: tap.count,
+                        max: tap.count,
+                        effect: crate::state::PendingEffect::PayActivationTaps { source_id: object_id },
+                    },
+                });
+                state.pending_ability_effect = Some(crate::state::PendingAbilityEffect {
+                    source_id: object_id,
+                    ability_index,
+                    behavior_card_id,
+                    targets: targets.to_vec(),
+                    description: ab.description.clone(),
+                    activator: player,
+                    target_requirement: ab.target_requirement.clone(),
+                    unpaid: Some(cost),
+                    has_x: has_x_cost,
+                });
+                return Applied::ReturnNow;
             }
-
-            // CR 601.2a via 602.2b: the activation is announced before its
-            // costs are paid — so a sacrifice cost reads "activated, then
-            // died", not a creature dying on its own and then somehow
-            // activating from the graveyard.
-            announce_activation(&mut *state, player, object_id, &ab.description, targets,
-                if has_x_cost { Some(0) } else { None }, registry);
-            if !has_x_cost {
-                state.last_activated_x_value = None;
-            }
-            // The player chose which creature to sacrifice when picking the
-            // action — `legal_actions` enumerates one `ActivateAbility` per
-            // (target, sacrifice) combo, so the choice is already encoded.
-            pay_activation_costs(&mut *state, player, object_id, ability_index, &cost, registry);
-
-            if has_x_cost {
-                // Only reachable when no mana could fund X at all, so there
-                // was no announcement to make: X is 0 (the prompt path
-                // returned above).
-                state.last_activated_x_value = Some(0);
-            }
-            put_ability_on_stack(&mut *state, object_id, ability_index, behavior_card_id, targets, player,
-                ab.target_requirement.clone(), registry);
-            // CR 117.3b: taking an action means every player gets priority
-            // again before anything resolves. This used to be moot — the
-            // ability was resolved on the spot — but now it waits on the
-            // stack like any other object, and a stale pass count would
-            // resolve it without the opponent ever seeing it.
-            state.consecutive_passes = 0;
+            return finish_activation(state, &Activation {
+                player, object_id, ability_index, behavior_card_id,
+                targets: targets.to_vec(),
+                description: ab.description.clone(),
+                target_requirement: ab.target_requirement.clone(),
+                has_x: has_x_cost,
+            }, cost, registry);
         }
+    Applied::Continue
+}
+
+/// The other untapped creatures `player` controls, which a "tap N creatures
+/// you control" cost chooses among (issue #670), in id order.
+pub(crate) fn tap_cost_candidates(state: &GameState, player: crate::ids::PlayerId, source: ObjectId, registry: &CardRegistry) -> Vec<ObjectId> {
+    state.objects_in_id_order().into_iter()
+        .filter(|o| o.zone == Zone::Battlefield && o.controller == player && o.id != source && !o.tapped)
+        .filter(|o| state.is_creature(o.id, registry))
+        .map(|o| o.id)
+        .collect()
+}
+
+/// An activation whose choices are all made, on its way to being paid for.
+pub(crate) struct Activation {
+    pub player: crate::ids::PlayerId,
+    pub object_id: ObjectId,
+    pub ability_index: usize,
+    pub behavior_card_id: crate::ids::CardId,
+    pub targets: Vec<Target>,
+    pub description: String,
+    pub target_requirement: Option<crate::cards::TargetRequirement>,
+    pub has_x: bool,
+}
+
+/// Announce X if there is one to announce, else announce the activation,
+/// pay its whole cost and put it on the stack (CR 602.2b via 601.2b-h).
+///
+/// Shared by an activation with nothing left to choose and one resuming
+/// after the creatures its cost taps were chosen (issue #670).
+pub(crate) fn finish_activation(
+    state: &mut GameState,
+    a: &Activation,
+    cost: crate::state::DeferredActivationCost,
+    registry: &CardRegistry,
+) -> Applied {
+    let Activation { player, object_id, ability_index, behavior_card_id, ref targets, .. } = *a;
+    // CR 601.2b precedes 601.2h: X is announced BEFORE the total cost
+    // is paid. So an X-cost activation with a real choice to make
+    // stashes its whole cost and asks first — the permanent is not
+    // tapped, no mana is spent, no counter is removed and nothing is
+    // sacrificed until the player has answered, which is also what
+    // makes that prompt cancellable (issue #290).
+    if a.has_x {
+        // What is left to announce X with is what remains once the
+        // WHOLE non-X cost is paid — including the `{T}`, which for
+        // Kessig Wolf Run is the source's own mana ability. Probing
+        // before tapping it counted that mana twice.
+        let mut probe = state.clone();
+        pay_activation_costs(&mut probe, player, object_id, ability_index, &cost, registry);
+        let options = crate::funding::build_options(&probe, player, registry);
+        if options.max_announceable_x() > 0 {
+            let name = card_name(state, registry, object_id);
+            state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
+                player,
+                source: object_id,
+                choice: crate::state::ResolutionChoiceKind::ChooseXFunding {
+                    description: format!("{name}{}: choose X funding (0-{})",
+                        announced_targets_suffix(state, player, targets),
+                        options.max_announceable_x()),
+                    options,
+                    source_id: object_id,
+                    is_ability: true,
+                },
+            });
+            state.pending_ability_effect = Some(crate::state::PendingAbilityEffect {
+                source_id: object_id,
+                ability_index,
+                behavior_card_id,
+                targets: targets.clone(),
+                description: a.description.clone(),
+                activator: player,
+                target_requirement: a.target_requirement.clone(),
+                unpaid: Some(cost),
+                has_x: false,
+            });
+            // Nothing else happens until the player answers.
+            return Applied::ReturnNow;
+        }
+        // No mana to announce X with: X is forced to 0, there is no
+        // choice, and the activation proceeds below as any other.
+    }
+
+    // CR 601.2a via 602.2b: the activation is announced before its
+    // costs are paid — so a sacrifice cost reads "activated, then
+    // died", not a creature dying on its own and then somehow
+    // activating from the graveyard.
+    announce_activation(&mut *state, player, object_id, &a.description, targets,
+        if a.has_x { Some(0) } else { None }, registry);
+    if !a.has_x {
+        state.last_activated_x_value = None;
+    }
+    // The player chose which creature to sacrifice when picking the
+    // action — `legal_actions` enumerates one `ActivateAbility` per
+    // (target, sacrifice) combo, so the choice is already encoded.
+    pay_activation_costs(&mut *state, player, object_id, ability_index, &cost, registry);
+
+    if a.has_x {
+        // Only reachable when no mana could fund X at all, so there
+        // was no announcement to make: X is 0 (the prompt path
+        // returned above).
+        state.last_activated_x_value = Some(0);
+    }
+    put_ability_on_stack(&mut *state, object_id, ability_index, behavior_card_id, targets, player,
+        a.target_requirement.clone(), registry);
+    // CR 117.3b: taking an action means every player gets priority
+    // again before anything resolves. This used to be moot — the
+    // ability was resolved on the spot — but now it waits on the
+    // stack like any other object, and a stale pass count would
+    // resolve it without the opponent ever seeing it.
+    state.consecutive_passes = 0;
     Applied::Continue
 }
 

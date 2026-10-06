@@ -987,7 +987,9 @@ fn no_card_reads_its_controller_off_its_own_source_while_resolving() {
             }
         }
     }
-    assert!(scanned >= 20,
+    // Skirsdag High Priest's per-pair cost decoder read its controller, and
+    // went with the decoder (#670): the pool went from 20 reads to 19.
+    assert!(scanned >= 18,
         "only {scanned} controller read(s) in src/cards — this invariant has \
          stopped covering anything");
     assert!(offenders.is_empty(),

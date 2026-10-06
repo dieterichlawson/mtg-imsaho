@@ -527,7 +527,7 @@ fn a_payment_waiting_under_the_wrong_prompt_is_flagged() {
         description: "an ability".into(),
         activator: P0,
         target_requirement: None,
-        unpaid: None,
+        unpaid: None, has_x: false,
     });
     if let Some(AwaitingAction::ResolutionChoice { choice: ResolutionChoiceKind::ChooseXFunding {
         is_ability, options: o, .. }, .. }) = &mut s.awaiting_action {
@@ -2708,7 +2708,7 @@ fn an_activation_that_neither_went_on_the_stack_nor_backed_out_is_flagged() {
             source_id: source, ability_index: index,
             behavior_card_id: prev.get_object(land).unwrap().card_id,
             targets: vec![], description: "Add {G}".into(), activator,
-            target_requirement: None, unpaid: None,
+            target_requirement: None, unpaid: None, has_x: false,
         }
     };
     let mut s = next(&prev);

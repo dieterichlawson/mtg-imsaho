@@ -88,6 +88,7 @@ impl CardBehavior for BackFromTheBrink {
                 once_per_turn: false,
                 sorcery_speed_only: true,
                 counter_cost: None,
+                tap_cost: None,
             }
         }).collect()
     }

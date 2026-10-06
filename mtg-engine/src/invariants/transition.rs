@@ -717,7 +717,10 @@ fn action_contract(prev: &GameState, cur: &GameState, action: &Action, events: &
                 if *source_id == *object_id && *i == *ability_index && Some(*activator) == p));
             let stashed = cur.pending_ability_effect.as_ref().is_some_and(|a|
                 a.source_id == *object_id && a.ability_index == *ability_index && Some(a.activator) == p);
-            if pushed || stashed {
+            // Only once it is on the stack: a stashed activation has paid
+            // nothing yet, whether it waits on its X (#290) or on the
+            // creatures its cost taps (#670).
+            if pushed {
                 // CR 602.2f: an activation cost is paid like any other, and
                 // no ledger here ever looked at one.
                 if let (Some(who), Some(o)) = (p, prev.get_object(*object_id)) {

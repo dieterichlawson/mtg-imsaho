@@ -223,6 +223,10 @@ pub fn activate_via_hooks(
             // The variants that sacrifice *some other* creature are the
             // player's choice, which `legal_actions` enumerates and this
             // helper has no way to make — those go through `activate`.
+            // Likewise the creatures a "tap N creatures" cost taps: the
+            // engine asks for them (#670), and `activate_tapping` answers.
+            assert!(ab.tap_cost.is_none(),
+                "activate_via_hooks cannot choose which creatures to tap; use `activate_tapping`");
             match ab.sacrifice_cost {
                 mtg_engine::cards::SacrificeCost::SacrificeThis => {
                     mtg_engine::destruction::sacrifice(state, object_id, registry);
@@ -237,6 +241,25 @@ pub fn activate_via_hooks(
         behavior.pay_activation_cost(state, object_id, ability_index, targets, registry);
     }
     mtg_engine::cards::push_ability(state, object_id, ability_index, card_id, targets, target_requirement, activator);
+}
+
+/// Activate the ability the engine offers for `object_id` and answer the
+/// "tap N creatures you control" cost it asks for with `tapping` (issue
+/// #670). Stops at the stack, like [`activate_onto_stack`].
+pub fn activate_tapping(
+    state: &GameState,
+    registry: &CardRegistry,
+    object_id: ObjectId,
+    tapping: &[ObjectId],
+) -> GameState {
+    let asked = activate_onto_stack(state, registry, object_id, None);
+    assert!(matches!(&asked.awaiting_action, Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+        choice: mtg_engine::state::ResolutionChoiceKind::ChooseObjectSet {
+            effect: mtg_engine::state::PendingEffect::PayActivationTaps { .. }, .. }, .. })),
+        "the activation asks which creatures to tap: {:?}", asked.awaiting_action);
+    mtg_engine::engine::submit_action(&asked, &Action::ResolveChoice {
+        choice: mtg_engine::actions::ResolvedChoice::ChosenObjectSet(tapping.to_vec()),
+    }, registry)
 }
 
 /// Activating an ability only puts it on the stack (CR 602.2a); it resolves

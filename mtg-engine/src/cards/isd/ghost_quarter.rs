@@ -49,6 +49,7 @@ impl CardBehavior for GhostQuarter {
             once_per_turn: false,
             sorcery_speed_only: false,
             counter_cost: None,
+            tap_cost: None,
         }]
     }
 

@@ -664,6 +664,69 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                 // SpellCast).
                 // CR 601.2c: the "up to N" slot comes back as a set, and
                 // the cast resumes with the fixed targets in front of it.
+                // The creatures an activation's cost taps (issue #670):
+                // checked like any set, then the activation resumes where it
+                // stopped — X, then the whole cost, then the stack.
+                (ResolutionChoiceKind::ChooseObjectSet {
+                    min, max, options, effect: crate::state::PendingEffect::PayActivationTaps { source_id }, ..
+                 },
+                 ResolvedChoice::ChosenObjectSet(chosen)) => {
+                    let n = chosen.len();
+                    let still_untapped = |id: &ObjectId| state.get_object(*id).is_some_and(|o|
+                        o.zone == Zone::Battlefield && !o.tapped && o.controller == chooser && o.id != *source_id)
+                        && state.is_creature(*id, registry);
+                    let refusal = if n < *min || n > *max {
+                        Some(format!("chose {n} to tap, required {min}..={max}"))
+                    } else if chosen.iter().any(|id| !options.contains(id)) {
+                        Some("a creature to tap that the prompt did not offer".to_string())
+                    } else if chosen.iter().enumerate().any(|(i, id)| chosen[..i].contains(id)) {
+                        Some("the same creature twice".to_string())
+                    } else if !chosen.iter().all(still_untapped) {
+                        Some("a creature that is no longer an untapped creature you control".to_string())
+                    } else {
+                        None
+                    };
+                    if let Some(err) = refusal {
+                        state.log(LogLevel::Debug, format!("choice refused, {err} (CR 601.2h)"));
+                        state.awaiting_action = unanswered;
+                        return Applied::ReturnNow;
+                    }
+                    let Some(pending) = state.pending_ability_effect.take() else {
+                        state.log(LogLevel::Debug, "choice refused, no activation is waiting on this cost".into());
+                        state.awaiting_action = unanswered;
+                        return Applied::ReturnNow;
+                    };
+                    let mut cost = pending.unpaid.clone().unwrap_or_else(|| crate::state::DeferredActivationCost {
+                        tap_plan: Vec::new(), non_x_mana_cost: crate::types::ManaCost::new(vec![]),
+                        requires_tap: false, counter_cost: None, sacrifice: None,
+                        sacrifice_cost: crate::cards::SacrificeCost::None, once_per_turn: false,
+                        tapped_creatures: Vec::new(),
+                    });
+                    cost.tapped_creatures.clone_from(chosen);
+                    let applied = super::abilities::finish_activation(&mut *state, &super::abilities::Activation {
+                        player: pending.activator,
+                        object_id: pending.source_id,
+                        ability_index: pending.ability_index,
+                        behavior_card_id: pending.behavior_card_id,
+                        targets: pending.targets.clone(),
+                        description: pending.description.clone(),
+                        target_requirement: pending.target_requirement.clone(),
+                        has_x: pending.has_x,
+                    }, cost, registry);
+                    if matches!(applied, Applied::ReturnNow) {
+                        return Applied::ReturnNow;
+                    }
+                }
+                // Backing out of an activation whose cost is still being
+                // chosen: nothing has been paid, so it is a pure un-stash.
+                (ResolutionChoiceKind::ChooseObjectSet { effect: crate::state::PendingEffect::PayActivationTaps { .. }, .. },
+                 ResolvedChoice::CancelCast) => {
+                    let pending = state.pending_ability_effect.take();
+                    let name = pending.as_ref()
+                        .map(|p| card_name(&*state, registry, p.source_id))
+                        .unwrap_or_else(|| "ability".into());
+                    state.log(LogLevel::Event, format!("{name}: activation cancelled"));
+                }
                 (ResolutionChoiceKind::ChooseObjectSet { min, max, options, effect, .. },
                  ResolvedChoice::ChosenObjectSet(chosen)) => {
                     let n = chosen.len();

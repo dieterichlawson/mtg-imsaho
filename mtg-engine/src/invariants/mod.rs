@@ -311,6 +311,11 @@ pub fn check_core(state: &GameState, _registry: &CardRegistry) -> Vec<String> {
                 K::ChooseXFunding { is_ability: true, .. } if state.pending_ability_effect.is_none() => {
                     v.push("ability X-funding prompt with no pending_ability_effect stashed".into());
                 }
+                K::ChooseObjectSet { effect: crate::state::PendingEffect::PayActivationTaps { .. }, .. }
+                    if state.pending_ability_effect.is_none() =>
+                {
+                    v.push("activation cost prompt with no pending_ability_effect stashed".into());
+                }
                 _ => {}
             }
         }
@@ -334,13 +339,17 @@ pub fn check_core(state: &GameState, _registry: &CardRegistry) -> Vec<String> {
         if state.pending_spell_cast.is_some() && !awaiting_stashes_spell {
             v.push("pending_spell_cast stashed with no funding/exile/target prompt up (leak)".into());
         }
+        // An activation waits on its X, or on the creatures its cost taps
+        // (issue #670); on nothing else.
         let awaiting_stashes_ability = matches!(&state.awaiting_action,
             Some(crate::state::AwaitingAction::ResolutionChoice {
-                choice: crate::state::ResolutionChoiceKind::ChooseXFunding { is_ability: true, .. },
+                choice: crate::state::ResolutionChoiceKind::ChooseXFunding { is_ability: true, .. }
+                    | crate::state::ResolutionChoiceKind::ChooseObjectSet {
+                        effect: crate::state::PendingEffect::PayActivationTaps { .. }, .. },
                 ..
             }));
         if state.pending_ability_effect.is_some() && !awaiting_stashes_ability {
-            v.push("pending_ability_effect stashed with no funding prompt up (leak)".into());
+            v.push("pending_ability_effect stashed with no funding or cost prompt up (leak)".into());
         }
     }
 

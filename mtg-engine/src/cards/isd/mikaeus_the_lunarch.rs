@@ -74,6 +74,7 @@ impl CardBehavior for MikaeusTheLunarch {
             once_per_turn: false,
             sorcery_speed_only: false,
             counter_cost: None,
+            tap_cost: None,
         });
 
         // Ability 1: {T}, Remove a +1/+1 counter from Mikaeus: Put a +1/+1
@@ -96,6 +97,7 @@ impl CardBehavior for MikaeusTheLunarch {
             once_per_turn: false,
             sorcery_speed_only: false,
             counter_cost: Some((CounterType::PlusOnePlusOne, 1)),
+            tap_cost: None,
         });
 
         abilities
