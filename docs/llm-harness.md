@@ -176,8 +176,16 @@ only — no dollar figure.
 ```
 
 The save is rewritten before every decision point via a temp file and
-`rename(2)`, so a reader always sees a whole save. It is deleted when the game
-ends normally, so a leftover file means the run died.
+`rename(2)`, so a reader always sees a whole save. It is left in place when
+the game ends, holding the final position; `--resume` on a finished save
+refuses and says who won. A save that still holds a live game means the run
+died or was quit.
+
+A save is the whole game state, hidden information included: both hands,
+both libraries in draw order, and the Private log lines (what a player kept
+from a look-at-the-top effect). It has to be, to resume. It is written
+readable by its owner only (mode 0600), but anyone who can read the file can
+read the answer key — in a hotseat game, that includes the other player.
 
 A save is written only when a `cli` seat is playing or `--save` was passed —
 serializing the whole state every action is too expensive for a long
@@ -186,11 +194,15 @@ resume needs `--save`. (A hot-reload snapshot is always written to a
 per-process file in the temp directory for the CLI's own reload key; it is not
 a substitute for `--save`.)
 
-On `--resume`, the save's decks and RNG win over the flags: `--deck1`,
-`--deck2`, and `--seed` are ignored and the runner says so. The seat flags are
-not stored in the save — pass `--p1`/`--p2` again, and note that a resumed LLM
-seat starts a fresh conversation seeded with a recap of the game log so far,
-not the original conversation.
+On `--resume`, the save's decks, RNG and seats win over the flags: `--deck1`
+and `--deck2` are ignored and the runner says so. `--seed` does not change the
+saved shuffle, but it still seeds the random and AI seats, so keep it to
+replay a resume deterministically. The seats are stored in the save, so a
+bare `--resume` brings back the same players; an explicit `--p1`/`--p2`
+overrides the saved seat and says so, and a metered API seat the file asks
+for needs that flag to confirm it. A resumed LLM seat starts a fresh
+conversation seeded with a recap of the game log so far, not the original
+conversation.
 
 ## Drafting
 
