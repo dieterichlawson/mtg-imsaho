@@ -313,17 +313,26 @@ fn own_group_tied_to_us(cmd: &mut Command) {
 /// sent. Async-signal-safe: `killpg`, `signal` and `raise` only.
 #[cfg(unix)]
 extern "C" fn handle_fatal_signal(sig: libc::c_int) {
-    for slot in &LIVE_GROUPS {
-        let pgid = slot.load(Ordering::Relaxed);
-        if pgid > 0 && pgid != unsafe { libc::getpgrp() } {
-            unsafe { libc::killpg(pgid, libc::SIGKILL) };
-        }
-    }
+    kill_live_calls_from_signal();
+    // A cli seat's terminal is put back too, whichever of the two handler
+    // sets was installed last: they used to replace each other (#686).
+    crate::cli::restore_terminal_from_signal();
     // Re-raise with the default disposition so the exit status is the one
     // the caller expects from a Ctrl-C.
     unsafe {
         libc::signal(sig, libc::SIG_DFL);
         libc::raise(sig);
+    }
+}
+
+/// Kill every in-flight `claude -p` group, from inside a signal handler:
+/// only atomics and `killpg`, which are async-signal-safe.
+pub fn kill_live_calls_from_signal() {
+    for slot in &LIVE_GROUPS {
+        let pgid = slot.load(Ordering::Relaxed);
+        if pgid > 0 && pgid != unsafe { libc::getpgrp() } {
+            unsafe { libc::killpg(pgid, libc::SIGKILL) };
+        }
     }
 }
 

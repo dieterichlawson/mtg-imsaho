@@ -156,20 +156,35 @@ static SANE_TERMIOS: std::sync::OnceLock<libc::termios> = std::sync::OnceLock::n
 /// allocation (`OnceLock::get` after initialization is a plain atomic
 /// load).
 extern "C" fn restore_terminal_and_exit(sig: libc::c_int) {
+    // An LLM seat's `claude -p` calls go down with us whichever handler
+    // runs: the runner installs this one after a cc seat has installed its
+    // own, and this used to replace it, so Ctrl-C, SIGTERM or a closed
+    // window with a cli seat in the game left the calls' process trees
+    // running under init (#686).
+    crate::llm::claude_code_kill_live_calls_from_signal();
+    restore_terminal_from_signal();
+    unsafe { libc::_exit(128 + sig) };
+}
+
+/// Put the terminal back the way a shell needs it, and take the hot-reload
+/// snapshot with us — from inside a signal handler, so only
+/// async-signal-safe calls. A no-op for the terminal when no cli seat saved
+/// one. Called by both fatal-signal handlers, so whichever was installed
+/// last does all of it (#686, #687).
+pub(crate) fn restore_terminal_from_signal() {
     unsafe {
         if let Some(t) = SANE_TERMIOS.get() {
             libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, t);
+            // Bracketed paste off, cursor back on, clear the screen, home
+            // the cursor — one write of literal escape bytes, because a
+            // signal handler may only call async-signal-safe functions and
+            // `write` is the one that qualifies. Without the clear, a signal
+            // death left the TUI frame on screen for the shell to paint into
+            // (#235), the same defect the Ctrl-C key path had.
+            let seq = b"\x1b[?2004l\x1b[?25h\x1b[2J\x1b[H";
+            libc::write(libc::STDOUT_FILENO, seq.as_ptr().cast(), seq.len());
         }
-        // Bracketed paste off, cursor back on, clear the screen, home the
-        // cursor — one write of literal escape bytes, because a signal
-        // handler may only call async-signal-safe functions and `write` is
-        // the one that qualifies. Without the clear, a signal death left the
-        // TUI frame on screen for the shell to paint into (#235), the same
-        // defect the Ctrl-C key path had.
-        let seq = b"\x1b[?2004l\x1b[?25h\x1b[2J\x1b[H";
-        libc::write(libc::STDOUT_FILENO, seq.as_ptr().cast(), seq.len());
         unlink_scratch_file();
-        libc::_exit(128 + sig);
     }
 }
 
@@ -321,7 +336,7 @@ fn read_event_guarded() -> Option<Event> {
     }
 }
 
-/// Install SIGHUP/SIGTERM/SIGINT handlers that restore the terminal
+/// Install SIGHUP/SIGTERM/SIGINT/SIGQUIT handlers that restore the terminal
 /// before exiting (issue #78), plus the SIGCONT re-arm handler for
 /// stop/resume under a job-control shell (issue #104). A signal landing
 /// while a prompt held the terminal in raw mode used to leave the pty raw
@@ -337,7 +352,10 @@ pub fn install_terminal_restore_signal_handlers() {
             let _ = SANE_TERMIOS.set(t);
         }
         let handler = restore_terminal_and_exit as extern "C" fn(libc::c_int);
-        for sig in [libc::SIGHUP, libc::SIGTERM, libc::SIGINT] {
+        // SIGQUIT too, as the `claude -p` handler has had since #653: an
+        // external `kill -QUIT` left the frame on screen, the tty in
+        // -icanon -echo, and the hot-reload snapshot in /tmp (#687).
+        for sig in [libc::SIGHUP, libc::SIGTERM, libc::SIGINT, libc::SIGQUIT] {
             libc::signal(sig, handler as libc::sighandler_t);
         }
         let cont_handler = rearm_raw_mode_on_cont as extern "C" fn(libc::c_int);

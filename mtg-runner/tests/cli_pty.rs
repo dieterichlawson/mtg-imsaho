@@ -42,6 +42,11 @@ impl PtyGame {
     /// exists at 100 columns or more), so a test about a narrow terminal
     /// has to ask for one.
     fn spawn_sized(cols: u16, rows: u16, args: &[&str]) -> PtyGame {
+        PtyGame::spawn_with_env(cols, rows, args, &[])
+    }
+
+    /// A game whose runner sees `env` as well — a stub `claude` for a cc seat.
+    fn spawn_with_env(cols: u16, rows: u16, args: &[&str], env: &[(&str, &std::ffi::OsStr)]) -> PtyGame {
         let mut master: libc::c_int = 0;
         let mut slave: libc::c_int = 0;
         let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
@@ -63,6 +68,9 @@ impl PtyGame {
         // package directory.
         cmd.args(args)
             .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."));
+        for (k, v) in env {
+            cmd.env(k, v);
+        }
         unsafe {
             // Each stdio dups the slave end; the child leads its own session
             // with the pty as its controlling terminal, exactly like a run
@@ -997,4 +1005,87 @@ fn an_unpayable_x_is_refused_before_the_card_is_spent() {
 
     g.send("\x03");
     assert_clean_exit(&mut g);
+}
+
+
+/// Issue #676: `concede` is accepted at every prompt — here the mulligan,
+/// which offers no Concede row — and it replaces the screen's answer: the
+/// game ends with the hand neither kept nor mulliganed.
+#[test]
+fn concede_typed_at_the_mulligan_ends_the_game_without_keeping() {
+    let mut g = seeded_game();
+    g.expect("Keep opening hand", T);
+    g.answer("concede\r");
+    g.expect("Are you sure", T);
+    g.answer("y\r");
+    g.expect("conceded", T);
+    assert!(!g.stripped().contains("p0 kept"), "the hand was kept before the concede");
+}
+
+fn stub_dir(name: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("mtg-pty-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    dir
+}
+
+/// Issue #686: with a cli seat in the game, a SIGTERM to the runner takes a
+/// cc seat's in-flight `claude -p` call with it — the whole process group,
+/// not just the direct child. The terminal-restore handler used to replace
+/// the call sweep's handler and `_exit` without it, leaving the stub's
+/// `sleep` running under init.
+#[test]
+fn a_sigterm_with_a_cli_seat_takes_the_cc_seats_calls_with_it() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = stub_dir("sigterm");
+    let mark = dir.join("grandchild.pid");
+    let stub = dir.join("claude");
+    std::fs::write(&stub, format!(
+        "#!/bin/sh\n[ \"$1\" = \"--version\" ] && {{ echo stub 0.0; exit 0; }}\ncat >/dev/null; sleep 600 & echo $! > {}; wait\n",
+        mark.display())).unwrap();
+    std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let mut g = PtyGame::spawn_with_env(150, 40, &[
+        "--p1", "cli", "--p2", "cc", "--on-the-play", "2", "--seed", "91003", "--quiet",
+    ], &[("CLAUDE_CODE_BIN", stub.as_os_str())]);
+    // The cc seat's first call is in flight once its stub has written the pid.
+    let deadline = Instant::now() + T;
+    while !mark.exists() && Instant::now() < deadline {
+        g.pump(Duration::from_millis(100));
+    }
+    let pid: i32 = std::fs::read_to_string(&mark).expect("the cc seat made a call")
+        .trim().parse().expect("a pid");
+    unsafe { libc::kill(g.child.id() as i32, libc::SIGTERM) };
+    let _ = g.wait_exit(T);
+    let gone = Instant::now() + Duration::from_secs(5);
+    while std::path::Path::new(&format!("/proc/{pid}")).exists() && Instant::now() < gone {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let alive = std::path::Path::new(&format!("/proc/{pid}")).exists();
+    if alive {
+        unsafe { libc::kill(pid, libc::SIGKILL) };
+    }
+    assert!(!alive, "the cc seat's call outlived the runner's SIGTERM");
+}
+
+/// Issue #687: SIGQUIT is a fatal signal like the others: the terminal is
+/// put back (the screen cleared, the cursor shown) and the hot-reload
+/// snapshot, which holds both hands, is taken with the process.
+#[test]
+fn a_sigquit_restores_the_terminal_and_removes_the_snapshot() {
+    let mut g = seeded_game();
+    g.expect("Keep opening hand", T);
+    let pid = g.child.id();
+    let snapshot = std::env::temp_dir().join(format!("mtg-hot-reload-{pid}.json"));
+    let deadline = Instant::now() + T;
+    while !snapshot.exists() && Instant::now() < deadline {
+        g.pump(Duration::from_millis(100));
+    }
+    assert!(snapshot.exists(), "the runner writes its snapshot before a decision");
+    let before = g.seen.len();
+    unsafe { libc::kill(pid as i32, libc::SIGQUIT) };
+    let status = g.wait_exit(T);
+    assert_eq!(status.code(), Some(128 + libc::SIGQUIT), "{status:?}");
+    assert!(!snapshot.exists(), "the snapshot with both hands in it was left in /tmp");
+    assert!(g.seen[before..].contains("\x1b[2J"), "the frame was not cleared on the way out");
 }
