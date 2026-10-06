@@ -283,6 +283,12 @@ fn silent_departure_bounces_creature() {
 
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Hand,
         "Creature should be returned to hand");
+    // And the log says where it went: "left the battlefield" could not be
+    // told from any other zone change (#707).
+    let name = state.obj_name(creature);
+    assert!(state.game_log.iter().any(|e| e.message == format!("{name} was returned to its owner's hand")),
+        "the bounce names its destination: {:#?}",
+        state.game_log.iter().map(|e| e.message.as_str()).collect::<Vec<_>>());
 }
 
 /// "to its **owner's** hand". The test above bounces a creature its owner also

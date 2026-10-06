@@ -919,7 +919,7 @@ fn only_a_permanent_leaving_the_battlefield_is_reported_as_leaving() {
         reg.get_id_by_name("Grizzly Bears").unwrap(), P0, Zone::Library, None, None);
     state.move_object(milled, Zone::Graveyard, &reg);
     for said in ["died", "was put into its owner's graveyard", "was exiled",
-                 "left the battlefield"] {
+                 "was returned to its owner's hand", "left the battlefield"] {
         assert!(log_lines(&state).iter().all(|l| !l.contains(said)),
             "a card milled out of the library never left the battlefield, \
              but the log says {said:?}: {:?}", log_lines(&state));

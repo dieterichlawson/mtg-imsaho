@@ -1238,6 +1238,12 @@ impl GameState {
                 (Zone::Graveyard, true) => "died",
                 (Zone::Graveyard, false) => "was put into its owner's graveyard",
                 (Zone::Exile, _) => "was exiled",
+                // A bounce read "left the battlefield", which a reader could
+                // not tell from any other zone change, while the card was in
+                // a hand to be cast again next turn (#707). A move to a
+                // library is still the generic line: every card that does it
+                // says where in the library, which this cannot.
+                (Zone::Hand, _) => "was returned to its owner's hand",
                 _ => "left the battlefield",
             };
             // With the id, like the lines around it: a sweeper's four
