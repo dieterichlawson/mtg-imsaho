@@ -5130,11 +5130,9 @@ impl CliPlayer {
                 .collect();
             let widest_heading = format!(
                 " INSPECT BATTLEFIELD (showing {n}-{n} of {n})", n = rows.len());
-            // The notice, when there is one, is a row of the chrome too.
             let chrome = Self::wrapped_height(str_cols(&widest_heading), w)
                 + 2
-                + Self::wrapped_height(str_cols(DECK_PAGED_FOOTER), w)
-                + notice.as_ref().map_or(0, |n| Self::wrapped_height(2 + str_cols(n), w));
+                + Self::wrapped_height(str_cols(DECK_PAGED_FOOTER), w);
             let avail = Self::viewer_avail(h, chrome);
             let (start, shown, paged) = Self::menu_page_lines(&heights, avail, page, 0);
             page = start;
@@ -5146,10 +5144,9 @@ impl CliPlayer {
             } else {
                 " INSPECT BATTLEFIELD".to_string()
             };
-            let footer = format!("{}\n{}",
-                notice.take().map(|n| format!("\n  {n}")).unwrap_or_default(),
-                if paged { DECK_PAGED_FOOTER.to_string() }
-                else { "  Enter number for details, or press enter to return: ".to_string() });
+            let footer = Self::viewer_footer(notice.take(),
+                if paged { DECK_PAGED_FOOTER }
+                else { "  Enter number for details, or press enter to return: " }, w);
             Self::paint_inspect_page(&mut out, &heading, &rows[start..end], &footer);
             let _ = out.flush();
             let input = Self::read_line("");
@@ -5179,6 +5176,27 @@ impl CliPlayer {
             // page is indistinguishable from a hung one (#563).
             notice = Some(Self::viewer_refusal(
                 typed, all_perms.len(), paged, page == 0, end >= rows.len()));
+        }
+    }
+
+    /// A viewer's footer: the blank row that leads it — or, in that row, a
+    /// refusal notice clipped to it — then the key hint.
+    ///
+    /// The notice used to be a row of its own added to the chrome, which
+    /// shrank the page and re-paged it from the same start: "Already at the
+    /// last page." evicted that page's last row, and the next `n` reached a
+    /// page the notice had just said did not exist (#699). Sharing the blank
+    /// row keeps every page the same size whether a notice shows or not.
+    fn viewer_footer(notice: Option<String>, hint: &str, w: usize) -> String {
+        match notice {
+            Some(n) => {
+                let room = w.saturating_sub(3);
+                let n = if str_cols(&n) > room {
+                    format!("{}\u{2026}", clip_cols(&n, room.saturating_sub(1)))
+                } else { n };
+                format!("  {n}\n{hint}")
+            }
+            None => format!("\n{hint}"),
         }
     }
 
@@ -5709,13 +5727,9 @@ return",
                 " YOUR DECK ({total_cards} cards, showing {n}-{n} of {n} entries)");
             // Heading, the blank under it, the blank the footer leads with,
             // and the footer itself.
-            // The notice, when there is one, is a row of the chrome too:
-            // a page sized as though it were not there pushes its own
-            // heading off the top (#365 is what that costs).
             let chrome = Self::wrapped_height(str_cols(&widest_heading), w)
                 + 2
-                + Self::wrapped_height(str_cols(DECK_PAGED_FOOTER), w)
-                + notice.as_ref().map_or(0, |n| Self::wrapped_height(2 + str_cols(n), w));
+                + Self::wrapped_height(str_cols(DECK_PAGED_FOOTER), w);
             let avail = Self::viewer_avail(h, chrome);
             let (start, shown, paged) = Self::menu_page_lines(&heights, avail, page, 0);
             page = start;
@@ -5726,10 +5740,9 @@ return",
             } else {
                 format!(" YOUR DECK ({total_cards} cards)")
             };
-            let footer = format!("{}\n{}",
-                notice.take().map(|n| format!("\n  {n}")).unwrap_or_default(),
-                if paged { DECK_PAGED_FOOTER.to_string() }
-                else { "  Enter number for details, or press enter to return: ".to_string() });
+            let footer = Self::viewer_footer(notice.take(),
+                if paged { DECK_PAGED_FOOTER }
+                else { "  Enter number for details, or press enter to return: " }, w);
             Self::paint_deck_page(&mut out, &heading, &rows[start..end], &footer);
             let _ = out.flush();
             let input = Self::read_line("");
@@ -11070,6 +11083,25 @@ Mark 1 of the 1 cards below to exile.");
             let shown = rows[2].join(" ").matches(',').count() + usize::from(keywords > 0);
             assert_eq!(shown, keywords, "{name} at {width}: every keyword is shown: {:?}", rows[2]);
         }
+    }
+
+    /// Issue #699: a refusal notice takes the footer's blank row instead of
+    /// a row of its own, so the page it is shown on keeps every entry, and
+    /// a notice too long for the row is clipped to it.
+    #[test]
+    fn a_viewer_notice_does_not_change_the_page_size() {
+        let hint = DECK_PAGED_FOOTER;
+        let plain = CliPlayer::viewer_footer(None, hint, 80);
+        let refused = CliPlayer::viewer_footer(Some("Already at the last page.".into()), hint, 80);
+        assert_eq!(plain.lines().count(), refused.lines().count(),
+            "the same rows with or without a notice: {plain:?} / {refused:?}");
+        assert!(refused.contains("Already at the last page."));
+        let long = "Invalid input 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx' \
+                    — enter a number 0-6, or press enter to return".to_string();
+        let clipped = CliPlayer::viewer_footer(Some(long), hint, 80);
+        let first = clipped.lines().next().unwrap();
+        assert!(str_cols(first) <= 79 && first.ends_with('\u{2026}'), "{first:?}");
+        assert_eq!(clipped.lines().count(), plain.lines().count());
     }
 
     /// Issue #697: a permanent with one of its abilities on the stack is

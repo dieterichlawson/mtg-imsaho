@@ -939,6 +939,41 @@ fn a_viewer_says_so_when_it_will_not_act_on_what_was_typed() {
     assert_clean_exit(&mut g);
 }
 
+/// Issue #699: a refusal notice shares the footer's blank row, so the page
+/// it is shown on is the page that was there. At 80x11 the deck browser's
+/// seven entries fit unpaged; the notice used to take a row of its own,
+/// re-page the list to "showing 1-6 of 7 entries" and hide the last entry.
+#[test]
+fn a_viewer_notice_does_not_evict_a_row() {
+    let mut g = PtyGame::spawn_sized(80, 11, &[
+        "--p1", "cli", "--p2", "cli", "--deck1", "rg", "--deck2", "wb",
+        "--seed", "5399", "--on-the-play", "1", "--quiet",
+    ]);
+    g.expect("Keep opening hand", T);
+    g.forget();
+    g.answer("0\r");
+    g.expect("you are p1", T);
+    g.expect("Keep opening hand", T);
+    g.answer("0\r");
+    g.expect("Pass priority", T);
+
+    g.forget();
+    g.answer("d\r");
+    g.expect("YOUR DECK", T);
+    g.expect("Mountain", T);
+    g.expect_absent("entries)", Duration::from_millis(300));
+    g.forget();
+    g.answer("x\r");
+    g.expect("Invalid input", T);
+    g.expect("Mountain", T);
+    g.expect_absent("entries)", Duration::from_millis(300));
+    g.answer("\r");
+    g.expect("Pass priority", T);
+
+    g.send("\x03");
+    assert_clean_exit(&mut g);
+}
+
 /// A deck that reaches a board whose only X source taps for two mana:
 /// Mountains for the land drop and the `{R}` pip, a Sol Ring for X, and
 /// Devil's Play to spend it on.
