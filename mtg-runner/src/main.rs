@@ -63,7 +63,8 @@ Options:
   --save <path>          Continuously write a resumable save to this file. The
                          file is overwritten from the first decision, follows a
                          symlink, and is left in place at game over holding the
-                         final position
+                         final position. It holds both hands and both library
+                         orders, so it is written readable by its owner only
   --resume <path>        Resume from a save file. The saved decks and seats
                          win over the flags; an explicit --p1/--p2 overrides
                          the saved seat and says so, and a metered API seat
@@ -149,9 +150,9 @@ fn stream_game_log(state: &GameState, from: usize) -> usize {
 /// braid their saves into one file (issue #75). The temp name carries the
 /// pid so two writers can't braid the temp either — the last rename wins
 /// whole, which is the most a shared path can promise.
-fn write_save_atomically(path: &str, json: &str, private: bool) -> std::io::Result<()> {
+fn write_save_atomically(path: &str, json: &str) -> std::io::Result<()> {
     let tmp = format!("{}.{}.tmp", path, std::process::id());
-    let write = write_file(&tmp, json, private).and_then(|()| fs::rename(&tmp, path));
+    let write = write_file(&tmp, json).and_then(|()| fs::rename(&tmp, path));
     if write.is_err() {
         // The failure path used to be what stranded a partial temp file —
         // on a filesystem that just ran out of space, which is exactly when
@@ -161,22 +162,20 @@ fn write_save_atomically(path: &str, json: &str, private: bool) -> std::io::Resu
     write
 }
 
-/// Write `json` to `path`, optionally with only this user able to read it.
+/// Write `json` to `path` with only this user able to read it.
 ///
-/// The hot-reload snapshot is a complete game state — both players' hands
-/// and both libraries in draw order — written to a world-readable /tmp at a
-/// name derived only from the pid, so any other user on the box could read
-/// a live game's answer key (issue #239). Nothing but this process ever
-/// reads it, so 0600 costs nothing. A `--save` file is a path the operator
-/// named and keeps the umask they expect.
-fn write_file(path: &str, json: &str, private: bool) -> std::io::Result<()> {
+/// A save is a complete game state — both players' hands, both libraries in
+/// draw order, and the Private log lines. The hot-reload snapshot was
+/// written to a world-readable /tmp at a name derived only from the pid, so
+/// any other user on the box could read a live game's answer key (issue
+/// #239). A `--save` file holds the same and kept the umask, so it was 0644
+/// too (#709): resuming needs the contents, and nobody else needs to read
+/// them.
+fn write_file(path: &str, json: &str) -> std::io::Result<()> {
     use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
     let mut options = fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    if private {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
+    options.write(true).create(true).truncate(true).mode(0o600);
     let mut file = options.open(path)?;
     file.write_all(json.as_bytes())
 }
@@ -918,7 +917,7 @@ stops here — pass --save {path} to keep writing it");
             // once, stop writing it, and let the game go on; `rr` refuses
             // rather than reloading a snapshot that has gone stale.
             if hot_reload_ok.get() {
-                if let Err(e) = write_save_atomically(&hot_reload_ref, &json, true) {
+                if let Err(e) = write_save_atomically(&hot_reload_ref, &json) {
                     hot_reload_ok.set(false);
                     mtg_player::stderr_line!("warning: cannot write the hot-reload snapshot to \
 '{hot_reload_ref}': {e}. `rr` is disabled for the rest of this game; \
@@ -930,7 +929,7 @@ use --save if you need a resumable file.");
             // file be replaced mid-game — that's a user-environment failure,
             // reported cleanly, not a panic (issue #69).
             if let Some(ref path) = save_file_ref {
-                write_save_atomically(path, &json, false)
+                write_save_atomically(path, &json)
                     .unwrap_or_else(|e| die(&format!("failed to write save file '{path}': {e}")));
             }
         }
@@ -1033,7 +1032,7 @@ use --save if you need a resumable file.");
         };
         match serde_json::to_string(&save) {
             Ok(json) => {
-                if let Err(e) = write_save_atomically(path, &json, false) {
+                if let Err(e) = write_save_atomically(path, &json) {
                     mtg_player::stderr_line!("warning: could not write the final save to '{path}': {e}");
                 }
             }

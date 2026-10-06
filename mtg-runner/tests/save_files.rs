@@ -106,6 +106,14 @@ fn the_save_outlives_the_game_and_holds_the_final_position() {
         Path::new(&save).exists(),
         "the file the operator named is still there after the game"
     );
+    // A save holds both hands, both libraries in draw order and the Private
+    // log lines — the answer key, the same as the hot-reload snapshot — so it
+    // is written for its owner alone. It kept the umask and was 0644 (#709).
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = std::fs::metadata(&save).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "the save is readable by its owner only, not {mode:o}");
+    }
 
     // And it is the *final* position, which is now read back out of the
     // refusal: a decided game has nothing to continue, so `--resume` on it
