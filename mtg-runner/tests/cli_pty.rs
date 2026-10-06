@@ -68,6 +68,9 @@ impl PtyGame {
         // package directory.
         cmd.args(args)
             .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."));
+        // The "working" indicator (#566) paints into the raw stream these
+        // tests read; it is off unless a test turns it on.
+        cmd.env("MTG_CLI_NO_WORKING_INDICATOR", "1");
         for (k, v) in env {
             cmd.env(k, v);
         }
@@ -1088,4 +1091,24 @@ fn a_sigquit_restores_the_terminal_and_removes_the_snapshot() {
     assert_eq!(status.code(), Some(128 + libc::SIGQUIT), "{status:?}");
     assert!(!snapshot.exists(), "the snapshot with both hands in it was left in /tmp");
     assert!(g.seen[before..].contains("\x1b[2J"), "the frame was not cleared on the way out");
+}
+
+/// Issue #566: while the program works on something a person is waiting
+/// for — here, everything after keeping a hand up to the next prompt — a
+/// "working" indicator is painted onto the frame already on screen. Its
+/// delay is set to nothing so the test need not find a slow board.
+#[test]
+fn the_working_indicator_paints_while_the_program_works() {
+    let mut g = PtyGame::spawn_with_env(150, 40, &[
+        "--p1", "cli", "--p2", "random",
+        "--deck1", "decks/rb-vampires.txt", "--deck2", "decks/gw-humans.txt",
+        "--seed", "2301", "--on-the-play", "1", "--quiet",
+    ], &[("MTG_CLI_NO_WORKING_INDICATOR", std::ffi::OsStr::new("0")),
+         ("MTG_CLI_WORKING_DELAY_MS", std::ffi::OsStr::new("0"))]);
+    g.expect("Keep opening hand", T);
+    g.answer("0\r");
+    g.expect("working", T);
+    g.expect("Pass priority", T);
+    g.send("\x03");
+    let _ = g.wait_exit(T);
 }

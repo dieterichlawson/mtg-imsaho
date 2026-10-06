@@ -648,6 +648,10 @@ stops here — pass --save {path} to keep writing it");
     // shell (issue #78).
     if has_human {
         mtg_player::cli::install_terminal_restore_signal_handlers();
+        // Everything before the first frame — a `--resume` of a large save
+        // above all — is work a person is waiting on with nothing on the
+        // screen to say so (#566). The first frame stops it.
+        mtg_player::cli::start_working();
     }
 
     // Serializing the full game state (log included) every action is what
@@ -725,12 +729,6 @@ stops here — pass --save {path} to keep writing it");
             return mtg_player::watchdog::ceiling_move();
         }
 
-        // The registry the run already built, not a new one. Each of these
-        // three call sites was constructing all 275 cards and both name
-        // maps from scratch — three times per decision, for a registry that
-        // never changes (issue #565).
-        let view = GameView::for_player(game_state, acting_player, registry_ref);
-
         let (player, other) = if acting_player == PlayerId(0) { (&mut p1, &mut p2) } else { (&mut p2, &mut p1) };
         if let PlayerKind::Gui(gui) = other {
             let other_id = PlayerId(1 - acting_player.0);
@@ -757,6 +755,15 @@ stops here — pass --save {path} to keep writing it");
         } else {
             None
         };
+
+        // Built after the spinner has started, not before: building it is
+        // part of the wait the spinner is there to cover (#566).
+        //
+        // The registry the run already built, not a new one. Each of these
+        // three call sites was constructing all 275 cards and both name
+        // maps from scratch — three times per decision, for a registry that
+        // never changes (issue #565).
+        let view = GameView::for_player(game_state, acting_player, registry_ref);
 
         let answer = if let Some(prompt) = &legal.combat_prompt {
             choose_combat(player, &view, legal, prompt)

@@ -369,6 +369,7 @@ pub fn install_terminal_restore_signal_handlers() {
 /// summary doesn't land on top of a stale frame and visually merge with
 /// leftover rows (issue #47).
 pub fn reset_terminal_for_exit() {
+    stop_working();
     tui_raw_off();
     let mut out = stdout();
     // Defensive: bracketed paste must never survive into the user's shell.
@@ -380,6 +381,95 @@ pub fn reset_terminal_for_exit() {
 /// Handle for the background spinner thread. Drop to stop.
 pub struct SpinnerHandle {
     running: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// The "working" indicator a person sees while the program does work they
+/// are waiting on (issue #566): the engine resolving what they just did,
+/// the other seat's turn, a `--resume` building its first frame.
+///
+/// It paints onto the frame already on screen — nothing is re-rendered —
+/// and only after [`WORKING_DELAY`], so a decision that takes 40 ms shows
+/// nothing and one that takes 16 s says the program is alive. A delay
+/// rather than a board-size threshold: it needs no guess at how big is too
+/// big, and stays right as the engine gets faster or slower. The next
+/// frame stops it ([`stop_working`]) before it draws.
+struct Working {
+    running: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+static WORKING: std::sync::Mutex<Option<Working>> = std::sync::Mutex::new(None);
+
+/// Held while the indicator paints, and by [`stop_working`], so a paint is
+/// never half-done under the frame that replaces it.
+static WORKING_PAINT: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// How long work goes unremarked before the indicator appears.
+const WORKING_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
+
+/// Set to `1` to never show the indicator — the pty tests, which assert on
+/// the raw byte stream, set it.
+pub const NO_WORKING_INDICATOR_ENV: &str = "MTG_CLI_NO_WORKING_INDICATOR";
+
+/// Overrides [`WORKING_DELAY`], in milliseconds; for testing the indicator.
+pub const WORKING_DELAY_ENV: &str = "MTG_CLI_WORKING_DELAY_MS";
+
+/// Start the indicator, unless one is already running or it is turned off.
+pub fn start_working() {
+    if std::env::var(NO_WORKING_INDICATOR_ENV).is_ok_and(|v| v == "1") {
+        return;
+    }
+    let mut slot = match WORKING.lock() { Ok(g) => g, Err(e) => e.into_inner() };
+    if slot.is_some() {
+        return;
+    }
+    let delay = std::env::var(WORKING_DELAY_ENV).ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .map_or(WORKING_DELAY, std::time::Duration::from_millis);
+    let running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let flag = std::sync::Arc::clone(&running);
+    std::thread::spawn(move || {
+        use std::sync::atomic::Ordering::SeqCst;
+        let began = std::time::Instant::now();
+        while began.elapsed() < delay {
+            if !flag.load(SeqCst) {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+        let mut i = 0;
+        loop {
+            {
+                let _paint = match WORKING_PAINT.lock() { Ok(g) => g, Err(e) => e.into_inner() };
+                if !flag.load(SeqCst) {
+                    return;
+                }
+                // The top row's right end: the turn bar, which every frame
+                // draws and nothing reads at the far right.
+                let label = format!(" working {} ", frames[i % frames.len()]);
+                let w = terminal::size().map_or(100, |(w, _)| w);
+                let col = w.saturating_sub(u16::try_from(label.chars().count()).unwrap_or(0));
+                let mut out = stdout();
+                let _ = execute!(out, cursor::SavePosition, cursor::MoveTo(col, 0),
+                    SetForegroundColor(Color::DarkYellow), Print(&label), ResetColor,
+                    cursor::RestorePosition);
+                let _ = out.flush();
+            }
+            i += 1;
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    });
+    *slot = Some(Working { running });
+}
+
+/// Stop the indicator, if it is running, before anything draws over it.
+pub fn stop_working() {
+    let mut slot = match WORKING.lock() { Ok(g) => g, Err(e) => e.into_inner() };
+    if let Some(w) = slot.take() {
+        w.running.store(false, std::sync::atomic::Ordering::SeqCst);
+        // Wait out a paint in progress: past this lock it paints no more.
+        drop(match WORKING_PAINT.lock() { Ok(g) => g, Err(e) => e.into_inner() });
+    }
 }
 
 impl Drop for SpinnerHandle {
@@ -805,7 +895,12 @@ fn is_concede_word(line: &str) -> bool {
 /// back here rather than being threaded through each loop's return value.
 fn answer_or_concede(f: impl FnOnce() -> Action) -> Action {
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
-        Ok(action) => action,
+        Ok(action) => {
+            // The answer is given and the person is now waiting on what it
+            // sets off: the engine, and the other seat (#566).
+            start_working();
+            action
+        }
         Err(payload) if payload.is::<ConcedeRequested>() => Action::Concede,
         Err(payload) => std::panic::resume_unwind(payload),
     }
@@ -1666,6 +1761,8 @@ impl CliPlayer {
     /// being asked.
     #[allow(clippy::too_many_arguments)]
     fn render_paged_noticed(view: &GameView, actions: Option<&[MenuLabel]>, message: Option<&str>, notice: Option<&str>, log: &[String], card_filter: &str, pass_mode_label: Option<&str>, menu_offset: usize, reserve_below: usize) -> MenuPage {
+        // The frame is about to be redrawn: the work it was waiting on is done.
+        stop_working();
 
         let mut out = stdout();
         let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
