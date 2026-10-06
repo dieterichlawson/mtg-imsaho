@@ -533,6 +533,10 @@ fn a_control_effect_outlives_neither_its_source_nor_its_object() {
     let olivia = named_permanent(&mut state, &reg, "Olivia Voldaren", P0);
     let vampire = named_permanent(&mut state, &reg, "Markov Patrician", P1);
     state.gain_control_while_source_controlled(vampire, olivia, &reg);
+    // The change of control is an event since #682; the game loop scans it
+    // for triggers before anyone decides anything, and this setup stands in
+    // for that scan.
+    state.trigger_event_index = state.events.len();
     assert_eq!(check_settled(&state, &reg), Vec::<String>::new());
 
     // The effect gives the permanent to whoever controls the source.
