@@ -220,7 +220,9 @@ fn die(msg: &str) -> ! {
     });
     // The summary's own log record is owed to the file now, for the same
     // reason the caller flushed before getting here.
-    let _ = std::panic::catch_unwind(mtg_player::game_log::flush_here);
+    // Every worker's held records, not only this thread's: the process
+    // will not come back for any of them (#658).
+    let _ = std::panic::catch_unwind(mtg_player::game_log::flush_all);
     std::process::exit(1);
 }
 
@@ -257,9 +259,10 @@ fn report_worker_failure(payload: &Box<dyn std::any::Any + Send>, context: &str)
     // reads; the rest are about to be killed with the process and have
     // nothing to add. Without this, two seats failing at once would race
     // each other to stderr with two accounts of one stop.
-    // Whatever this worker was holding back for the deterministic flush is
-    // owed to the log now: `process::exit` will not come back for it.
-    mtg_player::game_log::flush_here();
+    // Whatever the workers were holding back for the deterministic flush is
+    // owed to the log now — this one's and every other match's, in their
+    // order: `process::exit` will not come back for any of it (#658).
+    mtg_player::game_log::flush_all();
     static REPORTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
     if REPORTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
         loop {
@@ -1192,7 +1195,7 @@ this draft will be made under {} — this draft is a mixture of the two",
                                     pick_num + 1
                                 );
                                 in_seat(&context, move || {
-                                    mtg_player::game_log::buffer_here();
+                                    mtg_player::game_log::buffer_ranked(seat as u64);
                                     let prompt = crate::llm_client::DraftLlmClient::build_pick_prompt(
                                         table_for(seat),
                                         round + 1,
@@ -1344,7 +1347,7 @@ its build attempts are in that run's log"), "");
             .map(|(seat, (client, pool))| spawn_seat(s, format!("seat {seat}"), move || {
                 let context = format!("seat {seat} could not build its deck");
                 in_seat(&context, move || {
-                mtg_player::game_log::buffer_here();
+                mtg_player::game_log::buffer_ranked(seat as u64);
                 let result = build_deck_with_llm(client, pool, registry_ref, card_lines_ref);
                 let attempts: Vec<(&str, &str, Option<&str>)> = result
                     .attempts
@@ -1490,7 +1493,8 @@ and the FINAL STANDINGS below record none",
             let (finished_tx, finished_rx) = std::sync::mpsc::channel::<MatchResult>();
             let handles: Vec<_> = to_play
                 .iter()
-                .map(|&(a, b)| {
+                .enumerate()
+                .map(|(k, &(a, b))| {
                     let finished_tx = finished_tx.clone();
                     let deck_a = &decklists[a];
                     let deck_b = &decklists[b];
@@ -1514,7 +1518,7 @@ and the FINAL STANDINGS below record none",
                         // two runs of one seed record the round the same
                         // way rather than as a scheduler-shuffled merge of
                         // the concurrent matches (issue #541).
-                        mtg_player::game_log::buffer_here();
+                        mtg_player::game_log::buffer_ranked(k as u64);
                         let outcome = play_match(
                             &PlayerSpec { seat: a, deck: deck_a, model_spec: model_a, guide: guide_a },
                             &PlayerSpec { seat: b, deck: deck_b, model_spec: model_b, guide: guide_b },

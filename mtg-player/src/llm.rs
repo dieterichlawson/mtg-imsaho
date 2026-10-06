@@ -2163,16 +2163,27 @@ impl LlmPlayer {
     /// knows happened.
     #[track_caller]
     fn log_rejected(&self, content: &str) {
+        /// The first line, clipped: what a terminal line can carry.
+        fn first_line(s: &str) -> String {
+            s.lines().next().unwrap_or("").chars().take(200).collect()
+        }
         // A backend that never answered is not a seat that answered badly.
         // The fallback is the same; what the operator should do about it is
         // the opposite — fix the CLI, or fix the model — and the log said
         // the seat sent `{}`, quoting an answer it never gave (#587).
+        // Each rejection is also one line on stderr as it happens. The log
+        // holds a worker's records until its scope ends, so the log is in
+        // order and the same on every run of one seed, and stderr is where
+        // a seat going wrong is seen live — as the backends' `API_*` lines
+        // already are (#658).
         if let Some(why) = &self.last_call_failure {
+            crate::stderr_line!("[{}] NO_ANSWER: {why}; {}", self.name, first_line(content));
             self.log_at(crate::game_log::LogLevel::Error, "NO_ANSWER",
                 &format!("{why}; {content}"));
             record_llm_unanswered(self.backend.model_name(), self.name());
             return;
         }
+        crate::stderr_line!("[{}] MALFORMED: {}", self.name, first_line(content));
         // `LogLevel::Error` is documented as being for exactly this —
         // "malformed LLM responses, API retries ..., fallback activations" —
         // and this was written at Info, so `grep ERROR` over a game log

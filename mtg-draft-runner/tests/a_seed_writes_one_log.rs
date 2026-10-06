@@ -73,6 +73,11 @@ if "maindeck" in sch.get("properties", {}):
     o = {"maindeck": {c: 1 for c in n[:23]}, "lands": {"Island": 9, "Swamp": 8}}
 else:
     o = fill(sch, H)
+    # REJECT=1: one game answer in four comes back without its key, which
+    # the harness rejects (MALFORMED) and substitutes for (#658).
+    import os
+    if os.environ.get("REJECT") == "1" and "action" in sch.get("properties", {}) and H % 4 == 0:
+        o = {"thoughts": "t"}
 print(json.dumps({"type": "result", "subtype": "success", "is_error": False,
                   "session_id": sid, "result": json.dumps(o), "structured_output": o,
                   "usage": {"input_tokens": 10, "output_tokens": 2,
@@ -131,6 +136,10 @@ fn mask_uuids(line: &str) -> String {
 }
 
 fn run(dir: &Path, bin: &Path, name: &str) -> PathBuf {
+    run_with(dir, bin, name, false)
+}
+
+fn run_with(dir: &Path, bin: &Path, name: &str, reject: bool) -> PathBuf {
     let log = dir.join(format!("{name}.log"));
     let _ = std::fs::remove_file(&log);
     let status = std::process::Command::new(env!("CARGO_BIN_EXE_mtg-draft-runner"))
@@ -141,6 +150,7 @@ fn run(dir: &Path, bin: &Path, name: &str) -> PathBuf {
         .args(["--log", log.to_str().unwrap()])
         .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
         .env("CLAUDE_CODE_BIN", bin)
+        .env("REJECT", if reject { "1" } else { "0" })
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
@@ -220,4 +230,36 @@ fn two_runs_of_one_seed_write_the_same_log() {
         "the seats opened their sessions in a different order between two runs of one seed");
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Issue #658: a run with rejected answers in it is still the same log on
+/// every run of one seed. `Error` records — `MALFORMED`, `NO_ANSWER`,
+/// `API_*` — were written straight through from a worker while everything
+/// else was held for its scope, so they landed up to 62,000 lines from the
+/// PROMPT they answered and in an order two runs disagreed on. Any real
+/// model draws some, which is why the clean-stub test above never saw it.
+#[test]
+fn two_runs_of_one_seed_with_rejected_answers_write_the_same_log() {
+    if !std::process::Command::new("python3").arg("--version")
+        .stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())
+        .status().is_ok_and(|s| s.success())
+    {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("mtg-draft-replay-rejects-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let bin = deterministic_seat(&dir);
+
+    let a = masked(&run_with(&dir, &bin, "a", true));
+    let b = masked(&run_with(&dir, &bin, "b", true));
+    let rejected = a.iter().filter(|l| l.contains("\tMALFORMED")).count();
+    assert!(rejected > 0, "the fixture should draw some rejected answers");
+    let differing: Vec<(usize, &String, &String)> = a.iter().zip(b.iter()).enumerate()
+        .filter(|(_, (x, y))| x != y).map(|(i, (x, y))| (i, x, y)).collect();
+    assert_eq!(a.len(), b.len(), "the two runs recorded different numbers of lines");
+    assert!(differing.is_empty(),
+        "{} of {} lines differ between two runs of one seed with {rejected} rejected answers in them; \
+         first few: {:?}", differing.len(), a.len(), differing.iter().take(3).collect::<Vec<_>>());
 }

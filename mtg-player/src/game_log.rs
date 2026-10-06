@@ -12,7 +12,6 @@
 //! written as indented continuation lines below the header with a blank
 //! line separator — use `grep -A`/`grep -B` or an editor to view.
 
-use std::cell::RefCell;
 use std::fs::{File, OpenOptions};
 use std::fmt::Write as _;
 use std::io::Write;
@@ -54,10 +53,25 @@ static LOG: Mutex<Option<LogState>> = Mutex::new(None);
 /// a run with no `--log` does no formatting work per record.
 static INITIALIZED: AtomicBool = AtomicBool::new(false);
 
-thread_local! {
-    /// Records this thread is collecting rather than writing, if it is one
-    /// of the runner's per-seat workers. See [`buffer_here`].
-    static BUFFER: RefCell<Option<String>> = const { RefCell::new(None) };
+/// Records the runner's per-seat workers are collecting rather than
+/// writing, by worker thread: the rank the runner gave it (the order its
+/// block is written back in) and the block so far. See [`buffer_here`].
+///
+/// A registry rather than a thread-local, so the fatal path can reach every
+/// worker's block and not only its own: `report_worker_failure` used to
+/// flush the failing worker alone, and every other match's records were
+/// lost at `process::exit` (#658).
+static HELD: Mutex<Vec<(std::thread::ThreadId, u64, String)>> = Mutex::new(Vec::new());
+
+/// Whether any worker is collecting, readable without the lock, so a run
+/// that buffers nothing pays nothing per record.
+static ANY_HELD: AtomicBool = AtomicBool::new(false);
+
+fn held() -> std::sync::MutexGuard<'static, Vec<(std::thread::ThreadId, u64, String)>> {
+    match HELD.lock() {
+        Ok(g) => g,
+        Err(e) => e.into_inner(),
+    }
 }
 
 /// Collect this thread's records instead of writing them, so a caller can
@@ -72,19 +86,38 @@ thread_local! {
 /// nothing (issue #541). The pick loop has always joined in seat order and
 /// logged afterwards, which is why the draft half is byte-identical.
 ///
-/// Only what the seed determines is held back. An `Error` record — a retry,
-/// a malformed answer, a fatal — is written through as it happens: those are
-/// the records an operator watches a long run for, and they are nowhere in
-/// a clean seeded run to begin with, so holding them would trade away
-/// visibility for determinism that is already there.
+/// Every record is held, `Error` ones included. They used to be written
+/// through, on the premise that a clean seeded run has none — false for any
+/// real model, whose `MALFORMED` answers then landed up to 62,000 lines from
+/// the PROMPT they answered, in an order two runs of one seed disagreed on
+/// (#658). What an operator watches a live run for is on stderr instead: the
+/// backends' `API_*` lines, and one line per rejected answer.
+///
+/// `rank` is the block's place when a fatal writes every held block out at
+/// once ([`flush_all`]): the seat, or the match's place in its round.
+pub fn buffer_ranked(rank: u64) {
+    let me = std::thread::current().id();
+    let mut held = held();
+    held.retain(|(t, _, _)| *t != me);
+    held.push((me, rank, String::new()));
+    ANY_HELD.store(true, Ordering::SeqCst);
+}
+
+/// [`buffer_ranked`], for a worker whose place no fatal flush needs: it
+/// goes after every ranked one.
 pub fn buffer_here() {
-    let _ = BUFFER.try_with(|b| *b.borrow_mut() = Some(String::new()));
+    buffer_ranked(u64::MAX);
 }
 
 /// Stop collecting and hand back what this thread recorded.
 #[must_use]
 pub fn take_buffered() -> String {
-    BUFFER.try_with(|b| b.borrow_mut().take()).ok().flatten().unwrap_or_default()
+    let me = std::thread::current().id();
+    let mut held = held();
+    match held.iter().position(|(t, _, _)| *t == me) {
+        Some(i) => held.remove(i).2,
+        None => String::new(),
+    }
 }
 
 /// Write a block taken from a worker, in one piece and in the caller's
@@ -96,13 +129,22 @@ pub fn write_block(block: &str) {
 }
 
 /// Write out whatever this thread is holding, now.
-///
-/// For the fatal path: a worker that is about to take the process down with
-/// it still owes the log everything it recorded, and `process::exit` will
-/// not come back for it.
 pub fn flush_here() {
     let held = take_buffered();
     write_block(&held);
+}
+
+/// Write out every block every worker is holding, in rank order, now.
+///
+/// For the fatal path: the process is about to exit and will not come back
+/// for any of them, so every match's records — not only the failing
+/// worker's — are written before it goes (#658).
+pub fn flush_all() {
+    let mut blocks: Vec<(u64, String)> = held().drain(..).map(|(_, r, b)| (r, b)).collect();
+    blocks.sort_by_key(|(r, _)| *r);
+    for (_, block) in blocks {
+        write_block(&block);
+    }
 }
 
 /// Append a formatted block to the log file.
@@ -236,12 +278,13 @@ pub fn write_at(level: LogLevel, file: &str, line: u32, label: &str, content: &s
         }
     }
 
-    // An `Error` record is written through: see `buffer_here`.
-    if level != LogLevel::Error {
-        let buffered = BUFFER.try_with(|b| {
-            b.borrow_mut().as_mut().map(|buf| buf.push_str(&record)).is_some()
-        });
-        if buffered == Ok(true) {
+    // A worker collecting its records holds every one of them, errors
+    // included: see `buffer_ranked`.
+    if ANY_HELD.load(Ordering::Relaxed) {
+        let me = thread.id();
+        let mut held = held();
+        if let Some((_, _, block)) = held.iter_mut().find(|(t, _, _)| *t == me) {
+            block.push_str(&record);
             return;
         }
     }
