@@ -439,7 +439,7 @@ function syncField(): void {
   field.style.fontSize = `${8 * state.scale}px`;
   const want = ui.mode === "number" ? (ui.value ?? "") : (ui.query ?? "");
   if (field.value !== want) field.value = want;
-  field.placeholder = ui.mode === "number" ? `X (0-${ui.max})` : "filter";
+  field.placeholder = ui.mode === "number" ? (ui.placeholder ?? `X (0-${ui.max})`) : "filter";
   // Not after Escape on this widget: the frame that follows used to take the
   // keyboard straight back, so the blur was undone 120 ms later and the seven
   // board keys stayed unreachable (#601). Keyed on the widget rather than a

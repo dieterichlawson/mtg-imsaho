@@ -84,6 +84,8 @@ export interface Ui {
   move?: (pos: number, dir: number) => void;
   // number
   value?: string;
+  /** The input box's placeholder; X funding's `X (0-max)` when unset. */
+  placeholder?: string;
   summary?: string[];
   submit?: () => void;
 }

@@ -267,6 +267,7 @@ export function beginDecision(state: LiveState, send: Send): Ui {
     const ids = (rp.options ?? []) as ObjectId[];
     switch (kind) {
       case "ChooseXFunding": return beginNumber(state, ui, rp.options as unknown as FundingOptions, desc, send);
+      case "AssignCombatDamage": return beginDamageAmount(state, ui, rp, desc, send);
       case "ChooseExileFromGraveyard":
         return beginMark(state, ui, { title: desc, options: ids, min: rp.min ?? 0, max: rp.max ?? ids.length,
           onConfirm: (chosen) => send(resolve({ ChosenExileSet: chosen as ObjectId[] })),
@@ -821,6 +822,46 @@ function beginNumber(state: LiveState, ui: Ui, opts: FundingOptions, title: stri
   };
   ui.buttons.push({ label: "Confirm", primary: true, run: ui.submit });
   ui.buttons.push({ label: "Cancel", run: () => send(resolve({ ChosenTarget: null })) });
+  state.ui = ui;
+  return ui;
+}
+
+/**
+ * How much of an attacker's combat damage goes to one blocker (CR 510.1c-d,
+ * #637): one number, from lethal (`min`) to everything left (`max`). The
+ * answer is the prompt's index, `amount - min`. Enter at an empty box is
+ * lethal — the division the engine makes when nobody is asked, and what
+ * the terminal's Enter does — and the hint says so.
+ */
+function beginDamageAmount(state: LiveState, ui: Ui, rp: ResolutionPayload, title: string, send: Send): Ui {
+  const min = rp.min ?? 0;
+  const max = rp.max ?? min;
+  const labels = (rp.options ?? []) as string[];
+  const choose = (amount: number) => {
+    const i = amount - min;
+    send(resolve({ ChosenIndex: [i, labels[i] ?? String(amount)] }));
+  };
+  ui.mode = "number";
+  ui.title = title;
+  ui.min = min;
+  ui.max = max;
+  ui.value = "";
+  ui.placeholder = `${min}-${max}`;
+  ui.summary = [];
+  ui.hint = `Type an amount (${min}-${max}) and press Enter. Enter alone assigns ${min}, lethal.`;
+  ui.submit = () => {
+    // The terminal's parser: an optional `+` and ASCII digits (#561).
+    const typed = (ui.value ?? "").trim();
+    const refuse = (msg: string) => { state.notice = msg; ui.value = ""; };
+    if (typed === "") { choose(min); return; }
+    const a = /^\+?[0-9]+$/.test(typed) ? Number(typed) : NaN;
+    if (!Number.isInteger(a)) { refuse(`'${clipToken(typed)}' is not a number — enter an amount from ${min} to ${max}.`); return; }
+    if (a < min) { refuse(`${a} is less than lethal — at least ${min} must go to this blocker (CR 510.1c).`); return; }
+    if (a > max) { refuse(`${a} is more than is left — at most ${max}.`); return; }
+    choose(a);
+  };
+  ui.buttons.push({ label: "Confirm", primary: true, run: ui.submit });
+  ui.buttons.push({ label: `Lethal (${min})`, run: () => choose(min) });
   state.ui = ui;
   return ui;
 }

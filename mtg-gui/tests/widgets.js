@@ -188,6 +188,35 @@ async function main() {
         await expectSent("choose-x", a => { const f = a.ResolveChoice && a.ResolveChoice.choice.XFunding; return f && f.pool.Red === 1 && f.taps.Forest === 1; });
       }
     }
+    // 8a. AssignCombatDamage (#637): the amount is one number, lethal to
+    //     everything left, answered as the prompt's index (amount - min).
+    //     Enter alone is lethal, the engine's own default; out of range is
+    //     refused with a notice and nothing sent.
+    {
+      const amount = () => legal({ actions: [], resolution_prompt: { AssignCombatDamage: {
+        description: "Combat damage from Boar (5 power, CR 510.1c): how much goes to Bear?",
+        attacker: ids.mine[0], blocker: ids.theirs[0] || ids.mine[1], min: 2, max: 5,
+        options: ["2 to Bear (lethal)", "3 to Bear", "4 to Bear", "5 to Bear"], first_strike_only: false } } });
+      if (await stage("assign-damage", amount(), null, "number")) {
+        await page.keyboard.type("4");
+        await page.keyboard.press("Enter");
+        await expectSent("assign-damage", a => { const c = a.ResolveChoice && a.ResolveChoice.choice.ChosenIndex; return c && c[0] === 2 && c[1] === "4 to Bear"; });
+      }
+      if (await stage("assign-damage-enter", amount(), null, "number")) {
+        await page.keyboard.press("Enter");
+        await expectSent("assign-damage-enter", a => { const c = a.ResolveChoice && a.ResolveChoice.choice.ChosenIndex; return c && c[0] === 0; });
+      }
+      if (await stage("assign-damage-refused", amount(), null, "number")) {
+        const before = await page.evaluate(() => window.mtgDebug.sent.length);
+        await page.keyboard.type("9");
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(60);
+        const after = await page.evaluate(() => ({ sent: window.mtgDebug.sent.length, notice: window.mtg.notice }));
+        if (after.sent !== before) fail("assign-damage-refused: 9 of at most 5 was sent");
+        else if (!after.notice || !after.notice.includes("at most 5")) fail(`assign-damage-refused: notice ${JSON.stringify(after.notice)}`);
+        else ok("assign-damage-refused → " + after.notice);
+      }
+    }
     // 8b. The X box reads what the terminal reads (#561). `Number("")` is
     //     0 and `Number.isInteger(0)` is true, so a bare Enter at an empty
     //     box used to announce X = 0 and complete the cast — #123's exact

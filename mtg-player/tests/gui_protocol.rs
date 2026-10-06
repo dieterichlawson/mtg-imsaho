@@ -92,7 +92,11 @@ fn kinds_the_page_handles() -> BTreeSet<String> {
         let l = line.trim();
         if let Some(rest) = l.strip_prefix("case \"") {
             if let Some(name) = rest.split('"').next() {
-                if name.starts_with("Choose") || name == "PayOrNot" || name == "YesNo" || name == "DividePermanentsIntoPiles" {
+                // Any kind name. This used to admit only `Choose*` and
+                // three others by name, so a kind called anything else
+                // (AssignCombatDamage, #637) could never count as handled
+                // however many arms the page gave it.
+                if name.chars().next().is_some_and(char::is_uppercase) {
                     kinds.insert(name.to_string());
                 }
             }
