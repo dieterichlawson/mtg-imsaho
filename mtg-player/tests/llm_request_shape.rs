@@ -225,3 +225,22 @@ fn neither_request_path_sends_a_schema_no_sanitizer_has_seen() {
     }
     assert_eq!(sites, 2, "both Gemini request paths are covered, and no third one appeared");
 }
+
+/// Issue #637: a combat damage division is answered as the amount, an
+/// integer enum over exactly `[lethal, all that is left]`, under a fixed
+/// top-level key — and the Gemini path restates it as the same range.
+#[test]
+fn the_damage_amount_schema_offers_exactly_the_legal_amounts() {
+    use mtg_player::llm::{damage_amount_schema, sanitize_schema_for_gemini};
+    let schema = damage_amount_schema(2, 5);
+    let offered: Vec<u64> = schema["properties"]["amount"]["enum"].as_array()
+        .expect("an integer enum").iter().map(|v| v.as_u64().expect("an amount")).collect();
+    assert_eq!(offered, vec![2, 3, 4, 5], "lethal to all of it, and nothing else");
+    assert_eq!(schema["required"], serde_json::json!(["thoughts", "amount"]));
+    for key in schema["properties"].as_object().expect("properties").keys() {
+        assert!(mtg_player::llm::schema_key_is_legal(key), "{key:?}");
+    }
+    let g = sanitize_schema_for_gemini(&schema);
+    assert_eq!((&g["properties"]["amount"]["minimum"], &g["properties"]["amount"]["maximum"]),
+        (&serde_json::json!(2), &serde_json::json!(5)));
+}

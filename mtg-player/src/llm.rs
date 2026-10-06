@@ -248,6 +248,28 @@ pub fn ordering_schema(n: usize) -> serde_json::Value {
     })
 }
 
+/// The schema a combat damage division is answered through (CR 510.1c-d,
+/// issue #637): `amount`, one integer from `min` (lethal) to `max` (all the
+/// damage left). The amount itself, not an index into a list of them: the
+/// question is "how much", and an index the model has to offset by `min`
+/// is one more place to be wrong.
+#[must_use]
+pub fn damage_amount_schema(min: u32, max: u32) -> serde_json::Value {
+    let amounts: Vec<serde_json::Value> = (min..=max).map(|a| serde_json::json!(a)).collect();
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+            "amount": {
+                "type": "integer",
+                "enum": amounts,
+                "description": format!("Damage assigned to this blocker, {min} (lethal) to {max} (all that is left)")
+            }
+        },
+        "required": ["thoughts", "amount"]
+    })
+}
+
 pub fn thinking_param(model: &str) -> serde_json::Value {
     let wants_budget = model.contains("-4-5") || model.contains("haiku") || model.contains("-3-");
     if wants_budget {
@@ -789,6 +811,8 @@ Combat resolves in this order: declare attackers → declare blockers → first-
 **Multi-blocker damage assignment.** When a single attacker is blocked by two or more creatures, the **attacking player** assigns its damage among the blockers. The attacker MUST assign at least lethal damage to the first blocker before any damage spills to the second, and at least lethal to the second before any spills to the third, etc. (Lethal = blocker's toughness minus damage already marked.) Combined blocker toughness is NOT a shared pool — you can't "absorb" 4 damage across a 1/4 and a 2/2 and have them both survive.
 
 **How you are asked.** Right after blockers are declared, if one of your attackers is blocked by two or more creatures, you are asked to announce that attacker's *damage assignment order* (CR 509.2) — one structured prompt listing the blockers, answered with `order`: every index exactly once, first to last. Damage is then assigned in the order you announced: each blocker must be assigned lethal damage before any is assigned to the one after it. Put the blocker you most want dead first. The order is announced once and is used by both damage steps, so a first or double striker assigns its second damage in the same order.
+
+**How much each blocker gets.** Lethal is the least a blocker may be assigned, not the most: you may put MORE than lethal on an earlier blocker (to beat a regeneration shield or a damage prevention, or because you want that one dead more than you want the next one hit), and a trampler may send less past its blockers, or nothing (CR 510.1c-d). When an attacker of yours has more damage than its blockers' lethal total, and either two or more blockers or trample, the combat damage step asks you blocker by blocker, in your announced order: "how much of the N left goes to this blocker", answered with `amount`, an integer from lethal to everything left. Whatever you do not assign goes on to the next blocker, or tramples over after the last. Answering lethal is the ordinary play; you are asked so you can do otherwise.
 
 **Ordering your own triggers.** When two or more of your abilities trigger at the same time (CR 603.3b), you are asked for their order the same way — one structured prompt listing each trigger with its source, its P/T, what it does and what set it off, answered with `order`. The first index you list goes on the stack first and therefore resolves LAST; the last you list resolves FIRST. Put the trigger you want to resolve first at the end of the list.
 
@@ -3403,6 +3427,46 @@ impl LlmPlayer {
         Action::ResolveChoice { choice: ResolvedChoice::ChosenOrder(order) }
     }
 
+    /// Divide combat damage: how much of what is left goes to one blocker
+    /// (CR 510.1c-d). Answered as the amount, mapped back onto the
+    /// prompt's `ChosenIndex` (index `i` is `min + i`).
+    fn choose_damage_amount(&mut self, view: &GameView, description: &str, min: u32, max: u32,
+                            options: &[String]) -> Action {
+        use mtg_engine::actions::ResolvedChoice;
+        let description = Self::generic_player_rewrite(description, view.you);
+        let action_text = format!(
+            "{description}\n\
+             Each blocker must be assigned lethal damage before the next is assigned any, \
+             but you may assign it more (CR 510.1c). Whatever you do not assign here goes on.\n\n\
+             Respond with `amount`: an integer from {min} to {max}.");
+        let prompt = self.build_prompt(view, &action_text);
+        let schema = damage_amount_schema(min, max);
+        let response = self.send_message_structured(&prompt, &schema);
+        let amount = match Self::parse_damage_amount(&response["amount"], min, max) {
+            Some(a) => a,
+            None => {
+                // Lethal is a legal answer, and it is the division the
+                // engine makes when nobody is asked (#399).
+                self.log_rejected(&format!(
+                    "amount response was not an integer in {min}..={max}: {}; assigning lethal ({min})",
+                    response["amount"]));
+                min
+            }
+        };
+        self.log("CHOSE", &format!("amount {amount}"));
+        let index = (amount - min) as usize;
+        Action::ResolveChoice {
+            choice: ResolvedChoice::ChosenIndex(index, options.get(index).cloned().unwrap_or_default()),
+        }
+    }
+
+    /// The `amount` of a damage-division response, if it is in range.
+    fn parse_damage_amount(value: &serde_json::Value, min: u32, max: u32) -> Option<u32> {
+        value.as_u64()
+            .and_then(|a| u32::try_from(a).ok())
+            .filter(|a| (min..=max).contains(a))
+    }
+
     /// The `order` array of an ordering response as a permutation of `0..n`,
     /// or `None` when it is not one.
     fn parse_order_response(value: &serde_json::Value, n: usize) -> Option<Vec<usize>> {
@@ -4124,6 +4188,16 @@ impl Player for LlmPlayer {
             return self.choose_ordering(view, description, options,
                 "The first index you list is assigned damage FIRST and must be assigned lethal damage before the next gets any (CR 510.1c). \
                  Put the blocker you most want dead first.");
+        }
+
+        // How much of an attacker's damage goes to one blocker (CR
+        // 510.1c-d): one integer, asked as the amount it is (#637).
+        if let Some(mtg_engine::state::ResolutionChoiceKind::AssignCombatDamage {
+            description, min, max, options, ..
+        }) = legal.resolution_prompt.as_ref()
+        {
+            let (description, min, max, options) = (description.clone(), *min, *max, options.clone());
+            return self.choose_damage_amount(view, &description, min, max, &options);
         }
 
         // Auto-pass when there's nothing interesting to do. Logged at
@@ -5587,6 +5661,48 @@ pub(crate) mod tests {
         );
         assert!(asked[1].contains("CONCEDE"), "the second prompt is the confirmation: {}", asked[1]);
         assert!(matches!(chosen, Action::PassPriority), "a cancelled concede passes instead, got {chosen:?}");
+    }
+
+    /// Issue #637: the division prompt is asked as the amount, and the
+    /// answer goes back as the prompt's index (`amount - min`). An answer
+    /// outside the range is refused and lethal — the engine's own default —
+    /// is assigned instead, with a REJECTED line.
+    #[test]
+    fn a_combat_damage_division_is_answered_as_the_amount() {
+        let (state, registry) = view_for_contract_test();
+        let view = GameView::for_player(&state, mtg_engine::ids::PlayerId(0), &registry);
+        let options: Vec<String> = (2..=5).map(|a| format!("{a} to Bear")).collect();
+        let legal = mtg_engine::engine::LegalActions {
+            actions: options.iter().enumerate().map(|(i, o)| Action::ResolveChoice {
+                choice: mtg_engine::actions::ResolvedChoice::ChosenIndex(i, o.clone()) }).collect(),
+            combat_prompt: None,
+            castable_spells: Vec::new(),
+            activatable_abilities: Vec::new(),
+            context: Some("Combat damage from Boar".to_string()),
+            resolution_prompt: Some(mtg_engine::state::ResolutionChoiceKind::AssignCombatDamage {
+                description: "Combat damage from Boar (5 power, CR 510.1c): how much goes to Bear?".into(),
+                attacker: ObjectId(1), blocker: ObjectId(2), min: 2, max: 5,
+                options: options.clone(), first_strike_only: false,
+            }),
+            set_prompt: None,
+        };
+
+        let (mut player, prompts) = scripted_player(vec![serde_json::json!({"amount": 4})]);
+        match player.choose_action(&view, &legal) {
+            Action::ResolveChoice { choice: mtg_engine::actions::ResolvedChoice::ChosenIndex(i, label) } => {
+                assert_eq!((i, label.as_str()), (2, "4 to Bear"), "amount 4 is index 2 of 2..=5");
+            }
+            other => panic!("expected the division's index, got {other:?}"),
+        }
+        let asked = prompts.borrow();
+        assert_eq!(asked.len(), 1, "one question, not a menu walk");
+        assert!(asked[0].contains("an integer from 2 to 5"), "{}", asked[0]);
+        drop(asked);
+
+        let (mut player, _) = scripted_player(vec![serde_json::json!({"amount": 9})]);
+        assert!(matches!(player.choose_action(&view, &legal), Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenIndex(0, _) }),
+            "an out-of-range amount assigns lethal");
     }
 
     /// And a confirmed concede still concedes.
