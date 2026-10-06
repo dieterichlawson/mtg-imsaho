@@ -985,6 +985,24 @@ fn a_viewer_says_so_when_it_will_not_act_on_what_was_typed() {
     assert_clean_exit(&mut g);
 }
 
+/// Issue #695: the prompt block is anchored over the bottom of a short
+/// pane, and the hand that does not fit above it says how many cards it
+/// could not show. At 120x21 the block painted over three of seven cards
+/// with nothing on screen to say so; the board's padding now gives way
+/// first, so there all seven fit, and at 16 rows four of them cannot.
+#[test]
+fn a_hand_under_the_prompt_block_says_what_is_hidden() {
+    let mut g = PtyGame::spawn_sized(120, 16, &[
+        "--p1", "cli", "--p2", "cli", "--deck1", "rg", "--deck2", "wb",
+        "--seed", "5399", "--on-the-play", "1", "--quiet",
+    ]);
+    g.expect("Keep opening hand", T);
+    g.expect("more in hand", T);
+
+    g.send("\x03");
+    assert_clean_exit(&mut g);
+}
+
 /// Issue #699: a refusal notice shares the footer's blank row, so the page
 /// it is shown on is the page that was there. At 80x11 the deck browser's
 /// seven entries fit unpaged; the notice used to take a row of its own,

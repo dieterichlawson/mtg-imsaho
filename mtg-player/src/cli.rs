@@ -1938,6 +1938,15 @@ impl CliPlayer {
                 opp_caret, opp.life, opp.library_size, opp_gy, opp_exile, opp.hand_size)
         ).unwrap_or_default();
 
+        // The prompt block's least height, measured before the board is
+        // drawn: the block is anchored at `h - min_block` when the board
+        // runs long, and the board and hand budget their rows against that
+        // line rather than being painted over by it.
+        let min_block = Self::prompt_block_min_rows(
+            message, notice, actions, has_right, mid_w, reserve_below);
+        // The first row the anchored block may claim.
+        let block_floor = h.saturating_sub(min_block);
+
         // ── BATTLEFIELD section (combined) ──
         let bf_label = "─── BATTLEFIELD ";
         let bf_line = format!("{}{}", bf_label, "─".repeat(mid_w.saturating_sub(bf_label.chars().count())));
@@ -1987,6 +1996,11 @@ impl CliPlayer {
         } else {
             1 // at least 1 line for the divider
         };
+        // The padding is the first thing a short pane gives up: rows the
+        // block would otherwise paint over hold the hand (#695).
+        let natural_end = row as usize + padding as usize + your_row_count + 2
+            + view.your_hand.len().max(1) + usize::from(!view.your_mana_pool.is_empty());
+        let padding = if natural_end > block_floor { 1 } else { padding };
 
         // Draw divider with padding
         let divider_mid = row + padding / 2;
@@ -2019,11 +2033,16 @@ impl CliPlayer {
             SetAttribute(Attribute::Dim), Print("├"), SetAttribute(Attribute::Reset));
         row += 1;
 
-        // Hand
+        // Hand, in the rows above the block. A hand that does not fit says
+        // how much of it is hidden: at 120x21 the block painted over three
+        // of seven cards and nothing on screen said so (#695).
+        let has_mana = !view.your_mana_pool.is_empty();
+        let (hand_shown, mana_shown) = Self::fit_hand(
+            view.your_hand.len(), has_mana, block_floor.saturating_sub(row as usize));
         if view.your_hand.is_empty() {
             Self::mid_print(&mut out, mid_col, &mut row, mid_w, "  (empty)", None, false);
         } else {
-            for card in &view.your_hand {
+            for card in view.your_hand.iter().take(hand_shown) {
                 let cost = card.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
                 let pt = match (card.power, card.toughness) {
                     (Some(p), Some(t)) => format!(" {p}/{t}"),
@@ -2041,8 +2060,15 @@ impl CliPlayer {
             }
         }
 
+        let hidden = view.your_hand.len().saturating_sub(hand_shown);
+        if hidden > 0 {
+            Self::mid_print(&mut out, mid_col, &mut row, mid_w,
+                &format!("  \u{2026} {hidden} more in hand \u{2014} a larger terminal shows them"),
+                None, false);
+        }
+
         // Mana pool at bottom of hand area
-        if !view.your_mana_pool.is_empty() {
+        if mana_shown {
             let mana_str: Vec<String> = view.your_mana_pool.mana.iter()
                 .filter(|(_, &v)| v > 0)
                 .map(|(t, v)| format!("{t:?}:{v}"))
@@ -2062,26 +2088,8 @@ impl CliPlayer {
         // that anything was hidden, which is the "indistinguishable from a
         // hung game" symptom #76 exists to prevent (issue #260). Anchor it
         // to the bottom and let the board scroll off above instead.
-        {
-            // One row for the rule, whatever the heading says, plus the
-            // rows the question under it takes.
-            let title_rows = message.map_or(1, |msg| {
-                let (_, detail) = Self::rule_title(msg, mid_w.saturating_sub(6));
-                1 + detail.map_or(0, |d| Self::wrap_indented(&format!("  {d}"), mid_w).len())
-            }) + notice.map_or(0, |n| Self::wrap_indented(&format!("  {n}"), mid_w).len());
-            // hint row + input row, and for a menu one option and its marker.
-            let furniture = if actions.is_some() { 2 } else { 1 };
-            let menu_floor = if actions.is_some() { 2 } else { 0 };
-            // A caller that draws its own question under the rule — the two
-            // combat prompts, which append an eligible-creature list, its
-            // marker and its hints — says how many rows that takes.
-            // `actions.is_some()` cannot say it: those prompts pass no menu,
-            // so the floor inferred here was one input row and the list they
-            // went on to draw had no reservation at all (#352).
-            let min_block = title_rows + (menu_floor + furniture).max(reserve_below);
-            row = u16::try_from(Self::prompt_block_row(row as usize, h, min_block))
-                .unwrap_or(0);
-        }
+        row = u16::try_from(Self::prompt_block_row(row as usize, h, min_block))
+            .unwrap_or(0);
 
         // The actions separator. A rule is ONE line: it carries the
         // prompt's label and nothing that has to be read, and the question
@@ -4360,6 +4368,53 @@ impl CliPlayer {
 
     fn term_width() -> usize {
         terminal::size().unwrap_or((100, 30)).0 as usize
+    }
+
+    /// The least height of the prompt block: the rule and the question
+    /// under it, any notice, and for a menu one option, its paging marker,
+    /// the hint and the input row — each at the height it wraps to.
+    fn prompt_block_min_rows(message: Option<&str>, notice: Option<&str>,
+                             actions: Option<&[MenuLabel]>, has_right: bool,
+                             mid_w: usize, reserve_below: usize) -> usize {
+        // One row for the rule, whatever the heading says, plus the
+        // rows the question under it takes.
+        let title_rows = message.map_or(1, |msg| {
+            let (_, detail) = Self::rule_title(msg, mid_w.saturating_sub(6));
+            1 + detail.map_or(0, |d| Self::wrap_indented(&format!("  {d}"), mid_w).len())
+        }) + notice.map_or(0, |n| Self::wrap_indented(&format!("  {n}"), mid_w).len());
+        // For a menu: one option, the paging marker and the hint, each
+        // at the height it wraps to, and the input row. Both used to be
+        // counted as one row; below ~180 columns the hint wraps to two,
+        // and the input row then landed past the last row, where the
+        // terminal clamped it onto the hint and erased it (#698).
+        let menu_rows = actions.map_or(1, |labels| {
+            let hint_h = Self::wrap_indented(&Self::menu_hints(labels, has_right), mid_w).len();
+            let marker_h = Self::marker_lines(labels.len().saturating_sub(1), MENU_PAGE_KEYS, mid_w);
+            1 + marker_h + hint_h + 1
+        });
+        // A caller that draws its own question under the rule — the two
+        // combat prompts, which append an eligible-creature list, its
+        // marker and its hints — says how many rows that takes.
+        // `actions.is_some()` cannot say it: those prompts pass no menu,
+        // so the floor inferred here was one input row and the list they
+        // went on to draw had no reservation at all (#352).
+        title_rows + menu_rows.max(reserve_below)
+    }
+
+    /// How much of a hand of `cards` (plus a mana row, if there is one)
+    /// fits in `budget` rows: the cards shown, and whether the mana row is.
+    /// A hand that does not fit gives up one card row to say how many are
+    /// hidden; the mana row goes before any card does.
+    fn fit_hand(cards: usize, has_mana: bool, budget: usize) -> (usize, bool) {
+        let rows = cards.max(1) + usize::from(has_mana);
+        if rows <= budget {
+            return (cards, has_mana);
+        }
+        // Without the mana row, then with a marker row taking one card's place.
+        if cards.max(1) <= budget {
+            return (cards, false);
+        }
+        (budget.saturating_sub(1), false)
     }
 
     /// How many columns of text the middle panel holds at terminal width
@@ -11120,6 +11175,42 @@ Mark 1 of the 1 cards below to exile.");
         let first = clipped.lines().next().unwrap();
         assert!(str_cols(first) <= 79 && first.ends_with('\u{2026}'), "{first:?}");
         assert_eq!(clipped.lines().count(), plain.lines().count());
+    }
+
+    /// Issue #698: the anchored prompt block reserves the rows its hint and
+    /// paging marker really take. At the 100-column layout the hint wraps
+    /// to two rows, and a reservation of one pushed the input row past the
+    /// bottom, where the terminal clamped it onto the hint and erased it.
+    #[test]
+    fn the_prompt_block_reserves_its_wrapped_hint_and_marker() {
+        let labels: Vec<MenuLabel> = ["Pass priority", "Play Mountain", "Cast Lightning Bolt"]
+            .iter().map(|l| MenuLabel::plain((*l).to_string())).collect();
+        for mid_w in [40, 58, 80, 160] {
+            let hint_h = CliPlayer::wrap_indented(&CliPlayer::menu_hints(&labels, true), mid_w).len();
+            let marker_h = CliPlayer::marker_lines(2, MENU_PAGE_KEYS, mid_w);
+            let block = CliPlayer::prompt_block_min_rows(
+                Some("MAIN PHASE 1"), None, Some(&labels), true, mid_w, 0);
+            // The rule, one option, the marker, the hint, the input row.
+            assert_eq!(block, 1 + 1 + marker_h + hint_h + 1,
+                "at {mid_w} the hint is {hint_h} rows and the marker {marker_h}");
+            if mid_w <= 58 {
+                assert!(hint_h >= 2, "test premise: the hint wraps at {mid_w}");
+            }
+        }
+    }
+
+    /// Issue #695: a hand that does not fit above the prompt block says
+    /// how many cards are hidden; the mana row is given up before a card.
+    #[test]
+    fn a_hand_that_does_not_fit_says_how_much_is_hidden() {
+        assert_eq!(CliPlayer::fit_hand(7, false, 9), (7, false), "room for all");
+        assert_eq!(CliPlayer::fit_hand(7, true, 8), (7, true), "and the mana row");
+        assert_eq!(CliPlayer::fit_hand(7, true, 7), (7, false), "the mana row goes first");
+        // Four rows for seven cards: three cards and the marker row.
+        let (shown, mana) = CliPlayer::fit_hand(7, false, 4);
+        assert_eq!((shown, mana), (3, false));
+        assert_eq!(CliPlayer::fit_hand(0, true, 1), (0, false), "an empty hand keeps its row");
+        assert_eq!(CliPlayer::fit_hand(7, false, 0), (0, false));
     }
 
     /// Issue #697: a permanent with one of its abilities on the stack is
