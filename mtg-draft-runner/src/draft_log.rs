@@ -387,10 +387,11 @@ a result at turn {turn} {step}; the runner stopped the game and neither seat win
         );
     }
 
-    pub fn standings(standings: &[Standing], file: &str, line: u32) {
+    pub fn standings(standings: &[Standing], tags: &[crate::RowTags], file: &str, line: u32) {
         let mut content = String::new();
         for (rank, s) in standings.iter().enumerate() {
-            writeln!(content, "{}", crate::standings_row(rank + 1, s)).unwrap();
+            let t = tags.get(s.seat).cloned().unwrap_or_default();
+            writeln!(content, "{}", crate::standings_row(rank + 1, s, &t)).unwrap();
         }
         mtg_player::game_log::write(file, line, "FINAL STANDINGS", &content);
     }

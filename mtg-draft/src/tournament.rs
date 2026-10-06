@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// The opponent a bye is paired against: a seat number no pod can contain.
 pub const BYE: usize = usize::MAX;
@@ -18,7 +18,7 @@ pub fn wins_needed(best_of: usize) -> usize {
     best_of / 2 + 1
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MatchResult {
     pub player_a: usize,
     pub player_b: usize,
@@ -38,21 +38,21 @@ impl MatchResult {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameOutcome {
     pub winner: Option<usize>,
     pub turns: u32,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub game_log: Vec<String>,
     /// The seat that stopped making progress, when the game ended because
     /// the runner's watchdog forfeited it rather than because it was won.
     /// A game nobody played must not read like one that was (#488).
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stalled_seat: Option<usize>,
     /// The runner stopped the game at its action budget with no result.
     /// Neither seat won it; it used to be recorded as a concede by
     /// whichever seat was acting at that moment (#630).
-    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub abandoned: bool,
 }
 

@@ -32,7 +32,7 @@ use progress::{draw_progress, end_progress_line};
 /// round reads exactly like a seat that beat somebody, and the block does not
 /// reconcile against the matches above it (issue #486, the shape of #195 and
 /// #200).
-pub(crate) fn standings_row(rank: usize, s: &Standing) -> String {
+pub(crate) fn standings_row(rank: usize, s: &Standing, tags: &RowTags) -> String {
     let draws = if s.match_draws > 0 {
         format!("-{}", s.match_draws)
     } else {
@@ -44,9 +44,64 @@ pub(crate) fn standings_row(rank: usize, s: &Standing) -> String {
         n => format!(" [{n} byes]"),
     };
     format!(
-        "{}. Seat {} — {}-{}{draws} ({} game wins){byes}",
-        rank, s.seat, s.match_wins, s.match_losses, s.game_wins,
+        "{}. Seat {} — {}-{}{draws} ({} game wins){byes}{}",
+        rank, s.seat, s.match_wins, s.match_losses, s.game_wins, tags.render(),
     )
+}
+
+/// What a standings row says about a result that is not wholly the seat's
+/// own, in the same `[...]` form as a bye (#486). The sections after the
+/// standings say which and why; the row is where a reader is looking when
+/// it ranks the seat (issue #588).
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(crate) struct RowTags {
+    /// Answers the harness could not use and chose for the seat.
+    pub answers_substituted: u64,
+    /// Decisions the seat's backend never answered at all (#587).
+    pub never_answered: u64,
+    /// The runner built this seat's deck (#200).
+    pub runner_built_deck: bool,
+    /// Games the watchdog forfeited for this seat (#488).
+    pub games_forfeited: usize,
+    /// Matches carried over from a snapshot rather than played by this
+    /// process (#581).
+    pub matches_from_snapshot: usize,
+}
+
+impl RowTags {
+    fn render(&self) -> String {
+        let plural = |n: u64, one: &str, many: &str| if n == 1 { one.to_string() } else { many.to_string() };
+        let mut out = String::new();
+        if self.answers_substituted > 0 {
+            let n = self.answers_substituted;
+            out.push_str(&format!(" [{n} {} substituted]", plural(n, "answer", "answers")));
+        }
+        if self.never_answered > 0 {
+            let n = self.never_answered;
+            out.push_str(&format!(" [{n} {} never answered]", plural(n, "decision", "decisions")));
+        }
+        if self.runner_built_deck {
+            out.push_str(" [runner-built deck]");
+        }
+        if self.games_forfeited > 0 {
+            let n = self.games_forfeited as u64;
+            out.push_str(&format!(" [{n} {} forfeited]", plural(n, "game", "games")));
+        }
+        if self.matches_from_snapshot > 0 {
+            let n = self.matches_from_snapshot as u64;
+            out.push_str(&format!(" [{n} {} from snapshot]", plural(n, "match", "matches")));
+        }
+        out
+    }
+}
+
+/// A match result as the snapshot keeps it: the games' logs are the run's
+/// log's, and a snapshot written after every match has to stay small.
+fn without_game_logs(mut result: MatchResult) -> MatchResult {
+    for game in &mut result.games {
+        game.game_log.clear();
+    }
+    result
 }
 
 /// What the score line adds about the match's games that were not played
@@ -116,14 +171,15 @@ Options:
                          re-run by passing the seed from its log header
   --guide <path>         Draft guide file prepended to every seat's prompt
   --guide-<N> <path>     Draft guide file for seat N alone (0-based)
-  --save <path>          Snapshot the picks here after every pick round, so a
-                         failed model call costs one round and not the draft.
-                         The picks only: deck building and the tournament are
-                         not checkpointed, so an interruption after the last
-                         pick re-runs both — which is most of a run's calls
+  --save <path>          Snapshot the run here: after every pick round, after
+                         deck building, and after every tournament match. An
+                         interruption costs the round, the build or the match
+                         in progress, and --resume carries on from there
   --resume <path>        Replay a snapshot and carry on from it. Its seed, set
                          and seat count win over the flags — the packs are
-                         re-dealt from the seed, so the position is exact
+                         re-dealt from the seed, so the position is exact.
+                         Its decks are used as built, and its finished matches
+                         are counted, not replayed: the standings mark them
   --log <path>           Write the run log here  (default draft.log)
   --quiet, -q            Suppress progress output
   --help, -h             Print this help and exit
@@ -524,6 +580,36 @@ struct DraftSave {
     /// a replay can say about them (issue #579).
     #[serde(default)]
     seats: Vec<SeatPolicy>,
+    /// Each seat's built deck, in seat order, once deck building is done —
+    /// empty until then (issue #581). The build attempts are not kept: they
+    /// are in the log, and a snapshot written after every match has to stay
+    /// cheap to write.
+    #[serde(default)]
+    decks: Vec<SavedDeck>,
+    /// Every match the tournament has finished, in the order they finished
+    /// (issue #581). A resumed run takes these instead of playing them again,
+    /// and says so on the standings.
+    #[serde(default)]
+    matches: Vec<SavedMatch>,
+}
+
+/// A seat's deck as the snapshot keeps it.
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+struct SavedDeck {
+    deck: deckbuilding::DraftDeck,
+    /// The runner built it: no attempt produced a valid deck (#200).
+    fallback: bool,
+    /// How many attempts failed before the deck was settled.
+    retries: usize,
+}
+
+/// A finished match as the snapshot keeps it: the round it was played in,
+/// and its result without the games' logs (those are in the log of the run
+/// that played them).
+#[derive(serde::Serialize, serde::Deserialize, Clone)]
+struct SavedMatch {
+    round: usize,
+    result: MatchResult,
 }
 
 /// Refuse an argument vector `parse_args` wouldn't fully consume, and hand
@@ -973,9 +1059,27 @@ this draft will be made under {} — this draft is a mixture of the two",
     // Every pick the run has made, in order: the snapshot, and on a resume
     // the picks replayed out of one.
     let mut recorded: Vec<PickRecord> = Vec::new();
+    // What the snapshot carries past the picks (issue #581): the decks, once
+    // they were built, and every match the tournament finished.
+    let resumed_decks: Vec<SavedDeck> = resumed.as_ref().map(|s| s.decks.clone()).unwrap_or_default();
+    let resumed_matches: Vec<SavedMatch> = resumed.as_ref().map(|s| s.matches.clone()).unwrap_or_default();
     let replaying: Vec<PickRecord> = resumed.map(|s| s.picks).unwrap_or_default();
     if let Err(e) = check_snapshot_shape(&replaying, args.players, draft.cards_remaining(0)) {
         die(&format!("draft save '{}' cannot be replayed: {e}",
+            args.resume.as_deref().unwrap_or_default()));
+    }
+    // Decks are all of them or none, and matches need decks to have been
+    // played with (issue #581). The runner never writes anything else.
+    if !resumed_decks.is_empty() && resumed_decks.len() != args.players {
+        die(&format!("draft save '{}' cannot be replayed: it holds {} decks for {} seats",
+            args.resume.as_deref().unwrap_or_default(), resumed_decks.len(), args.players));
+    }
+    if !resumed_decks.is_empty() && replaying.len() != args.players * 3 * draft.cards_remaining(0) {
+        die(&format!("draft save '{}' cannot be replayed: it holds decks but the draft is not finished",
+            args.resume.as_deref().unwrap_or_default()));
+    }
+    if resumed_decks.is_empty() && !resumed_matches.is_empty() {
+        die(&format!("draft save '{}' cannot be replayed: it holds matches but no decks",
             args.resume.as_deref().unwrap_or_default()));
     }
     if !replaying.is_empty() && !args.quiet {
@@ -984,7 +1088,7 @@ this draft will be made under {} — this draft is a mixture of the two",
     // The cost summary counts this process's calls only, so it has to say
     // which part of the draft it is the cost of (issue #578).
     llm_client::note_replayed_picks(replaying.len());
-    let write_snapshot = |picks: &[PickRecord]| {
+    let write_snapshot = |picks: &[PickRecord], decks: &[SavedDeck], matches: &[SavedMatch]| {
         let Some(path) = &args.save else { return };
         let save = DraftSave {
             seed: args.seed,
@@ -992,6 +1096,8 @@ this draft will be made under {} — this draft is a mixture of the two",
             players: args.players,
             picks: picks.to_vec(),
             seats: args.seat_policies(),
+            decks: decks.to_vec(),
+            matches: matches.to_vec(),
         };
         // Write-then-rename: a snapshot half-written when the run dies is
         // worse than none, because it looks resumable.
@@ -1042,7 +1148,7 @@ this draft will be made under {} — this draft is a mixture of the two",
                     recorded.push((*rec).clone());
                 }
                 draft.rotate_packs();
-                write_snapshot(&recorded);
+                write_snapshot(&recorded, &[], &[]);
                 continue;
             }
 
@@ -1162,7 +1268,7 @@ substituting {} (the first card). Response: {}",
             draft.rotate_packs();
             // After the round, not during it: a snapshot is only resumable
             // at a pick boundary, where every seat has picked.
-            write_snapshot(&recorded);
+            write_snapshot(&recorded, &[], &[]);
         }
     }
 
@@ -1170,15 +1276,12 @@ substituting {} (the first card). Response: {}",
         eprintln!("{}Draft complete!", end_progress_line());
     }
 
-    // Where the protection ends, said where it matters rather than only in
-    // `--save`'s help. Past this point a failed model call, a Ctrl-C or a
-    // reboot costs the deck builds and the whole tournament, which at the
-    // shipped defaults is around fifteen times the draft's calls — and the
-    // flag that promised "one round and not the run" said nothing about it
-    // (issue #581).
+    // What the protection covers from here, said where it matters rather
+    // than only in `--save`'s help. It used to end at this line, and said so
+    // (#581's first half); it now runs through the tournament.
     if args.save.is_some() && !args.quiet {
-        eprintln!("note: the snapshot covers the picks and stops here — deck building \
-and the tournament are not checkpointed, so an interruption from now on re-runs them");
+        eprintln!("note: the snapshot now covers deck building and every match too — \
+an interruption from here costs the build or the match in progress, not the run");
     }
 
     // Log final pools
@@ -1210,7 +1313,27 @@ and the tournament are not checkpointed, so an interruption from now on re-runs 
     // `game_log::buffer_here`.
     let pools: Vec<Vec<String>> = draft.players.iter().map(|p| p.pool.clone()).collect();
 
-    let deck_results: Vec<DeckBuildResult> = std::thread::scope(|s| {
+    // A snapshot written after deck building carries the decks, and a
+    // resumed run uses them as built rather than paying for the builds again
+    // (issue #581). A deck the runner substituted stays one.
+    let deck_results: Vec<DeckBuildResult> = if resumed_decks.len() == args.players {
+        if !args.quiet {
+            eprintln!("Taking the {} decks from the snapshot...", args.players);
+        }
+        resumed_decks.iter().enumerate().map(|(seat, saved)| {
+            log_deck_building!(log, seat, &saved.deck.maindeck, &saved.deck.lands,
+                &saved.deck.sideboard, &[], saved.retries, saved.fallback);
+            mtg_player::game_log::write(file!(), line!(), &format!(
+                "[Seat {seat}] DECK FROM SNAPSHOT — built by the run that wrote the snapshot; \
+its build attempts are in that run's log"), "");
+            DeckBuildResult {
+                deck: saved.deck.clone(),
+                attempts: Vec::new(),
+                retries: saved.retries,
+                fallback: saved.fallback,
+            }
+        }).collect()
+    } else { std::thread::scope(|s| {
         let log_ref = &log;
         let registry_ref = &registry;
         let card_lines_ref = &card_lines;
@@ -1255,7 +1378,17 @@ and the tournament are not checkpointed, so an interruption from now on re-runs 
                 }
             })
             .collect()
-    });
+    }) };
+
+    // Checkpoint the builds: from here an interruption costs a match, not
+    // the deck-building phase again (issue #581).
+    let saved_decks: Vec<SavedDeck> = deck_results.iter().map(|r| SavedDeck {
+        deck: r.deck.clone(), fallback: r.fallback, retries: r.retries,
+    }).collect();
+    let mut saved_matches: Vec<SavedMatch> = Vec::new();
+    write_snapshot(&recorded, &saved_decks, &saved_matches);
+    // Matches this process did not play, per seat, for the standings.
+    let mut from_snapshot = vec![0usize; args.players];
 
     // Build the decklist collection in seat order now that all workers
     // have finished. No further logging — that already happened above.
@@ -1330,11 +1463,35 @@ and the FINAL STANDINGS below record none",
             }
         }
 
-        // Play all matches in the round in parallel
-        let results: Vec<MatchResult> = std::thread::scope(|s| {
-            let handles: Vec<_> = real_matches
+        // A match the snapshot already finished is taken from it, not played
+        // again: the pairings are a function of the results so far, so the
+        // same round pairs the same seats (issue #581).
+        let carried: Vec<Option<MatchResult>> = real_matches.iter().map(|&(a, b)| {
+            resumed_matches.iter()
+                .find(|m| m.round == round_num && m.result.player_a == a && m.result.player_b == b)
+                .map(|m| m.result.clone())
+        }).collect();
+        let to_play: Vec<(usize, usize)> = real_matches.iter().zip(&carried)
+            .filter(|(_, c)| c.is_none())
+            .map(|(m, _)| *m)
+            .collect();
+        for (&(a, b), c) in real_matches.iter().zip(&carried) {
+            if let Some(result) = c {
+                from_snapshot[a] += 1;
+                from_snapshot[b] += 1;
+                saved_matches.push(SavedMatch { round: round_num, result: result.clone() });
+            }
+        }
+
+        // Play the rest in parallel. Each is checkpointed the moment it
+        // finishes, in the order they finish, so an interruption costs the
+        // matches still in progress and no more (issue #581).
+        let played: Vec<MatchResult> = std::thread::scope(|s| {
+            let (finished_tx, finished_rx) = std::sync::mpsc::channel::<MatchResult>();
+            let handles: Vec<_> = to_play
                 .iter()
                 .map(|&(a, b)| {
+                    let finished_tx = finished_tx.clone();
                     let deck_a = &decklists[a];
                     let deck_b = &decklists[b];
                     let reg = &registry;
@@ -1367,15 +1524,21 @@ and the FINAL STANDINGS below record none",
                             card_ref,
                             seed,
                         );
+                        let _ = finished_tx.send(outcome.clone());
                         (outcome, mtg_player::game_log::take_buffered())
                         })
                     })
                 })
                 .collect();
+            drop(finished_tx);
+            for finished in finished_rx {
+                saved_matches.push(SavedMatch { round: round_num, result: without_game_logs(finished) });
+                write_snapshot(&recorded, &saved_decks, &saved_matches);
+            }
 
             handles
                 .into_iter()
-                .zip(real_matches.iter())
+                .zip(to_play.iter())
                 .map(|(h, (a, b))| match h.join() {
                     Ok((result, records)) => {
                         mtg_player::game_log::write_block(&records);
@@ -1389,6 +1552,12 @@ and the FINAL STANDINGS below record none",
                 .collect()
         });
 
+        let mut played = played.into_iter();
+        let from_save: Vec<bool> = carried.iter().map(Option::is_some).collect();
+        let results: Vec<MatchResult> = carried.into_iter()
+            .map(|c| c.unwrap_or_else(|| played.next().expect("a played result for every match not carried")))
+            .collect();
+
         // Log byes
         for &(a, b) in &pairings {
             if b == BYE {
@@ -1397,7 +1566,13 @@ and the FINAL STANDINGS below record none",
         }
 
         // Log match results and game logs
-        for result in &results {
+        for (result, &carried_over) in results.iter().zip(&from_save) {
+            if carried_over {
+                mtg_player::game_log::write(file!(), line!(), &format!(
+                    "MATCH FROM SNAPSHOT (Seat {} vs Seat {}) — played by the run that wrote \
+the snapshot, not by this one; its games are in that run's log",
+                    result.player_a, result.player_b), "");
+            }
             log_match_result!(log, 
                 round_num,
                 result.player_a,
@@ -1417,7 +1592,8 @@ and the FINAL STANDINGS below record none",
             }
 
             if !args.quiet {
-                eprintln!("{}", match_score_line(result));
+                let note = if carried_over { " [from snapshot]" } else { "" };
+                eprintln!("{}{note}", match_score_line(result));
             }
         }
 
@@ -1425,14 +1601,37 @@ and the FINAL STANDINGS below record none",
     }
 
     // ── Phase 5: Output ──
+    // A game the watchdog forfeited is counted as a loss in the standings
+    // and was never played out, so the run has to say so next to them —
+    // the same rule as a substituted deck or pick (#195, #200, #488).
+    let mut stalled_games = vec![0usize; args.players];
+    for game in tournament.rounds.iter().flat_map(|r| r.results.iter()).flat_map(|m| m.games.iter()) {
+        if let Some(seat) = game.stalled_seat {
+            stalled_games[seat] += 1;
+        }
+    }
+    // Every qualifier the standings carry, counted before they are printed
+    // rather than after, so the row a reader ranks a seat by says it
+    // (issue #588). The game seats are named `Seat{n}` in the per-seat
+    // tallies (see `play_match`).
+    let rejected = mtg_player::llm::get_rejected_by_seat();
+    let unanswered = mtg_player::llm::get_unanswered_by_seat();
+    let row_tags: Vec<RowTags> = (0..args.players).map(|seat| RowTags {
+        answers_substituted: rejected.get(&format!("Seat{seat}")).copied().unwrap_or(0),
+        never_answered: unanswered.get(&format!("Seat{seat}")).copied().unwrap_or(0),
+        runner_built_deck: deck_results[seat].fallback,
+        games_forfeited: stalled_games[seat],
+        matches_from_snapshot: from_snapshot[seat],
+    }).collect();
+
     log_section!(log, "FINAL STANDINGS");
     let sorted = tournament.sorted_standings();
-    log_standings!(log, &sorted);
+    log_standings!(log, &sorted, &row_tags);
 
     if !args.quiet {
         eprintln!("\nFinal Standings:");
         for (rank, s) in sorted.iter().enumerate() {
-            eprintln!("  {}", standings_row(rank + 1, s));
+            eprintln!("  {}", standings_row(rank + 1, s, &row_tags[s.seat]));
         }
     }
 
@@ -1466,15 +1665,6 @@ this seat's deck, so its results are not a built deck's", deck_results[*seat].re
         eprintln!("  (grep the log for FALLBACK to see each one)");
     }
 
-    // A game the watchdog forfeited is counted as a loss in the standings
-    // and was never played out, so the run has to say so next to them —
-    // the same rule as a substituted deck or pick (#195, #200, #488).
-    let mut stalled_games = vec![0usize; args.players];
-    for game in tournament.rounds.iter().flat_map(|r| r.results.iter()).flat_map(|m| m.games.iter()) {
-        if let Some(seat) = game.stalled_seat {
-            stalled_games[seat] += 1;
-        }
-    }
     if stalled_games.iter().any(|n| *n > 0) {
         eprintln!("\n=== Forfeited Games ===");
         for (seat, n) in stalled_games.iter().enumerate() {
@@ -2128,7 +2318,7 @@ mod match_length_tests {
 
 #[cfg(test)]
 mod standings_row_tests {
-    use super::{standings_row, Standing};
+    use super::{standings_row, RowTags, Standing};
 
     fn standing(seat: usize, match_wins: usize, match_losses: usize, game_wins: usize, byes: usize) -> Standing {
         Standing {
@@ -2148,8 +2338,8 @@ mod standings_row_tests {
     /// prints identically to seat 0.
     #[test]
     fn a_bye_is_not_printed_as_a_won_match() {
-        let played = standings_row(2, &standing(0, 1, 1, 1, 0));
-        let byed = standings_row(3, &standing(1, 1, 1, 1, 1));
+        let played = standings_row(2, &standing(0, 1, 1, 1, 0), &RowTags::default());
+        let byed = standings_row(3, &standing(1, 1, 1, 1, 1), &RowTags::default());
 
         assert_eq!(played, "2. Seat 0 — 1-1 (1 game wins)");
         assert_eq!(byed, "3. Seat 1 — 1-1 (1 game wins) [1 bye]");
@@ -2159,7 +2349,30 @@ mod standings_row_tests {
     fn several_byes_and_draws_are_both_reported() {
         let mut s = standing(4, 2, 1, 2, 2);
         s.match_draws = 1;
-        assert_eq!(standings_row(1, &s), "1. Seat 4 — 2-1-1 (2 game wins) [2 byes]");
+        assert_eq!(standings_row(1, &s, &RowTags::default()), "1. Seat 4 — 2-1-1 (2 game wins) [2 byes]");
+    }
+
+    /// Issue #588: a result that is not wholly the seat's own says so on
+    /// the row the seat is ranked by, the way a bye does — not in a section
+    /// under a heading about tokens.
+    #[test]
+    fn every_qualifier_is_on_the_row() {
+        let s = standing(1, 3, 0, 6, 0);
+        let one = |t: RowTags| standings_row(1, &s, &t);
+        assert_eq!(one(RowTags { answers_substituted: 39, ..RowTags::default() }),
+            "1. Seat 1 — 3-0 (6 game wins) [39 answers substituted]");
+        assert_eq!(one(RowTags { never_answered: 1, ..RowTags::default() }),
+            "1. Seat 1 — 3-0 (6 game wins) [1 decision never answered]");
+        assert_eq!(one(RowTags { runner_built_deck: true, ..RowTags::default() }),
+            "1. Seat 1 — 3-0 (6 game wins) [runner-built deck]");
+        assert_eq!(one(RowTags { games_forfeited: 1, ..RowTags::default() }),
+            "1. Seat 1 — 3-0 (6 game wins) [1 game forfeited]");
+        assert_eq!(one(RowTags { matches_from_snapshot: 2, ..RowTags::default() }),
+            "1. Seat 1 — 3-0 (6 game wins) [2 matches from snapshot]");
+        let mut byed = s.clone();
+        byed.byes = 1;
+        assert_eq!(standings_row(1, &byed, &RowTags { games_forfeited: 2, runner_built_deck: true, ..RowTags::default() }),
+            "1. Seat 1 — 3-0 (6 game wins) [1 bye] [runner-built deck] [2 games forfeited]");
     }
 }
 

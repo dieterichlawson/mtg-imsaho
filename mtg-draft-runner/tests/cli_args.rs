@@ -46,13 +46,11 @@ fn help_prints_usage_and_exits_without_drafting() {
 }
 
 /// Issue #581: `--save`'s help said the snapshot means "a failed model
-/// call costs one round and not the run". True up to the last pick and
-/// false after it: `write_snapshot` is called only from inside the pick
-/// loop, so deck building and the whole Swiss tournament — roughly
-/// fifteen times the draft's calls at the shipped defaults — are bought
-/// again by any interruption past that point, and nothing said so.
+/// call costs one round and not the run", while it covered the picks only.
+/// It was first made to say so; the snapshot now carries the decks and
+/// every finished match, and the help names each checkpoint.
 #[test]
-fn the_save_flag_says_what_the_snapshot_does_not_cover() {
+fn the_save_flag_says_what_the_snapshot_covers() {
     let out = runner().arg("--help").output().expect("failed to run");
     let stdout = String::from_utf8_lossy(&out.stdout);
     let save = stdout
@@ -60,18 +58,13 @@ fn the_save_flag_says_what_the_snapshot_does_not_cover() {
         .nth(1)
         .and_then(|rest| rest.split("  --resume").next())
         .unwrap_or_else(|| panic!("no --save entry in the help:\n{stdout}"));
-    assert!(
-        save.contains("not checkpointed"),
-        "--save promises protection it does not give past the last pick:\n{save}"
-    );
-    assert!(
-        save.contains("tournament"),
-        "--save's help must name the phase it does not cover:\n{save}"
-    );
-    assert!(
-        !save.contains("and not the run"),
-        "the snapshot costs one round of the *draft*, not of the run:\n{save}"
-    );
+    // The snapshot runs through the tournament now (#581); the help used to
+    // say, rightly at the time, that it stopped at the last pick.
+    for phase in ["pick round", "deck building", "match"] {
+        assert!(save.contains(phase), "--save's help must name the {phase} checkpoint:\n{save}");
+    }
+    assert!(!save.contains("not checkpointed"),
+        "--save's help still says the tournament is not checkpointed:\n{save}");
 }
 
 #[test]
@@ -459,6 +452,10 @@ fn a_draft_resumes_from_its_snapshot_without_re_asking() {
     // Cut it in half and resume.
     let mut half = full.clone();
     half["picks"] = serde_json::Value::Array(picks[..40].to_vec());
+    // A snapshot written mid-draft has no decks and no matches yet; the
+    // full one carries both since #581.
+    half["decks"] = serde_json::json!([]);
+    half["matches"] = serde_json::json!([]);
     std::fs::write(dir.join("half.save"), half.to_string()).expect("write the half save");
 
     let _ = std::fs::write(&calls, "");
