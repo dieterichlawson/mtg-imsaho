@@ -228,7 +228,7 @@ function describeChoice(state, c) {
     if ("ChosenCard" in c)
         return nameOf(state, c.ChosenCard);
     if ("ChosenIndex" in c)
-        return c.ChosenIndex[1];
+        return withoutIds(c.ChosenIndex[1]);
     if ("ChosenOrder" in c)
         return `Order: ${c.ChosenOrder.join(", ")}`;
     if ("ChosenSubset" in c)
@@ -255,7 +255,20 @@ export function targetKey(t) {
     return null;
 }
 function newUi(mode, title) {
-    return { mode, title, hint: "", buttons: [], marked: [] };
+    return { mode, title: withoutIds(title), hint: "", buttons: [], marked: [] };
+}
+/**
+ * Engine text with its object ids taken out: "Devil's Play (#34) targeting
+ * Grizzly Bears (#62)" reads "Devil's Play targeting Grizzly Bears", and a
+ * trigger row's "[source 2/2, #42]" reads "[source 2/2]".
+ *
+ * The engine writes `(#id)` so the CLI and the LLM seat, which print ids
+ * beside every permanent, can tell copies apart. The page draws no id
+ * anywhere — four Bears are one "x4" stack — so on the page an id names
+ * nothing a person can find (#694, the page's half of #634).
+ */
+export function withoutIds(s) {
+    return s.replace(/ \(#\d+\)/g, "").replace(/,\s*#\d+(?=\])/g, "").replace(/ #\d+\b/g, "");
 }
 /** A widget over a set of targets or object ids. */
 function withOptions(ui, list) {
@@ -356,7 +369,7 @@ function beginDecisionWidget(state, send) {
     if (legal.resolution_prompt) {
         const kind = tag(legal.resolution_prompt);
         const rp = legal.resolution_prompt[kind];
-        const desc = rp.description || legal.context || kind;
+        const desc = withoutIds(rp.description || legal.context || kind);
         const ids = (rp.options ?? []);
         switch (kind) {
             case "ChooseXFunding": return beginNumber(state, ui, rp.options, desc, send);
@@ -601,7 +614,7 @@ const NOTHING_MARKED = "nothing marked — mark what you want, or press Confirm 
 /** Mark between min and max of the options, then confirm. */
 function beginMark(state, ui, { title, options, min, max, onConfirm, onCancel, cancelLabel }) {
     ui.mode = "mark";
-    ui.title = title;
+    ui.title = withoutIds(title);
     withOptions(ui, options);
     ui.min = min;
     ui.max = max;
@@ -704,7 +717,7 @@ function isRow(r) { return typeof r === "object" && "label" in r && "run" in r; 
 /** A modal list of rows. Rows are actions or {label, run}. */
 export function beginList(state, ui, rows, title, send, filter, keepBoard = false) {
     ui.mode = "list";
-    ui.title = title;
+    ui.title = withoutIds(title);
     ui.rows = rows.map(r => isRow(r) ? r : { label: describeAction(state, r), run: () => send(r) });
     ui.filter = filter || ui.rows.length > 14;
     ui.query = "";
@@ -716,8 +729,8 @@ export function beginList(state, ui, rows, title, send, filter, keepBoard = fals
 }
 function beginOrder(state, ui, rp, title, send) {
     ui.mode = "order";
-    ui.title = title;
-    const order = (rp.options ?? []).map((label, i) => ({ label, i }));
+    ui.title = withoutIds(title);
+    const order = (rp.options ?? []).map((label, i) => ({ label: withoutIds(label), i }));
     ui.order = order;
     ui.hint = "First listed goes first. Use ▲ ▼ to reorder, then confirm.";
     ui.move = (pos, dir) => {
@@ -904,7 +917,7 @@ export function describeFundableX(values) {
 function beginNumber(state, ui, opts, title, send) {
     const maxX = (opts.max_x || 0) + (opts.x_discount || 0);
     ui.mode = "number";
-    ui.title = title;
+    ui.title = withoutIds(title);
     ui.max = maxX;
     ui.value = "";
     const summary = [];
@@ -982,7 +995,7 @@ function beginDamageAmount(state, ui, rp, title, send) {
         send(resolve({ ChosenIndex: [i, labels[i] ?? String(amount)] }));
     };
     ui.mode = "number";
-    ui.title = title;
+    ui.title = withoutIds(title);
     ui.min = min;
     ui.max = max;
     ui.value = "";

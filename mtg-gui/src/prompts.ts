@@ -208,7 +208,7 @@ function describeChoice(state: LiveState, c: ResolvedChoice): string {
   if ("YesNoDecision" in c) return c.YesNoDecision ? "Yes" : "No";
   if ("ChosenTarget" in c) return c.ChosenTarget === null ? "Decline" : targetLabel(state, c.ChosenTarget);
   if ("ChosenCard" in c) return nameOf(state, c.ChosenCard);
-  if ("ChosenIndex" in c) return c.ChosenIndex[1];
+  if ("ChosenIndex" in c) return withoutIds(c.ChosenIndex[1]);
   if ("ChosenOrder" in c) return `Order: ${c.ChosenOrder.join(", ")}`;
   if ("ChosenSubset" in c) return `Pile: ${c.ChosenSubset.map(id => nameOf(state, id)).join(", ")}`;
   if ("ChosenExileSet" in c) return `Exile ${c.ChosenExileSet.map(id => nameOf(state, id)).join(", ")}`;
@@ -231,7 +231,21 @@ export function targetKey(t: Target | null | undefined): string | null {
 }
 
 function newUi(mode: Ui["mode"], title: string): Ui {
-  return { mode, title, hint: "", buttons: [], marked: [] };
+  return { mode, title: withoutIds(title), hint: "", buttons: [], marked: [] };
+}
+
+/**
+ * Engine text with its object ids taken out: "Devil's Play (#34) targeting
+ * Grizzly Bears (#62)" reads "Devil's Play targeting Grizzly Bears", and a
+ * trigger row's "[source 2/2, #42]" reads "[source 2/2]".
+ *
+ * The engine writes `(#id)` so the CLI and the LLM seat, which print ids
+ * beside every permanent, can tell copies apart. The page draws no id
+ * anywhere — four Bears are one "x4" stack — so on the page an id names
+ * nothing a person can find (#694, the page's half of #634).
+ */
+export function withoutIds(s: string): string {
+  return s.replace(/ \(#\d+\)/g, "").replace(/,\s*#\d+(?=\])/g, "").replace(/ #\d+\b/g, "");
 }
 
 /** A widget over a set of targets or object ids. */
@@ -331,7 +345,7 @@ function beginDecisionWidget(state: LiveState, send: Send): Ui {
   if (legal.resolution_prompt) {
     const kind = tag(legal.resolution_prompt);
     const rp = legal.resolution_prompt[kind];
-    const desc = rp.description || legal.context || kind;
+    const desc = withoutIds(rp.description || legal.context || kind);
     const ids = (rp.options ?? []) as ObjectId[];
     switch (kind) {
       case "ChooseXFunding": return beginNumber(state, ui, rp.options as unknown as FundingOptions, desc, send);
@@ -577,7 +591,7 @@ const NOTHING_MARKED =
 /** Mark between min and max of the options, then confirm. */
 function beginMark(state: LiveState, ui: Ui, { title, options, min, max, onConfirm, onCancel, cancelLabel }: MarkArgs): Ui {
   ui.mode = "mark";
-  ui.title = title;
+  ui.title = withoutIds(title);
   withOptions(ui, options);
   ui.min = min; ui.max = max;
   ui.marked = [];
@@ -655,7 +669,7 @@ function isRow(r: Row | Action): r is Row { return typeof r === "object" && "lab
 /** A modal list of rows. Rows are actions or {label, run}. */
 export function beginList(state: LiveState, ui: Ui, rows: (Row | Action)[], title: string, send: Send, filter: boolean, keepBoard = false): Ui {
   ui.mode = "list";
-  ui.title = title;
+  ui.title = withoutIds(title);
   ui.rows = rows.map(r => isRow(r) ? r : { label: describeAction(state, r), run: () => send(r) });
   ui.filter = filter || ui.rows.length > 14;
   ui.query = "";
@@ -668,8 +682,8 @@ export function beginList(state: LiveState, ui: Ui, rows: (Row | Action)[], titl
 
 function beginOrder(state: LiveState, ui: Ui, rp: ResolutionPayload, title: string, send: Send): Ui {
   ui.mode = "order";
-  ui.title = title;
-  const order = ((rp.options ?? []) as string[]).map((label, i) => ({ label, i }));
+  ui.title = withoutIds(title);
+  const order = ((rp.options ?? []) as string[]).map((label, i) => ({ label: withoutIds(label), i }));
   ui.order = order;
   ui.hint = "First listed goes first. Use ▲ ▼ to reorder, then confirm.";
   ui.move = (pos, dir) => {
@@ -839,7 +853,7 @@ export function describeFundableX(values: number[]): string {
 function beginNumber(state: LiveState, ui: Ui, opts: FundingOptions, title: string, send: Send): Ui {
   const maxX = (opts.max_x || 0) + (opts.x_discount || 0);
   ui.mode = "number";
-  ui.title = title;
+  ui.title = withoutIds(title);
   ui.max = maxX;
   ui.value = "";
   const summary: string[] = [];
@@ -912,7 +926,7 @@ function beginDamageAmount(state: LiveState, ui: Ui, rp: ResolutionPayload, titl
     send(resolve({ ChosenIndex: [i, labels[i] ?? String(amount)] }));
   };
   ui.mode = "number";
-  ui.title = title;
+  ui.title = withoutIds(title);
   ui.min = min;
   ui.max = max;
   ui.value = "";
