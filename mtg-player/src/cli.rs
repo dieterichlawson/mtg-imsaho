@@ -2279,7 +2279,17 @@ impl CliPlayer {
         if head_room > 1 {
             return format!("{}…{tail}", clip_cols(head, head_room - 1));
         }
-        clip_cols(&format!("{head}{tail}"), budget)
+        // The tail alone is wider than the row. It is still cut, but it
+        // says so, and a bracket it opened is closed: "Galvanic Juggernaut
+        // 5/5 [attacks each combat if able, doesn't" read as a whole row
+        // that happened to end mid-phrase (#702).
+        let joined = format!("{head}{tail}");
+        let closes = joined.ends_with(']');
+        let keep = budget.saturating_sub(1 + usize::from(closes));
+        if keep == 0 {
+            return clip_cols(&joined, budget);
+        }
+        format!("{}…{}", clip_cols(&joined, keep).trim_end(), if closes { "]" } else { "" })
     }
 
     /// Group identical rows into one `(count, row)` entry, first-appearance
@@ -11341,6 +11351,19 @@ Mark 1 of the 1 cards below to exile.");
         assert!(row.ends_with(" [T] (3d)"), "got {row}");
         assert!(row.contains('…'), "the attachment list is what shortens: {row}");
         assert!(row.chars().count() <= 60);
+    }
+
+    /// Issue #702: a restriction tail wider than the row is cut with an
+    /// ellipsis and its bracket closed, not stopped mid-phrase.
+    #[test]
+    fn a_tail_wider_than_the_row_is_elided_and_closed() {
+        let tail = " [attacks each combat if able, doesn't untap during its controller's untap step]";
+        for budget in [40, 60, 75] {
+            let row = CliPlayer::elide_middle("Galvanic Juggernaut 5/5", "", tail, budget);
+            assert!(str_cols(&row) <= budget, "fits {budget}: {row:?}");
+            assert!(row.ends_with("…]"), "says it was cut, and closes the bracket: {row:?}");
+            assert!(row.starts_with("Galvanic Juggernaut 5/5 [attacks"), "{row:?}");
+        }
     }
 
     /// An Elite Inquisitor: the pool's longest ability list, which is what
