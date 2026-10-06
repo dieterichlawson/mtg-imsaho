@@ -3565,7 +3565,13 @@ impl CliPlayer {
                 |n| format!("{n} — {label}"));
             let page = Self::render_paged(
                 view, Some(&labels), Some(&title), &view.display_log, "", None, menu_offset);
-            let input = Self::read_line("");
+            // A resize repaints the chooser for the new size, as the menu
+            // and combat readers do since #250; this one kept the frame
+            // drawn for the old width until a keystroke (#700).
+            let input = Self::read_line_redrawing("", &|| {
+                let _ = Self::render_paged(
+                    view, Some(&labels), Some(&title), &view.display_log, "", None, menu_offset);
+            });
             match Self::parse_target_input(&input, options.len(), rows) {
                 TargetInput::Pick(idx) => return UpToPick::Pick(options[idx].clone()),
                 TargetInput::Done => return UpToPick::Done,
@@ -6479,44 +6485,6 @@ impl CliPlayer {
         use mtg_engine::actions::ResolvedChoice;
         use mtg_engine::types::ManaType;
 
-        // Rendered inside the TUI frame like every other prompt: bare
-        // println! landed on top of the drawn frame, colliding with the log
-        // panel mid-word — "Max X = 1" read as "Max X = 13 (p0) ──" — and
-        // left the stale main-phase menu on screen, so players pressed Enter
-        // "to retry" and silently funded X = 0 (#56).
-        Self::render(view, Some(description), &view.display_log, "", None);
-        let (term_w, _) = terminal::size().unwrap_or((100, 30));
-        let side = term_w as usize / 5;
-        let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
-        let w = term_w as usize;
-        let mid_w = if w >= 100 { w.saturating_sub(2 * side + 2) } else { w.saturating_sub(side + 1) };
-        let clip = |s: &str| -> String { s.chars().take(mid_w).collect() };
-        let mut r = cursor::position().unwrap_or((0, 20)).1;
-        let mut out = stdout();
-
-        let _ = execute!(out, cursor::MoveTo(col, r),
-            SetForegroundColor(Color::Yellow), SetAttribute(Attribute::Bold),
-            Print(clip(&format!("  Max X = {}", options.max_announceable_x()))),
-            SetAttribute(Attribute::Reset), ResetColor);
-        r += 1;
-        let pool_summary: Vec<String> = [
-            ManaType::White, ManaType::Blue, ManaType::Black,
-            ManaType::Red, ManaType::Green, ManaType::Colorless,
-        ].iter().filter_map(|mt| {
-            let n = options.pool.get(mt).copied().unwrap_or(0);
-            if n > 0 { Some(format!("{n} {mt:?}")) } else { None }
-        }).collect();
-        if !pool_summary.is_empty() {
-            let _ = execute!(out, cursor::MoveTo(col, r),
-                Print(clip(&format!("  Pool: {}", pool_summary.join(", ")))));
-            r += 1;
-        }
-        for g in &options.groups {
-            let _ = execute!(out, cursor::MoveTo(col, r),
-                Print(clip(&format!("  {} x{} ({}/tap, max {})",
-                    g.name, g.source_ids.len(), g.mana_per_tap, g.max_contribution()))));
-            r += 1;
-        }
         // Which values of X the sources can actually pay. The prompt used
         // to state `0-N` and accept every integer in it, then fund a
         // smaller X and say so for 900ms before the screen repainted — a
@@ -6526,35 +6494,85 @@ impl CliPlayer {
         // the rest like any other input it will not honour.
         let fundable = mtg_engine::funding::fundable_x_values(options);
         let contiguous = fundable.len() as u32 == options.max_announceable_x() + 1;
-        if !contiguous {
-            let _ = execute!(out, cursor::MoveTo(col, r),
-                SetForegroundColor(Color::Yellow),
-                Print(clip(&format!("  Payable X: {}", describe_fundable_x(&fundable)))),
-                ResetColor);
-            r += 1;
-        }
-        let _ = execute!(out, cursor::MoveTo(col, r));
-        let _ = out.flush();
+        // The frame and the funding lines, painted for the terminal as it is
+        // now; returns the reader's row. A resize at this prompt used to
+        // leave the frame drawn for the old width, hard-wrapped by the
+        // terminal, until a keystroke (#700, #250's fix reaching every
+        // reader).
+        let draw = || -> (u16, u16, usize) {
+            // Rendered inside the TUI frame like every other prompt: bare
+            // println! landed on top of the drawn frame, colliding with the
+            // log panel mid-word — "Max X = 1" read as "Max X = 13 (p0) ──"
+            // — and left the stale main-phase menu on screen, so players
+            // pressed Enter "to retry" and silently funded X = 0 (#56).
+            Self::render(view, Some(description), &view.display_log, "", None);
+            let (term_w, _) = terminal::size().unwrap_or((100, 30));
+            let side = term_w as usize / 5;
+            let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
+            let w = term_w as usize;
+            let mid_w = if w >= 100 { w.saturating_sub(2 * side + 2) } else { w.saturating_sub(side + 1) };
+            let clip = |s: &str| -> String { s.chars().take(mid_w).collect() };
+            let mut r = cursor::position().unwrap_or((0, 20)).1;
+            let mut out = stdout();
 
+            let _ = execute!(out, cursor::MoveTo(col, r),
+                SetForegroundColor(Color::Yellow), SetAttribute(Attribute::Bold),
+                Print(clip(&format!("  Max X = {}", options.max_announceable_x()))),
+                SetAttribute(Attribute::Reset), ResetColor);
+            r += 1;
+            let pool_summary: Vec<String> = [
+                ManaType::White, ManaType::Blue, ManaType::Black,
+                ManaType::Red, ManaType::Green, ManaType::Colorless,
+            ].iter().filter_map(|mt| {
+                let n = options.pool.get(mt).copied().unwrap_or(0);
+                if n > 0 { Some(format!("{n} {mt:?}")) } else { None }
+            }).collect();
+            if !pool_summary.is_empty() {
+                let _ = execute!(out, cursor::MoveTo(col, r),
+                    Print(clip(&format!("  Pool: {}", pool_summary.join(", ")))));
+                r += 1;
+            }
+            for g in &options.groups {
+                let _ = execute!(out, cursor::MoveTo(col, r),
+                    Print(clip(&format!("  {} x{} ({}/tap, max {})",
+                        g.name, g.source_ids.len(), g.mana_per_tap, g.max_contribution()))));
+                r += 1;
+            }
+            if !contiguous {
+                let _ = execute!(out, cursor::MoveTo(col, r),
+                    SetForegroundColor(Color::Yellow),
+                    Print(clip(&format!("  Payable X: {}", describe_fundable_x(&fundable)))),
+                    ResetColor);
+                r += 1;
+            }
+            let _ = execute!(out, cursor::MoveTo(col, r));
+            let _ = out.flush();
+            (col, r, mid_w)
+        };
         let hint = Self::x_funding_hint(options.max_announceable_x(), is_ability);
         // The refusal goes on its own row and stays there while the player
         // retypes. It used to be written over the PROMPT row and slept on,
         // so the message and the prompt were never on screen together —
         // first the message and no prompt, then the prompt and no message
         // (issue #291).
-        let mut notice: Option<String> = None;
-        let x: u32 = loop {
+        let paint = |notice: Option<&str>| {
+            let (col, r, mid_w) = draw();
             // Clear the input row before each attempt (same as the combat
             // prompts), so a rejected entry doesn't merge with the next.
             Self::clear_panel_row(&mut stdout(), col, r);
             Self::clear_panel_row(&mut stdout(), col, r + 1);
-            if let Some(msg) = &notice {
+            if let Some(msg) = notice {
+                let msg: String = msg.chars().take(mid_w).collect();
                 let _ = execute!(stdout(), cursor::MoveTo(col, r + 1),
-                    SetForegroundColor(Color::Red), Print(clip(msg)), ResetColor);
+                    SetForegroundColor(Color::Red), Print(msg), ResetColor);
             }
             let _ = execute!(stdout(), cursor::MoveTo(col, r));
             let _ = stdout().flush();
-            let input = Self::read_line(&hint);
+        };
+        let mut notice: Option<String> = None;
+        let x: u32 = loop {
+            paint(notice.as_deref());
+            let input = Self::read_line_redrawing(&hint, &|| paint(notice.as_deref()));
             let input = input.trim();
             // Cancelling a spell's X prompt backs out of the whole cast —
             // the engine un-stashes it with nothing spent (issue #123).

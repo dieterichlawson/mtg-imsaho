@@ -95,6 +95,17 @@ impl PtyGame {
         PtyGame { master, child, seen: String::new() }
     }
 
+    /// Resize the terminal, as a window manager would: the kernel sends
+    /// the foreground process group SIGWINCH.
+    fn resize(&mut self, cols: u16, rows: u16) {
+        use std::os::fd::AsRawFd;
+        let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
+        ws.ws_col = cols;
+        ws.ws_row = rows;
+        let rc = unsafe { libc::ioctl(self.master.as_raw_fd(), libc::TIOCSWINSZ, &raw const ws) };
+        assert_eq!(rc, 0, "TIOCSWINSZ failed");
+    }
+
     fn send(&mut self, keys: &str) {
         self.master
             .write_all(keys.as_bytes())
@@ -884,6 +895,41 @@ fn a_wide_enchantment_row_is_fitted_to_the_pane_not_printed_past_it() {
     g.expect("… [enchanting opponent]", T);
     g.expect_absent("Curse of the Pierced Heart [enchanting opponent]",
         Duration::from_millis(200));
+
+    g.send("\x03");
+    assert_clean_exit(&mut g);
+}
+
+/// Issue #700: a resize at the target chooser repaints it for the new
+/// size, with no keystroke. #250 gave the menu and combat readers a redraw;
+/// the chooser read through `read_line`, whose redraw did nothing, so the
+/// frame stayed drawn for the old width, hard-wrapped by the terminal.
+#[test]
+fn a_resize_at_the_target_chooser_repaints_it() {
+    let deck = curse_deck();
+    let deck = deck.to_str().expect("utf-8 temp path");
+    let mut g = PtyGame::spawn_sized(60, 44, &[
+        "--p1", "cli", "--p2", "random",
+        "--deck1", deck, "--deck2", deck,
+        "--seed", "3", "--on-the-play", "1", "--quiet",
+    ]);
+
+    g.expect("Keep opening hand", T);
+    g.answer("0\r");
+    g.expect("MAIN PHASE 1", T);
+    g.answer_option("Play land", T);
+    g.expect("Pass priority", T);
+    g.answer("f\r");
+    g.expect("Play land", T);
+    g.answer_option("Play land", T);
+    g.expect("Cast Curse of the Pierced Heart", T);
+    g.answer_option("Cast Curse of the Pierced Heart", T);
+    g.expect("select a target", T);
+    std::thread::sleep(Duration::from_millis(300));
+
+    g.forget();
+    g.resize(110, 44);
+    g.expect("select a target", T);
 
     g.send("\x03");
     assert_clean_exit(&mut g);
