@@ -3952,7 +3952,7 @@ impl CliPlayer {
             // break as soon as the comma itself fits — the space after it
             // is swallowed by the break, so it need not.
             let mut cols = 0;
-            let mut last_comma: Option<usize> = None; // byte index just after ','
+            let mut last_comma: Option<(usize, usize)> = None; // (byte index just after ',', cols to it)
             let mut last_space: Option<usize> = None; // byte index of ' '
             let mut hard_end = rest.len();
             let mut it = rest.char_indices().peekable();
@@ -3970,12 +3970,21 @@ impl CliPlayer {
                     ',' if i > 0
                         && it.peek().is_none_or(|&(_, next)| next == ' ')
                         && !Self::comma_is_inside_a_cost(&rest[i + 1..]) => {
-                        last_comma = Some(i + 1);
+                        last_comma = Some((i + 1, cols));
                     }
                     _ => {}
                 }
             }
-            let cut = last_comma.or(last_space).unwrap_or(hard_end);
+            // A comma is the better break only in the back half of the row. A
+            // card name has its own comma — "Mikaeus, the Lunarch" — and
+            // preferring the last comma anywhere broke the row eight columns
+            // in, with the name split across two lines and the first one
+            // nearly empty, though a space fitted at column 80 (#701). So
+            // does a sentence's comma early in an effect.
+            let comma = last_comma
+                .filter(|&(_, at)| at * 2 >= width || last_space.is_none())
+                .map(|(i, _)| i);
+            let cut = comma.or(last_space).unwrap_or(hard_end);
 
             let (line, tail) = rest.split_at(cut);
             lines.push(line.trim_end().to_string());
@@ -8699,6 +8708,23 @@ control: Create a 5/5 black Demon";
         assert!(!lines[0].ends_with("{T},"), "{lines:?}");
         assert_eq!(CliPlayer::wrap_row("Kessig Wolf Run: {X}{R}{G}, {T}: pump (tap Mountain (your), Forest (your))", 66),
             vec!["Kessig Wolf Run: {X}{R}{G}, {T}: pump (tap Mountain (your),", "Forest (your))"]);
+    }
+
+    /// Issue #701: a card name's own comma is not a place to break a row
+    /// when a space much further along fits. "6: Mikaeus," on a row of its
+    /// own split the name and left the line nearly empty.
+    #[test]
+    fn a_row_does_not_break_at_a_comma_inside_a_card_name() {
+        let row = "6: Mikaeus, the Lunarch 2/2 (your): {T}, Remove a +1/+1 counter: \
++1/+1 counter on each other creature you control";
+        for width in [70, 76, 100] {
+            let lines = CliPlayer::wrap_row(row, width);
+            assert!(lines[0].starts_with("6: Mikaeus, the Lunarch"), "at {width}: {lines:?}");
+            assert!(lines.iter().all(|l| str_cols(l) <= width), "at {width}: {lines:?}");
+        }
+        let lines = CliPlayer::wrap_row("5: Grimgrin, Corpse-Born 5/5 (your) [doesn't untap during its \
+controller's untap step] (can block: 0 1)", 76);
+        assert!(lines[0].starts_with("5: Grimgrin, Corpse-Born 5/5"), "{lines:?}");
     }
 
     /// The lands line either shows every entry or ends with a "+N more"
