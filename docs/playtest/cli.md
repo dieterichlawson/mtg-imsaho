@@ -1241,5 +1241,12 @@ whether it told the truth.
   Repeat at every prompt kind (priority menu, target, sacrifice, attackers,
   blockers, mulligan), then with the tall side being yours. Pass if
   everything is shown or something says the rest exists. A stray `├` tee on
-  a prompt row is the trace of a row drawn below the last line — count them
+  a prompt row is the trace of a row drawn below the last line — count them- V55 [proposed 2026-10-06, from #700] every reader that cannot repaint.
+  #250 gave the menu and combat readers a redraw on resize; #700 found
+  `run_target_chooser` and the X reader still calling `read_line`, which is
+  `read_line_redrawing(prompt, &|| {})`. Grep `cli.rs` for every `read_line(`
+  call and every `&|| {}` redraw, open each of those prompts in tmux, shrink
+  the pane by 20 columns and then grow it by 20 rows, and capture before
+  any keystroke. Pass if the frame is redrawn at the new size; a frame
+  hard-wrapped by the terminal or a blank band is a #250 escape
 
