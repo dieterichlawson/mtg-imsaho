@@ -409,11 +409,24 @@ fn greedy_autotap(
 
     // Phase 1: Satisfy colorless-specific requirements ({C}).
     while remaining.colorless > 0 {
-        // Sort available sources that can produce colorless by priority.
+        // Sort available sources that can produce colorless by priority —
+        // after first sparing any source that is the only one left able to
+        // make a colour this cost still needs. Shimmering Grotto's free {C}
+        // outranks Deranged Assistant's (tier 1 against 4), and spending it
+        // on the pip left nothing to make the {R} of {C}{R}, when the
+        // Assistant's {C} and the Grotto filtering a floating {G} would have
+        // paid it (issue #684).
+        let sole_route = |src_idx: usize, available: &[usize]| -> bool {
+            remaining.colored.iter().any(|&color|
+                can_produce_color(&sources[src_idx], color)
+                    && !available.iter().any(|&other| other != src_idx
+                        && can_produce_color(&sources[other], color)))
+        };
         let best = available.iter()
             .enumerate()
             .filter(|&(_, &src_idx)| can_produce_colorless(&sources[src_idx]))
-            .min_by_key(|&(_, &src_idx)| source_sort_key(&sources[src_idx], &hand_demand));
+            .min_by_key(|&(_, &src_idx)| (sole_route(src_idx, &available),
+                source_sort_key(&sources[src_idx], &hand_demand)));
 
         if let Some((avail_pos, &src_idx)) = best {
             let source = &sources[src_idx];
@@ -1317,6 +1330,47 @@ mod tests {
     }
 
     // ---- autotap tests ----
+
+    /// Issue #684: a `{C}` pip paid with the free `{C}` of the only source
+    /// that could also make the coloured pip left the colour unpayable.
+    /// Each board pays by hand: the Assistant's `{C}` for the pip, and the
+    /// Grotto filtering other mana into the colour.
+    #[test]
+    fn a_colorless_pip_spares_the_only_route_to_a_colour() {
+        let assistant = || {
+            let mut a = mono_ability(ManaType::Colorless);
+            a.has_side_effects = true;
+            make_source(2, ManaSourceKind::HasSideEffects, vec![a])
+        };
+        let cost = |color: Color| ManaCost::new(vec![ManaSymbol::Colorless(1), ManaSymbol::Colored(color)]);
+        let floating = |mt: ManaType| { let mut p = ManaPool::new(); p.add(mt, 1); p };
+        let boards: Vec<(&str, ManaPool, Vec<ManaSource>, ManaCost)> = vec![
+            ("Grotto, Assistant, {G} floating, {C}{R}", floating(ManaType::Green), vec![
+                make_source(1, ManaSourceKind::NonBasicMana, grotto_abilities()), assistant()], cost(Color::Red)),
+            ("Grotto, Assistant, {U} floating, {C}{W}", floating(ManaType::Blue), vec![
+                make_source(1, ManaSourceKind::NonBasicMana, grotto_abilities()), assistant()], cost(Color::White)),
+            ("Grotto, Pilgrim(R), Assistant, {C}{B}", ManaPool::new(), vec![
+                make_source(1, ManaSourceKind::NonBasicMana, grotto_abilities()),
+                make_source(3, ManaSourceKind::Creature, vec![mono_ability(ManaType::Red)]),
+                assistant()], cost(Color::Black)),
+        ];
+        for (what, pool, sources, cost) in boards {
+            let plan = compute_autotap(&cost, &pool, &sources, &[])
+                .unwrap_or_else(|| panic!("{what}: no plan offered, but tapping by hand pays"));
+            assert!(pool_after(&plan, &pool, &sources, &cost, &ManaCost::free()).is_some(),
+                "{what}: the plan {plan:?} does not pay");
+        }
+
+        // And where another source can make the colour, the Grotto's free
+        // `{C}` is still preferred to milling a card for it.
+        let sources = vec![
+            make_source(1, ManaSourceKind::NonBasicMana, grotto_abilities()),
+            assistant(),
+            make_source(4, ManaSourceKind::BasicMana, vec![mono_ability(ManaType::Red)]),
+        ];
+        let plan = compute_autotap(&cost(Color::Red), &ManaPool::new(), &sources, &[]).expect("payable");
+        assert!(!plan.iter().any(|(id, _)| *id == ObjectId(2)), "no card milled when a Mountain makes the {{R}}: {plan:?}");
+    }
 
     fn make_source(id: u64, kind: ManaSourceKind, abilities: Vec<ManaAbilityDef>) -> ManaSource {
         ManaSource {
