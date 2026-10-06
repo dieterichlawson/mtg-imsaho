@@ -2994,9 +2994,15 @@ impl CliPlayer {
     /// cost, type line, keywords, oracle text, flashback. Returns false
     /// once the panel is out of rows.
     #[allow(clippy::too_many_arguments)]
-    fn render_card_face(out: &mut io::Stdout, right_col: u16, row: &mut u16, max_row: u16,
-                        content_w: usize, data: &mtg_engine::cards::CardData, star_pt: bool,
-                        prefix: &str) -> bool {
+    /// A card face's name-and-cost, type-and-P/T and keyword lines, each
+    /// wrapped to `width` columns.
+    ///
+    /// They were cut at the pane's edge with no marker, mid-symbol: "Liliana
+    /// of the Veil {1}{B" for {1}{B}{B} read as a two-mana card, "Creature —
+    /// Angel 4/" lost a toughness, and a keyword could vanish whole (#696).
+    /// Wrapped at spaces, a cost or a P/T never splits.
+    fn card_face_header(data: &mtg_engine::cards::CardData, star_pt: bool, prefix: &str,
+                        width: usize) -> [Vec<String>; 3] {
         // Name + cost — or, for a face with no mana cost, the color
         // indicator printed beside its type line in its place (CR
         // 204.2). That is what the physical card does and why the
@@ -3012,12 +3018,6 @@ impl CliPlayer {
             None => String::new(),
         };
         let name_line = format!("{prefix}{}{}", data.name, cost_str);
-        let truncated: String = name_line.chars().take(content_w).collect();
-        let _ = execute!(out, cursor::MoveTo(right_col, *row), SetAttribute(Attribute::Bold));
-        Self::print_with_mana(out, &truncated, None);
-        let _ = execute!(out, SetAttribute(Attribute::Reset));
-        *row += 1;
-        if *row >= max_row { return false; }
 
         // Type line + P/T, supertypes first (CR 205.4a, issue #333).
         let pt = if star_pt {
@@ -3031,20 +3031,43 @@ impl CliPlayer {
         let type_line = format!("{}{}", mtg_engine::types::type_line(
             &data.supertypes, &data.card_types, &data.subtypes), pt);
 
-        let truncated: String = type_line.chars().take(content_w).collect();
-        let _ = execute!(out, cursor::MoveTo(right_col, *row),
-            SetAttribute(Attribute::Dim), Print(&truncated), SetAttribute(Attribute::Reset));
-        *row += 1;
-        if *row >= max_row { return false; }
-
-        // Keywords
-        if !data.keywords.is_empty() {
+        let kw_rows = if data.keywords.is_empty() {
+            Vec::new()
+        } else {
             let kw_str: Vec<String> =
                 data.keywords.iter().copied().map(keyword_title).collect();
-            let kw_line = kw_str.join(", ");
-            let truncated: String = kw_line.chars().take(content_w).collect();
+            Self::wrap_row(&kw_str.join(", "), width)
+        };
+        [Self::wrap_row(&name_line, width), Self::wrap_row(&type_line, width), kw_rows]
+    }
+
+    fn render_card_face(out: &mut io::Stdout, right_col: u16, row: &mut u16, max_row: u16,
+                        content_w: usize, data: &mtg_engine::cards::CardData, star_pt: bool,
+                        prefix: &str) -> bool {
+        // Name + cost — or, for a face with no mana cost, the color
+        // indicator printed beside its type line in its place (CR
+        // 204.2). That is what the physical card does and why the
+        // indicator exists: a transformed Gatstaf Howler is green, and
+        // with neither a cost nor an indicator on screen its color was
+        // unobtainable — which is the whole of what intimidate asks
+        // (CR 702.13a, issue #357).
+        let [name_rows, type_rows, kw_rows] = Self::card_face_header(data, star_pt, prefix, content_w);
+        for line in &name_rows {
+            let _ = execute!(out, cursor::MoveTo(right_col, *row), SetAttribute(Attribute::Bold));
+            Self::print_with_mana(out, line, None);
+            let _ = execute!(out, SetAttribute(Attribute::Reset));
+            *row += 1;
+            if *row >= max_row { return false; }
+        }
+        for line in &type_rows {
             let _ = execute!(out, cursor::MoveTo(right_col, *row),
-                SetForegroundColor(Color::Blue), Print(&truncated), ResetColor);
+                SetAttribute(Attribute::Dim), Print(line), SetAttribute(Attribute::Reset));
+            *row += 1;
+            if *row >= max_row { return false; }
+        }
+        for line in &kw_rows {
+            let _ = execute!(out, cursor::MoveTo(right_col, *row),
+                SetForegroundColor(Color::Blue), Print(line), ResetColor);
             *row += 1;
             if *row >= max_row { return false; }
         }
@@ -3069,11 +3092,12 @@ impl CliPlayer {
         // Flashback cost
         if let Some(fb) = &data.flashback_cost {
             if *row < max_row {
-                let fb_line = format!("Flashback {fb}");
-                let truncated: String = fb_line.chars().take(content_w).collect();
-                let _ = execute!(out, cursor::MoveTo(right_col, *row));
-                Self::print_with_mana(out, &truncated, Some(Color::Cyan));
-                *row += 1;
+                for line in Self::wrap_row(&format!("Flashback {fb}"), content_w) {
+                    if *row >= max_row { return false; }
+                    let _ = execute!(out, cursor::MoveTo(right_col, *row));
+                    Self::print_with_mana(out, &line, Some(Color::Cyan));
+                    *row += 1;
+                }
             }
         }
         true
@@ -11018,6 +11042,34 @@ Mark 1 of the 1 cards below to exile.");
         }
         let rejoined = rows.iter().map(|r| r.trim()).collect::<Vec<_>>().join(" ");
         assert_eq!(rejoined, entry, "nothing is lost or reordered");
+    }
+
+    /// Issue #696: the CARDS pane's header lines wrap at a space, so a
+    /// mana cost, a P/T or a keyword is never cut in the middle.
+    #[test]
+    fn a_card_face_header_never_cuts_a_cost_or_a_pt() {
+        let registry = mtg_engine::cards::CardRegistry::with_all_cards();
+        for (name, width) in [("Liliana of the Veil", 22), ("Liliana of the Veil", 25),
+                              ("Bitterheart Witch", 21), ("Angel of Flight Alabaster", 30),
+                              ("Elite Inquisitor", 20)] {
+            let id = registry.get_id_by_name(name).expect("in the pool");
+            let data = registry.card_data(id).unwrap();
+            let rows = CliPlayer::card_face_header(&data, false, "", width);
+            for line in rows.iter().flatten() {
+                assert!(str_cols(line) <= width, "{name} at {width}: {line:?} overflows");
+                assert_eq!(line.matches('{').count(), line.matches('}').count(),
+                    "{name} at {width}: a mana symbol is cut in {line:?}");
+            }
+            let cost = data.cost.as_ref().map(ToString::to_string).unwrap_or_default();
+            assert!(rows[0].join(" ").ends_with(&cost), "{name} at {width}: the whole cost {cost} is shown: {:?}", rows[0]);
+            if let (Some(p), Some(t)) = (data.power, data.toughness) {
+                assert!(rows[1].join(" ").ends_with(&format!("{p}/{t}")),
+                    "{name} at {width}: the whole P/T is shown: {:?}", rows[1]);
+            }
+            let keywords = data.keywords.len();
+            let shown = rows[2].join(" ").matches(',').count() + usize::from(keywords > 0);
+            assert_eq!(shown, keywords, "{name} at {width}: every keyword is shown: {:?}", rows[2]);
+        }
     }
 
     /// Issue #697: a permanent with one of its abilities on the stack is
