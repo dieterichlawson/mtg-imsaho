@@ -116,6 +116,30 @@ fn an_empty_combat_prompt_has_exactly_one_answer() {
     assert!(forced_combat_answer(&blockers(vec![ObjectId(30)], vec![])).is_some());
 }
 
+/// Issue #703: blockers that can block no attacker are no choice either. A
+/// flyer attacking into two Grizzly Bears was asked as a blockers prompt
+/// whose every row said "(can block: none)".
+#[test]
+fn blockers_that_can_block_nothing_have_one_answer() {
+    let prompt = CombatPrompt::ChooseBlockers {
+        eligible_blockers: vec![ObjectId(82), ObjectId(83)],
+        attackers: vec![ObjectId(61)],
+        legal_blocks: [(ObjectId(82), vec![]), (ObjectId(83), vec![])].into_iter().collect(),
+        min_blockers: std::collections::HashMap::new(),
+    };
+    assert!(matches!(forced_combat_answer(&prompt),
+        Some(Action::DeclareBlockers { ref assignments }) if assignments.is_empty()));
+
+    // One of them able to block is a decision again.
+    let prompt = CombatPrompt::ChooseBlockers {
+        eligible_blockers: vec![ObjectId(82), ObjectId(83)],
+        attackers: vec![ObjectId(61)],
+        legal_blocks: [(ObjectId(82), vec![]), (ObjectId(83), vec![ObjectId(61)])].into_iter().collect(),
+        min_blockers: std::collections::HashMap::new(),
+    };
+    assert!(forced_combat_answer(&prompt).is_none());
+}
+
 /// And a prompt with something to click is left alone. A rule that answered
 /// every combat prompt would pass every other test in this file while
 /// taking the game away from the player.

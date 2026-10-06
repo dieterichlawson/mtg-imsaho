@@ -104,11 +104,15 @@ pub fn forced_combat_answer(prompt: &CombatPrompt) -> Option<Action> {
         CombatPrompt::ChooseAttackers { eligible, must_attack, .. }
             if eligible.is_empty() && must_attack.is_empty() =>
             Some(Action::DeclareAttackers { attackers: vec![], planeswalker_attacks: vec![] }),
-        // No blocker, or nothing attacking to block. The engine raises this
-        // prompt only with an attacker present, so the second half is
-        // defence rather than a live case.
-        CombatPrompt::ChooseBlockers { eligible_blockers, attackers, .. }
-            if eligible_blockers.is_empty() || attackers.is_empty() =>
+        // No blocker, or nothing attacking to block — or blockers, none of
+        // which can block any attacker: a Voiceless Spirit attacking into
+        // two Grizzly Bears listed both "(can block: none)" and asked
+        // anyway, a question whose only answer is no blocks, on every seat
+        // (issue #703). The engine raises this prompt only with an attacker
+        // present, so the second clause is defence rather than a live case.
+        CombatPrompt::ChooseBlockers { eligible_blockers, attackers, legal_blocks, .. }
+            if eligible_blockers.is_empty() || attackers.is_empty()
+                || eligible_blockers.iter().all(|b| legal_blocks.get(b).is_none_or(Vec::is_empty)) =>
             Some(Action::DeclareBlockers { assignments: vec![] }),
         _ => None,
     }
