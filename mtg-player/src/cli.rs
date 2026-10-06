@@ -312,7 +312,7 @@ fn read_event_guarded() -> Option<Event> {
             });
             if n >= 200 {
                 reset_terminal_for_exit();
-                eprintln!("Error: cannot read terminal input (terminal gone?); exiting");
+                crate::stderr_line!("Error: cannot read terminal input (terminal gone?); exiting");
                 std::process::exit(1);
             }
             std::thread::sleep(std::time::Duration::from_millis(25));

@@ -113,7 +113,7 @@ fn decision_kind_name(legal: &engine::LegalActions) -> String {
 
 /// A user error: report it and exit without a Rust panic/backtrace.
 fn die(msg: &str) -> ! {
-    eprintln!("Error: {msg}");
+    mtg_player::stderr_line!("Error: {msg}");
     std::process::exit(1);
 }
 
@@ -208,7 +208,7 @@ fn resolve_save_symlink(path: &str) -> String {
     }
     let resolved = current.to_string_lossy().into_owned();
     if resolved != path {
-        eprintln!("note: --save '{path}' is a symlink; writing through it to '{resolved}'");
+        mtg_player::stderr_line!("note: --save '{path}' is a symlink; writing through it to '{resolved}'");
     }
     resolved
 }
@@ -253,14 +253,14 @@ fn validate_args(args: &[String]) {
         let a = args[i].as_str();
         if VALUE_FLAGS.contains(&a) {
             if i + 1 >= args.len() {
-                eprintln!("Error: {a} requires a value\n\n{USAGE}");
+                mtg_player::stderr_line!("Error: {a} requires a value\n\n{USAGE}");
                 std::process::exit(2);
             }
             i += 2;
         } else if BOOL_FLAGS.contains(&a) {
             i += 1;
         } else {
-            eprintln!("Error: unrecognized argument '{a}'\n\n{USAGE}");
+            mtg_player::stderr_line!("Error: unrecognized argument '{a}'\n\n{USAGE}");
             std::process::exit(2);
         }
     }
@@ -363,7 +363,7 @@ fn main() {
         // it is worth one line when the operator has aimed it at a file that
         // was already there (issue #242).
         if fs::metadata(path).is_ok_and(|m| m.is_file()) {
-            eprintln!("note: --save '{path}' already exists and will be overwritten");
+            mtg_player::stderr_line!("note: --save '{path}' already exists and will be overwritten");
         }
         // The probe never touches the save path itself — even a create+
         // delete leaves a momentary empty file that reads as a torn save to
@@ -386,7 +386,7 @@ fn main() {
         // repro provenance (issues #52/#55) — so say so.
         for flag in ["--deck1", "--deck2"] {
             if args.iter().any(|a| a == flag) {
-                eprintln!("note: {flag} is ignored with --resume; the save file's game wins");
+                mtg_player::stderr_line!("note: {flag} is ignored with --resume; the save file's game wins");
             }
         }
         // --seed is NOT ignored, and calling it ignored was worse than
@@ -395,7 +395,7 @@ fn main() {
         // seeds them, and dropping it — as the old note advised — is what
         // makes a resumed replay non-reproducible (issue #196).
         if args.iter().any(|a| a == "--seed") {
-            eprintln!("note: --seed does not change the saved game's shuffle (the save's RNG wins), \
+            mtg_player::stderr_line!("note: --seed does not change the saved game's shuffle (the save's RNG wins), \
 but it still seeds the random/AI seats — keep it to replay a resume deterministically");
         }
         // Every failure here is a user-supplied file being wrong (a typo'd
@@ -433,9 +433,9 @@ but it still seeds the random/AI seats — keep it to replay a resume determinis
         // here unconditionally, not only under --check-invariants.
         let violations = mtg_engine::invariants::check_core(&save.state, &registry);
         if !violations.is_empty() {
-            eprintln!("Error: save file '{path}' describes an invalid game state:");
+            mtg_player::stderr_line!("Error: save file '{path}' describes an invalid game state:");
             for v in &violations {
-                eprintln!("  - {v}");
+                mtg_player::stderr_line!("  - {v}");
             }
             std::process::exit(1);
         }
@@ -487,17 +487,17 @@ the command line did not: pass {flag} {saved} to confirm it, or {flag} random"))
             for (flag, seat, saved, used) in [("--p1", "p0", &save.seats[0], &p1_spec),
                                               ("--p2", "p1", &save.seats[1], &p2_spec)] {
                 if saved != used {
-                    eprintln!("note: {flag} overrides the save's seat ({saved} -> {used})");
+                    mtg_player::stderr_line!("note: {flag} overrides the save's seat ({saved} -> {used})");
                 } else if from_flag_absent(flag, &p1_flag, &p2_flag) && !seat_is_local(used) {
                     // Not gated on `!quiet`: the banner is, and it was the
                     // only line that said an LLM seat had been chosen by the
                     // file (issue #314).
-                    eprintln!("note: {seat} runs '{used}', which the save file chose and no \
+                    mtg_player::stderr_line!("note: {seat} runs '{used}', which the save file chose and no \
 flag asked for — pass {flag} to say otherwise");
                 }
             }
         } else if save.seats.is_empty() {
-            eprintln!("note: this save predates seat recording, so the seats come from the \
+            mtg_player::stderr_line!("note: this save predates seat recording, so the seats come from the \
 flags: p0={p1_spec}, p1={p2_spec} — pass --p1/--p2 if that is not the lineup you saved");
         } else {
             // Neither two seats nor none: the file is malformed, and saying
@@ -513,7 +513,7 @@ flags: p0={p1_spec}, p1={p2_spec} — pass --p1/--p2 if that is not the lineup y
         // The file sits on disk looking current while the game plays on
         // (issue #317).
         if save_file.is_none() {
-            eprintln!("note: --resume without --save; this game is not being saved and '{path}' \
+            mtg_player::stderr_line!("note: --resume without --save; this game is not being saved and '{path}' \
 stops here — pass --save {path} to keep writing it");
         }
         if !quiet {
@@ -771,7 +771,7 @@ stops here — pass --save {path} to keep writing it");
             if let Some(why) = mtg_player::Player::gave_up(p) {
                 let msg = format!("{}'s backend stopped answering ({why}); the seat forfeits the game",
                     mtg_player::Player::name(p));
-                eprintln!("\nWARN: {msg}");
+                mtg_player::stderr_line!("\nWARN: {msg}");
                 mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error,
                     file!(), line!(), "STALLED", &msg);
                 return mtg_player::watchdog::forfeit_move();
@@ -880,16 +880,16 @@ stops here — pass --save {path} to keep writing it");
 
             let all: Vec<String> = violations.into_iter().chain(extra).collect();
             if !all.is_empty() {
-                eprintln!("INVARIANT VIOLATION at action {action_count} (turn {}, step {:?}):",
+                mtg_player::stderr_line!("INVARIANT VIOLATION at action {action_count} (turn {}, step {:?}):",
                     game_state.turn_number, game_state.step);
                 for msg in &all {
-                    eprintln!("  - {msg}");
+                    mtg_player::stderr_line!("  - {msg}");
                     mtg_player::game_log::write(file!(), line!(), "INVARIANT", msg);
                 }
-                eprintln!("last game log entries:");
+                mtg_player::stderr_line!("last game log entries:");
                 let tail = game_state.game_log.len().saturating_sub(20);
                 for entry in &game_state.game_log[tail..] {
-                    eprintln!("  | {}", entry.message);
+                    mtg_player::stderr_line!("  | {}", entry.message);
                 }
                 std::process::exit(2);
             }
@@ -913,7 +913,7 @@ stops here — pass --save {path} to keep writing it");
             if hot_reload_ok.get() {
                 if let Err(e) = write_save_atomically(&hot_reload_ref, &json, true) {
                     hot_reload_ok.set(false);
-                    eprintln!("warning: cannot write the hot-reload snapshot to \
+                    mtg_player::stderr_line!("warning: cannot write the hot-reload snapshot to \
 '{hot_reload_ref}': {e}. `rr` is disabled for the rest of this game; \
 use --save if you need a resumable file.");
                 }
@@ -961,7 +961,7 @@ use --save if you need a resumable file.");
         });
         let text = serde_json::to_string_pretty(&stats).unwrap_or_default();
         if let Err(e) = fs::write(path, text) {
-            eprintln!("warning: could not write --decision-stats {path}: {e}");
+            mtg_player::stderr_line!("warning: could not write --decision-stats {path}: {e}");
         }
     }
 
@@ -971,7 +971,7 @@ use --save if you need a resumable file.");
 
     // Check for hot reload request.
     if mtg_player::cli::HOT_RELOAD_REQUESTED.load(std::sync::atomic::Ordering::SeqCst) {
-        eprintln!("\nHot reload requested. Rebuilding and relaunching...");
+        mtg_player::stderr_line!("\nHot reload requested. Rebuilding and relaunching...");
         // Build the project.
         let build_status = std::process::Command::new("cargo")
             .args(["build", "--release"])
@@ -995,16 +995,16 @@ use --save if you need a resumable file.");
                 let err = std::process::Command::new(&exe)
                     .args(&new_args[1..]) // skip argv[0]
                     .exec();
-                eprintln!("Failed to exec: {err}");
+                mtg_player::stderr_line!("Failed to exec: {err}");
                 std::process::exit(1);
             }
             Ok(s) => {
-                eprintln!("Build failed (exit code {:?}). Continuing with save at {}",
+                mtg_player::stderr_line!("Build failed (exit code {:?}). Continuing with save at {}",
                     s.code(), hot_reload_path);
-                eprintln!("Resume manually with: cargo run --release -- --resume {hot_reload_path}");
+                mtg_player::stderr_line!("Resume manually with: cargo run --release -- --resume {hot_reload_path}");
             }
             Err(e) => {
-                eprintln!("Failed to run cargo build: {e}. Save at {hot_reload_path}");
+                mtg_player::stderr_line!("Failed to run cargo build: {e}. Save at {hot_reload_path}");
             }
         }
         return;
@@ -1027,10 +1027,10 @@ use --save if you need a resumable file.");
         match serde_json::to_string(&save) {
             Ok(json) => {
                 if let Err(e) = write_save_atomically(path, &json, false) {
-                    eprintln!("warning: could not write the final save to '{path}': {e}");
+                    mtg_player::stderr_line!("warning: could not write the final save to '{path}': {e}");
                 }
             }
-            Err(e) => eprintln!("warning: could not serialize the final position: {e}"),
+            Err(e) => mtg_player::stderr_line!("warning: could not serialize the final position: {e}"),
         }
         // Only our own temp sibling is ours to remove.
         let _ = fs::remove_file(format!("{}.{}.tmp", path, std::process::id()));
@@ -1185,7 +1185,7 @@ fn make_player(spec: &str, name: &str, origin: &str, flag: &str, seed: Option<u6
                 "{origin} gui takes a port number after the colon, got '{m}'"))));
             match GuiPlayer::new(name, port) {
                 Ok(p) => {
-                    eprintln!("{origin} gui: open {}", p.url);
+                    mtg_player::stderr_line!("{origin} gui: open {}", p.url);
                     PlayerKind::Gui(p)
                 }
                 Err(e) => die(&format!("{origin} gui: {e}")),

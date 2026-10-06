@@ -1,4 +1,31 @@
 pub mod random;
+
+/// `eprintln!`, except that a write that fails is dropped instead of
+/// panicking.
+///
+/// The runtime ignores SIGPIPE, so `eprintln!` to a pipe whose reader has
+/// gone — stderr through `head`, or a log shipper that died — panics. In a
+/// seat's retry line that turned a call failure the seat would have ridden
+/// out into a panic: `mtg-runner` exited 101, and a draft tournament exited
+/// 1 with no reason written anywhere (#652, #685). Every runtime line on
+/// stderr in the game backends and both runners goes through this.
+#[macro_export]
+macro_rules! stderr_line {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        let _ = writeln!(std::io::stderr(), $($arg)*);
+    }};
+}
+
+/// [`stderr_line!`] without the newline: the `eprint!` counterpart.
+#[macro_export]
+macro_rules! stderr_text {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        let _ = write!(std::io::stderr(), $($arg)*);
+    }};
+}
+
 pub mod cli;
 pub mod gui;
 pub mod llm;

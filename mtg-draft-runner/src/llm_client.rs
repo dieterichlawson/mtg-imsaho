@@ -279,7 +279,7 @@ API failed, not the model", if *n == 1 { "" } else { "s" }).unwrap();
     }
 
     // Write to stderr
-    eprint!("\n{summary}");
+    mtg_player::stderr_text!("\n{summary}");
 
     // Write to log file
     mtg_player::game_log::write(file!(), line!(), "TOKEN USAGE", &summary);
@@ -1251,7 +1251,7 @@ impl DraftLlmClient {
             // spent real money drafting with a model nobody asked for. Refuse
             // it the way mtg-runner refuses an unknown seat.
             other => {
-                eprintln!("Error: unknown model provider '{other}' (expected {ACCEPTED_PROVIDERS})");
+                mtg_player::stderr_line!("Error: unknown model provider '{other}' (expected {ACCEPTED_PROVIDERS})");
                 std::process::exit(1);
             }
         };

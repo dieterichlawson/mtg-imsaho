@@ -77,3 +77,38 @@ fn a_seat_whose_backend_gave_up_forfeits_its_match_and_the_run_goes_on() {
         "the forfeiting seat's row says so: {standings:?}\n{stderr}");
     assert!(stderr.contains("=== Forfeited Games ==="), "{stderr}");
 }
+
+/// Issue #685: the same run with nobody reading stderr. The seat's failed
+/// calls print retry lines, and `eprintln!` to a pipe whose reader has gone
+/// panicked the match worker, which ended the whole tournament with exit 1
+/// and no reason in the log.
+#[test]
+fn a_seat_that_fails_with_nobody_reading_stderr_does_not_end_the_run() {
+    if !std::process::Command::new("python3").arg("--version")
+        .stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())
+        .status().is_ok_and(|s| s.success())
+    {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("mtg-draft-stderr-gone-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let bin = stub(&dir);
+    let log = dir.join("run.log");
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_mtg-draft-runner"))
+        .args(["--model", "cc", "--players", "2", "--best-of", "1", "--seed", "91032"])
+        .args(["--log", log.to_str().unwrap()])
+        .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
+        .env("CLAUDE_CODE_BIN", &bin)
+        .env("MTG_GAME_RETRY_BUDGET_SECS", "1")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("the runner starts");
+    drop(child.stderr.take());
+    let status = child.wait().expect("the runner ends");
+    assert!(status.success(), "the run ends normally with nobody reading stderr: {status}");
+    let logged = std::fs::read_to_string(&log).unwrap();
+    assert!(logged.contains("FINAL STANDINGS"), "the tournament finished");
+}

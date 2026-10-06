@@ -628,7 +628,7 @@ fn validate_args(args: &[String]) -> Vec<(String, usize)> {
         let per_seat = seat_flag(a);
         if VALUE_FLAGS.contains(&a) || per_seat.is_some() {
             if i + 1 >= args.len() {
-                eprintln!("Error: {a} requires a value\n\n{USAGE}");
+                mtg_player::stderr_line!("Error: {a} requires a value\n\n{USAGE}");
                 std::process::exit(2);
             }
             if let Some(index) = per_seat {
@@ -638,7 +638,7 @@ fn validate_args(args: &[String]) -> Vec<(String, usize)> {
         } else if BOOL_FLAGS.contains(&a) {
             i += 1;
         } else {
-            eprintln!("Error: unrecognized argument '{a}'\n\n{USAGE}");
+            mtg_player::stderr_line!("Error: unrecognized argument '{a}'\n\n{USAGE}");
             std::process::exit(2);
         }
     }
@@ -843,14 +843,14 @@ fn validate_model_specs(models: &[String]) {
 
         for level in &levels {
             if !valid_levels.contains(level) {
-                eprintln!("ERROR: Seat {} model '{}': '{}' is not a valid thinking level (valid: {})",
+                mtg_player::stderr_line!("ERROR: Seat {} model '{}': '{}' is not a valid thinking level (valid: {})",
                     i, spec, level, valid_levels.join(", "));
                 std::process::exit(1);
             }
             // Check model-specific restrictions
             for (model_prefix, allowed) in restricted {
                 if model.contains(model_prefix) && !allowed.contains(level) {
-                    eprintln!("ERROR: Seat {} model '{}': '{}' is not supported by {} (allowed: {})",
+                    mtg_player::stderr_line!("ERROR: Seat {} model '{}': '{}' is not supported by {} (allowed: {})",
                         i, spec, level, model, allowed.join(", "));
                     std::process::exit(1);
                 }
@@ -886,9 +886,9 @@ fn main() {
                 continue;
             }
             if args.was_supplied(flag) {
-                eprintln!("note: {flag} comes from the save ({used} -> {saved})");
+                mtg_player::stderr_line!("note: {flag} comes from the save ({used} -> {saved})");
             } else {
-                eprintln!("note: {flag} {saved} comes from the save");
+                mtg_player::stderr_line!("note: {flag} {saved} comes from the save");
             }
         }
         save
@@ -929,13 +929,13 @@ fn main() {
         })
         .unwrap_or_default();
     for (seat, was, now) in &replayed_under {
-        eprintln!("WARN: seat {seat}'s replayed picks were made under {}, and the rest of \
+        mtg_player::stderr_line!("WARN: seat {seat}'s replayed picks were made under {}, and the rest of \
 this draft will be made under {} — this draft is a mixture of the two",
             was.describe(), now.describe());
     }
     if let Some(save) = &resumed {
         if save.seats.is_empty() && !save.picks.is_empty() {
-            eprintln!("note: this snapshot predates the guide/model record, so what its \
+            mtg_player::stderr_line!("note: this snapshot predates the guide/model record, so what its \
 {} replayed picks were made under is unknown", save.picks.len());
         }
     }
@@ -946,21 +946,21 @@ this draft will be made under {} — this draft is a mixture of the two",
     // Load set data
     let set_path = PathBuf::from(format!("data/sets/{}.json", args.set));
     let mut set_data = SetData::load(&set_path).unwrap_or_else(|e| {
-        eprintln!("Failed to load set data: {e}");
+        mtg_player::stderr_line!("Failed to load set data: {e}");
         std::process::exit(1);
     });
 
     let registry = CardRegistry::with_all_cards();
     let removed = set_data.filter_implemented(&registry);
     if !removed.is_empty() && !args.quiet {
-        eprintln!(
+        mtg_player::stderr_line!(
             "Warning: {} cards not implemented, removed from draft pool",
             removed.len()
         );
     }
 
     let sheets = SheetData::from_set_data(&set_data).unwrap_or_else(|e| {
-        eprintln!("Failed to build sheet data: {e}");
+        mtg_player::stderr_line!("Failed to build sheet data: {e}");
         std::process::exit(1);
     });
 
@@ -978,16 +978,16 @@ this draft will be made under {} — this draft is a mixture of the two",
         replayed_note.as_slice());
 
     if !args.quiet {
-        eprintln!(
+        mtg_player::stderr_line!(
             "=== {} Draft: {} players, best-of-{} ===",
             set_data.set_name, args.players, args.best_of
         );
-        eprintln!("Log file: {}", args.log);
+        mtg_player::stderr_line!("Log file: {}", args.log);
     }
 
     // ── Phase 1: Generate packs ──
     if !args.quiet {
-        eprintln!("Generating booster packs...");
+        mtg_player::stderr_line!("Generating booster packs...");
     }
     let packs = generate_draft_packs(&sheets, args.players, &mut rng);
 
@@ -1002,7 +1002,7 @@ this draft will be made under {} — this draft is a mixture of the two",
     // ── Phase 2: Draft ──
     log_section!(log, "DRAFT");
     if !args.quiet {
-        eprintln!("Starting draft...");
+        mtg_player::stderr_line!("Starting draft...");
     }
     let mut draft = DraftState::new(&packs);
 
@@ -1083,7 +1083,7 @@ this draft will be made under {} — this draft is a mixture of the two",
             args.resume.as_deref().unwrap_or_default()));
     }
     if !replaying.is_empty() && !args.quiet {
-        eprintln!("Replaying {} recorded pick(s) from the snapshot...", replaying.len());
+        mtg_player::stderr_line!("Replaying {} recorded pick(s) from the snapshot...", replaying.len());
     }
     // The cost summary counts this process's calls only, so it has to say
     // which part of the draft it is the cost of (issue #578).
@@ -1107,7 +1107,7 @@ this draft will be made under {} — this draft is a mixture of the two",
             .and_then(|()| fs::rename(&tmp, path).map_err(|e| e.to_string()))
         {
             Ok(()) => {}
-            Err(e) => eprintln!("\nWARN: could not write the draft snapshot to {path}: {e}"),
+            Err(e) => mtg_player::stderr_line!("\nWARN: could not write the draft snapshot to {path}: {e}"),
         }
     };
 
@@ -1241,7 +1241,7 @@ this draft will be made under {} — this draft is a mixture of the two",
                     // unusable answers read exactly like 42 deliberate picks
                     // (issue #195).
                     substituted_picks[seat] += 1;
-                    eprintln!("{}WARN: seat {} pack {} pick {}: could not use the response, \
+                    mtg_player::stderr_line!("{}WARN: seat {} pack {} pick {}: could not use the response, \
 substituting {} (the first card). Response: {}",
                         end_progress_line(), seat, round + 1, pick_num + 1, pick.card(),
                         response.trim().replace('\n', " "));
@@ -1250,7 +1250,7 @@ substituting {} (the first card). Response: {}",
                 let chosen = pick.into_card();
 
                 draft.make_pick(seat, &chosen).unwrap_or_else(|e| {
-                    eprintln!("\nDraft pick error for seat {seat}: {e}");
+                    mtg_player::stderr_line!("\nDraft pick error for seat {seat}: {e}");
                     let first = draft.current_pack_for(seat)[0].clone();
                     draft.make_pick(seat, &first).unwrap();
                 });
@@ -1273,14 +1273,14 @@ substituting {} (the first card). Response: {}",
     }
 
     if !args.quiet {
-        eprintln!("{}Draft complete!", end_progress_line());
+        mtg_player::stderr_line!("{}Draft complete!", end_progress_line());
     }
 
     // What the protection covers from here, said where it matters rather
     // than only in `--save`'s help. It used to end at this line, and said so
     // (#581's first half); it now runs through the tournament.
     if args.save.is_some() && !args.quiet {
-        eprintln!("note: the snapshot now covers deck building and every match too — \
+        mtg_player::stderr_line!("note: the snapshot now covers deck building and every match too — \
 an interruption from here costs the build or the match in progress, not the run");
     }
 
@@ -1293,7 +1293,7 @@ an interruption from here costs the build or the match in progress, not the run"
     // ── Phase 3: Deck Building ──
     log_section!(log, "DECK BUILDING");
     if !args.quiet {
-        eprintln!("Building decks...");
+        mtg_player::stderr_line!("Building decks...");
     }
 
     // Build all decks in parallel. Each worker logs its own result as
@@ -1318,7 +1318,7 @@ an interruption from here costs the build or the match in progress, not the run"
     // (issue #581). A deck the runner substituted stays one.
     let deck_results: Vec<DeckBuildResult> = if resumed_decks.len() == args.players {
         if !args.quiet {
-            eprintln!("Taking the {} decks from the snapshot...", args.players);
+            mtg_player::stderr_line!("Taking the {} decks from the snapshot...", args.players);
         }
         resumed_decks.iter().enumerate().map(|(seat, saved)| {
             log_deck_building!(log, seat, &saved.deck.maindeck, &saved.deck.lands,
@@ -1400,13 +1400,13 @@ its build attempts are in that run's log"), "");
         .collect();
 
     if !args.quiet {
-        eprintln!("\nDecks built!");
+        mtg_player::stderr_line!("\nDecks built!");
     }
 
     // ── Phase 4: Tournament ──
     log_section!(log, "TOURNAMENT");
     if !args.quiet {
-        eprintln!("Starting Swiss tournament...");
+        mtg_player::stderr_line!("Starting Swiss tournament...");
     }
 
     let tournament_config = TournamentConfig {
@@ -1441,7 +1441,7 @@ and the FINAL STANDINGS below record none",
         let pairings = tournament.generate_pairings();
 
         if !args.quiet {
-            eprintln!("Round {}/{}", round_num, tournament.total_rounds());
+            mtg_player::stderr_line!("Round {}/{}", round_num, tournament.total_rounds());
         }
 
         // Separate byes from real matches
@@ -1453,13 +1453,13 @@ and the FINAL STANDINGS below record none",
 
         for &(a, _) in pairings.iter().filter(|&&(_, b)| b == BYE) {
             if !args.quiet {
-                eprintln!("  Seat {a} gets a bye");
+                mtg_player::stderr_line!("  Seat {a} gets a bye");
             }
         }
 
         if !args.quiet {
             for &(a, b) in &real_matches {
-                eprintln!("  Seat {a} vs Seat {b}");
+                mtg_player::stderr_line!("  Seat {a} vs Seat {b}");
             }
         }
 
@@ -1593,7 +1593,7 @@ the snapshot, not by this one; its games are in that run's log",
 
             if !args.quiet {
                 let note = if carried_over { " [from snapshot]" } else { "" };
-                eprintln!("{}{note}", match_score_line(result));
+                mtg_player::stderr_line!("{}{note}", match_score_line(result));
             }
         }
 
@@ -1629,9 +1629,9 @@ the snapshot, not by this one; its games are in that run's log",
     log_standings!(log, &sorted, &row_tags);
 
     if !args.quiet {
-        eprintln!("\nFinal Standings:");
+        mtg_player::stderr_line!("\nFinal Standings:");
         for (rank, s) in sorted.iter().enumerate() {
-            eprintln!("  {}", standings_row(rank + 1, s, &row_tags[s.seat]));
+            mtg_player::stderr_line!("  {}", standings_row(rank + 1, s, &row_tags[s.seat]));
         }
     }
 
@@ -1657,23 +1657,23 @@ the snapshot, not by this one; its games are in that run's log",
         .map(|(seat, _)| seat)
         .collect();
     if !fallback_seats.is_empty() {
-        eprintln!("\n=== Substituted Decks ===");
+        mtg_player::stderr_line!("\n=== Substituted Decks ===");
         for seat in &fallback_seats {
-            eprintln!("    Seat {seat}: no valid deck after {} attempts — the runner built \
+            mtg_player::stderr_line!("    Seat {seat}: no valid deck after {} attempts — the runner built \
 this seat's deck, so its results are not a built deck's", deck_results[*seat].retries);
         }
-        eprintln!("  (grep the log for FALLBACK to see each one)");
+        mtg_player::stderr_line!("  (grep the log for FALLBACK to see each one)");
     }
 
     if stalled_games.iter().any(|n| *n > 0) {
-        eprintln!("\n=== Forfeited Games ===");
+        mtg_player::stderr_line!("\n=== Forfeited Games ===");
         for (seat, n) in stalled_games.iter().enumerate() {
             if *n > 0 {
-                eprintln!("    Seat {seat}: {n} game(s) forfeited — this seat stopped making \
+                mtg_player::stderr_line!("    Seat {seat}: {n} game(s) forfeited — this seat stopped making \
 progress (the same unusable answer over and over), so the game was awarded to its opponent");
             }
         }
-        eprintln!("  (grep the log for STALLED to see each one)");
+        mtg_player::stderr_line!("  (grep the log for STALLED to see each one)");
     }
 
     // A game the runner stopped at its action budget is in the standings as
@@ -1683,17 +1683,17 @@ progress (the same unusable answer over and over), so the game was awarded to it
         .flat_map(|m| m.games.iter().filter(|g| g.abandoned).map(|_| (m.player_a, m.player_b)))
         .collect();
     if !abandoned.is_empty() {
-        eprintln!("\n=== Abandoned Games ===");
+        mtg_player::stderr_line!("\n=== Abandoned Games ===");
         for (a, b) in &abandoned {
-            eprintln!("    Seat {a} vs Seat {b}: the game ran past the runner's action budget \
+            mtg_player::stderr_line!("    Seat {a} vs Seat {b}: the game ran past the runner's action budget \
 with no result, so the runner stopped it — neither seat won it");
         }
-        eprintln!("  (grep the log for ABANDONED to see each one)");
+        mtg_player::stderr_line!("  (grep the log for ABANDONED to see each one)");
     }
 
     if played_nothing {
-        eprintln!("\n=== No Tournament ===");
-        eprintln!(
+        mtg_player::stderr_line!("\n=== No Tournament ===");
+        mtg_player::stderr_line!(
             "    A {}-seat pod has no pairings, so no match was played: every standing above \
 is an unplayed 0-0, not a result",
             args.players
@@ -1702,19 +1702,19 @@ is an unplayed 0-0, not a result",
 
     let substituted_total: usize = substituted_picks.iter().sum();
     if substituted_total > 0 {
-        eprintln!("\n=== Substituted Picks ===");
-        eprintln!("  {substituted_total} pick(s) were made by the runner, not by a seat:");
+        mtg_player::stderr_line!("\n=== Substituted Picks ===");
+        mtg_player::stderr_line!("  {substituted_total} pick(s) were made by the runner, not by a seat:");
         for (seat, n) in substituted_picks.iter().enumerate() {
             if *n > 0 {
-                eprintln!("    Seat {seat}: {n} pick(s) unusable — this seat's pool, \
+                mtg_player::stderr_line!("    Seat {seat}: {n} pick(s) unusable — this seat's pool, \
 deck and results are not a drafted one");
             }
         }
-        eprintln!("  (grep the log for WARN to see each one)");
+        mtg_player::stderr_line!("  (grep the log for WARN to see each one)");
     }
 
     if !args.quiet {
-        eprintln!("\nDone. Log written to {}", args.log);
+        mtg_player::stderr_line!("\nDone. Log written to {}", args.log);
     }
 }
 
@@ -1847,7 +1847,7 @@ fn build_deck_with_llm(
     // No attempt produced a valid deck. The draft has already been played,
     // so the round still has to happen — but the deck it happens with is the
     // runner's, not the seat's, and everything downstream is told so.
-    eprintln!("Warning: deck building failed after {max_retries} attempts, using fallback");
+    mtg_player::stderr_line!("Warning: deck building failed after {max_retries} attempts, using fallback");
     let retries = attempts.len();
     DeckBuildResult {
         deck: deckbuilding::fallback_deck(pool, registry),
@@ -2068,7 +2068,7 @@ fn play_game(
                 let report = mtg_player::watchdog::stall_report(
                     game_state, acting_player, legal, &seat.to_string(),
                 );
-                eprintln!("\nWARN: {report} The game is forfeit to seat {}.",
+                mtg_player::stderr_line!("\nWARN: {report} The game is forfeit to seat {}.",
                     if acting_player == PlayerId(0) { seat_b } else { seat_a });
                 draft_log::DraftLogger::stalled_game(
                     seat_a, seat_b, seat,
@@ -2082,7 +2082,7 @@ fn play_game(
             if let Some(stop) = harness_move(stalled, action_count, max_actions) {
                 if matches!(stop, mtg_engine::actions::Action::AbandonGame) && !abandoned {
                     abandoned = true;
-                    eprintln!("\nWARN: Seat {seat_a} vs Seat {seat_b}: the game reached \
+                    mtg_player::stderr_line!("\nWARN: Seat {seat_a} vs Seat {seat_b}: the game reached \
 {max_actions} actions without a result at turn {} {:?}; the runner abandoned it — no winner.",
                         game_state.turn_number, game_state.step);
                     draft_log::DraftLogger::abandoned_game(
@@ -2119,7 +2119,7 @@ fn play_game(
                     stalled_seat = Some(seat);
                     let report = format!("Seat {seat}'s backend never answered within its retry \
 budget ({why}), so the seat forfeits its match");
-                    eprintln!("\nWARN: {report}.");
+                    mtg_player::stderr_line!("\nWARN: {report}.");
                     draft_log::DraftLogger::stalled_game(
                         seat_a, seat_b, seat,
                         game_state.turn_number,

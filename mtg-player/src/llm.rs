@@ -1375,7 +1375,7 @@ impl AnthropicBackend {
                             "Anthropic HTTP {} (attempt {}/{}, {}ms): {}",
                             code, attempt + 1, MAX_ATTEMPTS, elapsed_ms, snippet
                         );
-                        eprintln!("{}{msg}", seat_tag(&self.seat));
+                        crate::stderr_line!("{}{msg}", seat_tag(&self.seat));
                         crate::game_log::write(file!(), line!(), &api_label("API_RETRY", &self.seat), &msg);
                         continue;
                     }
@@ -1383,7 +1383,7 @@ impl AnthropicBackend {
                         "Anthropic HTTP {} (attempt {}/{}, {}ms): {}",
                         code, attempt + 1, MAX_ATTEMPTS, elapsed_ms, snippet
                     );
-                    eprintln!("{}{msg}", seat_tag(&self.seat));
+                    crate::stderr_line!("{}{msg}", seat_tag(&self.seat));
                     crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
                     return "0".to_string();
                 }
@@ -1392,14 +1392,14 @@ impl AnthropicBackend {
                         "Anthropic request failed (attempt {}/{}, {}ms): {}",
                         attempt + 1, MAX_ATTEMPTS, elapsed_ms, format_reqwest_error(&e)
                     );
-                    eprintln!("{}{msg}", seat_tag(&self.seat));
+                    crate::stderr_line!("{}{msg}", seat_tag(&self.seat));
                     crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
                 }
             }
         }
         let msg = format!("Anthropic game API exhausted all {MAX_ATTEMPTS} retries");
         crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
-        eprintln!("{}{msg}", seat_tag(&self.seat));
+        crate::stderr_line!("{}{msg}", seat_tag(&self.seat));
         self.last_call_failure = Some(msg);
         "0".to_string()
     }
@@ -1613,7 +1613,7 @@ impl GeminiBackend {
                         }
 
                         let msg = format!("Gemini returned non-JSON response: {:?}", &output_text[..output_text.len().min(100)]);
-                        eprintln!("{}WARN: {msg}", seat_tag(&self.seat));
+                        crate::stderr_line!("{}WARN: {msg}", seat_tag(&self.seat));
                         crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
                         return serde_json::json!({});
                     }
@@ -1626,14 +1626,14 @@ impl GeminiBackend {
                             "Gemini HTTP {} (attempt {}/{}, {}ms): {}",
                             code, attempt + 1, MAX_ATTEMPTS, elapsed_ms, snippet
                         );
-                        eprintln!("{}{msg}", seat_tag(&self.seat));
+                        crate::stderr_line!("{}{msg}", seat_tag(&self.seat));
                         crate::game_log::write(file!(), line!(), &api_label("API_RETRY", &self.seat), &msg);
                         continue;
                     }
                     // If the interaction ID is invalid, fall back to a fresh conversation.
                     if code == 400 && text.contains("previous_interaction_id") && !fresh_retry {
                         let msg = "Invalid interaction ID, falling back to fresh conversation";
-                        eprintln!("{}WARN: {msg}", seat_tag(&self.seat));
+                        crate::stderr_line!("{}WARN: {msg}", seat_tag(&self.seat));
                         crate::game_log::write(file!(), line!(), &api_label("API_WARN", &self.seat), msg);
                         body.as_object_mut().unwrap().remove("previous_interaction_id");
                         body["system_instruction"] = serde_json::json!(&self.system_prompt);
@@ -1644,7 +1644,7 @@ impl GeminiBackend {
                     // Fatal config errors — abort loudly so we don't silently produce garbage.
                     if code == 400 && (text.contains("thinking level") || text.contains("not a supported")) {
                         let msg = format!("Gemini config error: {}", &text[..text.len().min(300)]);
-                        eprintln!("{}FATAL: {msg}", seat_tag(&self.seat));
+                        crate::stderr_line!("{}FATAL: {msg}", seat_tag(&self.seat));
                         crate::game_log::write(file!(), line!(), &api_label("API_FATAL", &self.seat), &msg);
                         std::process::exit(1);
                     }
@@ -1652,7 +1652,7 @@ impl GeminiBackend {
                         "Gemini HTTP {} (attempt {}/{}, {}ms): {}",
                         code, attempt + 1, MAX_ATTEMPTS, elapsed_ms, snippet
                     );
-                    eprintln!("{}{msg}", seat_tag(&self.seat));
+                    crate::stderr_line!("{}{msg}", seat_tag(&self.seat));
                     crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
                     return serde_json::json!({});
                 }
@@ -1661,13 +1661,13 @@ impl GeminiBackend {
                         "Gemini request failed (attempt {}/{}, {}ms): {}",
                         attempt + 1, MAX_ATTEMPTS, elapsed_ms, format_reqwest_error(&e)
                     );
-                    eprintln!("{}{msg}", seat_tag(&self.seat));
+                    crate::stderr_line!("{}{msg}", seat_tag(&self.seat));
                     crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
                 }
             }
         }
         let msg = format!("Gemini API exhausted all {MAX_ATTEMPTS} retries");
-        eprintln!("{}WARN: {msg}", seat_tag(&self.seat));
+        crate::stderr_line!("{}WARN: {msg}", seat_tag(&self.seat));
         crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
         self.last_call_failure = Some(msg);
         serde_json::json!({})

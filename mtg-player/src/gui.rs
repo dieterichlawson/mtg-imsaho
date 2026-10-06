@@ -260,7 +260,7 @@ impl GuiPlayer {
         *self.shared.latest.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(msg.clone());
         self.shared.broadcast(&msg);
         if let Some(line) = browser_notice(&self.name, &self.url, self.shared.connected(), &mut self.said_waiting) {
-            eprintln!("{line}");
+            crate::stderr_line!("{line}");
         }
         loop {
             // Timed, so the wait is not a black hole: a page can close while
@@ -278,7 +278,7 @@ impl GuiPlayer {
                     if let Some(line) = browser_notice(
                         &self.name, &self.url, self.shared.connected(), &mut self.said_waiting)
                     {
-                        eprintln!("{line}");
+                        crate::stderr_line!("{line}");
                     }
                     continue;
                 }

@@ -162,7 +162,7 @@ pub fn available() -> bool {
             // "Not runnable" is the right answer, but the caller's line for
             // it reads as "missing". Say which this was, since the whole
             // defect was that nothing was ever said at all.
-            eprintln!(
+            crate::stderr_line!(
                 "Warning: `{binary} --version` did not answer within {}s — treating the \
                  Claude Code CLI as not runnable.",
                 timeout.as_secs()
@@ -467,7 +467,7 @@ impl LiveGroup {
         if pgid > 0 {
             static WARNED: std::sync::Once = std::sync::Once::new();
             WARNED.call_once(|| {
-                eprintln!(
+                crate::stderr_line!(
                     "Warning: more than {MAX_LIVE_CALLS} claude -p calls in flight at once; \
                      the ones past that are not covered by the Ctrl-C handler and will be \
                      orphaned if this run is interrupted."
@@ -597,7 +597,7 @@ impl ClaudeCodeBackend {
                             "claude -p reported an error (attempt {attempt}, {elapsed_ms}ms): {}",
                             json["result"].as_str().unwrap_or("").chars().take(200).collect::<String>()
                         );
-                        eprintln!("{}{msg}", seat_tag(&self.seat));
+                        crate::stderr_line!("{}{msg}", seat_tag(&self.seat));
                         crate::game_log::write(file!(), line!(), &api_label("API_RETRY", &self.seat), &msg);
                         continue;
                     }
@@ -622,7 +622,7 @@ impl ClaudeCodeBackend {
                         "claude -p failed (attempt {attempt}, {}ms): {e}",
                         started.elapsed().as_millis()
                     );
-                    eprintln!("{}{msg}", seat_tag(&self.seat));
+                    crate::stderr_line!("{}{msg}", seat_tag(&self.seat));
                     crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
                 }
             }
@@ -630,7 +630,7 @@ impl ClaudeCodeBackend {
         let msg = format!(
             "claude -p gave up after {attempt} attempt{} over {}s (retry budget {}s)",
             if attempt == 1 { "" } else { "s" }, began.elapsed().as_secs(), budget.as_secs());
-        eprintln!("{}{msg}", seat_tag(&self.seat));
+        crate::stderr_line!("{}{msg}", seat_tag(&self.seat));
         crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
         // The caller is about to be handed an empty answer. Say that no
         // answer happened, so it is not reported as one the model gave
