@@ -859,6 +859,17 @@ struct OrderingPrompt<'a> {
     details: &'a [mtg_engine::state::TriggerOrderOption],
 }
 
+/// One line of input at the combat damage division prompt, read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum AmountInput {
+    /// An amount in range.
+    Amount(u32),
+    /// One of the info panes.
+    Pane(char),
+    /// Refused, with the reason to show.
+    Invalid(String),
+}
+
 /// One line of input at the ordering prompt, read.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum OrderInput {
@@ -6597,6 +6608,82 @@ impl CliPlayer {
         }
     }
 
+    /// Divide combat damage: how much of what is left goes to one blocker
+    /// (CR 510.1c-d, #637).
+    ///
+    /// The board stays on screen under the question, and the question is a
+    /// number in a stated range. Enter alone assigns lethal — the division
+    /// the engine makes when nobody is asked, and the ordinary play — and
+    /// the hint says so, which is what makes Enter safe here (#123). The
+    /// frame repaints on a resize like every other reader (#250).
+    fn prompt_damage_amount(view: &GameView, description: &str, min: u32, max: u32,
+                            options: &[String]) -> Action {
+        begin_decision(view.you, "damage-division");
+        let hint = format!("  Amount {min}-{max} (Enter = {min}, lethal)> ");
+        let mut notice: Option<String> = None;
+        loop {
+            let draw = |notice: Option<&str>| {
+                Self::render_reserving(view, Some(description), &view.display_log, 2);
+                let w = Self::term_width();
+                let col = Self::middle_panel_col();
+                let r = cursor::position().unwrap_or((0, 20)).1;
+                let mut out = stdout();
+                Self::clear_mid_from(&mut out, r);
+                if let Some(msg) = notice {
+                    let shown: String = msg.chars().take(Self::middle_panel_width_at(w)).collect();
+                    let _ = execute!(out, cursor::MoveTo(col, r + 1),
+                        SetForegroundColor(Color::Red), Print(shown), ResetColor);
+                }
+                let _ = execute!(out, cursor::MoveTo(col, r));
+                let _ = out.flush();
+            };
+            let shown = notice.take();
+            draw(shown.as_deref());
+            let input = Self::read_line_redrawing(&hint, &|| draw(shown.as_deref()));
+            match Self::parse_amount_input(&input, min, max) {
+                AmountInput::Amount(a) => {
+                    let index = (a - min) as usize;
+                    return Action::ResolveChoice {
+                        choice: mtg_engine::actions::ResolvedChoice::ChosenIndex(
+                            index, options.get(index).cloned().unwrap_or_default()),
+                    };
+                }
+                AmountInput::Pane(c) => match c {
+                    's' => Self::show_stack(view),
+                    'i' => Self::show_battlefield_inspector(view),
+                    'g' => Self::show_graveyards(view),
+                    'e' => Self::show_exile(view),
+                    'l' => Self::show_log(&view.display_log),
+                    _ => Self::show_deck_browser(view),
+                },
+                AmountInput::Invalid(why) => notice = Some(why),
+            }
+        }
+    }
+
+    /// One line of input at the combat damage division prompt, read. A
+    /// number from `min` to `max`; Enter alone is `min` (lethal); the pane
+    /// keys are the usual letters. Anything else is refused by name.
+    fn parse_amount_input(input: &str, min: u32, max: u32) -> AmountInput {
+        let t = input.trim();
+        if t.is_empty() {
+            return AmountInput::Amount(min);
+        }
+        if let "s" | "i" | "g" | "e" | "l" | "d" = t {
+            return AmountInput::Pane(t.chars().next().unwrap_or('s'));
+        }
+        match t.parse::<u32>() {
+            Ok(a) if (min..=max).contains(&a) => AmountInput::Amount(a),
+            Ok(a) if a < min => AmountInput::Invalid(format!(
+                "  {} is less than lethal — at least {min} must go to this blocker (CR 510.1c)",
+                refused_number(t, a as usize))),
+            Ok(a) => AmountInput::Invalid(format!(
+                "  {} is more than is left — at most {max}", refused_number(t, a as usize))),
+            Err(_) => AmountInput::Invalid(format!(
+                "  '{}' is not a number — enter an amount from {min} to {max}", quote_input(t))),
+        }
+    }
+
     /// One line of input at the ordering prompt, read.
     ///
     /// The numbers, in any spacing, commas allowed, are the order; every
@@ -7725,6 +7812,16 @@ impl Player for CliPlayer {
             return Self::prompt_ordering(view, &OrderingPrompt {
                 kind: OrderingKind::Blockers, description, options, details: &[],
             });
+        }
+
+        // How much of an attacker's damage goes to one blocker (CR
+        // 510.1c-d, #637): one number, read on one line, not a menu row
+        // per amount.
+        if let Some(mtg_engine::state::ResolutionChoiceKind::AssignCombatDamage {
+            description, min, max, options, ..
+        }) = legal.resolution_prompt.as_ref()
+        {
+            return Self::prompt_damage_amount(view, description, *min, *max, options);
         }
 
         // Special case: library search — show interactive card browser.
@@ -9047,6 +9144,24 @@ Mark 1 of the 1 cards below to exile.");
         ] {
             match CliPlayer::parse_order_input(input, 3) {
                 OrderInput::Invalid(msg) => assert!(msg.contains(why), "{input:?}: {msg}"),
+                other => panic!("{input:?} was accepted as {other:?}"),
+            }
+        }
+    }
+
+    /// Issue #637: the combat damage division reads one number in range;
+    /// Enter alone is lethal, the default division; the pane keys work; and
+    /// a refusal says which bound was crossed.
+    #[test]
+    fn a_damage_amount_is_one_number_in_range() {
+        assert_eq!(CliPlayer::parse_amount_input("4", 2, 5), AmountInput::Amount(4));
+        assert_eq!(CliPlayer::parse_amount_input(" 5 ", 2, 5), AmountInput::Amount(5));
+        assert_eq!(CliPlayer::parse_amount_input("", 2, 5), AmountInput::Amount(2), "Enter is lethal");
+        assert_eq!(CliPlayer::parse_amount_input("i", 2, 5), AmountInput::Pane('i'));
+        for (input, why) in [("1", "less than lethal"), ("6", "more than is left"), ("x", "not a number"),
+                             ("-1", "not a number")] {
+            match CliPlayer::parse_amount_input(input, 2, 5) {
+                AmountInput::Invalid(msg) => assert!(msg.contains(why), "{input:?}: {msg}"),
                 other => panic!("{input:?} was accepted as {other:?}"),
             }
         }
