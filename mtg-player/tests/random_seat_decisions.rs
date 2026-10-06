@@ -207,3 +207,46 @@ fn a_combat_damage_division_is_rolled_over_its_whole_range() {
         assert!(about(*n as f64 / 2000.0, 0.2), "{amount} is one of five amounts, drawn {n}/2000: {seen:?}");
     }
 }
+
+/// Issue #670: Skirsdag High Priest's "tap two untapped creatures you
+/// control" is asked as one set. The seat activates it as one decision,
+/// answers with a random pair the engine takes — not always the same two —
+/// and now and then backs out, which is an engine path of its own.
+#[test]
+fn a_tap_creatures_cost_is_answered_with_a_random_pair_or_backed_out_of() {
+    use mtg_engine::engine::submit_action;
+    let (mut state, reg) = main_phase();
+    let priest = named_permanent(&mut state, &reg, "Skirsdag High Priest", P0);
+    let others: Vec<_> = (0..4).map(|_| named_permanent(&mut state, &reg, "Grizzly Bears", P0)).collect();
+    state.creature_died_this_turn = true;
+
+    let offers: Vec<Action> = legal_actions(&state, &reg).actions.into_iter()
+        .filter(|a| matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == priest))
+        .collect();
+    assert_eq!(offers.len(), 1, "one decision, not one per pair");
+    let asked = submit_action(&state, &offers[0], &reg);
+    let legal = legal_actions(&asked, &reg);
+    assert!(matches!(legal.resolution_prompt,
+        Some(mtg_engine::state::ResolutionChoiceKind::ChooseObjectSet { .. })), "{:?}", legal.resolution_prompt);
+
+    let view = GameView::for_player(&asked, P0, &reg);
+    let mut seat = RandomPlayer::with_seed("r", 9);
+    let (mut paid, mut cancelled) = (0, 0);
+    let mut pairs = std::collections::BTreeSet::new();
+    for _ in 0..300 {
+        let answer = seat.choose_action(&view, &legal);
+        let after = submit_action(&asked, &answer, &reg);
+        assert!(after.awaiting_action.is_none(), "the engine took {answer:?}");
+        if after.stack.is_empty() {
+            cancelled += 1;
+            assert!(!after.get_object(priest).unwrap().tapped, "a cancel pays nothing");
+        } else {
+            paid += 1;
+            let tapped: Vec<_> = others.iter().copied().filter(|&o| after.get_object(o).unwrap().tapped).collect();
+            assert_eq!(tapped.len(), 2);
+            pairs.insert(tapped);
+        }
+    }
+    assert!(paid > 200 && cancelled > 0, "paid {paid}, cancelled {cancelled}");
+    assert_eq!(pairs.len(), 6, "every pair of the four is reached: {pairs:?}");
+}

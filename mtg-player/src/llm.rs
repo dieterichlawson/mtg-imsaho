@@ -3765,10 +3765,11 @@ impl LlmPlayer {
         min: usize,
         max: usize,
         description: &str,
+        verb: &str,
     ) -> Action {
         use mtg_engine::actions::ResolvedChoice;
         let mut chosen = self.choose_object_subset(
-            view, options, min, max, description, "choose");
+            view, options, min, max, description, verb);
         chosen.truncate(max);
         if chosen.len() < min {
             self.log("VALIDATION", &format!(
@@ -4155,13 +4156,20 @@ impl Player for LlmPlayer {
 
         // A set of objects chosen while an effect resolves: the same
         // index-array shape. Curse of Oblivion used to ask twice.
+        // The same shape answers "tap two untapped creatures you control",
+        // an activation's cost (#670): the verb says which it is.
         if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseObjectSet {
-            options, min, max, description, ..
+            options, min, max, description, effect,
         }) = legal.resolution_prompt.as_ref()
         {
+            let verb = if matches!(effect, mtg_engine::state::PendingEffect::PayActivationTaps { .. }) {
+                "tap to pay the ability's cost"
+            } else {
+                "choose"
+            };
             let (options, min, max, description) =
                 (options.clone(), *min, *max, description.clone());
-            return self.choose_object_set(view, &options, min, max, &description);
+            return self.choose_object_set(view, &options, min, max, &description, verb);
         }
 
         // Exile-from-graveyard additional cost: which cards to exile.

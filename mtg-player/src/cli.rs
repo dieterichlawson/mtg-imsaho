@@ -6520,22 +6520,35 @@ impl CliPlayer {
         min: usize,
         max: usize,
         description: &str,
+        cost: bool,
     ) -> Action {
         begin_decision(view.you, "object-set");
         use mtg_engine::actions::ResolvedChoice;
+        // The creatures an activation's cost taps (#670) are on the
+        // battlefield, and two copies of one creature are told apart by id;
+        // the rest of this screen's uses are graveyard cards.
+        let rows: Vec<MenuLabel> = if cost {
+            options.iter().map(|&id| MenuLabel::plain(format!("{} — #{}", Self::perm_name(view, id), id.0))).collect()
+        } else {
+            Self::graveyard_card_rows(view, options).into_iter().map(MenuLabel::plain).collect()
+        };
         let pick = SetPick {
             title: Self::prompt_source_name(description),
-            question: Self::set_question(min, max, options.len(), "cards below"),
-            rows: Self::graveyard_card_rows(view, options)
-                .into_iter().map(MenuLabel::plain).collect(),
+            question: Self::set_question(min, max, options.len(),
+                if cost { "creatures below to tap — part of the cost" } else { "cards below" }),
+            rows,
             min,
             max,
-            cancel: None,
+            // A cost is still being assembled, so nothing is paid yet and
+            // backing out is free; an effect resolving has no way back.
+            cancel: cost.then_some("cancel the activation"),
         };
-        // `pick_set` returns `None` only where a cancel was offered.
-        let ks = Self::pick_set(view, &pick).unwrap_or_default();
-        Action::ResolveChoice {
-            choice: ResolvedChoice::ChosenObjectSet(ks.into_iter().map(|k| options[k]).collect()),
+        match Self::pick_set(view, &pick) {
+            Some(ks) => Action::ResolveChoice {
+                choice: ResolvedChoice::ChosenObjectSet(ks.into_iter().map(|k| options[k]).collect()),
+            },
+            // `pick_set` returns `None` only where a cancel was offered.
+            None => Action::ResolveChoice { choice: ResolvedChoice::CancelCast },
         }
     }
 
@@ -7760,10 +7773,11 @@ impl Player for CliPlayer {
         // marking screen. Curse of Oblivion used to ask "choose a card",
         // then "choose another".
         if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseObjectSet {
-            options, min, max, description, ..
+            options, min, max, description, effect,
         }) = legal.resolution_prompt.as_ref()
         {
-            return Self::prompt_object_set(view, options, *min, *max, description);
+            let cost = matches!(effect, mtg_engine::state::PendingEffect::PayActivationTaps { .. });
+            return Self::prompt_object_set(view, options, *min, *max, description, cost);
         }
 
         // An "up to N" target slot: the same marking screen. The engine

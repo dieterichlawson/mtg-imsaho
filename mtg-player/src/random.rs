@@ -218,11 +218,19 @@ impl Player for RandomPlayer {
         // sometimes zero, and a seat that always answers with nothing is a
         // seat that never exercises the effect.
         if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseObjectSet {
-            options, min, max, ..
+            options, min, max, effect, ..
         }) = legal.resolution_prompt.as_ref()
         {
             use mtg_engine::actions::ResolvedChoice;
             use rand::seq::SliceRandom;
+            // The creatures an activation's cost taps (#670) are a cost still
+            // being assembled, and backing out of it is an engine path of its
+            // own: take it now and then, or no fuzz game ever does.
+            if matches!(effect, mtg_engine::state::PendingEffect::PayActivationTaps { .. })
+                && self.rng.gen_bool(0.1)
+            {
+                return Action::ResolveChoice { choice: ResolvedChoice::CancelCast };
+            }
             let how_many = if max > min { self.rng.gen_range(*min..=*max) } else { *min };
             let chosen: Vec<mtg_engine::ids::ObjectId> =
                 options.choose_multiple(&mut self.rng, how_many).copied().collect();

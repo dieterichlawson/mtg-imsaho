@@ -272,9 +272,15 @@ export function beginDecision(state: LiveState, send: Send): Ui {
         return beginMark(state, ui, { title: desc, options: ids, min: rp.min ?? 0, max: rp.max ?? ids.length,
           onConfirm: (chosen) => send(resolve({ ChosenExileSet: chosen as ObjectId[] })),
           onCancel: () => send(resolve("CancelCast")), cancelLabel: "Cancel cast" });
-      case "ChooseObjectSet":
+      case "ChooseObjectSet": {
+        // The creatures an activation's cost taps (#670) are a cost still
+        // being assembled: nothing is paid, so it can be backed out of. An
+        // effect resolving cannot.
+        const isCost = typeof rp.effect === "object" && rp.effect !== null && "PayActivationTaps" in rp.effect;
         return beginMark(state, ui, { title: desc, options: ids, min: rp.min ?? 0, max: rp.max ?? ids.length,
-          onConfirm: (chosen) => send(resolve({ ChosenObjectSet: chosen as ObjectId[] })) });
+          onConfirm: (chosen) => send(resolve({ ChosenObjectSet: chosen as ObjectId[] })),
+          ...(isCost ? { onCancel: () => send(resolve("CancelCast")), cancelLabel: "Cancel activation" } : {}) });
+      }
       case "ChooseTargetSet": {
         const targets = (rp.options ?? []) as Target[];
         return beginMark(state, ui, { title: desc, options: targets, min: rp.min ?? 0, max: rp.max ?? targets.length,

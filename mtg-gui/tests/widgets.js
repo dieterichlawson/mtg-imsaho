@@ -179,6 +179,22 @@ async function main() {
         await expectSent("choose-exile", a => a.ResolveChoice && a.ResolveChoice.choice.ChosenExileSet && a.ResolveChoice.choice.ChosenExileSet.length === 2);
       }
     }
+    // 7b. ChooseObjectSet as an activation's cost (#670): the creatures
+    //     Skirsdag High Priest taps. Nothing is paid yet, so it can be backed
+    //     out of; a plain object set (an effect resolving) cannot.
+    {
+      const cost = () => legal({ resolution_prompt: { ChooseObjectSet: { description: "Skirsdag High Priest: choose 2 untapped creatures you control to tap — part of the ability's cost", options: ids.mine.slice(0, 3), min: 2, max: 2, effect: { PayActivationTaps: { source_id: ids.mine[0] } } } } });
+      if (await stage("object-set-cost", cost(), null, "mark")) {
+        await clickHit("(h) => h.kind === 'button' && h.label === 'Cancel activation'");
+        await expectSent("object-set-cost cancel", a => a.ResolveChoice && a.ResolveChoice.choice === "CancelCast");
+      }
+      const effect = () => legal({ resolution_prompt: { ChooseObjectSet: { description: "Exile two cards", options: ids.mine.slice(0, 3), min: 2, max: 2, effect: { CardEffect: { source_id: ids.mine[0], key: "k" } } } } });
+      if (await stage("object-set-effect", effect(), null, "mark")) {
+        const hasCancel = await page.evaluate(() => window.mtg.hits.some(h => h.kind === 'button' && /^Cancel/.test(h.label)));
+        if (hasCancel) fail("object-set-effect: an effect resolving offered a cancel");
+        else ok("object-set-effect → no cancel");
+      }
+    }
     // 8. ChooseXFunding: X = 2 from two single-mana sources.
     {
       const options = { pool: { Red: 1 }, groups: [{ name: "Forest", category: "BasicLand", source_ids: [ids.mine[0], ids.mine[1]], mana_per_tap: 1, mana_type: "Green" }], max_x: 3, x_discount: 0 };
