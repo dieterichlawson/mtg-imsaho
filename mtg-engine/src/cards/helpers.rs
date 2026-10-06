@@ -951,6 +951,23 @@ pub fn morbid_should_trigger(state: &GameState, kind: &TriggerKind) -> bool {
 /// `candidates` is what the card considers a legal find; `destination` and
 /// `tapped` are where it ends up. The shuffle always happens, even when
 /// nothing is found — you searched.
+/// One offer per card, not per copy, for a choice out of a library.
+///
+/// Copies of a card in a library are interchangeable — the zone is hidden
+/// and is shuffled after the search (CR 701.19a) — so "which Mountain" is
+/// not a choice anyone makes. Listing each copy made Ghost Quarter's search
+/// 17 rows for 3 distinct answers, byte-identical in the LLM prompt (issue
+/// #673); Bitterheart Witch and Caravan Vigil built their choices by hand
+/// and kept doing it after that (#692). Every library choice goes through
+/// this, and the invariant checker flags one that offers two copies.
+#[must_use]
+pub fn one_of_each_card(state: &GameState, candidates: Vec<ObjectId>) -> Vec<ObjectId> {
+    let mut seen_cards = std::collections::HashSet::new();
+    candidates.into_iter()
+        .filter(|&id| state.get_object(id).is_none_or(|o| seen_cards.insert(o.card_id)))
+        .collect()
+}
+
 pub fn search_library(
     state: &mut GameState,
     source_id: ObjectId,
@@ -975,15 +992,7 @@ pub fn search_library(
             format!("{}: no matching card in library; search declined", state.obj_name(source_id)));
         return;
     }
-    // One offer per card, not per copy. Copies of a card in a library are
-    // interchangeable — the zone is hidden and is shuffled after the search
-    // (CR 701.19a) — so "which Mountain" is not a choice anyone makes, and
-    // listing each copy made Ghost Quarter's search 17 rows for 3 distinct
-    // answers, byte-identical in the LLM prompt (issue #673).
-    let mut seen_cards = std::collections::HashSet::new();
-    let candidates: Vec<ObjectId> = candidates.into_iter()
-        .filter(|&id| state.get_object(id).is_none_or(|o| seen_cards.insert(o.card_id)))
-        .collect();
+    let candidates = one_of_each_card(state, candidates);
     if optional {
         let options: Vec<Target> = candidates.into_iter().map(Target::Object).collect();
         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {

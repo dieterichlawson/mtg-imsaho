@@ -901,6 +901,36 @@ fn the_combat_damage_division_prompt_divides_one_attackers_damage() {
     let _ = second;
 }
 
+/// Issue #692: a choice out of a library offers one copy of each card, as
+/// `search_library` has since #673; a card that builds its own search and
+/// lists every copy is flagged.
+#[test]
+fn a_library_choice_offers_one_copy_of_each_card() {
+    let (mut state, reg) = base();
+    let forest = reg.get_id_by_name("Forest").unwrap();
+    let copies: Vec<ObjectId> = (0..2).map(|_| {
+        let id = state.create_object(forest, P0, Zone::Library, None, None);
+        state.get_object_mut(id).unwrap().name = "Forest".into();
+        state.get_player_mut(P0).library_order.push(id);
+        id
+    }).collect();
+    let source = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
+    let choose = |options: Vec<ObjectId>| AwaitingAction::ResolutionChoice {
+        player: P0, source,
+        choice: ResolutionChoiceKind::ChooseTarget {
+            description: "search".into(),
+            options: options.into_iter().map(Target::Object).collect(),
+            optional: true,
+            effect: mtg_engine::state::PendingEffect::CardEffect { source_id: source, key: String::new() },
+        } };
+    let mut s = state.clone();
+    s.awaiting_action = Some(choose(copies.clone()));
+    flags(&s, &reg, "library choice offers two copies of Forest");
+    let mut s = state.clone();
+    s.awaiting_action = Some(choose(vec![copies[0]]));
+    quiet_about(&s, &reg, "library choice offers two copies");
+}
+
 /// CR 601.2b/608.2: a pay-or-not prompt is about a spell on the stack,
 /// raised by the spell that is resolving, for a cost with no unannounced X.
 #[test]

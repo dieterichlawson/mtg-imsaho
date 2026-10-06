@@ -93,7 +93,8 @@ impl CardBehavior for CaravanVigil {
             crate::cards::helpers::shuffle_library(state, controller);
             return;
         }
-        let options: Vec<Target> = basic_lands.iter().copied().map(Target::Object).collect();
+        let options: Vec<Target> = crate::cards::helpers::one_of_each_card(state, basic_lands)
+            .into_iter().map(Target::Object).collect();
         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
             player: controller,
             source: object_id,

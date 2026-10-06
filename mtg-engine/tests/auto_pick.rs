@@ -195,6 +195,28 @@ fn caravan_vigil_offers_every_basic_land_in_the_library() {
         "the Forest stays in the library");
 }
 
+/// Issue #692: Caravan Vigil offers one row per basic land, not per copy —
+/// 13 rows for 5 distinct basics before.
+#[test]
+fn caravan_vigil_offers_one_row_per_basic_not_per_copy() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    for (name, copies) in [("Forest", 3), ("Swamp", 2)] {
+        let card_id = registry.get_id_by_name(name).unwrap();
+        for _ in 0..copies {
+            let id = state.create_object(card_id, P0, Zone::Library, None, None);
+            state.get_object_mut(id).unwrap().name = name.into();
+            state.get_player_mut(P0).library_order.push(id);
+        }
+    }
+    let vigil_card_id = registry.get_id_by_name("Caravan Vigil").unwrap();
+    let vigil = state.create_object(vigil_card_id, P0, Zone::Stack, None, None);
+    state.get_object_mut(vigil).unwrap().name = "Caravan Vigil".into();
+    registry.get(vigil_card_id).unwrap().on_resolve(&mut state, vigil, &[], &registry);
+    let (_, options) = pending_object_choices(&state, "Caravan Vigil");
+    assert_eq!(options.len(), 2, "one Forest and one Swamp: {options:?}");
+}
+
 /// Bug W (`audits/AUDIT_BUGS.md)`: The legend-rule SBA in `sba.rs`
 /// auto-picks which copy to keep when a player controls two legendary
 /// permanents with the same name. CR 704.5j explicitly says the player

@@ -97,8 +97,9 @@ impl CardBehavior for BitterheartWitch {
         // with exactly one Curse in the library the player may decline it, so
         // the choice is offered — and offered as optional — rather than taken
         // for them.
-        let curse_targets: Vec<crate::actions::Target> = curse_ids.iter()
-            .map(|&id| crate::actions::Target::Object(id))
+        let curse_targets: Vec<crate::actions::Target> = crate::cards::helpers::one_of_each_card(state, curse_ids)
+            .into_iter()
+            .map(crate::actions::Target::Object)
             .collect();
         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
             player: controller,

@@ -221,6 +221,24 @@ fn check_choice(state: &GameState, registry: &CardRegistry, player: crate::ids::
             v.push(format!("card-type prompt for p{} answered by p{}", controller.0, player.0));
         }
     }
+    // A choice out of a library offers one copy of each card: the zone is
+    // hidden and shuffled afterwards (CR 701.19a), so "which copy" is no
+    // choice (#673). Hand-rolled searches kept listing every copy (#692).
+    let library_options: Vec<ObjectId> = match choice {
+        K::ChooseTarget { options, .. } => options.iter()
+            .filter_map(|t| if let crate::actions::Target::Object(id) = t { Some(*id) } else { None })
+            .collect(),
+        K::ChooseFromLibrary { options, .. } => options.clone(),
+        _ => Vec::new(),
+    };
+    let mut library_cards = std::collections::HashSet::new();
+    for id in library_options {
+        if let Some(o) = state.get_object(id).filter(|o| o.zone == Zone::Library) {
+            if !library_cards.insert(o.card_id) {
+                v.push(format!("library choice offers two copies of {} (#{}) — one per card (#673)", o.name, id.0));
+            }
+        }
+    }
     match choice {
         K::ChooseTarget { options, optional, effect, .. } => {
             let w = "target prompt";

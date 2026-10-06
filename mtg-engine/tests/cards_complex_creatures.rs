@@ -449,6 +449,39 @@ fn bitterheart_witch_finds_curse_on_death() {
     assert_eq!(curse.attached_to_player, Some(P1), "Curse should be attached to opponent");
 }
 
+/// Issue #692: the Curse search offers one row per Curse, not per copy —
+/// seven copies of two Curses were seven rows told apart only by library
+/// ids. Copies in a hidden, shuffled library are interchangeable (#673).
+#[test]
+fn bitterheart_witch_offers_one_row_per_curse_not_per_copy() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let witch = named_permanent(&mut state, &reg, "Bitterheart Witch", P0);
+    for (name, copies) in [("Curse of the Pierced Heart", 4), ("Curse of Stalked Prey", 3)] {
+        let card_id = reg.get_id_by_name(name).unwrap();
+        for _ in 0..copies {
+            let id = state.create_object(card_id, P0, Zone::Library, None, None);
+            state.get_object_mut(id).unwrap().name = name.into();
+            state.get_player_mut(P0).library_order.push(id);
+        }
+    }
+    let behavior = reg.get(state.get_object(witch).unwrap().card_id).unwrap();
+    behavior.on_dies(&mut state, witch, &[Target::Player(P1)], &reg);
+    state = engine::submit_action(&state,
+        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) }, &reg);
+    let options = match &state.awaiting_action {
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { options, .. }, .. }) => options.clone(),
+        other => panic!("expected the Curse choice, got {other:?}"),
+    };
+    let names: std::collections::BTreeSet<String> = options.iter().map(|t| match t {
+        Target::Object(id) => state.get_object(*id).unwrap().name.clone(),
+        other => panic!("{other:?}"),
+    }).collect();
+    assert_eq!(options.len(), 2, "one row per Curse: {names:?}");
+    assert_eq!(names.len(), 2);
+}
+
 #[test]
 fn bitterheart_witch_can_attach_curse_to_self() {
     let reg = registry();
