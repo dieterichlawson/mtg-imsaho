@@ -830,7 +830,7 @@ async function main() {
           attack: w(`p${opp} declared attackers: Walking Corpse (#66) -> p${you}`),
           stranger: w("p7 did something"),
           card: w("Doom Blade (#75) resolved"),
-          win: window.mtgDebug.outcome(`Game over! p${you} (red-green) wins! (p${opp} (white-black) lost the game: life total reached 0 (CR 704.5a))`),
+          win: window.mtgDebug.outcome(`Game over! p${you} (red-green) wins! (p${opp} (white-black) lost the game: life total was 0 or less (CR 704.5a))`),
           lose: window.mtgDebug.outcome(`Game over! p${opp} (white-black) wins! (p${you} (red-green) conceded)`),
           draw: window.mtgDebug.outcome("Game over! It's a draw! (both players lost)"),
           odd: window.mtgDebug.outcome("Game ended without a result."),

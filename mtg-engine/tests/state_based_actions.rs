@@ -28,8 +28,27 @@ fn a_loss_is_logged_and_its_reason_recorded() {
         Some(mtg_engine::events::LossReason::LifeReachedZero),
         "the reason is recorded for the result summary");
     assert!(state.game_log.iter().any(|e|
-        e.message.contains("p1 lost the game: life total reached 0")),
+        e.message.contains("p1 lost the game: life total was 0 or less")),
         "the loss has a log line naming the player and the reason");
+}
+
+/// CR 704.5a is "0 or less life", and the line says so. Damage that
+/// overshoots left p1 at -3 under a line that read "life total reached 0",
+/// a number that was never true (#711).
+#[test]
+fn the_loss_line_does_not_claim_zero_for_a_negative_total() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.players[1].life = -3;
+
+    check_state_based_actions(&mut state, &reg);
+
+    assert!(state.players[1].lost);
+    let line = state.game_log.iter().map(|e| e.message.as_str())
+        .find(|m| m.starts_with("p1 lost the game"))
+        .expect("the loss has a line");
+    assert!(!line.contains("reached 0"), "p1 is at -3, not 0: {line:?}");
+    assert!(line.contains("0 or less"), "the line states the rule's condition: {line:?}");
 }
 
 /// Rule 104.4a: If both players reach 0 life simultaneously, it's a draw.

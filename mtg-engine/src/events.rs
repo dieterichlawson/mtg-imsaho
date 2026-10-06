@@ -100,7 +100,7 @@ impl LossReason {
     #[must_use]
     pub fn describe(self, state: &crate::state::GameState) -> String {
         match self {
-            LossReason::LifeReachedZero => "lost the game: life total reached 0 (CR 704.5a)".into(),
+            LossReason::LifeReachedZero => "lost the game: life total was 0 or less (CR 704.5a)".into(),
             LossReason::DrewFromEmptyLibrary =>
                 "lost the game: tried to draw from an empty library (CR 704.5b)".into(),
             LossReason::Conceded => "conceded".into(),
