@@ -242,7 +242,9 @@ fn kill_group(_pgid: i32) {}
 /// it looks at it. The thread is never joined: it ends when the pipe
 /// closes, which may be long after the call it belonged to is over, and
 /// waiting for that is the defect (#458, #459).
-fn pump_into(mut r: impl Read + Send + 'static, buf: Arc<Mutex<Vec<u8>>>) {
+fn pump_into(mut r: impl Read + Send + 'static, buf: Arc<Mutex<Vec<u8>>>) -> Arc<std::sync::atomic::AtomicBool> {
+    let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let finished = Arc::clone(&done);
     std::thread::spawn(move || {
         let mut chunk = [0u8; 8192];
         loop {
@@ -254,7 +256,9 @@ fn pump_into(mut r: impl Read + Send + 'static, buf: Arc<Mutex<Vec<u8>>>) {
                 },
             }
         }
+        finished.store(true, Ordering::SeqCst);
     });
+    done
 }
 
 /// What has arrived on a pumped pipe so far, as text.
@@ -736,14 +740,14 @@ pub fn run_print_mode(
     // is the rest of its mechanism.
     let out_buf = Arc::new(Mutex::new(Vec::new()));
     let err_buf = Arc::new(Mutex::new(Vec::new()));
-    pump_into(stdout, Arc::clone(&out_buf));
+    let _ = pump_into(stdout, Arc::clone(&out_buf));
     // Never joined. stderr is diagnostic text, and its read had no
     // deadline at all: a grandchild that detached from stdout with
     // `>/dev/null` — the ordinary idiom for keeping a helper's chatter
     // out of a captured stdout — but kept the inherited stderr parked
     // the call in `join()` forever, holding an answer it had already
     // read, with nothing logged and no retry (issue #459).
-    pump_into(stderr, Arc::clone(&err_buf));
+    let err_done = pump_into(stderr, Arc::clone(&err_buf));
 
     let timeout = call_timeout();
     let deadline = Instant::now() + timeout;
@@ -797,10 +801,19 @@ pub fn run_print_mode(
     // that has already been made (#206, #459).
     kill_group(pgid);
     drop(group);
-    let err_text = snapshot(&err_buf);
 
     // A timed-out call that had its answer has no status to check.
     if let Some(status) = status.filter(|s| !s.success()) {
+        // The stderr pump is a thread of its own, and a failed call can be
+        // over before it has copied what the CLI wrote there — a warning
+        // printed ahead of the refusal was dropped from the reason under
+        // load. Everything in the group is dead, so the pipe closes at
+        // once; give the pump a moment to see it close.
+        let grace = Instant::now() + DRAIN_GRACE;
+        while !err_done.load(Ordering::SeqCst) && Instant::now() < grace {
+            std::thread::sleep(POLL);
+        }
+        let err_text = snapshot(&err_buf);
         // `ExitStatus` says "exit status: N" (or "signal: N") itself (#660).
         return Err(format!("{status}: {}", failure_reason(&out, &err_text)));
     }
