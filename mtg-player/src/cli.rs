@@ -765,6 +765,34 @@ fn panel_keys() -> String {
     VIEWERS.iter().map(|(k, _)| *k).collect()
 }
 
+/// The payload a confirmed `concede` unwinds with, out of whichever screen
+/// was asking, to [`answer_or_concede`] (#676).
+struct ConcedeRequested;
+
+/// Whether a line typed at a prompt is the word that concedes the game: the
+/// exact word, after trimming, in any case. One word for every screen, so
+/// none of them has to reserve a key of its own, and nothing shorter, so a
+/// screen's own answers cannot be mistaken for it.
+fn is_concede_word(line: &str) -> bool {
+    line.trim().eq_ignore_ascii_case("concede")
+}
+
+/// Run one screen; if the player conceded from inside it, the answer is
+/// `Action::Concede` instead of whatever the screen would have returned.
+///
+/// The screens are a dozen separate read loops — the mulligan, the combat
+/// declarations, every marker and every mid-resolution question — and a
+/// person may concede at any of them (CR 104.3a). The word is recognised in
+/// the two line readers all of them use, and a confirmed concede unwinds
+/// back here rather than being threaded through each loop's return value.
+fn answer_or_concede(f: impl FnOnce() -> Action) -> Action {
+    match std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)) {
+        Ok(action) => action,
+        Err(payload) if payload.is::<ConcedeRequested>() => Action::Concede,
+        Err(payload) => std::panic::resume_unwind(payload),
+    }
+}
+
 /// `  [d=deck] [l=log] ... [s=stack] [m/p=page]` — the viewers, then the
 /// pager key this prompt uses (`p` everywhere but the blockers prompt,
 /// where `p` is already a pairing).
@@ -773,7 +801,7 @@ fn viewer_hints(page_key: char) -> String {
     for (k, what) in VIEWERS {
         line.push_str(&format!("[{k}={what}] "));
     }
-    line.push_str(&format!("[m/{page_key}=page]"));
+    line.push_str(&format!("[m/{page_key}=page] [concede]"));
     line
 }
 /// One line of input at a card-set prompt.
@@ -791,7 +819,7 @@ enum SetInput {
 }
 
 /// How to answer a set-picking screen, and the panes it can step into.
-const SET_HOW_TO: &str = " Type a number to mark or unmark it, several at once if you like. [a=all] [n=none] [enter = done] [s=stack] [i=board] [g=gy] [e=exile] [l=log] [d=deck] [m/p=page]";
+const SET_HOW_TO: &str = " Type a number to mark or unmark it, several at once if you like. [a=all] [n=none] [enter = done] [s=stack] [i=board] [g=gy] [e=exile] [l=log] [d=deck] [m/p=page] [concede]";
 
 /// What the screen says when the idle key would commit an empty answer
 /// nobody chose (issue #262).
@@ -821,7 +849,7 @@ struct SetPick {
 }
 
 /// How to answer an ordering screen, and the panes it can step into.
-const ORDER_HOW_TO: &str = " Type the numbers in order, e.g. \"2 0 1\". [enter = keep the order shown] [s=stack] [i=board] [g=gy] [e=exile] [l=log] [d=deck] [m/p=page]";
+const ORDER_HOW_TO: &str = " Type the numbers in order, e.g. \"2 0 1\". [enter = keep the order shown] [s=stack] [i=board] [g=gy] [e=exile] [l=log] [d=deck] [m/p=page] [concede]";
 
 
 
@@ -4280,6 +4308,33 @@ impl CliPlayer {
     }
 
     fn read_line_redrawing(prompt: &str, redraw: &dyn Fn()) -> String {
+        loop {
+            let line = Self::read_line_redrawing_raw(prompt, redraw);
+            if !is_concede_word(&line) {
+                return line;
+            }
+            // Declined: the screen asks its question again, as it was.
+            Self::concede_if_confirmed();
+            redraw();
+        }
+    }
+
+    /// `concede`, typed at any prompt, confirmed (#676). A yes unwinds out of
+    /// whatever screen is asking — its answer is never given — to
+    /// `answer_or_concede`, which returns `Action::Concede` in its place: a
+    /// concede typed at the mulligan must not keep the hand first.
+    fn concede_if_confirmed() {
+        // In the prompt panel, under the line that was typed — not at
+        // column 0, over the LOG pane, where the reader's newline leaves
+        // the cursor. The menu's own Concede row does the same.
+        let row = cursor::position().map_or(24, |(_, r)| r);
+        let _ = execute!(stdout(), cursor::MoveTo(Self::middle_panel_col(), row));
+        if Self::confirm_yn("  Are you sure you want to concede? (y/n)> ") {
+            std::panic::resume_unwind(Box::new(ConcedeRequested));
+        }
+    }
+
+    fn read_line_redrawing_raw(prompt: &str, redraw: &dyn Fn()) -> String {
         // ONE reader for the terminal, always. This used to be a cooked-mode
         // io::stdin() read while every menu prompt reads crossterm events in
         // raw mode; two buffered readers over one fd desynchronize, and a
@@ -4467,7 +4522,20 @@ impl CliPlayer {
     /// The action-menu reader. `redraw` repaints the menu when the terminal
     /// is resized (issue #250 — see
     /// [`read_line_redrawing`](Self::read_line_redrawing)).
-    fn read_line_with_search_redrawing(_col: u16, redraw: &dyn Fn()) -> Option<String> {
+    fn read_line_with_search_redrawing(col: u16, redraw: &dyn Fn()) -> Option<String> {
+        loop {
+            let line = Self::read_line_with_search_redrawing_raw(col, redraw);
+            if !line.as_deref().is_some_and(is_concede_word) {
+                return line;
+            }
+            // The same word as at every other prompt (#676); declined, the
+            // menu is drawn again and asks again.
+            Self::concede_if_confirmed();
+            redraw();
+        }
+    }
+
+    fn read_line_with_search_redrawing_raw(_col: u16, redraw: &dyn Fn()) -> Option<String> {
         // Prompt "> " is already printed by render.
         let mut out = stdout();
         tui_raw_on();
@@ -6213,7 +6281,7 @@ impl CliPlayer {
     /// the engine logs it as one — the prompt called it a cast (#613).
     fn x_funding_hint(max_x: u32, is_ability: bool) -> String {
         let what = if is_ability { "activation" } else { "cast" };
-        format!("  X (0-{max_x}, c = cancel the {what}) = ")
+        format!("  X (0-{max_x}, c = cancel the {what}, or concede) = ")
     }
 
     fn prompt_x_funding(
@@ -6632,7 +6700,7 @@ impl CliPlayer {
     fn prompt_damage_amount(view: &GameView, description: &str, min: u32, max: u32,
                             options: &[String]) -> Action {
         begin_decision(view.you, "damage-division");
-        let hint = format!("  Amount {min}-{max} (Enter = {min}, lethal)> ");
+        let hint = format!("  Amount {min}-{max} (Enter = {min}, lethal; or concede)> ");
         let mut notice: Option<String> = None;
         loop {
             let draw = |notice: Option<&str>| {
@@ -7745,6 +7813,14 @@ impl Player for CliPlayer {
     }
 
     fn choose_action(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
+        // `concede` is accepted at every screen (#676), not only as the
+        // priority menu's last row.
+        answer_or_concede(|| self.choose_action_screen(view, legal))
+    }
+}
+
+impl CliPlayer {
+    fn choose_action_screen(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
         let legal_actions = &legal.actions;
 
         // X-cost funding: prompt the user for an X value and auto-distribute
@@ -8114,6 +8190,10 @@ impl CliPlayer {
     }
 
     pub fn choose_combat(&mut self, view: &GameView, prompt: &CombatPrompt) -> Action {
+        answer_or_concede(|| self.choose_combat_screen(view, prompt))
+    }
+
+    fn choose_combat_screen(&mut self, view: &GameView, prompt: &CombatPrompt) -> Action {
         // A combat prompt with one legal answer never reaches the screen,
         // and never breaks pass mode either — there is nothing to decide.
         // One rule, shared with the other three seats (issue #517).
@@ -8288,8 +8368,8 @@ pub(crate) mod tests {
     /// It is an activation, and the engine logs it as one.
     #[test]
     fn the_x_prompt_names_what_cancelling_abandons() {
-        assert_eq!(CliPlayer::x_funding_hint(2, false), "  X (0-2, c = cancel the cast) = ");
-        assert_eq!(CliPlayer::x_funding_hint(3, true), "  X (0-3, c = cancel the activation) = ");
+        assert_eq!(CliPlayer::x_funding_hint(2, false), "  X (0-2, c = cancel the cast, or concede) = ");
+        assert_eq!(CliPlayer::x_funding_hint(3, true), "  X (0-3, c = cancel the activation, or concede) = ");
     }
 
     /// One equip label per Champion, differing only in whom it targets and
@@ -9163,6 +9243,38 @@ Mark 1 of the 1 cards below to exile.");
         }
     }
 
+    /// Issue #676: `concede` is one word at every screen — exactly that word,
+    /// in any case — and a confirmed one replaces the screen's answer rather
+    /// than following it: whatever the screen was about to return is never
+    /// returned, so a concede at the mulligan keeps no hand first.
+    #[test]
+    fn concede_replaces_the_screens_answer_at_any_prompt() {
+        for word in ["concede", "  Concede ", "CONCEDE"] {
+            assert!(super::is_concede_word(word), "{word:?}");
+        }
+        for not in ["c", "conc", "concede now", "0", ""] {
+            assert!(!super::is_concede_word(not), "{not:?}");
+        }
+        let conceded = super::answer_or_concede(|| {
+            std::panic::resume_unwind(Box::new(super::ConcedeRequested));
+        });
+        assert!(matches!(conceded, Action::Concede));
+        let answered = super::answer_or_concede(|| Action::MulliganKeep);
+        assert!(matches!(answered, Action::MulliganKeep), "a screen that was answered is untouched");
+        let other = std::panic::catch_unwind(|| super::answer_or_concede(|| panic!("a real bug")));
+        assert!(other.is_err(), "any other panic still propagates");
+    }
+
+    /// The word is advertised where every screen's keys are (#676).
+    #[test]
+    fn every_hint_line_names_the_concede_word() {
+        assert!(super::viewer_hints('p').contains("[concede]"));
+        assert!(super::viewer_hints('b').contains("[concede]"));
+        assert!(super::SET_HOW_TO.contains("[concede]"));
+        assert!(super::ORDER_HOW_TO.contains("[concede]"));
+        assert!(CliPlayer::x_funding_hint(3, false).contains("concede"));
+    }
+
     /// Issue #637: the combat damage division reads one number in range;
     /// Enter alone is lethal, the default division; the pane keys work; and
     /// a refusal says which bound was crossed.
@@ -9736,7 +9848,7 @@ Mark 1 of the 1 cards below to exile.");
             for (k, what) in VIEWERS {
                 assert!(hints.contains(&format!("[{k}={what}]")), "{hints:?}");
             }
-            assert!(hints.ends_with(&format!("[m/{page_key}=page]")), "{hints:?}");
+            assert!(hints.contains(&format!("[m/{page_key}=page]")), "{hints:?}");
         }
     }
 

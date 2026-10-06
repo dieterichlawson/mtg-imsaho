@@ -233,7 +233,31 @@ function offBoardRows(state: LiveState, ui: Ui, run: (key: string) => void): Row
  * Decide how the pending decision is answered. Sets `state.ui`.
  * `send(action)` answers; `state.notice` shows text in the panel.
  */
+/**
+ * The widget for the decision in hand, with a way to concede on it.
+ *
+ * A person may concede at any time (CR 104.3a), and the engine accepts it at
+ * every decision. The button used to exist only on the priority menu, so the
+ * mulligan, both combat declarations and every mid-resolution question had
+ * no way to end the game but to answer them first (#676). Every widget gets
+ * it here, once; "No" comes back through this function and restores the
+ * question as it was.
+ */
 export function beginDecision(state: LiveState, send: Send): Ui {
+  const ui = beginDecisionWidget(state, send);
+  if (!ui.buttons.some(b => b.label === "Concede")) ui.buttons.push(concedeButton(state, send));
+  return ui;
+}
+
+function concedeButton(state: LiveState, send: Send): Ui["buttons"][number] {
+  return { label: "Concede", run: () => {
+    beginList(state, newUi("list", "Concede the game?"),
+      [{ label: "Yes, concede", run: () => send("Concede") }, { label: "No", run: () => beginDecision(state, send) }],
+      "Concede the game?", send, false, true);
+  } };
+}
+
+function beginDecisionWidget(state: LiveState, send: Send): Ui {
   const d = state.decision;
   if (!d) throw new Error("no decision to begin");
   const legal = d.legal;
@@ -376,11 +400,7 @@ function beginMenu(state: LiveState, ui: Ui, actions: Action[], legal: LegalActi
   }
   ui.hint = hasPass ? "Click a card for what it can do. Enter passes." : "Choose an action.";
   if (hasPass) ui.buttons.push({ label: "Pass", primary: true, run: () => send("PassPriority") });
-  if (actions.includes("Concede")) ui.buttons.push({ label: "Concede", run: () => {
-    beginList(state, newUi("list", "Concede the game?"),
-      [{ label: "Yes, concede", run: () => send("Concede") }, { label: "No", run: () => beginDecision(state, send) }],
-      "Concede the game?", send, false, true);
-  } });
+  if (actions.includes("Concede")) ui.buttons.push(concedeButton(state, send));
   ui.canPass = hasPass;
   return ui;
 }

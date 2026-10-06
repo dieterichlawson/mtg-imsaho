@@ -344,6 +344,28 @@ async function main() {
         await expectSent("bottom", a => a.BottomCards && a.BottomCards.cards[0] === ids.hand[0]);
       }
     }
+    // 10b. Concede at every prompt (#676): a combat declaration, a set
+    //      prompt and a resolution prompt all carry the button; "No" puts the
+    //      question back as it was, "Yes, concede" sends Concede.
+    {
+      const mineCreatures = ids.creatures.filter(id => ids.mine.includes(id));
+      const cases = [
+        ["concede-combat", legal({ context: "DECLARE ATTACKERS" }), { ChooseAttackers: { eligible: mineCreatures.length ? mineCreatures : ids.mine.slice(0, 1), must_attack: [], defending_player: ids.opp, defending_planeswalkers: [] } }, "attackers"],
+        ["concede-set", legal({ context: "BOTTOM 1", set_prompt: { kind: "BottomAfterMulligan", player: ids.you, options: ids.hand, min: 1, max: 1 } }), null, "mark"],
+        ["concede-resolution", legal({ resolution_prompt: { AssignCombatDamage: { description: "Combat damage", attacker: ids.mine[0], blocker: ids.mine[1], min: 2, max: 3, options: ["2", "3"], first_strike_only: false } } }), null, "number"],
+      ];
+      for (const [name, l, combat, mode] of cases) {
+        if (!(await stage(name, l, combat, mode))) continue;
+        await clickHit("(h) => h.kind === 'button' && h.label === 'Concede'");
+        // The confirmation lists "Yes, concede" above "No".
+        await clickHit("(h, m) => h.kind === 'row' && h.y === Math.max(...m.hits.filter(x => x.kind === 'row').map(x => x.y))");
+        const back = await page.evaluate(() => window.mtg.ui && window.mtg.ui.mode);
+        if (back !== mode) fail(`${name}: "No" left the ${back} widget, not the ${mode} one`);
+        await clickHit("(h) => h.kind === 'button' && h.label === 'Concede'");
+        await clickHit("(h, m) => h.kind === 'row' && h.y === Math.min(...m.hits.filter(x => x.kind === 'row').map(x => x.y))");
+        await expectSent(name, a => a === "Concede");
+      }
+    }
     // 11. Combat: attackers with a planeswalker to choose, and blockers with menace.
     {
       const mineCreatures = ids.creatures.filter(id => ids.mine.includes(id));
