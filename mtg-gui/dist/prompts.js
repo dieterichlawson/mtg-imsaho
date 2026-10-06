@@ -77,13 +77,29 @@ export function inOurWords(state, line) {
         return state.view.opponents.some(o => o.id === pid) ? "opp" : whole;
     });
 }
+/**
+ * An object's name, with whose zone it is in when that zone is a graveyard
+ * or exile: "Mountain (your graveyard)", "Grizzly Bears (opponent's
+ * graveyard)". Two copies of one card in two graveyards are different
+ * targets, and the bare name made them one row, twice — Purify the Grave
+ * offered "Grizzly Bears" four times (#690; the CLI's #669 and the LLM
+ * seat's #668 said whose already).
+ */
+export function nameWithZone(state, id) {
+    const e = state.index.get(id);
+    const name = nameOf(state, id);
+    if (!e || (e.zone !== "graveyard" && e.zone !== "exile") || e.owner === null)
+        return name;
+    const whose = e.owner === state.view.you ? "your" : "opponent's";
+    return `${name} (${whose} ${e.zone})`;
+}
 export function targetLabel(state, t) {
     if (t === null || t === undefined)
         return "nothing";
     if (t === "Illegal")
         return "(illegal)";
     if ("Object" in t)
-        return nameOf(state, t.Object);
+        return nameWithZone(state, t.Object);
     if ("Player" in t)
         return playerLabel(state, t.Player);
     return JSON.stringify(t);
@@ -242,19 +258,23 @@ const ON_BOARD = new Set(["battlefield", "hand", "stack"]);
  */
 function offBoardRows(state, ui, run) {
     const rows = [];
-    let openZone = null;
+    // The zones the off-board options are in. One overlay can show one of
+    // them, so it opens only when there is one: it used to open the first
+    // option's owner's graveyard, so a target in the opponent's was offered
+    // under a panel titled "You: graveyard" (#690).
+    const zones = new Map();
     for (const [key, t] of ui.options ?? []) {
         const id = key[0] === "o" ? Number(key.slice(1)) : null;
         const e = id === null ? null : state.index.get(id);
         if (key[0] === "p" || (e && ON_BOARD.has(e.zone)))
             continue;
-        if (e && (e.zone === "graveyard" || e.zone === "exile") && e.owner !== null && !openZone)
-            openZone = { zone: e.zone, pid: e.owner };
-        const label = id === null ? targetLabel(state, t) : nameOf(state, id);
+        if (e && (e.zone === "graveyard" || e.zone === "exile") && e.owner !== null)
+            zones.set(`${e.zone}:${e.owner}`, { zone: e.zone, pid: e.owner });
+        const label = id === null ? targetLabel(state, t) : nameWithZone(state, id);
         rows.push({ label, run: () => run(key), key, cardName: e ? e.obj.name : null });
     }
-    if (openZone)
-        state.overlay = openZone;
+    if (zones.size === 1)
+        state.overlay = [...zones.values()][0];
     return rows;
 }
 /**

@@ -8,7 +8,8 @@
     "smoke": "node tests/smoke.js",
     "widgets": "node tests/widgets.js",
     "twotabs": "node tests/twotabs.js",
-    "clip": "node tests/clip.mjs"
+    "clip": "node tests/clip.mjs",
+    "target-labels": "node tests/target_labels.mjs"
   },
   "devDependencies": {
     "typescript": "^5.4"
