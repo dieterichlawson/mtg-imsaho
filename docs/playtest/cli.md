@@ -664,6 +664,16 @@ whether it told the truth.
   (life, cards drawn, mana spent, damage dealt), then comb the log and
   the save file for information one seat must not see. L25 covers the
   leak at the prompt; this covers it in the artifacts left behind
+
+  **Re-run 2026-10-06 (→ #703-#711): the totals still reconcile, and eight
+  log fixes since the first run hold; the gaps are each fix's other half.**
+  #638 logged taps by effects and nothing logs untaps (#704); the central
+  token and life lines are right and card-local sentences repeat them with
+  the printed count (#706); "left the battlefield" never says *to where*
+  (#707). The artifact half found `--save` world-readable with both hands,
+  both library orders and the Private lines (#709). Method: for every log
+  fix, grep the engine for the inverse mutation (`untap` for `tap`, a
+  bounce for a destroy) before playing — that is where the next gap is
 - M3 determinism from the outside: same seed and same scripted keystrokes
   twice must give a byte-identical `--log` (timestamps aside) and
   identical saves; `--on-the-play` honoured; different seeds actually
