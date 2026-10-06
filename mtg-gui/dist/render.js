@@ -139,6 +139,24 @@ export function clipKeepingTail(ctx, s, maxW, font = "8px Silkscreen") {
         return clip(ctx, s, maxW, font);
     return clip(ctx, s.slice(0, at), room, font) + tail;
 }
+/**
+ * The summary lines a number widget can show in `max` rows: all of them if
+ * they fit, else as many as fit with a "+N more" line, and the "Payable X"
+ * line — what the typed value is checked against — always.
+ *
+ * It used to be the first four, silently: twelve source groups showed four
+ * and read complete, and "Payable X", pushed last, never showed at all once
+ * there were four groups or a floating pool (#693, the shape of #680).
+ */
+export function fitSummary(lines, max) {
+    if (lines.length <= max)
+        return lines;
+    const kept = lines.filter(l => l.startsWith("Payable X"));
+    const rest = lines.filter(l => !l.startsWith("Payable X"));
+    const room = Math.max(0, max - kept.length - 1);
+    const shown = rest.slice(0, room);
+    return [...shown, `+${rest.length - shown.length} more`, ...kept];
+}
 function panel(ctx, x, y, w, h, fill = "#1a1620", stroke = "#5a4a6a") {
     ctx.fillStyle = fill;
     ctx.fillRect(x, y, w, h);
@@ -1021,7 +1039,7 @@ function promptArea(ctx, hits, state, x, y, w, h) {
         ty += 9;
     }
     if (ui && ui.mode === "number") {
-        for (const l of (ui.summary || []).slice(0, 4)) {
+        for (const l of fitSummary(ui.summary || [], 4)) {
             text(ctx, clip(ctx, l, w - 8, "7px Silkscreen"), x + 4, ty, { font: "7px Silkscreen", color: "#c0c8d0" });
             ty += 8;
         }
@@ -1126,6 +1144,8 @@ export function modalRows(ui) {
 export function clampScroll(ui, scroll) {
     return Math.max(0, Math.min(Math.max(0, modalRows(ui).length - MODAL_ROWS), scroll));
 }
+/** How many summary lines the number modal shows before "+N more". */
+const NUMBER_SUMMARY_LINES = 10;
 function modal(ctx, hits, state) {
     const ui = state.ui;
     if (!ui || (ui.mode !== "list" && ui.mode !== "order" && ui.mode !== "number"))
@@ -1143,7 +1163,10 @@ function modal(ctx, hits, state) {
     const scroll = clampScroll(ui, ui.scroll || 0);
     ui.scroll = scroll;
     const shown = rows.slice(scroll, scroll + maxRows);
-    const h = 30 + shown.length * rowH + (ui.mode === "number" ? 30 : 0) + (ui.filter ? 14 : 0) + 18;
+    // The number widget's field and its summary lines, budgeted line by line:
+    // a flat 30px let a fourth line sit on the modal's border (#693).
+    const summary = ui.mode === "number" ? fitSummary(ui.summary || [], NUMBER_SUMMARY_LINES) : [];
+    const h = 30 + shown.length * rowH + (ui.mode === "number" ? 22 + summary.length * 8 : 0) + (ui.filter ? 14 : 0) + 18;
     const y = Math.max(8, (H - h) / 2);
     // The background hit goes in first, so the rows drawn on it are on top.
     hits.push({ x, y, w, h, kind: "modal" });
@@ -1168,9 +1191,11 @@ function modal(ctx, hits, state) {
     if (ui.mode === "number") {
         panel(ctx, x + 6, ty, 80, 14, "#0e0c12", "#6a5a7a");
         state.fieldRect = { x: x + 6, y: ty, w: 80, h: 14 };
-        text(ctx, `0 – ${ui.max}`, x + 92, ty + 3, { color: "#b0b0c0" });
+        // The range the widget takes: X from 0, an amount from its own least
+        // (a combat damage division starts at lethal, #637).
+        text(ctx, `${ui.min ?? 0} – ${ui.max}`, x + 92, ty + 3, { color: "#b0b0c0" });
         ty += 18;
-        for (const l of (ui.summary || []).slice(0, 4)) {
+        for (const l of summary) {
             text(ctx, clip(ctx, l, w - 12, "7px Silkscreen"), x + 6, ty, { font: "7px Silkscreen", color: "#c0c8d0" });
             ty += 8;
         }

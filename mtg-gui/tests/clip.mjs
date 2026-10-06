@@ -10,7 +10,7 @@
 
 globalThis.Image ??= class { };
 globalThis.document ??= { createElement: () => ({ getContext: () => null }) };
-const { clip, clipKeepingTail } = await import("../dist/render.js");
+const { clip, clipKeepingTail, fitSummary } = await import("../dist/render.js");
 
 let failures = 0;
 const fail = m => { console.error("FAIL: " + m); failures++; };
@@ -46,6 +46,20 @@ for (const len of [0, 1, 5, 50, 101, 500, 17183]) {
   if (!you.endsWith(" → You") || !opp.endsWith(" → Opponent")) fail(`a target was cut: ${you} / ${opp}`);
   for (const t of [you, opp]) if ([...t].length * 4 > 246) fail(`over width: ${t}`);
   if (clipKeepingTail(fakeCtx(), "Pass", 246) !== "Pass") fail("a short label was changed");
+}
+// #693: a number widget's summary never drops lines silently, and never
+// drops "Payable X".
+{
+  const groups = Array.from({ length: 12 }, (_, i) => `Land ${i} x1 (1/tap)`);
+  const lines = ["Pool: 1 Red", ...groups, "Payable X: 0-5, 7"];
+  const four = fitSummary(lines, 4);
+  if (four.length !== 4) fail(`four rows hold four lines: ${JSON.stringify(four)}`);
+  if (!four.includes("Payable X: 0-5, 7")) fail(`Payable X dropped: ${JSON.stringify(four)}`);
+  if (!four.some(l => /^\+\d+ more$/.test(l))) fail(`no "+N more" for the dropped lines: ${JSON.stringify(four)}`);
+  const more = four.find(l => /more$/.test(l));
+  if (more !== `+${lines.length - 3} more`) fail(`the count of what was dropped is wrong: ${more}`);
+  const all = fitSummary(lines.slice(0, 3), 4);
+  if (JSON.stringify(all) !== JSON.stringify(lines.slice(0, 3))) fail("lines that fit are shown as they are");
 }
 if (failures) { console.error(`${failures} failure(s)`); process.exit(1); }
 console.log("ok: clip cuts where the slow loop did, in O(log L) measurements; verb targets survive");
