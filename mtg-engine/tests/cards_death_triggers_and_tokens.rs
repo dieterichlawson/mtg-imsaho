@@ -186,6 +186,19 @@ fn village_bell_ringer_untaps_creatures() {
         "Opponent's creature should NOT be untapped");
     assert!(state.get_object(land).unwrap().tapped,
         "and neither should your own land — it untaps creatures");
+
+    // The log says the trigger resolved and what it untapped, in that order:
+    // after "... goes on the stack" it said nothing at all while two [T]s
+    // vanished from the board (#704).
+    let log: Vec<&str> = state.game_log.iter().map(|e| e.message.as_str()).collect();
+    let resolved = log.iter().position(|m| m.contains("Village Bell-Ringer") && m.ends_with(" resolved")
+            && m.contains("trigger"))
+        .unwrap_or_else(|| panic!("the trigger's resolution has a line: {log:#?}"));
+    let untaps: Vec<usize> = log.iter().enumerate()
+        .filter(|(_, m)| m.starts_with("Village Bell-Ringer untaps "))
+        .map(|(i, _)| i).collect();
+    assert_eq!(untaps.len(), 2, "one line per creature untapped, none for the land: {log:#?}");
+    assert!(untaps.iter().all(|&i| i > resolved), "the untaps follow the resolution: {log:#?}");
 }
 
 /// Ruling (2011-09-22): "Untapping an attacking creature doesn't remove it from

@@ -735,6 +735,12 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
         }
 
     }
+    // A spell and an activated ability each log "resolved"; a trigger did
+    // not, so after "... trigger goes on the stack" the log went straight to
+    // whatever came next, and what the trigger did had nothing to hang off
+    // (#704).
+    let name = trigger.log_name(registry, state);
+    state.log(crate::state::LogLevel::Event, format!("{name} resolved"));
 
     // CR 113.7a: a triggered ability on the stack exists independently of its
     // source, so removing the source after the trigger is on the stack does
