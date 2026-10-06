@@ -1384,6 +1384,28 @@ impl CliPlayer {
     /// Word-wrap a string to fit within `width` characters.
     /// Returns a Vec of lines. Breaks at spaces when possible,
     /// falls back to hard break if a single word exceeds the width.
+    /// One LOG entry as rows of at most `width` columns: the first row at
+    /// full width, the rest indented two and wrapped once at the narrower
+    /// width.
+    ///
+    /// The rest used to be wrapped at full width and then each continuation
+    /// row wrapped *again* at the indented width, so any first-pass row one
+    /// or two columns too long for its indent split into a long piece and a
+    /// one-word orphan — "damage" and "on" on rows of their own (#705).
+    fn wrap_log_entry(entry: &str, width: usize) -> Vec<String> {
+        const INDENT: &str = "  ";
+        if entry.chars().count() <= width {
+            return vec![entry.to_string()];
+        }
+        let mut rows = Self::word_wrap(entry, width);
+        let first = rows.remove(0);
+        let rest = entry[first.len()..].trim_start_matches(' ');
+        let mut out = vec![first];
+        out.extend(Self::word_wrap(rest, width.saturating_sub(INDENT.len()))
+            .into_iter().map(|l| format!("{INDENT}{l}")));
+        out
+    }
+
     fn word_wrap(text: &str, width: usize) -> Vec<String> {
         if width == 0 { return vec![text.to_string()]; }
         let mut lines = Vec::new();
@@ -1398,8 +1420,14 @@ impl CliPlayer {
             let hard_end = remaining.char_indices()
                 .nth(width)
                 .map_or(remaining.len(), |(i, _)| i);
-            // Look for the last space within the width.
-            let break_at = remaining[..hard_end].rfind(' ')
+            // Look for the last space within the width — including a space
+            // just past it, which ends a row of exactly `width`. Without it
+            // "… on Olivia Voldaren (#101)" at 39 columns broke before
+            // "Voldaren", which fitted (#705).
+            let probe_end = remaining.char_indices()
+                .nth(width + 1)
+                .map_or(remaining.len(), |(i, _)| i);
+            let break_at = remaining[..probe_end].rfind(' ')
                 .unwrap_or(hard_end); // no space — hard break
             if break_at == 0 {
                 // Edge case: space at position 0 or single huge word.
@@ -1858,27 +1886,9 @@ impl CliPlayer {
             let max_chars = left_w.saturating_sub(1);
             // Wrap log entries that are too long for the panel.
             // Continuation lines get a 2-space indent.
-            let mut wrapped: Vec<String> = Vec::new();
-            let indent = "  ";
-            let cont_max = max_chars.saturating_sub(indent.len());
-            for entry in log {
-                if entry.chars().count() <= max_chars {
-                    wrapped.push(entry.clone());
-                } else {
-                    let lines = Self::word_wrap(entry, max_chars);
-                    for (i, line) in lines.into_iter().enumerate() {
-                        if i == 0 {
-                            wrapped.push(line);
-                        } else {
-                            // Re-wrap the continuation line at the narrower indent width.
-                            let sub_lines = Self::word_wrap(&line, cont_max);
-                            for sub in sub_lines {
-                                wrapped.push(format!("{indent}{sub}"));
-                            }
-                        }
-                    }
-                }
-            }
+            let wrapped: Vec<String> = log.iter()
+                .flat_map(|entry| Self::wrap_log_entry(entry, max_chars))
+                .collect();
             let start = if wrapped.len() > log_visible { wrapped.len() - log_visible } else { 0 };
             for (i, line) in wrapped[start..].iter().enumerate() {
                 let r = u16::try_from(log_start + 1 + i).unwrap_or(u16::MAX);
@@ -10951,6 +10961,27 @@ Mark 1 of the 1 cards below to exile.");
             mana_abilities: vec![],
             named_card: None,
         }
+    }
+
+    /// Issue #705: a LOG entry's continuation rows are wrapped once, at
+    /// the indented width, so no row is a lone word that a second wrap
+    /// split off. The entry is the one from the report, at the 39-column
+    /// pane of the 200-column layout.
+    #[test]
+    fn a_log_entry_wraps_without_orphan_words() {
+        let entry = "p0 activated ability on Olivia Voldaren (#101): {1}{R}: Deal 1 damage \
+                     to another target creature, make it a Vampire, put a +1/+1 counter on Olivia";
+        let rows = CliPlayer::wrap_log_entry(entry, 39);
+        for row in &rows {
+            assert!(str_cols(row) <= 39, "a row fits the pane: {row:?}");
+        }
+        for pair in rows.windows(2) {
+            let next_word = pair[1].split_whitespace().next().unwrap_or("");
+            assert!(str_cols(&pair[0]) + 1 + str_cols(next_word) > 39,
+                "{:?} had room for {next_word:?}; rows: {rows:#?}", pair[0]);
+        }
+        let rejoined = rows.iter().map(|r| r.trim()).collect::<Vec<_>>().join(" ");
+        assert_eq!(rejoined, entry, "nothing is lost or reordered");
     }
 
     /// Issue #697: a permanent with one of its abilities on the stack is
