@@ -5007,6 +5007,19 @@ impl CliPlayer {
         if perm.is_token {
             let _ = execute!(out, Print("  Token: true\n".to_string()));
         }
+        // A copy (CR 707.2), which the board row marks `[copy]` (#557) and
+        // the page's inspector says; this page did not (#727).
+        if perm.is_copy {
+            let _ = execute!(out, Print("  Copy: true\n".to_string()));
+        }
+        // The card a Nevermore named as it entered — the permanent's whole
+        // identity. The board row says `[names: X]` and can be cut at the
+        // pane's edge; this page, where a person goes to read the rest,
+        // never said it (#727).
+        if let Some(n) = &perm.named_card {
+            let _ = execute!(out, Print(format!("  Named card: {n}\n")));
+        }
+
         // Color (CR 105.2). Intimidate (CR 702.13a) is decided
         // entirely by it and no pane printed it: for most
         // permanents a player could infer it from the mana cost
@@ -11977,6 +11990,32 @@ Mark 1 of the 1 cards below to exile.");
         let (a, b, c) = CliPlayer::creature_row_parts(&perm, None);
         let row = format!("{a}{b}{c}");
         assert!(!row.contains("blocked"), "an unblocked attacker is plain [ATK]: {row}");
+    }
+
+    /// Issue #727: the detail page says what a Nevermore named, and that a
+    /// copy is one — the two facts the board row carries in a tail the
+    /// pane's edge can cut.
+    #[test]
+    fn the_detail_page_says_the_named_card_and_a_copy() {
+        let mut v = view(Step::PrecombatMain, 4, true);
+        let mut perm = creature(42, "Nevermore", 0);
+        perm.card_types = vec![CardType::Enchantment];
+        perm.named_card = Some("Brimstone Volley".into());
+        v.battlefield = vec![perm.clone()];
+        let mut buf: Vec<u8> = Vec::new();
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &perm);
+        let text = String::from_utf8_lossy(&buf).to_string();
+        assert!(text.contains("Named card: Brimstone Volley"), "{text}");
+        assert!(!text.contains("Copy:"), "{text}");
+
+        let mut twin = creature(43, "Walking Corpse", 0);
+        twin.is_copy = true;
+        v.battlefield = vec![twin.clone()];
+        let mut buf: Vec<u8> = Vec::new();
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &twin);
+        let text = String::from_utf8_lossy(&buf).to_string();
+        assert!(text.contains("Copy: true"), "{text}");
+        assert_crlf("permanent detail of a copy", &buf);
     }
 
     /// CR 706.2: the page renders the permanent's ability set, not the
