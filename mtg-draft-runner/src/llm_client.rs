@@ -617,57 +617,54 @@ impl AnthropicDraftBackend {
             }
         });
 
-        for attempt in 0..6 {
-            if attempt > 0 {
-                let delay = std::time::Duration::from_secs(2u64.pow(u32::try_from(attempt.min(4)).unwrap_or(0)));
-                std::thread::sleep(delay);
-            }
-            let response = self.client
-                .post("https://api.anthropic.com/v1/messages")
-                .header("x-api-key", &self.api_key)
+        // The draft's own budget, through the loop every HTTP seat uses: six
+        // fixed attempts over about half a minute ended a draft that the
+        // `claude -p` seat would have ridden out (#218, #719). Past it the
+        // draft stops, as it always has — quietly picking card 0 is worse.
+        let (client, api_key, model) = (&self.client, &self.api_key, &self.model);
+        let outcome = mtg_player::llm::call_within_budget(retry_budget(), |attempt| {
+            let response = client
+                .post(format!("{}/v1/messages", mtg_player::llm::anthropic_base_url()))
+                .header("x-api-key", api_key)
                 .header("anthropic-version", "2023-06-01")
                 .header("content-type", "application/json")
                 .json(&body)
                 .send();
-
             match response {
                 Ok(resp) if resp.status().is_success() => {
                     let json: serde_json::Value = resp.json().unwrap_or_default();
-                    record_anthropic_usage(&self.model, &json["usage"]);
+                    record_anthropic_usage(model, &json["usage"]);
                     let text = json["content"][0]["text"]
                         .as_str()
                         .unwrap_or("")
                         .trim()
                         .to_string();
                     if text.is_empty() {
-                        let msg = format!("Anthropic returned empty text (attempt {}/6)", attempt + 1);
-                        crate::progress::say(&format!("WARN: {msg}"));
-                        mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_WARN", &msg);
-                        continue;
+                        return mtg_player::llm::CallAttempt::Transient(
+                            format!("Anthropic returned empty text (attempt {attempt})"));
                     }
-                    return text;
+                    mtg_player::llm::CallAttempt::Answer(text)
                 }
                 Ok(resp) => {
                     let code = resp.status().as_u16();
-                    if code == 529 || code == 429 {
-                        let msg = format!("Anthropic {} (attempt {}/6)", code, attempt + 1);
-                        crate::progress::say(&msg);
-                        mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_RETRY", &msg);
-                        continue;
-                    }
                     let text = resp.text().unwrap_or_default();
-                    let msg = format!("Anthropic API error {}: {}", code, &text[..text.len().min(200)]);
-                    fatal(&msg);
+                    mtg_player::llm::classify_http_status(code, format!(
+                        "Anthropic API error {code} (attempt {attempt}): {}",
+                        text.chars().take(200).collect::<String>()))
                 }
-                Err(e) => {
-                    let msg = format!("Anthropic request failed (attempt {}/6): {}", attempt + 1, e);
-                    crate::progress::say(&msg);
-                    mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
-                }
+                Err(e) => mtg_player::llm::CallAttempt::Transient(
+                    format!("Anthropic request failed (attempt {attempt}): {e}")),
             }
+        }, |_, msg, retried| {
+            crate::progress::say(msg);
+            let label = if retried { "API_RETRY" } else { "API_ERROR" };
+            mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), label, msg);
+        });
+        match outcome {
+            mtg_player::llm::CallOutcome::Answer(text) => text,
+            mtg_player::llm::CallOutcome::Failed(why) => fatal(&why),
+            mtg_player::llm::CallOutcome::GaveUp(why) => fatal(&format!("Anthropic draft API {why}")),
         }
-        let msg = "Anthropic draft API exhausted all 6 retries";
-        fatal(msg)
     }
 
     fn send_conv_structured(
@@ -1084,18 +1081,14 @@ impl GeminiDraftBackend {
             body["system_instruction"] = serde_json::json!(&self.system_prompt);
         }
 
-        let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/interactions?key={}",
-            self.api_key
-        );
+        let url = format!("{}/v1beta/interactions?key={}", mtg_player::llm::gemini_base_url(), self.api_key);
 
+        // The draft's budget through the shared loop, like the Anthropic
+        // path above (#719).
         let mut fresh_retry = false;
-        for attempt in 0..6 {
-            if attempt > 0 {
-                let delay = std::time::Duration::from_secs(2u64.pow(u32::try_from(attempt.min(4)).unwrap_or(0)));
-                std::thread::sleep(delay);
-            }
-            let response = self.client
+        let (client, model, system_prompt) = (&self.client, &self.model, &self.system_prompt);
+        let outcome = mtg_player::llm::call_within_budget(retry_budget(), |attempt| {
+            let response = client
                 .post(&url)
                 .header("content-type", "application/json")
                 .json(&body)
@@ -1104,7 +1097,7 @@ impl GeminiDraftBackend {
             match response {
                 Ok(resp) if resp.status().is_success() => {
                     let json: serde_json::Value = resp.json().unwrap_or_default();
-                    record_gemini_usage(&self.model, &json["usage"]);
+                    record_gemini_usage(model, &json["usage"]);
                     let id = json["id"].as_str()
                         .filter(|s| !s.is_empty())
                         .map(std::string::ToString::to_string);
@@ -1119,54 +1112,51 @@ impl GeminiDraftBackend {
                         }
                     }
                     if text.is_empty() {
-                        let msg = format!("Gemini returned empty text (attempt {}/6, interaction_id: {:?})", attempt + 1, id);
-                        crate::progress::say(&format!("WARN: {msg}"));
-                        mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_WARN", &msg);
-                        continue;
+                        return mtg_player::llm::CallAttempt::Transient(format!(
+                            "Gemini returned empty text (attempt {attempt}, interaction_id: {id:?})"));
                     }
-                    return (text, id);
+                    mtg_player::llm::CallAttempt::Answer((text, id))
                 }
                 Ok(resp) => {
                     let code = resp.status().as_u16();
-                    if code == 429 || code == 503 {
-                        let err_text = resp.text().unwrap_or_default();
-                        let msg = format!("Gemini {} (attempt {}/6): {}", code, attempt + 1, &err_text[..err_text.len().min(150)]);
-                        crate::progress::say(&msg);
-                        mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_RETRY", &msg);
-                        continue;
-                    }
                     let text = resp.text().unwrap_or_default();
                     // If the interaction ID is invalid, fall back to a fresh conversation.
                     if code == 400 && text.contains("previous_interaction_id") && !fresh_retry {
-                        let msg = format!("Invalid interaction ID, falling back to fresh conversation ({})", &text[..text.len().min(150)]);
+                        let msg = format!("Invalid interaction ID, falling back to fresh conversation ({})",
+                            text.chars().take(150).collect::<String>());
                         crate::progress::say(&format!("WARN: {msg}"));
                         mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_WARN", &msg);
                         body.as_object_mut().unwrap().remove("previous_interaction_id");
-                        body["system_instruction"] = serde_json::json!(&self.system_prompt);
+                        body["system_instruction"] = serde_json::json!(system_prompt);
                         fresh_retry = true;
-                        continue;
+                        return mtg_player::llm::CallAttempt::Transient(
+                            format!("Gemini 400 (attempt {attempt}): stale interaction id"));
                     }
                     // Fatal config errors — abort loudly so we don't silently produce garbage.
                     if code == 400 && (text.contains("thinking level") || text.contains("not a supported")) {
-                        let msg = format!("Gemini config error: {}", &text[..text.len().min(300)]);
+                        let msg = format!("Gemini config error: {}", text.chars().take(300).collect::<String>());
                         mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_FATAL", &msg);
                         // Through the one fatal exit, so this stop accounts
                         // for what the run spent and sweeps the live calls
                         // the same way every other fatal does (#537, #578).
                         crate::die(&msg);
                     }
-                    let msg = format!("Gemini API error {}: {}", code, &text[..text.len().min(200)]);
-                    fatal(&msg);
+                    mtg_player::llm::classify_http_status(code, format!(
+                        "Gemini API error {code} (attempt {attempt}): {}", text.chars().take(200).collect::<String>()))
                 }
-                Err(e) => {
-                    let msg = format!("Gemini request failed (attempt {}/6): {}", attempt + 1, e);
-                    crate::progress::say(&msg);
-                    mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), "API_ERROR", &msg);
-                }
+                Err(e) => mtg_player::llm::CallAttempt::Transient(
+                    format!("Gemini request failed (attempt {attempt}): {e}")),
             }
+        }, |_, msg, retried| {
+            crate::progress::say(msg);
+            let label = if retried { "API_RETRY" } else { "API_ERROR" };
+            mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), label, msg);
+        });
+        match outcome {
+            mtg_player::llm::CallOutcome::Answer(answer) => answer,
+            mtg_player::llm::CallOutcome::Failed(why) => fatal(&why),
+            mtg_player::llm::CallOutcome::GaveUp(why) => fatal(&format!("Gemini draft API {why}")),
         }
-        let msg = "Gemini draft API exhausted all 6 retries";
-        fatal(msg)
     }
 
     /// Re-serialize the Gemini JSON response to a canonical pretty form.

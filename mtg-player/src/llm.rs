@@ -300,6 +300,110 @@ pub fn retry_backoff(attempt: u32) -> std::time::Duration {
     MAX_RETRY_BACKOFF.min(std::time::Duration::from_secs(2u64.pow(attempt.min(6))))
 }
 
+/// `https://api.anthropic.com`, unless `ANTHROPIC_BASE_URL` names another
+/// server — which is how a seat's failure paths are tested without a metered
+/// call (#719). Both request paths, the game's and the draft's, ask here.
+#[must_use]
+pub fn anthropic_base_url() -> String {
+    base_url_from("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+}
+
+/// [`anthropic_base_url`] for Gemini, overridden by `GEMINI_BASE_URL`.
+#[must_use]
+pub fn gemini_base_url() -> String {
+    base_url_from("GEMINI_BASE_URL", "https://generativelanguage.googleapis.com")
+}
+
+fn base_url_from(env_name: &str, default: &str) -> String {
+    std::env::var(env_name).ok().filter(|u| !u.is_empty())
+        .map_or_else(|| default.to_string(), |u| u.trim_end_matches('/').to_string())
+}
+
+/// What one attempt at a metered API call came to.
+#[derive(Debug)]
+pub enum CallAttempt<T> {
+    /// The model answered.
+    Answer(T),
+    /// Worth asking again: a rate limit, an overload, a 5xx, a timeout, a
+    /// connection that failed.
+    Transient(String),
+    /// This request cannot succeed, but the next one may: a 400 the request
+    /// itself earned, such as a schema the API refuses (#398).
+    Refused(String),
+    /// No request from this seat will succeed: the key was refused.
+    Dead(String),
+}
+
+/// What a whole call came to, after its retries.
+#[derive(Debug)]
+pub enum CallOutcome<T> {
+    Answer(T),
+    /// No answer to this call; the seat may still answer the next.
+    Failed(String),
+    /// No answer, and none is coming: the retry budget is spent, or the key
+    /// is dead. The seat has stopped answering, and its runner forfeits it.
+    GaveUp(String),
+}
+
+/// The class of a non-success HTTP status from a model API.
+#[must_use]
+pub fn classify_http_status<T>(code: u16, why: String) -> CallAttempt<T> {
+    match code {
+        401 | 403 => CallAttempt::Dead(why),
+        408 | 409 | 429 | 500..=599 => CallAttempt::Transient(why),
+        _ => CallAttempt::Refused(why),
+    }
+}
+
+/// Run `attempt` until it answers, retrying transient failures for as long
+/// as `budget` lasts with [`retry_backoff`] between tries.
+///
+/// The `claude -p` seat waited out a budget and forfeited past it (#587);
+/// the two metered seats kept three and six fixed attempts over seconds,
+/// returned an empty answer on any other status without saying no answer
+/// had happened — so a 400 or a 401 was logged as the model's malformed
+/// answer — and never gave up, so a dead key played a match on fallbacks
+/// (#719). One loop, every HTTP seat. `on_failure` is told each failed
+/// attempt and whether it will be retried, for the seat's own log lines.
+pub fn call_within_budget<T>(
+    budget: std::time::Duration,
+    mut attempt: impl FnMut(u32) -> CallAttempt<T>,
+    mut on_failure: impl FnMut(u32, &str, bool),
+) -> CallOutcome<T> {
+    let began = std::time::Instant::now();
+    let deadline = began + budget;
+    let mut tries = 0u32;
+    let mut last = String::new();
+    loop {
+        if tries > 0 {
+            let backoff = retry_backoff(tries);
+            if std::time::Instant::now() + backoff > deadline {
+                break;
+            }
+            std::thread::sleep(backoff);
+        }
+        tries += 1;
+        match attempt(tries) {
+            CallAttempt::Answer(t) => return CallOutcome::Answer(t),
+            CallAttempt::Transient(why) => {
+                on_failure(tries, &why, true);
+                last = why;
+            }
+            CallAttempt::Refused(why) => {
+                on_failure(tries, &why, false);
+                return CallOutcome::Failed(why);
+            }
+            CallAttempt::Dead(why) => {
+                on_failure(tries, &why, false);
+                return CallOutcome::GaveUp(format!("gave up: the API refused this seat's key: {why}"));
+            }
+        }
+    }
+    CallOutcome::GaveUp(format!(
+        "gave up after {tries} attempt{} over {}s (retry budget {}s); last: {last}",
+        if tries == 1 { "" } else { "s" }, began.elapsed().as_secs(), budget.as_secs()))
+}
+
 pub fn thinking_param(model: &str) -> serde_json::Value {
     let wants_budget = model.contains("-4-5") || model.contains("haiku") || model.contains("-3-");
     if wants_budget {
@@ -1274,6 +1378,13 @@ struct AnthropicBackend {
     /// Set when the retries run out, so the caller can tell "no answer"
     /// from an answer it could not use (#587).
     last_call_failure: Option<String>,
+    /// Set, and never cleared, once the seat has stopped answering; see
+    /// `LlmBackend::gave_up` (#719).
+    gave_up: Option<String>,
+    /// `https://api.anthropic.com` unless `ANTHROPIC_BASE_URL` says
+    /// otherwise — which is how the failure paths are tested without a
+    /// metered call.
+    base_url: String,
     /// The seat this backend answers for; see `LlmBackend::set_seat`.
     seat: String,
 }
@@ -1290,6 +1401,8 @@ impl AnthropicBackend {
             conversation: Vec::new(),
             last_thinking: None,
             last_call_failure: None,
+            gave_up: None,
+            base_url: anthropic_base_url(),
             seat: String::new(),
         }
     }
@@ -1322,86 +1435,98 @@ impl AnthropicBackend {
 
     /// Send a request to the Anthropic API and return the text content.
     /// Scans content blocks for thinking (logged) and text (returned).
+    ///
+    /// Retries within the game seat's budget (#587, #719); a call that gets
+    /// no answer returns `"0"` with `last_call_failure` saying why, and one
+    /// that spends the budget or meets a refused key marks the seat given
+    /// up.
     fn call_api(&mut self, body: &serde_json::Value) -> String {
-        const MAX_ATTEMPTS: u32 = 3;
-        for attempt in 0..MAX_ATTEMPTS {
-            if attempt > 0 {
-                let delay = std::time::Duration::from_secs(2u64.pow(attempt));
-                std::thread::sleep(delay);
-            }
-
+        if let Some(why) = &self.gave_up {
+            self.last_call_failure = Some(why.clone());
+            return "0".to_string();
+        }
+        let budget = retry_budget(claude_code::RETRY_BUDGET_ENV);
+        let url = format!("{}/v1/messages", self.base_url);
+        let seat = self.seat.clone();
+        let (client, api_key, model) = (&self.client, &self.api_key, &self.model);
+        let mut thinking = None;
+        let outcome = call_within_budget(budget, |attempt| {
             let started = std::time::Instant::now();
-            let response = self.client
-                .post("https://api.anthropic.com/v1/messages")
-                .header("x-api-key", &self.api_key)
+            let response = client
+                .post(&url)
+                .header("x-api-key", api_key)
                 .header("anthropic-version", "2023-06-01")
                 .header("content-type", "application/json")
                 .timeout(std::time::Duration::from_secs(120))
                 .json(body)
                 .send();
             let elapsed_ms = started.elapsed().as_millis();
-
             match response {
-                Ok(resp) => {
-                    if resp.status().is_success() {
-                        let json: serde_json::Value = resp.json().unwrap_or_default();
-                        record_anthropic_llm_usage(&self.model, &json);
-                        self.last_thinking = None;
-                        let mut text_content = String::from("0");
-                        if let Some(content) = json["content"].as_array() {
-                            for block in content {
-                                match block["type"].as_str() {
-                                    Some("thinking") => {
-                                        if let Some(thinking) = block["thinking"].as_str() {
-                                            self.last_thinking = Some(thinking.to_string());
-                                        }
+                Ok(resp) if resp.status().is_success() => {
+                    let json: serde_json::Value = resp.json().unwrap_or_default();
+                    record_anthropic_llm_usage(model, &json);
+                    thinking = None;
+                    let mut text_content = String::from("0");
+                    if let Some(content) = json["content"].as_array() {
+                        for block in content {
+                            match block["type"].as_str() {
+                                Some("thinking") => {
+                                    if let Some(t) = block["thinking"].as_str() {
+                                        thinking = Some(t.to_string());
                                     }
-                                    Some("text") => {
-                                        if let Some(text) = block["text"].as_str() {
-                                            text_content = text.trim().to_string();
-                                        }
-                                    }
-                                    _ => {}
                                 }
+                                Some("text") => {
+                                    if let Some(text) = block["text"].as_str() {
+                                        text_content = text.trim().to_string();
+                                    }
+                                }
+                                _ => {}
                             }
                         }
-                        return text_content;
                     }
+                    CallAttempt::Answer(text_content)
+                }
+                Ok(resp) => {
                     let code = resp.status().as_u16();
                     let text = resp.text().unwrap_or_default();
-                    let snippet = &text[..text.len().min(200)];
-                    if code == 529 || code == 429 {
-                        let msg = format!(
-                            "Anthropic HTTP {} (attempt {}/{}, {}ms): {}",
-                            code, attempt + 1, MAX_ATTEMPTS, elapsed_ms, snippet
-                        );
-                        crate::stderr_line!("{}{msg}", seat_tag(&self.seat));
-                        crate::game_log::write(file!(), line!(), &api_label("API_RETRY", &self.seat), &msg);
-                        continue;
-                    }
-                    let msg = format!(
-                        "Anthropic HTTP {} (attempt {}/{}, {}ms): {}",
-                        code, attempt + 1, MAX_ATTEMPTS, elapsed_ms, snippet
-                    );
-                    crate::stderr_line!("{}{msg}", seat_tag(&self.seat));
-                    crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
-                    return "0".to_string();
+                    let snippet: String = text.chars().take(200).collect();
+                    classify_http_status(code, format!(
+                        "Anthropic HTTP {code} (attempt {attempt}, {elapsed_ms}ms): {snippet}"))
                 }
-                Err(e) => {
-                    let msg = format!(
-                        "Anthropic request failed (attempt {}/{}, {}ms): {}",
-                        attempt + 1, MAX_ATTEMPTS, elapsed_ms, format_reqwest_error(&e)
-                    );
-                    crate::stderr_line!("{}{msg}", seat_tag(&self.seat));
-                    crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
-                }
+                Err(e) => CallAttempt::Transient(format!(
+                    "Anthropic request failed (attempt {attempt}, {elapsed_ms}ms): {}",
+                    format_reqwest_error(&e))),
+            }
+        }, |_, msg, retried| {
+            crate::stderr_line!("{}{msg}", seat_tag(&seat));
+            if retried {
+                crate::game_log::write(file!(), line!(), &api_label("API_RETRY", &seat), msg);
+            } else {
+                crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &seat), msg);
+            }
+        });
+        self.last_thinking = thinking;
+        self.settle_call(outcome)
+    }
+
+    /// The seat's state after a call: an answer is returned; anything else
+    /// is recorded as no answer, and a give-up stays given up.
+    fn settle_call(&mut self, outcome: CallOutcome<String>) -> String {
+        match outcome {
+            CallOutcome::Answer(text) => text,
+            CallOutcome::Failed(why) => {
+                self.last_call_failure = Some(why);
+                "0".to_string()
+            }
+            CallOutcome::GaveUp(why) => {
+                let msg = format!("Anthropic game seat {why}");
+                crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
+                crate::stderr_line!("{}{msg}", seat_tag(&self.seat));
+                self.last_call_failure = Some(msg.clone());
+                self.gave_up = Some(msg);
+                "0".to_string()
             }
         }
-        let msg = format!("Anthropic game API exhausted all {MAX_ATTEMPTS} retries");
-        crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
-        crate::stderr_line!("{}{msg}", seat_tag(&self.seat));
-        self.last_call_failure = Some(msg);
-        "0".to_string()
     }
 
     fn call_with_messages(&mut self, messages: &[serde_json::Value]) -> String {
@@ -1457,6 +1582,10 @@ impl LlmBackend for AnthropicBackend {
 
     fn take_call_failure(&mut self) -> Option<String> {
         self.last_call_failure.take()
+    }
+
+    fn gave_up(&self) -> Option<String> {
+        self.gave_up.clone()
     }
 
     fn send(&mut self, message: &str) -> String {
@@ -1521,6 +1650,11 @@ struct GeminiBackend {
     last_thinking: Option<String>,
     /// See `AnthropicBackend::last_call_failure` (#587).
     last_call_failure: Option<String>,
+    /// See `AnthropicBackend::gave_up` (#719).
+    gave_up: Option<String>,
+    /// `https://generativelanguage.googleapis.com` unless `GEMINI_BASE_URL`
+    /// says otherwise.
+    base_url: String,
     /// The seat this backend answers for; see `LlmBackend::set_seat`.
     seat: String,
 }
@@ -1538,6 +1672,8 @@ impl GeminiBackend {
             interaction_id: None,
             last_thinking: None,
             last_call_failure: None,
+            gave_up: None,
+            base_url: gemini_base_url(),
             seat: String::new(),
         }
     }
@@ -1545,8 +1681,6 @@ impl GeminiBackend {
     /// Core interactions API call. Sends a message with a custom JSON schema
     /// and returns the parsed JSON response. Handles retries, rate limits, etc.
     fn call_interactions_structured(&mut self, user_message: &str, schema: &serde_json::Value) -> serde_json::Value {
-        const MAX_ATTEMPTS: u32 = 6;
-
         let mut body = serde_json::json!({
             "model": &self.model,
             "input": user_message,
@@ -1565,20 +1699,22 @@ impl GeminiBackend {
             body["system_instruction"] = serde_json::json!(&self.system_prompt);
         }
 
-        let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/interactions?key={}",
-            self.api_key
-        );
+        let url = format!("{}/v1beta/interactions?key={}", self.base_url, self.api_key);
 
+        if let Some(why) = &self.gave_up {
+            self.last_call_failure = Some(why.clone());
+            return serde_json::json!({});
+        }
+        let budget = retry_budget(claude_code::RETRY_BUDGET_ENV);
+        let seat = self.seat.clone();
+        let system_prompt = self.system_prompt.clone();
+        let (client, model) = (&self.client, &self.model);
+        let mut interaction_id = self.interaction_id.clone();
+        let mut thinking = None;
         let mut fresh_retry = false;
-        for attempt in 0..MAX_ATTEMPTS {
-            if attempt > 0 {
-                let delay = std::time::Duration::from_secs(2u64.pow(attempt.min(4)));
-                std::thread::sleep(delay);
-            }
-
+        let outcome = call_within_budget(budget, |attempt| {
             let started = std::time::Instant::now();
-            let response = self.client
+            let response = client
                 .post(&url)
                 .header("content-type", "application/json")
                 .timeout(std::time::Duration::from_secs(120))
@@ -1587,90 +1723,91 @@ impl GeminiBackend {
             let elapsed_ms = started.elapsed().as_millis();
 
             match response {
-                Ok(resp) => {
-                    if resp.status().is_success() {
-                        let json: serde_json::Value = resp.json().unwrap_or_default();
-                        record_gemini_llm_usage(&self.model, &json["usage"]);
+                Ok(resp) if resp.status().is_success() => {
+                    let json: serde_json::Value = resp.json().unwrap_or_default();
+                    record_gemini_llm_usage(model, &json["usage"]);
 
-                        self.interaction_id = json["id"].as_str()
-                            .filter(|s| !s.is_empty())
-                            .map(std::string::ToString::to_string);
+                    interaction_id = json["id"].as_str()
+                        .filter(|s| !s.is_empty())
+                        .map(std::string::ToString::to_string);
 
-                        let mut output_text = String::new();
-                        if let Some(outputs) = json["outputs"].as_array() {
-                            for out in outputs {
-                                if out["type"].as_str() == Some("text") {
-                                    if let Some(t) = out["text"].as_str() {
-                                        output_text = t.trim().to_string();
-                                    }
+                    let mut output_text = String::new();
+                    if let Some(outputs) = json["outputs"].as_array() {
+                        for out in outputs {
+                            if out["type"].as_str() == Some("text") {
+                                if let Some(t) = out["text"].as_str() {
+                                    output_text = t.trim().to_string();
                                 }
                             }
                         }
-
-                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&output_text) {
-                            self.last_thinking = parsed["thoughts"].as_str().map(std::string::ToString::to_string);
-                            return parsed;
-                        }
-
-                        let msg = format!("Gemini returned non-JSON response: {:?}", &output_text[..output_text.len().min(100)]);
-                        crate::stderr_line!("{}WARN: {msg}", seat_tag(&self.seat));
-                        crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
-                        return serde_json::json!({});
                     }
 
+                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&output_text) {
+                        thinking = parsed["thoughts"].as_str().map(std::string::ToString::to_string);
+                        return CallAttempt::Answer(parsed);
+                    }
+                    // The API was asked for JSON and did not return it: no
+                    // answer was given, and saying so keeps it from being
+                    // logged as the model's (#719).
+                    CallAttempt::Refused(format!("Gemini returned non-JSON response: {:?}",
+                        output_text.chars().take(100).collect::<String>()))
+                }
+                Ok(resp) => {
                     let code = resp.status().as_u16();
                     let text = resp.text().unwrap_or_default();
-                    let snippet = &text[..text.len().min(200)];
-                    if code == 429 || code == 503 || code == 529 {
-                        let msg = format!(
-                            "Gemini HTTP {} (attempt {}/{}, {}ms): {}",
-                            code, attempt + 1, MAX_ATTEMPTS, elapsed_ms, snippet
-                        );
-                        crate::stderr_line!("{}{msg}", seat_tag(&self.seat));
-                        crate::game_log::write(file!(), line!(), &api_label("API_RETRY", &self.seat), &msg);
-                        continue;
-                    }
+                    let snippet: String = text.chars().take(200).collect();
                     // If the interaction ID is invalid, fall back to a fresh conversation.
                     if code == 400 && text.contains("previous_interaction_id") && !fresh_retry {
                         let msg = "Invalid interaction ID, falling back to fresh conversation";
-                        crate::stderr_line!("{}WARN: {msg}", seat_tag(&self.seat));
-                        crate::game_log::write(file!(), line!(), &api_label("API_WARN", &self.seat), msg);
+                        crate::stderr_line!("{}WARN: {msg}", seat_tag(&seat));
+                        crate::game_log::write(file!(), line!(), &api_label("API_WARN", &seat), msg);
                         body.as_object_mut().unwrap().remove("previous_interaction_id");
-                        body["system_instruction"] = serde_json::json!(&self.system_prompt);
-                        self.interaction_id = None;
+                        body["system_instruction"] = serde_json::json!(&system_prompt);
+                        interaction_id = None;
                         fresh_retry = true;
-                        continue;
+                        return CallAttempt::Transient(format!("Gemini HTTP {code} (attempt {attempt}): stale interaction id"));
                     }
                     // Fatal config errors — abort loudly so we don't silently produce garbage.
                     if code == 400 && (text.contains("thinking level") || text.contains("not a supported")) {
-                        let msg = format!("Gemini config error: {}", &text[..text.len().min(300)]);
-                        crate::stderr_line!("{}FATAL: {msg}", seat_tag(&self.seat));
-                        crate::game_log::write(file!(), line!(), &api_label("API_FATAL", &self.seat), &msg);
+                        let msg = format!("Gemini config error: {}", text.chars().take(300).collect::<String>());
+                        crate::stderr_line!("{}FATAL: {msg}", seat_tag(&seat));
+                        crate::game_log::write(file!(), line!(), &api_label("API_FATAL", &seat), &msg);
                         std::process::exit(1);
                     }
-                    let msg = format!(
-                        "Gemini HTTP {} (attempt {}/{}, {}ms): {}",
-                        code, attempt + 1, MAX_ATTEMPTS, elapsed_ms, snippet
-                    );
-                    crate::stderr_line!("{}{msg}", seat_tag(&self.seat));
-                    crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
-                    return serde_json::json!({});
+                    classify_http_status(code, format!(
+                        "Gemini HTTP {code} (attempt {attempt}, {elapsed_ms}ms): {snippet}"))
                 }
-                Err(e) => {
-                    let msg = format!(
-                        "Gemini request failed (attempt {}/{}, {}ms): {}",
-                        attempt + 1, MAX_ATTEMPTS, elapsed_ms, format_reqwest_error(&e)
-                    );
-                    crate::stderr_line!("{}{msg}", seat_tag(&self.seat));
-                    crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
-                }
+                Err(e) => CallAttempt::Transient(format!(
+                    "Gemini request failed (attempt {attempt}, {elapsed_ms}ms): {}",
+                    format_reqwest_error(&e))),
+            }
+        }, |_, msg, retried| {
+            crate::stderr_line!("{}{msg}", seat_tag(&seat));
+            if retried {
+                crate::game_log::write(file!(), line!(), &api_label("API_RETRY", &seat), msg);
+            } else {
+                crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &seat), msg);
+            }
+        });
+        self.interaction_id = interaction_id;
+        match outcome {
+            CallOutcome::Answer(parsed) => {
+                self.last_thinking = thinking;
+                parsed
+            }
+            CallOutcome::Failed(why) => {
+                self.last_call_failure = Some(why);
+                serde_json::json!({})
+            }
+            CallOutcome::GaveUp(why) => {
+                let msg = format!("Gemini game seat {why}");
+                crate::stderr_line!("{}{msg}", seat_tag(&self.seat));
+                crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
+                self.last_call_failure = Some(msg.clone());
+                self.gave_up = Some(msg);
+                serde_json::json!({})
             }
         }
-        let msg = format!("Gemini API exhausted all {MAX_ATTEMPTS} retries");
-        crate::stderr_line!("{}WARN: {msg}", seat_tag(&self.seat));
-        crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
-        self.last_call_failure = Some(msg);
-        serde_json::json!({})
     }
 
     /// Convenience wrapper: sends with the default action schema, returns just
@@ -1696,6 +1833,10 @@ impl LlmBackend for GeminiBackend {
 
     fn take_call_failure(&mut self) -> Option<String> {
         self.last_call_failure.take()
+    }
+
+    fn gave_up(&self) -> Option<String> {
+        self.gave_up.clone()
     }
 
     fn send(&mut self, message: &str) -> String {
@@ -7958,5 +8099,123 @@ this Aura deals 1 damage to that player.";
                 );
             }
         }
+    }
+}
+
+/// Issue #719: the metered seats retry within the game seat's budget, say
+/// when a call produced no answer, and give up — so their runner forfeits
+/// them — when no answer is coming.
+#[cfg(test)]
+mod metered_seat_failures {
+    use super::*;
+    use std::io::{BufRead, BufReader, Read, Write};
+
+    /// A server on a loopback port answering every request with `status`.
+    fn stub_server(status: u16) -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut len = 0usize;
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 { break; }
+                    if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        len = v.trim().parse().unwrap_or(0);
+                    }
+                    if line == "\r\n" { break; }
+                }
+                let mut body = vec![0; len];
+                let _ = reader.read_exact(&mut body);
+                let reply = "{\"error\":\"stub\"}";
+                let _ = write!(stream,
+                    "HTTP/1.1 {status} Stub\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                    reply.len());
+            }
+        });
+        format!("http://{addr}")
+    }
+
+    fn anthropic(base_url: String) -> AnthropicBackend {
+        AnthropicBackend {
+            client: Client::new(),
+            api_key: "dummy".into(),
+            model: "stub".into(),
+            system_prompt: String::new(),
+            conversation: Vec::new(),
+            last_thinking: None,
+            last_call_failure: None,
+            gave_up: None,
+            base_url,
+            seat: String::new(),
+        }
+    }
+
+    fn gemini(base_url: String) -> GeminiBackend {
+        GeminiBackend {
+            client: Client::new(),
+            api_key: "dummy".into(),
+            model: "stub".into(),
+            thinking_level: None,
+            system_prompt: String::new(),
+            interaction_id: None,
+            last_thinking: None,
+            last_call_failure: None,
+            gave_up: None,
+            base_url,
+            seat: String::new(),
+        }
+    }
+
+    #[test]
+    fn a_refused_key_gives_the_seat_up() {
+        let url = stub_server(401);
+        let mut a = anthropic(url.clone());
+        a.send("hello");
+        assert!(a.take_call_failure().is_some(), "a 401 is no answer, not the model's 0");
+        assert!(a.gave_up().is_some(), "a dead key is a seat that has stopped answering");
+
+        let mut g = gemini(url);
+        g.call_interactions_structured("hello", &serde_json::json!({"type": "object"}));
+        assert!(g.take_call_failure().is_some());
+        assert!(g.gave_up().is_some());
+    }
+
+    #[test]
+    fn a_refused_request_is_no_answer_but_not_the_end() {
+        let url = stub_server(400);
+        let mut a = anthropic(url.clone());
+        a.send("hello");
+        let why = a.take_call_failure().expect("a 400 is no answer");
+        assert!(why.contains("400"), "{why}");
+        assert!(a.gave_up().is_none(), "the next request may be answered");
+
+        let mut g = gemini(url);
+        g.call_interactions_structured("hello", &serde_json::json!({"type": "object"}));
+        assert!(g.take_call_failure().is_some());
+        assert!(g.gave_up().is_none());
+    }
+
+    #[test]
+    fn the_budget_decides_how_long_transient_failures_are_retried() {
+        let mut tries = 0;
+        let out: CallOutcome<()> = call_within_budget(std::time::Duration::ZERO,
+            |_| { tries += 1; CallAttempt::Transient("503".into()) }, |_, _, _| {});
+        assert!(matches!(out, CallOutcome::GaveUp(_)), "{out:?}");
+        assert_eq!(tries, 1, "a spent budget is not slept past");
+
+        let mut tries = 0;
+        let out = call_within_budget(std::time::Duration::from_secs(60), |_| {
+            tries += 1;
+            if tries < 2 { CallAttempt::Transient("529".into()) } else { CallAttempt::Answer(7) }
+        }, |_, _, _| {});
+        assert!(matches!(out, CallOutcome::Answer(7)), "a transient failure is retried: {out:?}");
+
+        assert!(matches!(classify_http_status::<()>(500, String::new()), CallAttempt::Transient(_)));
+        assert!(matches!(classify_http_status::<()>(429, String::new()), CallAttempt::Transient(_)));
+        assert!(matches!(classify_http_status::<()>(400, String::new()), CallAttempt::Refused(_)));
+        assert!(matches!(classify_http_status::<()>(403, String::new()), CallAttempt::Dead(_)));
     }
 }
