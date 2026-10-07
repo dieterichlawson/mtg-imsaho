@@ -827,11 +827,14 @@ Opp board:
 ```
 Lands are grouped by name. `(tapped)` or `(N tapped)` shows tap status. Non-land permanents include a unique object ID in parentheses (e.g. `(#30)`) — these IDs are stable for the lifetime of the permanent and can be used to distinguish permanents that share a name. Creatures show CURRENT effective P/T including bonuses. Status flags after creatures appear in a single bracket, comma-separated when there's more than one (e.g. `[T,1dmg]` for a tapped creature with 1 damage marked):
 - `T` = tapped
-- `S` = summoning sick (entered this turn, can't attack)
+- `S` = summoning sick: its controller has not controlled it continuously since their most recent turn began, so it can't attack or use `{T}` abilities yet (CR 302.6). It can still block. A creature cast on its controller's turn keeps `S` through the opponent's next turn
 - `attacking you`, `attacking Opp`, `attacking <planeswalker> (#id)` = attacking this combat, and what
 - `blocking <attacker> (#id)` = blocking that attacker this combat; `blocked by <blocker> (#id)` = the creatures blocking this attacker
 - `Ndmg` = N damage marked on it
-- `+1/+1:N`, `-1/-1:N`, `loyalty:N` etc. = counter counts
+- `regen shield` / `N regen shields` = regeneration shields ready to use
+- `token` = a token; `copy` = a copy of another permanent (it has the copied card's name and text)
+- `+1+1xN`, `-1-1xN`, `LOYxN` = N +1/+1 counters, N -1/-1 counters, loyalty N; any other counter is its kind and count, e.g. `Slimex2`
+- `names: <card>` = the card name this permanent named as it entered (Nevermore)
 
 A legendary permanent says `legendary` after its P/T (creatures, alongside the keywords) or in its flags (other permanents). The legend rule (CR 704.5j): if you control two or more legendary permanents with the same name, you choose one and the rest go to their owners' graveyards — so casting a second copy of a legend you already control gets you a choice, not two of them.
 
@@ -909,7 +912,7 @@ For variable-X cards (Harvest Pyre: pick 0–N, damage scales with X), any subse
 - **Land drops**: One land per turn, only during your main phase.
 - **Sorcery speed**: Sorceries, creatures, enchantments, artifacts can only be cast during YOUR main phase with an empty stack.
 - **Instant speed**: Instants can be cast anytime you have priority — your turn, opponent's turn, during combat, in response to spells.
-- **Summoning sickness**: Creatures with `[S]` can't attack or use tap-abilities the turn they enter. Goes away on your next untap.
+- **Summoning sickness**: Creatures with `[S]` can't attack or use tap-abilities until they have been under their controller's control since that player's most recent turn began — so one cast on your turn stays `[S]` through the opponent's turn and loses it as your next turn starts. `[S]` never stops a creature from blocking.
 
 ## Keyword abilities
 
@@ -7573,6 +7576,63 @@ this Aura deals 1 damage to that player.";
         // Seen from the other seat, the same attacker is attacking "you".
         let other = LlmPlayer::format_perms_compact(&[&tusker], &all, opp);
         assert!(other.contains("attacking you"), "{other}");
+    }
+
+    /// Issue #726: every flag the board prints is one the legend defines,
+    /// in the spelling it prints — the legend documented counters as
+    /// `+1/+1:N` while the board printed `+1+1xN`, and never mentioned
+    /// `token`, `copy`, `regen shield` or `names:`.
+    #[test]
+    fn the_board_legend_defines_every_flag_the_board_prints() {
+        use mtg_engine::view::AttackTarget;
+        let you = PlayerId(0);
+        let opp = PlayerId(1);
+        let mut a = perm(30, "Kalonian Tusker", 3, 3, you);
+        a.tapped = true;
+        a.attacking = Some(AttackTarget::Player(opp));
+        a.blocked_by = vec![ObjectId(45)];
+        a.damage_marked = 2;
+        a.regeneration_shields = 1;
+        a.counters.insert(CounterType::PlusOnePlusOne, 1);
+        a.counters.insert(CounterType::MinusOneMinusOne, 1);
+        a.is_token = true;
+        let mut b = perm(45, "Savannah Lions", 2, 1, opp);
+        b.blocking = vec![ObjectId(30)];
+        b.affected_by_summoning_sickness = true;
+        b.is_copy = true;
+        b.regeneration_shields = 2;
+        let mut c = perm(50, "Nevermore", 0, 0, you);
+        c.card_types = vec![CardType::Enchantment];
+        c.power = None;
+        c.toughness = None;
+        c.effective_power = None;
+        c.effective_toughness = None;
+        c.named_card = Some("Geistflame".into());
+        let all = vec![&a, &b, &c];
+        let board = LlmPlayer::format_perms_compact(&all, &all, you);
+        let legend_start = GAME_RULES.find("Status flags after creatures").expect("the legend");
+        let legend = &GAME_RULES[legend_start..legend_start + 2500];
+        for line in board.lines() {
+            let Some(open) = line.rfind(" [") else { continue };
+            let close = line[open..].find(']').map_or(line.len(), |i| open + i);
+            for flag in line[open + 2..close].split(',') {
+                // The defining part of a flag: its words before any count or name.
+                let key = match flag {
+                    f if f.starts_with("attacking") => "`attacking",
+                    f if f.starts_with("blocking") => "`blocking",
+                    f if f.starts_with("blocked by") => "`blocked by",
+                    f if f.starts_with("names:") => "`names:",
+                    f if f.ends_with("dmg") => "`Ndmg`",
+                    f if f.ends_with("regen shields") => "`N regen shields`",
+                    f if f.starts_with("+1+1x") => "`+1+1xN`",
+                    f if f.starts_with("-1-1x") => "`-1-1xN`",
+                    f => &format!("`{f}`"),
+                };
+                assert!(legend.contains(key), "board flag {flag:?} (from {line:?}) is not in the legend");
+            }
+        }
+        assert!(!legend.contains("entered this turn"),
+            "`S` lasts until the controller's next turn, not the turn it entered");
     }
 
     /// Issue #333: the board text never said a permanent was legendary, so a
