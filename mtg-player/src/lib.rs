@@ -110,9 +110,21 @@ pub fn forced_combat_answer(prompt: &CombatPrompt) -> Option<Action> {
         // anyway, a question whose only answer is no blocks, on every seat
         // (issue #703). The engine raises this prompt only with an attacker
         // present, so the second clause is defence rather than a live case.
-        CombatPrompt::ChooseBlockers { eligible_blockers, attackers, legal_blocks, .. }
+        //
+        // "Can block" is counted against each attacker's minimum, not 1
+        // (CR 509.1b): a Werewolf under Terror of Kruin Pass attacking into
+        // one untapped creature is listed as blockable by it, but a block by
+        // fewer than two is illegal, so the only answer was still no blocks
+        // (issue #718). With every attacker short of its minimum, every
+        // non-empty declaration leaves some blocked attacker under-blocked.
+        CombatPrompt::ChooseBlockers { eligible_blockers, attackers, legal_blocks, min_blockers }
             if eligible_blockers.is_empty() || attackers.is_empty()
-                || eligible_blockers.iter().all(|b| legal_blocks.get(b).is_none_or(Vec::is_empty)) =>
+                || attackers.iter().all(|a| {
+                    let able = eligible_blockers.iter()
+                        .filter(|b| legal_blocks.get(b).is_some_and(|l| l.contains(a)))
+                        .count();
+                    able < min_blockers.get(a).map_or(1, |&m| m.max(1) as usize)
+                }) =>
             Some(Action::DeclareBlockers { assignments: vec![] }),
         _ => None,
     }

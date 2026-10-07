@@ -140,6 +140,29 @@ fn blockers_that_can_block_nothing_have_one_answer() {
     assert!(forced_combat_answer(&prompt).is_none());
 }
 
+/// Issue #718: "can block" is counted against the attacker's minimum
+/// (CR 509.1b). A Werewolf under Terror of Kruin Pass ("can't be blocked
+/// except by two or more creatures") attacking into one creature that may
+/// block it has one legal answer, no blocks; a second able blocker makes
+/// it a decision again, and so does a second attacker without a minimum.
+#[test]
+fn blockers_short_of_every_attackers_minimum_have_one_answer() {
+    let wolf = ObjectId(61);
+    let bears = ObjectId(82);
+    let prompt = |blockers: Vec<ObjectId>, attackers: Vec<ObjectId>| CombatPrompt::ChooseBlockers {
+        legal_blocks: blockers.iter().map(|b| (*b, attackers.clone())).collect(),
+        eligible_blockers: blockers,
+        attackers,
+        min_blockers: [(wolf, 2)].into_iter().collect(),
+    };
+    assert!(matches!(forced_combat_answer(&prompt(vec![bears], vec![wolf])),
+        Some(Action::DeclareBlockers { ref assignments }) if assignments.is_empty()));
+    assert!(forced_combat_answer(&prompt(vec![bears, ObjectId(83)], vec![wolf])).is_none(),
+        "two able blockers meet the minimum");
+    assert!(forced_combat_answer(&prompt(vec![bears], vec![wolf, ObjectId(62)])).is_none(),
+        "an attacker without a minimum can still be blocked by one");
+}
+
 /// And a prompt with something to click is left alone. A rule that answered
 /// every combat prompt would pass every other test in this file while
 /// taking the game away from the player.
