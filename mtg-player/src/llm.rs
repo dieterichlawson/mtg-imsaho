@@ -828,6 +828,8 @@ Opp board:
 Lands are grouped by name. `(tapped)` or `(N tapped)` shows tap status. Non-land permanents include a unique object ID in parentheses (e.g. `(#30)`) — these IDs are stable for the lifetime of the permanent and can be used to distinguish permanents that share a name. Creatures show CURRENT effective P/T including bonuses. Status flags after creatures appear in a single bracket, comma-separated when there's more than one (e.g. `[T,1dmg]` for a tapped creature with 1 damage marked):
 - `T` = tapped
 - `S` = summoning sick (entered this turn, can't attack)
+- `attacking you`, `attacking Opp`, `attacking <planeswalker> (#id)` = attacking this combat, and what
+- `blocking <attacker> (#id)` = blocking that attacker this combat; `blocked by <blocker> (#id)` = the creatures blocking this attacker
 - `Ndmg` = N damage marked on it
 - `+1/+1:N`, `-1/-1:N`, `loyalty:N` etc. = counter counts
 
@@ -2883,6 +2885,29 @@ impl LlmPlayer {
             // about a creature the very next section offered as a legal
             // attacker (#605, the harness's half of #139).
             if c.affected_by_summoning_sickness { flag_parts.push("S".into()); }
+            // Combat roles (CR 506.4), which the CLI marks `[ATK]`/`[BLK]`
+            // (#245) and the page badges. This board never said them, and
+            // "Recent events" is a delta since the last prompt, so from the
+            // second prompt of a combat step an attacker read as plain `[T]`
+            // and a vigilant one or a blocker as idle — while the seat chose
+            // pump and removal targets (#724).
+            let named = |id: ObjectId| all_perms.iter().find(|p| p.object_id == id)
+                .map_or_else(|| format!("#{}", id.0), |p| format!("{} (#{})", p.name, id.0));
+            match &c.attacking {
+                Some(mtg_engine::view::AttackTarget::Player(p)) =>
+                    flag_parts.push(if *p == view_you { "attacking you".into() } else { "attacking Opp".into() }),
+                Some(mtg_engine::view::AttackTarget::Planeswalker(pw)) =>
+                    flag_parts.push(format!("attacking {}", named(*pw))),
+                None => {}
+            }
+            if !c.blocking.is_empty() {
+                flag_parts.push(format!("blocking {}",
+                    c.blocking.iter().map(|id| named(*id)).collect::<Vec<_>>().join(" and ")));
+            }
+            if !c.blocked_by.is_empty() {
+                flag_parts.push(format!("blocked by {}",
+                    c.blocked_by.iter().map(|id| named(*id)).collect::<Vec<_>>().join(" and ")));
+            }
             if c.damage_marked > 0 { flag_parts.push(format!("{}dmg", c.damage_marked)); }
             // A live regeneration shield (CR 701.15a), which decides whether
             // removal is worth casting and whether an attack trades. The seat
@@ -7514,6 +7539,40 @@ this Aura deals 1 damage to that player.";
             assert_eq!(LlmPlayer::parse_order_response(&bad, 3), None, "{bad}");
         }
         assert_eq!(LlmPlayer::parse_order_response(&serde_json::json!([]), 0), Some(vec![]));
+    }
+
+    /// Issue #724: the board says who is attacking and who is blocking whom.
+    /// "Recent events" is a delta since the last prompt, so from the second
+    /// prompt of a combat step the board was the only place left to say it,
+    /// and it said only `[T]`.
+    #[test]
+    fn the_board_marks_attackers_and_blockers() {
+        use mtg_engine::view::AttackTarget;
+        let you = PlayerId(0);
+        let opp = PlayerId(1);
+        let mut tusker = perm(30, "Kalonian Tusker", 3, 3, you);
+        tusker.tapped = true;
+        tusker.attacking = Some(AttackTarget::Player(opp));
+        tusker.blocked_by = vec![ObjectId(45)];
+        let mut lions = perm(45, "Savannah Lions", 2, 1, opp);
+        lions.blocking = vec![ObjectId(30)];
+        let mut vigilant = perm(31, "Abbey Griffin", 2, 2, you);
+        vigilant.attacking = Some(AttackTarget::Player(opp));
+        let idle = perm(32, "Grizzly Bears", 2, 2, you);
+        let all = vec![&tusker, &lions, &vigilant, &idle];
+
+        let mine = LlmPlayer::format_perms_compact(&[&tusker, &vigilant, &idle], &all, you);
+        let theirs = LlmPlayer::format_perms_compact(&[&lions], &all, you);
+        let line = |out: &str, id: u64| out.lines().find(|l| l.contains(&format!("(#{id}) ")))
+            .unwrap_or_else(|| panic!("#{id} on a line: {out}")).to_string();
+        assert!(line(&mine, 30).contains("attacking Opp"), "{}", line(&mine, 30));
+        assert!(line(&mine, 30).contains("blocked by Savannah Lions (#45)"), "{}", line(&mine, 30));
+        assert!(line(&mine, 31).contains("attacking Opp"), "an untapped attacker is not idle: {}", line(&mine, 31));
+        assert!(!line(&mine, 32).contains("attacking"), "{}", line(&mine, 32));
+        assert!(line(&theirs, 45).contains("blocking Kalonian Tusker (#30)"), "{}", line(&theirs, 45));
+        // Seen from the other seat, the same attacker is attacking "you".
+        let other = LlmPlayer::format_perms_compact(&[&tusker], &all, opp);
+        assert!(other.contains("attacking you"), "{other}");
     }
 
     /// Issue #333: the board text never said a permanent was legendary, so a
