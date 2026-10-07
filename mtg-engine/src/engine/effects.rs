@@ -176,8 +176,14 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         }
         (Target::Object(id), PendingEffect::ReturnToHand { source_name }) => {
             let name = state.obj_name(*id);
+            // A bounce off the battlefield is logged by the engine (#707);
+            // only a card coming back from another zone needs this line, or
+            // the bounce is told twice (#716).
+            let from_battlefield = state.get_object(*id).is_some_and(|o| o.zone == Zone::Battlefield);
             state.move_object(*id, Zone::Hand, registry);
-            state.log(LogLevel::Event, format!("{source_name}: returned {name} to hand"));
+            if !from_battlefield {
+                state.log(LogLevel::Event, format!("{source_name}: returned {name} to hand"));
+            }
         }
         (Target::Object(id), PendingEffect::SacrificeCreature { source_name }) => {
             crate::destruction::sacrifice_by(state, *id, &format!("to {source_name}"), registry);

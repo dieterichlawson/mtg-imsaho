@@ -1,7 +1,7 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetFilter, TargetRequirement, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
-use crate::state::{GameState, LogLevel};
+use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Lost in the Mist — {3}{U}{U} instant. Counter target spell. Return target permanent to its
@@ -53,9 +53,9 @@ impl CardBehavior for LostInTheMist {
         if let Some(Target::Object(perm_id)) = targets.get(1) {
             if let Some(obj) = state.get_object(*perm_id) {
                 if obj.zone == Zone::Battlefield {
-                    let bounced_name = state.obj_name(*perm_id);
+                    // The engine logs the bounce (#707); a line of the card's
+                    // own said it twice (#716).
                     state.move_object(*perm_id, Zone::Hand, registry);
-                    state.log(LogLevel::Event, format!("{bounced_name} was returned to hand"));
                 }
             }
         }

@@ -387,6 +387,12 @@ fn lost_in_the_mist_counters_and_bounces() {
         "Spell should be countered");
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Hand,
         "Permanent should be bounced to hand");
+    // The bounce is logged once, by the engine (#707); the card wrote a
+    // second line of its own in other words (#716).
+    let name = state.obj_name(creature);
+    let lines: Vec<&str> = state.game_log.iter().map(|e| e.message.as_str())
+        .filter(|m| m.contains(&name) && m.contains("hand")).collect();
+    assert_eq!(lines.len(), 1, "one line for one bounce: {lines:#?}");
 }
 
 /// Scryfall ruling (2011-09-22): "Lost in the Mist targets both the spell and
