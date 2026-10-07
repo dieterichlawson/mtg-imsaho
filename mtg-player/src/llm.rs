@@ -7544,6 +7544,19 @@ this Aura deals 1 damage to that player.";
         assert_eq!(LlmPlayer::parse_order_response(&serde_json::json!([]), 0), Some(vec![]));
     }
 
+    /// Issue #713: the pool-emptying line (#708) read "your unspent mana
+    /// empties from their pool" once the seat's token was rewritten. The
+    /// engine now names the pool once, as a possessive every surface turns
+    /// into a sentence.
+    #[test]
+    fn the_pool_emptying_line_reads_as_one_owner() {
+        let you = PlayerId(0);
+        assert_eq!(LlmPlayer::generic_player_rewrite("p0's mana pool empties (Green:1)", you),
+            "your mana pool empties (Green:1)");
+        assert_eq!(LlmPlayer::generic_player_rewrite("p1's mana pool empties (Black:2)", you),
+            "opp's mana pool empties (Black:2)");
+    }
+
     /// Issue #724: the board says who is attacking and who is blocking whom.
     /// "Recent events" is a delta since the last prompt, so from the second
     /// prompt of a combat step the board was the only place left to say it,

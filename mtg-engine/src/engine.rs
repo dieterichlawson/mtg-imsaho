@@ -839,7 +839,7 @@ fn empty_mana_pools(state: &mut GameState) {
     for (player, went) in emptied {
         state.events.push(GameEvent::ManaPoolEmptied { player });
         state.log(crate::state::LogLevel::Info,
-            format!("p{}'s unspent mana empties from their pool ({went})", player.0));
+            format!("p{}'s mana pool empties ({went})", player.0));
     }
 }
 

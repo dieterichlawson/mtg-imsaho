@@ -59,7 +59,7 @@ fn a_mana_pool_empties_at_every_step_boundary() {
         // And the log says so: its last word on the pool was "(pool:
         // Green:3)", which went false with nothing to say why (#708).
         assert!(state.game_log.iter().any(|e|
-                e.message == "p0's unspent mana empties from their pool (Green:3)"),
+                e.message == "p0's mana pool empties (Green:3)"),
             "the emptying is logged at {from:?} -> {to:?}: {:#?}",
             state.game_log.iter().map(|e| e.message.as_str()).collect::<Vec<_>>());
     }
