@@ -1040,6 +1040,16 @@ fn a_blocked_attacker_whose_blocker_left_combat_hits_nobody() {
     assert!(state.combat.as_ref().is_some_and(
         |c| c.blocker_assignments.get(&attacker).is_some_and(Vec::is_empty)
             && c.blocked_attackers.contains(&attacker)));
+    // And the view says so: `blocked_by` is empty, so without `blocked`
+    // every surface drew a plain attacker whose damage never came (#725).
+    let view = mtg_engine::view::GameView::for_player(&state, P1, &reg);
+    let shown = view.battlefield.iter().find(|p| p.object_id == attacker).unwrap();
+    assert!(shown.attacking.is_some() && shown.blocked_by.is_empty() && shown.blocked,
+        "the view says the attacker is blocked");
+    let free = ready_creature(&mut state, P0, 1, 1);
+    let view = mtg_engine::view::GameView::for_player(&state, P1, &reg);
+    assert!(!view.battlefield.iter().find(|p| p.object_id == free).unwrap().blocked,
+        "a creature out of combat is not blocked");
 
     let p1_life = state.get_player(P1).life;
     combat::deal_combat_damage(&mut state, &reg);

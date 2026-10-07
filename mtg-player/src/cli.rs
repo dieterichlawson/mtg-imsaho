@@ -2669,7 +2669,12 @@ impl CliPlayer {
         // and `[T]` — the same mark a creature gets for tapping for
         // mana — was the only thing the pane said about either
         // (issue #245).
-        let combat = if c.attacking.is_some() {
+        let combat = if c.attacking.is_some() && c.blocked && c.blocked_by.is_empty() {
+            // Blocked, by creatures that have all left combat: it deals
+            // no combat damage unless it has trample (CR 509.1h, 506.4),
+            // and a bare `[ATK]` read as an unblocked attacker (#725).
+            " [ATK, blocked]"
+        } else if c.attacking.is_some() {
             " [ATK]"
         } else if !c.blocking.is_empty() {
             " [BLK]"
@@ -5002,7 +5007,6 @@ impl CliPlayer {
         if perm.is_token {
             let _ = execute!(out, Print("  Token: true\n".to_string()));
         }
-
         // Color (CR 105.2). Intimidate (CR 702.13a) is decided
         // entirely by it and no pane printed it: for most
         // permanents a player could infer it from the mana cost
@@ -5108,6 +5112,9 @@ impl CliPlayer {
         if !perm.blocked_by.is_empty() {
             let names: Vec<String> = perm.blocked_by.iter().map(|&b| named(b)).collect();
             let _ = execute!(out, Print(format!("  Blocked by: {}\n", names.join(", "))));
+        } else if perm.blocked {
+            // CR 509.1h: still blocked with every blocker gone (#725).
+            let _ = execute!(out, Print("  Blocked: its blockers have left combat; it deals no combat damage unless it has trample\n".to_string()));
         }
 
         // Attachments, by what they are: an Aura enchants
@@ -11032,6 +11039,7 @@ Mark 1 of the 1 cards below to exile.");
             attacking: None,
             blocking: vec![],
             blocked_by: vec![],
+            blocked: false,
             oracle_text: String::new(),
             counters: HashMap::new(),
             loyalty_abilities: vec![],
@@ -11141,6 +11149,7 @@ Mark 1 of the 1 cards below to exile.");
             attacking: None,
             blocking: vec![],
             blocked_by: vec![],
+            blocked: false,
             oracle_text: String::new(),
             counters: HashMap::new(),
             loyalty_abilities: vec![],
@@ -11944,6 +11953,30 @@ Mark 1 of the 1 cards below to exile.");
         assert!(text.contains("Counters:"), "counters missing from {text}");
         assert!(text.contains("attacks each combat"), "oracle text missing from {text}");
         assert_crlf("show_battlefield_inspector detail", &buf);
+    }
+
+    /// Issue #725: an attacker whose blockers have all left combat is still
+    /// blocked (CR 509.1h) and deals no combat damage; the row and the
+    /// detail page say so instead of showing a plain attacker.
+    #[test]
+    fn an_attacker_whose_blockers_left_says_it_is_blocked() {
+        let mut v = view(Step::DeclareBlockers, 4, true);
+        let mut perm = creature(67, "Walking Corpse", 0);
+        perm.attacking = Some(mtg_engine::view::AttackTarget::Player(PlayerId(1)));
+        perm.blocked = true;
+        v.battlefield = vec![perm.clone()];
+        let (a, b, c) = CliPlayer::creature_row_parts(&perm, None);
+        let row = format!("{a}{b}{c}");
+        assert!(row.contains("[ATK, blocked]"), "{row}");
+        let mut buf: Vec<u8> = Vec::new();
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &perm);
+        let text = String::from_utf8_lossy(&buf).to_string();
+        assert!(text.contains("Blocked: its blockers have left combat"), "{text}");
+
+        perm.blocked = false;
+        let (a, b, c) = CliPlayer::creature_row_parts(&perm, None);
+        let row = format!("{a}{b}{c}");
+        assert!(!row.contains("blocked"), "an unblocked attacker is plain [ATK]: {row}");
     }
 
     /// CR 706.2: the page renders the permanent's ability set, not the

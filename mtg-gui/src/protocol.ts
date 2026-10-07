@@ -82,6 +82,12 @@ export interface PermanentView {
   attacking: AttackTarget | null;
   blocking: ObjectId[];
   blocked_by: ObjectId[];
+  /**
+   * Blocked (CR 509.1h), which stays true when every blocker has left
+   * combat — the attacker then deals no combat damage unless it has
+   * trample, and `blocked_by` is empty (#725).
+   */
+  blocked: boolean;
   protections: string[];
   restrictions: string[];
   oracle_text: string;

@@ -296,7 +296,9 @@ export function badgeStrip(ctx: Ctx, badges: { t: string; c: string }[], maxW: n
 /** Status marks for a permanent: tapped, attacking, blocking, sick, counters, damage. */
 export function permBadges(p: PermanentView, state: State): { t: string; c: string }[] {
   const b: { t: string; c: string }[] = [];
-  if (p.attacking) b.push({ t: "ATK", c: "#e07040" });
+  // An attacker whose blockers all left combat is still blocked (CR
+  // 509.1h) and deals no combat damage; a bare ATK read as unblocked (#725).
+  if (p.attacking) b.push(p.blocked && !(p.blocked_by && p.blocked_by.length) ? { t: "BLKD", c: "#a08060" } : { t: "ATK", c: "#e07040" });
   if (p.blocking && p.blocking.length) b.push({ t: "BLK", c: "#60a0e0" });
   if (p.affected_by_summoning_sickness) b.push({ t: "z", c: "#8080a0" });
   const c = p.counters || {};
@@ -806,6 +808,7 @@ export function inspectorFacts(state: LiveState, e: IndexEntry): string[] {
   if (o.attacking) out.push("Attacking " + ("Player" in o.attacking ? playerLabel(state, o.attacking.Player) : nameOf(state, o.attacking.Planeswalker)));
   if (o.blocking && o.blocking.length) out.push("Blocking " + o.blocking.map(id => nameOf(state, id)).join(", "));
   if (o.blocked_by && o.blocked_by.length) out.push("Blocked by " + o.blocked_by.map(id => nameOf(state, id)).join(", "));
+  else if (o.attacking && o.blocked) out.push("Blocked: its blockers left combat, so it deals no combat damage unless it has trample");
   for (const p of o.protections || []) out.push(p);
   for (const r of o.restrictions || []) out.push(r);
   if (o.affected_by_summoning_sickness) out.push("Summoning sick");

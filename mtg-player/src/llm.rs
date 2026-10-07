@@ -830,6 +830,7 @@ Lands are grouped by name. `(tapped)` or `(N tapped)` shows tap status. Non-land
 - `S` = summoning sick: its controller has not controlled it continuously since their most recent turn began, so it can't attack or use `{T}` abilities yet (CR 302.6). It can still block. A creature cast on its controller's turn keeps `S` through the opponent's next turn
 - `attacking you`, `attacking Opp`, `attacking <planeswalker> (#id)` = attacking this combat, and what
 - `blocking <attacker> (#id)` = blocking that attacker this combat; `blocked by <blocker> (#id)` = the creatures blocking this attacker
+- `blocked (no blockers left)` = this attacker was blocked and every creature blocking it has left combat: it stays blocked and deals no combat damage unless it has trample
 - `Ndmg` = N damage marked on it
 - `regen shield` / `N regen shields` = regeneration shields ready to use
 - `token` = a token; `copy` = a copy of another permanent (it has the copied card's name and text)
@@ -2910,6 +2911,10 @@ impl LlmPlayer {
             if !c.blocked_by.is_empty() {
                 flag_parts.push(format!("blocked by {}",
                     c.blocked_by.iter().map(|id| named(*id)).collect::<Vec<_>>().join(" and ")));
+            } else if c.blocked {
+                // Still blocked with every blocker gone (CR 509.1h): it
+                // deals no combat damage, and read as unblocked (#725).
+                flag_parts.push("blocked (no blockers left)".into());
             }
             if c.damage_marked > 0 { flag_parts.push(format!("{}dmg", c.damage_marked)); }
             // A live regeneration shield (CR 701.15a), which decides whether
@@ -7351,6 +7356,7 @@ pub(crate) mod tests {
             attacking: None,
             blocking: vec![],
             blocked_by: vec![],
+            blocked: false,
             oracle_text: String::new(),
             counters: HashMap::new(),
             loyalty_abilities: vec![],
@@ -7609,6 +7615,9 @@ this Aura deals 1 damage to that player.";
         a.counters.insert(CounterType::PlusOnePlusOne, 1);
         a.counters.insert(CounterType::MinusOneMinusOne, 1);
         a.is_token = true;
+        let mut alone = perm(31, "Walking Corpse", 2, 2, you);
+        alone.attacking = Some(AttackTarget::Player(opp));
+        alone.blocked = true;
         let mut b = perm(45, "Savannah Lions", 2, 1, opp);
         b.blocking = vec![ObjectId(30)];
         b.affected_by_summoning_sickness = true;
@@ -7621,8 +7630,9 @@ this Aura deals 1 damage to that player.";
         c.effective_power = None;
         c.effective_toughness = None;
         c.named_card = Some("Geistflame".into());
-        let all = vec![&a, &b, &c];
+        let all = vec![&a, &alone, &b, &c];
         let board = LlmPlayer::format_perms_compact(&all, &all, you);
+        assert!(board.contains("blocked (no blockers left)"), "{board}");
         let legend_start = GAME_RULES.find("Status flags after creatures").expect("the legend");
         let legend = &GAME_RULES[legend_start..legend_start + 2500];
         for line in board.lines() {
@@ -7713,6 +7723,7 @@ this Aura deals 1 damage to that player.";
             attacking: None,
             blocking: vec![],
             blocked_by: vec![],
+            blocked: false,
             oracle_text: String::new(),
             counters: HashMap::new(),
             loyalty_abilities: vec![],

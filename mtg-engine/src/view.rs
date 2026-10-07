@@ -178,6 +178,13 @@ pub struct PermanentView {
     pub blocking: Vec<ObjectId>,
     /// The creatures blocking this attacker.
     pub blocked_by: Vec<ObjectId>,
+    /// Whether this attacker is blocked (CR 509.1h). It stays blocked when
+    /// every creature blocking it has left combat, and then deals no combat
+    /// damage unless it has trample (CR 506.4, 702.19e) — a fact
+    /// `blocked_by`, which lists only the blockers still there, cannot say:
+    /// every surface showed such an attacker as plainly attacking, and the
+    /// damage never came (#725).
+    pub blocked: bool,
     /// Protections in force, described (CR 702.16). Not a keyword, so it
     /// cannot ride in `keywords`, and a timed one (Spare from Evil) is
     /// invisible without it (issue #243).
@@ -446,6 +453,8 @@ impl GameView {
                     blocked_by: state.combat.as_ref()
                         .and_then(|c| c.blocker_assignments.get(&obj.id).cloned())
                         .unwrap_or_default(),
+                    blocked: state.combat.as_ref()
+                        .is_some_and(|c| c.blocked_attackers.contains(&obj.id)),
                     protections: state.protections_of(obj.id, registry),
                     restrictions: state.restrictions_of(obj.id, registry),
                     // A token has no card face, so this is empty for one —
