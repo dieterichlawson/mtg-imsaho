@@ -1329,6 +1329,45 @@ fn forbidden_alchemy_choice_from_top_4() {
     assert_eq!(state.get_object(c4).unwrap().zone, Zone::Graveyard);
 }
 
+/// Issue #721: two copies of a card among the four looked at are one offer.
+/// The rest all go to the graveyard, so which copy is kept is no choice —
+/// and one row per copy was "Island / Forbidden Alchemy / Island /
+/// Forbidden Alchemy", byte-identical rows, with the random seat's pick
+/// weighted by copy count. The copy not kept still goes to the graveyard.
+#[test]
+fn forbidden_alchemy_offers_one_row_per_card_looked_at() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let mut cards = Vec::new();
+    for name in ["Island", "Forbidden Alchemy", "Island", "Forbidden Alchemy"] {
+        let card_id = reg.get_id_by_name(name).unwrap();
+        let obj = state.create_object(card_id, P0, Zone::Library, None, None);
+        state.get_object_mut(obj).unwrap().name = name.into();
+        cards.push(obj);
+    }
+    state.players[0].library_order = cards.clone();
+
+    let fa = castable_spell(&mut state, &reg, "Forbidden Alchemy", P0);
+    state = cast_and_resolve(&state, &reg, fa, vec![]);
+    let legal = engine::legal_actions(&state, &reg);
+    let violations = mtg_engine::invariants::check_legal(&state, P0, &legal, &reg);
+    assert!(violations.is_empty(), "{violations:?}");
+    let offers: Vec<_> = legal.actions.into_iter()
+        .filter_map(|a| match a {
+            Action::ResolveChoice { choice: mtg_engine::actions::ResolvedChoice::ChosenCard(id) } => Some(id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(offers, vec![cards[0], cards[1]], "one offer per card, the first copy of each");
+
+    state = engine::submit_action(&state, &Action::ResolveChoice {
+        choice: mtg_engine::actions::ResolvedChoice::ChosenCard(cards[0]) }, &reg);
+    assert_eq!(state.get_object(cards[0]).unwrap().zone, Zone::Hand);
+    for &c in &cards[1..] {
+        assert_eq!(state.get_object(c).unwrap().zone, Zone::Graveyard, "the rest, both copies included");
+    }
+}
+
 /// Forbidden Alchemy looks; it does not reveal.
 ///
 /// "Look at the top four cards" is CR 701.18a, not a reveal, and the card

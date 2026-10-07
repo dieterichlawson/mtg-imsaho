@@ -726,7 +726,26 @@ fn prompt_offers(state: &GameState, acting: PlayerId, legal: &LegalActions, regi
                 }
                 K::YesNo { .. } => expect(v, vec![format!("{:?}", ResolvedChoice::YesNoDecision(true)), format!("{:?}", ResolvedChoice::YesNoDecision(false))]),
                 K::ChooseCardFromHand { cards, .. } => expect(v, cards.iter().map(|c| format!("{:?}", ResolvedChoice::ChosenCard(*c))).collect()),
-                K::ChooseFromLookedAt { looked_at, .. } => expect(v, looked_at.iter().map(|c| format!("{:?}", ResolvedChoice::ChosenCard(*c))).collect()),
+                // Every card looked at is offered, once: one offer per
+                // distinct card, each a looked-at copy (#721).
+                K::ChooseFromLookedAt { looked_at, .. } => {
+                    let card = |id: &ObjectId| state.get_object(*id).map(|o| o.card_id);
+                    let mut offered_cards = std::collections::HashSet::new();
+                    for c in &acts {
+                        match c {
+                            ResolvedChoice::ChosenCard(id) if looked_at.contains(id) => {
+                                if !offered_cards.insert(card(id)) {
+                                    v.push(format!("looked-at choice offers two copies of {}", state.obj_name(*id)));
+                                }
+                            }
+                            other => v.push(format!("looked-at choice offers {other:?}, not a looked-at card")),
+                        }
+                    }
+                    let wanted: std::collections::HashSet<_> = looked_at.iter().map(card).collect();
+                    if wanted != offered_cards {
+                        v.push(format!("looked-at choice offers {} distinct card(s) of {}", offered_cards.len(), wanted.len()));
+                    }
+                }
                 K::ChooseFromLibrary { options, .. } => {
                     let mut want: Vec<String> = options.iter().map(|c| format!("{:?}", ResolvedChoice::ChosenCard(*c))).collect();
                     want.push(format!("{:?}", ResolvedChoice::ChosenTarget(None)));

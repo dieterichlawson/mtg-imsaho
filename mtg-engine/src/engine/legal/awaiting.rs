@@ -260,9 +260,14 @@ pub(crate) fn legal_actions_while_awaiting(
                         choice: ResolvedChoice::ChosenCard(id),
                     })
                     .collect(),
-                ResolutionChoiceKind::ChooseFromLookedAt { looked_at, .. } => looked_at
-                    .iter()
-                    .map(|&id| Action::ResolveChoice {
+                // One offer per card, not per copy: the cards not taken all
+                // go to the same place, so which of two copies is taken is
+                // no choice (#721, the looked-at sibling of #692). The full
+                // `looked_at` stays on the prompt for the handler.
+                ResolutionChoiceKind::ChooseFromLookedAt { looked_at, .. } =>
+                    crate::cards::helpers::one_of_each_card(state, looked_at.clone())
+                    .into_iter()
+                    .map(|id| Action::ResolveChoice {
                         choice: ResolvedChoice::ChosenCard(id),
                     })
                     .collect(),
