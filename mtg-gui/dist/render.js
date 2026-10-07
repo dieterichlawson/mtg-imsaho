@@ -507,7 +507,7 @@ function rowLayout(n, cardW, x0, width, gap = 3) {
  * `permBadges` would paint. That is the same rule the old one was a
  * special case of, so basic lands still stack exactly as before.
  */
-function stackKey(p, attachedTo) {
+export function stackKey(p, attachedTo) {
     if (p.attached_to !== null && p.attached_to !== undefined)
         return null;
     if (attachedTo.has(p.object_id))
@@ -529,6 +529,12 @@ function stackKey(p, attachedTo) {
         p.effective_power, p.effective_toughness, p.star_pt,
         (p.keywords || []).join(","), (p.protections || []).join(","), (p.restrictions || []).join(","),
         (p.card_types || []).join(","), (p.subtypes || []).join(","), (p.supertypes || []).join(","),
+        // What the inspector says and what a click can do. A stack draws its
+        // first card and offers only that card's verbs, so an Evil Twin copying
+        // your Walking Corpse stacked with it as one "x2", and the ability the
+        // copy granted itself was on no card a person could click (#722).
+        p.is_copy, (p.colors || []).join(","), p.oracle_text,
+        (p.granted_abilities || []).join("\n"), p.owner,
     ].join("|");
 }
 /**
