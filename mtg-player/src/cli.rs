@@ -7597,6 +7597,23 @@ impl CliPlayer {
         page
     }
 
+    /// The card browser's key line. It names the way out of every state
+    /// it can be in — Esc/Backspace were undiscoverable exactly when the
+    /// list was empty (#124) — and the concede word, which this browser
+    /// takes through its filter rather than a line reader (#715).
+    fn card_browser_footer(filter: &str, can_decline: bool, nothing_shown: bool) -> &'static str {
+        if is_concede_word(filter) {
+            return "Enter = concede the game (asks to confirm)  |  Esc or Backspace clears the filter";
+        }
+        match (can_decline, nothing_shown && !filter.is_empty()) {
+            (_, true) => "no matches  |  Esc or Backspace clears the filter  |  type concede + Enter to concede",
+            (true, false) =>
+                "↑↓ navigate  |  type to filter  |  Enter to select  |  Esc (empty filter) = take nothing  |  concede",
+            (false, false) =>
+                "↑↓ navigate  |  type to filter  |  Enter to select  |  Esc = clear filter  |  concede",
+        }
+    }
+
     fn library_search_ui(view: &GameView, actions: &[Action], title: &str, decline: Option<Action>) -> Action {
         begin_decision(view.you, "library-search");
 
@@ -7772,15 +7789,7 @@ impl CliPlayer {
 
             let _ = execute!(out, Print("\n\r"),
                 SetForegroundColor(Color::DarkGrey),
-                Print(match (decline.is_some(), filtered.is_empty() && !filter.is_empty()) {
-                    // The footer names the way out — Esc/Backspace were
-                    // undiscoverable exactly when the list was empty (#124).
-                    (_, true) => "no matches  |  Esc or Backspace clears the filter",
-                    (true, false) =>
-                        "↑↓ navigate  |  type to filter  |  Enter to select  |  Esc (empty filter) = take nothing",
-                    (false, false) =>
-                        "↑↓ navigate  |  type to filter  |  Enter to select  |  Esc = clear filter",
-                }),
+                Print(Self::card_browser_footer(&filter, decline.is_some(), filtered.is_empty())),
                 ResetColor, Print("\n\r"));
             let _ = out.flush();
 
@@ -7796,6 +7805,19 @@ impl CliPlayer {
             }
             if let Event::Key(KeyEvent { code, modifiers, .. }) = ev {
                 match code {
+                    // The browser reads keys, not lines, so the word every
+                    // other prompt takes (#676) arrives here as a filter:
+                    // Enter on exactly that filter concedes, confirmed, and
+                    // a "no" leaves the browser as it was, filter cleared
+                    // (#715).
+                    KeyCode::Enter if is_concede_word(&filter) => {
+                        let _ = execute!(out, event::DisableBracketedPaste);
+                        Self::concede_if_confirmed();
+                        tui_raw_on();
+                        let _ = execute!(out, event::EnableBracketedPaste);
+                        filter.clear();
+                        selected = 0;
+                    }
                     KeyCode::Enter => {
                         if let Some(card) = filtered.get(selected) {
                             let _ = execute!(out, event::DisableBracketedPaste);
@@ -9548,6 +9570,24 @@ Mark 1 of the 1 cards below to exile.");
         assert!(super::SET_HOW_TO.contains("[concede]"));
         assert!(super::ORDER_HOW_TO.contains("[concede]"));
         assert!(CliPlayer::x_funding_hint(3, false).contains("concede"));
+    }
+
+    /// Issue #715: the card browser (searches, looks, Nevermore's naming)
+    /// reads keys into a filter, so the word reaches it as a filter; its
+    /// footer names the word in every state, and says what Enter does once
+    /// the word is typed.
+    #[test]
+    fn the_card_browser_footer_names_the_concede_word() {
+        for decline in [false, true] {
+            for (filter, empty) in [("", false), ("isl", false), ("zzz", true), ("", true)] {
+                let footer = CliPlayer::card_browser_footer(filter, decline, empty);
+                assert!(footer.contains("concede"), "{filter:?} {decline} {empty}: {footer}");
+            }
+            for typed in ["concede", "Concede"] {
+                let footer = CliPlayer::card_browser_footer(typed, decline, true);
+                assert!(footer.starts_with("Enter = concede"), "{footer}");
+            }
+        }
     }
 
     /// Issue #637: the combat damage division reads one number in range;
