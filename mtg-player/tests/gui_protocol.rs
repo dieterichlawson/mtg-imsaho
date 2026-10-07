@@ -362,3 +362,27 @@ fn every_view_field_the_page_is_sent_is_one_the_page_declares() {
     checked += sent.len();
     assert!(checked >= 60, "only {checked} fields compared — this guard has stopped covering");
 }
+
+/// The inspector names a counter as the engine does (#723): the page keeps
+/// a table from the serde key the view sends to `CounterType::label`, and
+/// printed the key itself before it had one ("2 PlusOnePlusOne counters").
+/// The match below has no wildcard, so a new counter kind fails to compile
+/// here until the page is given its label.
+#[test]
+fn the_page_labels_every_counter_kind_as_the_engine_does() {
+    use mtg_engine::types::CounterType;
+    fn every(c: CounterType) -> CounterType {
+        match c {
+            CounterType::PlusOnePlusOne | CounterType::MinusOneMinusOne | CounterType::Loyalty
+            | CounterType::Slime | CounterType::Study | CounterType::Hatchling => c,
+        }
+    }
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../mtg-gui/src/render.ts"))
+        .expect("the page's renderer");
+    for c in [CounterType::PlusOnePlusOne, CounterType::MinusOneMinusOne, CounterType::Loyalty,
+              CounterType::Slime, CounterType::Study, CounterType::Hatchling].map(every) {
+        let key = serde_json::to_value(c).unwrap();
+        let entry = format!("{}: \"{}\"", key.as_str().unwrap(), c.label());
+        assert!(src.contains(&entry), "render.ts's COUNTER_LABEL lacks `{entry}`");
+    }
+}

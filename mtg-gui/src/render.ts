@@ -774,6 +774,21 @@ export function inspectorPt(o: ViewObject): string[] {
  * know about a permanent is `CliPlayer::paint_permanent_detail`; this is
  * the same list on the fourth surface.
  */
+/**
+ * The engine's `CounterType::label`, by the serde key the view sends. The
+ * inspector printed the key itself — "2 PlusOnePlusOne counters" — which
+ * is #363's Debug-named keywords again, for counters (#723).
+ * `gui_protocol.rs` holds this table to the engine's labels.
+ */
+const COUNTER_LABEL: Record<string, string> = {
+  PlusOnePlusOne: "+1/+1", MinusOneMinusOne: "-1/-1", Loyalty: "loyalty",
+  Slime: "slime", Study: "study", Hatchling: "hatchling",
+};
+
+export function counterFact(kind: string, n: number): string {
+  return `${n} ${COUNTER_LABEL[kind] ?? kind.toLowerCase()} counter${n > 1 ? "s" : ""}`;
+}
+
 export function inspectorFacts(state: LiveState, e: IndexEntry): string[] {
   const o: ViewObject = e.obj;
   const out: string[] = [];
@@ -791,7 +806,7 @@ export function inspectorFacts(state: LiveState, e: IndexEntry): string[] {
   // #357 on the fourth surface).
   if (o.colors) out.push(`Color: ${o.colors.length ? o.colors.join(", ") : "Colorless"}`);
   if (o.keywords && o.keywords.length) out.push(o.keywords.join(", "));
-  if (o.counters) for (const [k, n] of Object.entries(o.counters)) if (n) out.push(`${n} ${k} counter${n > 1 ? "s" : ""}`);
+  if (o.counters) for (const [k, n] of Object.entries(o.counters)) if (n) out.push(counterFact(k, n));
   // The count, not just a badge. A shield is spent one per destruction
   // (CR 701.15a), so six of them and one of them are different boards —
   // and the board's `R` badge carries no number and is 8th of the badges
