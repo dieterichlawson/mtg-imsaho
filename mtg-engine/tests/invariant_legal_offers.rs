@@ -876,6 +876,8 @@ fn every_resolution_prompt_enumerates_to_its_own_options() {
     let other = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
     let card = spell_in_hand(&mut state, &reg, "Moment of Heroism", P0);
     let card2 = spell_in_hand(&mut state, &reg, "Moment of Heroism", P0);
+    // Two different cards: copies of one card are one offer at a look (#721).
+    let other_card = spell_in_hand(&mut state, &reg, "Giant Growth", P0);
     state.priority_player = Some(P0);
 
     let kinds = [
@@ -884,7 +886,7 @@ fn every_resolution_prompt_enumerates_to_its_own_options() {
             description: "?".into(), player: P0, cards: vec![card, card2],
             discard_immediately: true, remaining: 1 },
         ResolutionChoiceKind::ChooseFromLookedAt {
-            description: "?".into(), looked_at: vec![card, card2] },
+            description: "?".into(), looked_at: vec![card, other_card] },
         ResolutionChoiceKind::ChooseCardType {
             description: "?".into(), options: vec!["Creature".into(), "Land".into()],
             controller: P0 },
