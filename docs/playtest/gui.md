@@ -47,6 +47,12 @@ random game happened to reach.
 - G3 the prompt with no board: a search, a looked-at pile, a card name.
   Is the row list readable at 30 entries? Does the filter box take
   focus, and give it back?
+  [2026-10-07] **The card name holds at 269 entries**: focus on open, 20
+  rows a page, "250-269 of 269", last row in 83 wheel notches; no key pages
+  it (the field owns them, #601), so the filter is the fast route. The
+  modal title clips where the panel prints it whole. Not yet looked at: a
+  real `ChooseFromLookedAt` (Forbidden Alchemy, which offers copies as
+  separate rows, #721) and a Garruk search, played live rather than staged.
 - G4 the crowded board: `20 Armored Skaab` a side, a 40-card graveyard,
   nine tokens. Does every row fit its band, does the graveyard page, can
   you reach the last card? (The CLI's V7 sweep, for the page.)
@@ -64,6 +70,16 @@ random game happened to reach.
   `h.x >= 480`, both exact.
 - G5 game over: a win, a loss, a draw, a concede, a decked opponent.
   Is the reason on screen? Is the last board still readable behind it?
+  [2026-10-07] **The reason holds, the board does not** (#712, #713, #714).
+  Concede, decking and life loss each name their reason in the box and the
+  panel. The box covers the player's own battlefield and the band and never
+  goes away, and the runner exits 300 ms after `game_over`, so there is no
+  reload. Cheap decks to reach the end: `20 Forest / 20 Grizzly Bears` vs
+  `8 Island` decks the opponent by turn 5 (seed 3); the same pile vs
+  white-black ends on life at turn 39 (seed 9). Still unreached: **a draw and
+  "Game abandoned"**, where `outcomeHeadline` returns null and the box has
+  no headline at all — build a board where both players reach 0 from one
+  damage event and look.
 
 - G12 [proposed 2026-09-17, from tonight's G1 night and #523] auto-pass's
   silence: `main.ts:96` answers every pass-only priority without drawing a
