@@ -103,6 +103,11 @@ export interface State {
   lastSent?: { seq: number; action: Action } | null;
   ui: Ui | null;
   gameOver: string | null;
+  /**
+   * The game-over box was put away (a click, Escape or Enter), so the final
+   * board can be read; the result stays in the panel (#712).
+   */
+  gameOverDismissed?: boolean;
   hover: Hit | null;
   hits: Hit[];
   popover: Popover | null;

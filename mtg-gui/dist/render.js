@@ -4,7 +4,7 @@
 // what each one is and what a click on it does. Input never looks at the
 // view; it looks at the last frame.
 import { drawArt, frameColor, darker, uiImage } from "./assets.js";
-import { nameOf, targetLabel, playerLabel, inOurWords } from "./prompts.js";
+import { nameOf, targetLabel, playerLabel, engineLine } from "./prompts.js";
 export const W = 640, H = 360;
 export const PANEL_X = 480;
 const BOARD_W = PANEL_X;
@@ -302,8 +302,10 @@ export function badgeStrip(ctx, badges, maxW) {
 /** Status marks for a permanent: tapped, attacking, blocking, sick, counters, damage. */
 export function permBadges(p, state) {
     const b = [];
+    // An attacker whose blockers all left combat is still blocked (CR
+    // 509.1h) and deals no combat damage; a bare ATK read as unblocked (#725).
     if (p.attacking)
-        b.push({ t: "ATK", c: "#e07040" });
+        b.push(p.blocked && !(p.blocked_by && p.blocked_by.length) ? { t: "BLKD", c: "#a08060" } : { t: "ATK", c: "#e07040" });
     if (p.blocking && p.blocking.length)
         b.push({ t: "BLK", c: "#60a0e0" });
     if (p.affected_by_summoning_sickness)
@@ -708,7 +710,7 @@ function drawBand(ctx, hits, state) {
     // Whose turn, which step, and the last two things that happened.
     const mine = view.active_player === view.you;
     text(ctx, bandTurnLine(ctx, mine, view.step), BAND_X, y + 2, { font: "7px Silkscreen", color: mine ? "#ffe080" : "#c0b0d0" });
-    bandLogLines(state).forEach((l, i) => text(ctx, clip(ctx, inOurWords(state, l), BAND_W, "7px Silkscreen"), BAND_X, y + 12 + i * 8, { font: "7px Silkscreen", color: "#8a8898" }));
+    bandLogLines(state).forEach((l, i) => text(ctx, clip(ctx, engineLine(state, l), BAND_W, "7px Silkscreen"), BAND_X, y + 12 + i * 8, { font: "7px Silkscreen", color: "#8a8898" }));
     view.stack.forEach((item, i) => {
         const key = `o${item.object_id}`;
         const x = sx0 + i * 28, sy = y + 9;
@@ -804,15 +806,27 @@ export function outcomeHeadline(state, summary) {
         return "A DRAW";
     return null;
 }
+/**
+ * Whether the game-over box is drawn over the board. It dims the board and
+ * sits over the phase strip, the log band and most of your own row, and the
+ * runner is gone a moment after the game ends, so this frame is the last
+ * view of the game a person gets; the box used to be drawn every frame with
+ * no way past it (#712). The same result is printed in the panel, so once
+ * put away — any click, Escape or Enter — it stays away.
+ */
+export function showsGameOverBox(state) {
+    return !!state.gameOver && !state.gameOverDismissed;
+}
+export const GAME_OVER_DISMISS_HINT = "click or Esc to see the final board";
 function gameOverScreen(ctx, state) {
-    if (!state.gameOver)
+    if (!state.gameOver || !showsGameOverBox(state))
         return;
     ctx.fillStyle = "rgba(0,0,0,0.6)";
     ctx.fillRect(0, 0, BOARD_W, H);
     const w = 360, x = (BOARD_W - w) / 2;
     const headline = outcomeHeadline(state, state.gameOver);
-    const lines = inOurWords(state, state.gameOver).split("\n").flatMap(l => wrap(ctx, l, w - 24, "8px Silkscreen"));
-    const h = 44 + (headline ? 14 : 0) + lines.length * 11, y = (H - h) / 2;
+    const lines = engineLine(state, state.gameOver).split("\n").flatMap(l => wrap(ctx, l, w - 24, "8px Silkscreen"));
+    const h = 56 + (headline ? 14 : 0) + lines.length * 11, y = (H - h) / 2;
     texturedPanel(ctx, x, y, w, h);
     text(ctx, "GAME OVER", x + w / 2, y + 10, { align: "center", font: "8px PressStart", color: "#ffe080" });
     let ly = y + 28;
@@ -821,6 +835,7 @@ function gameOverScreen(ctx, state) {
         ly += 14;
     }
     lines.forEach((l, i) => text(ctx, l, x + w / 2, ly + i * 11, { align: "center" }));
+    text(ctx, GAME_OVER_DISMISS_HINT, x + w / 2, ly + lines.length * 11 + 4, { align: "center", font: "7px Silkscreen", color: "#a8a0b0" });
 }
 // --------------------------------------------------------------- panel
 /**
@@ -859,6 +874,19 @@ export function inspectorPt(o) {
  * know about a permanent is `CliPlayer::paint_permanent_detail`; this is
  * the same list on the fourth surface.
  */
+/**
+ * The engine's `CounterType::label`, by the serde key the view sends. The
+ * inspector printed the key itself — "2 PlusOnePlusOne counters" — which
+ * is #363's Debug-named keywords again, for counters (#723).
+ * `gui_protocol.rs` holds this table to the engine's labels.
+ */
+const COUNTER_LABEL = {
+    PlusOnePlusOne: "+1/+1", MinusOneMinusOne: "-1/-1", Loyalty: "loyalty",
+    Slime: "slime", Study: "study", Hatchling: "hatchling",
+};
+export function counterFact(kind, n) {
+    return `${n} ${COUNTER_LABEL[kind] ?? kind.toLowerCase()} counter${n > 1 ? "s" : ""}`;
+}
 export function inspectorFacts(state, e) {
     const o = e.obj;
     const out = [];
@@ -883,7 +911,7 @@ export function inspectorFacts(state, e) {
     if (o.counters)
         for (const [k, n] of Object.entries(o.counters))
             if (n)
-                out.push(`${n} ${k} counter${n > 1 ? "s" : ""}`);
+                out.push(counterFact(k, n));
     // The count, not just a badge. A shield is spent one per destruction
     // (CR 701.15a), so six of them and one of them are different boards —
     // and the board's `R` badge carries no number and is 8th of the badges
@@ -907,6 +935,8 @@ export function inspectorFacts(state, e) {
         out.push("Blocking " + o.blocking.map(id => nameOf(state, id)).join(", "));
     if (o.blocked_by && o.blocked_by.length)
         out.push("Blocked by " + o.blocked_by.map(id => nameOf(state, id)).join(", "));
+    else if (o.attacking && o.blocked)
+        out.push("Blocked: its blockers left combat, so it deals no combat damage unless it has trample");
     for (const p of o.protections || [])
         out.push(p);
     for (const r of o.restrictions || [])
@@ -1013,7 +1043,7 @@ function promptArea(ctx, hits, state, x, y, w, h) {
             text(ctx, headline, x + 4, ty, { font: "8px PressStart", color: "#ffffff" });
             ty += 11;
         }
-        for (const l of wrapCapped(ctx, inOurWords(state, state.gameOver), w - 8, "8px Silkscreen", 8)) {
+        for (const l of wrapCapped(ctx, engineLine(state, state.gameOver), w - 8, "8px Silkscreen", 8)) {
             text(ctx, l, x + 4, ty, { color: "#ffe080" });
             ty += 9;
         }
@@ -1117,7 +1147,7 @@ function logArea(ctx, hits, state, x, y, w, h, headRoom = 0) {
     panel(ctx, x, y, w, h, "#100e14", "#3a3048");
     const lines = [];
     for (const entry of state.view.display_log.slice(-40))
-        for (const l of wrap(ctx, inOurWords(state, entry), w - 8, "7px Silkscreen"))
+        for (const l of wrap(ctx, engineLine(state, entry), w - 8, "7px Silkscreen"))
             lines.push(l);
     const top = y + 2 + headRoom;
     const fit = Math.floor((h - 4 - headRoom) / 8);

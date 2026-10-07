@@ -74,12 +74,40 @@ export function playerLabel(state: LiveState, pid: PlayerId): string {
  * rewritten so they do not have to be decoded.
  */
 export function inOurWords(state: LiveState, line: string): string {
-  return line.replace(/\bp(\d+)\b/g, (whole, n) => {
-    const pid = Number(n);
-    if (pid === state.view.you) return "you";
-    return state.view.opponents.some(o => o.id === pid) ? "opp" : whole;
-  });
+  // A token is a possessive, or the subject of a present-tense verb, as
+  // often as it is a bare name: swapping the word alone wrote "you's
+  // unspent mana", "you keeps" and "Game over! you (red-green) wins!"
+  // (#713). The verbs are the engine's and the runner's present-tense ones,
+  // the same list the LLM seat conjugates (`try_rewrite_player_token`); a
+  // parenthetical between subject and verb — the deck name in the game-over
+  // line — is carried across.
+  return line.replace(/\bp(\d+)\b('s\b)?((?: \([^()]*\))?) ?(\b(?:keeps|mulligans|concedes|passes|wins|mills)\b)?/g,
+    (whole: string, n: string, poss: string | undefined, _paren: string, verb: string | undefined) => {
+      const pid = Number(n);
+      const you = pid === state.view.you;
+      if (!you && !state.view.opponents.some(o => o.id === pid)) return whole;
+      const head = poss ? (you ? "your" : "opp's") : (you ? "you" : "opp");
+      let rest = whole.slice(1 + n.length + (poss ? 2 : 0));
+      if (verb && you && !poss) rest = rest.slice(0, rest.length - verb.length) + VERB_BASE[verb];
+      return head + rest;
+    });
 }
+
+/**
+ * A line the engine or the runner wrote, as the page shows it: in the
+ * page's words for the players, and without the `(#id)`s the board cannot
+ * be matched against. #694 stripped ids from titles and rows, but the log
+ * band and the log drawer — the two places the page shows the most engine
+ * text — only rewrote the players (#714). One function for every engine
+ * line the page quotes.
+ */
+export function engineLine(state: LiveState, line: string): string {
+  return withoutIds(inOurWords(state, line));
+}
+
+const VERB_BASE: Record<string, string> = {
+  keeps: "keep", mulligans: "mulligan", concedes: "concede", passes: "pass", wins: "win", mills: "mill",
+};
 
 /**
  * An object's name, with whose zone it is in when that zone is a graveyard
@@ -917,7 +945,7 @@ function beginNumber(state: LiveState, ui: Ui, opts: FundingOptions, title: stri
  * lethal — the division the engine makes when nobody is asked, and what
  * the terminal's Enter does — and the hint says so.
  */
-function beginDamageAmount(state: LiveState, ui: Ui, rp: ResolutionPayload, title: string, send: Send): Ui {
+export function beginDamageAmount(state: LiveState, ui: Ui, rp: ResolutionPayload, title: string, send: Send): Ui {
   const min = rp.min ?? 0;
   const max = rp.max ?? min;
   const labels = (rp.options ?? []) as string[];
@@ -926,12 +954,22 @@ function beginDamageAmount(state: LiveState, ui: Ui, rp: ResolutionPayload, titl
     send(resolve({ ChosenIndex: [i, labels[i] ?? String(amount)] }));
   };
   ui.mode = "number";
-  ui.title = withoutIds(title);
+  // The engine's description runs to ~150 characters and says where the
+  // rest goes only at its end, which the modal's two title lines and the
+  // panel both cut off; its option labels were never drawn, and its "p1"
+  // was never put in the page's words (#720). The title is the page's own
+  // short one; the description's tail and every option, each saying where
+  // the rest goes, are the summary.
+  const named = (k: string) => typeof rp[k] === "number" ? nameOf(state, rp[k] as ObjectId) : null;
+  const attacker = named("attacker"), blocker = named("blocker");
+  ui.title = attacker && blocker ? `Damage from ${attacker} to ${blocker}` : engineLine(state, title);
   ui.min = min;
   ui.max = max;
   ui.value = "";
   ui.placeholder = `${min}-${max}`;
-  ui.summary = [];
+  const tail = title.includes("? ") ? title.slice(title.indexOf("? ") + 2) : "";
+  ui.summary = [...(tail ? [engineLine(state, tail)] : []),
+    ...labels.map(l => engineLine(state, l))];
   ui.hint = `Type an amount (${min}-${max}) and press Enter. Enter alone assigns ${min}, lethal.`;
   ui.submit = () => {
     // The terminal's parser: an optional `+` and ASCII digits (#561).

@@ -5,7 +5,7 @@
 // view; it looks at the last frame.
 
 import { drawArt, frameColor, darker, uiImage } from "./assets.js";
-import { nameOf, targetLabel, playerLabel, inOurWords } from "./prompts.js";
+import { nameOf, targetLabel, playerLabel, engineLine } from "./prompts.js";
 import type { CardView, Color, GameView, ManaCost, ManaPool, ObjectId, PermanentView, PlayerId, Step, ViewObject } from "./protocol.js";
 import type { Hit, IndexEntry, LiveState, Row, State, Ui } from "./state.js";
 
@@ -633,7 +633,7 @@ function drawBand(ctx: Ctx, hits: Hit[], state: LiveState): void {
   // Whose turn, which step, and the last two things that happened.
   const mine = view.active_player === view.you;
   text(ctx, bandTurnLine(ctx, mine, view.step), BAND_X, y + 2, { font: "7px Silkscreen", color: mine ? "#ffe080" : "#c0b0d0" });
-  bandLogLines(state).forEach((l, i) => text(ctx, clip(ctx, inOurWords(state, l), BAND_W, "7px Silkscreen"), BAND_X, y + 12 + i * 8, { font: "7px Silkscreen", color: "#8a8898" }));
+  bandLogLines(state).forEach((l, i) => text(ctx, clip(ctx, engineLine(state, l), BAND_W, "7px Silkscreen"), BAND_X, y + 12 + i * 8, { font: "7px Silkscreen", color: "#8a8898" }));
   view.stack.forEach((item, i) => {
     const key = `o${item.object_id}`;
     const x = sx0 + i * 28, sy = y + 9;
@@ -725,18 +725,33 @@ export function outcomeHeadline(state: LiveState, summary: string): string | nul
   return null;
 }
 
+/**
+ * Whether the game-over box is drawn over the board. It dims the board and
+ * sits over the phase strip, the log band and most of your own row, and the
+ * runner is gone a moment after the game ends, so this frame is the last
+ * view of the game a person gets; the box used to be drawn every frame with
+ * no way past it (#712). The same result is printed in the panel, so once
+ * put away — any click, Escape or Enter — it stays away.
+ */
+export function showsGameOverBox(state: State): boolean {
+  return !!state.gameOver && !state.gameOverDismissed;
+}
+
+export const GAME_OVER_DISMISS_HINT = "click or Esc to see the final board";
+
 function gameOverScreen(ctx: Ctx, state: LiveState): void {
-  if (!state.gameOver) return;
+  if (!state.gameOver || !showsGameOverBox(state)) return;
   ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(0, 0, BOARD_W, H);
   const w = 360, x = (BOARD_W - w) / 2;
   const headline = outcomeHeadline(state, state.gameOver);
-  const lines = inOurWords(state, state.gameOver).split("\n").flatMap(l => wrap(ctx, l, w - 24, "8px Silkscreen"));
-  const h = 44 + (headline ? 14 : 0) + lines.length * 11, y = (H - h) / 2;
+  const lines = engineLine(state, state.gameOver).split("\n").flatMap(l => wrap(ctx, l, w - 24, "8px Silkscreen"));
+  const h = 56 + (headline ? 14 : 0) + lines.length * 11, y = (H - h) / 2;
   texturedPanel(ctx, x, y, w, h);
   text(ctx, "GAME OVER", x + w / 2, y + 10, { align: "center", font: "8px PressStart", color: "#ffe080" });
   let ly = y + 28;
   if (headline) { text(ctx, headline, x + w / 2, ly, { align: "center", font: "8px PressStart", color: "#ffffff" }); ly += 14; }
   lines.forEach((l, i) => text(ctx, l, x + w / 2, ly + i * 11, { align: "center" }));
+  text(ctx, GAME_OVER_DISMISS_HINT, x + w / 2, ly + lines.length * 11 + 4, { align: "center", font: "7px Silkscreen", color: "#a8a0b0" });
 }
 
 // --------------------------------------------------------------- panel
@@ -899,7 +914,7 @@ function promptArea(ctx: Ctx, hits: Hit[], state: LiveState, x: number, y: numbe
   if (state.gameOver) {
     const headline = outcomeHeadline(state, state.gameOver);
     if (headline) { text(ctx, headline, x + 4, ty, { font: "8px PressStart", color: "#ffffff" }); ty += 11; }
-    for (const l of wrapCapped(ctx, inOurWords(state, state.gameOver), w - 8, "8px Silkscreen", 8)) { text(ctx, l, x + 4, ty, { color: "#ffe080" }); ty += 9; }
+    for (const l of wrapCapped(ctx, engineLine(state, state.gameOver), w - 8, "8px Silkscreen", 8)) { text(ctx, l, x + 4, ty, { color: "#ffe080" }); ty += 9; }
     return;
   }
   if (!state.decision) {
@@ -980,7 +995,7 @@ export function clampRowScroll(total: number, perPage: number, scroll: number): 
 function logArea(ctx: Ctx, hits: Hit[], state: LiveState, x: number, y: number, w: number, h: number, headRoom = 0): void {
   panel(ctx, x, y, w, h, "#100e14", "#3a3048");
   const lines: string[] = [];
-  for (const entry of state.view.display_log.slice(-40)) for (const l of wrap(ctx, inOurWords(state, entry), w - 8, "7px Silkscreen")) lines.push(l);
+  for (const entry of state.view.display_log.slice(-40)) for (const l of wrap(ctx, engineLine(state, entry), w - 8, "7px Silkscreen")) lines.push(l);
   const top = y + 2 + headRoom;
   const fit = Math.floor((h - 4 - headRoom) / 8);
   const shown = lines.slice(Math.max(0, lines.length - fit - state.logScroll), lines.length - state.logScroll);

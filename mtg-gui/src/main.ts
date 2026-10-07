@@ -1,8 +1,8 @@
 // The page: one WebSocket to the seat, one canvas, one state object.
 
 import { loadManifest, fontsReady, artNames } from "./assets.js";
-import { render, inspecting, inspectorFacts, inspectorPt, wrap, wrapCapped, bandTurnLine, bandLogLines, badgeStrip, permBadges, clampScroll, outcomeHeadline, BAND_W, BADGE_ROOM, W, H, PANEL_X } from "./render.js";
-import { beginDecision, indexView, beginList, inOurWords, offersLandPlay, autoPassDeclines, autoPassNotice } from "./prompts.js";
+import { render, inspecting, inspectorFacts, inspectorPt, wrap, wrapCapped, bandTurnLine, bandLogLines, badgeStrip, permBadges, clampScroll, outcomeHeadline, showsGameOverBox, BAND_W, BADGE_ROOM, W, H, PANEL_X } from "./render.js";
+import { beginDecision, indexView, beginList, engineLine, offersLandPlay, autoPassDeclines, autoPassNotice } from "./prompts.js";
 import type { Action, ClientMessage, Decision, GameView, ServerMessage } from "./protocol.js";
 import type { Hit, LiveState, Row, State, Ui } from "./state.js";
 
@@ -293,6 +293,8 @@ canvas.addEventListener("mousemove", (ev) => {
 canvas.addEventListener("mouseleave", () => { state.hover = null; draw(); });
 
 canvas.addEventListener("click", (ev) => {
+  // The game-over box hides the final board; a click puts it away (#712).
+  if (showsGameOverBox(state)) { state.gameOverDismissed = true; draw(); return; }
   const { x, y } = canvasPoint(ev);
   const h = hitAt(x, y);
   state.notice = null;
@@ -394,6 +396,9 @@ window.addEventListener("keydown", (ev) => {
     // prompt or says why it cannot.
     if (ev.key === "Escape") { releaseField(); ev.preventDefault(); draw(); return; }
     if (ev.key !== "Enter") return;
+  }
+  if (showsGameOverBox(state) && (ev.key === "Escape" || ev.key === "Enter")) {
+    state.gameOverDismissed = true; ev.preventDefault(); draw(); return;
   }
   const ui = state.ui;
   const v = state.view;
@@ -573,7 +578,7 @@ window.mtgDebug = {
   },
   artNames,
   band: () => { const l = live(); return l ? bandLogLines(l) : []; },
-  words: (line) => { const l = live(); return l ? inOurWords(l, line) : line; },
+  words: (line) => { const l = live(); return l ? engineLine(l, line) : line; },
   outcome: (summary) => { const l = live(); return l ? outcomeHeadline(l, summary) : null; },
   fit: {
     wrap: (s, maxW, font) => wrap(ctx, s, maxW, font),
