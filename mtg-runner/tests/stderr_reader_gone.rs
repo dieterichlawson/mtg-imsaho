@@ -33,3 +33,30 @@ fn a_failing_seat_with_nobody_reading_stderr_plays_on() {
     assert_ne!(status.code(), Some(101), "a write to a stderr nobody reads panicked the run");
     assert!(status.success(), "the run ends normally: {status}");
 }
+
+/// Nor is a stdout whose reader has gone (issue #717): the banner and the
+/// summary were `println!`, so `mtg-runner ... | head` exited 101, and the
+/// summary's panic came before the `--log` file's RESULT record.
+#[test]
+fn a_game_with_nobody_reading_stdout_ends_and_logs_its_result() {
+    let dir = std::env::temp_dir().join(format!("mtg-stdout-gone-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let log = dir.join("game.log");
+    let mut child = std::process::Command::new(env!("CARGO_BIN_EXE_mtg-runner"))
+        .args(["--p1", "random", "--p2", "random", "--seed", "3"])
+        .args(["--log", log.to_str().unwrap()])
+        .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("the runner starts");
+    drop(child.stdout.take());
+    let status = child.wait().expect("the runner ends");
+    assert_ne!(status.code(), Some(101), "a write to a stdout nobody reads panicked the run");
+    assert!(status.success(), "the run ends normally: {status}");
+    let text = std::fs::read_to_string(&log).expect("the log was written");
+    assert!(text.contains("RESULT"), "the log has its RESULT record:\n{}",
+        text.lines().rev().take(5).collect::<Vec<_>>().join("\n"));
+    let _ = std::fs::remove_dir_all(&dir);
+}

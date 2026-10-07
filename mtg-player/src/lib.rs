@@ -26,6 +26,19 @@ macro_rules! stderr_text {
     }};
 }
 
+/// `println!`, except that a write that fails is dropped instead of
+/// panicking — [`stderr_line!`]'s rule for stdout. `mtg-runner`'s banner
+/// and summary went to `println!`, so a run piped through `head` exited 101,
+/// and the summary's panic came before the `--log` file's RESULT record
+/// (#717).
+#[macro_export]
+macro_rules! stdout_line {
+    ($($arg:tt)*) => {{
+        use std::io::Write as _;
+        let _ = writeln!(std::io::stdout(), $($arg)*);
+    }};
+}
+
 pub mod cli;
 pub mod gui;
 pub mod llm;

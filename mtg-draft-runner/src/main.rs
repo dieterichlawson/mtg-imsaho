@@ -660,11 +660,11 @@ fn parse_args() -> Args {
     // --help used to start a real eight-seat draft, so a typo cost money on
     // a metered seat. Both of these answer and exit without drafting.
     if args.iter().any(|a| a == "--help" || a == "-h") {
-        println!("{USAGE}");
+        mtg_player::stdout_line!("{USAGE}");
         std::process::exit(0);
     }
     if args.iter().any(|a| a == "--version") {
-        println!("mtg-draft-runner {}", env!("CARGO_PKG_VERSION"));
+        mtg_player::stdout_line!("mtg-draft-runner {}", env!("CARGO_PKG_VERSION"));
         std::process::exit(0);
     }
     let per_seat_flags = validate_args(&args);

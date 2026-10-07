@@ -269,11 +269,11 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.iter().any(|a| a == "--help" || a == "-h") {
-        println!("{USAGE}");
+        mtg_player::stdout_line!("{USAGE}");
         return;
     }
     if args.iter().any(|a| a == "--version") {
-        println!("mtg-runner {}", env!("CARGO_PKG_VERSION"));
+        mtg_player::stdout_line!("mtg-runner {}", env!("CARGO_PKG_VERSION"));
         return;
     }
     validate_args(&args);
@@ -516,10 +516,10 @@ flags: p0={p1_spec}, p1={p2_spec} — pass --p1/--p2 if that is not the lineup y
 stops here — pass --save {path} to keep writing it");
         }
         if !quiet {
-            println!("MTG Engine — resuming from {} (turn {}, {} vs {}) — p0: {}, p1: {}",
+            mtg_player::stdout_line!("MTG Engine — resuming from {} (turn {}, {} vs {}) — p0: {}, p1: {}",
                 path, save.state.turn_number, save.player_names[0], save.player_names[1],
                 p1_spec, p2_spec);
-            println!();
+            mtg_player::stdout_line!();
         }
         (save.player_names, save.state)
     } else {
@@ -530,10 +530,10 @@ stops here — pass --save {path} to keep writing it");
 
         if !quiet {
             match seed {
-                Some(s) => println!("MTG Engine — p0: {p1_spec} ({name1}) vs p1: {p2_spec} ({name2}) [seed {s}]"),
-                None => println!("MTG Engine — p0: {p1_spec} ({name1}) vs p1: {p2_spec} ({name2})"),
+                Some(s) => mtg_player::stdout_line!("MTG Engine — p0: {p1_spec} ({name1}) vs p1: {p2_spec} ({name2}) [seed {s}]"),
+                None => mtg_player::stdout_line!("MTG Engine — p0: {p1_spec} ({name1}) vs p1: {p2_spec} ({name2})"),
             }
-            println!();
+            mtg_player::stdout_line!();
         }
 
         let config = GameConfig {
@@ -1107,7 +1107,7 @@ use --save if you need a resumable file.");
             gui.game_over(&GameView::for_player(&state, seat, &registry), &summary);
         }
     }
-    println!("\n{summary}");
+    mtg_player::stdout_line!("\n{summary}");
     mtg_player::game_log::write(file!(), line!(), "RESULT", &summary);
 
     // Log token usage per model.
@@ -1131,7 +1131,7 @@ use --save if you need a resumable file.");
                 stats.cache_read, stats.cache_create, rejected, unanswered
             ).unwrap();
         }
-        println!("{}", usage_lines.trim());
+        mtg_player::stdout_line!("{}", usage_lines.trim());
         mtg_player::game_log::write(file!(), line!(), "TOKEN_USAGE", usage_lines.trim());
     }
 }
