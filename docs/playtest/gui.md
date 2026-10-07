@@ -455,6 +455,23 @@ random game happened to reach.
   is a "checked, correct" line worth writing down once so nobody sweeps it
   twice. Start from the ones with an issue number in a doc comment — those are
   the ones a fix has already touched on one surface.
+  [2026-10-07] **Swept; six filed (#722-#727), and the checked-correct list is
+  the part that saves the next crew a night.** One predicate on every surface:
+  `affected_by_summoning_sickness` (the raw `summoning_sick` is no longer on
+  the view), `tapped`, `regeneration_shields`, `damage_marked`, `attached_to`
+  and `attached_to_player`, `is_token`, protections/restrictions, the stack's
+  `x_value`/`source_id`. `random.rs` reads no view field at all. A dangling
+  `attached_to` cannot reach a decision (SBA unattach clears it first). What
+  broke: `is_copy` is missing from `stackKey`, so a clone stacks with its
+  original and its own ability has no card to click (#722); counters by serde
+  key in the inspector (#723); the LLM board never marks combat (#724); an
+  attacker whose blocker died reads "Attacking" everywhere because the view
+  has no blocked fact (#725). The method to copy for the LLM side is a
+  logging `CLAUDE_CODE_BIN` stub under a `cc` seat: it shows the second prompt
+  of a step, where "Recent events" is empty, which is where a flag the board
+  doesn't print is simply gone. Not yet asked: `granted_abilities` and the
+  other fields `stackKey` omits — every field a stack can differ in and
+  still merge is a #722.
 
 ## Filing
 
