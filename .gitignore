@@ -30,3 +30,6 @@ __pycache__/
 # npm installs the GUI's TypeScript compiler locally; CI uses
 # `npm install --no-save typescript@5` and never commits it either.
 mtg-gui/node_modules/
+# Cost-measurement runs (stdout beside the gitignored .log); transient, never committed.
+/logs/cost-baseline/
+/logs/cost/
