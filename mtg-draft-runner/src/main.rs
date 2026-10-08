@@ -1297,7 +1297,11 @@ this draft will be made under {} — this draft is a mixture of the two",
                     recorded.push((*rec).clone());
                 }
                 draft.rotate_packs();
-                write_snapshot(&recorded, &[], &[]);
+                // Not written: the snapshot being replayed already holds
+                // these steps, and the decks and matches after them that a
+                // picks-only write would drop — `--resume X --save X` was
+                // rewritten without them 42 times over before the first
+                // thing this run did of its own.
                 continue;
             }
 
@@ -1534,7 +1538,11 @@ its build attempts are in that run's log"), "");
     let saved_decks: Vec<SavedDeck> = deck_results.iter().map(|r| SavedDeck {
         deck: r.deck.clone(), fallback: r.fallback, retries: r.retries,
     }).collect();
-    let mut saved_matches: Vec<SavedMatch> = Vec::new();
+    // With the snapshot's matches in it from the start: every one has been
+    // checked to be a match this tournament takes, so the first write keeps
+    // them rather than waiting for this run to finish one of its own — the
+    // only write there was, which left a resume's `--save` with none (#732).
+    let mut saved_matches: Vec<SavedMatch> = resumed_matches.clone();
     write_snapshot(&recorded, &saved_decks, &saved_matches);
     // Matches this process did not play, per seat, for the standings.
     let mut from_snapshot = vec![0usize; args.players];
@@ -1625,19 +1633,10 @@ and the FINAL STANDINGS below record none",
             .map(|(m, _)| *m)
             .collect();
         for (&(a, b), c) in real_matches.iter().zip(&carried) {
-            if let Some(result) = c {
+            if c.is_some() {
                 from_snapshot[a] += 1;
                 from_snapshot[b] += 1;
-                saved_matches.push(SavedMatch { round: round_num, result: result.clone() });
             }
-        }
-        // Written now, before any match is played: the only other write is
-        // when a match of this process's own finishes, so a resume that
-        // carried everything, or was stopped before its first match ended,
-        // left a `--save` holding none of the matches it carried — and
-        // `--resume X --save X` erased them from the only snapshot (#732).
-        if carried.iter().any(Option::is_some) {
-            write_snapshot(&recorded, &saved_decks, &saved_matches);
         }
 
         // Play the rest in parallel. Each is checkpointed the moment it
