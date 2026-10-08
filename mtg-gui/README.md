@@ -55,6 +55,57 @@ opens the log, `g`/`G` a
 graveyard, `e` exile, `d` your library, `s` stops at every priority
 instead of passing when there is nothing to do.
 
+## The draft page
+
+`draft.html` + `src/draft/*.ts` → `dist/draft/*.js`, the second entry
+point of the same build, served by `mtg-draft-server` at `GET /` (see
+`docs/plans/draft-with-friends.md`). A DOM page, not the canvas: a draft
+is lists of cards with rules text. Open the join line the server prints
+(`http://host:8800/?seat=0&key=...`); the page takes `seat` and `key`
+from its own query string and opens `/ws?seat=N&key=K`.
+
+The server sends the seat's whole view after every change and the page
+is rebuilt from each one, so closing the tab and reopening it is fine
+and a dropped socket reconnects with backoff. A request the server
+refuses (`{"type":"refused", "reason", "echo"}`) is shown with its
+reason, and the page goes back to what the last view describes.
+
+- `src/draft/protocol.ts` — the view, the refusal and the four messages
+  the page sends (`pick`, `deck`, `ready`, `name`), as types and as a
+  shape table the fixture test reads.
+- `src/draft/cards.ts` — the headline's parts (cost, type, P/T), mana
+  value, colour grouping, art lookup by name.
+- `src/draft/deck.ts` — the deck under construction, its message, the
+  reason it does not validate yet (40 cards; the server checks again),
+  the colour and curve summary.
+- `src/draft/render.ts` — one function per phase: lobby, the pack grid
+  with the rules text in a side panel, the pool checklist with land
+  steppers and the Ready button, matches and standings.
+- `src/draft/main.ts` — the socket, the state, the keys, and the hooks.
+
+Drafting: click a card to read it, click it again or press Enter to
+pick it; digits and arrows move the selection, Esc clears it. Building:
+click a card to move it between main and side, step the basics, and
+press Ready when the count line reaches 40 (the button says why it is
+disabled until then). Playing: the game link is a link to the game page.
+
+`window.mtgDraft` holds the state, the last view and every message the
+page sent (`.sent`); `window.mtgDraftDebug.stage(view)` renders a view
+without a socket and `stage({type: "refused", ...})` applies a refusal,
+which is how the tests and a person stage any state.
+
+Tests, both in CI:
+
+- `node mtg-gui/tests/draft_fixtures.js` — every view in
+  `tests/draft-page-fixtures.json` (the page's own, one per phase) and
+  in `tests/draft-view-fixtures.json` (the server's, when its test has
+  written it) has every field `protocol.ts` declares. No browser.
+- `NODE_PATH=$(npm root -g) node mtg-gui/tests/draft_page.js --shots DIR`
+  — the page served by the test itself, every phase staged at 1280x720
+  and at 390px wide (a 14-card pack fits one screen; a phone scrolls
+  down, never sideways), a pick clicked and keyed, a deck built through
+  the checklist, a refusal shown, the reconnect backoff seen.
+
 ## Art
 
 `assets/art/` holds one 64x48 image per card face and token, drawn by
@@ -92,5 +143,6 @@ License (`assets/fonts/OFL-*.txt`).
   answer, a page error, or an invariant violation. `--shots DIR` keeps
   a screenshot every 25 decisions.
 
-All four run in CI (`.github/workflows/gui.yml`), which also checks
-that `dist/` matches `src/`.
+All four run in CI (`.github/workflows/gui.yml`), with the draft page's
+two above, and CI also checks that `dist/` (both entry points) matches
+`src/`.

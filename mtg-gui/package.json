@@ -13,7 +13,9 @@
     "auto-pass": "node tests/auto_pass.mjs",
     "without-ids": "node tests/without_ids.mjs",
     "stack-key": "node tests/stack_key.mjs",
-    "field-fits": "node tests/field_fits.js"
+    "field-fits": "node tests/field_fits.js",
+    "draft-fixtures": "node tests/draft_fixtures.js",
+    "draft-page": "node tests/draft_page.js"
   },
   "devDependencies": {
     "typescript": "^5.4"

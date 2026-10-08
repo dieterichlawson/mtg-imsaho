@@ -33,6 +33,19 @@ random game happened to reach.
   (a second copy of a card, a counter, an attachment) must rebuild the
   index before drawing: `stage` and `inspect` both call `indexView`,
   `render()` does not, and a stale index throws inside `nameOf`.
+- The draft page (`mtg-gui/draft.html`, `mtg-gui/src/draft/`) is the
+  other surface: a DOM page served by `mtg-draft-server`, rebuilt from
+  every view. `render.ts` is one function per phase (lobby, the pack
+  grid, the deck checklist, matches and standings), `main.ts` the socket
+  and the keys. Stage any state with
+  `window.mtgDraftDebug.stage(view)` from the fixtures in
+  `mtg-gui/tests/draft-page-fixtures.json` (or a refusal with
+  `stage({type: "refused", reason, echo})`) and read what the page sent
+  from `window.mtgDraft.sent`; `mtg-gui/tests/draft_page.js --shots DIR`
+  does that for every phase at 1280x720 and at 390px wide. The things
+  to look at are the same as the game page's: a row wider than its
+  panel, a pack that does not fit one screen, a key that does nothing
+  and says nothing, and a Ready button disabled without a reason.
 
 ## Ideas
 
