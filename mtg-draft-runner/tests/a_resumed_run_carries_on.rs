@@ -255,3 +255,38 @@ fn a_resume_plays_at_the_match_length_its_snapshot_was_played_at() {
     assert!(stderr.contains("best-of-1 ==="), "{stderr}");
     assert_eq!(calls(&pod.path("bo3.calls")), 0, "the best-of-1 match is still the one carried");
 }
+
+/// #731: a saved match was carried as it stood, so a 7-0 best-of-1 went
+/// into the standings; and one the pairings never took was dropped and the
+/// match re-played, both in silence.
+#[test]
+fn a_saved_match_this_tournament_did_not_finish_is_refused() {
+    if !have_python() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let pod = Pod::new("badmatch");
+    let save = pod.finished_snapshot("snap.json");
+    let mut score = save.clone();
+    score["matches"][0]["result"]["wins_a"] = 7.into();
+    score["matches"][0]["result"]["wins_b"] = 0.into();
+    let mut swapped = save.clone();
+    let r = &mut swapped["matches"][0]["result"];
+    let (a, b) = (r["player_a"].clone(), r["player_b"].clone());
+    (r["player_a"], r["player_b"]) = (b, a);
+    let (wa, wb) = (r["wins_a"].clone(), r["wins_b"].clone());
+    (r["wins_a"], r["wins_b"]) = (wb, wa);
+
+    for (name, edited, needle) in [
+        ("score", score, "says 7-0"),
+        ("swapped", swapped, "is not a match this tournament pairs"),
+    ] {
+        let path = pod.write(&format!("{name}.json"), &edited);
+        let counter = format!("{name}.calls");
+        let out = pod.run(&["--resume", &path], &counter, &format!("{name}.log"));
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(!out.status.success(), "{name}: {stderr}");
+        assert!(stderr.contains(needle), "{name}: {stderr}");
+        assert_eq!(calls(&pod.path(&counter)), 0, "{name}: refused, not re-played");
+    }
+}

@@ -571,6 +571,69 @@ fn check_snapshot_decks(decks: &[SavedDeck], pools: &[Vec<String>]) -> Result<()
     Ok(())
 }
 
+/// Whether every saved match is one this tournament finished: a score its
+/// own games add up to, decided at the match length, and a pairing the
+/// tournament makes in the round it names, given the matches before it.
+///
+/// A record was carried when its round and seats matched a pairing, and
+/// taken as it stood: a 7-0 best-of-1 went into the standings, and a record
+/// with its seats the other way round, for a seat or a round the pod does
+/// not have, or twice over, was dropped in silence — the match it stood for
+/// re-played and re-billed (#731). The pairings are a function of the
+/// results, so the tournament is walked here on the records alone.
+fn check_snapshot_matches(matches: &[SavedMatch], players: usize, best_of: usize) -> Result<(), String> {
+    let name = |m: &SavedMatch| format!("round {}, seat {} v seat {}", m.round, m.result.player_a, m.result.player_b);
+    for (i, m) in matches.iter().enumerate() {
+        let r = &m.result;
+        if matches[..i].iter().any(|o| o.round == m.round
+            && o.result.player_a == r.player_a && o.result.player_b == r.player_b)
+        {
+            return Err(format!("it has two records for {}", name(m)));
+        }
+        if r.games.iter().any(|g| g.winner.is_some_and(|w| w != r.player_a && w != r.player_b)) {
+            return Err(format!("its record for {} has a game won by a seat not in the match", name(m)));
+        }
+        let won = |seat: usize, games: &[GameOutcome]| games.iter().filter(|g| g.winner == Some(seat)).count();
+        let (a, b) = (won(r.player_a, &r.games), won(r.player_b, &r.games));
+        if (r.wins_a, r.wins_b) != (a, b) {
+            return Err(format!("its record for {} says {}-{}, and its games say {a}-{b}",
+                name(m), r.wins_a, r.wins_b));
+        }
+        let before = &r.games[..r.games.len().saturating_sub(1)];
+        let finished = !r.games.is_empty()
+            && match_is_over(best_of, r.games.len(), a, b)
+            && !match_is_over(best_of, before.len(), won(r.player_a, before), won(r.player_b, before));
+        if !finished {
+            return Err(format!("its record for {} is {a}-{b} over {} game(s), which is not a finished \
+best-of-{best_of}", name(m), r.games.len()));
+        }
+    }
+    let mut tournament = Tournament::new(players, TournamentConfig { best_of });
+    let mut used = vec![false; matches.len()];
+    while !tournament.is_complete() {
+        let round = tournament.rounds.len() + 1;
+        let pairings = tournament.generate_pairings();
+        let real: Vec<(usize, usize)> = pairings.iter().filter(|&&(_, b)| b != BYE).copied().collect();
+        let mut results = Vec::new();
+        for &(a, b) in &real {
+            let found = matches.iter()
+                .position(|m| m.round == round && m.result.player_a == a && m.result.player_b == b);
+            if let Some(i) = found {
+                used[i] = true;
+                results.push(matches[i].result.clone());
+            }
+        }
+        if results.len() < real.len() {
+            break;
+        }
+        tournament.record_round(pairings, results);
+    }
+    match used.iter().position(|&u| !u) {
+        Some(i) => Err(format!("its record for {} is not a match this tournament pairs", name(&matches[i]))),
+        None => Ok(()),
+    }
+}
+
 /// What one seat was told to do while it was making the recorded picks.
 ///
 /// A guide changes what a seat does more than any other flag, and none of
@@ -1153,6 +1216,10 @@ this draft will be made under {} — this draft is a mixture of the two",
         },
         Err(e) => die(&format!("draft save '{}' cannot be replayed: {e}",
             args.resume.as_deref().unwrap_or_default())),
+    }
+    if let Err(e) = check_snapshot_matches(&resumed_matches, args.players, args.best_of) {
+        die(&format!("draft save '{}' cannot be replayed: {e}",
+            args.resume.as_deref().unwrap_or_default()));
     }
     if !replaying.is_empty() && !args.quiet {
         mtg_player::stderr_line!("Replaying {} recorded pick(s) from the snapshot...", replaying.len());
@@ -2619,5 +2686,83 @@ mod harness_stop_tests {
             " [1 game abandoned: the action budget ran out, no winner]");
         assert_eq!(unplayed_games_note(&[game(Some(1), false), game(None, true), game(None, true)]),
             " [1 game forfeited: a seat stalled] [2 games abandoned: the action budget ran out, no winner]");
+    }
+}
+
+#[cfg(test)]
+mod snapshot_match_tests {
+    use super::{check_snapshot_matches, SavedMatch};
+    use mtg_draft::tournament::{GameOutcome, MatchResult, Tournament, TournamentConfig, BYE};
+
+    fn game(winner: usize) -> GameOutcome {
+        GameOutcome { winner: Some(winner), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false }
+    }
+
+    /// Round 1 of a fresh 4-seat pod as the runner would record it, the
+    /// first seat of every pairing winning 1-0.
+    fn round_one() -> Vec<SavedMatch> {
+        let t = Tournament::new(4, TournamentConfig { best_of: 1 });
+        t.generate_pairings().into_iter().filter(|&(_, b)| b != BYE).map(|(a, b)| SavedMatch {
+            round: 1,
+            result: MatchResult { player_a: a, player_b: b, wins_a: 1, wins_b: 0, games: vec![game(a)] },
+        }).collect()
+    }
+
+    #[test]
+    fn the_records_the_runner_writes_are_accepted() {
+        assert_eq!(check_snapshot_matches(&[], 4, 1), Ok(()));
+        assert_eq!(check_snapshot_matches(&round_one(), 4, 1), Ok(()));
+        // A round interrupted part-way.
+        assert_eq!(check_snapshot_matches(&round_one()[..1], 4, 1), Ok(()));
+    }
+
+    /// #731: a 7-0 best-of-1 was carried into the standings as it stood.
+    #[test]
+    fn a_score_its_games_do_not_add_up_to_is_refused() {
+        let mut saved = round_one();
+        saved[0].result.wins_a = 7;
+        let err = check_snapshot_matches(&saved, 4, 1).unwrap_err();
+        assert!(err.contains("says 7-0, and its games say 1-0"), "{err}");
+    }
+
+    #[test]
+    fn a_match_not_finished_at_the_saves_length_is_refused() {
+        // A 1-0 is a finished best-of-1 and not a finished best-of-3.
+        let err = check_snapshot_matches(&round_one(), 4, 3).unwrap_err();
+        assert!(err.contains("not a finished best-of-3"), "{err}");
+        // And a game played after a best-of-3 was decided.
+        let mut saved = round_one();
+        let (a, b) = (saved[0].result.player_a, saved[0].result.player_b);
+        saved[0].result = MatchResult { player_a: a, player_b: b, wins_a: 2, wins_b: 1,
+            games: vec![game(a), game(a), game(b)] };
+        let err = check_snapshot_matches(&saved[..1], 4, 3).unwrap_err();
+        assert!(err.contains("not a finished best-of-3"), "{err}");
+    }
+
+    /// #731: a record with its seats the other way round, for a round the
+    /// pod never plays, for a seat it does not have, or twice over, was
+    /// dropped in silence and its match re-played.
+    #[test]
+    fn a_record_the_tournament_never_consumes_is_refused() {
+        let mut swapped = round_one();
+        let r = &mut swapped[0].result;
+        (r.player_a, r.player_b) = (r.player_b, r.player_a);
+        (r.wins_a, r.wins_b) = (0, 1);
+        let err = check_snapshot_matches(&swapped, 4, 1).unwrap_err();
+        assert!(err.contains("is not a match this tournament pairs"), "{err}");
+
+        let mut phantom = round_one();
+        phantom.push(SavedMatch { round: 9, ..phantom[0].clone() });
+        let err = check_snapshot_matches(&phantom, 4, 1).unwrap_err();
+        assert!(err.contains("round 9") && err.contains("is not a match this tournament pairs"), "{err}");
+
+        let mut no_seat = round_one();
+        no_seat[0].result.player_b = 5;
+        assert!(check_snapshot_matches(&no_seat, 4, 1).is_err());
+
+        let mut twice = round_one();
+        twice.push(twice[0].clone());
+        let err = check_snapshot_matches(&twice, 4, 1).unwrap_err();
+        assert!(err.contains("two records for round 1"), "{err}");
     }
 }
