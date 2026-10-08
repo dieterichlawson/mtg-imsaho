@@ -541,6 +541,31 @@ pub fn claude_code_thinking_tokens(level: ThinkingLevel) -> Option<u32> {
     }
 }
 
+/// `MTG_LLM_HISTORY`: how many earlier exchanges a decision is sent along
+/// with its own prompt. The default is none.
+///
+/// Every decision prompt restates the whole position — the board, the
+/// hand, the stack, the events since the last prompt, every legal action
+/// — so the exchanges before it are not information the seat lacks, they
+/// are the same information again. A seat that re-sent its whole history
+/// grew quadratically in the number of decisions: input tokens per game
+/// went from a few hundred thousand to tens of millions over a long game,
+/// and prompt caching only turned the price into a tenth of itself. The
+/// seat now sends the system prompt, at most this many earlier exchanges
+/// and the current prompt, and carries its plan across decisions in its
+/// own notes (see `LlmPlayer::notes`).
+///
+/// The Messages API seat keeps a sliding window of this many exchanges.
+/// The Gemini and `claude -p` seats cannot slide a server-held
+/// conversation, so they start a fresh one every this-many decisions.
+pub const HISTORY_ENV: &str = "MTG_LLM_HISTORY";
+
+/// The history window this run's seats use, from [`HISTORY_ENV`].
+#[must_use]
+pub fn history_exchanges() -> usize {
+    std::env::var(HISTORY_ENV).ok().and_then(|v| v.trim().parse().ok()).unwrap_or(0)
+}
+
 fn record_llm_usage(model: &str, input: u64, output: u64, cache_read: u64, cache_create: u64) {
     let mut map = LLM_MODEL_USAGE.lock().unwrap();
     let entry = map.entry(model.to_string()).or_default();
@@ -926,6 +951,8 @@ const GAME_RULES: &str = r#"## Prompt format
 Each prompt you receive has these sections, in this order:
 
 **Header line** (top): `Turn N - <step> (your turn|opp's turn)`. The step is one of: Untap, Upkeep, Draw, Main Phase 1, Begin Combat, Declare Attackers, Declare Blockers, First-Strike Combat Damage, Combat Damage, End Combat, Main Phase 2, End Step, Cleanup.
+
+**Your notes from your last decision** (after your first decision): the tail of your own reasoning from the previous prompt. Earlier prompts are not kept in the conversation — every prompt restates the whole position — so this is where your plan carries over. Trust the board below over the notes when they disagree.
 
 **Recent events** (only if anything happened since the last prompt that showed you the board): a delta log of game events — lands played, spells cast, triggers, damage, draws, etc. Use this to understand what changed. Includes both your actions and your opponent's. It carries at most the most recent 80 entries; when older ones are dropped it opens with a marker line saying how many and through which turn, e.g. `… 227 earlier entries omitted, through turn 94 …`, and the board sections below are always current.
 
@@ -1339,10 +1366,6 @@ impl LlmBackend for InertBackend {
         self.system_prompt = format!("{ANTHROPIC_RESPONSE_FORMAT}{GAME_RULES}{deck_info}");
         self.turns = 0;
     }
-    fn resume(&mut self, _recap: &str) {
-        // The recap and its acknowledgement, as the API backend records them.
-        self.turns += 2;
-    }
     fn conversation_len(&self) -> usize { self.turns }
     fn system_prompt(&self) -> &str { &self.system_prompt }
     fn model_name(&self) -> &str { "inert" }
@@ -1359,8 +1382,9 @@ trait LlmBackend {
     }
     /// Initialize with a system prompt (rules + decklists).
     fn init(&mut self, system_prompt: &str);
-    /// Resume from a game log recap.
-    fn resume(&mut self, recap: &str);
+    /// How many earlier exchanges a decision is sent with; see
+    /// [`HISTORY_ENV`], whose value every backend starts from.
+    fn set_history_window(&mut self, _exchanges: usize) {}
     /// Set thinking level (Gemini only, no-op for others).
     fn set_thinking_level(&mut self, _level: &str) {}
     /// Why the last call produced no answer at all, if it produced none.
@@ -1524,6 +1548,8 @@ struct AnthropicBackend {
     seat: String,
     /// How hard the seat thinks per decision; see [`thinking_level`].
     thinking: ThinkingLevel,
+    /// How many earlier exchanges a request carries; see [`HISTORY_ENV`].
+    window: usize,
 }
 
 impl AnthropicBackend {
@@ -1542,6 +1568,17 @@ impl AnthropicBackend {
             base_url: anthropic_base_url(),
             seat: String::new(),
             thinking: thinking_level(),
+            window: history_exchanges(),
+        }
+    }
+
+    /// Keep only the last `window` exchanges, so the next request carries
+    /// them and nothing older (see [`HISTORY_ENV`]).
+    fn trim_history(&mut self) {
+        let keep = self.window * 2;
+        if self.conversation.len() > keep {
+            let drop = self.conversation.len() - keep;
+            self.conversation.drain(..drop);
         }
     }
 
@@ -1728,6 +1765,7 @@ impl LlmBackend for AnthropicBackend {
         self.conversation.push(serde_json::json!({"role": "user", "content": message}));
         let result = self.call_with_messages(&self.conversation.clone());
         self.conversation.push(serde_json::json!({"role": "assistant", "content": &result}));
+        self.trim_history();
         // Extract action number from JSON response (e.g. {"action":1} → "1").
         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&result) {
             if let Some(action) = parsed["action"].as_u64() {
@@ -1742,6 +1780,7 @@ impl LlmBackend for AnthropicBackend {
         let result = self.call_with_messages_structured(&self.conversation.clone(), schema);
         let result_str = serde_json::to_string(&result).unwrap_or_default();
         self.conversation.push(serde_json::json!({"role": "assistant", "content": result_str}));
+        self.trim_history();
         result
     }
 
@@ -1750,12 +1789,9 @@ impl LlmBackend for AnthropicBackend {
         self.conversation.clear();
     }
 
-    fn resume(&mut self, recap: &str) {
-        self.conversation.push(serde_json::json!({"role": "user", "content": recap}));
-        self.conversation.push(serde_json::json!({
-            "role": "assistant",
-            "content": "Understood. I've reviewed the game history and I'm ready to continue playing."
-        }));
+    fn set_history_window(&mut self, exchanges: usize) {
+        self.window = exchanges;
+        self.trim_history();
     }
 
     fn conversation_len(&self) -> usize {
@@ -1793,6 +1829,11 @@ struct GeminiBackend {
     base_url: String,
     /// The seat this backend answers for; see `LlmBackend::set_seat`.
     seat: String,
+    /// How many decisions one server-held interaction chain carries before
+    /// the seat starts a fresh one; see [`HISTORY_ENV`].
+    window: usize,
+    /// Decisions answered in the current chain.
+    chain_len: usize,
 }
 
 impl GeminiBackend {
@@ -1811,12 +1852,20 @@ impl GeminiBackend {
             gave_up: None,
             base_url: gemini_base_url(),
             seat: String::new(),
+            window: history_exchanges(),
+            chain_len: 0,
         }
     }
 
     /// Core interactions API call. Sends a message with a custom JSON schema
     /// and returns the parsed JSON response. Handles retries, rate limits, etc.
     fn call_interactions_structured(&mut self, user_message: &str, schema: &serde_json::Value) -> serde_json::Value {
+        // A chain that has carried its window of decisions is not continued:
+        // the server would re-read every one of them on every call.
+        if self.chain_len > self.window {
+            self.interaction_id = None;
+            self.chain_len = 0;
+        }
         let mut body = serde_json::json!({
             "model": &self.model,
             "input": user_message,
@@ -1929,6 +1978,7 @@ impl GeminiBackend {
         match outcome {
             CallOutcome::Answer(parsed) => {
                 self.last_thinking = thinking;
+                self.chain_len += 1;
                 parsed
             }
             CallOutcome::Failed(why) => {
@@ -1986,10 +2036,11 @@ impl LlmBackend for GeminiBackend {
     fn init(&mut self, deck_info: &str) {
         self.system_prompt = format!("{THOUGHTS_IN_JSON_FORMAT}{GAME_RULES}{deck_info}");
         self.interaction_id = None;
+        self.chain_len = 0;
     }
 
-    fn resume(&mut self, recap: &str) {
-        self.call_interactions(recap);
+    fn set_history_window(&mut self, exchanges: usize) {
+        self.window = exchanges;
     }
 
     fn set_thinking_level(&mut self, level: &str) {
@@ -2078,6 +2129,21 @@ pub struct LlmPlayer {
     /// Why this decision's backend call produced no answer, when it
     /// produced none. Refreshed on every structured request (#587).
     last_call_failure: Option<String>,
+    /// The game-so-far recap a resumed seat is owed, delivered in its next
+    /// decision prompt. It used to be a permanent entry at the head of the
+    /// conversation; the conversation no longer carries earlier prompts
+    /// (see [`HISTORY_ENV`]), so the recap rides along with the first
+    /// prompt after the resume instead, where a human picking up a saved
+    /// game would read the log once.
+    pending_recap: Option<String>,
+    /// The tail of the seat's own reasoning from its last decision, sent
+    /// back to it at the top of the next prompt. With no earlier exchanges
+    /// in the conversation this is how a plan survives from one decision to
+    /// the next ("hold Bolt for the flier", "attack next turn when the
+    /// Tusker loses summoning sickness"): a few hundred characters of the
+    /// seat's own words, not the thousands of tokens of prompts they came
+    /// from.
+    notes: Option<String>,
 }
 
 impl LlmPlayer {
@@ -2093,6 +2159,8 @@ impl LlmPlayer {
             guide: None,
             session_logged: None,
             last_call_failure: None,
+            pending_recap: None,
+            notes: None,
         }
     }
 
@@ -2113,6 +2181,8 @@ impl LlmPlayer {
             guide: None,
             session_logged: None,
             last_call_failure: None,
+            pending_recap: None,
+            notes: None,
         }
     }
 
@@ -2128,6 +2198,8 @@ impl LlmPlayer {
             guide: None,
             session_logged: None,
             last_call_failure: None,
+            pending_recap: None,
+            notes: None,
         }
     }
 
@@ -2147,6 +2219,8 @@ impl LlmPlayer {
             guide: None,
             session_logged: None,
             last_call_failure: None,
+            pending_recap: None,
+            notes: None,
         }
     }
 
@@ -2164,6 +2238,8 @@ impl LlmPlayer {
             guide: None,
             session_logged: None,
             last_call_failure: None,
+            pending_recap: None,
+            notes: None,
         }
     }
 
@@ -2187,6 +2263,14 @@ impl LlmPlayer {
             self.backend = Box::new(AnthropicBackend::new(model));
             self.provider = Provider::Anthropic;
         }
+        self
+    }
+
+    /// Send this many earlier exchanges with every decision instead of
+    /// the run's [`HISTORY_ENV`] setting.
+    #[must_use]
+    pub fn with_history(mut self, exchanges: usize) -> Self {
+        self.backend.set_history_window(exchanges);
         self
     }
 
@@ -2297,9 +2381,13 @@ impl LlmPlayer {
             recap.push_str(&Self::rewrite_log_entry(entry, you));
             recap.push('\n');
         }
-        recap.push_str("\nThe game continues from this point. You will be prompted for your next action.");
+        recap.push_str("\nThe game continues from this point.");
 
-        self.backend.resume(&recap);
+        // Delivered with the next decision prompt rather than as a turn of
+        // its own: a resume used to cost a whole API call to be told
+        // "ready", and the conversation no longer keeps earlier turns.
+        self.pending_recap = Some(recap.clone());
+        self.notes = None;
         // Set log index to current length so we don't re-send these entries.
         self.last_log_index = game_log.len();
         // Log the recap body, not just its size. It is the largest message
@@ -2385,6 +2473,18 @@ impl LlmPlayer {
         self.backend.send(message)
     }
 
+    /// The recap the next decision prompt will carry, for tests.
+    #[must_use]
+    pub fn pending_recap_for_test(&self) -> Option<&str> {
+        self.pending_recap.as_deref()
+    }
+
+    /// The notes the next decision prompt will carry, for tests.
+    #[must_use]
+    pub fn notes_for_test(&self) -> Option<&str> {
+        self.notes.as_deref()
+    }
+
     /// Drive the backend's structured call directly, for backend tests.
     pub fn backend_send_with_schema_for_test(&mut self, message: &str, schema: &serde_json::Value) -> serde_json::Value {
         self.backend.set_seat(&self.name);
@@ -2394,11 +2494,6 @@ impl LlmPlayer {
     /// Take the backend's reasoning for the last decision, for backend tests.
     pub fn backend_take_thinking_for_test(&mut self) -> Option<String> {
         self.backend.take_thinking()
-    }
-
-    /// Feed a recap through the backend's resume path, for backend tests.
-    pub fn backend_resume_for_test(&mut self, recap: &str) {
-        self.backend.resume(recap);
     }
 
     /// The backend's model label, for backend tests.
@@ -3554,11 +3649,40 @@ impl LlmPlayer {
         if name.contains(&format!("(#{})", id.0)) { name } else { format!("{name} (#{})", id.0) }
     }
 
-    /// Log thinking from the last backend call, if any, at info level.
+    /// Log thinking from the last backend call, if any, at info level, and
+    /// keep its tail as the seat's notes for the next prompt.
     fn log_thinking(&mut self) {
         if let Some(thinking) = self.backend.take_thinking() {
             self.log("THOUGHT", &thinking);
+            if let Some(notes) = Self::notes_from(&thinking) {
+                self.notes = Some(notes);
+            }
         }
+    }
+
+    /// The most characters of reasoning carried into the next prompt.
+    const NOTES_MAX_CHARS: usize = 600;
+
+    /// The tail of a decision's reasoning, for the next prompt's notes.
+    ///
+    /// The tail, because reasoning ends with the decision and the plan
+    /// behind it ("…so I pass and block with the Bears next turn") where
+    /// it opens with a reading of the board the next prompt restates
+    /// anyway. Cut at a word boundary and marked as cut. `None` when there
+    /// is nothing to carry — a 5.x model whose thinking is not displayed
+    /// hands back an empty block, which is not a note.
+    fn notes_from(thinking: &str) -> Option<String> {
+        let text = thinking.trim();
+        if text.is_empty() {
+            return None;
+        }
+        let chars = text.chars().count();
+        if chars <= Self::NOTES_MAX_CHARS {
+            return Some(text.to_string());
+        }
+        let tail: String = text.chars().skip(chars - Self::NOTES_MAX_CHARS).collect();
+        let from_word = tail.find(char::is_whitespace).map_or(0, |i| i + 1);
+        Some(format!("…{}", tail[from_word..].trim_start()))
     }
 
     /// Send a message with a custom JSON response schema, returning parsed JSON.
@@ -3631,6 +3755,20 @@ impl LlmPlayer {
         // what decision it's being asked to make.
         prompt.push_str(&Self::format_turn_header(view, header_override));
         prompt.push('\n');
+
+        // A resumed seat reads the game so far once, here, in its first
+        // prompt; after that the board below is the whole position.
+        if let Some(recap) = self.pending_recap.take() {
+            prompt.push_str(&recap);
+            prompt.push_str("\n\n");
+        }
+        // The seat's own plan, from its last decision: the one thing the
+        // bounded conversation would otherwise lose (see `notes`).
+        if let Some(notes) = &self.notes {
+            prompt.push_str("Your notes from your last decision:\n");
+            prompt.push_str(notes);
+            prompt.push_str("\n\n");
+        }
 
         if !new_logs.is_empty() {
             prompt.push_str("Recent events:\n");
@@ -5937,7 +6075,6 @@ pub(crate) mod tests {
             self.answers.remove(0)
         }
         fn init(&mut self, _deck_info: &str) {}
-        fn resume(&mut self, _recap: &str) {}
         fn conversation_len(&self) -> usize { self.prompts.borrow().len() }
         fn system_prompt(&self) -> &str { "" }
         fn model_name(&self) -> &str { "scripted" }
@@ -6002,6 +6139,8 @@ pub(crate) mod tests {
             guide: None,
             session_logged: None,
             last_call_failure: None,
+            pending_recap: None,
+            notes: None,
         };
         (player, prompts)
     }
@@ -6535,7 +6674,6 @@ pub(crate) mod tests {
         }
         fn take_call_failure(&mut self) -> Option<String> { self.failure.clone() }
         fn init(&mut self, _deck_info: &str) {}
-        fn resume(&mut self, _recap: &str) {}
         fn system_prompt(&self) -> &str { "" }
         fn model_name(&self) -> &str { self.model }
     }
@@ -6725,7 +6863,6 @@ pub(crate) mod tests {
             self.reply.clone()
         }
         fn init(&mut self, _deck_info: &str) {}
-        fn resume(&mut self, _recap: &str) {}
         fn system_prompt(&self) -> &str { "" }
         fn model_name(&self) -> &str { self.model }
     }
@@ -8216,7 +8353,6 @@ this Aura deals 1 damage to that player.";
         fn init(&mut self, deck_info: &str) {
             self.system_prompt = deck_info.to_string();
         }
-        fn resume(&mut self, _recap: &str) {}
         fn system_prompt(&self) -> &str { &self.system_prompt }
         fn model_name(&self) -> &str { "recording" }
     }
@@ -8454,6 +8590,7 @@ mod metered_seat_failures {
             base_url,
             seat: String::new(),
             thinking: ThinkingLevel::Low,
+            window: 0,
         }
     }
 
@@ -8470,6 +8607,8 @@ mod metered_seat_failures {
             gave_up: None,
             base_url,
             seat: String::new(),
+            window: 0,
+            chain_len: 0,
         }
     }
 
@@ -8521,5 +8660,212 @@ mod metered_seat_failures {
         assert!(matches!(classify_http_status::<()>(429, String::new()), CallAttempt::Transient(_)));
         assert!(matches!(classify_http_status::<()>(400, String::new()), CallAttempt::Refused(_)));
         assert!(matches!(classify_http_status::<()>(403, String::new()), CallAttempt::Dead(_)));
+    }
+}
+
+/// A decision is sent on its own: the system prompt, at most a bounded
+/// window of earlier exchanges, and the prompt — which restates the whole
+/// position anyway. The seat's plan and a resume's recap travel inside the
+/// prompt instead of the history.
+#[cfg(test)]
+mod stateless_decisions {
+    use super::*;
+    use mtg_engine::cards::CardRegistry;
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::sync::{Arc, Mutex};
+
+    /// A Messages API on a loopback port that answers every request with a
+    /// thinking block and `{"action":0}`, and keeps every request body.
+    fn recording_api() -> (String, Arc<Mutex<Vec<serde_json::Value>>>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let bodies = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&bodies);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut len = 0usize;
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 { break; }
+                    if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        len = v.trim().parse().unwrap_or(0);
+                    }
+                    if line == "\r\n" { break; }
+                }
+                let mut body = vec![0; len];
+                let _ = reader.read_exact(&mut body);
+                let n = {
+                    let mut seen = seen.lock().unwrap();
+                    seen.push(serde_json::from_slice(&body).unwrap_or_default());
+                    seen.len()
+                };
+                let reply = serde_json::json!({
+                    "content": [
+                        {"type": "thinking", "thinking": format!("Decision {n}: the board is stable, so I pass and keep Bolt for the flier.")},
+                        {"type": "text", "text": "{\"action\":0}"}
+                    ],
+                    "usage": {"input_tokens": 1, "output_tokens": 1}
+                }).to_string();
+                let _ = write!(stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                    reply.len());
+            }
+        });
+        (format!("http://{addr}"), bodies)
+    }
+
+    fn metered_player(url: &str, window: usize) -> LlmPlayer {
+        let mut backend = AnthropicBackend {
+            client: Client::new(),
+            api_key: "dummy".into(),
+            model: "stub".into(),
+            system_prompt: "rules".into(),
+            conversation: Vec::new(),
+            last_thinking: None,
+            last_call_failure: None,
+            gave_up: None,
+            base_url: url.to_string(),
+            seat: String::new(),
+            thinking: ThinkingLevel::Low,
+            window: 0,
+        };
+        backend.set_history_window(window);
+        LlmPlayer {
+            name: "t".into(),
+            last_log_index: 0,
+            own_card_names: std::collections::HashSet::new(),
+            card_texts: HashMap::new(),
+            backend: Box::new(backend),
+            provider: Provider::Anthropic,
+            guide: None,
+            session_logged: None,
+            last_call_failure: None,
+            pending_recap: None,
+            notes: None,
+        }
+    }
+
+    fn a_view() -> (mtg_engine::state::GameState, CardRegistry) {
+        use mtg_engine::engine::{setup_game, Decklist, GameConfig};
+        let registry = CardRegistry::with_all_cards();
+        let deck = Decklist {
+            entries: vec![("Forest".to_string(), 20), ("Grizzly Bears".to_string(), 20)],
+        };
+        let config = GameConfig {
+            player_names: vec!["you".into(), "opp".into()],
+            decklists: vec![deck.clone(), deck],
+            starting_life: 20,
+            starting_player: Some(mtg_engine::ids::PlayerId(0)),
+            rng_seed: Some(7),
+        };
+        let state = setup_game(&config, &registry);
+        (state, registry)
+    }
+
+    /// The request for decision N carries the system prompt, the window
+    /// and the prompt — not decisions 1..N-1. It used to carry all of them,
+    /// so the input tokens of a game grew with the square of its decisions.
+    #[test]
+    fn a_request_carries_at_most_the_window_of_earlier_exchanges() {
+        for (window, most_messages) in [(0usize, 1usize), (2, 5)] {
+            let (url, bodies) = recording_api();
+            let mut player = metered_player(&url, window);
+            let (state, registry) = a_view();
+            let view = GameView::for_player(&state, mtg_engine::ids::PlayerId(0), &registry);
+            for _ in 0..6 {
+                player.pick_action_index(&view, "[MAIN PHASE 1]\nAvailable actions:\n0: Pass\n", 1);
+            }
+            let bodies = bodies.lock().unwrap();
+            assert_eq!(bodies.len(), 6);
+            for (i, body) in bodies.iter().enumerate() {
+                let messages = body["messages"].as_array().expect("a messages array");
+                assert!(messages.len() <= most_messages,
+                    "window {window}: request {} carries {} messages, more than the window allows",
+                    i + 1, messages.len());
+                assert_eq!(messages.last().unwrap()["role"], "user", "the prompt is last");
+                assert_eq!(messages.len().min(2 * i + 1), messages.len(),
+                    "window {window}: request {} cannot carry exchanges that never happened", i + 1);
+            }
+            // And the last request is no bigger than the first by more than
+            // a window of exchanges: the history stopped growing.
+            let size = |b: &serde_json::Value| b.to_string().len();
+            let first = size(&bodies[0]);
+            let last = size(&bodies[5]);
+            let one_exchange = size(&bodies[1]) - first;
+            assert!(last <= first + window * one_exchange + 64,
+                "window {window}: request 6 is {last} bytes against {first} for request 1");
+            assert!(player.conversation_len_for_test() <= 2 * window);
+        }
+    }
+
+    /// The seat's reasoning from one decision comes back to it as notes at
+    /// the top of the next prompt — the one thing the bounded conversation
+    /// would otherwise lose — and is logged as THOUGHT as before.
+    #[test]
+    fn the_last_reasoning_comes_back_as_notes_in_the_next_prompt() {
+        let (url, bodies) = recording_api();
+        let mut player = metered_player(&url, 0);
+        let (state, registry) = a_view();
+        let view = GameView::for_player(&state, mtg_engine::ids::PlayerId(0), &registry);
+
+        player.pick_action_index(&view, "[MAIN PHASE 1]\nAvailable actions:\n0: Pass\n", 1);
+        assert_eq!(player.notes_for_test(),
+            Some("Decision 1: the board is stable, so I pass and keep Bolt for the flier."));
+        player.pick_action_index(&view, "[MAIN PHASE 1]\nAvailable actions:\n0: Pass\n", 1);
+
+        let bodies = bodies.lock().unwrap();
+        let prompt = |i: usize| bodies[i]["messages"][0]["content"].as_str().unwrap().to_string();
+        assert!(!prompt(0).contains("Your notes from your last decision:"),
+            "the first decision has no notes yet:\n{}", prompt(0));
+        let second = prompt(1);
+        let header = second.find("Turn ").expect("the header line");
+        let notes = second.find("Your notes from your last decision:\nDecision 1: the board is stable")
+            .expect("the second decision carries the first's reasoning");
+        assert!(header < notes, "after the header:\n{second}");
+        let board = second.find("You: ").expect("player status");
+        assert!(notes < board, "before the board:\n{second}");
+        // Documented where the seat reads the prompt format.
+        let doc_header = GAME_RULES.find("**Header line**").unwrap();
+        let doc_notes = GAME_RULES.find("**Your notes from your last decision**").expect("documented");
+        let doc_events = GAME_RULES.find("**Recent events**").unwrap();
+        assert!(doc_header < doc_notes && doc_notes < doc_events, "in the order they are sent");
+    }
+
+    /// The notes are the tail of the reasoning, bounded.
+    #[test]
+    fn notes_are_the_bounded_tail_of_the_reasoning() {
+        assert_eq!(LlmPlayer::notes_from("  "), None, "an empty thinking block is not a note");
+        assert_eq!(LlmPlayer::notes_from("short plan").as_deref(), Some("short plan"));
+        let long = format!("{}so I attack with everything.", "reading the board, ".repeat(100));
+        let notes = LlmPlayer::notes_from(&long).unwrap();
+        assert!(notes.starts_with('…'), "marked as cut: {notes}");
+        assert!(notes.ends_with("so I attack with everything."), "the end is kept: {notes}");
+        assert!(notes.chars().count() <= LlmPlayer::NOTES_MAX_CHARS + 1);
+        assert!(!notes.starts_with("…oard"), "cut at a word boundary: {notes}");
+    }
+
+    /// A resumed seat reads the recap in its first prompt after the
+    /// resume, once, where it used to be a permanent conversation entry
+    /// re-sent with every decision of the rest of the game.
+    #[test]
+    fn a_resumed_seat_reads_the_recap_once_in_its_next_prompt() {
+        let mut player = LlmPlayer::for_prompt_tests("t");
+        let (state, registry) = a_view();
+        let view = GameView::for_player(&state, mtg_engine::ids::PlayerId(0), &registry);
+        player.resume_from_log(
+            &["── Turn 1 (p0) ──".to_string(), "p0 played Forest".to_string()],
+            mtg_engine::ids::PlayerId(0),
+        );
+        let first = player.build_prompt(&view, "[MAIN PHASE 1]\nAvailable actions:\n0: Pass\n");
+        let header = first.find("Turn ").expect("header");
+        let recap = first.find("Game resumed. Here is the complete game log so far:")
+            .expect("the first prompt after a resume carries the recap");
+        assert!(header < recap, "{first}");
+        assert!(first.contains("You played Forest"), "in the seat's vocabulary:\n{first}");
+        let second = player.build_prompt(&view, "[MAIN PHASE 1]\nAvailable actions:\n0: Pass\n");
+        assert!(!second.contains("Game resumed"), "and the second does not:\n{second}");
+        assert_eq!(player.conversation_len_for_test(), 0);
     }
 }

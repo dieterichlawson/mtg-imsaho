@@ -3,9 +3,12 @@
 //! [`AnthropicBackend`](super::AnthropicBackend) talks to the Messages API
 //! with an `ANTHROPIC_API_KEY`, which is metered and billed separately. This
 //! backend runs the same prompt protocol through the Claude Code CLI in
-//! print mode instead — one `claude -p` subprocess per decision, the
-//! conversation kept in a Claude Code session (`--session-id` on the first
-//! call, `--resume` after that) so the CLI's own prompt caching applies.
+//! print mode instead — one `claude -p` subprocess per decision, each in a
+//! Claude Code session of its own (`--session-id`) unless the run asks for
+//! a history window (`MTG_LLM_HISTORY`), in which case a session is
+//! `--resume`d for that many decisions and then replaced. The CLI's own
+//! prompt caching still applies: the system prompt is the same bytes on
+//! every call.
 //! Whatever the CLI is logged into pays for it: for a subscription login
 //! that is plan quota, not an API bill. The CLI gives an exported
 //! `ANTHROPIC_API_KEY` precedence over that login, so the subprocess runs
@@ -528,6 +531,10 @@ pub(super) struct ClaudeCodeBackend {
     gave_up: Option<String>,
     /// The seat this backend answers for; see `LlmBackend::set_seat`.
     seat: String,
+    /// How many decisions one CLI session carries before the seat starts a
+    /// fresh one; see [`super::HISTORY_ENV`]. A `--resume`d session re-reads
+    /// its whole history on every call, so the session is the window.
+    window: usize,
 }
 
 impl ClaudeCodeBackend {
@@ -553,6 +560,7 @@ impl ClaudeCodeBackend {
             last_call_failure: None,
             gave_up: None,
             seat: String::new(),
+            window: super::history_exchanges(),
         }
     }
 
@@ -585,6 +593,12 @@ impl ClaudeCodeBackend {
             // look anyway.
             self.last_call_failure = Some(why.clone());
             return None;
+        }
+        // A session that has carried its window of decisions is not
+        // resumed: every call to it would re-read all of them.
+        if self.turns > self.window {
+            self.session_id = None;
+            self.turns = 0;
         }
         let budget = super::retry_budget(RETRY_BUDGET_ENV);
         let began = std::time::Instant::now();
@@ -946,20 +960,8 @@ impl LlmBackend for ClaudeCodeBackend {
         self.turns = 0;
     }
 
-    fn resume(&mut self, recap: &str) {
-        // The API backend fakes the acknowledgement turn; a CLI session is
-        // real history, so the recap is delivered as a genuine turn.
-        let schema = serde_json::json!({
-            "type": "object",
-            "properties": {"ready": {"type": "boolean"}},
-            "required": ["ready"],
-            "additionalProperties": false
-        });
-        let message = format!(
-            "{recap}\n\nReview this history; the game continues from here. \
-             Reply with {{\"ready\": true}}."
-        );
-        let _ = self.call(&message, Some(&schema));
+    fn set_history_window(&mut self, exchanges: usize) {
+        self.window = exchanges;
     }
 
     fn conversation_len(&self) -> usize {

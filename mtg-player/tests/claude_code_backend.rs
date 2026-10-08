@@ -84,21 +84,51 @@ fn arg_after<'a>(call: &'a str, flag: &str) -> Option<&'a str> {
     lines.get(idx + 1)?.strip_prefix("ARG: ")
 }
 
+/// Every decision prompt restates the whole position, so a session
+/// `--resume`d for the whole game re-read a growing history on every call
+/// for nothing: input tokens per game grew with the square of the decision
+/// count. Each decision is its own session now, unless a history window is
+/// asked for — then a session carries that many decisions and is replaced.
 #[test]
-fn first_call_creates_a_session_and_later_calls_resume_it() {
+fn each_decision_is_its_own_session_unless_a_window_is_asked_for() {
     let fake = Fake::new("session", OK_BODY);
-    let mut p = mtg_player::llm::LlmPlayer::new_claude_code_with_binary("t", &fake.bin());
+    let mut p = mtg_player::llm::LlmPlayer::new_claude_code_with_binary("t", &fake.bin())
+        .with_history(0);
 
     assert_eq!(p.backend_send_for_test("pick"), "3");
     assert_eq!(p.backend_send_for_test("pick again"), "3");
+    assert_eq!(p.backend_send_for_test("and again"), "3");
     let calls = fake.calls();
-    assert_eq!(calls.len(), 2, "two decisions, two subprocesses:\n{}", fake.log());
+    assert_eq!(calls.len(), 3, "three decisions, three subprocesses:\n{}", fake.log());
 
-    let sid = arg_after(&calls[0], "--session-id").expect("first call sets --session-id");
-    assert_eq!(sid.len(), 36, "session id is a uuid: {sid}");
-    assert!(arg_after(&calls[0], "--resume").is_none());
-    assert_eq!(arg_after(&calls[1], "--resume"), Some(sid), "second call resumes the same session");
-    assert!(arg_after(&calls[1], "--session-id").is_none());
+    let mut sids = Vec::new();
+    for c in &calls {
+        let sid = arg_after(c, "--session-id").expect("every call opens a session of its own");
+        assert_eq!(sid.len(), 36, "session id is a uuid: {sid}");
+        assert!(arg_after(c, "--resume").is_none(), "no call resumes an earlier decision's session:\n{c}");
+        sids.push(sid.to_string());
+    }
+    sids.dedup();
+    assert_eq!(sids.len(), 3, "three distinct sessions");
+    // The session is replaced on the next call, not the moment the answer
+    // lands — the SESSION record is written after the call, from the id.
+    assert!(p.conversation_len_for_test() <= 2, "nothing but the exchange just made is held");
+
+    // With a window of two, a session carries two decisions, then a fresh
+    // one is opened: resumed, resumed, fresh, resumed — never the whole game.
+    let fake = Fake::new("window", OK_BODY);
+    let mut p = mtg_player::llm::LlmPlayer::new_claude_code_with_binary("t", &fake.bin())
+        .with_history(2);
+    for _ in 0..5 {
+        assert_eq!(p.backend_send_for_test("pick"), "3");
+    }
+    let calls = fake.calls();
+    let first = arg_after(&calls[0], "--session-id").expect("fresh");
+    assert_eq!(arg_after(&calls[1], "--resume"), Some(first), "second decision resumes the first's session");
+    assert_eq!(arg_after(&calls[2], "--resume"), Some(first), "and the third: two earlier exchanges");
+    let fourth = arg_after(&calls[3], "--session-id").expect("the window is full: a fresh session");
+    assert_ne!(fourth, first);
+    assert_eq!(arg_after(&calls[4], "--resume"), Some(fourth));
 
     for c in &calls {
         assert!(c.contains("ARG: -p\n"), "print mode");
@@ -110,7 +140,6 @@ fn first_call_creates_a_session_and_later_calls_resume_it() {
         let schema = arg_after(c, "--json-schema").expect("action calls are schema-constrained");
         assert!(schema.contains("\"action\""));
     }
-    assert_eq!(p.conversation_len_for_test(), 4, "two exchanges");
     assert_eq!(p.model_name_for_test(), "claude-code");
 }
 
@@ -167,16 +196,17 @@ fn structured_calls_pass_the_schema_and_return_the_object() {
     assert!(p.backend_take_thinking_for_test().is_none(), "taken once");
 }
 
+/// A resume used to spend a whole call on the recap, to be told "ready".
+/// The recap now rides along with the first decision prompt after it
+/// (`LlmPlayer::resume_from_log`), so a resume makes no call of its own.
 #[test]
-fn resume_delivers_the_recap_as_a_real_turn() {
+fn a_resume_makes_no_call_of_its_own() {
     let fake = Fake::new("resume", OK_BODY);
     let mut p = mtg_player::llm::LlmPlayer::new_claude_code_with_binary("t", &fake.bin());
-    p.backend_resume_for_test("Turn 3: you cast Doomed Traveler.");
-    let calls = fake.calls();
-    assert_eq!(calls.len(), 1);
-    assert!(calls[0].contains("Doomed Traveler"), "recap went to the model");
-    assert!(arg_after(&calls[0], "--json-schema").unwrap().contains("ready"));
-    assert_eq!(p.conversation_len_for_test(), 2);
+    p.resume_from_log(&["p0 cast Doomed Traveler".to_string()], mtg_engine::ids::PlayerId(0));
+    assert!(fake.calls().is_empty(), "the recap waits for the next decision:\n{}", fake.log());
+    assert!(p.pending_recap_for_test().is_some_and(|r| r.contains("You cast Doomed Traveler")),
+        "and is carried, in the seat's own vocabulary");
 }
 
 /// A refusal the CLI prints as a result object on stdout (a usage limit
