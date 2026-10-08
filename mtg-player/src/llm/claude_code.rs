@@ -642,6 +642,9 @@ impl ClaudeCodeBackend {
                         usage["cache_read_input_tokens"].as_u64().unwrap_or(0),
                         usage["cache_creation_input_tokens"].as_u64().unwrap_or(0),
                     );
+                    if let Some(thinking) = usage["output_tokens_details"]["thinking_tokens"].as_u64() {
+                        super::record_llm_thinking(&self.label, thinking);
+                    }
                     return Some(json);
                 }
                 Err(e) => {

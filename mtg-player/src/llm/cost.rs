@@ -110,6 +110,21 @@ pub fn cost(model: &str, usage: &LlmModelUsage) -> Cost {
     )
 }
 
+/// What a plan-quota seat's usage would have cost at API rates, when its
+/// label names a model this build has a rate for — `claude-code:<model>`.
+///
+/// Not a cost: nothing was billed. It is the number that answers "what
+/// would this night of games cost on a key", which is what a run on plan
+/// quota is often measuring, and the summary prints it as such.
+#[must_use]
+pub fn api_equivalent(model: &str, usage: &LlmModelUsage) -> Option<f64> {
+    let api_model = model.strip_prefix("claude-code:")?;
+    match cost(api_model, usage) {
+        Cost::Usd(v) => Some(v),
+        Cost::PlanQuota | Cost::Unknown => None,
+    }
+}
+
 /// The cost of a whole run's usage map. A run of nothing but plan-quota
 /// seats has no dollar total to report, and one priced model with no rate
 /// on file makes the total unknown rather than an understatement.

@@ -18,7 +18,7 @@ pub use claude_code::{available as claude_code_available, binary as claude_code_
 // The one `claude -p` subprocess driver, for both seats in the workspace
 // (#404).
 pub use claude_code::{prepare_seat as claude_code_prepare_seat, run_print_mode as claude_code_run};
-pub use cost::{cost, is_plan_quota, model_prices, total_cost, Cost, ModelPrices};
+pub use cost::{api_equivalent, cost, is_plan_quota, model_prices, total_cost, Cost, ModelPrices};
 
 
 #[derive(Default, Debug, Clone)]
@@ -45,6 +45,12 @@ pub struct LlmModelUsage {
     /// an answer the model never gave (issue #587). Not part of `calls`
     /// either: no call succeeded.
     pub unanswered: u64,
+    /// The part of `output` that was thinking, where the backend reports
+    /// it (the `claude -p` result's `output_tokens_details`). Thinking is
+    /// billed as output, and once the history is bounded it is the largest
+    /// term a decision has, so the summary says how much of the output it
+    /// was. Zero where the backend does not say.
+    pub thinking: u64,
 }
 
 static LLM_MODEL_USAGE: std::sync::LazyLock<Mutex<HashMap<String, LlmModelUsage>>> =
@@ -575,6 +581,11 @@ fn record_llm_usage(model: &str, input: u64, output: u64, cache_read: u64, cache
     entry.output += output;
     entry.cache_read += cache_read;
     entry.cache_create += cache_create;
+}
+
+/// How much of a call's output was thinking, for a backend that reports it.
+fn record_llm_thinking(model: &str, thinking: u64) {
+    LLM_MODEL_USAGE.lock().unwrap().entry(model.to_string()).or_default().thinking += thinking;
 }
 
 /// The suffix a usage line carries when some of its calls came back with an

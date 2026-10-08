@@ -77,3 +77,19 @@ fn one_unpriced_model_makes_the_whole_total_unknown() {
     map.insert("some-model-nobody-here-has-priced".to_string(), usage(30_000, 4_000, 0, 0));
     assert_eq!(total_cost(&map), Cost::Unknown);
 }
+
+/// A plan-quota seat that names its model can say what the same usage
+/// would have cost on a key — the figure a night of `cc` games is usually
+/// run to find out — without that being reported as money spent.
+#[test]
+fn a_plan_quota_seat_naming_its_model_has_an_api_rate_equivalent() {
+    use mtg_player::llm::api_equivalent;
+    let u = usage(1_000_000, 1_000_000, 1_000_000, 1_000_000);
+    let p = model_prices("claude-sonnet-4-6").unwrap();
+    let equivalent = api_equivalent("claude-code:claude-sonnet-4-6", &u).expect("a priced model");
+    assert!((equivalent - (p.input + p.output + p.cache_read + p.cache_write)).abs() < 1e-9);
+    assert_eq!(cost("claude-code:claude-sonnet-4-6", &u), Cost::PlanQuota, "still not a bill");
+    assert_eq!(api_equivalent("claude-code", &u), None, "no model named, no rate");
+    assert_eq!(api_equivalent("claude-code:opus", &u), None, "a CLI alias is not a priced model id");
+    assert_eq!(api_equivalent("claude-sonnet-4-6", &u), None, "a metered seat is priced by `cost`");
+}

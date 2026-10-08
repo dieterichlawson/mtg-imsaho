@@ -1130,10 +1130,22 @@ use --save if you need a resumable file.");
             // all. Folded into the rejection count it read as a model
             // playing badly rather than a dead CLI (issue #587).
             let unanswered = mtg_player::llm::unanswered_note(stats.unanswered);
+            // How much of the output was thinking, where the backend says.
+            let thinking = if stats.thinking > 0 {
+                format!(" ({} thinking)", stats.thinking)
+            } else {
+                String::new()
+            };
+            // What it cost — or, for a plan-quota seat, what it would have
+            // cost on a key, said as such (cost.rs).
+            let cost = match mtg_player::llm::api_equivalent(model, stats) {
+                Some(usd) => format!("n/a (plan quota; ${usd:.4} at API rates)"),
+                None => mtg_player::llm::cost(model, stats).to_string(),
+            };
             writeln!(usage_lines,
-                "{}: {} calls, {} input, {} output, {} cache_read, {} cache_create{}{}",
-                model, stats.calls, stats.input, stats.output,
-                stats.cache_read, stats.cache_create, rejected, unanswered
+                "{}: {} calls, {} input, {} output{}, {} cache_read, {} cache_create{}{}, cost {}",
+                model, stats.calls, stats.input, stats.output, thinking,
+                stats.cache_read, stats.cache_create, rejected, unanswered, cost
             ).unwrap();
         }
         mtg_player::stdout_line!("{}", usage_lines.trim());

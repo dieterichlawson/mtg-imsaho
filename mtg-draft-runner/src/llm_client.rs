@@ -110,6 +110,9 @@ fn as_llm_usage(u: &ModelUsage) -> mtg_player::llm::LlmModelUsage {
         calls: u.calls,
         rejected: u.rejected,
         unanswered: u.unanswered,
+        // Not a counter this crate keeps: the draft seats report no
+        // thinking breakdown, and the game seats' own record carries it.
+        thinking: 0,
     }
 }
 
