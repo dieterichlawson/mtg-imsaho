@@ -190,3 +190,45 @@ fn a_refused_pick_leaves_the_snapshot_as_it_was() {
     assert_eq!(calls(&pod.path("bad.calls")), 0);
 }
 
+/// #730: the saved decks were played as they stood, so a deck of cards its
+/// seat never drafted played the tournament and a name that is not a card
+/// panicked a match worker.
+#[test]
+fn a_saved_deck_its_pool_could_not_build_is_refused() {
+    if !have_python() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let pod = Pod::new("baddeck");
+    let mut save = pod.finished_snapshot("snap.json");
+    save["matches"] = serde_json::json!([]);
+    let other_seats_card = save["decks"][1]["deck"]["maindeck"][0].clone();
+    let seat0_pool: Vec<serde_json::Value> = ["maindeck", "sideboard"].iter()
+        .flat_map(|k| save["decks"][0]["deck"][k].as_array().unwrap().clone())
+        .collect();
+    assert!(!seat0_pool.contains(&other_seats_card), "the test needs a card seat 0 never drafted");
+
+    for (name, card, needle) in [
+        ("fake", serde_json::Value::from("Not A Real Card"), "'Not A Real Card' is not in your drafted pool"),
+        ("theirs", other_seats_card.clone(), "is not in your drafted pool"),
+    ] {
+        let mut edited = save.clone();
+        edited["decks"][0]["deck"]["maindeck"][0] = card;
+        let path = pod.write(&format!("{name}.json"), &edited);
+        let counter = format!("{name}.calls");
+        let out = pod.run(&["--resume", &path], &counter, &format!("{name}.log"));
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(!out.status.success(), "{name}: {stderr}");
+        assert!(stderr.contains("seat 0's deck is not one its pool builds") && stderr.contains(needle),
+            "{name}: {stderr}");
+        assert!(!stderr.contains("panicked"), "{name}: refused, not crashed: {stderr}");
+        assert_eq!(calls(&pod.path(&counter)), 0, "{name}: refused before any game");
+    }
+
+    let mut short = save.clone();
+    short["decks"][0]["deck"]["maindeck"].as_array_mut().unwrap().truncate(5);
+    let path = pod.write("short.json", &short);
+    let out = pod.run(&["--resume", &path], "short.calls", "short.log");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success() && stderr.contains("need at least 40"), "{stderr}");
+}

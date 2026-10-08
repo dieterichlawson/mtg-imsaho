@@ -555,6 +555,22 @@ fn replay_pools(mut draft: DraftState, picks: &[PickRecord], players: usize) -> 
     Ok(draft.players.iter().map(|p| p.pool.clone()).collect())
 }
 
+/// Whether every saved deck is one its seat could have built from the pool
+/// the replayed picks give it: the checks a freshly built deck passes.
+///
+/// The saved decks were played as they stood, so a hand-edited or corrupted
+/// snapshot played a 30-card deck of cards its seat never drafted, exit 0,
+/// and a name that is not a card panicked a match worker once the
+/// tournament was under way (#730). A card that is not in the pool is
+/// refused here, and every card in a pool is a card the set dealt.
+fn check_snapshot_decks(decks: &[SavedDeck], pools: &[Vec<String>]) -> Result<(), String> {
+    for (seat, (saved, pool)) in decks.iter().zip(pools).enumerate() {
+        deckbuilding::validate_deck(pool, &saved.deck.maindeck, &saved.deck.lands)
+            .map_err(|e| format!("seat {seat}'s deck is not one its pool builds: {e}"))?;
+    }
+    Ok(())
+}
+
 /// What one seat was told to do while it was making the recorded picks.
 ///
 /// A guide changes what a seat does more than any other flag, and none of
@@ -1120,7 +1136,10 @@ this draft will be made under {} — this draft is a mixture of the two",
     // Everything the snapshot holds is checked before the first write below
     // (#733), so a refused save is left as it was found.
     match replay_pools(draft.clone(), &replaying, args.players) {
-        Ok(_) => {}
+        Ok(pools) => if let Err(e) = check_snapshot_decks(&resumed_decks, &pools) {
+            die(&format!("draft save '{}' cannot be replayed: {e}",
+                args.resume.as_deref().unwrap_or_default()));
+        },
         Err(e) => die(&format!("draft save '{}' cannot be replayed: {e}",
             args.resume.as_deref().unwrap_or_default())),
     }
