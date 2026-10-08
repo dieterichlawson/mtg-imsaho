@@ -836,6 +836,7 @@ Lands are grouped by name. `(tapped)` or `(N tapped)` shows tap status. Non-land
 - `token` = a token; `copy` = a copy of another permanent (it has the copied card's name and text)
 - `+1+1xN`, `-1-1xN`, `LOYxN` = N +1/+1 counters, N -1/-1 counters, loyalty N; any other counter is its kind and count, e.g. `Slimex2`
 - `names: <card>` = the card name this permanent named as it entered (Nevermore)
+- `enchanting you`, `enchanting opponent` = the player this Curse is attached to, which is not always its controller's opponent
 
 A legendary permanent says `legendary` after its P/T (creatures, alongside the keywords) or in its flags (other permanents). The legend rule (CR 704.5j): if you control two or more legendary permanents with the same name, you choose one and the rest go to their owners' graveyards — so casting a second copy of a legend you already control gets you a choice, not two of them.
 
@@ -2970,11 +2971,6 @@ impl LlmPlayer {
             if let Some(suffix) = Self::format_counters(&o.counters) {
                 flag_parts.push(suffix);
             }
-            let flags_str = if flag_parts.is_empty() {
-                String::new()
-            } else {
-                format!(" [{}]", flag_parts.join(","))
-            };
             // A Curse's entire identity is whom it enchants (CR 702.5c).
             // It attaches to a *player*, so it is not in `aura_map` (keyed on
             // attached_to, an object) and falls through to here — where the
@@ -2983,17 +2979,23 @@ impl LlmPlayer {
             // "Enchant player" line. Two Curses of the same name on opposite
             // players then rendered identically, and the controller is no
             // proxy for the host: a seat can legally curse itself. This is
-            // the CLI's #81 fix, which the prompt never got.
-            let host = match o.attached_to_player {
-                Some(p) if p == view_you => " [enchanting you]",
-                Some(_) => " [enchanting opponent]",
-                None => "",
+            // the CLI's #81 fix, which the prompt never got. One of the
+            // flags, in the one bracket the legend defines (#736).
+            match o.attached_to_player {
+                Some(p) if p == view_you => flag_parts.push("enchanting you".into()),
+                Some(_) => flag_parts.push("enchanting opponent".into()),
+                None => {}
+            }
+            let flags_str = if flag_parts.is_empty() {
+                String::new()
+            } else {
+                format!(" [{}]", flag_parts.join(","))
             };
             let desc = Self::short_effect_summary(&o.oracle_text);
             if desc.is_empty() {
-                parts.push(format!("{} (#{}){}{}", o.name, o.object_id.0, flags_str, host));
+                parts.push(format!("{} (#{}){}", o.name, o.object_id.0, flags_str));
             } else {
-                parts.push(format!("{} (#{}){}{} ({})", o.name, o.object_id.0, flags_str, host, desc));
+                parts.push(format!("{} (#{}){} ({})", o.name, o.object_id.0, flags_str, desc));
             }
         }
 
@@ -7630,12 +7632,22 @@ this Aura deals 1 damage to that player.";
         c.effective_power = None;
         c.effective_toughness = None;
         c.named_card = Some("Geistflame".into());
-        let all = vec![&a, &alone, &b, &c];
+        // A Curse on each player, one of them with a flag of its own (#736).
+        let oracle = "Enchant player\nAt the beginning of enchanted player's upkeep, \
+this Aura deals 1 damage to that player.";
+        let mut d = curse(51, "Curse of the Pierced Heart", you, opp, oracle);
+        d.tapped = true;
+        let e = curse(52, "Curse of the Pierced Heart", opp, you, oracle);
+        let all = vec![&a, &alone, &b, &c, &d, &e];
         let board = LlmPlayer::format_perms_compact(&all, &all, you);
         assert!(board.contains("blocked (no blockers left)"), "{board}");
+        assert!(board.contains("enchanting you") && board.contains("enchanting opponent"), "{board}");
         let legend_start = GAME_RULES.find("Status flags after creatures").expect("the legend");
         let legend = &GAME_RULES[legend_start..legend_start + 2500];
         for line in board.lines() {
+            // One bracket per line: a second one is a flag outside the
+            // bracket the legend describes (#736).
+            assert!(line.matches(" [").count() <= 1, "more than one bracket: {line:?}");
             let Some(open) = line.rfind(" [") else { continue };
             let close = line[open..].find(']').map_or(line.len(), |i| open + i);
             for flag in line[open + 2..close].split(',') {
