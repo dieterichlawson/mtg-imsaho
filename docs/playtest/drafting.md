@@ -767,3 +767,50 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   Still open: what the *game* half of a resumed match does. A match is
   saved only when it finishes, so an interrupted best-of-3 at 1-0
   re-plays game 1. Check whether the log and the stake prose (#609) say so.
+- D27 [proposed 2026-10-08, from docs/plans/draft-with-friends.md] the
+  table with a person at it: host `mtg-draft-server --seats human,ai,ai,ai`
+  under a `CLAUDE_CODE_BIN` stub, join seat 0 from the Playwright Chromium
+  (the page) and, on a second run, from `mtg-draft-client`, and draft to
+  the end. Verify against the log: every pick the page showed is the
+  pick the log records, the pass direction flips at pack 2, a pack that
+  arrives while you are still holding one is counted ("1 pack waiting")
+  and arrives in order, pick numbering on a pack is `size - remaining +
+  1` whoever held it before you, and the view never carries another
+  seat's pack or pool (read the raw `view` JSON from `/api/view`, not
+  just the screen)
+- D28 [proposed 2026-10-08, same source] the absent human: a human seat
+  that never joins, and one that joins and stops picking. Without
+  `--pick-seconds` the table must wait and say for whom; with it, the
+  auto-pick must be logged as `auto-pick: <why>`, shown to the seat as a
+  notice when it returns, and never name a card the pack did not hold.
+  `kick <seat>` at the host's keyboard turns the seat into an auto-picker
+  for the rest of the run — check the deck it ends up with is buildable
+  and its matches are recorded as forfeits, not as games nobody played
+- D29 [proposed 2026-10-08, same source] two people, one key: open the
+  same seat's URL in two tabs and pick from both. One pick must win and
+  the other be refused against the `pack_id` it named, both tabs then
+  showing the same next pack; a reconnecting tab is sent the pending
+  pack. Then a wrong key, a seat index past the pod, and a join after the
+  draft is over — each refused with a reason, none taking the server
+  down
+- D30 [proposed 2026-10-08, same source] the human deck: build a deck of
+  39, of 40 with a card not in the pool, of 40 with 17 basics, re-send a
+  deck after `ready`. The server's answer must match
+  `mtg_draft::deckbuilding::validate_deck`, the page's Ready button must
+  have been disabled for the same reason the server would refuse, and
+  the `decks/seat-N.txt` file written beside the log must be one
+  `mtg-runner --deck1` loads and plays
+- D31 [proposed 2026-10-08, same source] the human's match: from a
+  finished 2-human draft, open each seat's game URL in its own Chromium
+  page and play the match out with `autoplay.js`-style random clicks.
+  Both ports must be on the `--bind` address, both pages must see the
+  same game, the result must reach the draft page's standings and the
+  log, and the next round must pair on it. Then a human against an AI
+  seat: the AI seat's game must run on `cc`, never a metered API
+- D32 [proposed 2026-10-08, same source] what the AI seats are told at a
+  mixed table: read the stub's recorded prompts from a mixed-seat run
+  against the runner's for the same seed and pod size. Nothing in the
+  prompt may say which seats are human, and every fact the runner's
+  prompt carries (pack, pool, pool shape, seat, pass direction, the
+  seat's notes from its last pick) must be there — the table builds its
+  prompts through the same function, and this checks it stayed that way
