@@ -99,6 +99,22 @@ export function artFor(name: string, isToken: boolean): HTMLImageElement | null 
   return img && img.ready ? img : null;
 }
 
+/**
+ * The path of the art file for a card or token name, or null when the
+ * manifest has none. For a page that puts the art in an `<img>` rather than
+ * on the canvas (the draft page), which wants the path and not the loaded
+ * image. A double-faced card is named "Front // Back" in a draft pool; its
+ * art is filed under the front face.
+ */
+export function artPath(name: string): string | null {
+  const front = name.split(" // ")[0];
+  for (const candidate of artNames(front)) {
+    const path = byName.get(candidate);
+    if (path) return path;
+  }
+  return null;
+}
+
 /** A UI piece from assets/art/ui, or null. */
 export function uiImage(name: string): HTMLImageElement | null {
   const img = load(`assets/art/ui/${name}.png`);
