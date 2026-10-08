@@ -412,7 +412,17 @@ fn damage(state: &GameState, registry: &CardRegistry, events: &[GameEvent], quie
                     DamageTarget::Object(o) if blocked => {
                         let listed = c.blocker_assignments.get(&source).is_some_and(|bs| bs.contains(o));
                         let gone = !on_bf(state, *o) || state.get_object(*o).is_some_and(|x| x.damage_marked == 0);
-                        if !listed && !gone && !(quiet && state.has_keyword(source, Keyword::Trample, registry) && to_walker) {
+                        // A blocker that changed controller AFTER this hit
+                        // was blocking when it was hit: the control change
+                        // removed it from combat (CR 506.4d), so the combat
+                        // state now says nothing about it, and the damage
+                        // is still marked. Olivia Voldaren dying to the
+                        // same damage step ends her steal as a state-based
+                        // action in this very window (issue #728, the
+                        // combat half of #682).
+                        let left_after = events.iter().skip(i + 1).any(|x| matches!(x,
+                            GameEvent::ControlChanged { object, .. } if object == o));
+                        if !listed && !gone && !left_after && !(quiet && state.has_keyword(source, Keyword::Trample, registry) && to_walker) {
                             v.push(format!("{what}: a blocked attacker hit #{} which is not blocking it (CR 510.1c)", o.0));
                         }
                     }

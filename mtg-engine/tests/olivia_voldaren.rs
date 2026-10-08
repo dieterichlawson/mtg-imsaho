@@ -334,3 +334,50 @@ fn a_lifelinker_that_goes_home_after_its_damage_gained_life_for_the_thief() {
         .collect();
     assert!(complaints.is_empty(), "{complaints:?}");
 }
+
+/// Issue #728, the combat half of #682: Olivia blocks beside a creature she
+/// stole, the attacker assigns lethal to her and the rest to the stolen
+/// creature, and she dies to that damage. The steal ends as a state-based
+/// action, which removes the creature from combat (CR 506.4d) — after it
+/// was hit, while it was blocking. The invariant checker read the combat
+/// state after that removal and called the hit "a blocked attacker hit #…
+/// which is not blocking it" (fuzz seed 20733025189).
+#[test]
+fn a_blocker_that_goes_home_after_being_hit_was_blocking_when_it_was_hit() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.turn_number = 3;
+
+    let olivia = named_permanent(&mut state, &reg, "Olivia Voldaren", P1);
+    let vampire = ready_creature(&mut state, P0, 1, 4);
+    state.get_object_mut(vampire).unwrap().subtypes = vec!["Vampire".into()];
+    activate_via_hooks(&mut state, &reg, olivia, 1, &[Target::Object(vampire)]);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert_eq!(state.get_object(vampire).unwrap().controller, P1, "stolen");
+
+    // P0 attacks with a 4/5; Olivia (3/3) and the stolen Vampire block it,
+    // Olivia first in the order, so she takes lethal and the Vampire the
+    // remaining 1 — and the attacker survives their 4, so it is still in
+    // combat when the checker looks.
+    let attacker = ready_creature(&mut state, P0, 4, 5);
+    state.step = Step::CombatDamage;
+    attacks_blocked_by(&mut state, attacker, P1, &[olivia, vampire]);
+    state.combat.as_mut().unwrap().damage_assignment_order.insert(attacker, vec![olivia, vampire]);
+    state.events.clear();
+    state.trigger_event_index = 0;
+
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+    while mtg_engine::sba::check_state_based_actions(&mut state, &reg) {}
+
+    assert!(state.get_object(olivia).is_none_or(|o| o.zone != Zone::Battlefield), "Olivia died");
+    assert_eq!(state.get_object(attacker).unwrap().zone, Zone::Battlefield, "the attacker survived");
+    assert_eq!(state.get_object(vampire).unwrap().controller, P0, "and the Vampire went home after");
+    assert_eq!(state.get_object(vampire).unwrap().damage_marked, 1, "with the damage it took while blocking");
+    assert!(state.combat.as_ref().is_some_and(|c|
+        !c.blocker_assignments.get(&attacker).is_some_and(|bs| bs.contains(&vampire))),
+        "and it is out of combat (CR 506.4d)");
+    let complaints: Vec<String> = mtg_engine::invariants::check_settled(&state, &reg).into_iter()
+        .filter(|c| c.contains("not blocking it"))
+        .collect();
+    assert!(complaints.is_empty(), "{complaints:?}");
+}
