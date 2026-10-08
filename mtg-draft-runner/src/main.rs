@@ -1032,6 +1032,15 @@ fn main() {
             mtg_player::stderr_line!("note: {note}");
             resume_notes.push(note);
         }
+        // The flag stands in for a length the snapshot never recorded, and
+        // the next write records it as the save's own (#729): say so where
+        // it will be read later, not only on stderr.
+        if save.best_of.is_none() && !save.matches.is_empty() {
+            let note = format!("--best-of {} is the flag's: this snapshot does not record the match \
+length its matches were played at", args.best_of);
+            mtg_player::stderr_line!("note: {note}");
+            resume_notes.push(note);
+        }
         save
     });
     if let Some(save) = &resumed {

@@ -270,6 +270,8 @@ fn a_resume_plays_at_the_match_length_its_snapshot_was_played_at() {
     let out = pod.run(&["--resume", &path], "old1.calls", "old1.log");
     assert!(out.status.success(), "with the --best-of it was played at, it resumes: {}",
         String::from_utf8_lossy(&out.stderr));
+    let log = std::fs::read_to_string(pod.path("old1.log")).unwrap();
+    assert!(log.contains("NOTE --best-of 1 is the flag's"), "and the log says the length is assumed");
 }
 
 /// #731: a saved match was carried as it stood, so a 7-0 best-of-1 went
