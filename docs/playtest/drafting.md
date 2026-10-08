@@ -726,3 +726,33 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   future format change will not be caught. Re-probe: whether *every*
   `die` after the first snapshot write leaves `--save` intact (the card
   check was one; look for others).
+
+- D26 [proposed 2026-10-08, from #581 and reading `DraftSave` during D25]
+  the tournament half of the snapshot. #581 added `decks` and `matches` to
+  the save. `check_snapshot_shape` reads only `picks`, and the save does
+  not record `best_of`. Take a finished `--players 4 --best-of 1` save made
+  under a stub that answers every deck call with `{}`. The runner then
+  substitutes the decks, so a run takes about 40 s from the repo root.
+  Cut, edit and re-resume it:
+  - a different `--best-of`, including leaving it off (the default is 3);
+  - a deck under 40 cards, or with cards from another seat's pool, or a
+    name that is not a card;
+  - a match record with an impossible score, with its seats swapped, for a
+    round that never happens, or duplicated;
+  - a finished save resumed with `--save` to a new path. Count the matches
+    in the new file.
+
+  For each, check whether the run refuses with the record named, the way
+  picks are refused, or plays on.
+
+  **Run 2026-10-08: nothing past the picks is checked.**
+  - #729: best-of is taken from the flags, so formats mix.
+  - #730: decks are played unvalidated, and an unknown card panics a
+    match worker.
+  - #731: impossible scores are carried, and unmatched records are dropped
+    and the match re-played, both in silence.
+  - #732: the new save from a resume holds no matches.
+
+  Still open: what the *game* half of a resumed match does. A match is
+  saved only when it finishes, so an interrupted best-of-3 at 1-0
+  re-plays game 1. Check whether the log and the stake prose (#609) say so.
