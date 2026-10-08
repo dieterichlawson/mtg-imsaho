@@ -1858,8 +1858,14 @@ this seat's deck, so its results are not a built deck's", deck_results[*seat].re
         mtg_player::stderr_line!("\n=== Forfeited Games ===");
         for (seat, n) in stalled_games.iter().enumerate() {
             if *n > 0 {
-                mtg_player::stderr_line!("    Seat {seat}: {n} game(s) forfeited — this seat stopped making \
-progress (the same unusable answer over and over), so the game was awarded to its opponent");
+                // Both ways a seat stops answering forfeit here: the
+                // watchdog's stall, and a backend that spent its retry
+                // budget (#587), which forfeits the rest of its match too.
+                // Naming only the first described the second wrongly, the
+                // shape #742 removed from the game-over line.
+                mtg_player::stderr_line!("    Seat {seat}: {n} game(s) forfeited — this seat stopped \
+answering (the same unusable answer over and over, or a backend that gave up), so the game was \
+awarded to its opponent");
             }
         }
         mtg_player::stderr_line!("  (grep the log for STALLED to see each one)");

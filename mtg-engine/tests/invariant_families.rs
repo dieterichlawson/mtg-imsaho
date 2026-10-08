@@ -2097,6 +2097,24 @@ fn the_life_and_loss_ledger_is_checked() {
     let (p, c) = conceded(Some(P0));
     flags_transition(&p, Some(&concede), &c, &reg, "conceded without holding priority on a Concede action");
 
+    // #742: a forfeit is the harness's action, recorded as itself — not a
+    // concede, and not without one.
+    let forfeited = || {
+        let p = prev.clone();
+        let mut c = next(&p);
+        c.get_player_mut(P1).lost = true;
+        c.get_player_mut(P1).loss_reason = Some(mtg_engine::events::LossReason::Forfeited);
+        c.result = Some(mtg_engine::state::GameResult::Winner(P0));
+        c.events.push(GameEvent::PlayerLost { player: P1, reason: mtg_engine::events::LossReason::Forfeited });
+        (p, c)
+    };
+    let (p, c) = forfeited();
+    flags_transition(&p, None, &c, &reg, "forfeited without a Forfeit action");
+    let (p, c) = forfeited();
+    flags_transition(&p, Some(&concede), &c, &reg, "forfeited without a Forfeit action");
+    let (p, c) = forfeited();
+    quiet_transition_about(&p, Some(&Action::Forfeit), &c, &reg, "forfeited without a Forfeit action");
+
     // CR 121.4: "drew from an empty library" is about an empty library.
     let mut c = next(&prev);
     c.get_player_mut(P1).has_drawn_from_empty = true;

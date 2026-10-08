@@ -143,6 +143,7 @@ fn a_concede_is_admitted_at_every_prompt() {
     assert!(legal.actions.is_empty(), "test precondition: this prompt lists no rows");
     assert!(legal.permits(&Action::Concede));
     assert!(legal.permits(&Action::AbandonGame), "nor is the harness stopping a game action");
+    assert!(legal.permits(&Action::Forfeit), "nor the harness ending it for a stalled seat (#742)");
 }
 
 // ---------------------------------------------------------------------------
