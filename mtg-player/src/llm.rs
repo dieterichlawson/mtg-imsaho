@@ -948,29 +948,23 @@ more card.\n",
 /// Shared game rules and strategy — used by all backends.
 const GAME_RULES: &str = r#"## Prompt format
 
-Each prompt you receive has these sections, in this order:
+Each prompt has these sections, in this order:
 
 **Header line** (top): `Turn N - <step> (your turn|opp's turn)`. The step is one of: Untap, Upkeep, Draw, Main Phase 1, Begin Combat, Declare Attackers, Declare Blockers, First-Strike Combat Damage, Combat Damage, End Combat, Main Phase 2, End Step, Cleanup.
 
 **Your notes from your last decision** (after your first decision): the tail of your own reasoning from the previous prompt. Earlier prompts are not kept in the conversation — every prompt restates the whole position — so this is where your plan carries over. Trust the board below over the notes when they disagree.
 
-**Recent events** (only if anything happened since the last prompt that showed you the board): a delta log of game events — lands played, spells cast, triggers, damage, draws, etc. Use this to understand what changed. Includes both your actions and your opponent's. It carries at most the most recent 80 entries; when older ones are dropped it opens with a marker line saying how many and through which turn, e.g. `… 227 earlier entries omitted, through turn 94 …`, and the board sections below are always current.
-
+**Recent events** (only if anything happened since the last prompt): a delta log of game events, yours and your opponent's. It carries at most the most recent 80 entries; when older ones are dropped it opens with a marker line, e.g. `… 227 earlier entries omitted, through turn 94 …`. The board below is always current.
 ```
 Recent events:
 You drew a card
 ```
 
-**Player status**:
-```
-You: 20hp, 7cards, 33lib, 0gy, 0exile
-Opp: 20hp, 7cards, 33lib, 0gy, 0exile
-```
-Fields: hp=life total, cards=hand size, lib=library size, gy=graveyard count, exile=exile zone count.
+**Player status**: `You: 20hp, 7cards, 33lib, 0gy, 0exile` and the same for `Opp:` — life, hand size, library, graveyard and exile counts.
 
 **Mana pool** (only if non-empty): `Mana pool: Green:1, Red:2`
 
-**Boards** (only if non-empty): a `Your board:` / `Opp board:` header with one indented entry per permanent:
+**Boards** (only if non-empty): one indented entry per permanent, lands grouped by name with `(tapped)` / `(N tapped)`:
 ```
 Your board:
   2x Forest
@@ -980,30 +974,25 @@ Opp board:
   1x Plains
   Savannah Lions (#45) 2/1 [S]
 ```
-Lands are grouped by name. `(tapped)` or `(N tapped)` shows tap status. Non-land permanents include a unique object ID in parentheses (e.g. `(#30)`) — these IDs are stable for the lifetime of the permanent and can be used to distinguish permanents that share a name. Creatures show CURRENT effective P/T including bonuses. Status flags after a permanent appear in a single bracket, comma-separated when there's more than one (e.g. `[T,1dmg]` for a tapped creature with 1 damage marked):
+`(#30)` is the permanent's id, stable for its lifetime; it tells apart permanents that share a name. Creatures show their CURRENT P/T, bonuses included, and their keywords after the P/T (`Abbey Griffin 2/2 flying, vigilance`). A creature has exactly the keywords printed there — none from its name, flavour or a spell that has worn off. Status flags after a permanent appear in one bracket, comma-separated (`[T,1dmg]`):
 - `T` = tapped
-- `S` = summoning sick: its controller has not controlled it continuously since their most recent turn began, so it can't attack or use `{T}` abilities yet (CR 302.6). It can still block. A creature cast on its controller's turn keeps `S` through the opponent's next turn
-- `attacking you`, `attacking Opp`, `attacking <planeswalker> (#id)` = attacking this combat, and what
-- `blocking <attacker> (#id)` = blocking that attacker this combat; `blocked by <blocker> (#id)` = the creatures blocking this attacker
-- `blocked (no blockers left)` = this attacker was blocked and every creature blocking it has left combat: it stays blocked and deals no combat damage unless it has trample
-- `Ndmg` = N damage marked on it
-- `regen shield` / `N regen shields` = regeneration shields ready to use
-- `token` = a token; `copy` = a copy of another permanent (it has the copied card's name and text)
-- `+1+1xN`, `-1-1xN`, `LOYxN` = N +1/+1 counters, N -1/-1 counters, loyalty N; any other counter is its kind and count, e.g. `Slimex2`
-- `names: <card>` = the card name this permanent named as it entered (Nevermore)
-- `enchanting you`, `enchanting opponent` = the player this Curse is attached to, which is not always its controller's opponent
+- `S` = summoning sick: can't attack or use `{T}` abilities until it has been under its controller's control since their most recent turn began (CR 302.6); it can still block
+- `attacking you`, `attacking Opp`, `attacking <planeswalker> (#id)`; `blocking <attacker> (#id)`; `blocked by <blocker> (#id)`; `blocked (no blockers left)` = blocked, every blocker gone, deals no combat damage unless it has trample
+- `Ndmg` = N damage marked; `regen shield` / `N regen shields`
+- `token`; `copy` = a copy of another permanent
+- `+1+1xN`, `-1-1xN`, `LOYxN` = counters (loyalty N); any other counter is its kind and count, e.g. `Slimex2`
+- `names: <card>` = the card name this permanent named as it entered
+- `enchanting you`, `enchanting opponent` = the player a Curse is attached to
+- `legendary` after the P/T or in the flags. The legend rule (CR 704.5j): two legendary permanents of one name under your control, you keep one
 
-A legendary permanent says `legendary` after its P/T (creatures, alongside the keywords) or in its flags (other permanents). The legend rule (CR 704.5j): if you control two or more legendary permanents with the same name, you choose one and the rest go to their owners' graveyards — so casting a second copy of a legend you already control gets you a choice, not two of them.
-
-
-**Stack** (only if non-empty): a `Stack:` header with one indented entry per object, each with the id of the spell (or of the ability's source), its controller, and its targets:
+**Stack** (only if non-empty), with each object's id, controller and targets:
 ```
 Stack:
   Lightning Bolt (#41) (opponent's) targeting Goblin Piker (#45) (your)
 ```
-Wherever an object is named — a target on the stack, a row in the action list — it carries its id and whose it is, so two objects that share a name are never the same row: `(your)` / `(opponent's)` for a permanent or a stack object (by controller), `(in your graveyard)` / `(in opponent's graveyard)` for a graveyard card, `(exiled)` for an exiled one. Lands too: the board groups them by name, but a land named as a target says which one it is.
+Wherever an object is named — on the stack, in the action list — it carries its id and whose it is: `(your)` / `(opponent's)` by controller, `(in your graveyard)` / `(in opponent's graveyard)`, `(exiled)`.
 
-**Hand**: a `Hand:` header with one indented card per line, with mana costs and (for creatures) base P/T:
+**Hand**: one indented card per line, with mana cost and (for creatures) base P/T:
 ```
 Hand:
   Forest
@@ -1011,28 +1000,20 @@ Hand:
   Lightning Bolt {R}
 ```
 
-**Graveyards** (only if non-empty): a `Your graveyard:` / `Opp graveyard:` header with one indented card per line.
+**Graveyards** (only if non-empty): `Your graveyard:` / `Opp graveyard:`, one indented card per line.
 
-**Flashback available** (only if relevant): cards in your graveyard you can cast for a flashback cost, one indented line each. A card can carry more than one flashback cost at once (a granted one alongside its printed one), and the line names each of them; the action list says which cost each row charges.
+**Flashback available** (only if relevant): cards in your graveyard you can cast for a flashback cost, each cost named; the action list says which cost a row charges.
 
-**Opp's cards in view** (only if any): the rules text of every card in view that is not in your decklist — on the battlefield, on the stack, in a graveyard, in exile, or revealed — one entry per card name (basic lands excepted), in the same shape as the card reference:
+**Opp's cards in view** (only if any): the rules text of every card in view that is not in your decklist — on the battlefield, on the stack, in a graveyard, in exile, or revealed — one entry per name (basic lands excepted). This is how you learn what your opponent's cards do: when they come into view, never before.
 ```
 Opp's cards in view:
 Delver of Secrets {U} | Creature — Human Wizard 1/1
   At the beginning of your upkeep, look at the top card of your library. You may reveal that card. If an instant or sorcery card is revealed this way, transform this creature.
 ```
-This is how you learn what your opponent's cards do: you are told about a card when it comes into view, never before.
 
-**Context line**: a `[CONTEXT]` marker showing the current game state:
-- `[MAIN PHASE 1]` / `[MAIN PHASE 2]` — your main phases. Cast sorceries, creatures, enchantments, artifacts here. Also play lands here.
-- `[BEGIN COMBAT]` — just before declaring attackers. Last chance for instants before combat.
-- `[AFTER ATTACKERS DECLARED]` — attackers are declared, blockers haven't been chosen yet. Instant window — cast pump spells on attackers, removal on blockers.
-- `[AFTER BLOCKERS DECLARED]` — blockers chosen, before damage. Instant window — cast pump spells, removal, etc.
-- `[UPKEEP]`, `[DRAW]`, `[END STEP]` — utility steps. Usually pass unless you have a specific instant to cast (e.g. removing a creature at end of turn so you don't expose your own removal).
-- `[OPPONENT'S TURN: <step>]` — it's the opponent's turn and you have priority. You can cast instants and activate abilities.
-- `[RESPOND TO <controller>'s <spell>]` — something is on the stack waiting to resolve. You can pass to let it resolve, or respond with an instant/ability (e.g. Counterspell).
+**Context line**: `[MAIN PHASE 1]` / `[MAIN PHASE 2]` (your main phases: sorceries, creatures, lands), `[BEGIN COMBAT]`, `[AFTER ATTACKERS DECLARED]`, `[AFTER BLOCKERS DECLARED]` (instant windows), `[UPKEEP]` / `[DRAW]` / `[END STEP]` (utility steps — usually pass), `[OPPONENT'S TURN: <step>]` (you have priority on their turn), `[RESPOND TO <controller>'s <spell>]` (something is on the stack: pass to let it resolve, or respond).
 
-**Action list** (last): an `Available actions:` header, then the numbered options, one per line:
+**Action list** (last): the numbered options, one per line. Pick one by its index.
 ```
 [MAIN PHASE 1]
 Available actions:
@@ -1042,18 +1023,20 @@ Available actions:
 3: Cast Kalonian Tusker (tap 2x Forest)
 4: Concede
 ```
-Pick one by its index. A cast option names the spell and its tap plan, not its target: when a spell needs a target you pick the action first and a follow-up prompt (`<card name>: select a target:`) lists the legal targets. Copies of one permanent that offer the same ability with the same tap plan share one line, with an index per copy — pick the index of the copy you mean; the board lists each copy's counters and status by its `#id`:
+A cast option names the spell and its tap plan, not its target: pick it and a follow-up prompt (`<card name>: select a target:`) lists the legal targets. Copies of one permanent that offer the same ability with the same tap plan share one line, one index per copy — pick the index of the copy you mean:
 ```
 5-7: Activate Ludevic's Test Subject ({1}{U}: Put a hatchling counter. At 5, transform.) (tap 2x Island) — one per copy: 5=#43, 6=#45, 7=#46
 ```
 
-## Key rules
+Combat prompts replace the action list: `Choose attackers:` lists your creatures by index and asks for the indices attacking (empty for none; forced attackers are added for you); `Declare blocks` asks for `{"blocker", "attacker"}` index pairs, at most one per blocker.
 
-- **Auto-tap**: When you pick a `Cast [spell]` option, the engine taps the right lands for you automatically. The action label shows which lands will be tapped, e.g. `Cast Doom Blade (tap Swamp, Swamp)`. You almost never need to tap lands manually before casting. Activated abilities with a mana cost (a pump, an equip) are funded by the same auto-tapper, with the same preferences. The auto-tapper uses these priorities (lowest opportunity cost first): (1) basic lands and mana-only artifacts, (2) non-basic lands with only mana abilities, (3) permanents with utility abilities (tapping locks out the ability), (4) creature mana dorks (tapping prevents attacking/blocking), (5) sources with side effects (e.g. Deranged Assistant mills). A colored pip is paid by a source that makes that color for free before a filter that charges for it (Shimmering Grotto's `{1}, {T}: Add one mana of any color` needs another mana to fund it, so a mana creature's free `{W}` is cheaper), and mana already floating can fund a filter. Within a tier, generic costs are paid first from redundant sources (ones whose colors other untapped sources still produce, so no color access is lost), then it prefers mono-color sources over dual-color sources (to preserve flexibility), and considers which colors your other hand spells need. Those preferences give way when they would cost you a spell: if the plan would leave another spell in your hand unpayable that a different choice of sources (or one more source) keeps payable, the engine uses that choice instead, even if it taps a mana creature (but never one more source with a side effect). Mana already in your pool pays generic costs with what your other hand spells need least.
-- **Manual tapping**: Useful for floating mana to bluff an instant, using a mana ability with a side effect (e.g. Deranged Assistant mills a card), or overriding the auto-tap to preserve a specific land. Otherwise just pick the Cast option.
-- **X-cost spells and abilities**: Spells with {X} in their cost (Devil's Play, Mikaeus the Lunarch) and abilities with {X} (Kessig Wolf Run) use a two-step process: (1) you pick "Cast [spell]" or "Activate [ability]" — the engine pays only the non-X portion of the cost via auto-tap, (2) a structured follow-up prompt asks you to fund X explicitly. The funding prompt has four buckets: `floating` (drain by color from your pool), `lands`, `rocks`, and `dorks` (tap specific named groups). Each value is a mana amount, not a source count. For 1-mana sources (basic lands, most dorks) pick any integer from 0 to the available count. For multi-mana sources (Sol Ring `{C}{C}`) pick a multiple of the per-tap output (0, 2, 4, ...). X is the sum of everything you allocate. Per CR 601.2b, X is announced as part of casting — so the spell only formally "becomes cast" (and SpellCast triggers fire) AFTER you submit a funding choice. Variable-output or cost-bearing sources (pain lands, Cabal Coffers) aren't shown — tap those manually before casting so their mana floats in the pool.
-- **Spells with sacrifice costs**: Spells that require sacrificing a creature as an additional cost (Altar's Reap, Infernal Plunge) prompt you to choose which creature to sacrifice after you select targets. If you only control one creature, it's auto-selected. The sacrifice happens at cast time (before the spell goes on the stack), so the creature is gone even if the spell gets countered.
-- **Spells with exile-from-graveyard costs**: Spells that require exiling cards from your graveyard as an additional cost (Harvest Pyre, Stitched Drake, Skaab Ruinator, Makeshift Mauler, Corpse Lunge, Skaab Goliath) use the same two-step pattern as X-cost: (1) you pick "Cast [spell]" — one entry per target, no expanded subset list, (2) a structured follow-up prompt numbers every eligible graveyard card and asks which positions to exile, as an array of indices under the key `indices` — an empty array exiles nothing. The prompt looks like this, with the numbered options last:
+## How the engine works
+
+- **Auto-tap**: `Cast [spell]` and `Activate [ability]` tap the right sources for you, shown in the row (`Cast Doom Blade (tap Swamp, Swamp)`), preferring basics and mana-only sources, then utility lands, then mana creatures, then sources with side effects, and never a choice that leaves another spell in your hand unpayable when a different one keeps it payable. `Tap <source>` rows are for floating mana deliberately, for a mana ability's side effect, or to preserve a specific land; otherwise just cast.
+- **Mana pools empty between steps**, so tap only what you will spend in the same step.
+- **X costs**: `Cast`/`Activate` pays the non-X part; a follow-up prompt asks how to fund X in buckets (`floating`, `lands`, `rocks`, `dorks`), each value a mana amount. X is the total. Sources with variable output or a cost of their own are not offered — tap them first so the mana floats.
+- **Sacrifice costs**: a spell or ability that sacrifices a creature asks `<source>: choose a creature to sacrifice` after its targets; with one candidate it is chosen for you. The sacrifice is paid at cast time, so the creature is gone even if the spell is countered.
+- **Exile-from-graveyard costs** (Harvest Pyre, Stitched Drake, Skaab Ruinator, Makeshift Mauler, Corpse Lunge, Skaab Goliath): pick `Cast`, then a prompt numbers the eligible cards and asks for the positions to exile as an index array under `indices`. A fixed count must be met exactly or the cast is cancelled:
 ```
 Harvest Pyre: choose 0-1 cards to exile from your graveyard (each exiled card adds to the spell's X)
 
@@ -1062,284 +1045,24 @@ Pick anywhere from 0 to 1 cards. Name the cards to exile.
 Options:
 0: Reckless Waif (#44)
 ```
-For variable-X cards (Harvest Pyre: pick 0–N, damage scales with X), any subset is legal. For fixed-count cards (Stitched Drake: exile exactly 1 creature; Skaab Ruinator: exactly 3) you MUST pick the exact count or the cast is cancelled (spell stays in hand, no mana paid). Per CR 601.2h → 601.2i the spell only formally "becomes cast" after the prompt resolves — so SpellCast triggers fire after exile, not before. Corpse Lunge stores the highest effective power among exiled creatures as the damage it deals.
-- **Sacrifice-cost activated abilities**: Activated abilities whose cost includes "Sacrifice a creature" (pick one — Demonmail Hauberk, Disciple of Griselbrand, Skirsdag Cultist, etc.) auto-tap like any other ability: the ability is listed once (once per copy of its source), and its label shows which sources will be tapped. After you pick it, and its target if it has one, a follow-up prompt — `<source>: choose a creature to sacrifice` — asks which creature to sacrifice; with only one candidate it is chosen for you. The tap plan may include a mana creature, and you may still pick that same creature as the sacrifice — its mana is produced before the sacrifice is paid. If you would rather keep a particular creature untapped, tap other sources manually first. Abilities that sacrifice *this* permanent specifically (e.g. Selfless Cathar's `{1}{W}, Sacrifice this: Creatures you control get +1/+1`) auto-tap too, and never tap the permanent being sacrificed for its own cost.
-- **Mana pools empty between steps**: You can tap lands at any time you have priority, but the mana disappears when the step ends. Only tap if you'll spend the mana in the same step (cast a sorcery/creature in main, or an instant in any step).
-- **Spells use the stack**: Your spell goes on the stack and resolves only after both players pass priority. Opponents can respond. The Stack section shows what's pending.
-- **Land drops**: One land per turn, only during your main phase.
-- **Sorcery speed**: Sorceries, creatures, enchantments, artifacts can only be cast during YOUR main phase with an empty stack.
-- **Instant speed**: Instants can be cast anytime you have priority — your turn, opponent's turn, during combat, in response to spells.
-- **Summoning sickness**: Creatures with `[S]` can't attack or use tap-abilities until they have been under their controller's control since that player's most recent turn began — so one cast on your turn stays `[S]` through the opponent's turn and loses it as your next turn starts. `[S]` never stops a creature from blocking.
-
-## Keyword abilities
-
-Creatures display their keywords after P/T (e.g. `Abbey Griffin 2/2 flying, vigilance`). Combat-relevant keywords:
-
-- **flying**: Only blocked by flying or reach. Huge in combat.
-- **reach**: Can block flying (doesn't grant flying).
-- **deathtouch**: Any damage it deals to a creature destroys it. A 1/1 deathtouch kills a 10/10.
-- **first strike**: Deals damage before non-first-strike creatures. A 2/2 blocking a 3/2 first strike takes 3 and dies *before* dealing its damage; the first striker survives untouched.
-- **double strike**: Deals first strike AND normal damage.
-- **lifelink**: Damage dealt = life gained. Changes race math.
-- **trample**: Excess damage hits the defending player.
-- **vigilance**: Doesn't tap when attacking — can still block.
-- **hexproof**: Can't be targeted by opponent's spells/abilities. Don't waste removal on it.
-- **defender**: Can't attack.
-- **intimidate**: Only blocked by artifact creatures or creatures sharing a color.
-- **menace**: Must be blocked by 2+ creatures.
-- **haste**: Can attack the turn it enters (ignores summoning sickness).
-- **indestructible**: Can't be destroyed by damage or destroy effects.
-
-## Flashback
-
-Cards with flashback can be cast from your graveyard for their flashback cost. After resolving they're exiled. Look for `Flashback <card>` in the action list. The engine auto-taps for flashback costs.
-
-## Equipment
-
-Artifacts with an `Equip {N}` ability can be attached to a creature you control by paying the equip cost. Equip is sorcery speed (your main phase only). The equipped creature gains the listed bonuses (e.g. `+3/+0`, `lifelink`). Equipment stays in play when its creature dies and can be re-equipped to a new creature. Some equipment has alternative equip costs like `Equip—Sacrifice a creature` (e.g. Demonmail Hauberk).
-
-Look for `Activate <equipment> (Equip {N})` in the action list. Equipment sitting idle on the battlefield is wasted resources — find a creature to equip it to, especially when you're behind on board or life.
-
-## Combat math
-
-Combat resolves in this order: declare attackers → declare blockers → first-strike damage step (only if a first/double striker is involved) → normal damage step. Anything that died in an earlier step doesn't deal damage in a later step.
-
-**Multi-blocker damage assignment.** When a single attacker is blocked by two or more creatures, the **attacking player** assigns its damage among the blockers. The attacker MUST assign at least lethal damage to the first blocker before any damage spills to the second, and at least lethal to the second before any spills to the third, etc. (Lethal = blocker's toughness minus damage already marked.) Combined blocker toughness is NOT a shared pool — you can't "absorb" 4 damage across a 1/4 and a 2/2 and have them both survive.
-
-**How you are asked.** Right after blockers are declared, if one of your attackers is blocked by two or more creatures, you are asked to announce that attacker's *damage assignment order* (CR 509.2) — one structured prompt listing the blockers, answered with `order`: every index exactly once, first to last. Damage is then assigned in the order you announced: each blocker must be assigned lethal damage before any is assigned to the one after it. Put the blocker you most want dead first. The order is announced once and is used by both damage steps, so a first or double striker assigns its second damage in the same order.
-
-**How much each blocker gets.** Lethal is the least a blocker may be assigned, not the most: you may put MORE than lethal on an earlier blocker (to beat a regeneration shield or a damage prevention, or because you want that one dead more than you want the next one hit), and a trampler may send less past its blockers, or nothing (CR 510.1c-d). When an attacker of yours has more damage than its blockers' lethal total, and either two or more blockers or trample, the combat damage step asks you blocker by blocker, in your announced order: "how much of the N left goes to this blocker", answered with `amount`, an integer from lethal to everything left. Whatever you do not assign goes on to the next blocker, or tramples over after the last. Answering lethal is the ordinary play; you are asked so you can do otherwise.
-
-**Ordering your own triggers.** When two or more of your abilities trigger at the same time (CR 603.3b), you are asked for their order the same way — one structured prompt listing each trigger with its source, its P/T, what it does and what set it off, answered with `order`. The first index you list goes on the stack first and therefore resolves LAST; the last you list resolves FIRST. Put the trigger you want to resolve first at the end of the list.
-
-**Choosing between replacement and prevention effects on damage.** When two or more such effects apply to one damage event and the order changes the result — Inquisitor's Flail (double it) and Undead Alchemist (mill instead) on one Zombie's combat damage, or Ghostly Possession (prevent it) and the Alchemist — the AFFECTED player chooses: the player being damaged, or the controller of the creature being damaged (CR 616.1). The context line names the event (`Walking Corpse (#30) would deal 2 combat damage to you`) and the numbered options say what each effect would do (`double it to 4`, `instead You mill 2 cards`, `prevent all of it`). Pick the effect you want to apply FIRST; it applies, and the others apply afterwards only if they still can — a prevention or a mill ends the damage, so nothing after it happens, while doubling leaves a bigger damage event for the rest. You are only asked when the choice matters; two Flails, or a Flail under a Ghostly Possession, apply on their own.
-
-Worked example. A 4/2 trample attacker is double-blocked by your 1/4 Bell-Ringer and your 2/2 Walking Corpse. The attacker has 4 damage to assign:
-- It can lethal-first the Walking Corpse (assign 2 → kills it), then assign the remaining 2 to Bell-Ringer (Bell-Ringer survives at 1/2). Walking Corpse dies, Bell-Ringer survives. With trample, no damage tramples through (4 was used up assigning lethal to one and partial to the other).
-- Or it can lethal-first the Bell-Ringer (assign 4 → kills it), then 0 left over. Bell-Ringer dies, Walking Corpse survives untouched.
-The attacking player picks the worse-for-you option. Either way, exactly one of your two blockers dies; the trade is *one* attacker for *one* blocker, not "both blockers absorb the damage and live."
-
-**Chump-blocking with one creature against several attackers.** When you have one blocker and multiple attackers will get through, you usually want to chump the *highest-power* attacker, not the smallest one — that minimises the damage you take. Trading your 1/1 for the opponent's 2/1 token "to remove a creature from the board" is rarely worth taking 1 extra life loss; chumping the 3/3 instead saves you a life.
-
-**First strike vs trample double-blocks.** First strike damage happens before normal damage. If a first-striking attacker double-blocked by two non-first-strike creatures kills one of the blockers in the first-strike step, the attacker then deals its damage to *just the survivor* in the normal step. Trample only matters if the attacker has trample AND the surviving blocker still has fewer hit points than the attacker has power; only excess damage tramples through.
-
-## When you're behind
-
-If you're low on life and the board is unfavourable but stable, look for a way to *change* the situation — equipping a creature, casting an aura or buff, or forcing a race with combat tricks — before defaulting to "pass and hope to topdeck". Repeated passing rarely wins from behind; a desperate line that sometimes works beats a safe line that loses for sure.
+- **Sets of cards** (bottoming after a mulligan, cleanup discard, "choose N") are asked the same way: an index array, exactly as many as the prompt says.
+- **Equip** and **flashback** are rows in the action list (`Activate <equipment> (Equip {N})`, `Flashback <card>`), auto-tapped like anything else. Idle equipment is a wasted resource.
+- **Timing**: sorceries, creatures, enchantments, artifacts and lands only in YOUR main phase with an empty stack; instants and abilities whenever you have priority. Spells use the stack; the opponent can respond before yours resolves.
+- **Damage assignment** (CR 510.1c-d): when one of your attackers is blocked by two or more creatures you are asked for its damage assignment order once, after blocks — `order`: every blocker index exactly once, the one you most want dead first. Lethal must go to each blocker in that order before any spills to the next; a trampler sends the rest to the player. When there is more damage than the blockers' lethal total you are then asked, blocker by blocker, how much of what is left goes to it (`amount`, from lethal to all of it); lethal is the ordinary answer.
+- **Ordering your triggers** (CR 603.3b): simultaneous triggers of yours are one `order` prompt. The first index you list goes on the stack first and resolves LAST; put the trigger you want to resolve first at the END.
+- **Choosing between replacement and prevention effects on damage.** When two or more apply to one damage event and the order changes the result — Inquisitor's Flail (double it) and Undead Alchemist (mill instead), or Ghostly Possession (prevent it) and the Alchemist — the AFFECTED player chooses: the player being damaged, or the controller of the creature being damaged (CR 616.1). The context line names the event (`Walking Corpse (#30) would deal 2 combat damage to you`) and the options say what each effect would do (`double it to 4`, `instead You mill 2 cards`, `prevent all of it`). Pick the effect to apply FIRST; the others apply after only if they still can — a prevention or a mill ends the damage, doubling leaves more for the rest. You are asked only when the choice matters.
+- **Concede** is always offered; picking it asks you to confirm.
 
 ## London mulligan
 
-At the start of the game, before turn 1, you'll be asked two pre-game decisions:
+Before turn 1: `[MULLIGAN DECISION]` shows your seven cards; answer `true` to mulligan, `false` to keep. Each mulligan costs one card: you draw seven again and, when you keep, `[BOTTOM N CARD(S) AFTER MULLIGAN]` asks for exactly N distinct indices to put on the bottom. Mulligan a 0- or 7-lander or a hand with no play in the first three turns; keep 2–4 lands and a curve. More than two mulligans is rarely right.
 
-1. **Keep or mulligan** — context `[MULLIGAN DECISION]`. You'll see your seven-card hand numbered with mana costs and P/T. Choose `true` to mulligan, `false` to keep. This is the London mulligan: you always draw exactly seven cards, but each mulligan you take costs you one card that you'll put on the bottom of your library when you finally keep. There is no limit on the number of mulligans (CR 103.4), but taking more than a couple is rarely right, and at seven the hand you keep is empty. Mulligan a 0- or 7-lander, or a hand with no plays in the first three turns; keep if you have 2–4 lands and a reasonable curve.
-2. **Bottom N cards** — context `[BOTTOM N CARD(S) AFTER MULLIGAN]`, with N filled in (`[BOTTOM 2 CARD(S) AFTER MULLIGAN]`; a single card drops the `(S)`). You'll see your seven-card hand numbered 0..6 and must pick exactly N distinct indices to put on the bottom of your library. Do not include duplicates or out-of-range indices; the response will be rejected and a fallback used.
+## Playing
 
-## Examples
-
-### Example: main phase, build mana and cast a creature
-
-```
-Turn 3 - Main Phase 1 (your turn)
-
-Recent events:
-you drew a card
-
-You: 20hp, 6cards, 31lib, 0gy, 0exile
-Opp: 20hp, 6cards, 32lib, 0gy, 0exile
-Your board:
-  2x Forest
-Hand:
-  Forest
-  Kalonian Tusker {G}{G} 3/3
-  Kalonian Tusker {G}{G} 3/3
-  Lightning Bolt {R}
-
-[MAIN PHASE 1]
-Available actions:
-0: Pass
-1: Tap Forest
-2: Tap Forest
-3: Play Forest
-4: Cast Kalonian Tusker (tap 2x Forest)
-5: Concede
-```
-**Pick 4** — auto-tap handles mana, just cast directly. Don't bother with Tap Forest manually.
-
-### Example: utility step, nothing to do
-
-```
-Turn 4 - Upkeep (your turn)
-
-You: 20hp, 5cards, 30lib, 0gy, 0exile
-Opp: 20hp, 6cards, 32lib, 0gy, 0exile
-Your board:
-  3x Forest
-  Kalonian Tusker (#30) 3/3
-Hand:
-  Forest
-  Lightning Bolt {R}
-
-[UPKEEP]
-Available actions:
-0: Pass
-1: Tap Forest
-2: Tap Forest
-3: Tap Forest
-4: Concede
-```
-**Pick 0** — no instants you want to cast right now. Tapping a Forest in Upkeep just wastes it (mana pool empties when Upkeep ends).
-
-### Example: combat trick after attackers are declared
-
-```
-Turn 5 - Declare Attackers (your turn)
-
-Recent events:
-you declared attackers: Grizzly Bears (#27) -> opp
-
-You: 20hp, 4cards, 28lib, 1gy, 0exile
-Opp: 18hp, 5cards, 29lib, 0gy, 0exile
-Your board:
-  2x Forest
-  Grizzly Bears (#27) 2/2 [T]
-Opp board:
-  2x Plains
-  Savannah Lions (#45) 2/1
-Hand:
-  Giant Growth {G}
-
-[AFTER ATTACKERS DECLARED]
-Available actions:
-0: Pass
-1: Tap Forest
-2: Cast Giant Growth (tap Forest)
-3: Concede
-```
-**Pick 2** — cast Giant Growth on your attacking Bears (the follow-up target prompt asks which creature). After it resolves they're 5/5, so even if Savannah Lions blocks, the Bears survive (5 toughness vs 2 power) and trade up.
-
-### Example: timing morbid (a "creature died this turn" effect)
-
-Some spells care about whether a creature died THIS turn — Brimstone Volley
-deals 3 damage normally but 5 if a creature died this turn ("morbid"). That
-means you usually want to **let combat damage resolve before casting the
-spell** so a creature actually dies, then cast the spell after the damage
-step with the morbid bonus already active.
-
-```
-Turn 15 - Declare Blockers (your turn)
-
-Recent events:
-you declared attackers: Tormented Pariah (#5) -> opp, Elder of Laurels (#4) -> opp, Villagers of Estwald (#9) -> opp
-opp declared blockers: Ghoulraiser (#60) blocks Elder of Laurels (#4), Rakish Heir (#58) blocks Villagers of Estwald (#9)
-
-You: 14hp, 1cards, 28lib, 4gy, 0exile
-Opp: 7hp, 3cards, 27lib, 3gy, 1exile
-Your board:
-  2x Forest
-  3x Mountain
-  Tormented Pariah (#5) 3/2 [T]
-  Elder of Laurels (#4) 2/3 [T]
-  Villagers of Estwald (#9) 2/3 [T]
-Opp board:
-  2x Swamp (tapped)
-  2x Mountain (1 tapped)
-  Rakish Heir (#58) 2/2 [S]
-  Ghoulraiser (#60) 2/2
-Hand:
-  Brimstone Volley {2}{R}
-
-[AFTER BLOCKERS DECLARED]
-Available actions:
-0: Pass
-1: Tap Forest
-2: Tap Mountain
-3: Cast Brimstone Volley (tap Mountain, 2x Forest)
-4: Concede
-```
-
-**Pick 0** — pass first. Combat damage will resolve: Elder of Laurels (2 power) trades with Ghoulraiser (2 toughness), Villagers of Estwald (2 power) trades with Rakish Heir (2 toughness), Tormented Pariah (3 power) gets through unblocked → opp goes from 7 to 4. Several creatures die in combat → morbid is active. THEN, after combat damage, cast Brimstone Volley and pick the opponent at the target prompt for 5 (morbid). 4 → -1 = lethal.
-
-If you cast Brimstone Volley *before* combat damage (i.e. now, during Declare Blockers), nothing has died yet, so it deals only 3 — opp would go to 7 - 3 = 4 from the spell, then 4 - 3 = 1 from Pariah's combat damage, and you'd lose your shot at lethal this turn.
-
-The general rule: when you have a "creature died this turn" effect and you have favourable combat lined up, let combat damage resolve first, then cast the effect.
-
-### Example: respond to opponent's spell
-
-```
-Turn 5 - Main Phase 1 (opp's turn)
-
-Recent events:
-opp cast Lightning Bolt (#41) targeting Kalonian Tusker (#30)
-
-You: 20hp, 5cards, 28lib, 1gy, 0exile
-Opp: 18hp, 4cards, 29lib, 1gy, 0exile
-Your board:
-  3x Island
-  Kalonian Tusker (#30) 3/3
-Stack:
-  Lightning Bolt (#41) (opponent's) targeting Kalonian Tusker (#30) (your)
-Hand:
-  Counterspell {U}{U}
-  Island
-
-[RESPOND TO opp's Lightning Bolt]
-Available actions:
-0: Pass
-1: Tap Island
-2: Tap Island
-3: Tap Island
-4: Cast Counterspell (tap 2x Island)
-5: Concede
-```
-**Pick 4** — counter the Bolt to save your 3/3. The Tusker would die to 3 damage.
-
-### Example: declare attackers
-
-Combat prompts replace the action list with their own space-separated
-index list.
-
-```
-Turn 6 - Declare Attackers (your turn)
-
-You: 20hp, 5cards, 28lib, 0gy, 0exile
-Opp: 14hp, 5cards, 29lib, 1gy, 0exile
-Your board:
-  3x Forest
-  Kalonian Tusker (#30) 3/3
-  Kalonian Tusker (#31) 3/3
-Opp board:
-  2x Mountain
-  Goblin Piker (#52) 2/1
-
-Choose attackers: 0:Kalonian Tusker (#30) 3/3 1:Kalonian Tusker (#31) 3/3
-Pick indices in 0-1 to attack with, or empty list for no attacks. Forced attackers are auto-included.
-```
-**Attack with both** — both 3/3s. Opponent's 2/1 can only block one, so 3 damage gets through and the blocked Tusker survives (3 toughness vs 2 power).
-
-### Example: declare blockers
-
-```
-Turn 6 - Declare Blockers (opp's turn)
-
-Recent events:
-opp declared attackers: Kalonian Tusker (#30) -> you, Kalonian Tusker (#31) -> you
-
-You: 17hp, 5cards, 27lib, 0gy, 0exile
-Opp: 14hp, 4cards, 28lib, 0gy, 0exile
-Your board:
-  3x Mountain
-  Goblin Piker (#52) 2/1
-  Goblin Piker (#53) 2/1
-Opp board:
-  3x Forest (tapped)
-  Kalonian Tusker (#30) 3/3 [T]
-  Kalonian Tusker (#31) 3/3 [T]
-
-Attackers: 0:Kalonian Tusker (#30) 3/3 1:Kalonian Tusker (#31) 3/3
-Your blockers: 0:Goblin Piker (#52) 2/1 1:Goblin Piker (#53) 2/1
-Declare blocks as a list of {"blocker": <blocker index>, "attacker": <attacker index>} pairs, at most one per blocker; a blocker you leave out does not block.
-```
-**Block both Tuskers** — chump-block both. Your 2/1s die but you prevent 6 damage. Better than taking 6 to the face when you're at 17.
+- Reason only from what the prompt lists. If a keyword is not printed after the P/T, the creature does not have it; if a card is not in view, you do not know it.
+- Blocked creatures trade by current P/T; first strike lands before normal damage; combined blocker toughness is not a pool (an attacker assigns lethal to one blocker before the next). Chump the highest-power attacker, not the smallest.
+- Let combat damage resolve before casting a "creature died this turn" effect.
+- Behind on board and life, look for a line that changes the situation — an equip, an aura, a race — rather than passing to topdeck.
 "#;
 
 /// Backend trait for LLM API communication.
@@ -1434,96 +1157,44 @@ pub(crate) fn seat_tag(seat: &str) -> String {
 /// if it comes back INSIDE the JSON: Gemini, and the `claude -p` CLI seat,
 /// whose result object carries no thinking block the harness can read
 /// (issue #213).
-const THOUGHTS_IN_JSON_FORMAT: &str = r#"You are playing Magic: The Gathering against an opponent in a one-on-one
-Limited (draft) match — each player has a 40-card deck built from a draft pool.
-The goal is to reduce your opponent's life total from 20 to 0 by attacking with
-creatures and casting damaging spells, while protecting your own life total.
+const THOUGHTS_IN_JSON_FORMAT: &str = r#"You are playing Magic: The Gathering, a one-on-one Limited (draft) match: 40-card
+decks, 20 life, reduce the opponent to 0.
 
-## What you'll be asked
+Every decision the game needs comes as one prompt describing the whole current
+position — events since the last prompt, turn and step, both players' life and
+counts, both battlefields, the stack, your mana pool, your hand, and the legal
+options. The "Prompt format" section documents every field.
 
-For every decision the game requires, you'll receive a prompt describing the
-current game state — recent events, turn and step, both players' life and
-hand/library/graveyard counts, the contents of each battlefield, the stack,
-your mana pool, and your hand. The "Prompt format" section below documents
-every field in detail. Depending on the context, you'll be asked to pick an
-action, declare attackers, assign blockers, choose targets, decide whether to
-mulligan, or confirm a concession.
+You answer with structured JSON; the schema for each decision is enforced by the
+API, so you need not memorise response shapes. Every schema has a "thoughts"
+field: reason there, concisely — the position, the alternatives, the choice.
+Thoughts are private.
 
-## How you respond
-
-You always respond with structured JSON. The response schema for each
-decision is provided via the API's structured output mode, so you don't need
-to memorize response formats. Every schema includes a "thoughts" field — use
-it to think through the game state, weigh alternatives, and explain your
-choice. Thoughts are private (your opponent does not see them), so be candid
-about your plan.
-
-Ground every claim in your thoughts in the actual prompt text. Only reference
-creatures, cards, and zones that are explicitly listed in the current state —
-do not invent details, board positions, or cards that aren't there.
-
-When you cite a keyword (trample, first strike, deathtouch, lifelink, flying,
-vigilance, etc.), the keyword MUST appear after the creature's P/T in the
-prompt — e.g. `Rampaging Werewolf 8/4 trample`. If the keyword isn't printed
-there, the creature does not have it. Do not assume a creature has a keyword
-because of its flavour, name, or what a similar creature usually has, and do
-not credit a creature with a keyword that comes from an aura or anthem unless
-that aura is currently attached and listed inline. Common slips: thinking
-"Werewolf" implies trample, thinking "first strike" carries from Vampiric Fury
-to a Vampire after the spell has worn off, thinking a Spirit token has flying
-when the prompt printed it without the keyword.
-
-The detailed game rules and prompt format follow.
-
+Ground every claim in the prompt text. Only reference creatures, cards and zones
+it lists; a keyword a creature has is printed after its P/T, and one that is not
+printed there it does not have.
 "#;
 
 /// Anthropic-flavoured response intro: reasoning is delivered through the
 /// model's extended-thinking channel, NOT inside the JSON payload. Every
 /// schema shown to the model intentionally omits the "thoughts" field —
 /// including it would be rejected by the schema validator.
-const ANTHROPIC_RESPONSE_FORMAT: &str = r#"You are playing Magic: The Gathering against an opponent in a one-on-one
-Limited (draft) match — each player has a 40-card deck built from a draft pool.
-The goal is to reduce your opponent's life total from 20 to 0 by attacking with
-creatures and casting damaging spells, while protecting your own life total.
+const ANTHROPIC_RESPONSE_FORMAT: &str = r#"You are playing Magic: The Gathering, a one-on-one Limited (draft) match: 40-card
+decks, 20 life, reduce the opponent to 0.
 
-## What you'll be asked
+Every decision the game needs comes as one prompt describing the whole current
+position — events since the last prompt, turn and step, both players' life and
+counts, both battlefields, the stack, your mana pool, your hand, and the legal
+options. The "Prompt format" section documents every field.
 
-For every decision the game requires, you'll receive a prompt describing the
-current game state — recent events, turn and step, both players' life and
-hand/library/graveyard counts, the contents of each battlefield, the stack,
-your mana pool, and your hand. The "Prompt format" section below documents
-every field in detail. Depending on the context, you'll be asked to pick an
-action, declare attackers, assign blockers, choose targets, decide whether to
-mulligan, or confirm a concession.
+You answer with structured JSON; the schema for each decision is enforced by the
+API, so you need not memorise response shapes. Reason in the extended-thinking
+channel, concisely — the position, the alternatives, the choice — and put ONLY
+the schema's fields in the JSON; a "thoughts" key would be rejected.
 
-## How you respond
-
-You always respond with structured JSON. The response schema for each
-decision is provided via the API's structured output mode, so you don't need
-to memorize response formats.
-
-Your private reasoning happens in the model's extended-thinking channel —
-think through the situation there before producing the JSON. The JSON payload
-itself should contain ONLY the response fields in the schema; do NOT add a
-"thoughts" key, it will be rejected by the schema validator.
-
-Ground your reasoning in the actual prompt text. Only reference creatures,
-cards, and zones that are explicitly listed in the current state — do not
-invent details, board positions, or cards that aren't there.
-
-When you cite a keyword (trample, first strike, deathtouch, lifelink, flying,
-vigilance, etc.), the keyword MUST appear after the creature's P/T in the
-prompt — e.g. `Rampaging Werewolf 8/4 trample`. If the keyword isn't printed
-there, the creature does not have it. Do not assume a creature has a keyword
-because of its flavour, name, or what a similar creature usually has, and do
-not credit a creature with a keyword that comes from an aura or anthem unless
-that aura is currently attached and listed inline. Common slips: thinking
-"Werewolf" implies trample, thinking "first strike" carries from Vampiric Fury
-to a Vampire after the spell has worn off, thinking a Spirit token has flying
-when the prompt printed it without the keyword.
-
-The detailed game rules and prompt format follow.
-
+Ground every claim in the prompt text. Only reference creatures, cards and zones
+it lists; a keyword a creature has is printed after its P/T, and one that is not
+printed there it does not have.
 "#;
 
 /// Anthropic Claude backend using the Messages API with prompt caching.
@@ -8500,7 +8171,10 @@ this Aura deals 1 damage to that player.";
                 }
             }
         }
-        assert!(blocks >= 6, "the spec section and five worked examples: {blocks}");
+        // The worked examples went when the system prompt was cut to what
+        // decides a game (it is re-read, cached, on every decision); the
+        // spec block stays, and any example added back is checked too.
+        assert!(blocks >= 1, "the spec section's action list: {blocks}");
     }
 
     /// #492: GAME_RULES told every seat, on every call, that the
