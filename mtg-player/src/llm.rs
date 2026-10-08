@@ -404,6 +404,7 @@ pub fn call_within_budget<T>(
         if tries == 1 { "" } else { "s" }, began.elapsed().as_secs(), budget.as_secs()))
 }
 
+#[must_use]
 pub fn thinking_param(model: &str) -> serde_json::Value {
     if model_takes_a_thinking_budget(model) {
         serde_json::json!({ "type": "enabled", "budget_tokens": 4096 })
@@ -449,19 +450,17 @@ pub const THINKING_ENV: &str = "MTG_LLM_THINKING";
 /// found only in the bill.
 #[must_use]
 pub fn thinking_level() -> ThinkingLevel {
+    static WARNED: std::sync::Once = std::sync::Once::new();
     let Ok(raw) = std::env::var(THINKING_ENV) else { return ThinkingLevel::Low };
-    match parse_thinking_level(&raw) {
-        Some(level) => level,
-        None => {
-            static WARNED: std::sync::Once = std::sync::Once::new();
-            WARNED.call_once(|| {
-                crate::stderr_line!(
-                    "Warning: {THINKING_ENV}={raw:?} is not off, low, medium, high or a token \
-                     count; thinking stays at low.");
-            });
-            ThinkingLevel::Low
-        }
+    if let Some(level) = parse_thinking_level(&raw) {
+        return level;
     }
+    WARNED.call_once(|| {
+        crate::stderr_line!(
+            "Warning: {THINKING_ENV}={raw:?} is not off, low, medium, high or a token \
+             count; thinking stays at low.");
+    });
+    ThinkingLevel::Low
 }
 
 /// [`thinking_level`]'s parser, `None` for a value it does not know.
@@ -485,6 +484,9 @@ pub fn parse_thinking_level(raw: &str) -> Option<ThinkingLevel> {
 /// `off` omits the `thinking` parameter altogether, which is "no thinking"
 /// on the models that allow it and the model's default on the ones that
 /// do not (the 5.x family thinks regardless; `effort: low` still applies).
+///
+/// # Panics
+/// If `body` is not a JSON object — a request body always is.
 pub fn apply_thinking(body: &mut serde_json::Value, model: &str, level: ThinkingLevel) {
     let obj = body.as_object_mut().expect("a request body is a JSON object");
     obj.remove("thinking");
@@ -510,10 +512,9 @@ pub fn apply_thinking(body: &mut serde_json::Value, model: &str, level: Thinking
         let effort = match level {
             ThinkingLevel::Off | ThinkingLevel::Low => "low",
             ThinkingLevel::Medium => "medium",
-            ThinkingLevel::High => "high",
             ThinkingLevel::Budget(n) if n <= 2048 => "low",
             ThinkingLevel::Budget(n) if n <= 8192 => "medium",
-            ThinkingLevel::Budget(_) => "high",
+            ThinkingLevel::High | ThinkingLevel::Budget(_) => "high",
         };
         let output_config = obj.entry("output_config").or_insert_with(|| serde_json::json!({}));
         output_config["effort"] = serde_json::json!(effort);
