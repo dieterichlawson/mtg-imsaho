@@ -2759,16 +2759,23 @@ impl CliPlayer {
         let parts: Vec<_> = creatures.iter()
             .map(|c| Self::creature_row_parts(c, aura_map.get(&c.object_id)))
             .collect();
-        let mut groups: Vec<(usize, (String, String, String), ObjectId, &str)> = Vec::new();
+        // Grouped on owner as well as on the row: a stolen creature is
+        // still its owner's (CR 108.3), goes back when the control effect
+        // ends (CR 611.2b) and to its owner's graveyard (CR 404.1), so it is
+        // not one of its controller's copies however alike the rows read.
+        // It merged into them once its `[S]` cleared (#740, the CLI half of
+        // #722's `stackKey`), and now stands on its own row with its id.
+        let mut groups: Vec<(usize, (String, String, String), ObjectId, &str, mtg_engine::ids::PlayerId)> =
+            Vec::new();
         for (c, p) in creatures.iter().zip(parts) {
-            match groups.iter_mut().find(|(_, q, _, _)| *q == p) {
-                Some((n, _, _, _)) => *n += 1,
-                None => groups.push((1, p, c.object_id, c.name.as_str())),
+            match groups.iter_mut().find(|(_, q, _, _, owner)| *q == p && *owner == c.owner) {
+                Some((n, _, _, _, _)) => *n += 1,
+                None => groups.push((1, p, c.object_id, c.name.as_str(), c.owner)),
             }
         }
         let shared = |name: &str| groups.iter().filter(|g| g.3 == name).count() > 1;
         groups.iter()
-            .map(|(n, (head, mid, tail), id, name)| {
+            .map(|(n, (head, mid, tail), id, name, _)| {
                 let head = if *n == 1 && shared(name) {
                     format!("{head} (#{})", id.0)
                 } else {
@@ -5092,6 +5099,12 @@ impl CliPlayer {
 
         let controller = if perm.controller == view.you { "You" } else { "Opponent" };
         let _ = execute!(out, Print(format!("  Controller: {controller}\n")));
+        // Only when it differs: whose it goes back to when a control effect
+        // ends, and whose graveyard it goes to (#740).
+        if perm.owner != perm.controller {
+            let owner = if perm.owner == view.you { "You" } else { "Opponent" };
+            let _ = execute!(out, Print(format!("  Owner: {owner}\n")));
+        }
         let _ = execute!(out, Print(format!("  Tapped: {}\n", perm.tapped)));
         // The page that lists everything else about a permanent
         // was silent about a live shield (issue #468).
@@ -8846,6 +8859,24 @@ pub(crate) mod tests {
         assert!(!heads[0].1.contains('#'), "interchangeable copies need no id: {heads:?}");
         assert!(heads[1].1.ends_with("(#47)"), "{heads:?}");
         assert!(!heads[2].1.contains('#'), "a unique name needs no id: {heads:?}");
+    }
+
+    /// #740: a stolen creature merged into its controller's own copies once
+    /// its `[S]` cleared ("5x Vampire Interloper"), though it is its owner's
+    /// and goes back when the control effect ends.
+    #[test]
+    fn a_stolen_creature_is_not_counted_among_its_controllers_copies() {
+        let mine: Vec<PermanentView> = [71, 75, 77, 79].iter().map(|&id| creature(id, "Vampire Interloper", 1)).collect();
+        let mut stolen = creature(22, "Vampire Interloper", 1);
+        stolen.owner = PlayerId(0);
+        let all: Vec<&PermanentView> = mine.iter().chain(std::iter::once(&stolen)).collect();
+        let refs: Vec<&&PermanentView> = all.iter().collect();
+        let rows = CliPlayer::creature_rows(&refs, &HashMap::new());
+        let heads: Vec<(usize, &str)> = rows.iter().map(|(n, p)| (*n, p.0.as_str())).collect();
+        assert_eq!(heads.len(), 2, "{heads:?}");
+        assert_eq!(heads[0].0, 4, "{heads:?}");
+        assert_eq!(heads[1].0, 1, "{heads:?}");
+        assert!(heads[1].1.ends_with("(#22)"), "the stolen one is told apart by id: {heads:?}");
     }
 
     /// An activation cost's commas are not list separators: breaking at
