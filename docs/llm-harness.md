@@ -87,6 +87,67 @@ record each), and the draft seats do the same per pick. `reports/llm-cost.md`
 has the measured before/after, and `scripts/measure-llm-prompts.sh` counts
 decisions and prompt bytes per game for free with a stub CLI.
 
+`max_tokens` is a cap on a runaway answer, not a budget: the answer's own
+room (2,048 tokens; the largest structured answer, the draft runner's 40-card
+deck, is ≈ 600) at `off`, 4,096 at the default `low`, 8,192 and 16,384 above,
+a budget plus the answer on the older models. A `claude -p` seat gets the
+same number as `CLAUDE_CODE_MAX_OUTPUT_TOKENS`. Every schema's `thoughts`
+field asks for at most two sentences.
+
+## Saying "go": the pass-until row
+
+A person holding an instant does not deliberate at every priority of both
+players' turns; they say "go" and respond when something happens. The
+browser page has this as the `f` key and the CLI as its auto-pass mode. An
+LLM seat has it as one row on every priority menu, right after `Pass`:
+
+```
+0: Pass
+1: Pass until something happens (keep passing priority, unasked, until: ...)
+2: Cast Lightning Bolt (tap Mountain)
+3: Concede
+```
+
+Picking it passes now and keeps passing every later *plain* priority offer
+without a model call, until something the seat would want to see happens.
+The stops are conservative — when in doubt, the seat is asked:
+
+- anything on the stack that was not there when it said "go" (an entry
+  that was there resolving off the top is expected);
+- its own turn beginning;
+- attackers declared against it, before blocks;
+- a blocker declared against its attacker;
+- its own main phase — the next one, and the same one again when a land
+  drop or a sorcery-speed cast or activation is on offer (what a seat that
+  cast a spell and said "go" to let it resolve is then owed);
+- a combat prompt, a target or set or resolution prompt, the mulligan: any
+  prompt that is not a plain priority pass.
+
+The row is the seat's own, not an engine action: the random seat, the CLI
+and the page do not get it, and `surface_parity.rs` excludes it from the
+CLI/LLM menu comparison on purpose, with a test that says why. The engine's
+own auto-pass (an offer of only Pass, Concede and mana abilities is passed
+without asking anyone) is unchanged and comes first.
+
+In the `--log`:
+
+- `AUTO_PASS [seat]` — `engaged at <turn, step>` when the row is picked,
+  then `until: <what it is still waiting for> — <turn, step>, <stack>;
+  passing since <where>, (N offers passed unasked)` for every offer passed
+  without a call. `INFO`, one line per pass, so a stretch is visible.
+- `AUTO_PASS_STOP [seat]` — `<what happened> (N offers passed unasked since
+  <where>)`, and the next `PROMPT` opens with `You chose to pass until
+  something happened; after N unasked passes it stopped: <what happened>.`
+  above a `Recent events` recap carrying everything that happened meanwhile
+  (the recap's 80-entry cap and its marker apply as always).
+- `USAGE [seat]` (`DEBUG`) — one line per `claude -p` call: input, output,
+  thinking, cache tokens and wall time, so the largest answer of a game can
+  be read off the log.
+
+`MTG_LLM_PASS_UNTIL=off` leaves the row out of every menu, for measuring a
+run against one without it; unset, it is offered. The draft runner's games
+use the same seat and get the row for free.
+
 ## One game
 
 ```bash
@@ -187,6 +248,8 @@ header rows are the ones starting with a timestamp digit.
   `claude -p` failures land here too.
 - `COLLAPSED` — how many legal actions were folded into how many presented
   options (`DEBUG`).
+- `AUTO_PASS`, `AUTO_PASS_STOP`, `USAGE` — the pass-until row and the
+  per-call usage, above.
 - `INVARIANT` — a `--check-invariants` violation.
 - `RESULT`, `TOKEN_USAGE` — end of run.
 
