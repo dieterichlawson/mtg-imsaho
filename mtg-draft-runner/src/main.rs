@@ -223,6 +223,11 @@ fn die(msg: &str) -> ! {
     // Every worker's held records, not only this thread's: the process
     // will not come back for any of them (#658).
     let _ = std::panic::catch_unwind(mtg_player::game_log::flush_all);
+    // And the reason the run stopped, last: the log is the run's record,
+    // and a refused or failed run's ended mid-section with no word of why
+    // (#735). Nothing is written when no log is open yet.
+    let _ = std::panic::catch_unwind(|| mtg_player::game_log::write_at(
+        mtg_player::game_log::LogLevel::Error, file!(), line!(), &format!("FATAL {msg}"), ""));
     std::process::exit(1);
 }
 
@@ -990,6 +995,9 @@ fn main() {
     // A snapshot decides the seed, the set and the seat count: they are what
     // the recorded picks were made against, so a flag that disagreed would
     // replay them into a different draft (issue #218).
+    // Each value the save overrode, for the log as well as stderr: the
+    // header names the value used and nothing said where it came from.
+    let mut resume_notes: Vec<String> = Vec::new();
     let resumed: Option<DraftSave> = args.resume.as_ref().map(|path| {
         let text = fs::read_to_string(path)
             .unwrap_or_else(|e| die(&format!("failed to read draft save '{path}': {e}")));
@@ -1016,11 +1024,13 @@ fn main() {
             if saved == used {
                 continue;
             }
-            if args.was_supplied(flag) {
-                mtg_player::stderr_line!("note: {flag} comes from the save ({used} -> {saved})");
+            let note = if args.was_supplied(flag) {
+                format!("{flag} comes from the save ({used} -> {saved})")
             } else {
-                mtg_player::stderr_line!("note: {flag} {saved} comes from the save");
-            }
+                format!("{flag} {saved} comes from the save")
+            };
+            mtg_player::stderr_line!("note: {note}");
+            resume_notes.push(note);
         }
         save
     });
@@ -1098,19 +1108,6 @@ this draft will be made under {} — this draft is a mixture of the two",
         std::process::exit(1);
     });
 
-    // Create streaming log file
-    let log = draft_log::DraftLogger::new(std::path::Path::new(&args.log));
-    let resumed_from = resumed.as_ref().map(|save| {
-        (args.resume.as_deref().unwrap_or_default(), save.picks.len())
-    });
-    let replayed_note: Vec<(usize, String, String)> = replayed_under
-        .iter()
-        .map(|(seat, was, now)| (*seat, was.describe(), now.describe()))
-        .collect();
-    log_header!(log, &set_data.set_name, args.players, args.best_of,
-        args.models.as_slice(), args.guide_paths.as_slice(), args.seed, resumed_from,
-        replayed_note.as_slice());
-
     if !args.quiet {
         mtg_player::stderr_line!(
             "=== {} Draft: {} players, best-of-{} ===",
@@ -1125,6 +1122,70 @@ this draft will be made under {} — this draft is a mixture of the two",
     }
     let packs = generate_draft_packs(&sheets, args.players, &mut rng);
 
+    let mut draft = DraftState::new(&packs);
+
+    // The snapshot is checked whole before anything is written: before the
+    // log is opened, so a refused resume leaves no header claiming a replay
+    // that never happened (#735), and before the first snapshot write, so a
+    // refused save is left as it was found (#733).
+    //
+    // What the snapshot carries past the picks (issue #581): the decks, once
+    // they were built, and every match the tournament finished.
+    let best_of_recorded = resumed.as_ref().is_some_and(|s| s.best_of.is_some());
+    let resumed_decks: Vec<SavedDeck> = resumed.as_ref().map(|s| s.decks.clone()).unwrap_or_default();
+    let resumed_matches: Vec<SavedMatch> = resumed.as_ref().map(|s| s.matches.clone()).unwrap_or_default();
+    let replaying: Vec<PickRecord> = resumed.map(|s| s.picks).unwrap_or_default();
+    if let Err(e) = check_snapshot_shape(&replaying, args.players, draft.cards_remaining(0)) {
+        die(&format!("draft save '{}' cannot be replayed: {e}",
+            args.resume.as_deref().unwrap_or_default()));
+    }
+    // Decks are all of them or none, and matches need decks to have been
+    // played with (issue #581). The runner never writes anything else.
+    if !resumed_decks.is_empty() && resumed_decks.len() != args.players {
+        die(&format!("draft save '{}' cannot be replayed: it holds {} decks for {} seats",
+            args.resume.as_deref().unwrap_or_default(), resumed_decks.len(), args.players));
+    }
+    if !resumed_decks.is_empty() && replaying.len() != args.players * 3 * draft.cards_remaining(0) {
+        die(&format!("draft save '{}' cannot be replayed: it holds decks but the draft is not finished",
+            args.resume.as_deref().unwrap_or_default()));
+    }
+    if resumed_decks.is_empty() && !resumed_matches.is_empty() {
+        die(&format!("draft save '{}' cannot be replayed: it holds matches but no decks",
+            args.resume.as_deref().unwrap_or_default()));
+    }
+    match replay_pools(draft.clone(), &replaying, args.players) {
+        Ok(pools) => if let Err(e) = check_snapshot_decks(&resumed_decks, &pools) {
+            die(&format!("draft save '{}' cannot be replayed: {e}",
+                args.resume.as_deref().unwrap_or_default()));
+        },
+        Err(e) => die(&format!("draft save '{}' cannot be replayed: {e}",
+            args.resume.as_deref().unwrap_or_default())),
+    }
+    if let Err(e) = check_snapshot_matches(&resumed_matches, args.players, args.best_of) {
+        // A snapshot from before the match length was recorded is checked
+        // against the flag, which defaults to 3 and may not be what it was
+        // played at.
+        let hint = if best_of_recorded { String::new() } else { format!(
+            " (this snapshot does not record its match length, so best-of-{} is --best-of's; \
+resume with the --best-of its run was played at)", args.best_of) };
+        die(&format!("draft save '{}' cannot be replayed: {e}{hint}",
+            args.resume.as_deref().unwrap_or_default()));
+    }
+
+    // Create streaming log file
+    let log = draft_log::DraftLogger::new(std::path::Path::new(&args.log));
+    let resumed_from = args.resume.as_deref().map(|path| (path, replaying.len()));
+    let replayed_note: Vec<(usize, String, String)> = replayed_under
+        .iter()
+        .map(|(seat, was, now)| (*seat, was.describe(), now.describe()))
+        .collect();
+    log_header!(log, &set_data.set_name, args.players, args.best_of,
+        args.models.as_slice(), args.guide_paths.as_slice(), args.seed, resumed_from,
+        replayed_note.as_slice());
+    for note in &resume_notes {
+        mtg_player::game_log::write(file!(), line!(), &format!("NOTE {note}"), "");
+    }
+
     // Log original pack contents
     log_section!(log, "BOOSTER PACKS");
     for (seat, player_packs) in packs.iter().enumerate() {
@@ -1138,7 +1199,6 @@ this draft will be made under {} — this draft is a mixture of the two",
     if !args.quiet {
         mtg_player::stderr_line!("Starting draft...");
     }
-    let mut draft = DraftState::new(&packs);
 
     // Build card reference with oracle text for all cards in the set
     let card_reference = llm_client::build_card_reference(&set_data.all_card_names(), &registry);
@@ -1193,43 +1253,6 @@ this draft will be made under {} — this draft is a mixture of the two",
     // Every pick the run has made, in order: the snapshot, and on a resume
     // the picks replayed out of one.
     let mut recorded: Vec<PickRecord> = Vec::new();
-    // What the snapshot carries past the picks (issue #581): the decks, once
-    // they were built, and every match the tournament finished.
-    let resumed_decks: Vec<SavedDeck> = resumed.as_ref().map(|s| s.decks.clone()).unwrap_or_default();
-    let resumed_matches: Vec<SavedMatch> = resumed.as_ref().map(|s| s.matches.clone()).unwrap_or_default();
-    let replaying: Vec<PickRecord> = resumed.map(|s| s.picks).unwrap_or_default();
-    if let Err(e) = check_snapshot_shape(&replaying, args.players, draft.cards_remaining(0)) {
-        die(&format!("draft save '{}' cannot be replayed: {e}",
-            args.resume.as_deref().unwrap_or_default()));
-    }
-    // Decks are all of them or none, and matches need decks to have been
-    // played with (issue #581). The runner never writes anything else.
-    if !resumed_decks.is_empty() && resumed_decks.len() != args.players {
-        die(&format!("draft save '{}' cannot be replayed: it holds {} decks for {} seats",
-            args.resume.as_deref().unwrap_or_default(), resumed_decks.len(), args.players));
-    }
-    if !resumed_decks.is_empty() && replaying.len() != args.players * 3 * draft.cards_remaining(0) {
-        die(&format!("draft save '{}' cannot be replayed: it holds decks but the draft is not finished",
-            args.resume.as_deref().unwrap_or_default()));
-    }
-    if resumed_decks.is_empty() && !resumed_matches.is_empty() {
-        die(&format!("draft save '{}' cannot be replayed: it holds matches but no decks",
-            args.resume.as_deref().unwrap_or_default()));
-    }
-    // Everything the snapshot holds is checked before the first write below
-    // (#733), so a refused save is left as it was found.
-    match replay_pools(draft.clone(), &replaying, args.players) {
-        Ok(pools) => if let Err(e) = check_snapshot_decks(&resumed_decks, &pools) {
-            die(&format!("draft save '{}' cannot be replayed: {e}",
-                args.resume.as_deref().unwrap_or_default()));
-        },
-        Err(e) => die(&format!("draft save '{}' cannot be replayed: {e}",
-            args.resume.as_deref().unwrap_or_default())),
-    }
-    if let Err(e) = check_snapshot_matches(&resumed_matches, args.players, args.best_of) {
-        die(&format!("draft save '{}' cannot be replayed: {e}",
-            args.resume.as_deref().unwrap_or_default()));
-    }
     if !replaying.is_empty() && !args.quiet {
         mtg_player::stderr_line!("Replaying {} recorded pick(s) from the snapshot...", replaying.len());
     }

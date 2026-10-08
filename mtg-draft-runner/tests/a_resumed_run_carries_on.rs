@@ -254,6 +254,22 @@ fn a_resume_plays_at_the_match_length_its_snapshot_was_played_at() {
     assert!(stderr.contains("note: --best-of comes from the save (3 -> 1)"), "{stderr}");
     assert!(stderr.contains("best-of-1 ==="), "{stderr}");
     assert_eq!(calls(&pod.path("bo3.calls")), 0, "the best-of-1 match is still the one carried");
+    let log = std::fs::read_to_string(pod.path("bo3.log")).unwrap();
+    assert!(log.contains("NOTE --best-of comes from the save (3 -> 1)"),
+        "the log says where its header's best-of came from");
+
+    // A snapshot from before the field: checked against the flag, and the
+    // refusal says why rather than calling a finished match unfinished.
+    let mut old = save.clone();
+    old.as_object_mut().unwrap().remove("best_of");
+    let path = pod.write("old.json", &old);
+    let out = pod.run(&["--resume", &path, "--best-of", "3"], "old.calls", "old.log");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "{stderr}");
+    assert!(stderr.contains("does not record its match length"), "{stderr}");
+    let out = pod.run(&["--resume", &path], "old1.calls", "old1.log");
+    assert!(out.status.success(), "with the --best-of it was played at, it resumes: {}",
+        String::from_utf8_lossy(&out.stderr));
 }
 
 /// #731: a saved match was carried as it stood, so a 7-0 best-of-1 went
@@ -289,4 +305,44 @@ fn a_saved_match_this_tournament_did_not_finish_is_refused() {
         assert!(stderr.contains(needle), "{name}: {stderr}");
         assert_eq!(calls(&pod.path(&counter)), 0, "{name}: refused, not re-played");
     }
+}
+
+/// #734: a snapshot's seat count replaced `--players` with no floor, and
+/// `"players": 0` panicked indexing the log header's first seat.
+#[test]
+fn a_snapshot_with_no_seats_or_no_games_is_refused() {
+    if !have_python() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let pod = Pod::new("zero");
+    let save = pod.finished_snapshot("snap.json");
+    for (name, field, needle) in [("p0", "players", "0 seats"), ("b0", "best_of", "best-of-0")] {
+        let mut edited = save.clone();
+        edited[field] = 0.into();
+        let path = pod.write(&format!("{name}.json"), &edited);
+        let out = pod.run(&["--resume", &path], &format!("{name}.calls"), &format!("{name}.log"));
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert_eq!(out.status.code(), Some(1), "{name}: refused, not panicked: {stderr}");
+        assert!(stderr.contains(needle) && !stderr.contains("panicked"), "{name}: {stderr}");
+    }
+}
+
+/// #735: the log header said "resumed from … (N picks replayed)" before the
+/// snapshot was checked, so a refused resume left a log asserting a replay
+/// that never happened, with no word of the refusal.
+#[test]
+fn a_refused_resume_writes_no_log_claiming_a_replay() {
+    if !have_python() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let pod = Pod::new("refusedlog");
+    let mut save = pod.finished_snapshot("snap.json");
+    save["picks"][4]["seat"] = 2.into();
+    let path = pod.write("bad.json", &save);
+    let out = pod.run(&["--resume", &path], "bad.calls", "bad.log");
+    assert!(!out.status.success());
+    let log = std::fs::read_to_string(pod.path("bad.log")).unwrap_or_default();
+    assert!(!log.contains("resumed from"), "no header for a replay that never happened:\n{log}");
 }
