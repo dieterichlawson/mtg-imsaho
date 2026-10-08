@@ -103,6 +103,12 @@ impl Pod {
         assert!(first.status.success(), "{}", String::from_utf8_lossy(&first.stderr));
         serde_json::from_str(&std::fs::read_to_string(&snap).unwrap()).unwrap()
     }
+
+    fn write(&self, name: &str, save: &serde_json::Value) -> String {
+        let path = self.path(name);
+        std::fs::write(&path, save.to_string()).unwrap();
+        path.to_str().unwrap().to_string()
+    }
 }
 
 #[test]
@@ -154,3 +160,33 @@ fn a_resumed_runs_own_save_keeps_the_matches_it_carried() {
     assert_eq!(resaved["matches"].as_array().map(Vec::len), Some(1),
         "the carried match is still in the snapshot the resume wrote");
 }
+
+/// #733: an impossible replayed pick was found only when the replay reached
+/// it, after `--save` had been rewritten with the steps before it, so
+/// `--resume X --save X` refused the snapshot and destroyed it in one go.
+#[test]
+fn a_refused_pick_leaves_the_snapshot_as_it_was() {
+    if !have_python() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let pod = Pod::new("badpick");
+    let mut save = pod.finished_snapshot("snap.json");
+    save["decks"] = serde_json::json!([]);
+    save["matches"] = serde_json::json!([]);
+    save["picks"].as_array_mut().unwrap().truncate(40);
+    let bad = save["picks"].as_array_mut().unwrap().iter_mut()
+        .find(|r| r["round"] == 1 && r["pick"] == 10 && r["seat"] == 1).unwrap();
+    bad["card"] = "Black Lotus".into();
+    let path = pod.write("bad.json", &save);
+    let before = std::fs::read_to_string(&path).unwrap();
+
+    let out = pod.run(&["--resume", &path, "--save", &path], "bad.calls", "bad.log");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "{stderr}");
+    assert!(stderr.contains("impossible pick (seat 1, pack 1, pick 10, Black Lotus)"), "{stderr}");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), before,
+        "the refused snapshot is left as it was found");
+    assert_eq!(calls(&pod.path("bad.calls")), 0);
+}
+

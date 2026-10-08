@@ -20,6 +20,7 @@ pub struct DraftPlayer {
 
 /// The draft state machine.
 /// Manages pack distribution, picks, and rotation for a standard booster draft.
+#[derive(Clone)]
 pub struct DraftState {
     pub pod_size: usize,
     pub players: Vec<DraftPlayer>,

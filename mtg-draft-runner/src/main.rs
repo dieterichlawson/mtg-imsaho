@@ -523,6 +523,38 @@ fn check_snapshot_shape(picks: &[PickRecord], players: usize, pack_size: usize) 
     }
 }
 
+/// Every seat's pool after `picks`, made on a copy of `draft` — or the
+/// first record that names a card its pack did not hold.
+///
+/// Run before the resumed run writes anything. The replay used to find an
+/// impossible card only when it reached it, after it had already rewritten
+/// `--save` with the steps before it: `--resume X --save X` refused the
+/// save and destroyed it in one go, and the next resume re-asked the lost
+/// picks in silence (#733). `picks` has passed `check_snapshot_shape`.
+fn replay_pools(mut draft: DraftState, picks: &[PickRecord], players: usize) -> Result<Vec<Vec<String>>, String> {
+    'draft: for round in 0..3 {
+        if round > 0 {
+            draft.start_next_pack_round();
+        }
+        for pick_num in 0..draft.cards_remaining(0) {
+            let step: Vec<&PickRecord> = picks.iter()
+                .filter(|p| p.round == round + 1 && p.pick == pick_num + 1)
+                .collect();
+            if step.is_empty() {
+                break 'draft;
+            }
+            for seat in 0..players {
+                let Some(rec) = step.iter().find(|p| p.seat == seat) else { continue };
+                draft.make_pick(seat, &rec.card).map_err(|e| format!(
+                    "it replays an impossible pick (seat {seat}, pack {}, pick {}, {}): {e}",
+                    round + 1, pick_num + 1, rec.card))?;
+            }
+            draft.rotate_packs();
+        }
+    }
+    Ok(draft.players.iter().map(|p| p.pool.clone()).collect())
+}
+
 /// What one seat was told to do while it was making the recorded picks.
 ///
 /// A guide changes what a seat does more than any other flag, and none of
@@ -1084,6 +1116,13 @@ this draft will be made under {} — this draft is a mixture of the two",
     if resumed_decks.is_empty() && !resumed_matches.is_empty() {
         die(&format!("draft save '{}' cannot be replayed: it holds matches but no decks",
             args.resume.as_deref().unwrap_or_default()));
+    }
+    // Everything the snapshot holds is checked before the first write below
+    // (#733), so a refused save is left as it was found.
+    match replay_pools(draft.clone(), &replaying, args.players) {
+        Ok(_) => {}
+        Err(e) => die(&format!("draft save '{}' cannot be replayed: {e}",
+            args.resume.as_deref().unwrap_or_default())),
     }
     if !replaying.is_empty() && !args.quiet {
         mtg_player::stderr_line!("Replaying {} recorded pick(s) from the snapshot...", replaying.len());
