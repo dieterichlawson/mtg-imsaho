@@ -240,3 +240,23 @@ fn the_snapshot_is_private_and_a_dead_run_does_not_keep_it() {
         snapshot.display()
     );
 }
+
+/// #735: a refused `--resume` left the `--log` it had opened with no record
+/// of why the run stopped; the reason was on stderr only.
+#[test]
+fn a_refused_resume_says_why_in_the_log() {
+    let scratch = Scratch::new("refused-log");
+    let save = scratch.path("not-a-save.json");
+    std::fs::write(&save, "{ not json").unwrap();
+    let log = scratch.path("run.log");
+    let out = runner()
+        .current_dir(repo_root())
+        .env("TMPDIR", &scratch.dir)
+        .args(["--p1", "random", "--p2", "random", "--quiet", "--resume", &save, "--log", &log])
+        .output()
+        .expect("failed to run the runner");
+    assert!(!out.status.success());
+    let text = std::fs::read_to_string(&log).unwrap_or_default();
+    assert!(text.contains("FATAL save file") && text.contains("is not a valid game save"),
+        "the log says why the run stopped:\n{text}");
+}

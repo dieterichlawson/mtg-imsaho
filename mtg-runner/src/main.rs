@@ -115,6 +115,11 @@ fn decision_kind_name(legal: &engine::LegalActions) -> String {
 /// A user error: report it and exit without a Rust panic/backtrace.
 fn die(msg: &str) -> ! {
     mtg_player::stderr_line!("Error: {msg}");
+    // The log is the run's record: a refused `--resume` or any later fatal
+    // left it ending with no word of why the run stopped, as the draft
+    // runner's did (#735). Nothing is written when no log is open.
+    mtg_player::game_log::write_at(
+        mtg_player::game_log::LogLevel::Error, file!(), line!(), &format!("FATAL {msg}"), "");
     std::process::exit(1);
 }
 
