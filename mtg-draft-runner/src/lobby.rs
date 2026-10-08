@@ -813,6 +813,17 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
         if self.seats[seat].build_deadline.is_some() || self.seats[seat].ready {
             return;
         }
+        // The section opens when the first seat is done, not when the
+        // table is: a seat builds as soon as its own draft is over, and its
+        // pool and deck would otherwise land inside the DRAFT section,
+        // before the header a reader looks for (found in the first
+        // playtest: three of four decks were above "DECK BUILDING").
+        if !self.started_pool_log {
+            self.started_pool_log = true;
+            log_section!(self.log, "DECK BUILDING");
+            mtg_player::game_log::write(file!(), line!(),
+                "NOTE each seat's pool and deck are written as that seat finishes drafting, so they come in the order the seats finished, interleaved with the last picks of the others", "");
+        }
         log_pool_summary!(self.log, seat, self.table.pool(seat));
         let name = self.seats[seat].name.clone();
         self.event(format!("{name} has drafted all {} cards and is building", self.table.pool(seat).len()));
@@ -827,10 +838,6 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
 
     fn draft_over(&mut self) {
         self.phase = Phase::Building;
-        if !self.started_pool_log {
-            self.started_pool_log = true;
-            log_section!(self.log, "DECK BUILDING");
-        }
         self.event("the draft is over; every seat is building".to_string());
     }
 

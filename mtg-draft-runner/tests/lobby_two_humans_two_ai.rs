@@ -142,6 +142,14 @@ fn two_humans_and_two_ai_seats_draft_build_and_the_ai_match_plays() {
         "an AI pick logs its prompt");
     assert!(log.contains("[Seat 0] POOL (42 cards)"));
     assert!(v0["seats"][2]["picks"] == 42 && v0["seats"][3]["picks"] == 42, "{}", v0["seats"]);
+    // The AI seats finished first and built at once; their pools and decks
+    // are under the DECK BUILDING header, not above it in the DRAFT section
+    // (the first playtest found three of four decks there).
+    let header = log.find("  DECK BUILDING\n").expect("a DECK BUILDING section");
+    for needle in ["] POOL (", "] DECK ("] {
+        let first = log.find(needle).unwrap_or_else(|| panic!("the log has a {needle} record"));
+        assert!(first > header, "the first {needle:?} record is above the DECK BUILDING header");
+    }
 
     // An invalid deck is refused with the reason, and kept with it.
     let pool: Vec<String> = v0["pool"].as_array().unwrap().iter().map(|c| c["name"].as_str().unwrap().to_string()).collect();
