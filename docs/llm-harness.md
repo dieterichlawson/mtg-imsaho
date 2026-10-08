@@ -53,6 +53,40 @@ Default models when the spec names none: `claude` → `claude-sonnet-4-6`,
 `gemini` → `gemini-2.5-flash`, `claude-code` → whatever the CLI defaults to
 (no `--model` is passed).
 
+## What one decision sends
+
+Every decision is sent on its own. A call carries:
+
+- the **system prompt** — the prompt-format contract and the engine's
+  conventions (`GAME_RULES`, ~11KB), the match section, and the seat's own
+  decklist with rules text. It is the same bytes on every call of a game, so
+  the API's prompt cache serves it;
+- **no earlier exchanges**, by default. Every decision prompt restates the
+  whole position (board, hand, stack, the events since the last prompt, every
+  legal action), so the history was the same information again, and re-sending
+  it made a game's input tokens grow with the square of its decision count.
+  `MTG_LLM_HISTORY=K` sends the last K exchanges too: a sliding window on the
+  Messages API seat; a conversation restarted every K decisions on the Gemini
+  and `claude -p` seats, which cannot slide a server-held one;
+- the **decision prompt**, which opens with `Your notes from your last
+  decision:` — the tail of the seat's own reasoning from the previous call
+  (up to 600 characters), which is how a plan carries across decisions
+  without the history. A resumed seat's recap of the game so far rides in
+  its first prompt after the resume the same way.
+
+Thinking is billed as output and is the largest term a decision has once the
+history is bounded. `MTG_LLM_THINKING` sets it for every seat: `off`, `low`
+(the default), `medium`, `high`, or a token budget such as `2048`. On the
+current Anthropic models that is adaptive thinking plus `output_config.effort`;
+on the older ones a `budget_tokens`; on a `claude -p` seat the CLI's own
+`MAX_THINKING_TOKENS` (left at the CLI default for `low`, which a probe found
+cheaper than naming a 1024 budget). Gemini keeps its own `thinking_level`.
+
+A `claude -p` seat therefore opens a session per decision (one `SESSION`
+record each), and the draft seats do the same per pick. `reports/llm-cost.md`
+has the measured before/after, and `scripts/measure-llm-prompts.sh` counts
+decisions and prompt bytes per game for free with a stub CLI.
+
 ## One game
 
 ```bash
@@ -165,8 +199,10 @@ grep -A40 $'\tPROMPT' logs/smoke/game.log               # a prompt with its body
 ```
 
 Independently of `--log`, `mtg-runner` prints a per-model token line at the
-end (calls, input, output, cache read, cache create). It prints token counts
-only — no dollar figure.
+end (calls, input, output — with the thinking share where the backend reports
+it — cache read, cache create) and what it cost: dollars for a metered seat,
+`n/a (plan quota; $X at API rates)` for a `claude-code:<model>` seat whose
+model has a published rate, `unknown` for a model this build has no rate for.
 
 ## Saving and resuming
 
@@ -200,9 +236,9 @@ saved shuffle, but it still seeds the random and AI seats, so keep it to
 replay a resume deterministically. The seats are stored in the save, so a
 bare `--resume` brings back the same players; an explicit `--p1`/`--p2`
 overrides the saved seat and says so, and a metered API seat the file asks
-for needs that flag to confirm it. A resumed LLM seat starts a fresh
-conversation seeded with a recap of the game log so far, not the original
-conversation.
+for needs that flag to confirm it. A resumed LLM seat is handed a recap of the
+game log so far in its first decision prompt after the resume (logged as
+`RESUME`), not the original conversation.
 
 ## Drafting
 
@@ -243,11 +279,12 @@ replayed or resumed.
 
 ## Not supported yet
 
-- **Thinking levels only reach Gemini.** `with_thinking_level` is a no-op for
-  the Anthropic and Claude Code backends, so `:draft_thinking:game_thinking`
-  in a `mtg-draft-runner` spec changes nothing on a `claude` or `claude-code`
-  seat. Relatedly, `mtg-draft-runner` validates the level strings only for
-  `gemini` specs; a bogus level on a `claude` spec is accepted and ignored.
+- **The spec's thinking suffix only reaches Gemini.** `with_thinking_level`
+  is a no-op for the Anthropic and Claude Code backends, so
+  `:draft_thinking:game_thinking` in a `mtg-draft-runner` spec changes nothing
+  on a `claude` or `claude-code` seat — those take `MTG_LLM_THINKING` (above).
+  Relatedly, `mtg-draft-runner` validates the level strings only for `gemini`
+  specs; a bogus level on a `claude` spec is accepted and ignored.
 - **`mtg-runner` has no thinking-level syntax at all.** It splits a seat spec
   at the *first* colon, so `--p1 gemini:gemini-2.5-flash:high` asks the API for
   a model literally named `gemini-2.5-flash:high` and fails. Only
@@ -256,7 +293,7 @@ replayed or resumed.
   containing `gemini` builds a Gemini backend whatever provider word preceded
   it, so `--p1 claude:gemini-2.5-flash` demands `ANTHROPIC_API_KEY` at the
   gate and then calls the Gemini API. Name the provider that matches the model.
-- **No cost line from `mtg-runner`**, only token counts. `mtg-draft-runner`
-  prints a cost summary: metered seats in dollars, a `claude-code` seat as
-  `n/a (plan quota)`, and a model this build has no published rate for as
-  `unknown` rather than a made-up figure.
+- **`mtg-draft-runner`'s cost summary** prints metered seats in dollars, a
+  `claude-code` seat as `n/a (plan quota)` with no API-rate equivalent, and a
+  model this build has no published rate for as `unknown` rather than a
+  made-up figure.
