@@ -1485,6 +1485,14 @@ and the FINAL STANDINGS below record none",
                 saved_matches.push(SavedMatch { round: round_num, result: result.clone() });
             }
         }
+        // Written now, before any match is played: the only other write is
+        // when a match of this process's own finishes, so a resume that
+        // carried everything, or was stopped before its first match ended,
+        // left a `--save` holding none of the matches it carried — and
+        // `--resume X --save X` erased them from the only snapshot (#732).
+        if carried.iter().any(Option::is_some) {
+            write_snapshot(&recorded, &saved_decks, &saved_matches);
+        }
 
         // Play the rest in parallel. Each is checkpointed the moment it
         // finishes, in the order they finish, so an interruption costs the
