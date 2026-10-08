@@ -318,6 +318,10 @@ this (2026-10-08, the first implementation):
   table's pick is the first card of the pack the fallback deck would
   play with the pool (else the first card), logged as `auto-pick: <why>`
   in the prompt and response slots and shown to the seat as a notice.
+  An absent seat under `--pick-seconds` is picked for when its timer
+  runs out, not at once (the first playtest's absent seat lost all 42
+  picks to a stub table in four seconds); with no timer, and for a
+  kicked seat, at once. `--build-seconds` paces the deck the same way.
   A kicked (or auto) seat's matches are forfeits — `wins_needed` games
   to the opponent, `stalled_seat` set, a drawn 0-0 when both are away —
   recorded through the same path as a stalled seat's, so the log and the

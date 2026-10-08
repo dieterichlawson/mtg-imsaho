@@ -83,7 +83,9 @@ every pairing, every game and match result, the standings — and reads:
 
 - Enter or `start`: start before everybody has joined. A seat that has
   not joined is picked for by the table until the person arrives, then
-  it is theirs again.
+  it is theirs again — on the pick timer when `--pick-seconds` is set
+  (so somebody a minute late has lost a few picks, not the draft), at
+  once when it is not. The deck likewise, under `--build-seconds`.
 - `kick <seat>`: hand a human seat to the table for good. It is picked
   for and built for, and its matches are forfeit (recorded as such in the
   log and the standings) rather than waited on.

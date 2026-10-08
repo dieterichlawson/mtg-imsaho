@@ -469,6 +469,9 @@ impl Lobby {
         lines: &CardLines,
         log: DraftLogger,
     ) -> Result<Self, String> {
+        if packs.len() != config.seats.len() {
+            return Err(format!("{} seats but packs for {}", config.seats.len(), packs.len()));
+        }
         let table = Table::new(packs)?;
         let book = CardBook::new(set_data, &registry, lines);
         let seats: Vec<SeatState> = config.seats.iter().enumerate().map(|(i, kind)| SeatState {
@@ -654,12 +657,27 @@ the order they happened, not in seat order", "");
         self.run_auto_seats();
     }
 
+    /// Whether the table picks for this seat at once rather than on the
+    /// timer: it was kicked, or the host set no pick timer. An absent seat
+    /// under a timer is picked for when the timer runs out, so a person
+    /// who joins a minute late finds the table has taken a few picks, not
+    /// the whole draft (the first playtest lost all 42 in four seconds).
+    fn picks_at_once(&self, seat: usize) -> bool {
+        self.seats[seat].auto && (self.seats[seat].kicked || self.config.pick_seconds.is_none())
+    }
+
+    /// The same for the deck: kicked, or no build timer.
+    fn builds_at_once(&self, seat: usize) -> bool {
+        self.seats[seat].auto && (self.seats[seat].kicked || self.config.build_seconds.is_none())
+    }
+
     /// Give every human seat with a pack and no deadline one, when the host
-    /// set a pick timer.
+    /// set a pick timer. An absent seat's deadline is the table's cue to
+    /// pick for it.
     fn arm_deadlines(&mut self) {
         let Some(secs) = self.config.pick_seconds else { return };
         for seat in 0..self.seats.len() {
-            if !self.seats[seat].is_human() || self.seats[seat].auto {
+            if !self.seats[seat].is_human() || self.seats[seat].kicked {
                 continue;
             }
             match self.table.in_front(seat) {
@@ -780,8 +798,13 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
         let card = cards[index].clone();
         let note = format!("auto-pick: {why}");
         self.apply_pick(seat, pack_id, index, true, &note, &note)?;
-        self.seats[seat].notice = Some(format!(
-            "The table picked {} for you ({why}).", mtg_draft::front_face(&card)));
+        // A kicked seat was told once that it is the table's; a notice
+        // per pick would only write over that line (the lobby test read
+        // "The table picked Moonmist for you" where the kick should be).
+        if !self.seats[seat].kicked {
+            self.seats[seat].notice = Some(format!(
+                "The table picked {} for you ({why}).", mtg_draft::front_face(&card)));
+        }
         self.event(format!("seat {seat}: the table picked {} ({why})", mtg_draft::front_face(&card)));
         Ok(())
     }
@@ -828,7 +851,7 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
         let name = self.seats[seat].name.clone();
         self.event(format!("{name} has drafted all {} cards and is building", self.table.pool(seat).len()));
         if self.seats[seat].is_human() {
-            if self.seats[seat].auto {
+            if self.builds_at_once(seat) {
                 self.auto_build(seat, "the table builds for a seat it picks for");
             } else if let Some(secs) = self.config.build_seconds {
                 self.seats[seat].build_deadline = Some(Instant::now() + Duration::from_secs(secs));
@@ -1009,21 +1032,23 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
         self.seats[seat].auto
     }
 
-    /// Pick and build for every auto seat with something to do.
+    /// Pick and build for every auto seat with something to do and no
+    /// timer to wait for; the others get their deadlines armed.
     fn run_auto_seats(&mut self) {
         while let Some(seat) = (0..self.seats.len()).find(|&s| {
-            self.seats[s].auto && self.phase == Phase::Drafting
+            self.picks_at_once(s) && self.phase == Phase::Drafting
                 && self.table.in_front(s).is_some()
         }) {
             let _ = self.auto_pick(seat, "the seat is away");
         }
         for seat in 0..self.seats.len() {
-            if self.seats[seat].auto && !self.seats[seat].ready
+            if self.builds_at_once(seat) && !self.seats[seat].ready
                 && self.table.seat_done(seat)
             {
                 self.auto_build(seat, "the seat is away");
             }
         }
+        self.arm_deadlines();
     }
 
     /// The clock: expire pick and build deadlines. Returns whether anything
@@ -1031,15 +1056,17 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
     pub fn tick(&mut self, now: Instant) -> bool {
         let mut changed = false;
         for seat in 0..self.seats.len() {
+            let why = if self.seats[seat].auto { "the seat is away" } else { "the pick timer ran out" };
             if self.seats[seat].pick_deadline.is_some_and(|d| d <= now) {
                 self.seats[seat].pick_deadline = None;
-                if self.auto_pick(seat, "the pick timer ran out").is_ok() {
+                if self.auto_pick(seat, why).is_ok() {
                     changed = true;
                 }
             }
             if self.seats[seat].build_deadline.is_some_and(|d| d <= now) {
                 self.seats[seat].build_deadline = None;
-                self.auto_build(seat, "the build timer ran out");
+                let why = if self.seats[seat].auto { "the seat is away" } else { "the build timer ran out" };
+                self.auto_build(seat, why);
                 changed = true;
             }
         }
