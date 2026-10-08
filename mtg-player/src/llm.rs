@@ -241,7 +241,7 @@ pub fn ordering_schema(n: usize) -> serde_json::Value {
     serde_json::json!({
         "type": "object",
         "properties": {
-            "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+            "thoughts": {"type": "string", "description": THOUGHTS_DESCRIPTION},
             "order": {
                 "type": "array",
                 "items": {"type": "integer", "enum": valid_indices},
@@ -265,7 +265,7 @@ pub fn damage_amount_schema(min: u32, max: u32) -> serde_json::Value {
     serde_json::json!({
         "type": "object",
         "properties": {
-            "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+            "thoughts": {"type": "string", "description": THOUGHTS_DESCRIPTION},
             "amount": {
                 "type": "integer",
                 "enum": amounts,
@@ -496,7 +496,7 @@ pub fn parse_thinking_level(raw: &str) -> Option<ThinkingLevel> {
 pub fn apply_thinking(body: &mut serde_json::Value, model: &str, level: ThinkingLevel) {
     let obj = body.as_object_mut().expect("a request body is a JSON object");
     obj.remove("thinking");
-    let mut max_tokens: u64 = 8192;
+    let mut max_tokens: u64 = max_output_tokens(level);
     if model_takes_a_thinking_budget(model) {
         let budget = match level {
             ThinkingLevel::Off => None,
@@ -509,7 +509,7 @@ pub fn apply_thinking(body: &mut serde_json::Value, model: &str, level: Thinking
         if let Some(budget) = budget {
             obj.insert("thinking".into(), serde_json::json!({"type": "enabled", "budget_tokens": budget}));
             // The budget must be below `max_tokens`, with room for the answer.
-            max_tokens = max_tokens.max(budget + 4096);
+            max_tokens = max_tokens.max(budget + ANSWER_TOKENS);
         }
     } else {
         if level != ThinkingLevel::Off {
@@ -526,6 +526,37 @@ pub fn apply_thinking(body: &mut serde_json::Value, model: &str, level: Thinking
         output_config["effort"] = serde_json::json!(effort);
     }
     obj.insert("max_tokens".into(), serde_json::json!(max_tokens));
+}
+
+/// Output tokens the largest structured answer needs, with room to spare:
+/// an ordering of twelve triggers is ≈ 100 tokens of JSON, a blockers
+/// answer for six creatures ≈ 120, the draft runner's 40-card deck —
+/// every drafted name with a count, five basics, two sentences of
+/// `thoughts` — ≈ 600 (`mtg-draft-runner`'s `deck_schema_for`). The
+/// measured game answer is 60–120 tokens of JSON (`reports/llm-cost.md`).
+pub const ANSWER_TOKENS: u64 = 2048;
+
+/// The `max_tokens` a request is sent at this level — the cap on a
+/// runaway, not a budget the model is expected to use.
+///
+/// Thinking counts against `max_tokens` on the Messages API and on a
+/// `claude -p` seat alike (`CLAUDE_CODE_MAX_OUTPUT_TOKENS` is the CLI's
+/// `max_tokens`), so the cap is the answer plus the thinking the level
+/// asks for. The default `low` was measured at 728 thinking tokens per
+/// decision on average and under 2,000 at most over two games
+/// (`reports/llm-cost.md`, phase 2), so 4,096 is twice the largest
+/// decision seen and half the 8,192 it replaced; `off` is the answer's
+/// own room. A truncated answer is a wasted call — the harness reads no
+/// JSON and falls back — which is why the cap is not tighter.
+#[must_use]
+pub fn max_output_tokens(level: ThinkingLevel) -> u64 {
+    match level {
+        ThinkingLevel::Off => ANSWER_TOKENS,
+        ThinkingLevel::Low => 4096,
+        ThinkingLevel::Medium => 8192,
+        ThinkingLevel::High => 16384,
+        ThinkingLevel::Budget(n) => u64::from(n) + ANSWER_TOKENS,
+    }
 }
 
 /// The `MAX_THINKING_TOKENS` a `claude -p` child is given at this level,
@@ -1166,6 +1197,14 @@ Before turn 1: `[MULLIGAN DECISION]` shows your seven cards; answer `true` to mu
 - Behind on board and life, look for a line that changes the situation — an equip, an aura, a race — rather than passing to topdeck.
 "#;
 
+/// What every schema's `thoughts` field asks for. The reasoning is private
+/// and the plan carries over as the seat's notes, so the field is the
+/// decision, not the deliberation: "Concise but complete summary of your
+/// internal thoughts" came back at ≈ 300 characters per decision, and
+/// output is the largest term a decision has (`reports/llm-cost.md`).
+pub const THOUGHTS_DESCRIPTION: &str =
+    "At most two sentences: what decided it, and what you plan to do next.";
+
 /// Backend trait for LLM API communication.
 /// Separates provider-specific API mechanics from shared game logic.
 /// A backend that keeps the conversation but sends nothing anywhere. See
@@ -1774,7 +1813,7 @@ impl GeminiBackend {
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
-                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+                "thoughts": {"type": "string", "description": THOUGHTS_DESCRIPTION},
                 "action": {"type": "integer", "minimum": 0}
             },
             "required": ["thoughts", "action"]
@@ -3879,7 +3918,7 @@ impl LlmPlayer {
             "properties": {
                 "thoughts": {
                     "type": "string",
-                    "description": "Concise but complete summary of your internal thoughts",
+                    "description": THOUGHTS_DESCRIPTION,
                 },
                 "indices": {
                     "type": "array",
@@ -4174,7 +4213,7 @@ impl LlmPlayer {
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
-                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+                "thoughts": {"type": "string", "description": THOUGHTS_DESCRIPTION},
                 "floating": {
                     "type": "object",
                     "properties": floating_props,
@@ -4301,7 +4340,7 @@ impl LlmPlayer {
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
-                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+                "thoughts": {"type": "string", "description": THOUGHTS_DESCRIPTION},
                 "confirm": {"type": "boolean", "description": "true to concede, false to cancel"}
             },
             "required": ["thoughts", "confirm"]
@@ -4336,7 +4375,7 @@ impl LlmPlayer {
         serde_json::json!({
             "type": "object",
             "properties": {
-                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+                "thoughts": {"type": "string", "description": THOUGHTS_DESCRIPTION},
                 key: {
                     "type": "integer",
                     "enum": valid,
@@ -5136,7 +5175,7 @@ from your hand to put on the bottom of your library.\n\
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
-                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+                "thoughts": {"type": "string", "description": THOUGHTS_DESCRIPTION},
                 "mull": {"type": "boolean", "description": "true = mulligan, false = keep"}
             },
             "required": ["thoughts", "mull"]
@@ -5218,7 +5257,7 @@ from your hand to put on the bottom of your library.\n\
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
-                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+                "thoughts": {"type": "string", "description": THOUGHTS_DESCRIPTION},
                 "card_indices": {
                     "type": "array",
                     "items": {"type": "integer", "enum": valid_indices},
@@ -5344,7 +5383,7 @@ from your hand to put on the bottom of your library.\n\
             "properties": {
                 "thoughts": {
                     "type": "string",
-                    "description": "Concise but complete summary of your internal thoughts"
+                    "description": THOUGHTS_DESCRIPTION
                 },
                 "pile_a": {
                     "type": "object",
@@ -5409,7 +5448,7 @@ from your hand to put on the bottom of your library.\n\
         serde_json::json!({
             "type": "object",
             "properties": {
-                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+                "thoughts": {"type": "string", "description": THOUGHTS_DESCRIPTION},
                 "attacker_indices": {
                     "type": "array",
                     "items": {"type": "integer", "enum": attacker_enum},
@@ -5629,7 +5668,7 @@ attacking the planeswalker", both.join(", ")));
         serde_json::json!({
             "type": "object",
             "properties": {
-                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+                "thoughts": {"type": "string", "description": THOUGHTS_DESCRIPTION},
                 "blocks": {
                     "type": "array",
                     "maxItems": blockers,
