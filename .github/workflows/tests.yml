@@ -1,0 +1,81 @@
+# The workspace's own checks on every push: zero warnings, clippy under
+# the repo's lints, and the whole test suite — the same three steps the
+# daily bug fixer runs before it pushes, so a fix that was green on one
+# machine and red on a clean checkout is seen within the hour rather
+# than on the next night's run. GREEN means the suite passed; RED means a
+# test failed, a crate did not compile, or a warning was introduced.
+#
+# A fourth step measures what an LLM seat is sent per game under a stub
+# `claude` (nothing is billed) and publishes the table in the step
+# summary, so the per-decision cost in reports/llm-cost.md can be read
+# against every push. The hard bound on the request shape is in the
+# tests (mtg-player/tests/llm_request_shape.rs, llm_conversation.rs);
+# this step is the number beside it.
+name: tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  workspace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: tests-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Check, zero warnings
+        run: cargo check --workspace --all-targets
+
+      - name: Clippy under the repo's lints
+        run: cargo clippy --workspace --all-targets
+
+      - name: Test the workspace
+        env:
+          ANTHROPIC_API_KEY: dummy
+        run: cargo test --workspace --no-fail-fast
+
+  llm-prompt-shape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: prompt-shape-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build the runner
+        run: cargo build --release -p mtg-runner
+
+      - name: What one game sends, under a stub claude
+        run: |
+          MTG_RUNNER_BIN=./target/release/mtg-runner scripts/measure-llm-prompts.sh 1 2 3 4 5 | tee prompt-shape.txt
+          {
+            echo '## What an LLM seat is sent per game (stub claude, nothing billed)'
+            echo
+            echo 'Bytes; divide by ~4 for tokens. Compare with reports/llm-cost.md.'
+            echo
+            echo '```'
+            cat prompt-shape.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
