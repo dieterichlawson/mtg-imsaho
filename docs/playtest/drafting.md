@@ -53,6 +53,17 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   program has fallbacks that substitute a decision when a seat's answer
   doesn't parse, and a run that quietly fell back looks a lot like a run
   that worked.
+- **Multi-human table.** `mtg-draft-server` (`mtg-draft-runner/src/bin/`)
+  hosts the same draft for people and AI seats together; `docs/draft-with-friends.md`
+  is the manual. The asynchronous table is `mtg-draft/src/table.rs`, the
+  phases and what each seat is shown are `mtg-draft-runner/src/lobby.rs`,
+  the threads and the sockets are `src/server.rs`, and the match loop both
+  runners share is `src/game.rs`. Its `--log` is this same format, so the
+  readers above apply: a person's pick logs `human` where the prompt and
+  response go, the table's own picks log `auto-pick: <why>`, and a
+  forfeited match (a kicked seat) is marked as the runner marks a stalled
+  one. A test drives the whole thing under a stub `claude`
+  (`mtg-draft-runner/tests/lobby_*.rs`), which is the cheap way to probe it.
 
 ## Ideas
 
