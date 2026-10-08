@@ -110,6 +110,9 @@ fn as_llm_usage(u: &ModelUsage) -> mtg_player::llm::LlmModelUsage {
         calls: u.calls,
         rejected: u.rejected,
         unanswered: u.unanswered,
+        // Not a counter this crate keeps: the draft seats report no
+        // thinking breakdown, and the game seats' own record carries it.
+        thinking: 0,
     }
 }
 
@@ -302,6 +305,10 @@ trait DraftBackend: Send {
     fn send_deck_building(&mut self, message: &str, pool: &[String]) -> String;
     /// The full system prompt this backend will send to the model.
     fn system_prompt(&self) -> &str;
+    /// The reasoning behind the last answer, for a backend that reads it
+    /// from a channel outside the JSON (the Messages API's thinking block).
+    /// Taken once. The others leave it in the response's `thoughts`.
+    fn take_thinking(&mut self) -> Option<String> { None }
 }
 
 /// Build a pick schema with the `pick` field constrained to the valid
@@ -530,7 +537,7 @@ fn build_draft_rules(
 - Value bombs (powerful rares), removal, evasion (flying), then curve fillers
 - Every card is listed as `name cost | type line size`, and a card in a pack ends with its rarity in brackets — `[common]`, `[uncommon]`, `[rare]`, `[mythic]`
 - Cards with "//" are double-faced cards; both faces are on the line, and you evaluate the front face for casting
-- Your pool is restated at every pick, with its colour counts and its curve
+- Your pool is restated at every pick, with its colour counts and its curve, and so is the tail of your own reasoning from the pick before ("Your notes from your last pick"). Earlier picks are not kept in the conversation; the pool and the notes are what carries over
 
 ## Card reference
 
@@ -558,7 +565,15 @@ struct AnthropicDraftBackend {
     api_key: String,
     model: String,
     system_prompt: String,
+    /// The last `window` exchanges, re-sent with the next request. Every
+    /// pick prompt restates the pack, the pool and the seat's place (#481),
+    /// and the deck prompt restates the pool, so the exchanges before are
+    /// the same information again — and 45 picks of growing history were
+    /// a quadratic bill. Bounded like the game seat (`MTG_LLM_HISTORY`).
     conversation: Vec<serde_json::Value>,
+    window: usize,
+    /// The thinking block of the last answer, for the seat's notes.
+    last_thinking: Option<String>,
 }
 
 impl AnthropicDraftBackend {
@@ -574,17 +589,20 @@ impl AnthropicDraftBackend {
             model: model.to_string(),
             system_prompt,
             conversation: Vec::new(),
+            window: mtg_player::llm::history_exchanges(),
+            last_thinking: None,
         }
     }
 
     /// Send a message to Anthropic with the given JSON schema as
     /// structured output. Returns the raw response text (which should
-    /// be valid JSON matching the schema).
+    /// be valid JSON matching the schema), and the thinking block if the
+    /// answer carried one.
     fn call_api_structured(
         &self,
         messages: &[serde_json::Value],
         schema: &serde_json::Value,
-    ) -> String {
+    ) -> (String, Option<String>) {
         let system = serde_json::json!([{
             "type": "text",
             "text": &self.system_prompt,
@@ -603,10 +621,8 @@ impl AnthropicDraftBackend {
         }
 
         let sanitized = mtg_player::llm::sanitize_schema_for_anthropic(schema, false);
-        let body = serde_json::json!({
+        let mut body = serde_json::json!({
             "model": &self.model,
-            "max_tokens": 8192,
-            "thinking": mtg_player::llm::thinking_param(&self.model),
             "system": system,
             "messages": msgs,
             "output_config": {
@@ -616,6 +632,9 @@ impl AnthropicDraftBackend {
                 }
             }
         });
+        // The same thinking level as the game seat (`MTG_LLM_THINKING`):
+        // this is the request path that has missed fixes before (#404).
+        mtg_player::llm::apply_thinking(&mut body, &self.model, mtg_player::llm::thinking_level());
 
         // The draft's own budget, through the loop every HTTP seat uses: six
         // fixed attempts over about half a minute ended a draft that the
@@ -634,16 +653,28 @@ impl AnthropicDraftBackend {
                 Ok(resp) if resp.status().is_success() => {
                     let json: serde_json::Value = resp.json().unwrap_or_default();
                     record_anthropic_usage(model, &json["usage"]);
-                    let text = json["content"][0]["text"]
-                        .as_str()
+                    // The text block, wherever it is: with thinking on, the
+                    // first block is the thinking block, and reading
+                    // `content[0].text` found nothing there and retried a
+                    // perfectly good answer as "empty text".
+                    let blocks = json["content"].as_array().cloned().unwrap_or_default();
+                    let text = blocks.iter()
+                        .find(|b| b["type"] == "text")
+                        .and_then(|b| b["text"].as_str())
                         .unwrap_or("")
                         .trim()
                         .to_string();
+                    let thinking = blocks.iter()
+                        .find(|b| b["type"] == "thinking")
+                        .and_then(|b| b["thinking"].as_str())
+                        .map(str::trim)
+                        .filter(|t| !t.is_empty())
+                        .map(str::to_string);
                     if text.is_empty() {
                         return mtg_player::llm::CallAttempt::Transient(
                             format!("Anthropic returned empty text (attempt {attempt})"));
                     }
-                    mtg_player::llm::CallAttempt::Answer(text)
+                    mtg_player::llm::CallAttempt::Answer((text, thinking))
                 }
                 Ok(resp) => {
                     let code = resp.status().as_u16();
@@ -661,21 +692,23 @@ impl AnthropicDraftBackend {
             mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(), label, msg);
         });
         match outcome {
-            mtg_player::llm::CallOutcome::Answer(text) => text,
+            mtg_player::llm::CallOutcome::Answer(answer) => answer,
             mtg_player::llm::CallOutcome::Failed(why) => fatal(&why),
             mtg_player::llm::CallOutcome::GaveUp(why) => fatal(&format!("Anthropic draft API {why}")),
         }
     }
 
-    fn send_conv_structured(
-        &mut self,
-        conv: &mut Vec<serde_json::Value>,
-        message: &str,
-        schema: &serde_json::Value,
-    ) -> String {
-        conv.push(serde_json::json!({"role": "user", "content": message}));
-        let resp = self.call_api_structured(conv, schema);
-        conv.push(serde_json::json!({"role": "assistant", "content": &resp}));
+    fn send_conv_structured(&mut self, message: &str, schema: &serde_json::Value) -> String {
+        self.conversation.push(serde_json::json!({"role": "user", "content": message}));
+        let (resp, thinking) = self.call_api_structured(&self.conversation.clone(), schema);
+        self.conversation.push(serde_json::json!({"role": "assistant", "content": &resp}));
+        // Keep the window and nothing older.
+        let keep = self.window * 2;
+        if self.conversation.len() > keep {
+            let drop = self.conversation.len() - keep;
+            self.conversation.drain(..drop);
+        }
+        self.last_thinking = thinking;
         resp
     }
 }
@@ -683,26 +716,23 @@ impl AnthropicDraftBackend {
 impl DraftBackend for AnthropicDraftBackend {
     fn send_pick(&mut self, message: &str, num_cards: usize) -> String {
         let schema = pick_schema_for(num_cards);
-        let mut conv = std::mem::take(&mut self.conversation);
-        let result = self.send_conv_structured(&mut conv, message, &schema);
-        self.conversation = conv;
-        result
+        self.send_conv_structured(message, &schema)
     }
 
-    // Deckbuilding shares the same conversation as pick selection so the model
-    // can look back at every pack it saw and every pick it made.
+    // Deckbuilding is the next turn of the same (bounded) conversation; the
+    // prompt restates the whole pool, which is what the build is made of.
     fn send_deck_building(&mut self, message: &str, pool: &[String]) -> String {
         let schema = deck_schema_for(pool);
-        let mut conv = std::mem::take(&mut self.conversation);
-        let result = self.send_conv_structured(&mut conv, message, &schema);
-        self.conversation = conv;
-        result
+        self.send_conv_structured(message, &schema)
     }
 
     fn system_prompt(&self) -> &str {
         &self.system_prompt
     }
 
+    fn take_thinking(&mut self) -> Option<String> {
+        self.last_thinking.take()
+    }
 }
 
 /// The prefix this seat's scratch directory is named with. Not the one the
@@ -755,8 +785,14 @@ struct ClaudeCodeDraftBackend {
     /// Label used for usage accounting.
     label: String,
     system_prompt: String,
-    /// The session id once the first call has created it; `--resume`d after.
+    /// The session id once the first call has created it; `--resume`d for
+    /// `window` more decisions, then replaced (see `MTG_LLM_HISTORY`): a
+    /// resumed session re-reads its whole history on every call, and every
+    /// pick prompt restates the pack and the pool anyway (#481).
     session_id: Option<String>,
+    window: usize,
+    /// Decisions the current session has carried.
+    turns: usize,
     /// Scratch working directory for the subprocess, so no project
     /// `CLAUDE.md`, settings, or hooks from the caller's cwd leak into the
     /// draft prompt.
@@ -790,6 +826,8 @@ impl ClaudeCodeDraftBackend {
                 build_draft_rules(set_name, guide, card_reference, table)
             ),
             session_id: None,
+            window: mtg_player::llm::history_exchanges(),
+            turns: 0,
             workdir,
         }
     }
@@ -822,6 +860,12 @@ impl ClaudeCodeDraftBackend {
         // log where the tournament recorded 202 (issue #607). This is the
         // seat the project actually drafts with.
         let sanitized = mtg_player::llm::sanitize_schema_for_anthropic(schema, true);
+        // A session that has carried its window of decisions is not
+        // resumed: every call to it would re-read all of them.
+        if self.turns > self.window {
+            self.session_id = None;
+            self.turns = 0;
+        }
         let began = std::time::Instant::now();
         let deadline = began + retry_budget();
         let mut attempt = 0u32;
@@ -876,6 +920,7 @@ impl ClaudeCodeDraftBackend {
                         }
                         self.session_id = Some(sid.to_string());
                     }
+                    self.turns += 1;
                     let usage = &json["usage"];
                     record_model_usage(
                         &self.label,
@@ -1013,8 +1058,8 @@ impl DraftBackend for ClaudeCodeDraftBackend {
         self.decide(message, &schema)
     }
 
-    // Deckbuilding continues the same CLI session as pick selection, so the
-    // model still has every pack it saw and every pick it made in context.
+    // Deckbuilding is the next decision of the same (bounded) session; the
+    // prompt restates the whole pool, which is what the build is made of.
     fn send_deck_building(&mut self, message: &str, pool: &[String]) -> String {
         let schema = deck_schema_for(pool);
         self.decide(message, &schema)
@@ -1032,9 +1077,14 @@ struct GeminiDraftBackend {
     model: String,
     draft_thinking: Option<String>,
     system_prompt: String,
-    /// Single interaction chain shared by both pick and deckbuilding turns,
-    /// so deckbuilding inherits the full draft history.
+    /// The interaction chain, shared by pick and deckbuilding turns, and
+    /// restarted every `window` decisions (`MTG_LLM_HISTORY`): the server
+    /// re-reads the whole chain on every call, and every prompt restates
+    /// what it needs.
     interaction_id: Option<String>,
+    window: usize,
+    /// Decisions the current chain has carried.
+    chain_len: usize,
 }
 
 impl GeminiDraftBackend {
@@ -1051,7 +1101,18 @@ impl GeminiDraftBackend {
             draft_thinking,
             system_prompt,
             interaction_id: None,
+            window: mtg_player::llm::history_exchanges(),
+            chain_len: 0,
         }
+    }
+
+    /// The chain to continue, if it has not carried its window yet.
+    fn chain_to_continue(&mut self) -> Option<String> {
+        if self.chain_len > self.window {
+            self.interaction_id = None;
+            self.chain_len = 0;
+        }
+        self.interaction_id.take()
     }
 
     fn call_interactions(
@@ -1171,21 +1232,22 @@ impl GeminiDraftBackend {
 
 impl DraftBackend for GeminiDraftBackend {
     fn send_pick(&mut self, message: &str, num_cards: usize) -> String {
-        let prev = self.interaction_id.take();
+        let prev = self.chain_to_continue();
         let schema = pick_schema_for(num_cards);
         let (raw, new_id) = self.call_interactions(message, &schema, prev.as_deref());
         self.interaction_id = new_id;
+        self.chain_len += 1;
         Self::normalize_response(&raw)
     }
 
-    // Deckbuilding chains off the same interaction id as pick selection so
-    // the model has the full draft history (packs, picks, prior reasoning)
-    // in context when building its deck.
+    // Deckbuilding is the next decision of the same (bounded) chain; the
+    // prompt restates the whole pool, which is what the build is made of.
     fn send_deck_building(&mut self, message: &str, pool: &[String]) -> String {
-        let prev = self.interaction_id.take();
+        let prev = self.chain_to_continue();
         let schema = deck_schema_for(pool);
         let (raw, new_id) = self.call_interactions(message, &schema, prev.as_deref());
         self.interaction_id = new_id;
+        self.chain_len += 1;
         Self::normalize_response(&raw)
     }
 
@@ -1201,6 +1263,12 @@ pub const ACCEPTED_PROVIDERS: &str = "claude[:model], gemini[:model], claude-cod
 /// LLM client for draft picks and deck building.
 pub struct DraftLlmClient {
     backend: Box<dyn DraftBackend>,
+    /// The tail of the seat's reasoning from its last pick, restated at
+    /// the top of its next prompt. The conversation no longer carries the
+    /// earlier picks (see `MTG_LLM_HISTORY`), so this is how "I am
+    /// green-white, taking removal over creatures now" survives from one
+    /// pick to the next.
+    notes: Option<String>,
 }
 
 impl DraftLlmClient {
@@ -1245,7 +1313,43 @@ impl DraftLlmClient {
                 std::process::exit(1);
             }
         };
-        Self { backend }
+        Self { backend, notes: None }
+    }
+
+    /// The most characters of reasoning carried into the next prompt.
+    const NOTES_MAX_CHARS: usize = 600;
+
+    /// Keep the tail of this answer's reasoning as the notes for the next
+    /// prompt: the thinking block where the backend reads one, else the
+    /// response's own `thoughts`.
+    fn keep_notes(&mut self, response: &str) {
+        let thoughts = self.backend.take_thinking().or_else(|| {
+            serde_json::from_str::<serde_json::Value>(response).ok()
+                .and_then(|v| v["thoughts"].as_str().map(str::to_string))
+        });
+        let Some(text) = thoughts.map(|t| t.trim().to_string()).filter(|t| !t.is_empty()) else {
+            return;
+        };
+        let chars = text.chars().count();
+        self.notes = Some(if chars <= Self::NOTES_MAX_CHARS {
+            text
+        } else {
+            let tail: String = text.chars().skip(chars - Self::NOTES_MAX_CHARS).collect();
+            let from_word = tail.find(char::is_whitespace).map_or(0, |i| i + 1);
+            format!("…{}", tail[from_word..].trim_start())
+        });
+    }
+
+    /// The seat's notes from its last pick, for the next prompt.
+    #[must_use]
+    pub fn notes(&self) -> Option<&str> {
+        self.notes.as_deref()
+    }
+
+    /// The notes block a prompt opens with, when there are notes.
+    #[must_use]
+    pub fn notes_section(notes: Option<&str>) -> String {
+        notes.map(|n| format!("Your notes from your last pick:\n{n}\n\n")).unwrap_or_default()
     }
 
     /// Build the prompt for a draft pick.
@@ -1297,14 +1401,18 @@ back to you on your next pick"
     /// Send a pick message with the pack size, so the backend can build
     /// an enum-constrained pick schema for structured decoding.
     pub fn send_pick_message(&mut self, user_message: &str, num_cards: usize) -> String {
-        self.backend.send_pick(user_message, num_cards)
+        let response = self.backend.send_pick(user_message, num_cards);
+        self.keep_notes(&response);
+        response
     }
 
     /// Send a deck-building message with the player's full card pool, so
     /// the backend can build an enum-constrained `maindeck` schema that
     /// only accepts cards the model actually drafted.
     pub fn send_deck_building_message(&mut self, user_message: &str, pool: &[String]) -> String {
-        self.backend.send_deck_building(user_message, pool)
+        let response = self.backend.send_deck_building(user_message, pool);
+        self.keep_notes(&response);
+        response
     }
 
     /// The full system prompt this client will send to the model.
@@ -1622,26 +1730,47 @@ printf '{"type":"result","subtype":"success","is_error":false,"session_id":"%s",
         )
     }
 
+    /// Every pick prompt restates the pack, the pool and the seat's place
+    /// (#481), and the deck prompt the whole pool — so a session resumed
+    /// across all 45 decisions re-read a growing history for nothing. Each
+    /// decision is a session of its own unless a window is asked for.
     #[test]
-    fn the_first_pick_creates_a_session_and_later_decisions_resume_it() {
+    fn each_decision_is_its_own_session_unless_a_window_is_asked_for() {
         use super::DraftBackend;
         let fake = Fake::new("session", OK_BODY);
         let mut b = backend(&fake, None);
+        b.window = 0;
 
         b.send_pick("Pack 1, Pick 1", 5);
         b.send_pick("Pack 1, Pick 2", 4);
-        // Deckbuilding must land in the same session, or the model builds a
-        // deck without the draft it just did in context.
         b.send_deck_building("Build a deck", &["Doomed Traveler".to_string()]);
 
         let calls = fake.calls();
         assert_eq!(calls.len(), 3, "three decisions, three subprocesses:\n{}", fake.log());
-        let sid = arg_after(&calls[0], "--session-id").expect("first call sets --session-id");
-        assert_eq!(sid.len(), 36, "session id is a uuid: {sid}");
-        for call in &calls[1..] {
-            assert_eq!(arg_after(call, "--resume"), Some(sid));
-            assert!(arg_after(call, "--session-id").is_none());
+        let mut sids = Vec::new();
+        for call in &calls {
+            let sid = arg_after(call, "--session-id").expect("every decision opens its own session");
+            assert_eq!(sid.len(), 36, "session id is a uuid: {sid}");
+            assert!(arg_after(call, "--resume").is_none(), "no decision resumes an earlier one:\n{call}");
+            sids.push(sid.to_string());
         }
+        sids.dedup();
+        assert_eq!(sids.len(), 3);
+
+        // A window of one: a session carries two decisions, then is replaced.
+        let fake2 = Fake::new("window", OK_BODY);
+        let mut b = backend(&fake2, None);
+        b.window = 1;
+        for _ in 0..4 {
+            b.send_pick("Pack 1, Pick N", 3);
+        }
+        let windowed = fake2.calls();
+        let first = arg_after(&windowed[0], "--session-id").expect("fresh");
+        assert_eq!(arg_after(&windowed[1], "--resume"), Some(first), "one earlier exchange");
+        let third = arg_after(&windowed[2], "--session-id").expect("the window is full: fresh");
+        assert_ne!(third, first);
+        assert_eq!(arg_after(&windowed[3], "--resume"), Some(third));
+
         for call in &calls {
             assert!(call.contains("ARG: -p\n"), "print mode");
             assert_eq!(arg_after(call, "--output-format"), Some("json"));

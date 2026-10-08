@@ -18,7 +18,7 @@ pub use claude_code::{available as claude_code_available, binary as claude_code_
 // The one `claude -p` subprocess driver, for both seats in the workspace
 // (#404).
 pub use claude_code::{prepare_seat as claude_code_prepare_seat, run_print_mode as claude_code_run};
-pub use cost::{cost, is_plan_quota, model_prices, total_cost, Cost, ModelPrices};
+pub use cost::{api_equivalent, cost, is_plan_quota, model_prices, total_cost, Cost, ModelPrices};
 
 
 #[derive(Default, Debug, Clone)]
@@ -45,6 +45,12 @@ pub struct LlmModelUsage {
     /// an answer the model never gave (issue #587). Not part of `calls`
     /// either: no call succeeded.
     pub unanswered: u64,
+    /// The part of `output` that was thinking, where the backend reports
+    /// it (the `claude -p` result's `output_tokens_details`). Thinking is
+    /// billed as output, and once the history is bounded it is the largest
+    /// term a decision has, so the summary says how much of the output it
+    /// was. Zero where the backend does not say.
+    pub thinking: u64,
 }
 
 static LLM_MODEL_USAGE: std::sync::LazyLock<Mutex<HashMap<String, LlmModelUsage>>> =
@@ -404,13 +410,167 @@ pub fn call_within_budget<T>(
         if tries == 1 { "" } else { "s" }, began.elapsed().as_secs(), budget.as_secs()))
 }
 
+#[must_use]
 pub fn thinking_param(model: &str) -> serde_json::Value {
-    let wants_budget = model.contains("-4-5") || model.contains("haiku") || model.contains("-3-");
-    if wants_budget {
+    if model_takes_a_thinking_budget(model) {
         serde_json::json!({ "type": "enabled", "budget_tokens": 4096 })
     } else {
         serde_json::json!({ "type": "adaptive" })
     }
+}
+
+/// Whether this model family still steers thinking with `budget_tokens`
+/// (Haiku 4.5, the 4.5 Sonnet, the 3.x models) rather than adaptive
+/// thinking plus `output_config.effort`.
+fn model_takes_a_thinking_budget(model: &str) -> bool {
+    model.contains("-4-5") || model.contains("haiku") || model.contains("-3-")
+}
+
+/// How hard a seat thinks per decision.
+///
+/// Thinking output is billed at output rates and, once the conversation
+/// history is bounded, it is the largest term a decision has left — a seat
+/// that reasons at length over "pass or Bolt the 2/1" spends more on the
+/// reasoning than on reading the board. The default is the low setting;
+/// [`THINKING_ENV`] raises or lowers it for a run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThinkingLevel {
+    /// No thinking at all, where the model allows that.
+    Off,
+    Low,
+    Medium,
+    High,
+    /// An explicit token budget. Models that take only an effort level
+    /// get the nearest one.
+    Budget(u32),
+}
+
+/// `MTG_LLM_THINKING`: `off`, `low` (the default), `medium`, `high`, or a
+/// token budget such as `2048`.
+pub const THINKING_ENV: &str = "MTG_LLM_THINKING";
+
+/// The level this run's seats think at, from [`THINKING_ENV`].
+///
+/// An unrecognised value falls back to the default and says so once: a
+/// typo that silently ran a whole night of games at the default would be
+/// found only in the bill.
+#[must_use]
+pub fn thinking_level() -> ThinkingLevel {
+    static WARNED: std::sync::Once = std::sync::Once::new();
+    let Ok(raw) = std::env::var(THINKING_ENV) else { return ThinkingLevel::Low };
+    if let Some(level) = parse_thinking_level(&raw) {
+        return level;
+    }
+    WARNED.call_once(|| {
+        crate::stderr_line!(
+            "Warning: {THINKING_ENV}={raw:?} is not off, low, medium, high or a token \
+             count; thinking stays at low.");
+    });
+    ThinkingLevel::Low
+}
+
+/// [`thinking_level`]'s parser, `None` for a value it does not know.
+#[must_use]
+pub fn parse_thinking_level(raw: &str) -> Option<ThinkingLevel> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "" | "low" => Some(ThinkingLevel::Low),
+        "off" | "none" => Some(ThinkingLevel::Off),
+        "medium" => Some(ThinkingLevel::Medium),
+        "high" => Some(ThinkingLevel::High),
+        n => n.parse::<u32>().ok().map(|n| if n == 0 { ThinkingLevel::Off } else { ThinkingLevel::Budget(n) }),
+    }
+}
+
+/// Set `thinking`, `output_config.effort` and `max_tokens` on a Messages
+/// API request body for this model at this level.
+///
+/// The two model families take different parameters (see
+/// [`thinking_param`]): an adaptive model is steered by `effort` and
+/// rejects a budget, an older one needs the budget and rejects `effort`.
+/// `off` omits the `thinking` parameter altogether, which is "no thinking"
+/// on the models that allow it and the model's default on the ones that
+/// do not (the 5.x family thinks regardless; `effort: low` still applies).
+///
+/// # Panics
+/// If `body` is not a JSON object — a request body always is.
+pub fn apply_thinking(body: &mut serde_json::Value, model: &str, level: ThinkingLevel) {
+    let obj = body.as_object_mut().expect("a request body is a JSON object");
+    obj.remove("thinking");
+    let mut max_tokens: u64 = 8192;
+    if model_takes_a_thinking_budget(model) {
+        let budget = match level {
+            ThinkingLevel::Off => None,
+            ThinkingLevel::Low => Some(1024),
+            ThinkingLevel::Medium => Some(4096),
+            ThinkingLevel::High => Some(16384),
+            // The API's minimum is 1024.
+            ThinkingLevel::Budget(n) => Some(u64::from(n).max(1024)),
+        };
+        if let Some(budget) = budget {
+            obj.insert("thinking".into(), serde_json::json!({"type": "enabled", "budget_tokens": budget}));
+            // The budget must be below `max_tokens`, with room for the answer.
+            max_tokens = max_tokens.max(budget + 4096);
+        }
+    } else {
+        if level != ThinkingLevel::Off {
+            obj.insert("thinking".into(), serde_json::json!({"type": "adaptive"}));
+        }
+        let effort = match level {
+            ThinkingLevel::Off | ThinkingLevel::Low => "low",
+            ThinkingLevel::Medium => "medium",
+            ThinkingLevel::Budget(n) if n <= 2048 => "low",
+            ThinkingLevel::Budget(n) if n <= 8192 => "medium",
+            ThinkingLevel::High | ThinkingLevel::Budget(_) => "high",
+        };
+        let output_config = obj.entry("output_config").or_insert_with(|| serde_json::json!({}));
+        output_config["effort"] = serde_json::json!(effort);
+    }
+    obj.insert("max_tokens".into(), serde_json::json!(max_tokens));
+}
+
+/// The `MAX_THINKING_TOKENS` a `claude -p` child is given at this level,
+/// which is the one thinking knob the CLI exposes; `None` leaves the
+/// CLI's own default.
+///
+/// The default stays at `low`: measured on a one-line blocking question,
+/// the CLI's default spent ~730 thinking tokens and `MAX_THINKING_TOKENS=
+/// 1024` spent ~1450, so naming a small budget is not a way down from the
+/// default on this path. `0` is: it turns thinking off (`thinking_tokens:
+/// 0` in the result's usage).
+#[must_use]
+pub fn claude_code_thinking_tokens(level: ThinkingLevel) -> Option<u32> {
+    match level {
+        ThinkingLevel::Off => Some(0),
+        ThinkingLevel::Low => None,
+        ThinkingLevel::Medium => Some(4096),
+        ThinkingLevel::High => Some(16384),
+        ThinkingLevel::Budget(n) => Some(n),
+    }
+}
+
+/// `MTG_LLM_HISTORY`: how many earlier exchanges a decision is sent along
+/// with its own prompt. The default is none.
+///
+/// Every decision prompt restates the whole position — the board, the
+/// hand, the stack, the events since the last prompt, every legal action
+/// — so the exchanges before it are not information the seat lacks, they
+/// are the same information again. A seat that re-sent its whole history
+/// grew quadratically in the number of decisions: input tokens per game
+/// went from a few hundred thousand to tens of millions over a long game,
+/// and prompt caching only turned the price into a tenth of itself. The
+/// seat now sends the system prompt, at most this many earlier exchanges
+/// and the current prompt, and carries its plan across decisions in its
+/// own notes (see `LlmPlayer::notes`).
+///
+/// The Messages API seat keeps a sliding window of this many exchanges.
+/// The Gemini and `claude -p` seats cannot slide a server-held
+/// conversation, so they start a fresh one every this-many decisions.
+pub const HISTORY_ENV: &str = "MTG_LLM_HISTORY";
+
+/// The history window this run's seats use, from [`HISTORY_ENV`].
+#[must_use]
+pub fn history_exchanges() -> usize {
+    std::env::var(HISTORY_ENV).ok().and_then(|v| v.trim().parse().ok()).unwrap_or(0)
 }
 
 fn record_llm_usage(model: &str, input: u64, output: u64, cache_read: u64, cache_create: u64) {
@@ -421,6 +581,11 @@ fn record_llm_usage(model: &str, input: u64, output: u64, cache_read: u64, cache
     entry.output += output;
     entry.cache_read += cache_read;
     entry.cache_create += cache_create;
+}
+
+/// How much of a call's output was thinking, for a backend that reports it.
+fn record_llm_thinking(model: &str, thinking: u64) {
+    LLM_MODEL_USAGE.lock().unwrap().entry(model.to_string()).or_default().thinking += thinking;
 }
 
 /// The suffix a usage line carries when some of its calls came back with an
@@ -795,27 +960,23 @@ more card.\n",
 /// Shared game rules and strategy — used by all backends.
 const GAME_RULES: &str = r#"## Prompt format
 
-Each prompt you receive has these sections, in this order:
+Each prompt has these sections, in this order:
 
 **Header line** (top): `Turn N - <step> (your turn|opp's turn)`. The step is one of: Untap, Upkeep, Draw, Main Phase 1, Begin Combat, Declare Attackers, Declare Blockers, First-Strike Combat Damage, Combat Damage, End Combat, Main Phase 2, End Step, Cleanup.
 
-**Recent events** (only if anything happened since the last prompt that showed you the board): a delta log of game events — lands played, spells cast, triggers, damage, draws, etc. Use this to understand what changed. Includes both your actions and your opponent's. It carries at most the most recent 80 entries; when older ones are dropped it opens with a marker line saying how many and through which turn, e.g. `… 227 earlier entries omitted, through turn 94 …`, and the board sections below are always current.
+**Your notes from your last decision** (after your first decision): the tail of your own reasoning from the previous prompt. Earlier prompts are not kept in the conversation — every prompt restates the whole position — so this is where your plan carries over. Trust the board below over the notes when they disagree.
 
+**Recent events** (only if anything happened since the last prompt): a delta log of game events, yours and your opponent's. It carries at most the most recent 80 entries; when older ones are dropped it opens with a marker line, e.g. `… 227 earlier entries omitted, through turn 94 …`. The board below is always current.
 ```
 Recent events:
 You drew a card
 ```
 
-**Player status**:
-```
-You: 20hp, 7cards, 33lib, 0gy, 0exile
-Opp: 20hp, 7cards, 33lib, 0gy, 0exile
-```
-Fields: hp=life total, cards=hand size, lib=library size, gy=graveyard count, exile=exile zone count.
+**Player status**: `You: 20hp, 7cards, 33lib, 0gy, 0exile` and the same for `Opp:` — life, hand size, library, graveyard and exile counts.
 
 **Mana pool** (only if non-empty): `Mana pool: Green:1, Red:2`
 
-**Boards** (only if non-empty): a `Your board:` / `Opp board:` header with one indented entry per permanent:
+**Boards** (only if non-empty): one indented entry per permanent, lands grouped by name with `(tapped)` / `(N tapped)`:
 ```
 Your board:
   2x Forest
@@ -825,30 +986,25 @@ Opp board:
   1x Plains
   Savannah Lions (#45) 2/1 [S]
 ```
-Lands are grouped by name. `(tapped)` or `(N tapped)` shows tap status. Non-land permanents include a unique object ID in parentheses (e.g. `(#30)`) — these IDs are stable for the lifetime of the permanent and can be used to distinguish permanents that share a name. Creatures show CURRENT effective P/T including bonuses. Status flags after a permanent appear in a single bracket, comma-separated when there's more than one (e.g. `[T,1dmg]` for a tapped creature with 1 damage marked):
+`(#30)` is the permanent's id, stable for its lifetime; it tells apart permanents that share a name. Creatures show their CURRENT P/T, bonuses included, and their keywords after the P/T (`Abbey Griffin 2/2 flying, vigilance`). A creature has exactly the keywords printed there — none from its name, flavour or a spell that has worn off. Status flags after a permanent appear in one bracket, comma-separated (`[T,1dmg]`):
 - `T` = tapped
-- `S` = summoning sick: its controller has not controlled it continuously since their most recent turn began, so it can't attack or use `{T}` abilities yet (CR 302.6). It can still block. A creature cast on its controller's turn keeps `S` through the opponent's next turn
-- `attacking you`, `attacking Opp`, `attacking <planeswalker> (#id)` = attacking this combat, and what
-- `blocking <attacker> (#id)` = blocking that attacker this combat; `blocked by <blocker> (#id)` = the creatures blocking this attacker
-- `blocked (no blockers left)` = this attacker was blocked and every creature blocking it has left combat: it stays blocked and deals no combat damage unless it has trample
-- `Ndmg` = N damage marked on it
-- `regen shield` / `N regen shields` = regeneration shields ready to use
-- `token` = a token; `copy` = a copy of another permanent (it has the copied card's name and text)
-- `+1+1xN`, `-1-1xN`, `LOYxN` = N +1/+1 counters, N -1/-1 counters, loyalty N; any other counter is its kind and count, e.g. `Slimex2`
-- `names: <card>` = the card name this permanent named as it entered (Nevermore)
-- `enchanting you`, `enchanting opponent` = the player this Curse is attached to, which is not always its controller's opponent
+- `S` = summoning sick: can't attack or use `{T}` abilities until it has been under its controller's control since their most recent turn began (CR 302.6); it can still block
+- `attacking you`, `attacking Opp`, `attacking <planeswalker> (#id)`; `blocking <attacker> (#id)`; `blocked by <blocker> (#id)`; `blocked (no blockers left)` = blocked, every blocker gone, deals no combat damage unless it has trample
+- `Ndmg` = N damage marked; `regen shield` / `N regen shields`
+- `token`; `copy` = a copy of another permanent
+- `+1+1xN`, `-1-1xN`, `LOYxN` = counters (loyalty N); any other counter is its kind and count, e.g. `Slimex2`
+- `names: <card>` = the card name this permanent named as it entered
+- `enchanting you`, `enchanting opponent` = the player a Curse is attached to
+- `legendary` after the P/T or in the flags. The legend rule (CR 704.5j): two legendary permanents of one name under your control, you keep one
 
-A legendary permanent says `legendary` after its P/T (creatures, alongside the keywords) or in its flags (other permanents). The legend rule (CR 704.5j): if you control two or more legendary permanents with the same name, you choose one and the rest go to their owners' graveyards — so casting a second copy of a legend you already control gets you a choice, not two of them.
-
-
-**Stack** (only if non-empty): a `Stack:` header with one indented entry per object, each with the id of the spell (or of the ability's source), its controller, and its targets:
+**Stack** (only if non-empty), with each object's id, controller and targets:
 ```
 Stack:
   Lightning Bolt (#41) (opponent's) targeting Goblin Piker (#45) (your)
 ```
-Wherever an object is named — a target on the stack, a row in the action list — it carries its id and whose it is, so two objects that share a name are never the same row: `(your)` / `(opponent's)` for a permanent or a stack object (by controller), `(in your graveyard)` / `(in opponent's graveyard)` for a graveyard card, `(exiled)` for an exiled one. Lands too: the board groups them by name, but a land named as a target says which one it is.
+Wherever an object is named — on the stack, in the action list — it carries its id and whose it is: `(your)` / `(opponent's)` by controller, `(in your graveyard)` / `(in opponent's graveyard)`, `(exiled)`.
 
-**Hand**: a `Hand:` header with one indented card per line, with mana costs and (for creatures) base P/T:
+**Hand**: one indented card per line, with mana cost and (for creatures) base P/T:
 ```
 Hand:
   Forest
@@ -856,28 +1012,20 @@ Hand:
   Lightning Bolt {R}
 ```
 
-**Graveyards** (only if non-empty): a `Your graveyard:` / `Opp graveyard:` header with one indented card per line.
+**Graveyards** (only if non-empty): `Your graveyard:` / `Opp graveyard:`, one indented card per line.
 
-**Flashback available** (only if relevant): cards in your graveyard you can cast for a flashback cost, one indented line each. A card can carry more than one flashback cost at once (a granted one alongside its printed one), and the line names each of them; the action list says which cost each row charges.
+**Flashback available** (only if relevant): cards in your graveyard you can cast for a flashback cost, each cost named; the action list says which cost a row charges.
 
-**Opp's cards in view** (only if any): the rules text of every card in view that is not in your decklist — on the battlefield, on the stack, in a graveyard, in exile, or revealed — one entry per card name (basic lands excepted), in the same shape as the card reference:
+**Opp's cards in view** (only if any): the rules text of every card in view that is not in your decklist — on the battlefield, on the stack, in a graveyard, in exile, or revealed — one entry per name (basic lands excepted). This is how you learn what your opponent's cards do: when they come into view, never before.
 ```
 Opp's cards in view:
 Delver of Secrets {U} | Creature — Human Wizard 1/1
   At the beginning of your upkeep, look at the top card of your library. You may reveal that card. If an instant or sorcery card is revealed this way, transform this creature.
 ```
-This is how you learn what your opponent's cards do: you are told about a card when it comes into view, never before.
 
-**Context line**: a `[CONTEXT]` marker showing the current game state:
-- `[MAIN PHASE 1]` / `[MAIN PHASE 2]` — your main phases. Cast sorceries, creatures, enchantments, artifacts here. Also play lands here.
-- `[BEGIN COMBAT]` — just before declaring attackers. Last chance for instants before combat.
-- `[AFTER ATTACKERS DECLARED]` — attackers are declared, blockers haven't been chosen yet. Instant window — cast pump spells on attackers, removal on blockers.
-- `[AFTER BLOCKERS DECLARED]` — blockers chosen, before damage. Instant window — cast pump spells, removal, etc.
-- `[UPKEEP]`, `[DRAW]`, `[END STEP]` — utility steps. Usually pass unless you have a specific instant to cast (e.g. removing a creature at end of turn so you don't expose your own removal).
-- `[OPPONENT'S TURN: <step>]` — it's the opponent's turn and you have priority. You can cast instants and activate abilities.
-- `[RESPOND TO <controller>'s <spell>]` — something is on the stack waiting to resolve. You can pass to let it resolve, or respond with an instant/ability (e.g. Counterspell).
+**Context line**: `[MAIN PHASE 1]` / `[MAIN PHASE 2]` (your main phases: sorceries, creatures, lands), `[BEGIN COMBAT]`, `[AFTER ATTACKERS DECLARED]`, `[AFTER BLOCKERS DECLARED]` (instant windows), `[UPKEEP]` / `[DRAW]` / `[END STEP]` (utility steps — usually pass), `[OPPONENT'S TURN: <step>]` (you have priority on their turn), `[RESPOND TO <controller>'s <spell>]` (something is on the stack: pass to let it resolve, or respond).
 
-**Action list** (last): an `Available actions:` header, then the numbered options, one per line:
+**Action list** (last): the numbered options, one per line. Pick one by its index.
 ```
 [MAIN PHASE 1]
 Available actions:
@@ -887,18 +1035,20 @@ Available actions:
 3: Cast Kalonian Tusker (tap 2x Forest)
 4: Concede
 ```
-Pick one by its index. A cast option names the spell and its tap plan, not its target: when a spell needs a target you pick the action first and a follow-up prompt (`<card name>: select a target:`) lists the legal targets. Copies of one permanent that offer the same ability with the same tap plan share one line, with an index per copy — pick the index of the copy you mean; the board lists each copy's counters and status by its `#id`:
+A cast option names the spell and its tap plan, not its target: pick it and a follow-up prompt (`<card name>: select a target:`) lists the legal targets. Copies of one permanent that offer the same ability with the same tap plan share one line, one index per copy — pick the index of the copy you mean:
 ```
 5-7: Activate Ludevic's Test Subject ({1}{U}: Put a hatchling counter. At 5, transform.) (tap 2x Island) — one per copy: 5=#43, 6=#45, 7=#46
 ```
 
-## Key rules
+Combat prompts replace the action list: `Choose attackers:` lists your creatures by index and asks for the indices attacking (empty for none; forced attackers are added for you); `Declare blocks` asks for `{"blocker", "attacker"}` index pairs, at most one per blocker.
 
-- **Auto-tap**: When you pick a `Cast [spell]` option, the engine taps the right lands for you automatically. The action label shows which lands will be tapped, e.g. `Cast Doom Blade (tap Swamp, Swamp)`. You almost never need to tap lands manually before casting. Activated abilities with a mana cost (a pump, an equip) are funded by the same auto-tapper, with the same preferences. The auto-tapper uses these priorities (lowest opportunity cost first): (1) basic lands and mana-only artifacts, (2) non-basic lands with only mana abilities, (3) permanents with utility abilities (tapping locks out the ability), (4) creature mana dorks (tapping prevents attacking/blocking), (5) sources with side effects (e.g. Deranged Assistant mills). A colored pip is paid by a source that makes that color for free before a filter that charges for it (Shimmering Grotto's `{1}, {T}: Add one mana of any color` needs another mana to fund it, so a mana creature's free `{W}` is cheaper), and mana already floating can fund a filter. Within a tier, generic costs are paid first from redundant sources (ones whose colors other untapped sources still produce, so no color access is lost), then it prefers mono-color sources over dual-color sources (to preserve flexibility), and considers which colors your other hand spells need. Those preferences give way when they would cost you a spell: if the plan would leave another spell in your hand unpayable that a different choice of sources (or one more source) keeps payable, the engine uses that choice instead, even if it taps a mana creature (but never one more source with a side effect). Mana already in your pool pays generic costs with what your other hand spells need least.
-- **Manual tapping**: Useful for floating mana to bluff an instant, using a mana ability with a side effect (e.g. Deranged Assistant mills a card), or overriding the auto-tap to preserve a specific land. Otherwise just pick the Cast option.
-- **X-cost spells and abilities**: Spells with {X} in their cost (Devil's Play, Mikaeus the Lunarch) and abilities with {X} (Kessig Wolf Run) use a two-step process: (1) you pick "Cast [spell]" or "Activate [ability]" — the engine pays only the non-X portion of the cost via auto-tap, (2) a structured follow-up prompt asks you to fund X explicitly. The funding prompt has four buckets: `floating` (drain by color from your pool), `lands`, `rocks`, and `dorks` (tap specific named groups). Each value is a mana amount, not a source count. For 1-mana sources (basic lands, most dorks) pick any integer from 0 to the available count. For multi-mana sources (Sol Ring `{C}{C}`) pick a multiple of the per-tap output (0, 2, 4, ...). X is the sum of everything you allocate. Per CR 601.2b, X is announced as part of casting — so the spell only formally "becomes cast" (and SpellCast triggers fire) AFTER you submit a funding choice. Variable-output or cost-bearing sources (pain lands, Cabal Coffers) aren't shown — tap those manually before casting so their mana floats in the pool.
-- **Spells with sacrifice costs**: Spells that require sacrificing a creature as an additional cost (Altar's Reap, Infernal Plunge) prompt you to choose which creature to sacrifice after you select targets. If you only control one creature, it's auto-selected. The sacrifice happens at cast time (before the spell goes on the stack), so the creature is gone even if the spell gets countered.
-- **Spells with exile-from-graveyard costs**: Spells that require exiling cards from your graveyard as an additional cost (Harvest Pyre, Stitched Drake, Skaab Ruinator, Makeshift Mauler, Corpse Lunge, Skaab Goliath) use the same two-step pattern as X-cost: (1) you pick "Cast [spell]" — one entry per target, no expanded subset list, (2) a structured follow-up prompt numbers every eligible graveyard card and asks which positions to exile, as an array of indices under the key `indices` — an empty array exiles nothing. The prompt looks like this, with the numbered options last:
+## How the engine works
+
+- **Auto-tap**: `Cast [spell]` and `Activate [ability]` tap the right sources for you, shown in the row (`Cast Doom Blade (tap Swamp, Swamp)`), preferring basics and mana-only sources, then utility lands, then mana creatures, then sources with side effects, and never a choice that leaves another spell in your hand unpayable when a different one keeps it payable. `Tap <source>` rows are for floating mana deliberately, for a mana ability's side effect, or to preserve a specific land; otherwise just cast.
+- **Mana pools empty between steps**, so tap only what you will spend in the same step.
+- **X costs**: `Cast`/`Activate` pays the non-X part; a follow-up prompt asks how to fund X in buckets (`floating`, `lands`, `rocks`, `dorks`), each value a mana amount. X is the total. Sources with variable output or a cost of their own are not offered — tap them first so the mana floats.
+- **Sacrifice costs**: a spell or ability that sacrifices a creature asks `<source>: choose a creature to sacrifice` after its targets; with one candidate it is chosen for you. The sacrifice is paid at cast time, so the creature is gone even if the spell is countered.
+- **Exile-from-graveyard costs** (Harvest Pyre, Stitched Drake, Skaab Ruinator, Makeshift Mauler, Corpse Lunge, Skaab Goliath): pick `Cast`, then a prompt numbers the eligible cards and asks for the positions to exile as an index array under `indices`. A fixed count must be met exactly or the cast is cancelled:
 ```
 Harvest Pyre: choose 0-1 cards to exile from your graveyard (each exiled card adds to the spell's X)
 
@@ -907,284 +1057,24 @@ Pick anywhere from 0 to 1 cards. Name the cards to exile.
 Options:
 0: Reckless Waif (#44)
 ```
-For variable-X cards (Harvest Pyre: pick 0–N, damage scales with X), any subset is legal. For fixed-count cards (Stitched Drake: exile exactly 1 creature; Skaab Ruinator: exactly 3) you MUST pick the exact count or the cast is cancelled (spell stays in hand, no mana paid). Per CR 601.2h → 601.2i the spell only formally "becomes cast" after the prompt resolves — so SpellCast triggers fire after exile, not before. Corpse Lunge stores the highest effective power among exiled creatures as the damage it deals.
-- **Sacrifice-cost activated abilities**: Activated abilities whose cost includes "Sacrifice a creature" (pick one — Demonmail Hauberk, Disciple of Griselbrand, Skirsdag Cultist, etc.) auto-tap like any other ability: the ability is listed once (once per copy of its source), and its label shows which sources will be tapped. After you pick it, and its target if it has one, a follow-up prompt — `<source>: choose a creature to sacrifice` — asks which creature to sacrifice; with only one candidate it is chosen for you. The tap plan may include a mana creature, and you may still pick that same creature as the sacrifice — its mana is produced before the sacrifice is paid. If you would rather keep a particular creature untapped, tap other sources manually first. Abilities that sacrifice *this* permanent specifically (e.g. Selfless Cathar's `{1}{W}, Sacrifice this: Creatures you control get +1/+1`) auto-tap too, and never tap the permanent being sacrificed for its own cost.
-- **Mana pools empty between steps**: You can tap lands at any time you have priority, but the mana disappears when the step ends. Only tap if you'll spend the mana in the same step (cast a sorcery/creature in main, or an instant in any step).
-- **Spells use the stack**: Your spell goes on the stack and resolves only after both players pass priority. Opponents can respond. The Stack section shows what's pending.
-- **Land drops**: One land per turn, only during your main phase.
-- **Sorcery speed**: Sorceries, creatures, enchantments, artifacts can only be cast during YOUR main phase with an empty stack.
-- **Instant speed**: Instants can be cast anytime you have priority — your turn, opponent's turn, during combat, in response to spells.
-- **Summoning sickness**: Creatures with `[S]` can't attack or use tap-abilities until they have been under their controller's control since that player's most recent turn began — so one cast on your turn stays `[S]` through the opponent's turn and loses it as your next turn starts. `[S]` never stops a creature from blocking.
-
-## Keyword abilities
-
-Creatures display their keywords after P/T (e.g. `Abbey Griffin 2/2 flying, vigilance`). Combat-relevant keywords:
-
-- **flying**: Only blocked by flying or reach. Huge in combat.
-- **reach**: Can block flying (doesn't grant flying).
-- **deathtouch**: Any damage it deals to a creature destroys it. A 1/1 deathtouch kills a 10/10.
-- **first strike**: Deals damage before non-first-strike creatures. A 2/2 blocking a 3/2 first strike takes 3 and dies *before* dealing its damage; the first striker survives untouched.
-- **double strike**: Deals first strike AND normal damage.
-- **lifelink**: Damage dealt = life gained. Changes race math.
-- **trample**: Excess damage hits the defending player.
-- **vigilance**: Doesn't tap when attacking — can still block.
-- **hexproof**: Can't be targeted by opponent's spells/abilities. Don't waste removal on it.
-- **defender**: Can't attack.
-- **intimidate**: Only blocked by artifact creatures or creatures sharing a color.
-- **menace**: Must be blocked by 2+ creatures.
-- **haste**: Can attack the turn it enters (ignores summoning sickness).
-- **indestructible**: Can't be destroyed by damage or destroy effects.
-
-## Flashback
-
-Cards with flashback can be cast from your graveyard for their flashback cost. After resolving they're exiled. Look for `Flashback <card>` in the action list. The engine auto-taps for flashback costs.
-
-## Equipment
-
-Artifacts with an `Equip {N}` ability can be attached to a creature you control by paying the equip cost. Equip is sorcery speed (your main phase only). The equipped creature gains the listed bonuses (e.g. `+3/+0`, `lifelink`). Equipment stays in play when its creature dies and can be re-equipped to a new creature. Some equipment has alternative equip costs like `Equip—Sacrifice a creature` (e.g. Demonmail Hauberk).
-
-Look for `Activate <equipment> (Equip {N})` in the action list. Equipment sitting idle on the battlefield is wasted resources — find a creature to equip it to, especially when you're behind on board or life.
-
-## Combat math
-
-Combat resolves in this order: declare attackers → declare blockers → first-strike damage step (only if a first/double striker is involved) → normal damage step. Anything that died in an earlier step doesn't deal damage in a later step.
-
-**Multi-blocker damage assignment.** When a single attacker is blocked by two or more creatures, the **attacking player** assigns its damage among the blockers. The attacker MUST assign at least lethal damage to the first blocker before any damage spills to the second, and at least lethal to the second before any spills to the third, etc. (Lethal = blocker's toughness minus damage already marked.) Combined blocker toughness is NOT a shared pool — you can't "absorb" 4 damage across a 1/4 and a 2/2 and have them both survive.
-
-**How you are asked.** Right after blockers are declared, if one of your attackers is blocked by two or more creatures, you are asked to announce that attacker's *damage assignment order* (CR 509.2) — one structured prompt listing the blockers, answered with `order`: every index exactly once, first to last. Damage is then assigned in the order you announced: each blocker must be assigned lethal damage before any is assigned to the one after it. Put the blocker you most want dead first. The order is announced once and is used by both damage steps, so a first or double striker assigns its second damage in the same order.
-
-**How much each blocker gets.** Lethal is the least a blocker may be assigned, not the most: you may put MORE than lethal on an earlier blocker (to beat a regeneration shield or a damage prevention, or because you want that one dead more than you want the next one hit), and a trampler may send less past its blockers, or nothing (CR 510.1c-d). When an attacker of yours has more damage than its blockers' lethal total, and either two or more blockers or trample, the combat damage step asks you blocker by blocker, in your announced order: "how much of the N left goes to this blocker", answered with `amount`, an integer from lethal to everything left. Whatever you do not assign goes on to the next blocker, or tramples over after the last. Answering lethal is the ordinary play; you are asked so you can do otherwise.
-
-**Ordering your own triggers.** When two or more of your abilities trigger at the same time (CR 603.3b), you are asked for their order the same way — one structured prompt listing each trigger with its source, its P/T, what it does and what set it off, answered with `order`. The first index you list goes on the stack first and therefore resolves LAST; the last you list resolves FIRST. Put the trigger you want to resolve first at the end of the list.
-
-**Choosing between replacement and prevention effects on damage.** When two or more such effects apply to one damage event and the order changes the result — Inquisitor's Flail (double it) and Undead Alchemist (mill instead) on one Zombie's combat damage, or Ghostly Possession (prevent it) and the Alchemist — the AFFECTED player chooses: the player being damaged, or the controller of the creature being damaged (CR 616.1). The context line names the event (`Walking Corpse (#30) would deal 2 combat damage to you`) and the numbered options say what each effect would do (`double it to 4`, `instead You mill 2 cards`, `prevent all of it`). Pick the effect you want to apply FIRST; it applies, and the others apply afterwards only if they still can — a prevention or a mill ends the damage, so nothing after it happens, while doubling leaves a bigger damage event for the rest. You are only asked when the choice matters; two Flails, or a Flail under a Ghostly Possession, apply on their own.
-
-Worked example. A 4/2 trample attacker is double-blocked by your 1/4 Bell-Ringer and your 2/2 Walking Corpse. The attacker has 4 damage to assign:
-- It can lethal-first the Walking Corpse (assign 2 → kills it), then assign the remaining 2 to Bell-Ringer (Bell-Ringer survives at 1/2). Walking Corpse dies, Bell-Ringer survives. With trample, no damage tramples through (4 was used up assigning lethal to one and partial to the other).
-- Or it can lethal-first the Bell-Ringer (assign 4 → kills it), then 0 left over. Bell-Ringer dies, Walking Corpse survives untouched.
-The attacking player picks the worse-for-you option. Either way, exactly one of your two blockers dies; the trade is *one* attacker for *one* blocker, not "both blockers absorb the damage and live."
-
-**Chump-blocking with one creature against several attackers.** When you have one blocker and multiple attackers will get through, you usually want to chump the *highest-power* attacker, not the smallest one — that minimises the damage you take. Trading your 1/1 for the opponent's 2/1 token "to remove a creature from the board" is rarely worth taking 1 extra life loss; chumping the 3/3 instead saves you a life.
-
-**First strike vs trample double-blocks.** First strike damage happens before normal damage. If a first-striking attacker double-blocked by two non-first-strike creatures kills one of the blockers in the first-strike step, the attacker then deals its damage to *just the survivor* in the normal step. Trample only matters if the attacker has trample AND the surviving blocker still has fewer hit points than the attacker has power; only excess damage tramples through.
-
-## When you're behind
-
-If you're low on life and the board is unfavourable but stable, look for a way to *change* the situation — equipping a creature, casting an aura or buff, or forcing a race with combat tricks — before defaulting to "pass and hope to topdeck". Repeated passing rarely wins from behind; a desperate line that sometimes works beats a safe line that loses for sure.
+- **Sets of cards** (bottoming after a mulligan, cleanup discard, "choose N") are asked the same way: an index array, exactly as many as the prompt says.
+- **Equip** and **flashback** are rows in the action list (`Activate <equipment> (Equip {N})`, `Flashback <card>`), auto-tapped like anything else. Idle equipment is a wasted resource.
+- **Timing**: sorceries, creatures, enchantments, artifacts and lands only in YOUR main phase with an empty stack; instants and abilities whenever you have priority. Spells use the stack; the opponent can respond before yours resolves.
+- **Damage assignment** (CR 510.1c-d): when one of your attackers is blocked by two or more creatures you are asked for its damage assignment order once, after blocks — `order`: every blocker index exactly once, the one you most want dead first. Lethal must go to each blocker in that order before any spills to the next; a trampler sends the rest to the player. When there is more damage than the blockers' lethal total you are then asked, blocker by blocker, how much of what is left goes to it (`amount`, from lethal to all of it); lethal is the ordinary answer.
+- **Ordering your triggers** (CR 603.3b): simultaneous triggers of yours are one `order` prompt. The first index you list goes on the stack first and resolves LAST; put the trigger you want to resolve first at the END.
+- **Choosing between replacement and prevention effects on damage.** When two or more apply to one damage event and the order changes the result — Inquisitor's Flail (double it) and Undead Alchemist (mill instead), or Ghostly Possession (prevent it) and the Alchemist — the AFFECTED player chooses: the player being damaged, or the controller of the creature being damaged (CR 616.1). The context line names the event (`Walking Corpse (#30) would deal 2 combat damage to you`) and the options say what each effect would do (`double it to 4`, `instead You mill 2 cards`, `prevent all of it`). Pick the effect to apply FIRST; the others apply after only if they still can — a prevention or a mill ends the damage, doubling leaves more for the rest. You are asked only when the choice matters.
+- **Concede** is always offered; picking it asks you to confirm.
 
 ## London mulligan
 
-At the start of the game, before turn 1, you'll be asked two pre-game decisions:
+Before turn 1: `[MULLIGAN DECISION]` shows your seven cards; answer `true` to mulligan, `false` to keep. Each mulligan costs one card: you draw seven again and, when you keep, `[BOTTOM N CARD(S) AFTER MULLIGAN]` asks for exactly N distinct indices to put on the bottom. Mulligan a 0- or 7-lander or a hand with no play in the first three turns; keep 2–4 lands and a curve. More than two mulligans is rarely right.
 
-1. **Keep or mulligan** — context `[MULLIGAN DECISION]`. You'll see your seven-card hand numbered with mana costs and P/T. Choose `true` to mulligan, `false` to keep. This is the London mulligan: you always draw exactly seven cards, but each mulligan you take costs you one card that you'll put on the bottom of your library when you finally keep. There is no limit on the number of mulligans (CR 103.4), but taking more than a couple is rarely right, and at seven the hand you keep is empty. Mulligan a 0- or 7-lander, or a hand with no plays in the first three turns; keep if you have 2–4 lands and a reasonable curve.
-2. **Bottom N cards** — context `[BOTTOM N CARD(S) AFTER MULLIGAN]`, with N filled in (`[BOTTOM 2 CARD(S) AFTER MULLIGAN]`; a single card drops the `(S)`). You'll see your seven-card hand numbered 0..6 and must pick exactly N distinct indices to put on the bottom of your library. Do not include duplicates or out-of-range indices; the response will be rejected and a fallback used.
+## Playing
 
-## Examples
-
-### Example: main phase, build mana and cast a creature
-
-```
-Turn 3 - Main Phase 1 (your turn)
-
-Recent events:
-you drew a card
-
-You: 20hp, 6cards, 31lib, 0gy, 0exile
-Opp: 20hp, 6cards, 32lib, 0gy, 0exile
-Your board:
-  2x Forest
-Hand:
-  Forest
-  Kalonian Tusker {G}{G} 3/3
-  Kalonian Tusker {G}{G} 3/3
-  Lightning Bolt {R}
-
-[MAIN PHASE 1]
-Available actions:
-0: Pass
-1: Tap Forest
-2: Tap Forest
-3: Play Forest
-4: Cast Kalonian Tusker (tap 2x Forest)
-5: Concede
-```
-**Pick 4** — auto-tap handles mana, just cast directly. Don't bother with Tap Forest manually.
-
-### Example: utility step, nothing to do
-
-```
-Turn 4 - Upkeep (your turn)
-
-You: 20hp, 5cards, 30lib, 0gy, 0exile
-Opp: 20hp, 6cards, 32lib, 0gy, 0exile
-Your board:
-  3x Forest
-  Kalonian Tusker (#30) 3/3
-Hand:
-  Forest
-  Lightning Bolt {R}
-
-[UPKEEP]
-Available actions:
-0: Pass
-1: Tap Forest
-2: Tap Forest
-3: Tap Forest
-4: Concede
-```
-**Pick 0** — no instants you want to cast right now. Tapping a Forest in Upkeep just wastes it (mana pool empties when Upkeep ends).
-
-### Example: combat trick after attackers are declared
-
-```
-Turn 5 - Declare Attackers (your turn)
-
-Recent events:
-you declared attackers: Grizzly Bears (#27) -> opp
-
-You: 20hp, 4cards, 28lib, 1gy, 0exile
-Opp: 18hp, 5cards, 29lib, 0gy, 0exile
-Your board:
-  2x Forest
-  Grizzly Bears (#27) 2/2 [T]
-Opp board:
-  2x Plains
-  Savannah Lions (#45) 2/1
-Hand:
-  Giant Growth {G}
-
-[AFTER ATTACKERS DECLARED]
-Available actions:
-0: Pass
-1: Tap Forest
-2: Cast Giant Growth (tap Forest)
-3: Concede
-```
-**Pick 2** — cast Giant Growth on your attacking Bears (the follow-up target prompt asks which creature). After it resolves they're 5/5, so even if Savannah Lions blocks, the Bears survive (5 toughness vs 2 power) and trade up.
-
-### Example: timing morbid (a "creature died this turn" effect)
-
-Some spells care about whether a creature died THIS turn — Brimstone Volley
-deals 3 damage normally but 5 if a creature died this turn ("morbid"). That
-means you usually want to **let combat damage resolve before casting the
-spell** so a creature actually dies, then cast the spell after the damage
-step with the morbid bonus already active.
-
-```
-Turn 15 - Declare Blockers (your turn)
-
-Recent events:
-you declared attackers: Tormented Pariah (#5) -> opp, Elder of Laurels (#4) -> opp, Villagers of Estwald (#9) -> opp
-opp declared blockers: Ghoulraiser (#60) blocks Elder of Laurels (#4), Rakish Heir (#58) blocks Villagers of Estwald (#9)
-
-You: 14hp, 1cards, 28lib, 4gy, 0exile
-Opp: 7hp, 3cards, 27lib, 3gy, 1exile
-Your board:
-  2x Forest
-  3x Mountain
-  Tormented Pariah (#5) 3/2 [T]
-  Elder of Laurels (#4) 2/3 [T]
-  Villagers of Estwald (#9) 2/3 [T]
-Opp board:
-  2x Swamp (tapped)
-  2x Mountain (1 tapped)
-  Rakish Heir (#58) 2/2 [S]
-  Ghoulraiser (#60) 2/2
-Hand:
-  Brimstone Volley {2}{R}
-
-[AFTER BLOCKERS DECLARED]
-Available actions:
-0: Pass
-1: Tap Forest
-2: Tap Mountain
-3: Cast Brimstone Volley (tap Mountain, 2x Forest)
-4: Concede
-```
-
-**Pick 0** — pass first. Combat damage will resolve: Elder of Laurels (2 power) trades with Ghoulraiser (2 toughness), Villagers of Estwald (2 power) trades with Rakish Heir (2 toughness), Tormented Pariah (3 power) gets through unblocked → opp goes from 7 to 4. Several creatures die in combat → morbid is active. THEN, after combat damage, cast Brimstone Volley and pick the opponent at the target prompt for 5 (morbid). 4 → -1 = lethal.
-
-If you cast Brimstone Volley *before* combat damage (i.e. now, during Declare Blockers), nothing has died yet, so it deals only 3 — opp would go to 7 - 3 = 4 from the spell, then 4 - 3 = 1 from Pariah's combat damage, and you'd lose your shot at lethal this turn.
-
-The general rule: when you have a "creature died this turn" effect and you have favourable combat lined up, let combat damage resolve first, then cast the effect.
-
-### Example: respond to opponent's spell
-
-```
-Turn 5 - Main Phase 1 (opp's turn)
-
-Recent events:
-opp cast Lightning Bolt (#41) targeting Kalonian Tusker (#30)
-
-You: 20hp, 5cards, 28lib, 1gy, 0exile
-Opp: 18hp, 4cards, 29lib, 1gy, 0exile
-Your board:
-  3x Island
-  Kalonian Tusker (#30) 3/3
-Stack:
-  Lightning Bolt (#41) (opponent's) targeting Kalonian Tusker (#30) (your)
-Hand:
-  Counterspell {U}{U}
-  Island
-
-[RESPOND TO opp's Lightning Bolt]
-Available actions:
-0: Pass
-1: Tap Island
-2: Tap Island
-3: Tap Island
-4: Cast Counterspell (tap 2x Island)
-5: Concede
-```
-**Pick 4** — counter the Bolt to save your 3/3. The Tusker would die to 3 damage.
-
-### Example: declare attackers
-
-Combat prompts replace the action list with their own space-separated
-index list.
-
-```
-Turn 6 - Declare Attackers (your turn)
-
-You: 20hp, 5cards, 28lib, 0gy, 0exile
-Opp: 14hp, 5cards, 29lib, 1gy, 0exile
-Your board:
-  3x Forest
-  Kalonian Tusker (#30) 3/3
-  Kalonian Tusker (#31) 3/3
-Opp board:
-  2x Mountain
-  Goblin Piker (#52) 2/1
-
-Choose attackers: 0:Kalonian Tusker (#30) 3/3 1:Kalonian Tusker (#31) 3/3
-Pick indices in 0-1 to attack with, or empty list for no attacks. Forced attackers are auto-included.
-```
-**Attack with both** — both 3/3s. Opponent's 2/1 can only block one, so 3 damage gets through and the blocked Tusker survives (3 toughness vs 2 power).
-
-### Example: declare blockers
-
-```
-Turn 6 - Declare Blockers (opp's turn)
-
-Recent events:
-opp declared attackers: Kalonian Tusker (#30) -> you, Kalonian Tusker (#31) -> you
-
-You: 17hp, 5cards, 27lib, 0gy, 0exile
-Opp: 14hp, 4cards, 28lib, 0gy, 0exile
-Your board:
-  3x Mountain
-  Goblin Piker (#52) 2/1
-  Goblin Piker (#53) 2/1
-Opp board:
-  3x Forest (tapped)
-  Kalonian Tusker (#30) 3/3 [T]
-  Kalonian Tusker (#31) 3/3 [T]
-
-Attackers: 0:Kalonian Tusker (#30) 3/3 1:Kalonian Tusker (#31) 3/3
-Your blockers: 0:Goblin Piker (#52) 2/1 1:Goblin Piker (#53) 2/1
-Declare blocks as a list of {"blocker": <blocker index>, "attacker": <attacker index>} pairs, at most one per blocker; a blocker you leave out does not block.
-```
-**Block both Tuskers** — chump-block both. Your 2/1s die but you prevent 6 damage. Better than taking 6 to the face when you're at 17.
+- Reason only from what the prompt lists. If a keyword is not printed after the P/T, the creature does not have it; if a card is not in view, you do not know it.
+- Blocked creatures trade by current P/T; first strike lands before normal damage; combined blocker toughness is not a pool (an attacker assigns lethal to one blocker before the next). Chump the highest-power attacker, not the smallest.
+- Let combat damage resolve before casting a "creature died this turn" effect.
+- Behind on board and life, look for a line that changes the situation — an equip, an aura, a race — rather than passing to topdeck.
 "#;
 
 /// Backend trait for LLM API communication.
@@ -1211,10 +1101,6 @@ impl LlmBackend for InertBackend {
         self.system_prompt = format!("{ANTHROPIC_RESPONSE_FORMAT}{GAME_RULES}{deck_info}");
         self.turns = 0;
     }
-    fn resume(&mut self, _recap: &str) {
-        // The recap and its acknowledgement, as the API backend records them.
-        self.turns += 2;
-    }
     fn conversation_len(&self) -> usize { self.turns }
     fn system_prompt(&self) -> &str { &self.system_prompt }
     fn model_name(&self) -> &str { "inert" }
@@ -1231,8 +1117,9 @@ trait LlmBackend {
     }
     /// Initialize with a system prompt (rules + decklists).
     fn init(&mut self, system_prompt: &str);
-    /// Resume from a game log recap.
-    fn resume(&mut self, recap: &str);
+    /// How many earlier exchanges a decision is sent with; see
+    /// [`HISTORY_ENV`], whose value every backend starts from.
+    fn set_history_window(&mut self, _exchanges: usize) {}
     /// Set thinking level (Gemini only, no-op for others).
     fn set_thinking_level(&mut self, _level: &str) {}
     /// Why the last call produced no answer at all, if it produced none.
@@ -1282,96 +1169,44 @@ pub(crate) fn seat_tag(seat: &str) -> String {
 /// if it comes back INSIDE the JSON: Gemini, and the `claude -p` CLI seat,
 /// whose result object carries no thinking block the harness can read
 /// (issue #213).
-const THOUGHTS_IN_JSON_FORMAT: &str = r#"You are playing Magic: The Gathering against an opponent in a one-on-one
-Limited (draft) match — each player has a 40-card deck built from a draft pool.
-The goal is to reduce your opponent's life total from 20 to 0 by attacking with
-creatures and casting damaging spells, while protecting your own life total.
+const THOUGHTS_IN_JSON_FORMAT: &str = r#"You are playing Magic: The Gathering, a one-on-one Limited (draft) match: 40-card
+decks, 20 life, reduce the opponent to 0.
 
-## What you'll be asked
+Every decision the game needs comes as one prompt describing the whole current
+position — events since the last prompt, turn and step, both players' life and
+counts, both battlefields, the stack, your mana pool, your hand, and the legal
+options. The "Prompt format" section documents every field.
 
-For every decision the game requires, you'll receive a prompt describing the
-current game state — recent events, turn and step, both players' life and
-hand/library/graveyard counts, the contents of each battlefield, the stack,
-your mana pool, and your hand. The "Prompt format" section below documents
-every field in detail. Depending on the context, you'll be asked to pick an
-action, declare attackers, assign blockers, choose targets, decide whether to
-mulligan, or confirm a concession.
+You answer with structured JSON; the schema for each decision is enforced by the
+API, so you need not memorise response shapes. Every schema has a "thoughts"
+field: reason there, concisely — the position, the alternatives, the choice.
+Thoughts are private.
 
-## How you respond
-
-You always respond with structured JSON. The response schema for each
-decision is provided via the API's structured output mode, so you don't need
-to memorize response formats. Every schema includes a "thoughts" field — use
-it to think through the game state, weigh alternatives, and explain your
-choice. Thoughts are private (your opponent does not see them), so be candid
-about your plan.
-
-Ground every claim in your thoughts in the actual prompt text. Only reference
-creatures, cards, and zones that are explicitly listed in the current state —
-do not invent details, board positions, or cards that aren't there.
-
-When you cite a keyword (trample, first strike, deathtouch, lifelink, flying,
-vigilance, etc.), the keyword MUST appear after the creature's P/T in the
-prompt — e.g. `Rampaging Werewolf 8/4 trample`. If the keyword isn't printed
-there, the creature does not have it. Do not assume a creature has a keyword
-because of its flavour, name, or what a similar creature usually has, and do
-not credit a creature with a keyword that comes from an aura or anthem unless
-that aura is currently attached and listed inline. Common slips: thinking
-"Werewolf" implies trample, thinking "first strike" carries from Vampiric Fury
-to a Vampire after the spell has worn off, thinking a Spirit token has flying
-when the prompt printed it without the keyword.
-
-The detailed game rules and prompt format follow.
-
+Ground every claim in the prompt text. Only reference creatures, cards and zones
+it lists; a keyword a creature has is printed after its P/T, and one that is not
+printed there it does not have.
 "#;
 
 /// Anthropic-flavoured response intro: reasoning is delivered through the
 /// model's extended-thinking channel, NOT inside the JSON payload. Every
 /// schema shown to the model intentionally omits the "thoughts" field —
 /// including it would be rejected by the schema validator.
-const ANTHROPIC_RESPONSE_FORMAT: &str = r#"You are playing Magic: The Gathering against an opponent in a one-on-one
-Limited (draft) match — each player has a 40-card deck built from a draft pool.
-The goal is to reduce your opponent's life total from 20 to 0 by attacking with
-creatures and casting damaging spells, while protecting your own life total.
+const ANTHROPIC_RESPONSE_FORMAT: &str = r#"You are playing Magic: The Gathering, a one-on-one Limited (draft) match: 40-card
+decks, 20 life, reduce the opponent to 0.
 
-## What you'll be asked
+Every decision the game needs comes as one prompt describing the whole current
+position — events since the last prompt, turn and step, both players' life and
+counts, both battlefields, the stack, your mana pool, your hand, and the legal
+options. The "Prompt format" section documents every field.
 
-For every decision the game requires, you'll receive a prompt describing the
-current game state — recent events, turn and step, both players' life and
-hand/library/graveyard counts, the contents of each battlefield, the stack,
-your mana pool, and your hand. The "Prompt format" section below documents
-every field in detail. Depending on the context, you'll be asked to pick an
-action, declare attackers, assign blockers, choose targets, decide whether to
-mulligan, or confirm a concession.
+You answer with structured JSON; the schema for each decision is enforced by the
+API, so you need not memorise response shapes. Reason in the extended-thinking
+channel, concisely — the position, the alternatives, the choice — and put ONLY
+the schema's fields in the JSON; a "thoughts" key would be rejected.
 
-## How you respond
-
-You always respond with structured JSON. The response schema for each
-decision is provided via the API's structured output mode, so you don't need
-to memorize response formats.
-
-Your private reasoning happens in the model's extended-thinking channel —
-think through the situation there before producing the JSON. The JSON payload
-itself should contain ONLY the response fields in the schema; do NOT add a
-"thoughts" key, it will be rejected by the schema validator.
-
-Ground your reasoning in the actual prompt text. Only reference creatures,
-cards, and zones that are explicitly listed in the current state — do not
-invent details, board positions, or cards that aren't there.
-
-When you cite a keyword (trample, first strike, deathtouch, lifelink, flying,
-vigilance, etc.), the keyword MUST appear after the creature's P/T in the
-prompt — e.g. `Rampaging Werewolf 8/4 trample`. If the keyword isn't printed
-there, the creature does not have it. Do not assume a creature has a keyword
-because of its flavour, name, or what a similar creature usually has, and do
-not credit a creature with a keyword that comes from an aura or anthem unless
-that aura is currently attached and listed inline. Common slips: thinking
-"Werewolf" implies trample, thinking "first strike" carries from Vampiric Fury
-to a Vampire after the spell has worn off, thinking a Spirit token has flying
-when the prompt printed it without the keyword.
-
-The detailed game rules and prompt format follow.
-
+Ground every claim in the prompt text. Only reference creatures, cards and zones
+it lists; a keyword a creature has is printed after its P/T, and one that is not
+printed there it does not have.
 "#;
 
 /// Anthropic Claude backend using the Messages API with prompt caching.
@@ -1394,6 +1229,10 @@ struct AnthropicBackend {
     base_url: String,
     /// The seat this backend answers for; see `LlmBackend::set_seat`.
     seat: String,
+    /// How hard the seat thinks per decision; see [`thinking_level`].
+    thinking: ThinkingLevel,
+    /// How many earlier exchanges a request carries; see [`HISTORY_ENV`].
+    window: usize,
 }
 
 impl AnthropicBackend {
@@ -1411,6 +1250,18 @@ impl AnthropicBackend {
             gave_up: None,
             base_url: anthropic_base_url(),
             seat: String::new(),
+            thinking: thinking_level(),
+            window: history_exchanges(),
+        }
+    }
+
+    /// Keep only the last `window` exchanges, so the next request carries
+    /// them and nothing older (see [`HISTORY_ENV`]).
+    fn trim_history(&mut self) {
+        let keep = self.window * 2;
+        if self.conversation.len() > keep {
+            let drop = self.conversation.len() - keep;
+            self.conversation.drain(..drop);
         }
     }
 
@@ -1538,10 +1389,8 @@ impl AnthropicBackend {
 
     fn call_with_messages(&mut self, messages: &[serde_json::Value]) -> String {
         let (system, msgs) = self.prepare_request(messages);
-        let body = serde_json::json!({
+        let mut body = serde_json::json!({
             "model": self.model,
-            "max_tokens": 8192,
-            "thinking": thinking_param(&self.model),
             "system": system,
             "messages": msgs,
             "output_config": {
@@ -1558,16 +1407,15 @@ impl AnthropicBackend {
                 }
             }
         });
+        apply_thinking(&mut body, &self.model, self.thinking);
         self.call_api(&body)
     }
 
     fn call_with_messages_structured(&mut self, messages: &[serde_json::Value], schema: &serde_json::Value) -> serde_json::Value {
         let (system, msgs) = self.prepare_request(messages);
         let sanitized = sanitize_schema_for_anthropic(schema, false);
-        let body = serde_json::json!({
+        let mut body = serde_json::json!({
             "model": self.model,
-            "max_tokens": 8192,
-            "thinking": thinking_param(&self.model),
             "system": system,
             "messages": msgs,
             "output_config": {
@@ -1577,6 +1425,7 @@ impl AnthropicBackend {
                 }
             }
         });
+        apply_thinking(&mut body, &self.model, self.thinking);
         let text = self.call_api(&body);
         serde_json::from_str(&text).unwrap_or_else(|_| serde_json::json!({}))
     }
@@ -1599,6 +1448,7 @@ impl LlmBackend for AnthropicBackend {
         self.conversation.push(serde_json::json!({"role": "user", "content": message}));
         let result = self.call_with_messages(&self.conversation.clone());
         self.conversation.push(serde_json::json!({"role": "assistant", "content": &result}));
+        self.trim_history();
         // Extract action number from JSON response (e.g. {"action":1} → "1").
         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&result) {
             if let Some(action) = parsed["action"].as_u64() {
@@ -1613,6 +1463,7 @@ impl LlmBackend for AnthropicBackend {
         let result = self.call_with_messages_structured(&self.conversation.clone(), schema);
         let result_str = serde_json::to_string(&result).unwrap_or_default();
         self.conversation.push(serde_json::json!({"role": "assistant", "content": result_str}));
+        self.trim_history();
         result
     }
 
@@ -1621,12 +1472,9 @@ impl LlmBackend for AnthropicBackend {
         self.conversation.clear();
     }
 
-    fn resume(&mut self, recap: &str) {
-        self.conversation.push(serde_json::json!({"role": "user", "content": recap}));
-        self.conversation.push(serde_json::json!({
-            "role": "assistant",
-            "content": "Understood. I've reviewed the game history and I'm ready to continue playing."
-        }));
+    fn set_history_window(&mut self, exchanges: usize) {
+        self.window = exchanges;
+        self.trim_history();
     }
 
     fn conversation_len(&self) -> usize {
@@ -1664,6 +1512,11 @@ struct GeminiBackend {
     base_url: String,
     /// The seat this backend answers for; see `LlmBackend::set_seat`.
     seat: String,
+    /// How many decisions one server-held interaction chain carries before
+    /// the seat starts a fresh one; see [`HISTORY_ENV`].
+    window: usize,
+    /// Decisions answered in the current chain.
+    chain_len: usize,
 }
 
 impl GeminiBackend {
@@ -1682,12 +1535,20 @@ impl GeminiBackend {
             gave_up: None,
             base_url: gemini_base_url(),
             seat: String::new(),
+            window: history_exchanges(),
+            chain_len: 0,
         }
     }
 
     /// Core interactions API call. Sends a message with a custom JSON schema
     /// and returns the parsed JSON response. Handles retries, rate limits, etc.
     fn call_interactions_structured(&mut self, user_message: &str, schema: &serde_json::Value) -> serde_json::Value {
+        // A chain that has carried its window of decisions is not continued:
+        // the server would re-read every one of them on every call.
+        if self.chain_len > self.window {
+            self.interaction_id = None;
+            self.chain_len = 0;
+        }
         let mut body = serde_json::json!({
             "model": &self.model,
             "input": user_message,
@@ -1800,6 +1661,7 @@ impl GeminiBackend {
         match outcome {
             CallOutcome::Answer(parsed) => {
                 self.last_thinking = thinking;
+                self.chain_len += 1;
                 parsed
             }
             CallOutcome::Failed(why) => {
@@ -1857,10 +1719,11 @@ impl LlmBackend for GeminiBackend {
     fn init(&mut self, deck_info: &str) {
         self.system_prompt = format!("{THOUGHTS_IN_JSON_FORMAT}{GAME_RULES}{deck_info}");
         self.interaction_id = None;
+        self.chain_len = 0;
     }
 
-    fn resume(&mut self, recap: &str) {
-        self.call_interactions(recap);
+    fn set_history_window(&mut self, exchanges: usize) {
+        self.window = exchanges;
     }
 
     fn set_thinking_level(&mut self, level: &str) {
@@ -1949,6 +1812,21 @@ pub struct LlmPlayer {
     /// Why this decision's backend call produced no answer, when it
     /// produced none. Refreshed on every structured request (#587).
     last_call_failure: Option<String>,
+    /// The game-so-far recap a resumed seat is owed, delivered in its next
+    /// decision prompt. It used to be a permanent entry at the head of the
+    /// conversation; the conversation no longer carries earlier prompts
+    /// (see [`HISTORY_ENV`]), so the recap rides along with the first
+    /// prompt after the resume instead, where a human picking up a saved
+    /// game would read the log once.
+    pending_recap: Option<String>,
+    /// The tail of the seat's own reasoning from its last decision, sent
+    /// back to it at the top of the next prompt. With no earlier exchanges
+    /// in the conversation this is how a plan survives from one decision to
+    /// the next ("hold Bolt for the flier", "attack next turn when the
+    /// Tusker loses summoning sickness"): a few hundred characters of the
+    /// seat's own words, not the thousands of tokens of prompts they came
+    /// from.
+    notes: Option<String>,
 }
 
 impl LlmPlayer {
@@ -1964,6 +1842,8 @@ impl LlmPlayer {
             guide: None,
             session_logged: None,
             last_call_failure: None,
+            pending_recap: None,
+            notes: None,
         }
     }
 
@@ -1984,6 +1864,8 @@ impl LlmPlayer {
             guide: None,
             session_logged: None,
             last_call_failure: None,
+            pending_recap: None,
+            notes: None,
         }
     }
 
@@ -1999,6 +1881,8 @@ impl LlmPlayer {
             guide: None,
             session_logged: None,
             last_call_failure: None,
+            pending_recap: None,
+            notes: None,
         }
     }
 
@@ -2018,6 +1902,8 @@ impl LlmPlayer {
             guide: None,
             session_logged: None,
             last_call_failure: None,
+            pending_recap: None,
+            notes: None,
         }
     }
 
@@ -2035,6 +1921,8 @@ impl LlmPlayer {
             guide: None,
             session_logged: None,
             last_call_failure: None,
+            pending_recap: None,
+            notes: None,
         }
     }
 
@@ -2058,6 +1946,14 @@ impl LlmPlayer {
             self.backend = Box::new(AnthropicBackend::new(model));
             self.provider = Provider::Anthropic;
         }
+        self
+    }
+
+    /// Send this many earlier exchanges with every decision instead of
+    /// the run's [`HISTORY_ENV`] setting.
+    #[must_use]
+    pub fn with_history(mut self, exchanges: usize) -> Self {
+        self.backend.set_history_window(exchanges);
         self
     }
 
@@ -2168,9 +2064,13 @@ impl LlmPlayer {
             recap.push_str(&Self::rewrite_log_entry(entry, you));
             recap.push('\n');
         }
-        recap.push_str("\nThe game continues from this point. You will be prompted for your next action.");
+        recap.push_str("\nThe game continues from this point.");
 
-        self.backend.resume(&recap);
+        // Delivered with the next decision prompt rather than as a turn of
+        // its own: a resume used to cost a whole API call to be told
+        // "ready", and the conversation no longer keeps earlier turns.
+        self.pending_recap = Some(recap.clone());
+        self.notes = None;
         // Set log index to current length so we don't re-send these entries.
         self.last_log_index = game_log.len();
         // Log the recap body, not just its size. It is the largest message
@@ -2256,6 +2156,18 @@ impl LlmPlayer {
         self.backend.send(message)
     }
 
+    /// The recap the next decision prompt will carry, for tests.
+    #[must_use]
+    pub fn pending_recap_for_test(&self) -> Option<&str> {
+        self.pending_recap.as_deref()
+    }
+
+    /// The notes the next decision prompt will carry, for tests.
+    #[must_use]
+    pub fn notes_for_test(&self) -> Option<&str> {
+        self.notes.as_deref()
+    }
+
     /// Drive the backend's structured call directly, for backend tests.
     pub fn backend_send_with_schema_for_test(&mut self, message: &str, schema: &serde_json::Value) -> serde_json::Value {
         self.backend.set_seat(&self.name);
@@ -2265,11 +2177,6 @@ impl LlmPlayer {
     /// Take the backend's reasoning for the last decision, for backend tests.
     pub fn backend_take_thinking_for_test(&mut self) -> Option<String> {
         self.backend.take_thinking()
-    }
-
-    /// Feed a recap through the backend's resume path, for backend tests.
-    pub fn backend_resume_for_test(&mut self, recap: &str) {
-        self.backend.resume(recap);
     }
 
     /// The backend's model label, for backend tests.
@@ -3425,11 +3332,40 @@ impl LlmPlayer {
         if name.contains(&format!("(#{})", id.0)) { name } else { format!("{name} (#{})", id.0) }
     }
 
-    /// Log thinking from the last backend call, if any, at info level.
+    /// Log thinking from the last backend call, if any, at info level, and
+    /// keep its tail as the seat's notes for the next prompt.
     fn log_thinking(&mut self) {
         if let Some(thinking) = self.backend.take_thinking() {
             self.log("THOUGHT", &thinking);
+            if let Some(notes) = Self::notes_from(&thinking) {
+                self.notes = Some(notes);
+            }
         }
+    }
+
+    /// The most characters of reasoning carried into the next prompt.
+    const NOTES_MAX_CHARS: usize = 600;
+
+    /// The tail of a decision's reasoning, for the next prompt's notes.
+    ///
+    /// The tail, because reasoning ends with the decision and the plan
+    /// behind it ("…so I pass and block with the Bears next turn") where
+    /// it opens with a reading of the board the next prompt restates
+    /// anyway. Cut at a word boundary and marked as cut. `None` when there
+    /// is nothing to carry — a 5.x model whose thinking is not displayed
+    /// hands back an empty block, which is not a note.
+    fn notes_from(thinking: &str) -> Option<String> {
+        let text = thinking.trim();
+        if text.is_empty() {
+            return None;
+        }
+        let chars = text.chars().count();
+        if chars <= Self::NOTES_MAX_CHARS {
+            return Some(text.to_string());
+        }
+        let tail: String = text.chars().skip(chars - Self::NOTES_MAX_CHARS).collect();
+        let from_word = tail.find(char::is_whitespace).map_or(0, |i| i + 1);
+        Some(format!("…{}", tail[from_word..].trim_start()))
     }
 
     /// Send a message with a custom JSON response schema, returning parsed JSON.
@@ -3502,6 +3438,20 @@ impl LlmPlayer {
         // what decision it's being asked to make.
         prompt.push_str(&Self::format_turn_header(view, header_override));
         prompt.push('\n');
+
+        // A resumed seat reads the game so far once, here, in its first
+        // prompt; after that the board below is the whole position.
+        if let Some(recap) = self.pending_recap.take() {
+            prompt.push_str(&recap);
+            prompt.push_str("\n\n");
+        }
+        // The seat's own plan, from its last decision: the one thing the
+        // bounded conversation would otherwise lose (see `notes`).
+        if let Some(notes) = &self.notes {
+            prompt.push_str("Your notes from your last decision:\n");
+            prompt.push_str(notes);
+            prompt.push_str("\n\n");
+        }
 
         if !new_logs.is_empty() {
             prompt.push_str("Recent events:\n");
@@ -5808,7 +5758,6 @@ pub(crate) mod tests {
             self.answers.remove(0)
         }
         fn init(&mut self, _deck_info: &str) {}
-        fn resume(&mut self, _recap: &str) {}
         fn conversation_len(&self) -> usize { self.prompts.borrow().len() }
         fn system_prompt(&self) -> &str { "" }
         fn model_name(&self) -> &str { "scripted" }
@@ -5873,6 +5822,8 @@ pub(crate) mod tests {
             guide: None,
             session_logged: None,
             last_call_failure: None,
+            pending_recap: None,
+            notes: None,
         };
         (player, prompts)
     }
@@ -6406,7 +6357,6 @@ pub(crate) mod tests {
         }
         fn take_call_failure(&mut self) -> Option<String> { self.failure.clone() }
         fn init(&mut self, _deck_info: &str) {}
-        fn resume(&mut self, _recap: &str) {}
         fn system_prompt(&self) -> &str { "" }
         fn model_name(&self) -> &str { self.model }
     }
@@ -6596,7 +6546,6 @@ pub(crate) mod tests {
             self.reply.clone()
         }
         fn init(&mut self, _deck_info: &str) {}
-        fn resume(&mut self, _recap: &str) {}
         fn system_prompt(&self) -> &str { "" }
         fn model_name(&self) -> &str { self.model }
     }
@@ -8087,7 +8036,6 @@ this Aura deals 1 damage to that player.";
         fn init(&mut self, deck_info: &str) {
             self.system_prompt = deck_info.to_string();
         }
-        fn resume(&mut self, _recap: &str) {}
         fn system_prompt(&self) -> &str { &self.system_prompt }
         fn model_name(&self) -> &str { "recording" }
     }
@@ -8235,7 +8183,10 @@ this Aura deals 1 damage to that player.";
                 }
             }
         }
-        assert!(blocks >= 6, "the spec section and five worked examples: {blocks}");
+        // The worked examples went when the system prompt was cut to what
+        // decides a game (it is re-read, cached, on every decision); the
+        // spec block stays, and any example added back is checked too.
+        assert!(blocks >= 1, "the spec section's action list: {blocks}");
     }
 
     /// #492: GAME_RULES told every seat, on every call, that the
@@ -8324,6 +8275,8 @@ mod metered_seat_failures {
             gave_up: None,
             base_url,
             seat: String::new(),
+            thinking: ThinkingLevel::Low,
+            window: 0,
         }
     }
 
@@ -8340,6 +8293,8 @@ mod metered_seat_failures {
             gave_up: None,
             base_url,
             seat: String::new(),
+            window: 0,
+            chain_len: 0,
         }
     }
 
@@ -8391,5 +8346,212 @@ mod metered_seat_failures {
         assert!(matches!(classify_http_status::<()>(429, String::new()), CallAttempt::Transient(_)));
         assert!(matches!(classify_http_status::<()>(400, String::new()), CallAttempt::Refused(_)));
         assert!(matches!(classify_http_status::<()>(403, String::new()), CallAttempt::Dead(_)));
+    }
+}
+
+/// A decision is sent on its own: the system prompt, at most a bounded
+/// window of earlier exchanges, and the prompt — which restates the whole
+/// position anyway. The seat's plan and a resume's recap travel inside the
+/// prompt instead of the history.
+#[cfg(test)]
+mod stateless_decisions {
+    use super::*;
+    use mtg_engine::cards::CardRegistry;
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::sync::{Arc, Mutex};
+
+    /// A Messages API on a loopback port that answers every request with a
+    /// thinking block and `{"action":0}`, and keeps every request body.
+    fn recording_api() -> (String, Arc<Mutex<Vec<serde_json::Value>>>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let bodies = Arc::new(Mutex::new(Vec::new()));
+        let seen = Arc::clone(&bodies);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut len = 0usize;
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 { break; }
+                    if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        len = v.trim().parse().unwrap_or(0);
+                    }
+                    if line == "\r\n" { break; }
+                }
+                let mut body = vec![0; len];
+                let _ = reader.read_exact(&mut body);
+                let n = {
+                    let mut seen = seen.lock().unwrap();
+                    seen.push(serde_json::from_slice(&body).unwrap_or_default());
+                    seen.len()
+                };
+                let reply = serde_json::json!({
+                    "content": [
+                        {"type": "thinking", "thinking": format!("Decision {n}: the board is stable, so I pass and keep Bolt for the flier.")},
+                        {"type": "text", "text": "{\"action\":0}"}
+                    ],
+                    "usage": {"input_tokens": 1, "output_tokens": 1}
+                }).to_string();
+                let _ = write!(stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                    reply.len());
+            }
+        });
+        (format!("http://{addr}"), bodies)
+    }
+
+    fn metered_player(url: &str, window: usize) -> LlmPlayer {
+        let mut backend = AnthropicBackend {
+            client: Client::new(),
+            api_key: "dummy".into(),
+            model: "stub".into(),
+            system_prompt: "rules".into(),
+            conversation: Vec::new(),
+            last_thinking: None,
+            last_call_failure: None,
+            gave_up: None,
+            base_url: url.to_string(),
+            seat: String::new(),
+            thinking: ThinkingLevel::Low,
+            window: 0,
+        };
+        backend.set_history_window(window);
+        LlmPlayer {
+            name: "t".into(),
+            last_log_index: 0,
+            own_card_names: std::collections::HashSet::new(),
+            card_texts: HashMap::new(),
+            backend: Box::new(backend),
+            provider: Provider::Anthropic,
+            guide: None,
+            session_logged: None,
+            last_call_failure: None,
+            pending_recap: None,
+            notes: None,
+        }
+    }
+
+    fn a_view() -> (mtg_engine::state::GameState, CardRegistry) {
+        use mtg_engine::engine::{setup_game, Decklist, GameConfig};
+        let registry = CardRegistry::with_all_cards();
+        let deck = Decklist {
+            entries: vec![("Forest".to_string(), 20), ("Grizzly Bears".to_string(), 20)],
+        };
+        let config = GameConfig {
+            player_names: vec!["you".into(), "opp".into()],
+            decklists: vec![deck.clone(), deck],
+            starting_life: 20,
+            starting_player: Some(mtg_engine::ids::PlayerId(0)),
+            rng_seed: Some(7),
+        };
+        let state = setup_game(&config, &registry);
+        (state, registry)
+    }
+
+    /// The request for decision N carries the system prompt, the window
+    /// and the prompt — not decisions 1..N-1. It used to carry all of them,
+    /// so the input tokens of a game grew with the square of its decisions.
+    #[test]
+    fn a_request_carries_at_most_the_window_of_earlier_exchanges() {
+        for (window, most_messages) in [(0usize, 1usize), (2, 5)] {
+            let (url, bodies) = recording_api();
+            let mut player = metered_player(&url, window);
+            let (state, registry) = a_view();
+            let view = GameView::for_player(&state, mtg_engine::ids::PlayerId(0), &registry);
+            for _ in 0..6 {
+                player.pick_action_index(&view, "[MAIN PHASE 1]\nAvailable actions:\n0: Pass\n", 1);
+            }
+            let bodies = bodies.lock().unwrap();
+            assert_eq!(bodies.len(), 6);
+            for (i, body) in bodies.iter().enumerate() {
+                let messages = body["messages"].as_array().expect("a messages array");
+                assert!(messages.len() <= most_messages,
+                    "window {window}: request {} carries {} messages, more than the window allows",
+                    i + 1, messages.len());
+                assert_eq!(messages.last().unwrap()["role"], "user", "the prompt is last");
+                assert_eq!(messages.len().min(2 * i + 1), messages.len(),
+                    "window {window}: request {} cannot carry exchanges that never happened", i + 1);
+            }
+            // And the last request is no bigger than the first by more than
+            // a window of exchanges: the history stopped growing.
+            let size = |b: &serde_json::Value| b.to_string().len();
+            let first = size(&bodies[0]);
+            let last = size(&bodies[5]);
+            let one_exchange = size(&bodies[1]) - first;
+            assert!(last <= first + window * one_exchange + 64,
+                "window {window}: request 6 is {last} bytes against {first} for request 1");
+            assert!(player.conversation_len_for_test() <= 2 * window);
+        }
+    }
+
+    /// The seat's reasoning from one decision comes back to it as notes at
+    /// the top of the next prompt — the one thing the bounded conversation
+    /// would otherwise lose — and is logged as THOUGHT as before.
+    #[test]
+    fn the_last_reasoning_comes_back_as_notes_in_the_next_prompt() {
+        let (url, bodies) = recording_api();
+        let mut player = metered_player(&url, 0);
+        let (state, registry) = a_view();
+        let view = GameView::for_player(&state, mtg_engine::ids::PlayerId(0), &registry);
+
+        player.pick_action_index(&view, "[MAIN PHASE 1]\nAvailable actions:\n0: Pass\n", 1);
+        assert_eq!(player.notes_for_test(),
+            Some("Decision 1: the board is stable, so I pass and keep Bolt for the flier."));
+        player.pick_action_index(&view, "[MAIN PHASE 1]\nAvailable actions:\n0: Pass\n", 1);
+
+        let bodies = bodies.lock().unwrap();
+        let prompt = |i: usize| bodies[i]["messages"][0]["content"].as_str().unwrap().to_string();
+        assert!(!prompt(0).contains("Your notes from your last decision:"),
+            "the first decision has no notes yet:\n{}", prompt(0));
+        let second = prompt(1);
+        let header = second.find("Turn ").expect("the header line");
+        let notes = second.find("Your notes from your last decision:\nDecision 1: the board is stable")
+            .expect("the second decision carries the first's reasoning");
+        assert!(header < notes, "after the header:\n{second}");
+        let board = second.find("You: ").expect("player status");
+        assert!(notes < board, "before the board:\n{second}");
+        // Documented where the seat reads the prompt format.
+        let doc_header = GAME_RULES.find("**Header line**").unwrap();
+        let doc_notes = GAME_RULES.find("**Your notes from your last decision**").expect("documented");
+        let doc_events = GAME_RULES.find("**Recent events**").unwrap();
+        assert!(doc_header < doc_notes && doc_notes < doc_events, "in the order they are sent");
+    }
+
+    /// The notes are the tail of the reasoning, bounded.
+    #[test]
+    fn notes_are_the_bounded_tail_of_the_reasoning() {
+        assert_eq!(LlmPlayer::notes_from("  "), None, "an empty thinking block is not a note");
+        assert_eq!(LlmPlayer::notes_from("short plan").as_deref(), Some("short plan"));
+        let long = format!("{}so I attack with everything.", "reading the board, ".repeat(100));
+        let notes = LlmPlayer::notes_from(&long).unwrap();
+        assert!(notes.starts_with('…'), "marked as cut: {notes}");
+        assert!(notes.ends_with("so I attack with everything."), "the end is kept: {notes}");
+        assert!(notes.chars().count() <= LlmPlayer::NOTES_MAX_CHARS + 1);
+        assert!(!notes.starts_with("…oard"), "cut at a word boundary: {notes}");
+    }
+
+    /// A resumed seat reads the recap in its first prompt after the
+    /// resume, once, where it used to be a permanent conversation entry
+    /// re-sent with every decision of the rest of the game.
+    #[test]
+    fn a_resumed_seat_reads_the_recap_once_in_its_next_prompt() {
+        let mut player = LlmPlayer::for_prompt_tests("t");
+        let (state, registry) = a_view();
+        let view = GameView::for_player(&state, mtg_engine::ids::PlayerId(0), &registry);
+        player.resume_from_log(
+            &["── Turn 1 (p0) ──".to_string(), "p0 played Forest".to_string()],
+            mtg_engine::ids::PlayerId(0),
+        );
+        let first = player.build_prompt(&view, "[MAIN PHASE 1]\nAvailable actions:\n0: Pass\n");
+        let header = first.find("Turn ").expect("header");
+        let recap = first.find("Game resumed. Here is the complete game log so far:")
+            .expect("the first prompt after a resume carries the recap");
+        assert!(header < recap, "{first}");
+        assert!(first.contains("You played Forest"), "in the seat's vocabulary:\n{first}");
+        let second = player.build_prompt(&view, "[MAIN PHASE 1]\nAvailable actions:\n0: Pass\n");
+        assert!(!second.contains("Game resumed"), "and the second does not:\n{second}");
+        assert_eq!(player.conversation_len_for_test(), 0);
     }
 }

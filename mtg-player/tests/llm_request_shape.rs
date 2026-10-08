@@ -244,3 +244,64 @@ fn the_damage_amount_schema_offers_exactly_the_legal_amounts() {
     assert_eq!((&g["properties"]["amount"]["minimum"], &g["properties"]["amount"]["maximum"]),
         (&serde_json::json!(2), &serde_json::json!(5)));
 }
+
+/// The thinking level a run asks for reaches the request in the form each
+/// model family accepts: adaptive thinking plus `output_config.effort` on
+/// the current models, a `budget_tokens` on the ones that still take one,
+/// and no `thinking` parameter at all for `off`. The level is the biggest
+/// output-token term a decision has once the history is bounded, so the
+/// default is the low setting and `MTG_LLM_THINKING` moves it.
+#[test]
+fn the_thinking_level_is_sent_the_way_the_model_accepts_it() {
+    use mtg_player::llm::{apply_thinking, parse_thinking_level, ThinkingLevel};
+
+    assert_eq!(parse_thinking_level(""), Some(ThinkingLevel::Low), "unset is low");
+    assert_eq!(parse_thinking_level("OFF"), Some(ThinkingLevel::Off));
+    assert_eq!(parse_thinking_level("medium"), Some(ThinkingLevel::Medium));
+    assert_eq!(parse_thinking_level("high"), Some(ThinkingLevel::High));
+    assert_eq!(parse_thinking_level("2048"), Some(ThinkingLevel::Budget(2048)));
+    assert_eq!(parse_thinking_level("0"), Some(ThinkingLevel::Off));
+    assert_eq!(parse_thinking_level("lots"), None, "a typo is not quietly some level");
+
+    let body = || serde_json::json!({"model": "m", "output_config": {"format": {"type": "json_schema"}}});
+
+    // Adaptive models: effort steers depth, a budget would be a 400.
+    for model in ["claude-sonnet-4-6", "claude-opus-5", "claude-fable-5-1"] {
+        for (level, effort) in [
+            (ThinkingLevel::Low, "low"), (ThinkingLevel::Medium, "medium"),
+            (ThinkingLevel::High, "high"), (ThinkingLevel::Budget(1024), "low"),
+            (ThinkingLevel::Budget(20000), "high"),
+        ] {
+            let mut b = body();
+            apply_thinking(&mut b, model, level);
+            assert_eq!(b["thinking"]["type"], "adaptive", "{model} {level:?}");
+            assert!(b["thinking"].get("budget_tokens").is_none(), "{model} rejects a budget");
+            assert_eq!(b["output_config"]["effort"], effort, "{model} {level:?}");
+            assert_eq!(b["output_config"]["format"]["type"], "json_schema", "the format survives");
+            assert!(b["max_tokens"].as_u64().is_some_and(|m| m >= 4096));
+        }
+        let mut b = body();
+        apply_thinking(&mut b, model, ThinkingLevel::Off);
+        assert!(b.get("thinking").is_none(), "{model}: off sends no thinking parameter");
+        assert_eq!(b["output_config"]["effort"], "low");
+    }
+
+    // Budget models: the budget is the knob, effort would be rejected.
+    for model in ["claude-haiku-4-5", "claude-sonnet-4-5"] {
+        for (level, budget) in [
+            (ThinkingLevel::Low, 1024), (ThinkingLevel::Medium, 4096),
+            (ThinkingLevel::High, 16384), (ThinkingLevel::Budget(2048), 2048),
+            (ThinkingLevel::Budget(100), 1024),
+        ] {
+            let mut b = body();
+            apply_thinking(&mut b, model, level);
+            assert_eq!(b["thinking"]["type"], "enabled", "{model} {level:?}");
+            assert_eq!(b["thinking"]["budget_tokens"].as_u64(), Some(budget), "{model} {level:?}");
+            assert!(b["output_config"].get("effort").is_none(), "{model} rejects effort");
+            assert!(b["max_tokens"].as_u64().unwrap() > budget, "the budget fits under max_tokens");
+        }
+        let mut b = body();
+        apply_thinking(&mut b, model, ThinkingLevel::Off);
+        assert!(b.get("thinking").is_none(), "{model}: off sends no thinking parameter");
+    }
+}

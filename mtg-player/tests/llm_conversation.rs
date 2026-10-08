@@ -113,9 +113,13 @@ fn resume_from_log_seeds_conversation() {
 
     player.resume_from_log(&log, mtg_engine::ids::PlayerId(0));
 
-    // Should have 2 messages: user recap + assistant acknowledgment
-    assert_eq!(player.conversation_len_for_test(), 2,
-        "Resume should add a user+assistant message pair");
+    // The recap is not a conversation turn: it is carried into the next
+    // decision prompt, in the seat's own you/opp vocabulary.
+    assert_eq!(player.conversation_len_for_test(), 0,
+        "a resume adds no history; every prompt restates the position");
+    let recap = player.pending_recap_for_test().expect("the next prompt carries the recap");
+    assert!(recap.contains("Game resumed") && recap.contains("── Turn 1 (your turn) ──")
+        && recap.contains("You played Mountain"), "{recap}");
 
     // last_log_index should be set to the log length
     assert_eq!(player.last_log_index_for_test(), 5,

@@ -1378,7 +1378,11 @@ resume with the --best-of its run was played at)", args.best_of) };
                                 );
                                 in_seat(&context, move || {
                                     mtg_player::game_log::buffer_ranked(seat as u64);
-                                    let prompt = crate::llm_client::DraftLlmClient::build_pick_prompt(
+                                    // The seat's notes from its last pick
+                                    // open the prompt: the conversation
+                                    // does not carry the earlier picks.
+                                    let notes = crate::llm_client::DraftLlmClient::notes_section(client.notes());
+                                    let prompt = notes + &crate::llm_client::DraftLlmClient::build_pick_prompt(
                                         table_for(seat),
                                         round + 1,
                                         pick_num + 1,
@@ -1688,7 +1692,6 @@ and the FINAL STANDINGS below record none",
                     let model_b = &args.models[b];
                     let guide_a = args.guides[a].as_deref();
                     let guide_b = args.guides[b].as_deref();
-                    let card_ref = &card_reference;
                     let best_of = args.best_of;
                     let quiet = args.quiet;
                     // Computed here, on the main thread, from the match's own
@@ -1710,7 +1713,6 @@ and the FINAL STANDINGS below record none",
                             reg,
                             best_of,
                             quiet,
-                            card_ref,
                             seed,
                         );
                         let _ = finished_tx.send(outcome.clone());
@@ -1999,7 +2001,7 @@ fn build_deck_with_llm(
     registry: &CardRegistry,
     cards: &card_lines::CardLines,
 ) -> DeckBuildResult {
-    let prompt = build_deck_prompt(pool, cards);
+    let prompt = llm_client::DraftLlmClient::notes_section(client.notes()) + &build_deck_prompt(pool, cards);
     let mut last_error = String::new();
     let mut attempts: Vec<DeckAttempt> = Vec::new();
     let max_retries = 10;
@@ -2101,7 +2103,6 @@ fn play_match(
     registry: &CardRegistry,
     best_of: usize,
     _quiet: bool,
-    card_reference: &str,
     seed: u64,
 ) -> MatchResult {
     let mut wins_a = 0;
@@ -2144,7 +2145,6 @@ fn play_match(
             &mut p1,
             &mut p2,
             starter,
-            card_reference,
             MatchFormat::BestOf {
                 best_of,
                 game: game_number,
@@ -2211,7 +2211,6 @@ fn play_game(
     p1: &mut LlmPlayer,
     p2: &mut LlmPlayer,
     starting_player: mtg_engine::ids::PlayerId,
-    card_reference: &str,
     // Each seat's own side of the match: the score is stated from the seat's
     // point of view, so the two are mirrors of each other (issue #609).
     format_a: MatchFormat,
@@ -2233,8 +2232,16 @@ fn play_game(
     // The context is fresh, so whatever the seat is to know about the match
     // around this game has to be in the system prompt — it is the only thing
     // that survives (issue #609).
-    p1.init_conversation(&deck_a.entries, card_reference, registry, format_a);
-    p2.init_conversation(&deck_b.entries, card_reference, registry, format_b);
+    //
+    // No set-wide card reference here. The game's system prompt is re-read,
+    // cached, on every decision, and the whole set's rules text is the
+    // largest thing it could carry — while every card that comes into view
+    // is described in the decision prompt itself (`Opp's cards in view`),
+    // which is what the seat reads a card from anyway. The draft phase,
+    // where the whole set is what is being chosen from, keeps the
+    // reference.
+    p1.init_conversation(&deck_a.entries, "", registry, format_a);
+    p2.init_conversation(&deck_b.entries, "", registry, format_b);
 
     let mut action_count: u64 = 0;
     let max_actions: u64 = 50_000;

@@ -44,7 +44,11 @@ say what your stub says.
   `format_state_body`, `format_perms_compact`, `build_prompt`, the
   per-prompt action formatters, and the response parsers. The backends
   are in `mtg-player/src/llm/`.
-- `docs/llm-harness.md` for how each seat is invoked and what it costs.
+- `docs/llm-harness.md` for how each seat is invoked and what it costs,
+  including what one decision sends: no earlier exchanges (`MTG_LLM_HISTORY`),
+  the seat's own notes from its last decision at the top of the prompt
+  (`LlmPlayer::notes`), a resume's recap in the first prompt after it, and the
+  thinking level (`MTG_LLM_THINKING`). `reports/llm-cost.md` has the numbers.
 - Two contracts to test against, and they are different questions.
   *Correct*: does what the seat is told match the game state, do the
   offered actions match what the engine will accept, is hidden
@@ -64,8 +68,9 @@ say what your stub says.
   actions listed matching what the engine will accept, and no
   schema-valid answer that the engine then rejects
 - H2 subprocess contract: point `CLAUDE_CODE_BIN` at a wrapper that logs
-  argv and stdin and delegates to the real binary — session ids stable
-  across a game, one subprocess per decision, no leaked processes or temp
+  argv and stdin and delegates to the real binary — one session per decision
+  (a session carried across decisions only under `MTG_LLM_HISTORY`), one
+  subprocess per decision, no leaked processes or temp
   directories after exit, Ctrl-C or kill, the game never blocking past
   the call timeout, and end-of-game usage totals that make sense
 - H3 harness failure modes: point `CLAUDE_CODE_BIN` at a script that
@@ -91,9 +96,9 @@ say what your stub says.
   actually available. File a gap when it would change a decision, not for
   every omission
 - H4 recap fidelity across resume: `--save` and `--resume` a game with a
-  `cc` seat and check the conversation the resumed seat is handed
-  describes the same game it left — recap contents, turn count, nothing
-  hallucinated and nothing dropped
+  `cc` seat and check the recap in the resumed seat's first prompt (the
+  `RESUME` record, and the next `PROMPT`) describes the same game it left —
+  recap contents, turn count, nothing hallucinated and nothing dropped
 - H6 [proposed 2026-09-04, from #203] the stdout-holder: point
   `CLAUDE_CODE_BIN` at a script that writes a valid answer and then leaves a
   background child holding stdout open, and at one that does the same after
