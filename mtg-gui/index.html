@@ -22,6 +22,10 @@
     font-family: "Silkscreen", monospace; font-size: 16px;
     background: #1a1620; color: #eee; border: 2px solid #7a6a8a; outline: none;
     padding: 2px 4px;
+    /* The page sizes it to the slot the modal painted, border and padding
+       included; content-box made it 12x8 px bigger than the slot at every
+       scale, which at phone width covered the text around it (#741). */
+    box-sizing: border-box;
   }
   /* Fonts load lazily; force them before the first frame. */
   #fontload { position: absolute; left: -1000px; top: -1000px; visibility: hidden; }

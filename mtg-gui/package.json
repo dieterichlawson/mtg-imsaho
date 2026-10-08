@@ -12,7 +12,8 @@
     "target-labels": "node tests/target_labels.mjs",
     "auto-pass": "node tests/auto_pass.mjs",
     "without-ids": "node tests/without_ids.mjs",
-    "stack-key": "node tests/stack_key.mjs"
+    "stack-key": "node tests/stack_key.mjs",
+    "field-fits": "node tests/field_fits.js"
   },
   "devDependencies": {
     "typescript": "^5.4"

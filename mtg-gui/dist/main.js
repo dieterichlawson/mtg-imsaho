@@ -490,6 +490,11 @@ function syncField() {
     field.style.width = `${box.w * state.scale}px`;
     field.style.height = `${box.h * state.scale}px`;
     field.style.fontSize = `${8 * state.scale}px`;
+    // Inside that rectangle, scaled with it: the CSS's 2px border and 2px 4px
+    // padding are sized for the desktop, and at the scale of a phone they are
+    // most of a slot 8 CSS px tall (#741).
+    field.style.borderWidth = `${Math.max(1, state.scale)}px`;
+    field.style.padding = `0 ${2 * state.scale}px`;
     const want = ui.mode === "number" ? (ui.value ?? "") : (ui.query ?? "");
     if (field.value !== want)
         field.value = want;
