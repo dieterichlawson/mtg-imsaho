@@ -107,6 +107,17 @@ pub enum Action {
     /// Concede the game.
     Concede,
 
+    /// The harness ends the game against the seat to act because that seat
+    /// stopped answering: its backend gave up, or the watchdog saw it make
+    /// no progress. The seat loses as by a concede (CR 104.3a), but it did
+    /// not choose to: recorded as `Concede`, the game-over line and the
+    /// result said "p0 conceded" while the runner's own warning said the
+    /// seat forfeited (#742).
+    ///
+    /// Never offered by `legal_actions`; a player answering it is refused by
+    /// every seat that takes answers from outside.
+    Forfeit,
+
     /// Respond to a mid-resolution choice.
     ResolveChoice { choice: ResolvedChoice },
 
@@ -413,6 +424,7 @@ impl std::fmt::Display for Action {
             Action::MulliganMull => write!(f, "Mulligan"),
             Action::BottomCards { cards } =>
                 write!(f, "Bottom {} card(s)", cards.len()),
+            Action::Forfeit => write!(f, "Forfeit (harness: the seat stopped answering)"),
             Action::Concede => write!(f, "Concede"),
             Action::ActivateLoyaltyAbility { object_id, ability_index, .. } =>
                 write!(f, "Activate loyalty ability {ability_index} on {object_id}"),

@@ -200,7 +200,7 @@ export interface ActivateAbilityAction {
 }
 
 export type Action =
-  | "PassPriority" | "Concede" | "MulliganKeep" | "MulliganMull" | "AbandonGame"
+  | "PassPriority" | "Concede" | "MulliganKeep" | "MulliganMull" | "AbandonGame" | "Forfeit"
   | { PlayLand: { object_id: ObjectId } }
   | { CastSpell: CastSpellAction }
   | { ActivateManaAbility: { object_id: ObjectId; ability_index: number } }

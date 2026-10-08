@@ -77,6 +77,10 @@ pub enum LossReason {
     LifeReachedZero,
     DrewFromEmptyLibrary,
     Conceded,
+    /// The harness ended the game against a seat that stopped answering
+    /// (`Action::Forfeit`, #742). A loss like a concede, but not one the
+    /// seat chose.
+    Forfeited,
     /// CR 104.2b: an effect stated that the opponent wins the game, and in a
     /// two-player game that ends it (CR 104.1). Nothing happened to *them* —
     /// Laboratory Maniac used to report this as `LifeReachedZero`, which is
@@ -104,6 +108,8 @@ impl LossReason {
             LossReason::DrewFromEmptyLibrary =>
                 "lost the game: tried to draw from an empty library (CR 704.5b)".into(),
             LossReason::Conceded => "conceded".into(),
+            LossReason::Forfeited =>
+                "forfeited: stopped answering, and the harness ended the game for it".into(),
             LossReason::OpponentWon { source } => format!(
                 "lost the game: the opponent won by the effect of {} (CR 104.2b)",
                 state.obj_name(source)),

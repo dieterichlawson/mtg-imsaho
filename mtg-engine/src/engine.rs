@@ -178,6 +178,9 @@ impl LegalActions {
             // CR 104.3a: a player may concede at any time. No prompt lists
             // it, so no prompt may refuse it either.
             Action::Concede => true,
+            // The harness's, for a seat that stopped answering (#742): like
+            // `AbandonGame`, never listed and never refused here.
+            Action::Forfeit => true,
             Action::DeclareAttackers { .. } =>
                 matches!(self.combat_prompt, Some(CombatPrompt::ChooseAttackers { .. })),
             Action::DeclareBlockers { .. } =>
@@ -499,6 +502,7 @@ pub(crate) fn submit_action_inner(state: &GameState, action: &Action, registry: 
         Action::DiscardCards { cards } =>
             actions::simple::discard_cards(&mut new_state, cards, registry),
         Action::Concede => actions::simple::concede(&mut new_state, registry),
+        Action::Forfeit => actions::simple::forfeit(&mut new_state, registry),
         // Not a game action: the harness is stopping. The game loop returns
         // before ever reaching here; a direct submit is a no-op (issue #233).
         Action::AbandonGame => Applied::ReturnNow,
@@ -1648,6 +1652,7 @@ fn run_game_loop_inner<F>(
             | Action::ActivateAbility { .. }
             | Action::ActivateLoyaltyAbility { .. }
             | Action::Concede
+            | Action::Forfeit
             | Action::PlayLand { .. }
             | Action::CastSpell { .. } => {
                 // Mulligan-phase actions don't touch priority (mulligan advances via

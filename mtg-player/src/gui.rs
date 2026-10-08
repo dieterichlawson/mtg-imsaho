@@ -302,6 +302,12 @@ impl GuiPlayer {
                 self.notice(answer.from, seq, "AbandonGame is the harness's, not a player's");
                 None
             }
+            // The same: the harness ends a stalled seat's game (#742); a
+            // page that wants out has Concede.
+            Ok(Action::Forfeit) => {
+                self.notice(answer.from, seq, "Forfeit is the harness's, not a player's");
+                None
+            }
             Ok(action) => {
                 // Every other page is holding this same decision. Tell
                 // them it is taken, before the next board arrives, so
@@ -616,7 +622,8 @@ mod tests {
         let a = seat.shared.add_client(a_tx);
         let _b = seat.shared.add_client(b_tx);
 
-        for action in [serde_json::json!({"Nope": 1}), serde_json::json!("AbandonGame")] {
+        for action in [serde_json::json!({"Nope": 1}), serde_json::json!("AbandonGame"),
+                       serde_json::json!("Forfeit")] {
             assert!(seat.take(1, Answer { seq: 1, action, from: a }).is_none());
             let to_a = a_rx.try_recv().expect("the sender is told its answer was refused");
             assert!(to_a.contains("\"notice\"") && to_a.contains("\"seq\":1"), "{to_a}");

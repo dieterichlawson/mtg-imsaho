@@ -206,9 +206,14 @@ impl ProgressWatchdog {
 ///
 /// The engine accepts it there — that is the part that made the defect a
 /// pure runner bug. `mtg-player/tests/stall_forfeit.rs` holds the contract.
+///
+/// `Forfeit`, not `Concede`: the loss is the same, but a concede recorded
+/// the game as one the seat chose to give up — "p0 conceded" in the
+/// game-over line and the result, next to the runner's own warning that
+/// the seat forfeited (#742).
 #[must_use]
 pub fn forfeit_move() -> mtg_engine::actions::Action {
-    mtg_engine::actions::Action::Concede
+    mtg_engine::actions::Action::Forfeit
 }
 
 /// The move a runner sends when a game has run past its action budget.

@@ -195,6 +195,7 @@ export function describeAction(state: LiveState, a: Action): string {
   if (a === "MulliganKeep") return "Keep this hand";
   if (a === "MulliganMull") return "Mulligan";
   if (a === "AbandonGame") return "Abandon (harness)";
+  if (a === "Forfeit") return "Forfeit (harness)";
   if ("PlayLand" in a) return `Play ${nameOf(state, a.PlayLand.object_id)}`;
   if ("CastSpell" in a) {
     const v = a.CastSpell;

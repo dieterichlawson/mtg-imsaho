@@ -148,6 +148,13 @@ fn a_stall_at_a_prompt_is_stopped_by_the_move_the_runner_sends() {
          but the game has no result: a forfeited game has to be a finished game, or the \
          tournament reports a forfeit it never resolved"
     );
+    // And it is recorded as what it was: the game-over line and the result
+    // said "conceded", a choice the seat never made, next to the runner's
+    // warning that it forfeited (#742).
+    let loser = state.players.iter().find(|p| p.lost).expect("somebody lost");
+    assert_eq!(loser.loss_reason, Some(mtg_engine::events::LossReason::Forfeited));
+    let said = mtg_engine::events::LossReason::Forfeited.describe(&state);
+    assert!(said.starts_with("forfeited") && !said.contains("conceded"), "{said}");
 }
 
 /// The engine half on its own: whoever is being asked is who concedes.

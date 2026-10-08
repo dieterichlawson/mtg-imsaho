@@ -202,6 +202,8 @@ export function describeAction(state, a) {
         return "Mulligan";
     if (a === "AbandonGame")
         return "Abandon (harness)";
+    if (a === "Forfeit")
+        return "Forfeit (harness)";
     if ("PlayLand" in a)
         return `Play ${nameOf(state, a.PlayLand.object_id)}`;
     if ("CastSpell" in a) {

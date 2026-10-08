@@ -538,6 +538,11 @@ fn life_and_loss(prev: &GameState, cur: &GameState, action: Option<&Action>, eve
                         v.push(format!("p{} conceded without holding priority on a Concede action", p.0));
                     }
                 }
+                Some(LossReason::Forfeited) => {
+                    if !matches!(action, Some(Action::Forfeit)) {
+                        v.push(format!("p{} is recorded as having forfeited without a Forfeit action", p.0));
+                    }
+                }
                 Some(LossReason::OpponentWon { .. }) => {
                     if cur.result != Some(crate::state::GameResult::Winner(cur.opponent(p))) {
                         v.push(format!("p{} lost because the opponent won, but the result is {:?}", p.0, cur.result));
@@ -918,6 +923,13 @@ fn action_contract(prev: &GameState, cur: &GameState, action: &Action, events: &
                 }
             }
         }
+        Action::Forfeit => {
+            if let Some(who) = p {
+                if !cur.get_player(who).lost || cur.get_player(who).loss_reason != Some(LossReason::Forfeited) {
+                    v.push(format!("p{} forfeited but is not recorded as having lost that way", who.0));
+                }
+            }
+        }
         Action::PassPriority => {
             pass_contract(prev, cur, events, v);
         }
@@ -998,6 +1010,7 @@ fn action_name(a: &Action) -> &'static str {
         Action::MulliganMull => "MulliganMull",
         Action::BottomCards { .. } => "BottomCards",
         Action::Concede => "Concede",
+        Action::Forfeit => "Forfeit",
         Action::ResolveChoice { .. } => "ResolveChoice",
         Action::AbandonGame => "AbandonGame",
     }

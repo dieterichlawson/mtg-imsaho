@@ -4187,6 +4187,9 @@ impl CliPlayer {
             Action::PassPriority => "Pass priority".into(),
             // Never offered: the harness stopping is not a menu row (#233).
             Action::AbandonGame => "Abandon game".into(),
+            // Never offered either: the harness ends a stalled seat's game
+            // (#742).
+            Action::Forfeit => "Forfeit (the seat stopped answering)".into(),
             Action::PlayLand { object_id } =>
                 format!("Play land {}", Self::perm_name(view, *object_id)),
             Action::CastSpell { object_id, targets, tap_plan, sacrifice, .. } => {
@@ -7943,7 +7946,7 @@ impl CliPlayer {
                 // offer, and adding a number to them would say nothing.
                 _ => {}
             },
-            Action::PassPriority | Action::Concede | Action::AbandonGame
+            Action::PassPriority | Action::Concede | Action::AbandonGame | Action::Forfeit
             | Action::MulliganKeep | Action::MulliganMull => {}
         }
         ids

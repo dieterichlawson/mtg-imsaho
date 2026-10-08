@@ -2711,9 +2711,10 @@ mod harness_stop_tests {
         assert!(harness_move(false, 49_999, 50_000).is_none());
         assert!(matches!(harness_move(false, 50_000, 50_000), Some(Action::AbandonGame)),
             "the ceiling must not be a seat's concede");
-        // A stalled seat still forfeits: that loss is the stuck seat's.
-        assert!(matches!(harness_move(true, 10, 50_000), Some(Action::Concede)));
-        assert!(matches!(harness_move(true, 50_000, 50_000), Some(Action::Concede)));
+        // A stalled seat still forfeits: that loss is the stuck seat's, and
+        // recorded as a forfeit, not as a concede it never chose (#742).
+        assert!(matches!(harness_move(true, 10, 50_000), Some(Action::Forfeit)));
+        assert!(matches!(harness_move(true, 50_000, 50_000), Some(Action::Forfeit)));
     }
 
     #[test]

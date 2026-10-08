@@ -53,6 +53,16 @@ pub(crate) fn discard_cards(state: &mut GameState, cards: &[ObjectId], registry:
 }
 
 pub(crate) fn concede(state: &mut GameState, _registry: &CardRegistry) -> Applied {
+    lose_to_act(state, crate::events::LossReason::Conceded)
+}
+
+/// The harness ending the game against the seat to act (#742): the same
+/// loss as a concede, recorded as what it was.
+pub(crate) fn forfeit(state: &mut GameState, _registry: &CardRegistry) -> Applied {
+    lose_to_act(state, crate::events::LossReason::Forfeited)
+}
+
+fn lose_to_act(state: &mut GameState, reason: crate::events::LossReason) -> Applied {
         // The player being asked, not the one holding priority. CR 104.3a
         // lets a concede in at any decision point and `LegalActions::permits`
         // admits it at every prompt, but at a prompt priority is `None` (the
@@ -62,7 +72,7 @@ pub(crate) fn concede(state: &mut GameState, _registry: &CardRegistry) -> Applie
         // seat at its mulligan was a silent no-op followed by the same prompt
         // forever (issue #559).
         if let Some(player) = state.player_to_act() {
-            state.player_loses(player, crate::events::LossReason::Conceded);
+            state.player_loses(player, reason);
         }
     Applied::Continue
 }
