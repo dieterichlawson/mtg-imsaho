@@ -82,11 +82,12 @@ impl Pod {
         self.dir.join(name)
     }
 
-    /// `--players 2 --best-of 1 --seed 7` unless `extra` says otherwise
-    /// (a later flag wins).
+    /// `--players 2 --best-of 1 --seed 7`, each unless `extra` names it.
     fn run(&self, extra: &[&str], counter: &str, log: &str) -> std::process::Output {
+        let defaults = [("--players", "2"), ("--best-of", "1"), ("--seed", "7")];
         std::process::Command::new(env!("CARGO_BIN_EXE_mtg-draft-runner"))
-            .args(["--model", "cc", "--players", "2", "--best-of", "1", "--seed", "7"])
+            .args(["--model", "cc"])
+            .args(defaults.iter().filter(|(f, _)| !extra.contains(f)).flat_map(|(f, v)| [*f, *v]))
             .args(["--log", self.path(log).to_str().unwrap()])
             .args(extra)
             .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
@@ -231,4 +232,26 @@ fn a_saved_deck_its_pool_could_not_build_is_refused() {
     let out = pod.run(&["--resume", &path], "short.calls", "short.log");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(!out.status.success() && stderr.contains("need at least 40"), "{stderr}");
+}
+
+/// #729: `--best-of` came from the flags, not the snapshot, so a best-of-1
+/// save resumed at the default played its next round as best-of-3 and
+/// ranked game wins from both formats on one table.
+#[test]
+fn a_resume_plays_at_the_match_length_its_snapshot_was_played_at() {
+    if !have_python() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let pod = Pod::new("bestof");
+    let save = pod.finished_snapshot("snap.json");
+    assert_eq!(save["best_of"], 1, "the snapshot records its match length");
+    let path = pod.path("snap.json");
+
+    let out = pod.run(&["--resume", path.to_str().unwrap(), "--best-of", "3"], "bo3.calls", "bo3.log");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{stderr}");
+    assert!(stderr.contains("note: --best-of comes from the save (3 -> 1)"), "{stderr}");
+    assert!(stderr.contains("best-of-1 ==="), "{stderr}");
+    assert_eq!(calls(&pod.path("bo3.calls")), 0, "the best-of-1 match is still the one carried");
 }

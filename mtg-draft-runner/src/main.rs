@@ -175,8 +175,8 @@ Options:
                          deck building, and after every tournament match. An
                          interruption costs the round, the build or the match
                          in progress, and --resume carries on from there
-  --resume <path>        Replay a snapshot and carry on from it. Its seed, set
-                         and seat count win over the flags — the packs are
+  --resume <path>        Replay a snapshot and carry on from it. Its seed, set,
+                         seat count and match length win over the flags — the packs are
                          re-dealt from the seed, so the position is exact.
                          Its decks are used as built, and its finished matches
                          are counted, not replayed: the standings mark them
@@ -642,6 +642,13 @@ struct DraftSave {
     /// and says so on the standings.
     #[serde(default)]
     matches: Vec<SavedMatch>,
+    /// The match length the matches above were played at. A resume took
+    /// `--best-of` from the flags, so a best-of-1 save resumed at the
+    /// default played round 2 as best-of-3 and ranked game wins from both
+    /// formats on one table (#729). `None` in a snapshot written before the
+    /// field existed, where the flag is all there is to go on.
+    #[serde(default)]
+    best_of: Option<usize>,
 }
 
 /// A seat's deck as the snapshot keeps it.
@@ -932,6 +939,7 @@ fn main() {
             ("--seed", save.seed.to_string(), args.seed.to_string()),
             ("--set", save.set.clone(), args.set.clone()),
             ("--players", save.players.to_string(), args.players.to_string()),
+            ("--best-of", save.best_of.unwrap_or(args.best_of).to_string(), args.best_of.to_string()),
         ] {
             if saved == used {
                 continue;
@@ -947,6 +955,9 @@ fn main() {
     if let Some(save) = &resumed {
         args.seed = save.seed;
         args.set.clone_from(&save.set);
+        if let Some(best_of) = save.best_of {
+            args.best_of = best_of;
+        }
         if save.players != args.players {
             // Rebuilt, not resized. Padding grew `models` with `models[0]`
             // and `guides` with `None`, so a global `--model` survived the
@@ -1159,6 +1170,7 @@ this draft will be made under {} — this draft is a mixture of the two",
             seats: args.seat_policies(),
             decks: decks.to_vec(),
             matches: matches.to_vec(),
+            best_of: Some(args.best_of),
         };
         // Write-then-rename: a snapshot half-written when the run dies is
         // worse than none, because it looks resumable.
@@ -2500,6 +2512,7 @@ mod pick_parsing_tests {
         ).expect("an older snapshot is still a snapshot");
         assert_eq!(save.picks.len(), 1);
         assert!(!save.picks[0].substituted);
+        assert_eq!(save.best_of, None, "an older snapshot leaves the match length to the flag");
     }
 }
 
