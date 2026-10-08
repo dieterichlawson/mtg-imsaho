@@ -26,6 +26,12 @@ fn planeswalker_with_zero_loyalty_dies() {
     check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(liliana).unwrap().zone, Zone::Graveyard);
+    // The move is logged once, by the engine, after the cause (#738).
+    let lines: Vec<&str> = state.game_log.iter().map(|e| e.message.as_str())
+        .filter(|m| m.contains("Liliana of the Veil")).collect();
+    assert_eq!(lines.iter().filter(|m| m.contains("graveyard")).count(), 1,
+        "one line for one move: {lines:#?}");
+    assert!(lines.iter().any(|m| m.ends_with("has 0 loyalty")), "and the cause: {lines:#?}");
 }
 
 #[test]

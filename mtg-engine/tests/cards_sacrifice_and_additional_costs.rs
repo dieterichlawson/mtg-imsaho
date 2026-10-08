@@ -138,6 +138,11 @@ fn silverchase_fox_exiles_enchantment() {
         Zone::Exile,
         "Target enchantment should be exiled"
     );
+    // Logged once, by the engine (#738).
+    let name = new_state.obj_name(enchantment);
+    let lines: Vec<&str> = new_state.game_log.iter().map(|e| e.message.as_str())
+        .filter(|m| m.contains(&name) && m.contains("exiled")).collect();
+    assert_eq!(lines.len(), 1, "one line for one exile: {lines:#?}");
 }
 #[test]
 fn brain_weevil_forces_discard() {

@@ -276,8 +276,9 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
             .filter(|&id| state.has_card_type(id, crate::types::CardType::Planeswalker, registry))
             .collect();
         for id in pw_zero_loyalty {
-            state.log(LogLevel::Event, format!("{} has 0 loyalty and is put into graveyard",
-                state.obj_name(id)));
+            // The cause; `move_object` logs the move itself, which this line
+            // used to tell a second time (#738).
+            state.log(LogLevel::Event, format!("{} has 0 loyalty", state.obj_name(id)));
             state.move_object(id, Zone::Graveyard, registry);
             took_action = true;
         }

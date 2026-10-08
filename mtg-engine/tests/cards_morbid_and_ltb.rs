@@ -290,6 +290,11 @@ fn fiend_hunter_returns_exiled_on_death() {
 
     assert_eq!(state.get_object(target).unwrap().zone, Zone::Exile,
         "Target should be exiled by Fiend Hunter ETB");
+    // Logged once, by the engine (#738).
+    let exiles = state.game_log.iter()
+        .filter(|e| e.message.contains("Target Creature") && e.message.contains("exiled")).count();
+    let lines: Vec<&str> = state.game_log.iter().map(|e| e.message.as_str()).collect();
+    assert_eq!(exiles, 1, "one line for one exile: {lines:#?}");
     assert_eq!(state.get_object(fh).unwrap().zone, Zone::Battlefield);
 
     // Now kill the Fiend Hunter.

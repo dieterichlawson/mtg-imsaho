@@ -50,10 +50,9 @@ impl CardBehavior for SilverchaseFox {
         // than resolving and quietly exiling the card out of the graveyard.
         // The guard used to live here, which made the ability resolve and do
         // nothing: the right board state by the wrong route.
+        // `move_object` logs the exile, once (#738).
         if let Some(Target::Object(target_id)) = targets.first() {
-            let exiled_name = state.obj_name(*target_id);
             state.move_object(*target_id, Zone::Exile, registry);
-            state.log(crate::state::LogLevel::Event, format!("Silverchase Fox exiled {exiled_name}"));
         }
     }
 }

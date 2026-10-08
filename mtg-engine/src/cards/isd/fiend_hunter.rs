@@ -82,11 +82,11 @@ impl CardBehavior for FiendHunter {
     /// convention, so the bookkeeping belongs here.
     fn resolve_card_effect(&self, state: &mut GameState, source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
         let Target::Object(id) = target else { return };
-        let name = state.obj_name(*id);
+        // `move_object` logs the exile; a line of the card's own told it a
+        // second time in other words (#738).
         state.move_object(*id, Zone::Exile, registry);
         if let Some(source_obj) = state.get_object_mut(source_id) {
             source_obj.card_state.insert("exiled_creature".into(), *id);
         }
-        state.log(crate::state::LogLevel::Event, format!("Fiend Hunter exiled {name}"));
     }
 }
