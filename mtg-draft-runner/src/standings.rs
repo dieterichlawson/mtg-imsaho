@@ -2,8 +2,9 @@
 //! seat, with the qualifiers a row has to carry (byes, substituted
 //! answers, a runner-built deck, forfeits), and the per-match score line.
 
-use mtg_draft::tournament::{GameOutcome, MatchResult, Standing};
+use std::fmt::Write as _;
 
+use mtg_draft::tournament::{GameOutcome, MatchResult, Standing};
 
 /// One row of the final standings, written once and printed by both surfaces
 /// that show them — stderr and the log's FINAL STANDINGS block.
@@ -13,6 +14,7 @@ use mtg_draft::tournament::{GameOutcome, MatchResult, Standing};
 /// round reads exactly like a seat that beat somebody, and the block does not
 /// reconcile against the matches above it (issue #486, the shape of #195 and
 /// #200).
+#[must_use]
 pub fn standings_row(rank: usize, s: &Standing, tags: &RowTags) -> String {
     let draws = if s.match_draws > 0 {
         format!("-{}", s.match_draws)
@@ -55,29 +57,31 @@ impl RowTags {
         let mut out = String::new();
         if self.answers_substituted > 0 {
             let n = self.answers_substituted;
-            out.push_str(&format!(" [{n} {} substituted]", plural(n, "answer", "answers")));
+            let _ = write!(out, " [{n} {} substituted]", plural(n, "answer", "answers"));
         }
         if self.never_answered > 0 {
             let n = self.never_answered;
-            out.push_str(&format!(" [{n} {} never answered]", plural(n, "decision", "decisions")));
+            let _ = write!(out, " [{n} {} never answered]", plural(n, "decision", "decisions"));
         }
         if self.runner_built_deck {
             out.push_str(" [runner-built deck]");
         }
         if self.games_forfeited > 0 {
             let n = self.games_forfeited as u64;
-            out.push_str(&format!(" [{n} {} forfeited]", plural(n, "game", "games")));
+            let _ = write!(out, " [{n} {} forfeited]", plural(n, "game", "games"));
         }
         if self.matches_from_snapshot > 0 {
             let n = self.matches_from_snapshot as u64;
-            out.push_str(&format!(" [{n} {} from snapshot]", plural(n, "match", "matches")));
+            let _ = write!(out, " [{n} {} from snapshot]", plural(n, "match", "matches"));
         }
         out
     }
 }
 
-/// A match result as the snapshot keeps it: the games' logs are the run's
-
+/// What the score line adds about the match's games that were not played
+/// out: a forfeit is a seat the watchdog caught (#488), an abandoned game is
+/// one the runner stopped at its action budget with no winner (#630).
+#[must_use]
 pub fn unplayed_games_note(games: &[GameOutcome]) -> String {
     let count = |n: usize, what: &str| match n {
         0 => String::new(),
@@ -96,6 +100,7 @@ pub fn unplayed_games_note(games: &[GameOutcome]) -> String {
 /// The per-match progress line on stderr. A forfeited game is a game nobody
 /// played; the score line is where a reader is looking when it happens
 /// (#488). A level match has no winner to name (#650).
+#[must_use]
 pub fn match_score_line(result: &MatchResult) -> String {
     let outcome = match result.winner() {
         Some(w) => format!("winner: Seat {w}"),

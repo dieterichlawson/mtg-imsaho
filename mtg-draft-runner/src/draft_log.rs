@@ -19,6 +19,13 @@ impl DraftLogger {
         Self
     }
 
+    /// A logger over no file: every record is dropped. For a lobby built
+    /// in-process by a test.
+    #[must_use]
+    pub fn silent() -> Self {
+        Self
+    }
+
     pub fn header(
         set_name: &str,
         players: usize,

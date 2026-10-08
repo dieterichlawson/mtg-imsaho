@@ -7,13 +7,50 @@ pub mod deck;
 pub mod draft_log;
 pub mod game;
 pub mod llm_client;
+pub mod lobby;
 pub mod pick;
 pub mod progress;
+pub mod server;
 pub mod standings;
 
 pub use standings::{standings_row, RowTags};
 
 use progress::end_progress_line;
+
+/// Silence the default panic output for a seat's fatal LLM failure.
+///
+/// Exhausting the retries is deliberately fatal, but it is an operational
+/// condition — a usage limit, a CLI outage — not a bug, and the operator
+/// used to get a worker-thread panic with a backtrace followed by a second
+/// panic whose whole message was `Any { .. }`. The panic is still how the
+/// worker unwinds; `report_worker_failure` prints the one line that
+/// matters, so the hook keeps quiet for these and behaves normally for a
+/// real bug (issue #218).
+pub fn install_panic_hook() {
+    let default = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let payload = info.payload();
+        let msg = payload
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| payload.downcast_ref::<&str>().copied());
+        if msg.is_some_and(|m| m.starts_with(llm_client::FATAL_MARKER)) {
+            return;
+        }
+        default(info);
+    }));
+}
+
+/// The message a worker's panic payload carries, without the fatal marker.
+#[must_use]
+pub fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
+    let msg = payload
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .or_else(|| payload.downcast_ref::<&str>().copied())
+        .unwrap_or("worker thread failed");
+    msg.strip_prefix(llm_client::FATAL_MARKER).unwrap_or(msg).to_string()
+}
 
 /// A user error: report it and exit without a Rust panic/backtrace.
 pub fn die(msg: &str) -> ! {

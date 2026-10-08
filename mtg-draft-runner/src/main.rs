@@ -16,7 +16,7 @@ use mtg_draft_runner::game::{make_game_player, match_is_over, match_seed, play_m
 use mtg_draft_runner::pick::{parse_pick_response, Pick};
 use mtg_draft_runner::progress::{draw_progress, end_progress_line};
 use mtg_draft_runner::standings::{match_score_line, standings_row, RowTags};
-use mtg_draft_runner::{card_lines, die, draft_log, llm_client};
+use mtg_draft_runner::{card_lines, die, draft_log, install_panic_hook, llm_client};
 use mtg_draft_runner::{log_bye, log_deck_building, log_draft_pick, log_draft_warning, log_game_log,
     log_header, log_match_result, log_pack_contents, log_pool_summary, log_replayed_pick,
     log_section, log_standings, log_subsection, log_system_prompt};
@@ -70,30 +70,6 @@ Model spec: provider[:model[:draft_thinking[:game_thinking]]]. claude and gemini
 seats call metered APIs (ANTHROPIC_API_KEY / GEMINI_API_KEY); claude-code (alias
 cc) runs the same seat through `claude -p` on the CLI's own login, for both the
 draft and the games.";
-
-/// Silence the default panic output for a seat's fatal LLM failure.
-///
-/// Exhausting the retries is deliberately fatal, but it is an operational
-/// condition — a usage limit, a CLI outage — not a bug, and the operator
-/// used to get a worker-thread panic with a backtrace followed by a second
-/// panic whose whole message was `Any { .. }`. The panic is still how the
-/// worker unwinds; `report_worker_failure` prints the one line that
-/// matters, so the hook keeps quiet for these and behaves normally for a
-/// real bug (issue #218).
-fn install_panic_hook() {
-    let default = std::panic::take_hook();
-    std::panic::set_hook(Box::new(move |info| {
-        let payload = info.payload();
-        let msg = payload
-            .downcast_ref::<String>()
-            .map(String::as_str)
-            .or_else(|| payload.downcast_ref::<&str>().copied());
-        if msg.is_some_and(|m| m.starts_with(llm_client::FATAL_MARKER)) {
-            return;
-        }
-        default(info);
-    }));
-}
 
 /// Turn a joined worker's panic payload into one operator-facing line.
 ///

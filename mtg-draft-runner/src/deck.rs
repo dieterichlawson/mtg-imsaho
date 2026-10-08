@@ -113,6 +113,23 @@ pub fn build_deck_prompt(pool: &[String], cards: &CardLines) -> String {
     prompt
 }
 
+/// Write a built deck as `COUNT NAME` lines, the format `mtg-runner
+/// --deck1 <path>` reads, creating the directory it goes in.
+///
+/// # Errors
+/// The directory cannot be made or the file cannot be written.
+pub fn write_deck_file(path: &std::path::Path, deck: &DraftDeck) -> std::io::Result<()> {
+    use std::fmt::Write as _;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    let mut text = String::new();
+    for (name, count) in deckbuilding::to_decklist(deck) {
+        let _ = writeln!(text, "{count} {name}");
+    }
+    std::fs::write(path, text)
+}
+
 #[cfg(test)]
 mod deck_prompt_tests {
     use super::{build_deck_prompt, CardLines, CardRegistry};

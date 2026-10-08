@@ -140,7 +140,7 @@ pub fn play_match(
     // rather than the thread's, so a seeded run replays its games and not
     // only its packs (issue #212).
     let mut match_rng = <rand::rngs::StdRng as rand::SeedableRng>::seed_from_u64(seed);
-    let mut starter = PlayerId(if rand::Rng::gen_bool(&mut match_rng, 0.5) { 1 } else { 0 });
+    let mut starter = PlayerId(u8::from(rand::Rng::gen_bool(&mut match_rng, 0.5)));
 
     while !match_is_over(best_of, games.len(), wins_a, wins_b) {
         let game_number = games.len() + 1;
