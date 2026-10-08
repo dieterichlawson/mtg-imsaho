@@ -283,3 +283,77 @@ only, to confirm the LLM path is wired. Every finding is fixed or filed.
 
 Snapshot and resume of a lobby; spectators; a draft of more than one set
 or a cube; seat-to-seat chat; authentication beyond the key.
+
+## Decisions made while building
+
+Where the plan was silent or the code disagreed with it, decided like
+this (2026-10-08, the first implementation):
+
+- **The lobby is a pure state machine.** `mtg-draft-runner/src/lobby.rs`
+  owns no socket, thread or timer; `src/server.rs` wraps one `Lobby` in a
+  mutex and drives it from the connection threads, an LLM worker per AI
+  seat, a 250 ms timer, the tournament thread and the host's stdin. That
+  is what lets a Rust test walk every phase in-process and write the
+  page's fixture (`mtg-gui/tests/draft-view-fixtures.json`, by
+  `tests/draft_view_fixtures.rs`; a stale fixture fails the test and
+  rewrites the file to commit).
+- **The view carries a `pairings` list besides `matches`.** `matches` is
+  the viewing seat's own, with its link, as the protocol section says;
+  `pairings` is every match of the tournament for everybody (`a`, `b`
+  or `null` for a bye, `status`, `result`), so a page can show the whole
+  round and a test can see the AI-vs-AI match finish while the humans'
+  waits. Also added: `seats[].connected` (live sockets), `seats[].auto`
+  (the table picks for it), `deck.ready`, `pick_seconds`,
+  `build_seconds`, `build_deadline_ms`, and a `pack`-less view in every
+  phase but drafting. A page ignores what it does not know.
+- **A view never consumes a notice.** `Lobby::view` is read-only; the
+  server clears a seat's notice once a view carrying it has been sent to
+  a live connection, so the API and a second tab read the same thing.
+- **`--seats` defaults to `human,ai,ai,ai`, `--ai` sets the bare `ai`
+  spec (default `cc`).** A `cli` seat parses and is refused by the server
+  as not implemented: the terminal is also the host's command line, and
+  the draft, build and game surfaces for it are not a small addition.
+- **An absent seat is the table's until it joins; a kicked seat is the
+  table's for good.** Both are `auto`; `kicked` tells them apart. The
+  table's pick is the first card of the pack the fallback deck would
+  play with the pool (else the first card), logged as `auto-pick: <why>`
+  in the prompt and response slots and shown to the seat as a notice.
+  A kicked (or auto) seat's matches are forfeits — `wins_needed` games
+  to the opponent, `stalled_seat` set, a drawn 0-0 when both are away —
+  recorded through the same path as a stalled seat's, so the log and the
+  standings mark them. `kick` does not interrupt a game in progress.
+- **An AI seat whose backend gives up becomes `auto` too** rather than
+  taking the server down with a fatal, as the runner's worker would: the
+  people at the table keep drafting, the seat is marked and its games
+  are forfeit.
+- **A pick names its pack.** `{"type":"pick","pack_id","index"}` is
+  refused when that pack is no longer in front of the seat, so an answer
+  to a pack the timer already took never lands on the next one.
+- **The game seats are named `Seat{n}`** on both surfaces, as the
+  runner names them, so `mtg-player`'s per-seat tallies read the same.
+  Human seats' cosmetic names are the lobby's only.
+- **Deadlines are armed per head pack** and sent as `deadline_ms`
+  remaining; the page counts down from receipt. `--build-seconds` arms
+  when the seat's own draft ends.
+- **Every match thread writes the log directly**, in wall-clock order; a
+  `NOTE` after the header says so. The runner's seat-ordered buffering
+  is for seeded replays, which this table has not got.
+- **Game pages are not reused.** A `GuiPlayer`'s accept thread holds
+  its port for the process's life, so each human's match takes the next
+  free port in `--game-ports`; 99 ports covers an 8-seat draft's rounds
+  with room to spare, and the old pages stay readable.
+- **The advertised host** for `--bind 0.0.0.0` is found by connecting a
+  UDP socket to a documentation address (`192.0.2.1`, nothing is sent)
+  and reading its local address; when that gives loopback or nothing the
+  server prints "replace 0.0.0.0 with this machine's address".
+- **`GET /` is `draft.html`**, `/dist/*` and `/assets/*` the files, with
+  no `..` and nothing else; a missing page is a 404 that says where it
+  should be, and the server says so at start-up.
+- **`--log` defaults to `logs/draft-with-friends/draft.log`**, created if
+  missing, because CLAUDE.md keeps logs out of the root; `decks/` and
+  `games/` go in the log's directory.
+- **`--resume` is accepted, noted in the log and ignored**, per "the log
+  says so if `--resume` is passed".
+- **Timing.** Under the stub `claude`, a 4-seat draft with two humans
+  runs in about 4 s and the AI-vs-AI game in a few more, so the
+  subprocess tests are cheap.

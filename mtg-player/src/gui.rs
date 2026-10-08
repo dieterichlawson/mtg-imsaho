@@ -181,12 +181,24 @@ pub struct GuiPlayer {
 }
 
 impl GuiPlayer {
-    /// Start serving the page. `port` of `None` takes the first free port
-    /// from [`DEFAULT_PORT`] upward.
+    /// Start serving the page on the loopback address. `port` of `None`
+    /// takes the first free port from [`DEFAULT_PORT`] upward.
     ///
     /// # Errors
     /// The page directory is missing, or no port could be bound.
     pub fn new(name: &str, port: Option<u16>) -> Result<Self, String> {
+        Self::new_at(name, "127.0.0.1", port)
+    }
+
+    /// [`GuiPlayer::new`] on `bind` — `0.0.0.0` for a page a friend on the
+    /// network opens, which is what a hosted draft's games need. The
+    /// `url` is `http://<bind>:<port>/` as bound; a caller that advertises
+    /// another host name substitutes it.
+    ///
+    /// # Errors
+    /// The page directory is missing, the address is not one this machine
+    /// has, or no port could be bound.
+    pub fn new_at(name: &str, bind: &str, port: Option<u16>) -> Result<Self, String> {
         let web_dir = std::env::var(WEB_DIR_ENV)
             .map_or_else(|_| PathBuf::from(DEFAULT_WEB_DIR), PathBuf::from);
         if !web_dir.join("index.html").is_file() {
@@ -196,14 +208,14 @@ impl GuiPlayer {
                 web_dir.display()));
         }
         let listener = match port {
-            Some(p) => TcpListener::bind(("127.0.0.1", p))
-                .map_err(|e| format!("cannot listen on 127.0.0.1:{p}: {e}"))?,
+            Some(p) => TcpListener::bind((bind, p))
+                .map_err(|e| format!("cannot listen on {bind}:{p}: {e}"))?,
             // The next free port from the default upward, so two seats in
             // one game (`--p1 gui --p2 gui`) land on 8765 and 8766 and a
             // second runner on the next pair, rather than somewhere random.
             None => (DEFAULT_PORT..DEFAULT_PORT + 20)
-                .find_map(|p| TcpListener::bind(("127.0.0.1", p)).ok())
-                .ok_or_else(|| format!("no free port in 127.0.0.1:{DEFAULT_PORT}-{}", DEFAULT_PORT + 19))?,
+                .find_map(|p| TcpListener::bind((bind, p)).ok())
+                .ok_or_else(|| format!("no free port in {bind}:{DEFAULT_PORT}-{}", DEFAULT_PORT + 19))?,
         };
         let bound = listener.local_addr().map_err(|e| e.to_string())?;
         let (answer_tx, answer_rx) = mpsc::channel();

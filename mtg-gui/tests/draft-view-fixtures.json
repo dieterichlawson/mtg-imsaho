@@ -1,0 +1,2673 @@
+{
+  "about": "Written by mtg-draft-runner/tests/draft_view_fixtures.rs: the view JSON mtg-draft-server sends seat 0 in each phase, and a refused message. Regenerate with `cargo test -p mtg-draft-runner --test draft_view_fixtures` and commit the result.",
+  "building": {
+    "build_deadline_ms": null,
+    "build_seconds": null,
+    "deck": {
+      "lands": {
+        "Mountain": 9,
+        "Plains": 8
+      },
+      "main": [
+        "Balefire Dragon",
+        "Dearly Departed",
+        "Avacynian Priest",
+        "Mask of Avacyn",
+        "Ashmouth Hound",
+        "Ghostly Possession",
+        "Curse of the Pierced Heart",
+        "Burning Vengeance",
+        "Elite Inquisitor",
+        "Heretic's Punishment",
+        "Moorland Haunt",
+        "Brimstone Volley",
+        "Elder Cathar",
+        "Harvest Pyre",
+        "Doomed Traveler",
+        "Bonds of Faith",
+        "Past in Flames",
+        "Kruin Outlaw",
+        "Furor of the Bitten",
+        "Cobbled Wings",
+        "Kessig Wolf Run",
+        "Clifftop Retreat",
+        "One-Eyed Scarecrow"
+      ],
+      "problem": null,
+      "ready": false,
+      "sideboard": [
+        "Maw of the Mire",
+        "Gnaw to the Bone",
+        "Ghoulcaller's Chant",
+        "Daybreak Ranger // Nightfall Predator",
+        "Manor Skeleton",
+        "Armored Skaab",
+        "Makeshift Mauler",
+        "Moon Heron",
+        "Brain Weevil",
+        "Hamlet Captain",
+        "Moldgraf Monstrosity",
+        "Dissipate",
+        "Creeping Renaissance",
+        "Parallel Lives",
+        "Frightful Delusion",
+        "Kessig Cagebreakers",
+        "Forbidden Alchemy",
+        "Civilized Scholar // Homicidal Brute",
+        "Nightbird's Clutches"
+      ],
+      "valid": true
+    },
+    "matches": [],
+    "notice": null,
+    "pack": null,
+    "pairings": [],
+    "pass_direction": null,
+    "phase": "building",
+    "pick_seconds": null,
+    "picks": [
+      {
+        "auto": false,
+        "card": "Balefire Dragon",
+        "pick": 1,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Maw of the Mire",
+        "pick": 2,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Gnaw to the Bone",
+        "pick": 3,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Dearly Departed",
+        "pick": 4,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Avacynian Priest",
+        "pick": 5,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Mask of Avacyn",
+        "pick": 6,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Ghoulcaller's Chant",
+        "pick": 7,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Daybreak Ranger",
+        "pick": 8,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Ashmouth Hound",
+        "pick": 9,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Manor Skeleton",
+        "pick": 10,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Ghostly Possession",
+        "pick": 11,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Curse of the Pierced Heart",
+        "pick": 12,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Armored Skaab",
+        "pick": 13,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Makeshift Mauler",
+        "pick": 14,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Burning Vengeance",
+        "pick": 1,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Elite Inquisitor",
+        "pick": 2,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Heretic's Punishment",
+        "pick": 3,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Moorland Haunt",
+        "pick": 4,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Brimstone Volley",
+        "pick": 5,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Elder Cathar",
+        "pick": 6,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Harvest Pyre",
+        "pick": 7,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Moon Heron",
+        "pick": 8,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Brain Weevil",
+        "pick": 9,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Doomed Traveler",
+        "pick": 10,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Hamlet Captain",
+        "pick": 11,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Moldgraf Monstrosity",
+        "pick": 12,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Bonds of Faith",
+        "pick": 13,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Dissipate",
+        "pick": 14,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Creeping Renaissance",
+        "pick": 1,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Past in Flames",
+        "pick": 2,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Kruin Outlaw",
+        "pick": 3,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Furor of the Bitten",
+        "pick": 4,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Cobbled Wings",
+        "pick": 5,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Parallel Lives",
+        "pick": 6,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Kessig Wolf Run",
+        "pick": 7,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Frightful Delusion",
+        "pick": 8,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Clifftop Retreat",
+        "pick": 9,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "One-Eyed Scarecrow",
+        "pick": 10,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Kessig Cagebreakers",
+        "pick": 11,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Forbidden Alchemy",
+        "pick": 12,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Civilized Scholar",
+        "pick": 13,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Nightbird's Clutches",
+        "pick": 14,
+        "round": 3
+      }
+    ],
+    "pod_size": 4,
+    "pool": [
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Balefire Dragon {5}{R}{R} | Creature — Dragon 6/6 [mythic]",
+        "name": "Balefire Dragon",
+        "rarity": "mythic",
+        "text": "Flying\nWhenever this creature deals combat damage to a player, it deals that much damage to each creature that player controls."
+      },
+      {
+        "colors": [
+          "B"
+        ],
+        "line": "Maw of the Mire {4}{B} | Sorcery [common]",
+        "name": "Maw of the Mire",
+        "rarity": "common",
+        "text": "Destroy target land. You gain 4 life."
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Gnaw to the Bone {2}{G} | Instant [common]",
+        "name": "Gnaw to the Bone",
+        "rarity": "common",
+        "text": "You gain 2 life for each creature card in your graveyard.\nFlashback {2}{G} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Dearly Departed {4}{W}{W} | Creature — Spirit 5/5 [rare]",
+        "name": "Dearly Departed",
+        "rarity": "rare",
+        "text": "Flying\nAs long as this creature is in your graveyard, each Human creature you control enters with an additional +1/+1 counter on it."
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Avacynian Priest {1}{W} | Creature — Human Cleric 1/2 [common]",
+        "name": "Avacynian Priest",
+        "rarity": "common",
+        "text": "{1}, {T}: Tap target non-Human creature."
+      },
+      {
+        "colors": [],
+        "line": "Mask of Avacyn {2} | Artifact — Equipment [uncommon]",
+        "name": "Mask of Avacyn",
+        "rarity": "uncommon",
+        "text": "Equipped creature gets +1/+2 and has hexproof. (It can't be the target of spells or abilities your opponents control.)\nEquip {3}"
+      },
+      {
+        "colors": [
+          "B"
+        ],
+        "line": "Ghoulcaller's Chant {B} | Sorcery [common]",
+        "name": "Ghoulcaller's Chant",
+        "rarity": "common",
+        "text": "Choose one —\n• Return target creature card from your graveyard to your hand.\n• Return two target Zombie cards from your graveyard to your hand."
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Daybreak Ranger {2}{G} | Creature — Human Archer Ranger Werewolf 2/2 // Nightfall Predator 4/4 [rare]",
+        "name": "Daybreak Ranger",
+        "rarity": "rare",
+        "text": "{T}: This creature deals 2 damage to target creature with flying.\nAt the beginning of each upkeep, if no spells were cast last turn, transform this creature.\n// Nightfall Predator: {R}, {T}: This creature fights target creature. (Each deals damage equal to its power to the other.)\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Ashmouth Hound {1}{R} | Creature — Elemental Dog 2/1 [common]",
+        "name": "Ashmouth Hound",
+        "rarity": "common",
+        "text": "Whenever this creature blocks or becomes blocked by a creature, this creature deals 1 damage to that creature."
+      },
+      {
+        "colors": [
+          "B"
+        ],
+        "line": "Manor Skeleton {1}{B} | Creature — Skeleton 1/1 [common]",
+        "name": "Manor Skeleton",
+        "rarity": "common",
+        "text": "Haste\n{1}{B}: Regenerate this creature."
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Ghostly Possession {2}{W} | Enchantment — Aura [common]",
+        "name": "Ghostly Possession",
+        "rarity": "common",
+        "text": "Enchant creature\nEnchanted creature has flying.\nPrevent all combat damage that would be dealt to and dealt by enchanted creature."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Curse of the Pierced Heart {1}{R} | Enchantment — Aura Curse [common]",
+        "name": "Curse of the Pierced Heart",
+        "rarity": "common",
+        "text": "Enchant player\nAt the beginning of enchanted player's upkeep, this Aura deals 1 damage to that player or a planeswalker that player controls."
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Armored Skaab {2}{U} | Creature — Zombie Warrior 1/4 [common]",
+        "name": "Armored Skaab",
+        "rarity": "common",
+        "text": "When this creature enters, mill four cards."
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Makeshift Mauler {3}{U} | Creature — Zombie Horror 4/5 [common]",
+        "name": "Makeshift Mauler",
+        "rarity": "common",
+        "text": "As an additional cost to cast this spell, exile a creature card from your graveyard."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Burning Vengeance {2}{R} | Enchantment [uncommon]",
+        "name": "Burning Vengeance",
+        "rarity": "uncommon",
+        "text": "Whenever you cast a spell from your graveyard, this enchantment deals 2 damage to any target."
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Elite Inquisitor {W}{W} | Creature — Human Soldier 2/2 [rare]",
+        "name": "Elite Inquisitor",
+        "rarity": "rare",
+        "text": "First strike, vigilance\nProtection from Vampires, from Werewolves, and from Zombies"
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Heretic's Punishment {4}{R} | Enchantment [rare]",
+        "name": "Heretic's Punishment",
+        "rarity": "rare",
+        "text": "{3}{R}: Choose any target, then mill three cards. This enchantment deals damage to that permanent or player equal to the greatest mana value among the milled cards."
+      },
+      {
+        "colors": [],
+        "line": "Moorland Haunt | Land [rare]",
+        "name": "Moorland Haunt",
+        "rarity": "rare",
+        "text": "{T}: Add {C}.\n{W}{U}, {T}, Exile a creature card from your graveyard: Create a 1/1 white Spirit creature token with flying."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Brimstone Volley {2}{R} | Instant [common]",
+        "name": "Brimstone Volley",
+        "rarity": "common",
+        "text": "Brimstone Volley deals 3 damage to any target.\nMorbid — Brimstone Volley deals 5 damage instead if a creature died this turn."
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Elder Cathar {2}{W} | Creature — Human Soldier 2/2 [common]",
+        "name": "Elder Cathar",
+        "rarity": "common",
+        "text": "When this creature dies, put a +1/+1 counter on target creature you control. If that creature is a Human, put two +1/+1 counters on it instead."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Harvest Pyre {1}{R} | Instant [common]",
+        "name": "Harvest Pyre",
+        "rarity": "common",
+        "text": "As an additional cost to cast this spell, exile X cards from your graveyard.\nHarvest Pyre deals X damage to target creature."
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Moon Heron {3}{U} | Creature — Spirit Bird 3/2 [common]",
+        "name": "Moon Heron",
+        "rarity": "common",
+        "text": "Flying"
+      },
+      {
+        "colors": [
+          "B"
+        ],
+        "line": "Brain Weevil {3}{B} | Creature — Insect 1/1 [common]",
+        "name": "Brain Weevil",
+        "rarity": "common",
+        "text": "Intimidate (This creature can't be blocked except by artifact creatures and/or creatures that share a color with it.)\nSacrifice this creature: Target player discards two cards. Activate only as a sorcery."
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Doomed Traveler {W} | Creature — Human Soldier 1/1 [common]",
+        "name": "Doomed Traveler",
+        "rarity": "common",
+        "text": "When this creature dies, create a 1/1 white Spirit creature token with flying."
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Hamlet Captain {1}{G} | Creature — Human Warrior 2/2 [uncommon]",
+        "name": "Hamlet Captain",
+        "rarity": "uncommon",
+        "text": "Whenever this creature attacks or blocks, other Humans you control get +1/+1 until end of turn."
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Moldgraf Monstrosity {4}{G}{G}{G} | Creature — Insect 8/8 [rare]",
+        "name": "Moldgraf Monstrosity",
+        "rarity": "rare",
+        "text": "Trample\nWhen this creature dies, exile it, then return two creature cards at random from your graveyard to the battlefield."
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Bonds of Faith {1}{W} | Enchantment — Aura [common]",
+        "name": "Bonds of Faith",
+        "rarity": "common",
+        "text": "Enchant creature\nEnchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block."
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Dissipate {1}{U}{U} | Instant [uncommon]",
+        "name": "Dissipate",
+        "rarity": "uncommon",
+        "text": "Counter target spell. If that spell is countered this way, exile it instead of putting it into its owner's graveyard."
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Creeping Renaissance {3}{G}{G} | Sorcery [rare]",
+        "name": "Creeping Renaissance",
+        "rarity": "rare",
+        "text": "Choose a permanent type. Return all cards of the chosen type from your graveyard to your hand.\nFlashback {5}{G}{G} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Past in Flames {3}{R} | Sorcery [mythic]",
+        "name": "Past in Flames",
+        "rarity": "mythic",
+        "text": "Each instant and sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost.\nFlashback {4}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Kruin Outlaw {1}{R}{R} | Creature — Human Rogue Werewolf 2/2 // Terror of Kruin Pass 3/3 [rare]",
+        "name": "Kruin Outlaw",
+        "rarity": "rare",
+        "text": "First strike\nAt the beginning of each upkeep, if no spells were cast last turn, transform this creature.\n// Terror of Kruin Pass: Double strike\nWerewolves you control have menace. (A creature with menace can't be blocked except by two or more creatures.)\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Furor of the Bitten {R} | Enchantment — Aura [common]",
+        "name": "Furor of the Bitten",
+        "rarity": "common",
+        "text": "Enchant creature\nEnchanted creature gets +2/+2 and attacks each combat if able."
+      },
+      {
+        "colors": [],
+        "line": "Cobbled Wings {2} | Artifact — Equipment [common]",
+        "name": "Cobbled Wings",
+        "rarity": "common",
+        "text": "Equipped creature has flying.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)"
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Parallel Lives {3}{G} | Enchantment [rare]",
+        "name": "Parallel Lives",
+        "rarity": "rare",
+        "text": "If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead."
+      },
+      {
+        "colors": [],
+        "line": "Kessig Wolf Run | Land [rare]",
+        "name": "Kessig Wolf Run",
+        "rarity": "rare",
+        "text": "{T}: Add {C}.\n{X}{R}{G}, {T}: Target creature gets +X/+0 and gains trample until end of turn."
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Frightful Delusion {2}{U} | Instant [common]",
+        "name": "Frightful Delusion",
+        "rarity": "common",
+        "text": "Counter target spell unless its controller pays {1}. That player discards a card."
+      },
+      {
+        "colors": [],
+        "line": "Clifftop Retreat | Land [rare]",
+        "name": "Clifftop Retreat",
+        "rarity": "rare",
+        "text": "This land enters tapped unless you control a Mountain or a Plains.\n{T}: Add {R} or {W}."
+      },
+      {
+        "colors": [],
+        "line": "One-Eyed Scarecrow {3} | Artifact Creature — Scarecrow 2/3 [common]",
+        "name": "One-Eyed Scarecrow",
+        "rarity": "common",
+        "text": "Defender\nCreatures with flying your opponents control get -1/-0."
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Kessig Cagebreakers {4}{G} | Creature — Human Rogue 3/4 [rare]",
+        "name": "Kessig Cagebreakers",
+        "rarity": "rare",
+        "text": "Whenever this creature attacks, create a 2/2 green Wolf creature token that's tapped and attacking for each creature card in your graveyard."
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Forbidden Alchemy {2}{U} | Instant [common]",
+        "name": "Forbidden Alchemy",
+        "rarity": "common",
+        "text": "Look at the top four cards of your library. Put one of them into your hand and the rest into your graveyard.\nFlashback {6}{B} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Civilized Scholar {2}{U} | Creature — Human Advisor 0/1 // Homicidal Brute 5/1 [uncommon]",
+        "name": "Civilized Scholar",
+        "rarity": "uncommon",
+        "text": "{T}: Draw a card, then discard a card. If a creature card is discarded this way, untap this creature, then transform it.\n// Homicidal Brute: At the beginning of your end step, if this creature didn't attack this turn, tap this creature, then transform it."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Nightbird's Clutches {1}{R} | Sorcery [common]",
+        "name": "Nightbird's Clutches",
+        "rarity": "common",
+        "text": "Up to two target creatures can't block this turn.\nFlashback {3}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+      }
+    ],
+    "seat": 0,
+    "seats": [
+      {
+        "auto": false,
+        "connected": 1,
+        "joined": true,
+        "kind": "human",
+        "name": "seat 0",
+        "picks": 42,
+        "seat": 0,
+        "status": "building"
+      },
+      {
+        "auto": false,
+        "connected": 1,
+        "joined": true,
+        "kind": "human",
+        "name": "seat 1",
+        "picks": 42,
+        "seat": 1,
+        "status": "building"
+      },
+      {
+        "auto": false,
+        "connected": 0,
+        "joined": true,
+        "kind": "ai",
+        "name": "seat 2",
+        "picks": 42,
+        "seat": 2,
+        "status": "building"
+      },
+      {
+        "auto": false,
+        "connected": 0,
+        "joined": true,
+        "kind": "ai",
+        "name": "seat 3",
+        "picks": 42,
+        "seat": 3,
+        "status": "building"
+      }
+    ],
+    "set": "isd",
+    "standings": [],
+    "type": "view"
+  },
+  "done": {
+    "build_deadline_ms": null,
+    "build_seconds": null,
+    "deck": {
+      "lands": {
+        "Mountain": 9,
+        "Plains": 8
+      },
+      "main": [
+        "Balefire Dragon",
+        "Dearly Departed",
+        "Avacynian Priest",
+        "Mask of Avacyn",
+        "Ashmouth Hound",
+        "Ghostly Possession",
+        "Curse of the Pierced Heart",
+        "Burning Vengeance",
+        "Elite Inquisitor",
+        "Heretic's Punishment",
+        "Moorland Haunt",
+        "Brimstone Volley",
+        "Elder Cathar",
+        "Harvest Pyre",
+        "Doomed Traveler",
+        "Bonds of Faith",
+        "Past in Flames",
+        "Kruin Outlaw",
+        "Furor of the Bitten",
+        "Cobbled Wings",
+        "Kessig Wolf Run",
+        "Clifftop Retreat",
+        "One-Eyed Scarecrow"
+      ],
+      "problem": null,
+      "ready": true,
+      "sideboard": [
+        "Maw of the Mire",
+        "Gnaw to the Bone",
+        "Ghoulcaller's Chant",
+        "Daybreak Ranger // Nightfall Predator",
+        "Manor Skeleton",
+        "Armored Skaab",
+        "Makeshift Mauler",
+        "Moon Heron",
+        "Brain Weevil",
+        "Hamlet Captain",
+        "Moldgraf Monstrosity",
+        "Dissipate",
+        "Creeping Renaissance",
+        "Parallel Lives",
+        "Frightful Delusion",
+        "Kessig Cagebreakers",
+        "Forbidden Alchemy",
+        "Civilized Scholar // Homicidal Brute",
+        "Nightbird's Clutches"
+      ],
+      "valid": true
+    },
+    "matches": [
+      {
+        "games": [
+          {
+            "winner": 0
+          },
+          {
+            "winner": 0
+          }
+        ],
+        "opponent": 1,
+        "result": "2-0",
+        "round": 1,
+        "status": "done",
+        "url": "http://192.168.1.20:8801/"
+      },
+      {
+        "games": [
+          {
+            "winner": 0
+          },
+          {
+            "winner": 0
+          },
+          {
+            "winner": 2
+          }
+        ],
+        "opponent": 2,
+        "result": "2-1",
+        "round": 2,
+        "status": "done",
+        "url": null
+      }
+    ],
+    "notice": null,
+    "pack": null,
+    "pairings": [
+      {
+        "a": 0,
+        "b": 1,
+        "result": "2-0",
+        "round": 1,
+        "status": "done"
+      },
+      {
+        "a": 2,
+        "b": 3,
+        "result": "2-1",
+        "round": 1,
+        "status": "done"
+      },
+      {
+        "a": 0,
+        "b": 2,
+        "result": "2-1",
+        "round": 2,
+        "status": "done"
+      },
+      {
+        "a": 1,
+        "b": 3,
+        "result": "0-2",
+        "round": 2,
+        "status": "done"
+      }
+    ],
+    "pass_direction": null,
+    "phase": "done",
+    "pick_seconds": null,
+    "picks": [
+      {
+        "auto": false,
+        "card": "Balefire Dragon",
+        "pick": 1,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Maw of the Mire",
+        "pick": 2,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Gnaw to the Bone",
+        "pick": 3,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Dearly Departed",
+        "pick": 4,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Avacynian Priest",
+        "pick": 5,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Mask of Avacyn",
+        "pick": 6,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Ghoulcaller's Chant",
+        "pick": 7,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Daybreak Ranger",
+        "pick": 8,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Ashmouth Hound",
+        "pick": 9,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Manor Skeleton",
+        "pick": 10,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Ghostly Possession",
+        "pick": 11,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Curse of the Pierced Heart",
+        "pick": 12,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Armored Skaab",
+        "pick": 13,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Makeshift Mauler",
+        "pick": 14,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Burning Vengeance",
+        "pick": 1,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Elite Inquisitor",
+        "pick": 2,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Heretic's Punishment",
+        "pick": 3,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Moorland Haunt",
+        "pick": 4,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Brimstone Volley",
+        "pick": 5,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Elder Cathar",
+        "pick": 6,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Harvest Pyre",
+        "pick": 7,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Moon Heron",
+        "pick": 8,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Brain Weevil",
+        "pick": 9,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Doomed Traveler",
+        "pick": 10,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Hamlet Captain",
+        "pick": 11,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Moldgraf Monstrosity",
+        "pick": 12,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Bonds of Faith",
+        "pick": 13,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Dissipate",
+        "pick": 14,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Creeping Renaissance",
+        "pick": 1,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Past in Flames",
+        "pick": 2,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Kruin Outlaw",
+        "pick": 3,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Furor of the Bitten",
+        "pick": 4,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Cobbled Wings",
+        "pick": 5,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Parallel Lives",
+        "pick": 6,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Kessig Wolf Run",
+        "pick": 7,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Frightful Delusion",
+        "pick": 8,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Clifftop Retreat",
+        "pick": 9,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "One-Eyed Scarecrow",
+        "pick": 10,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Kessig Cagebreakers",
+        "pick": 11,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Forbidden Alchemy",
+        "pick": 12,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Civilized Scholar",
+        "pick": 13,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Nightbird's Clutches",
+        "pick": 14,
+        "round": 3
+      }
+    ],
+    "pod_size": 4,
+    "pool": [
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Balefire Dragon {5}{R}{R} | Creature — Dragon 6/6 [mythic]",
+        "name": "Balefire Dragon",
+        "rarity": "mythic",
+        "text": "Flying\nWhenever this creature deals combat damage to a player, it deals that much damage to each creature that player controls."
+      },
+      {
+        "colors": [
+          "B"
+        ],
+        "line": "Maw of the Mire {4}{B} | Sorcery [common]",
+        "name": "Maw of the Mire",
+        "rarity": "common",
+        "text": "Destroy target land. You gain 4 life."
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Gnaw to the Bone {2}{G} | Instant [common]",
+        "name": "Gnaw to the Bone",
+        "rarity": "common",
+        "text": "You gain 2 life for each creature card in your graveyard.\nFlashback {2}{G} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Dearly Departed {4}{W}{W} | Creature — Spirit 5/5 [rare]",
+        "name": "Dearly Departed",
+        "rarity": "rare",
+        "text": "Flying\nAs long as this creature is in your graveyard, each Human creature you control enters with an additional +1/+1 counter on it."
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Avacynian Priest {1}{W} | Creature — Human Cleric 1/2 [common]",
+        "name": "Avacynian Priest",
+        "rarity": "common",
+        "text": "{1}, {T}: Tap target non-Human creature."
+      },
+      {
+        "colors": [],
+        "line": "Mask of Avacyn {2} | Artifact — Equipment [uncommon]",
+        "name": "Mask of Avacyn",
+        "rarity": "uncommon",
+        "text": "Equipped creature gets +1/+2 and has hexproof. (It can't be the target of spells or abilities your opponents control.)\nEquip {3}"
+      },
+      {
+        "colors": [
+          "B"
+        ],
+        "line": "Ghoulcaller's Chant {B} | Sorcery [common]",
+        "name": "Ghoulcaller's Chant",
+        "rarity": "common",
+        "text": "Choose one —\n• Return target creature card from your graveyard to your hand.\n• Return two target Zombie cards from your graveyard to your hand."
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Daybreak Ranger {2}{G} | Creature — Human Archer Ranger Werewolf 2/2 // Nightfall Predator 4/4 [rare]",
+        "name": "Daybreak Ranger",
+        "rarity": "rare",
+        "text": "{T}: This creature deals 2 damage to target creature with flying.\nAt the beginning of each upkeep, if no spells were cast last turn, transform this creature.\n// Nightfall Predator: {R}, {T}: This creature fights target creature. (Each deals damage equal to its power to the other.)\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Ashmouth Hound {1}{R} | Creature — Elemental Dog 2/1 [common]",
+        "name": "Ashmouth Hound",
+        "rarity": "common",
+        "text": "Whenever this creature blocks or becomes blocked by a creature, this creature deals 1 damage to that creature."
+      },
+      {
+        "colors": [
+          "B"
+        ],
+        "line": "Manor Skeleton {1}{B} | Creature — Skeleton 1/1 [common]",
+        "name": "Manor Skeleton",
+        "rarity": "common",
+        "text": "Haste\n{1}{B}: Regenerate this creature."
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Ghostly Possession {2}{W} | Enchantment — Aura [common]",
+        "name": "Ghostly Possession",
+        "rarity": "common",
+        "text": "Enchant creature\nEnchanted creature has flying.\nPrevent all combat damage that would be dealt to and dealt by enchanted creature."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Curse of the Pierced Heart {1}{R} | Enchantment — Aura Curse [common]",
+        "name": "Curse of the Pierced Heart",
+        "rarity": "common",
+        "text": "Enchant player\nAt the beginning of enchanted player's upkeep, this Aura deals 1 damage to that player or a planeswalker that player controls."
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Armored Skaab {2}{U} | Creature — Zombie Warrior 1/4 [common]",
+        "name": "Armored Skaab",
+        "rarity": "common",
+        "text": "When this creature enters, mill four cards."
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Makeshift Mauler {3}{U} | Creature — Zombie Horror 4/5 [common]",
+        "name": "Makeshift Mauler",
+        "rarity": "common",
+        "text": "As an additional cost to cast this spell, exile a creature card from your graveyard."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Burning Vengeance {2}{R} | Enchantment [uncommon]",
+        "name": "Burning Vengeance",
+        "rarity": "uncommon",
+        "text": "Whenever you cast a spell from your graveyard, this enchantment deals 2 damage to any target."
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Elite Inquisitor {W}{W} | Creature — Human Soldier 2/2 [rare]",
+        "name": "Elite Inquisitor",
+        "rarity": "rare",
+        "text": "First strike, vigilance\nProtection from Vampires, from Werewolves, and from Zombies"
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Heretic's Punishment {4}{R} | Enchantment [rare]",
+        "name": "Heretic's Punishment",
+        "rarity": "rare",
+        "text": "{3}{R}: Choose any target, then mill three cards. This enchantment deals damage to that permanent or player equal to the greatest mana value among the milled cards."
+      },
+      {
+        "colors": [],
+        "line": "Moorland Haunt | Land [rare]",
+        "name": "Moorland Haunt",
+        "rarity": "rare",
+        "text": "{T}: Add {C}.\n{W}{U}, {T}, Exile a creature card from your graveyard: Create a 1/1 white Spirit creature token with flying."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Brimstone Volley {2}{R} | Instant [common]",
+        "name": "Brimstone Volley",
+        "rarity": "common",
+        "text": "Brimstone Volley deals 3 damage to any target.\nMorbid — Brimstone Volley deals 5 damage instead if a creature died this turn."
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Elder Cathar {2}{W} | Creature — Human Soldier 2/2 [common]",
+        "name": "Elder Cathar",
+        "rarity": "common",
+        "text": "When this creature dies, put a +1/+1 counter on target creature you control. If that creature is a Human, put two +1/+1 counters on it instead."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Harvest Pyre {1}{R} | Instant [common]",
+        "name": "Harvest Pyre",
+        "rarity": "common",
+        "text": "As an additional cost to cast this spell, exile X cards from your graveyard.\nHarvest Pyre deals X damage to target creature."
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Moon Heron {3}{U} | Creature — Spirit Bird 3/2 [common]",
+        "name": "Moon Heron",
+        "rarity": "common",
+        "text": "Flying"
+      },
+      {
+        "colors": [
+          "B"
+        ],
+        "line": "Brain Weevil {3}{B} | Creature — Insect 1/1 [common]",
+        "name": "Brain Weevil",
+        "rarity": "common",
+        "text": "Intimidate (This creature can't be blocked except by artifact creatures and/or creatures that share a color with it.)\nSacrifice this creature: Target player discards two cards. Activate only as a sorcery."
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Doomed Traveler {W} | Creature — Human Soldier 1/1 [common]",
+        "name": "Doomed Traveler",
+        "rarity": "common",
+        "text": "When this creature dies, create a 1/1 white Spirit creature token with flying."
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Hamlet Captain {1}{G} | Creature — Human Warrior 2/2 [uncommon]",
+        "name": "Hamlet Captain",
+        "rarity": "uncommon",
+        "text": "Whenever this creature attacks or blocks, other Humans you control get +1/+1 until end of turn."
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Moldgraf Monstrosity {4}{G}{G}{G} | Creature — Insect 8/8 [rare]",
+        "name": "Moldgraf Monstrosity",
+        "rarity": "rare",
+        "text": "Trample\nWhen this creature dies, exile it, then return two creature cards at random from your graveyard to the battlefield."
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Bonds of Faith {1}{W} | Enchantment — Aura [common]",
+        "name": "Bonds of Faith",
+        "rarity": "common",
+        "text": "Enchant creature\nEnchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block."
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Dissipate {1}{U}{U} | Instant [uncommon]",
+        "name": "Dissipate",
+        "rarity": "uncommon",
+        "text": "Counter target spell. If that spell is countered this way, exile it instead of putting it into its owner's graveyard."
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Creeping Renaissance {3}{G}{G} | Sorcery [rare]",
+        "name": "Creeping Renaissance",
+        "rarity": "rare",
+        "text": "Choose a permanent type. Return all cards of the chosen type from your graveyard to your hand.\nFlashback {5}{G}{G} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Past in Flames {3}{R} | Sorcery [mythic]",
+        "name": "Past in Flames",
+        "rarity": "mythic",
+        "text": "Each instant and sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost.\nFlashback {4}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Kruin Outlaw {1}{R}{R} | Creature — Human Rogue Werewolf 2/2 // Terror of Kruin Pass 3/3 [rare]",
+        "name": "Kruin Outlaw",
+        "rarity": "rare",
+        "text": "First strike\nAt the beginning of each upkeep, if no spells were cast last turn, transform this creature.\n// Terror of Kruin Pass: Double strike\nWerewolves you control have menace. (A creature with menace can't be blocked except by two or more creatures.)\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Furor of the Bitten {R} | Enchantment — Aura [common]",
+        "name": "Furor of the Bitten",
+        "rarity": "common",
+        "text": "Enchant creature\nEnchanted creature gets +2/+2 and attacks each combat if able."
+      },
+      {
+        "colors": [],
+        "line": "Cobbled Wings {2} | Artifact — Equipment [common]",
+        "name": "Cobbled Wings",
+        "rarity": "common",
+        "text": "Equipped creature has flying.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)"
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Parallel Lives {3}{G} | Enchantment [rare]",
+        "name": "Parallel Lives",
+        "rarity": "rare",
+        "text": "If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead."
+      },
+      {
+        "colors": [],
+        "line": "Kessig Wolf Run | Land [rare]",
+        "name": "Kessig Wolf Run",
+        "rarity": "rare",
+        "text": "{T}: Add {C}.\n{X}{R}{G}, {T}: Target creature gets +X/+0 and gains trample until end of turn."
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Frightful Delusion {2}{U} | Instant [common]",
+        "name": "Frightful Delusion",
+        "rarity": "common",
+        "text": "Counter target spell unless its controller pays {1}. That player discards a card."
+      },
+      {
+        "colors": [],
+        "line": "Clifftop Retreat | Land [rare]",
+        "name": "Clifftop Retreat",
+        "rarity": "rare",
+        "text": "This land enters tapped unless you control a Mountain or a Plains.\n{T}: Add {R} or {W}."
+      },
+      {
+        "colors": [],
+        "line": "One-Eyed Scarecrow {3} | Artifact Creature — Scarecrow 2/3 [common]",
+        "name": "One-Eyed Scarecrow",
+        "rarity": "common",
+        "text": "Defender\nCreatures with flying your opponents control get -1/-0."
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Kessig Cagebreakers {4}{G} | Creature — Human Rogue 3/4 [rare]",
+        "name": "Kessig Cagebreakers",
+        "rarity": "rare",
+        "text": "Whenever this creature attacks, create a 2/2 green Wolf creature token that's tapped and attacking for each creature card in your graveyard."
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Forbidden Alchemy {2}{U} | Instant [common]",
+        "name": "Forbidden Alchemy",
+        "rarity": "common",
+        "text": "Look at the top four cards of your library. Put one of them into your hand and the rest into your graveyard.\nFlashback {6}{B} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Civilized Scholar {2}{U} | Creature — Human Advisor 0/1 // Homicidal Brute 5/1 [uncommon]",
+        "name": "Civilized Scholar",
+        "rarity": "uncommon",
+        "text": "{T}: Draw a card, then discard a card. If a creature card is discarded this way, untap this creature, then transform it.\n// Homicidal Brute: At the beginning of your end step, if this creature didn't attack this turn, tap this creature, then transform it."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Nightbird's Clutches {1}{R} | Sorcery [common]",
+        "name": "Nightbird's Clutches",
+        "rarity": "common",
+        "text": "Up to two target creatures can't block this turn.\nFlashback {3}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+      }
+    ],
+    "seat": 0,
+    "seats": [
+      {
+        "auto": false,
+        "connected": 1,
+        "joined": true,
+        "kind": "human",
+        "name": "seat 0",
+        "picks": 42,
+        "seat": 0,
+        "status": "idle"
+      },
+      {
+        "auto": true,
+        "connected": 1,
+        "joined": true,
+        "kind": "human",
+        "name": "seat 1",
+        "picks": 42,
+        "seat": 1,
+        "status": "idle"
+      },
+      {
+        "auto": false,
+        "connected": 0,
+        "joined": true,
+        "kind": "ai",
+        "name": "seat 2",
+        "picks": 42,
+        "seat": 2,
+        "status": "idle"
+      },
+      {
+        "auto": false,
+        "connected": 0,
+        "joined": true,
+        "kind": "ai",
+        "name": "seat 3",
+        "picks": 42,
+        "seat": 3,
+        "status": "idle"
+      }
+    ],
+    "set": "isd",
+    "standings": [
+      {
+        "byes": 0,
+        "draws": 0,
+        "game_wins": 4,
+        "losses": 0,
+        "points": 6,
+        "seat": 0,
+        "wins": 2
+      },
+      {
+        "byes": 0,
+        "draws": 0,
+        "game_wins": 3,
+        "losses": 1,
+        "points": 3,
+        "seat": 3,
+        "wins": 1
+      },
+      {
+        "byes": 0,
+        "draws": 0,
+        "game_wins": 3,
+        "losses": 1,
+        "points": 3,
+        "seat": 2,
+        "wins": 1
+      },
+      {
+        "byes": 0,
+        "draws": 0,
+        "game_wins": 0,
+        "losses": 2,
+        "points": 0,
+        "seat": 1,
+        "wins": 0
+      }
+    ],
+    "type": "view"
+  },
+  "drafting": {
+    "build_deadline_ms": null,
+    "build_seconds": null,
+    "deck": null,
+    "matches": [],
+    "notice": null,
+    "pack": {
+      "cards": [
+        {
+          "colors": [
+            "U"
+          ],
+          "index": 0,
+          "line": "Curiosity {U} | Enchantment — Aura [uncommon]",
+          "name": "Curiosity",
+          "rarity": "uncommon",
+          "text": "Enchant creature\nWhenever enchanted creature deals damage to an opponent, you may draw a card."
+        },
+        {
+          "colors": [
+            "B"
+          ],
+          "index": 1,
+          "line": "Curse of Death's Hold {3}{B}{B} | Enchantment — Aura Curse [rare]",
+          "name": "Curse of Death's Hold",
+          "rarity": "rare",
+          "text": "Enchant player\nCreatures enchanted player controls get -1/-1."
+        },
+        {
+          "colors": [
+            "B"
+          ],
+          "index": 2,
+          "line": "Curse of Oblivion {3}{B} | Enchantment — Aura Curse [common]",
+          "name": "Curse of Oblivion",
+          "rarity": "common",
+          "text": "Enchant player\nAt the beginning of enchanted player's upkeep, that player exiles two cards from their graveyard."
+        },
+        {
+          "colors": [
+            "R"
+          ],
+          "index": 3,
+          "line": "Curse of Stalked Prey {1}{R} | Enchantment — Aura Curse [rare]",
+          "name": "Curse of Stalked Prey",
+          "rarity": "rare",
+          "text": "Enchant player\nWhenever a creature deals combat damage to enchanted player, put a +1/+1 counter on that creature."
+        },
+        {
+          "colors": [
+            "U"
+          ],
+          "index": 4,
+          "line": "Curse of the Bloody Tome {2}{U} | Enchantment — Aura Curse [common]",
+          "name": "Curse of the Bloody Tome",
+          "rarity": "common",
+          "text": "Enchant player\nAt the beginning of enchanted player's upkeep, that player mills two cards."
+        },
+        {
+          "colors": [
+            "R"
+          ],
+          "index": 5,
+          "line": "Curse of the Nightly Hunt {2}{R} | Enchantment — Aura Curse [uncommon]",
+          "name": "Curse of the Nightly Hunt",
+          "rarity": "uncommon",
+          "text": "Enchant player\nCreatures enchanted player controls attack each combat if able."
+        },
+        {
+          "colors": [
+            "R"
+          ],
+          "index": 6,
+          "line": "Curse of the Pierced Heart {1}{R} | Enchantment — Aura Curse [common]",
+          "name": "Curse of the Pierced Heart",
+          "rarity": "common",
+          "text": "Enchant player\nAt the beginning of enchanted player's upkeep, this Aura deals 1 damage to that player or a planeswalker that player controls."
+        },
+        {
+          "colors": [
+            "G"
+          ],
+          "index": 7,
+          "line": "Darkthicket Wolf {1}{G} | Creature — Wolf 2/2 [common]",
+          "name": "Darkthicket Wolf",
+          "rarity": "common",
+          "text": "{2}{G}: This creature gets +2/+2 until end of turn. Activate only once each turn."
+        },
+        {
+          "colors": [
+            "G"
+          ],
+          "index": 8,
+          "line": "Daybreak Ranger {2}{G} | Creature — Human Archer Ranger Werewolf 2/2 // Nightfall Predator 4/4 [rare]",
+          "name": "Daybreak Ranger",
+          "rarity": "rare",
+          "text": "{T}: This creature deals 2 damage to target creature with flying.\nAt the beginning of each upkeep, if no spells were cast last turn, transform this creature.\n// Nightfall Predator: {R}, {T}: This creature fights target creature. (Each deals damage equal to its power to the other.)\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature."
+        },
+        {
+          "colors": [
+            "B"
+          ],
+          "index": 9,
+          "line": "Dead Weight {B} | Enchantment — Aura [common]",
+          "name": "Dead Weight",
+          "rarity": "common",
+          "text": "Enchant creature\nEnchanted creature gets -2/-2."
+        },
+        {
+          "colors": [
+            "W"
+          ],
+          "index": 10,
+          "line": "Dearly Departed {4}{W}{W} | Creature — Spirit 5/5 [rare]",
+          "name": "Dearly Departed",
+          "rarity": "rare",
+          "text": "Flying\nAs long as this creature is in your graveyard, each Human creature you control enters with an additional +1/+1 counter on it."
+        }
+      ],
+      "deadline_ms": null,
+      "id": 1,
+      "pick": 4,
+      "round": 1,
+      "size": 14,
+      "waiting": 3
+    },
+    "pairings": [],
+    "pass_direction": "left",
+    "phase": "drafting",
+    "pick_seconds": null,
+    "picks": [
+      {
+        "auto": false,
+        "card": "Balefire Dragon",
+        "pick": 1,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Maw of the Mire",
+        "pick": 2,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Gnaw to the Bone",
+        "pick": 3,
+        "round": 1
+      }
+    ],
+    "pod_size": 4,
+    "pool": [
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Balefire Dragon {5}{R}{R} | Creature — Dragon 6/6 [mythic]",
+        "name": "Balefire Dragon",
+        "rarity": "mythic",
+        "text": "Flying\nWhenever this creature deals combat damage to a player, it deals that much damage to each creature that player controls."
+      },
+      {
+        "colors": [
+          "B"
+        ],
+        "line": "Maw of the Mire {4}{B} | Sorcery [common]",
+        "name": "Maw of the Mire",
+        "rarity": "common",
+        "text": "Destroy target land. You gain 4 life."
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Gnaw to the Bone {2}{G} | Instant [common]",
+        "name": "Gnaw to the Bone",
+        "rarity": "common",
+        "text": "You gain 2 life for each creature card in your graveyard.\nFlashback {2}{G} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+      }
+    ],
+    "seat": 0,
+    "seats": [
+      {
+        "auto": false,
+        "connected": 1,
+        "joined": true,
+        "kind": "human",
+        "name": "seat 0",
+        "picks": 3,
+        "seat": 0,
+        "status": "picking"
+      },
+      {
+        "auto": false,
+        "connected": 1,
+        "joined": true,
+        "kind": "human",
+        "name": "seat 1",
+        "picks": 4,
+        "seat": 1,
+        "status": "waiting"
+      },
+      {
+        "auto": false,
+        "connected": 0,
+        "joined": true,
+        "kind": "ai",
+        "name": "seat 2",
+        "picks": 5,
+        "seat": 2,
+        "status": "waiting"
+      },
+      {
+        "auto": false,
+        "connected": 0,
+        "joined": true,
+        "kind": "ai",
+        "name": "seat 3",
+        "picks": 6,
+        "seat": 3,
+        "status": "waiting"
+      }
+    ],
+    "set": "isd",
+    "standings": [],
+    "type": "view"
+  },
+  "lobby": {
+    "build_deadline_ms": null,
+    "build_seconds": null,
+    "deck": null,
+    "matches": [],
+    "notice": null,
+    "pack": null,
+    "pairings": [],
+    "pass_direction": null,
+    "phase": "lobby",
+    "pick_seconds": null,
+    "picks": [],
+    "pod_size": 4,
+    "pool": [],
+    "seat": 0,
+    "seats": [
+      {
+        "auto": false,
+        "connected": 1,
+        "joined": true,
+        "kind": "human",
+        "name": "seat 0",
+        "picks": 0,
+        "seat": 0,
+        "status": "idle"
+      },
+      {
+        "auto": false,
+        "connected": 0,
+        "joined": false,
+        "kind": "human",
+        "name": "seat 1",
+        "picks": 0,
+        "seat": 1,
+        "status": "idle"
+      },
+      {
+        "auto": false,
+        "connected": 0,
+        "joined": true,
+        "kind": "ai",
+        "name": "seat 2",
+        "picks": 0,
+        "seat": 2,
+        "status": "idle"
+      },
+      {
+        "auto": false,
+        "connected": 0,
+        "joined": true,
+        "kind": "ai",
+        "name": "seat 3",
+        "picks": 0,
+        "seat": 3,
+        "status": "idle"
+      }
+    ],
+    "set": "isd",
+    "standings": [],
+    "type": "view"
+  },
+  "playing": {
+    "build_deadline_ms": null,
+    "build_seconds": null,
+    "deck": {
+      "lands": {
+        "Mountain": 9,
+        "Plains": 8
+      },
+      "main": [
+        "Balefire Dragon",
+        "Dearly Departed",
+        "Avacynian Priest",
+        "Mask of Avacyn",
+        "Ashmouth Hound",
+        "Ghostly Possession",
+        "Curse of the Pierced Heart",
+        "Burning Vengeance",
+        "Elite Inquisitor",
+        "Heretic's Punishment",
+        "Moorland Haunt",
+        "Brimstone Volley",
+        "Elder Cathar",
+        "Harvest Pyre",
+        "Doomed Traveler",
+        "Bonds of Faith",
+        "Past in Flames",
+        "Kruin Outlaw",
+        "Furor of the Bitten",
+        "Cobbled Wings",
+        "Kessig Wolf Run",
+        "Clifftop Retreat",
+        "One-Eyed Scarecrow"
+      ],
+      "problem": null,
+      "ready": true,
+      "sideboard": [
+        "Maw of the Mire",
+        "Gnaw to the Bone",
+        "Ghoulcaller's Chant",
+        "Daybreak Ranger // Nightfall Predator",
+        "Manor Skeleton",
+        "Armored Skaab",
+        "Makeshift Mauler",
+        "Moon Heron",
+        "Brain Weevil",
+        "Hamlet Captain",
+        "Moldgraf Monstrosity",
+        "Dissipate",
+        "Creeping Renaissance",
+        "Parallel Lives",
+        "Frightful Delusion",
+        "Kessig Cagebreakers",
+        "Forbidden Alchemy",
+        "Civilized Scholar // Homicidal Brute",
+        "Nightbird's Clutches"
+      ],
+      "valid": true
+    },
+    "matches": [
+      {
+        "games": [
+          {
+            "winner": 0
+          }
+        ],
+        "opponent": 1,
+        "result": null,
+        "round": 1,
+        "status": "playing",
+        "url": "http://192.168.1.20:8801/"
+      }
+    ],
+    "notice": null,
+    "pack": null,
+    "pairings": [
+      {
+        "a": 0,
+        "b": 1,
+        "result": null,
+        "round": 1,
+        "status": "playing"
+      },
+      {
+        "a": 2,
+        "b": 3,
+        "result": null,
+        "round": 1,
+        "status": "playing"
+      }
+    ],
+    "pass_direction": null,
+    "phase": "playing",
+    "pick_seconds": null,
+    "picks": [
+      {
+        "auto": false,
+        "card": "Balefire Dragon",
+        "pick": 1,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Maw of the Mire",
+        "pick": 2,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Gnaw to the Bone",
+        "pick": 3,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Dearly Departed",
+        "pick": 4,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Avacynian Priest",
+        "pick": 5,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Mask of Avacyn",
+        "pick": 6,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Ghoulcaller's Chant",
+        "pick": 7,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Daybreak Ranger",
+        "pick": 8,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Ashmouth Hound",
+        "pick": 9,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Manor Skeleton",
+        "pick": 10,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Ghostly Possession",
+        "pick": 11,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Curse of the Pierced Heart",
+        "pick": 12,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Armored Skaab",
+        "pick": 13,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Makeshift Mauler",
+        "pick": 14,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Burning Vengeance",
+        "pick": 1,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Elite Inquisitor",
+        "pick": 2,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Heretic's Punishment",
+        "pick": 3,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Moorland Haunt",
+        "pick": 4,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Brimstone Volley",
+        "pick": 5,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Elder Cathar",
+        "pick": 6,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Harvest Pyre",
+        "pick": 7,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Moon Heron",
+        "pick": 8,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Brain Weevil",
+        "pick": 9,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Doomed Traveler",
+        "pick": 10,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Hamlet Captain",
+        "pick": 11,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Moldgraf Monstrosity",
+        "pick": 12,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Bonds of Faith",
+        "pick": 13,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Dissipate",
+        "pick": 14,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Creeping Renaissance",
+        "pick": 1,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Past in Flames",
+        "pick": 2,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Kruin Outlaw",
+        "pick": 3,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Furor of the Bitten",
+        "pick": 4,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Cobbled Wings",
+        "pick": 5,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Parallel Lives",
+        "pick": 6,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Kessig Wolf Run",
+        "pick": 7,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Frightful Delusion",
+        "pick": 8,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Clifftop Retreat",
+        "pick": 9,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "One-Eyed Scarecrow",
+        "pick": 10,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Kessig Cagebreakers",
+        "pick": 11,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Forbidden Alchemy",
+        "pick": 12,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Civilized Scholar",
+        "pick": 13,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Nightbird's Clutches",
+        "pick": 14,
+        "round": 3
+      }
+    ],
+    "pod_size": 4,
+    "pool": [
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Balefire Dragon {5}{R}{R} | Creature — Dragon 6/6 [mythic]",
+        "name": "Balefire Dragon",
+        "rarity": "mythic",
+        "text": "Flying\nWhenever this creature deals combat damage to a player, it deals that much damage to each creature that player controls."
+      },
+      {
+        "colors": [
+          "B"
+        ],
+        "line": "Maw of the Mire {4}{B} | Sorcery [common]",
+        "name": "Maw of the Mire",
+        "rarity": "common",
+        "text": "Destroy target land. You gain 4 life."
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Gnaw to the Bone {2}{G} | Instant [common]",
+        "name": "Gnaw to the Bone",
+        "rarity": "common",
+        "text": "You gain 2 life for each creature card in your graveyard.\nFlashback {2}{G} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Dearly Departed {4}{W}{W} | Creature — Spirit 5/5 [rare]",
+        "name": "Dearly Departed",
+        "rarity": "rare",
+        "text": "Flying\nAs long as this creature is in your graveyard, each Human creature you control enters with an additional +1/+1 counter on it."
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Avacynian Priest {1}{W} | Creature — Human Cleric 1/2 [common]",
+        "name": "Avacynian Priest",
+        "rarity": "common",
+        "text": "{1}, {T}: Tap target non-Human creature."
+      },
+      {
+        "colors": [],
+        "line": "Mask of Avacyn {2} | Artifact — Equipment [uncommon]",
+        "name": "Mask of Avacyn",
+        "rarity": "uncommon",
+        "text": "Equipped creature gets +1/+2 and has hexproof. (It can't be the target of spells or abilities your opponents control.)\nEquip {3}"
+      },
+      {
+        "colors": [
+          "B"
+        ],
+        "line": "Ghoulcaller's Chant {B} | Sorcery [common]",
+        "name": "Ghoulcaller's Chant",
+        "rarity": "common",
+        "text": "Choose one —\n• Return target creature card from your graveyard to your hand.\n• Return two target Zombie cards from your graveyard to your hand."
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Daybreak Ranger {2}{G} | Creature — Human Archer Ranger Werewolf 2/2 // Nightfall Predator 4/4 [rare]",
+        "name": "Daybreak Ranger",
+        "rarity": "rare",
+        "text": "{T}: This creature deals 2 damage to target creature with flying.\nAt the beginning of each upkeep, if no spells were cast last turn, transform this creature.\n// Nightfall Predator: {R}, {T}: This creature fights target creature. (Each deals damage equal to its power to the other.)\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Ashmouth Hound {1}{R} | Creature — Elemental Dog 2/1 [common]",
+        "name": "Ashmouth Hound",
+        "rarity": "common",
+        "text": "Whenever this creature blocks or becomes blocked by a creature, this creature deals 1 damage to that creature."
+      },
+      {
+        "colors": [
+          "B"
+        ],
+        "line": "Manor Skeleton {1}{B} | Creature — Skeleton 1/1 [common]",
+        "name": "Manor Skeleton",
+        "rarity": "common",
+        "text": "Haste\n{1}{B}: Regenerate this creature."
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Ghostly Possession {2}{W} | Enchantment — Aura [common]",
+        "name": "Ghostly Possession",
+        "rarity": "common",
+        "text": "Enchant creature\nEnchanted creature has flying.\nPrevent all combat damage that would be dealt to and dealt by enchanted creature."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Curse of the Pierced Heart {1}{R} | Enchantment — Aura Curse [common]",
+        "name": "Curse of the Pierced Heart",
+        "rarity": "common",
+        "text": "Enchant player\nAt the beginning of enchanted player's upkeep, this Aura deals 1 damage to that player or a planeswalker that player controls."
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Armored Skaab {2}{U} | Creature — Zombie Warrior 1/4 [common]",
+        "name": "Armored Skaab",
+        "rarity": "common",
+        "text": "When this creature enters, mill four cards."
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Makeshift Mauler {3}{U} | Creature — Zombie Horror 4/5 [common]",
+        "name": "Makeshift Mauler",
+        "rarity": "common",
+        "text": "As an additional cost to cast this spell, exile a creature card from your graveyard."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Burning Vengeance {2}{R} | Enchantment [uncommon]",
+        "name": "Burning Vengeance",
+        "rarity": "uncommon",
+        "text": "Whenever you cast a spell from your graveyard, this enchantment deals 2 damage to any target."
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Elite Inquisitor {W}{W} | Creature — Human Soldier 2/2 [rare]",
+        "name": "Elite Inquisitor",
+        "rarity": "rare",
+        "text": "First strike, vigilance\nProtection from Vampires, from Werewolves, and from Zombies"
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Heretic's Punishment {4}{R} | Enchantment [rare]",
+        "name": "Heretic's Punishment",
+        "rarity": "rare",
+        "text": "{3}{R}: Choose any target, then mill three cards. This enchantment deals damage to that permanent or player equal to the greatest mana value among the milled cards."
+      },
+      {
+        "colors": [],
+        "line": "Moorland Haunt | Land [rare]",
+        "name": "Moorland Haunt",
+        "rarity": "rare",
+        "text": "{T}: Add {C}.\n{W}{U}, {T}, Exile a creature card from your graveyard: Create a 1/1 white Spirit creature token with flying."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Brimstone Volley {2}{R} | Instant [common]",
+        "name": "Brimstone Volley",
+        "rarity": "common",
+        "text": "Brimstone Volley deals 3 damage to any target.\nMorbid — Brimstone Volley deals 5 damage instead if a creature died this turn."
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Elder Cathar {2}{W} | Creature — Human Soldier 2/2 [common]",
+        "name": "Elder Cathar",
+        "rarity": "common",
+        "text": "When this creature dies, put a +1/+1 counter on target creature you control. If that creature is a Human, put two +1/+1 counters on it instead."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Harvest Pyre {1}{R} | Instant [common]",
+        "name": "Harvest Pyre",
+        "rarity": "common",
+        "text": "As an additional cost to cast this spell, exile X cards from your graveyard.\nHarvest Pyre deals X damage to target creature."
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Moon Heron {3}{U} | Creature — Spirit Bird 3/2 [common]",
+        "name": "Moon Heron",
+        "rarity": "common",
+        "text": "Flying"
+      },
+      {
+        "colors": [
+          "B"
+        ],
+        "line": "Brain Weevil {3}{B} | Creature — Insect 1/1 [common]",
+        "name": "Brain Weevil",
+        "rarity": "common",
+        "text": "Intimidate (This creature can't be blocked except by artifact creatures and/or creatures that share a color with it.)\nSacrifice this creature: Target player discards two cards. Activate only as a sorcery."
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Doomed Traveler {W} | Creature — Human Soldier 1/1 [common]",
+        "name": "Doomed Traveler",
+        "rarity": "common",
+        "text": "When this creature dies, create a 1/1 white Spirit creature token with flying."
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Hamlet Captain {1}{G} | Creature — Human Warrior 2/2 [uncommon]",
+        "name": "Hamlet Captain",
+        "rarity": "uncommon",
+        "text": "Whenever this creature attacks or blocks, other Humans you control get +1/+1 until end of turn."
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Moldgraf Monstrosity {4}{G}{G}{G} | Creature — Insect 8/8 [rare]",
+        "name": "Moldgraf Monstrosity",
+        "rarity": "rare",
+        "text": "Trample\nWhen this creature dies, exile it, then return two creature cards at random from your graveyard to the battlefield."
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Bonds of Faith {1}{W} | Enchantment — Aura [common]",
+        "name": "Bonds of Faith",
+        "rarity": "common",
+        "text": "Enchant creature\nEnchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block."
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Dissipate {1}{U}{U} | Instant [uncommon]",
+        "name": "Dissipate",
+        "rarity": "uncommon",
+        "text": "Counter target spell. If that spell is countered this way, exile it instead of putting it into its owner's graveyard."
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Creeping Renaissance {3}{G}{G} | Sorcery [rare]",
+        "name": "Creeping Renaissance",
+        "rarity": "rare",
+        "text": "Choose a permanent type. Return all cards of the chosen type from your graveyard to your hand.\nFlashback {5}{G}{G} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Past in Flames {3}{R} | Sorcery [mythic]",
+        "name": "Past in Flames",
+        "rarity": "mythic",
+        "text": "Each instant and sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost.\nFlashback {4}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Kruin Outlaw {1}{R}{R} | Creature — Human Rogue Werewolf 2/2 // Terror of Kruin Pass 3/3 [rare]",
+        "name": "Kruin Outlaw",
+        "rarity": "rare",
+        "text": "First strike\nAt the beginning of each upkeep, if no spells were cast last turn, transform this creature.\n// Terror of Kruin Pass: Double strike\nWerewolves you control have menace. (A creature with menace can't be blocked except by two or more creatures.)\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Furor of the Bitten {R} | Enchantment — Aura [common]",
+        "name": "Furor of the Bitten",
+        "rarity": "common",
+        "text": "Enchant creature\nEnchanted creature gets +2/+2 and attacks each combat if able."
+      },
+      {
+        "colors": [],
+        "line": "Cobbled Wings {2} | Artifact — Equipment [common]",
+        "name": "Cobbled Wings",
+        "rarity": "common",
+        "text": "Equipped creature has flying.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)"
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Parallel Lives {3}{G} | Enchantment [rare]",
+        "name": "Parallel Lives",
+        "rarity": "rare",
+        "text": "If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead."
+      },
+      {
+        "colors": [],
+        "line": "Kessig Wolf Run | Land [rare]",
+        "name": "Kessig Wolf Run",
+        "rarity": "rare",
+        "text": "{T}: Add {C}.\n{X}{R}{G}, {T}: Target creature gets +X/+0 and gains trample until end of turn."
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Frightful Delusion {2}{U} | Instant [common]",
+        "name": "Frightful Delusion",
+        "rarity": "common",
+        "text": "Counter target spell unless its controller pays {1}. That player discards a card."
+      },
+      {
+        "colors": [],
+        "line": "Clifftop Retreat | Land [rare]",
+        "name": "Clifftop Retreat",
+        "rarity": "rare",
+        "text": "This land enters tapped unless you control a Mountain or a Plains.\n{T}: Add {R} or {W}."
+      },
+      {
+        "colors": [],
+        "line": "One-Eyed Scarecrow {3} | Artifact Creature — Scarecrow 2/3 [common]",
+        "name": "One-Eyed Scarecrow",
+        "rarity": "common",
+        "text": "Defender\nCreatures with flying your opponents control get -1/-0."
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Kessig Cagebreakers {4}{G} | Creature — Human Rogue 3/4 [rare]",
+        "name": "Kessig Cagebreakers",
+        "rarity": "rare",
+        "text": "Whenever this creature attacks, create a 2/2 green Wolf creature token that's tapped and attacking for each creature card in your graveyard."
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Forbidden Alchemy {2}{U} | Instant [common]",
+        "name": "Forbidden Alchemy",
+        "rarity": "common",
+        "text": "Look at the top four cards of your library. Put one of them into your hand and the rest into your graveyard.\nFlashback {6}{B} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Civilized Scholar {2}{U} | Creature — Human Advisor 0/1 // Homicidal Brute 5/1 [uncommon]",
+        "name": "Civilized Scholar",
+        "rarity": "uncommon",
+        "text": "{T}: Draw a card, then discard a card. If a creature card is discarded this way, untap this creature, then transform it.\n// Homicidal Brute: At the beginning of your end step, if this creature didn't attack this turn, tap this creature, then transform it."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Nightbird's Clutches {1}{R} | Sorcery [common]",
+        "name": "Nightbird's Clutches",
+        "rarity": "common",
+        "text": "Up to two target creatures can't block this turn.\nFlashback {3}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+      }
+    ],
+    "seat": 0,
+    "seats": [
+      {
+        "auto": false,
+        "connected": 1,
+        "joined": true,
+        "kind": "human",
+        "name": "seat 0",
+        "picks": 42,
+        "seat": 0,
+        "status": "playing"
+      },
+      {
+        "auto": true,
+        "connected": 1,
+        "joined": true,
+        "kind": "human",
+        "name": "seat 1",
+        "picks": 42,
+        "seat": 1,
+        "status": "playing"
+      },
+      {
+        "auto": false,
+        "connected": 0,
+        "joined": true,
+        "kind": "ai",
+        "name": "seat 2",
+        "picks": 42,
+        "seat": 2,
+        "status": "playing"
+      },
+      {
+        "auto": false,
+        "connected": 0,
+        "joined": true,
+        "kind": "ai",
+        "name": "seat 3",
+        "picks": 42,
+        "seat": 3,
+        "status": "playing"
+      }
+    ],
+    "set": "isd",
+    "standings": [
+      {
+        "byes": 0,
+        "draws": 0,
+        "game_wins": 0,
+        "losses": 0,
+        "points": 0,
+        "seat": 0,
+        "wins": 0
+      },
+      {
+        "byes": 0,
+        "draws": 0,
+        "game_wins": 0,
+        "losses": 0,
+        "points": 0,
+        "seat": 1,
+        "wins": 0
+      },
+      {
+        "byes": 0,
+        "draws": 0,
+        "game_wins": 0,
+        "losses": 0,
+        "points": 0,
+        "seat": 2,
+        "wins": 0
+      },
+      {
+        "byes": 0,
+        "draws": 0,
+        "game_wins": 0,
+        "losses": 0,
+        "points": 0,
+        "seat": 3,
+        "wins": 0
+      }
+    ],
+    "type": "view"
+  },
+  "refused": {
+    "echo": {
+      "lands": {},
+      "main": [
+        "Abbey Griffin"
+      ],
+      "sideboard": [],
+      "type": "deck"
+    },
+    "reason": "Deck has 5 cards (need at least 40). Add more cards or basic lands.",
+    "type": "refused"
+  }
+}

@@ -277,6 +277,12 @@ mistyped invocation costs nothing rather than starting an eight-seat draft.
 There is no `--seed`, `--save`, or `--resume` here: a draft run cannot be
 replayed or resumed.
 
+To draft *with* people — a hosted table where humans join from a browser
+or a terminal and AI seats fill the rest, then everybody plays — see
+`docs/draft-with-friends.md` (`mtg-draft-server` and `mtg-draft-client`,
+in the same crate). Its AI seats are told exactly what the runner's are,
+and its `--log` is the same format.
+
 ## Not supported yet
 
 - **The spec's thinking suffix only reaches Gemini.** `with_thinking_level`
