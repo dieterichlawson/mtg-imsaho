@@ -142,7 +142,11 @@ function onView(view: DraftView): void {
     if (!stillThere || Date.now() - state.pendingPick.sentAt > 5000) state.pendingPick = null;
   }
   if (state.selected !== null && (!pack || !pack.cards.some(c => c.index === state.selected))) state.selected = null;
-  state.deadlineAt = pack && pack.deadline_ms !== null ? performance.now() + pack.deadline_ms : null;
+  // The countdown: the pick timer while a pack is in front, else the
+  // build timer while the deck is not yet final.
+  const buildLeft = view.phase === "building" && view.build_deadline_ms != null ? view.build_deadline_ms : null;
+  state.deadlineAt = pack && pack.deadline_ms !== null ? performance.now() + pack.deadline_ms
+    : buildLeft !== null ? performance.now() + buildLeft : null;
 
   // Building: the edit is the person's and survives the views that arrive
   // while they work (another seat's status, a pick elsewhere). It starts

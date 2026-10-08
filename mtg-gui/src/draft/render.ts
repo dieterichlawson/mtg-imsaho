@@ -98,13 +98,25 @@ function seatName(view: DraftView, seat: number): string {
   return s.name === `seat ${seat}` ? s.name : `${s.name} (seat ${seat})`;
 }
 
+/** "here", "away" (joined, no socket) or "not yet"; an AI seat is always here. */
+function presence(s: SeatInfo): string {
+  if (!s.joined) return "not yet";
+  if (s.kind === "human" && s.connected === 0) return "away";
+  return "here";
+}
+
+/** The status word, with the table's hand named when it picks for the seat. */
+function statusWord(s: SeatInfo): string {
+  return s.auto ? `${s.status} (table picks)` : s.status;
+}
+
 function seatsTable(view: DraftView): HTMLElement {
   const rows = view.seats.map((s: SeatInfo) => h("tr", { class: s.seat === view.seat ? "me" : "" },
     h("td", { text: String(s.seat) }),
     h("td", { text: s.name + (s.seat === view.seat ? " (you)" : "") }),
     h("td", { text: s.kind }),
-    h("td", { text: s.joined ? "here" : "not yet" }),
-    h("td", { text: s.status }),
+    h("td", { text: presence(s) }),
+    h("td", { text: statusWord(s) }),
     h("td", { class: "num", text: String(s.picks) }),
   ));
   return h("table", { class: "seats" },
@@ -126,15 +138,36 @@ function standingsTable(view: DraftView): HTMLElement {
 }
 
 function matchRow(view: DraftView, m: Match): HTMLElement {
-  const games = m.games.map((g, i) => `G${i + 1} ${g.winner === view.seat ? "you" : seatName(view, g.winner)}`).join(", ");
+  const games = m.games.map((g, i) => `G${i + 1} ${g.winner === null ? "drawn" : g.winner === view.seat ? "you" : seatName(view, g.winner)}`).join(", ");
   const status = m.status === "done" ? `done${m.result ? `, ${m.result}` : ""}` : m.status === "playing" ? "playing now" : "waiting to start";
+  // The link is this seat's own page. It is null until the match's pages
+  // are open (a beat after the pairing), and stays null for a match the
+  // table settled without one (a forfeit).
+  let link: HTMLElement | null = null;
+  if (m.status !== "done") {
+    link = m.url
+      ? h("div", { class: "match-link" }, "Open your game: ", h("a", { href: m.url, target: "_blank", rel: "noopener", text: m.url }))
+      : h("div", { class: "match-link muted", text: m.status === "waiting" ? "Your game page opens when the match starts." : "No game page for this match." });
+  }
   return h("li", { class: `match match-${m.status}` },
     h("div", { class: "match-head" },
       h("span", { text: `Round ${m.round} vs ${seatName(view, m.opponent)} — ${status}` })),
-    m.status !== "done" ? h("div", { class: "match-link" }, "Open your game: ",
-      h("a", { href: m.url, target: "_blank", rel: "noopener", text: m.url })) : null,
+    link,
     games ? h("div", { class: "match-games muted", text: games }) : null,
   );
+}
+
+/** Every match of the tournament, the whole table's, round by round. */
+function pairingsList(view: DraftView): HTMLElement | null {
+  const pairings = view.pairings;
+  if (!pairings || pairings.length === 0) return null;
+  const rows = pairings.map(p => {
+    const who = p.b === null ? `${seatName(view, p.a)} has a bye` : `${seatName(view, p.a)} vs ${seatName(view, p.b)}`;
+    const how = p.b === null ? "" : p.status === "done" ? ` — ${p.result ?? "done"}` : p.status === "playing" ? " — playing" : " — waiting";
+    const mine = p.a === view.seat || p.b === view.seat;
+    return h("li", { class: mine ? "me" : "", text: `Round ${p.round}: ${who}${how}` });
+  });
+  return h("div", { class: "pairings" }, h("h3", { text: "All matches" }), h("ul", { class: "pairings-list" }, ...rows));
 }
 
 // ----------------------------------------------------------------- phases
@@ -244,6 +277,10 @@ function building(view: DraftView, state: PageState, actions: Actions): HTMLElem
   const s = summary(edit, view.pool);
   panel.append(h("h3", { text: ready ? "Deck — ready" : "Deck" }));
   panel.append(h("div", { class: "count-line", id: "count-line", text: `${c.spells} spells + ${c.lands} lands = ${c.total}` }));
+  if (!ready && view.build_deadline_ms != null) {
+    panel.append(h("div", { class: "build-timer" }, h("span", { id: "countdown", class: "countdown" }),
+      h("span", { class: "muted", text: " to send a deck, or the table builds one for you" })));
+  }
   const landsEl = h("div", { class: "lands" });
   for (const b of BASICS) {
     const n = edit.lands[b] || 0;
@@ -295,6 +332,8 @@ function playing(view: DraftView, done: boolean): HTMLElement {
   sections.push(h("h3", { text: "Your matches" }),
     view.matches.length ? h("ul", { class: "matches" }, ...view.matches.map(m => matchRow(view, m))) : h("p", { class: "muted", text: "No pairings yet." }));
   sections.push(h("h3", { text: done ? "Final standings" : "Standings" }), standingsTable(view));
+  const all = pairingsList(view);
+  if (all) sections.push(all);
   sections.push(h("h3", { text: "Seats" }), seatsTable(view));
   if (view.deck) {
     sections.push(h("h3", { text: `Your deck (${view.deck.main.length + Object.values(view.deck.lands).reduce((a, b) => a + b, 0)})` }),
