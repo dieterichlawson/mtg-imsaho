@@ -994,6 +994,15 @@ fn sever_the_bloodline_exiles_all_with_same_name() {
 
     // Bear should be unaffected.
     assert_eq!(state.get_object(bear).unwrap().zone, Zone::Battlefield, "Differently-named creature should be unaffected");
+
+    // The cause, then one line per move — not the moves told again after
+    // them (#738).
+    let lines: Vec<&str> = state.game_log.iter().map(|e| e.message.as_str()).collect();
+    let cause = lines.iter().position(|m| m.starts_with("Sever the Bloodline exiles 3")).expect("the cause");
+    let moves: Vec<usize> = lines.iter().enumerate()
+        .filter(|(_, m)| m.contains("Zombie") && m.ends_with("was exiled")).map(|(i, _)| i).collect();
+    assert_eq!(moves.len(), 3, "{lines:#?}");
+    assert!(moves.iter().all(|&i| i > cause), "the cause comes first: {lines:#?}");
 }
 
 /// Ruling: "A double-faced creature only has the name of the face that's up.

@@ -52,12 +52,14 @@ impl CardBehavior for SeverTheBloodline {
                     .filter(|id| state.is_creature(*id, registry) && state.name_of(*id, registry) == name)
                     .collect();
 
+                // The cause, before the moves `move_object` logs one by one;
+                // written after them it was a summary telling them again
+                // (#738).
+                state.log(crate::state::LogLevel::Event,
+                    format!("Sever the Bloodline exiles {} creature(s) named \"{}\"", to_exile.len(), name));
                 for id in &to_exile {
                     state.move_object(*id, Zone::Exile, registry);
                 }
-
-                state.log(crate::state::LogLevel::Event,
-                    format!("Sever the Bloodline exiles {} creature(s) named \"{}\"", to_exile.len(), name));
             }
         }
     }

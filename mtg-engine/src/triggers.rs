@@ -687,9 +687,9 @@ fn target_requirement(
 /// token is still on the battlefield.
 fn exile_delayed_token(state: &mut GameState, target_id: ObjectId, registry: &CardRegistry) {
     if state.get_object(target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
+        // `move_object` logs the exile; a second line after it told the same
+        // move again (#738).
         state.move_object(target_id, Zone::Exile, registry);
-        state.log(crate::state::LogLevel::Event,
-            "Token exiled by delayed end-of-combat trigger".into());
     }
 }
 

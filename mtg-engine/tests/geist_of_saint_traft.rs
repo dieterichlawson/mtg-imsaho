@@ -96,6 +96,10 @@ fn angel_exiled_at_end_of_combat() {
 
     assert_eq!(state.get_object(angel_id).unwrap().zone, Zone::Exile,
         "Angel token should be exiled at end of combat");
+    // Logged once, by the engine (#738).
+    let exiles: Vec<&str> = state.game_log.iter().map(|e| e.message.as_str())
+        .filter(|m| m.contains("exiled")).collect();
+    assert_eq!(exiles.len(), 1, "one line for one exile: {exiles:#?}");
 }
 
 #[test]
