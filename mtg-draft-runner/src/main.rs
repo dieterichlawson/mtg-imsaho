@@ -995,6 +995,15 @@ fn main() {
             .unwrap_or_else(|e| die(&format!("failed to read draft save '{path}': {e}")));
         let save: DraftSave = serde_json::from_str(&text)
             .unwrap_or_else(|e| die(&format!("draft save '{path}' is not a valid snapshot: {e}")));
+        // The flags' own floor, which a snapshot's values replace them past:
+        // `"players": 0` panicked indexing the log header's seat 0 (#734),
+        // and `"best_of": 0` played matches of no games.
+        if save.players == 0 {
+            die(&format!("draft save '{path}' cannot be replayed: it has 0 seats, and a draft needs at least 1"));
+        }
+        if save.best_of == Some(0) {
+            die(&format!("draft save '{path}' cannot be replayed: its matches are best-of-0, and a match needs at least 1 game"));
+        }
         // Only a value the operator actually asked for can be overridden.
         // Where they asked for nothing, the note says where the value came
         // from rather than inventing an argument they never gave (#582).
