@@ -705,3 +705,24 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   or replays something and draws a different draft in silence. Compare
   the "N picks came from a snapshot" summary against the number actually
   replayed every time.
+
+  **Run 2026-10-08: the shape check holds, but not what happens around it.**
+  About 30 corruptions of a 2-seat `--seed 25` save were tried. Every one
+  was refused with the record named, or replayed the identical draft:
+  seat past the pod, pick -1/0/15, round 4, duplicates, shuffled order,
+  pack 2 begun early, edited players/seed/set, truncated or empty files.
+  Four finds, all outside the check:
+
+  - #733: the replay writes `--save` before the impossible-card check
+    reaches the bad step, so a refused `--resume X --save X` truncates its
+    own snapshot.
+  - #732: a resumed run's save drops every carried match.
+  - #734: `players: 0` panics.
+  - #735: a refused resume's log claims the picks were replayed and holds
+    no error.
+
+  Accepted silently but harmless today: unknown fields, `version: 99`, a
+  `seats` list of the wrong length. The save has no version field, so a
+  future format change will not be caught. Re-probe: whether *every*
+  `die` after the first snapshot write leaves `--save` intact (the card
+  check was one; look for others).
