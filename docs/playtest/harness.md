@@ -874,3 +874,31 @@ say what your stub says.
   per source object across boards of 2..20 creatures for every card whose
   `activated_abilities` length depends on the board, and flag anything
   superlinear
+- H26 [proposed 2026-10-08, from reports/llm-cost.md] the cost of a
+  decision: run `scripts/measure-llm-prompts.sh` over ten seeds and read
+  the per-call bytes and session counts. The request for decision N must
+  not carry decision N-1's board (the history is bounded; the recap and
+  the seat's notes are in the prompt), the system prompt must be
+  byte-identical across a game (or the cache misses every call), no
+  `claude -p` call may `--resume` an earlier decision's session unless
+  `MTG_LLM_HISTORY` asks for it, and the per-game figures must stay near
+  the report's. File a token regression the way a clipped row is filed:
+  it is the same failure on the surface where nothing wraps
+- H27 [proposed 2026-10-08, same source] what the seat lost when the
+  history went: play a `cc` game with `--log` and at every decision ask
+  whether the prompt alone (board, hand, recent events, the `Your notes
+  from your last decision:` line) is enough to continue a plan made two
+  turns ago — an attack planned around a trick in hand, a land held for
+  a flashback. Where the seat visibly forgets, say what one line in the
+  prompt would have carried it, and file it as a sufficiency gap (H5's
+  kind), not a cost one
+- H28 [proposed 2026-10-08, same source] the decisions the seat is no
+  longer asked: with `--log`, list every `AUTO-PASS` line (and, once the
+  seat can say "pass until something happens", every stretch it passes
+  on its own) and check the legal actions at each point were nothing a
+  human would have paused on: Pass, Concede and bare mana abilities. One
+  with a castable instant, an activatable ability, or a stack object the
+  seat never saw is a decision taken from the seat, `sev:game-affecting`;
+  and the recap at the next real prompt must carry everything that
+  happened in between. Then the converse: a priority stop with nothing
+  to do that was still sent to the model is the cost bug's return
