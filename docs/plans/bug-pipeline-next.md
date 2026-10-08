@@ -100,3 +100,37 @@ open tickets are recorded on the tickets themselves.
 - The planner test's "unmet shapes" result. If it found misses, those
   become issues the day a card with such a cost is implemented, and the
   Dark Ascension plan names which cards those are.
+
+## What changed on 2026-10-08
+
+Three things landed in one day, and each one is a surface the loops did
+not know about until now.
+
+1. **The LLM seat is stateless, and the bill is measured.** One decision
+   is the system prompt plus one prompt (`MTG_LLM_HISTORY=0`), the
+   thinking level is a knob (`MTG_LLM_THINKING`), and
+   `reports/llm-cost.md` is the before/after table with the method to
+   re-measure (`scripts/measure-llm-prompts.sh` under a stub `claude`,
+   free; a real `cc` game for the token counts). The request-shape tests
+   pin the bound. `harness.md` H26-H28 are the probes: the bound holds,
+   what the seat lost without the history, and what it is no longer
+   asked. CLAUDE.md says a prompt change is measured before it lands.
+2. **The hosted table.** `mtg-draft-server` seats people (browser page or
+   `mtg-draft-client`) and AI seats at one draft, builds, and plays the
+   matches through the game pages. Its view, its page and its client are
+   three more copies of every draft decision, so the fixer's propagation
+   step and the crew's R1 sweep name them. `drafting.md` D27-D32 and
+   `gui.md` G27-G28 are its first probes; `reports/playtests/2026-10-08-
+   draft-with-friends.md` is its first night, played before it shipped.
+3. **A workspace test workflow.** Until today nothing ran `cargo test`
+   on a push; the fixer ran it locally and the nightly instruments ran
+   only their own binaries. `.github/workflows/tests.yml` now checks,
+   clippies and tests the workspace on every push to master, so a fix
+   that lands green locally and red on a clean checkout is seen the same
+   hour, not the next night.
+
+What to watch: whether the per-game token figures in the cost report
+drift up as prompts grow (H26 reads them; the fuzz workflow's reach table
+is the model for publishing them), and whether the hosted table's first
+real nights (a person at it, not Playwright) find what the stub could
+not.
