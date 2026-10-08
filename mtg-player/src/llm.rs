@@ -405,11 +405,139 @@ pub fn call_within_budget<T>(
 }
 
 pub fn thinking_param(model: &str) -> serde_json::Value {
-    let wants_budget = model.contains("-4-5") || model.contains("haiku") || model.contains("-3-");
-    if wants_budget {
+    if model_takes_a_thinking_budget(model) {
         serde_json::json!({ "type": "enabled", "budget_tokens": 4096 })
     } else {
         serde_json::json!({ "type": "adaptive" })
+    }
+}
+
+/// Whether this model family still steers thinking with `budget_tokens`
+/// (Haiku 4.5, the 4.5 Sonnet, the 3.x models) rather than adaptive
+/// thinking plus `output_config.effort`.
+fn model_takes_a_thinking_budget(model: &str) -> bool {
+    model.contains("-4-5") || model.contains("haiku") || model.contains("-3-")
+}
+
+/// How hard a seat thinks per decision.
+///
+/// Thinking output is billed at output rates and, once the conversation
+/// history is bounded, it is the largest term a decision has left — a seat
+/// that reasons at length over "pass or Bolt the 2/1" spends more on the
+/// reasoning than on reading the board. The default is the low setting;
+/// [`THINKING_ENV`] raises or lowers it for a run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ThinkingLevel {
+    /// No thinking at all, where the model allows that.
+    Off,
+    Low,
+    Medium,
+    High,
+    /// An explicit token budget. Models that take only an effort level
+    /// get the nearest one.
+    Budget(u32),
+}
+
+/// `MTG_LLM_THINKING`: `off`, `low` (the default), `medium`, `high`, or a
+/// token budget such as `2048`.
+pub const THINKING_ENV: &str = "MTG_LLM_THINKING";
+
+/// The level this run's seats think at, from [`THINKING_ENV`].
+///
+/// An unrecognised value falls back to the default and says so once: a
+/// typo that silently ran a whole night of games at the default would be
+/// found only in the bill.
+#[must_use]
+pub fn thinking_level() -> ThinkingLevel {
+    let Ok(raw) = std::env::var(THINKING_ENV) else { return ThinkingLevel::Low };
+    match parse_thinking_level(&raw) {
+        Some(level) => level,
+        None => {
+            static WARNED: std::sync::Once = std::sync::Once::new();
+            WARNED.call_once(|| {
+                crate::stderr_line!(
+                    "Warning: {THINKING_ENV}={raw:?} is not off, low, medium, high or a token \
+                     count; thinking stays at low.");
+            });
+            ThinkingLevel::Low
+        }
+    }
+}
+
+/// [`thinking_level`]'s parser, `None` for a value it does not know.
+#[must_use]
+pub fn parse_thinking_level(raw: &str) -> Option<ThinkingLevel> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "" | "low" => Some(ThinkingLevel::Low),
+        "off" | "none" => Some(ThinkingLevel::Off),
+        "medium" => Some(ThinkingLevel::Medium),
+        "high" => Some(ThinkingLevel::High),
+        n => n.parse::<u32>().ok().map(|n| if n == 0 { ThinkingLevel::Off } else { ThinkingLevel::Budget(n) }),
+    }
+}
+
+/// Set `thinking`, `output_config.effort` and `max_tokens` on a Messages
+/// API request body for this model at this level.
+///
+/// The two model families take different parameters (see
+/// [`thinking_param`]): an adaptive model is steered by `effort` and
+/// rejects a budget, an older one needs the budget and rejects `effort`.
+/// `off` omits the `thinking` parameter altogether, which is "no thinking"
+/// on the models that allow it and the model's default on the ones that
+/// do not (the 5.x family thinks regardless; `effort: low` still applies).
+pub fn apply_thinking(body: &mut serde_json::Value, model: &str, level: ThinkingLevel) {
+    let obj = body.as_object_mut().expect("a request body is a JSON object");
+    obj.remove("thinking");
+    let mut max_tokens: u64 = 8192;
+    if model_takes_a_thinking_budget(model) {
+        let budget = match level {
+            ThinkingLevel::Off => None,
+            ThinkingLevel::Low => Some(1024),
+            ThinkingLevel::Medium => Some(4096),
+            ThinkingLevel::High => Some(16384),
+            // The API's minimum is 1024.
+            ThinkingLevel::Budget(n) => Some(u64::from(n).max(1024)),
+        };
+        if let Some(budget) = budget {
+            obj.insert("thinking".into(), serde_json::json!({"type": "enabled", "budget_tokens": budget}));
+            // The budget must be below `max_tokens`, with room for the answer.
+            max_tokens = max_tokens.max(budget + 4096);
+        }
+    } else {
+        if level != ThinkingLevel::Off {
+            obj.insert("thinking".into(), serde_json::json!({"type": "adaptive"}));
+        }
+        let effort = match level {
+            ThinkingLevel::Off | ThinkingLevel::Low => "low",
+            ThinkingLevel::Medium => "medium",
+            ThinkingLevel::High => "high",
+            ThinkingLevel::Budget(n) if n <= 2048 => "low",
+            ThinkingLevel::Budget(n) if n <= 8192 => "medium",
+            ThinkingLevel::Budget(_) => "high",
+        };
+        let output_config = obj.entry("output_config").or_insert_with(|| serde_json::json!({}));
+        output_config["effort"] = serde_json::json!(effort);
+    }
+    obj.insert("max_tokens".into(), serde_json::json!(max_tokens));
+}
+
+/// The `MAX_THINKING_TOKENS` a `claude -p` child is given at this level,
+/// which is the one thinking knob the CLI exposes; `None` leaves the
+/// CLI's own default.
+///
+/// The default stays at `low`: measured on a one-line blocking question,
+/// the CLI's default spent ~730 thinking tokens and `MAX_THINKING_TOKENS=
+/// 1024` spent ~1450, so naming a small budget is not a way down from the
+/// default on this path. `0` is: it turns thinking off (`thinking_tokens:
+/// 0` in the result's usage).
+#[must_use]
+pub fn claude_code_thinking_tokens(level: ThinkingLevel) -> Option<u32> {
+    match level {
+        ThinkingLevel::Off => Some(0),
+        ThinkingLevel::Low => None,
+        ThinkingLevel::Medium => Some(4096),
+        ThinkingLevel::High => Some(16384),
+        ThinkingLevel::Budget(n) => Some(n),
     }
 }
 
@@ -1394,6 +1522,8 @@ struct AnthropicBackend {
     base_url: String,
     /// The seat this backend answers for; see `LlmBackend::set_seat`.
     seat: String,
+    /// How hard the seat thinks per decision; see [`thinking_level`].
+    thinking: ThinkingLevel,
 }
 
 impl AnthropicBackend {
@@ -1411,6 +1541,7 @@ impl AnthropicBackend {
             gave_up: None,
             base_url: anthropic_base_url(),
             seat: String::new(),
+            thinking: thinking_level(),
         }
     }
 
@@ -1538,10 +1669,8 @@ impl AnthropicBackend {
 
     fn call_with_messages(&mut self, messages: &[serde_json::Value]) -> String {
         let (system, msgs) = self.prepare_request(messages);
-        let body = serde_json::json!({
+        let mut body = serde_json::json!({
             "model": self.model,
-            "max_tokens": 8192,
-            "thinking": thinking_param(&self.model),
             "system": system,
             "messages": msgs,
             "output_config": {
@@ -1558,16 +1687,15 @@ impl AnthropicBackend {
                 }
             }
         });
+        apply_thinking(&mut body, &self.model, self.thinking);
         self.call_api(&body)
     }
 
     fn call_with_messages_structured(&mut self, messages: &[serde_json::Value], schema: &serde_json::Value) -> serde_json::Value {
         let (system, msgs) = self.prepare_request(messages);
         let sanitized = sanitize_schema_for_anthropic(schema, false);
-        let body = serde_json::json!({
+        let mut body = serde_json::json!({
             "model": self.model,
-            "max_tokens": 8192,
-            "thinking": thinking_param(&self.model),
             "system": system,
             "messages": msgs,
             "output_config": {
@@ -1577,6 +1705,7 @@ impl AnthropicBackend {
                 }
             }
         });
+        apply_thinking(&mut body, &self.model, self.thinking);
         let text = self.call_api(&body);
         serde_json::from_str(&text).unwrap_or_else(|_| serde_json::json!({}))
     }
@@ -8324,6 +8453,7 @@ mod metered_seat_failures {
             gave_up: None,
             base_url,
             seat: String::new(),
+            thinking: ThinkingLevel::Low,
         }
     }
 

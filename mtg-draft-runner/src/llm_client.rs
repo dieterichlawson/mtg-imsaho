@@ -603,10 +603,8 @@ impl AnthropicDraftBackend {
         }
 
         let sanitized = mtg_player::llm::sanitize_schema_for_anthropic(schema, false);
-        let body = serde_json::json!({
+        let mut body = serde_json::json!({
             "model": &self.model,
-            "max_tokens": 8192,
-            "thinking": mtg_player::llm::thinking_param(&self.model),
             "system": system,
             "messages": msgs,
             "output_config": {
@@ -616,6 +614,9 @@ impl AnthropicDraftBackend {
                 }
             }
         });
+        // The same thinking level as the game seat (`MTG_LLM_THINKING`):
+        // this is the request path that has missed fixes before (#404).
+        mtg_player::llm::apply_thinking(&mut body, &self.model, mtg_player::llm::thinking_level());
 
         // The draft's own budget, through the loop every HTTP seat uses: six
         // fixed attempts over about half a minute ended a draft that the

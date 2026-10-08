@@ -30,6 +30,10 @@ use super::{api_label, seat_tag, LlmBackend, GAME_RULES, THOUGHTS_IN_JSON_FORMAT
 /// on `PATH`.
 pub const BINARY_ENV: &str = "CLAUDE_CODE_BIN";
 
+/// The CLI's own thinking-budget variable, set on every child from the
+/// run's [`super::thinking_level`].
+pub const THINKING_TOKENS_ENV: &str = "MAX_THINKING_TOKENS";
+
 /// How long one decision may take before the subprocess is killed and the
 /// call retried. Print mode with thinking can run well past the API path's
 /// two minutes.
@@ -714,6 +718,13 @@ pub fn run_print_mode(
         for var in API_AUTH_VARS {
             cmd.env_remove(var);
         }
+    }
+    // The one thinking knob the CLI exposes. Thinking is billed as output
+    // and is the largest term a decision has once the history is bounded,
+    // so the run's level (`MTG_LLM_THINKING`) reaches this seat too.
+    match super::claude_code_thinking_tokens(super::thinking_level()) {
+        Some(n) => { cmd.env(THINKING_TOKENS_ENV, n.to_string()); }
+        None => { cmd.env_remove(THINKING_TOKENS_ENV); }
     }
 
     // Give the child its own process group, so the timeout and the
