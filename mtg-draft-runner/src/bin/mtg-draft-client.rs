@@ -308,8 +308,12 @@ fn render(v: &Value, build: &Build) -> (String, String) {
             for m in v["matches"].as_array().into_iter().flatten() {
                 let opp = m["opponent"].as_u64().unwrap_or(0) as usize;
                 let name = names.get(opp).cloned().unwrap_or_else(|| format!("seat {opp}"));
-                s.push_str(&format!("Round {} vs {name}: {}", m["round"], m["status"].as_str().unwrap_or("?")));
-                if let Some(url) = m["url"].as_str() {
+                let status = m["status"].as_str().unwrap_or("?");
+                s.push_str(&format!("Round {} vs {name}: {status}", m["round"]));
+                // The link is for a match still to be played; a finished
+                // one is its result (the page stays readable, but it is
+                // not something to open).
+                if let (Some(url), false) = (m["url"].as_str(), status == "done") {
                     s.push_str(&format!(" — open {url}"));
                 }
                 if let Some(r) = m["result"].as_str() {
@@ -337,6 +341,31 @@ fn render(v: &Value, build: &Build) -> (String, String) {
         _ => {}
     }
     (table, s)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_finished_match_is_its_result_and_a_live_one_is_its_link() {
+        let v = serde_json::json!({
+            "type": "view", "phase": "playing", "seat": 0, "set": "isd",
+            "seats": [{"seat": 0, "name": "seat 0", "kind": "human", "status": "playing", "picks": 42, "joined": true},
+                      {"seat": 1, "name": "Lawson", "kind": "human", "status": "playing", "picks": 42, "joined": true}],
+            "matches": [
+                {"round": 1, "opponent": 1, "url": "http://h:8801/", "status": "done", "games": [], "result": "0-2"},
+                {"round": 2, "opponent": 1, "url": "http://h:8803/", "status": "playing", "games": [], "result": null},
+                {"round": 3, "opponent": 1, "url": null, "status": "waiting", "games": [], "result": null},
+            ],
+            "pairings": [], "standings": [], "pool": [], "picks": [], "deck": null, "notice": null,
+        });
+        let (_, mine) = render(&v, &Build::default());
+        assert!(mine.contains("Round 1 vs Lawson: done — 0-2\n"), "{mine}");
+        assert!(!mine.contains("8801"), "a finished match's page is not offered:\n{mine}");
+        assert!(mine.contains("Round 2 vs Lawson: playing — open http://h:8803/\n"), "{mine}");
+        assert!(mine.contains("Round 3 vs Lawson: waiting\n"), "{mine}");
+    }
 }
 
 fn pool_listing(v: &Value) -> String {
