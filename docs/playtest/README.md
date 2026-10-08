@@ -226,15 +226,21 @@ You are one of three finders, and the labels tell them apart: the
 (`[fuzz] <pair> seed <N>: <violation>`, which doubles as its dedupe key);
 the `weekly-mutants` workflow files `phase:mutants` issues for survivors
 beyond `reports/mutants-accepted.txt`; you file `phase:playtest`. Every
-issue also carries `bug`. One fixer — the "Daily bug fixer" routine —
+issue also carries `bug`. The two workflows file with no severity label,
+because a machine cannot tell an engine bug from a bug in its own oracle
+(#682 was the invariant checker, not the engine): the fixer triages an
+unlabeled issue first — reproduce, decide what is actually wrong, label —
+and only then queues it. One fixer — the "Daily bug fixer" routine —
 works every open `phase:*` issue severe-first (`sev:rules`, then
 `sev:game-affecting`, then `sev:presentation`, oldest first within a
 level): reproduce, root-cause, fix the mechanism (never a per-card special
 case), regression test, merge to master, close citing the commit. Before
 closing, a fix that touched a prompt, a row, a label, a schema, a log line
 or a game loop is checked on the other three surfaces and in the draft
-runner's copy, and the closing comment says which were checked — the
-propagation sweep above is the audit of that. Its **Repro** section is what the fixer
+runner's copy, a reviewer agent that reads only the diff and those files
+is asked to name any surface the diff left out, and the closing comment
+says which were checked — the propagation sweep above is the audit of
+that. Its **Repro** section is what the fixer
 starts from, which is why it has to be runnable by a fresh reader.
 
 ## Afterwards
