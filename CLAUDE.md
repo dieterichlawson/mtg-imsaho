@@ -57,6 +57,35 @@ Two rules follow, and both have been broken by changes that looked local:
 2. **Never let a non-interactive seat answer with a constant** where the
    constant is a legal no-op. Roll it, or the fuzzer covers nothing.
 
+**A draft decision has surfaces too.** A pick, a deck and a match are
+presented by `mtg-draft-runner`'s pick loop (the LLM prompt in
+`mtg-draft-runner/src/llm_client.rs`), by the hosted table's view
+(`mtg-draft-runner/src/lobby.rs`, what every seat is sent), by the draft
+page (`mtg-gui/src/draft/`) and by the terminal client
+(`mtg-draft-runner/src/bin/mtg-draft-client.rs`). A change to what a
+seat is asked at the table is a change to all of them;
+`mtg-draft-runner/tests/draft_view_fixtures.rs` and
+`mtg-gui/tests/draft_fixtures.js` fail when the view and the page's
+protocol disagree.
+
+## Player-facing changes: what one decision costs
+
+An LLM seat is sent, per decision, the system prompt and one prompt —
+never the game's earlier exchanges (`MTG_LLM_HISTORY` is 0 by default,
+and tests in `mtg-player/tests/llm_conversation.rs` and
+`llm_request_shape.rs` pin the bound). `reports/llm-cost.md` is the
+measured bill and why. Two rules follow:
+
+1. **Nothing a seat needs may live only in the history.** The prompt
+   restates the board, the hand, the recent events, the legal actions
+   and the seat's notes from its last decision; a fact a seat should
+   carry across decisions goes into one of those, not into a message
+   the next call no longer sees.
+2. **A prompt change is measured.** `scripts/measure-llm-prompts.sh`
+   counts calls and bytes per game for free under a stub `claude`; run
+   it before and after a change to `GAME_RULES`, `build_prompt`, the
+   system prompt or a backend, and say in the commit what moved.
+
 ## Player-facing changes: fit, and the size of a question
 
 Two properties the interactive surface is expected to hold, both of which
