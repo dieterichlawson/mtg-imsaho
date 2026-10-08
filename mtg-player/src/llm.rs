@@ -825,7 +825,7 @@ Opp board:
   1x Plains
   Savannah Lions (#45) 2/1 [S]
 ```
-Lands are grouped by name. `(tapped)` or `(N tapped)` shows tap status. Non-land permanents include a unique object ID in parentheses (e.g. `(#30)`) — these IDs are stable for the lifetime of the permanent and can be used to distinguish permanents that share a name. Creatures show CURRENT effective P/T including bonuses. Status flags after creatures appear in a single bracket, comma-separated when there's more than one (e.g. `[T,1dmg]` for a tapped creature with 1 damage marked):
+Lands are grouped by name. `(tapped)` or `(N tapped)` shows tap status. Non-land permanents include a unique object ID in parentheses (e.g. `(#30)`) — these IDs are stable for the lifetime of the permanent and can be used to distinguish permanents that share a name. Creatures show CURRENT effective P/T including bonuses. Status flags after a permanent appear in a single bracket, comma-separated when there's more than one (e.g. `[T,1dmg]` for a tapped creature with 1 damage marked):
 - `T` = tapped
 - `S` = summoning sick: its controller has not controlled it continuously since their most recent turn began, so it can't attack or use `{T}` abilities yet (CR 302.6). It can still block. A creature cast on its controller's turn keeps `S` through the opponent's next turn
 - `attacking you`, `attacking Opp`, `attacking <planeswalker> (#id)` = attacking this combat, and what
@@ -3380,7 +3380,14 @@ impl LlmPlayer {
     fn obj_name(view: &GameView, id: ObjectId) -> String {
         let whose = |p: mtg_engine::ids::PlayerId| if p == view.you { "your" } else { "opponent's" };
         if let Some(p) = view.battlefield.iter().find(|p| p.object_id == id) {
-            return format!("{} (#{}) ({})", p.name, id.0, whose(p.controller));
+            // A Curse is told apart by whom it enchants, which its controller
+            // does not say: two same-named Curses as targets read alike (#736).
+            let host = match p.attached_to_player {
+                Some(h) if h == view.you => ", enchanting you",
+                Some(_) => ", enchanting opponent",
+                None => "",
+            };
+            return format!("{} (#{}) ({}{host})", p.name, id.0, whose(p.controller));
         }
         if let Some(s) = view.stack.iter().find(|s| s.object_id == id) {
             return format!("{} (#{}) ({})", s.name, id.0, whose(s.controller));
@@ -5034,7 +5041,9 @@ from your hand to put on the bottom of your library.\n\
                 .filter(|p| p.attached_to == Some(id))
                 .map(|p| p.name.clone())
                 .collect();
-            if bits.is_empty() { String::new() } else { format!(" [+{}]", bits.join(", ")) }
+            // In words, not a bracket: the legend's one bracket is the
+            // board's status flags, and `[+X]` read like a counter (#736).
+            if bits.is_empty() { String::new() } else { format!(" (attached: {})", bits.join(", ")) }
         }).collect();
 
         let mut out = Vec::with_capacity(ids.len());
@@ -7535,6 +7544,16 @@ this Aura deals 1 damage to that player.";
             "a curse on the other seat says so: {line_28}");
         assert_ne!(line_27, line_28,
             "two same-named curses on opposite players must not render identically");
+
+        // And as a target, where the label used to name the controller only
+        // (#736's propagation review).
+        let mut view = empty_view();
+        view.battlefield.push(on_you.clone());
+        view.battlefield.push(on_opp.clone());
+        assert_eq!(LlmPlayer::obj_name(&view, ObjectId(27)),
+            "Curse of the Pierced Heart (#27) (your, enchanting you)");
+        assert_eq!(LlmPlayer::obj_name(&view, ObjectId(28)),
+            "Curse of the Pierced Heart (#28) (your, enchanting opponent)");
     }
 
     /// Issue #325: an ordering response is a permutation of the offered
@@ -7642,7 +7661,7 @@ this Aura deals 1 damage to that player.";
         let board = LlmPlayer::format_perms_compact(&all, &all, you);
         assert!(board.contains("blocked (no blockers left)"), "{board}");
         assert!(board.contains("enchanting you") && board.contains("enchanting opponent"), "{board}");
-        let legend_start = GAME_RULES.find("Status flags after creatures").expect("the legend");
+        let legend_start = GAME_RULES.find("Status flags after a permanent").expect("the legend");
         let legend = &GAME_RULES[legend_start..legend_start + 2500];
         for line in board.lines() {
             // One bracket per line: a second one is a flag outside the
@@ -7782,7 +7801,7 @@ this Aura deals 1 damage to that player.";
             &[ObjectId(20), ObjectId(21)],
         );
         assert_eq!(labels[0], "Rakish Heir (#20) 4/2");
-        assert_eq!(labels[1], "Rakish Heir (#21) 4/2 [+Bonds of Faith]");
+        assert_eq!(labels[1], "Rakish Heir (#21) 4/2 (attached: Bonds of Faith)");
     }
 
     #[test]
