@@ -13,8 +13,8 @@ pick a subject, read that subject's guide, and go.
 | The game | The rules engine — does a game played here follow the Comprehensive Rules? | [`playing.md`](playing.md) |
 | The CLI | The binaries as programs — the TUI, flags, files, signals, terminals | [`cli.md`](cli.md) |
 | The harness | The LLM interface — what a model in a seat is told, offered, and understood to have said | [`harness.md`](harness.md) |
-| Drafting | `mtg-draft-runner` — packs, picks, deck building, the tournament | [`drafting.md`](drafting.md) |
-| The GUI | The browser page — can a person at it see, find, and do what the engine asks? | [`gui.md`](gui.md) |
+| Drafting | `mtg-draft-runner` and the hosted table, `mtg-draft-server` — packs, picks, deck building, the tournament, and people and AI seats drafting together | [`drafting.md`](drafting.md) |
+| The GUI | The browser pages — the game page and the draft page: can a person at them see, find, and do what the engine or the table asks? | [`gui.md`](gui.md) |
 
 This list is not closed. If you find something that is none of these —
 the card implementations as a body of code, the save format, the deck
@@ -41,7 +41,10 @@ subject's last night (at least the last seven days), and for each fix
 that touched a prompt, a row, a label, a schema, a log line or one of the
 two game loops, ask the same question on the surfaces and the copy the
 fix did not name — CLI, LLM prompt and schema, random seat, page, and
-`mtg-draft-runner` beside `mtg-runner`. File what you find, citing the
+`mtg-draft-runner` beside `mtg-runner`; for a draft-side fix, the hosted
+table's view and page (`mtg-draft-runner/src/lobby.rs`,
+`mtg-gui/src/draft/`) and `mtg-draft-client` beside the runner's pick
+loop. File what you find, citing the
 fix it escaped, and record the sweep as one ledger row with mission id
 `R1` and the window it covered. It usually takes an hour and it is the
 most productive hour of the night (the 2026-10-05 crew did it unprompted
@@ -112,10 +115,22 @@ take it, and then add it.
 
 NEVER spawn a metered API seat. `--p1 claude`, `--p2 claude`,
 `--p1 gemini`, `--p2 gemini` (any model suffix) call metered external
-APIs and are forbidden without exception, on every subject. Your seats
-are `cli` (driven by you through tmux), `random`, and `claude-code`
-(`cc`) — the same LLM seat run through `claude -p`, billed to the CLI's
-own login. There is no `scripted` seat, so don't plan around one.
+APIs and are forbidden without exception, on every subject; so are
+`mtg-draft-runner --model claude`/`gemini` and `mtg-draft-server`'s
+`--ai claude`, `--ai gemini` or an `ai:claude`/`ai:gemini` seat. Your
+seats are `cli` (driven by you through tmux), `random`, `gui` (the page
+in the Playwright Chromium), and `claude-code` (`cc`) — the same LLM
+seat run through `claude -p`, billed to the CLI's own login; at the
+hosted table a bare `ai` seat is `cc` already, and a `human` seat is you
+through the draft page or `mtg-draft-client`. There is no `scripted`
+seat, so don't plan around one. The CLI's default model may refuse the
+game prompt outright; name one (`cc:claude-sonnet-4-6`) when it does.
+
+What a `cc` seat is sent is bounded on purpose (`reports/llm-cost.md`):
+one decision is the system prompt plus one prompt, never the game's
+earlier exchanges. A probe that makes a seat's calls grow with the
+decision count, or finds one that does, has found a bug of the same
+rank as a clipped row — H26 in `harness.md` is the check.
 
 Most nights want two `cli` seats. Only the harness and draft subjects
 need `cc`, where it is the thing under test.
@@ -144,6 +159,15 @@ mtg-runner | tail -1`, which will find somebody else's game, and treat
 `logs/playtest/` as shared — do not wipe the whole directory, only your
 own files.
 
+For the draft subject's hosted table, build `mtg-draft-runner` too
+(`cargo build --release -p mtg-draft-runner`), host with
+`./target/release/mtg-draft-server --seats human,ai,ai,ai --port <yours>
+--log logs/playtest/<mission>/draft.log` under a `CLAUDE_CODE_BIN` stub,
+and sit at the human seat from the Playwright Chromium (the printed URL)
+or from `./target/release/mtg-draft-client <ws url>` through a pipe;
+`docs/draft-with-friends.md` is the manual and
+`mtg-draft-runner/tests/lobby_*.rs` show the stub and the clients.
+
 For the GUI subject the terminal is not the surface: the page is. Build
 the runner, then drive the page in the Playwright Chromium the way
 `mtg-gui/tests/*.js` do (`NODE_PATH=$(npm root -g) node
@@ -166,9 +190,10 @@ easy to confuse, fixed here, and used in every issue's **Target** line:
 
 - **the engine** — the rules (`mtg-engine`).
 - **the machine** — the binaries as programs: the CLI/TUI, the browser
-  page and its seat, flags, files, signals, save/resume, pack generation
-  (`mtg-runner`, `mtg-draft-runner`, `mtg-player`'s interactive surfaces,
-  `mtg-gui/`).
+  pages and their seats, the hosted table and its terminal client, flags,
+  files, signals, save/resume, pack generation (`mtg-runner`,
+  `mtg-draft-runner`, `mtg-draft-server`, `mtg-draft-client`,
+  `mtg-player`'s interactive surfaces, `mtg-gui/`).
 - **the harness** — the LLM interface: the prompts, the response schema and
   the conversation an LLM seat plays a game through (`mtg-player/src/llm.rs`
   and its backends). Documented in `docs/llm-harness.md`.
