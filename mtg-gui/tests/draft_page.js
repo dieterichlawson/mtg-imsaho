@@ -291,6 +291,21 @@ async function main() {
         check(r.reconnects >= 1 && !r.connected && /retrying/.test(r.conn), `${tag}: reconnecting with backoff (${r.reconnects} tries, "${r.conn}")`);
       }
 
+      // But a join the server itself refused (a wrong key, no such seat)
+      // is not retried: the link is wrong, and the page says so instead
+      // of counting down to the next refusal for ever (the first
+      // playtest: five retries in 2.5 s under a "wrong key" banner).
+      {
+        await page.evaluate(() => { window.mtgDraft.state.view = null; window.mtgDraft.view = null; });
+        await stage({ type: "refused", reason: "wrong key for seat 0", echo: null });
+        const before = await page.evaluate(() => window.mtgDraft.reconnects);
+        await page.waitForTimeout(2500);
+        const r = await page.evaluate(() => ({ reconnects: window.mtgDraft.reconnects, conn: document.getElementById("conn").textContent, banner: (document.querySelector(".banner.refusal") || {}).textContent }));
+        check(r.reconnects <= before + 1, `${tag}: a refused join stops the reconnects (${before} before, ${r.reconnects} after)`);
+        check(/refused — check the link/.test(r.conn), `${tag}: and the status line says to check the link ("${r.conn}")`);
+        check((r.banner || "").includes("wrong key"), `${tag}: with the server's reason on the banner`);
+      }
+
       if (errors.length) fail(`${tag}: page errors:\n  ${errors.join("\n  ")}`); else ok(`${tag}: no page errors`);
       await page.close();
     }

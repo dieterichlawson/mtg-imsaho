@@ -96,9 +96,11 @@ function connect(): void {
   };
 }
 
-/** Reconnect with backoff: half a second, doubling to ten. */
+/** Reconnect with backoff: half a second, doubling to ten — unless the
+ *  server refused this link itself (a wrong key, a seat that is not at
+ *  the table), which no amount of retrying changes. */
 function scheduleReconnect(): void {
-  if (retryTimer !== null) return;
+  if (retryTimer !== null || state.rejected) return;
   state.reconnects++; exposed.reconnects = state.reconnects;
   state.retryAt = Date.now() + retryDelay;
   retryTimer = window.setTimeout(connect, retryDelay);
@@ -180,6 +182,9 @@ function sameDeck(a: Deck, b: typeof lastDeckSent): boolean {
 
 function onRefused(msg: Refused): void {
   state.refusal = { reason: msg.reason, echo: msg.echo };
+  // A refusal with nothing echoed is the join itself: the link is wrong,
+  // and the socket is about to close for good.
+  if (msg.echo === null && !state.view) state.rejected = true;
   // Back to what the last view describes: the pick is not pending, the
   // deck is the server's, nothing is selected.
   state.pendingPick = null;
@@ -338,6 +343,7 @@ function draw(): void {
   const v = state.view;
   seatEl.textContent = v ? `seat ${v.seat} of ${v.pod_size} · ${v.set.toUpperCase()} · ${v.phase}` : (state.seat !== null ? `seat ${state.seat}` : "");
   connEl.textContent = state.connected ? "connected"
+    : state.rejected ? "refused — check the link"
     : state.retryAt ? `disconnected — retrying in ${Math.max(0, Math.ceil((state.retryAt - Date.now()) / 1000))}s`
     : params.has("nosocket") ? "no socket" : "connecting…";
   connEl.className = state.connected ? "ok" : "down";
@@ -355,7 +361,7 @@ function tick(): void {
       el.classList.toggle("urgent", left <= 10);
     }
   }
-  if (!state.connected && state.retryAt) {
+  if (!state.connected && state.retryAt && !state.rejected) {
     connEl.textContent = `disconnected — retrying in ${Math.max(0, Math.ceil((state.retryAt - Date.now()) / 1000))}s`;
   }
 }
