@@ -75,11 +75,13 @@ fn the_terminal_client_drafts_builds_and_names_the_game_link() {
         writeln!(stdin, "add {i}").unwrap();
     }
     writeln!(stdin, "lands island=9 swamp=8").unwrap();
-    let text = wait_for(&out, "23 spells + 17 lands = 40 cards", Duration::from_secs(30));
-    assert!(text.contains("legal — type ready when it is final"), "{text}");
+    // The count is the client's own arithmetic; the verdict is the
+    // server's and arrives a beat later, so that is what is waited for.
+    let text = wait_for(&out, "legal — type ready when it is final", Duration::from_secs(30));
+    assert!(text.contains("23 spells + 17 lands = 40 cards"), "{text}");
     writeln!(stdin, "drop 0").unwrap();
-    let text = wait_for(&out, "22 spells + 17 lands = 39 cards", Duration::from_secs(30));
-    assert!(text.contains("not legal yet: Deck has 39 cards"), "the refusal's reason is shown:\n{text}");
+    let text = wait_for(&out, "not legal yet: Deck has 39 cards", Duration::from_secs(30));
+    assert!(text.contains("22 spells + 17 lands = 39 cards"), "the refusal's reason is shown:\n{text}");
     writeln!(stdin, "add 0").unwrap();
     wait_for(&out, "23 spells + 17 lands = 40 cards\nlegal", Duration::from_secs(30));
     writeln!(stdin, "ready").unwrap();
