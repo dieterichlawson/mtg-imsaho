@@ -501,6 +501,23 @@ random game happened to reach.
   doesn't print is simply gone. Not yet asked: `granted_abilities` and the
   other fields `stackKey` omits — every field a stack can differ in and
   still merge is a #722.
+- G27 [proposed 2026-10-08, from docs/plans/draft-with-friends.md] the
+  draft page fits: stage each phase's fixture at 1280x720 and at 390px
+  (`window.mtgDraftDebug.stage` over `mtg-gui/tests/draft-page-fixtures.json`
+  and the server's own `draft-view-fixtures.json`), screenshot, and
+  look. A 14-card pack on one screen, rules text wrapped not clipped, no
+  horizontal scroll at phone width, the pool readable at 45 cards, the
+  deck checklist and the land steppers reachable by keyboard
+- G28 [proposed 2026-10-08, same source] the draft page says what the
+  server knows: against a live `mtg-draft-server` table under a stub
+  `claude`, compare the raw `view` (`/api/view?seat=N&key=K`) with what
+  the page renders at every pick — pick number, packs waiting, pass
+  direction, the timer, the opponent and URL of a match, the standings —
+  and a `refused` must be shown with its reason and the page must fall
+  back to the last `view`, never to a pack it invented. Also the game
+  link: the URL the draft page shows must be the one the game page
+  answers on, on the `--bind` address, not on loopback
+
 
 ## Filing
 
