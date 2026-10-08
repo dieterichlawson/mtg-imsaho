@@ -1,7 +1,8 @@
 # The GUI's checks: the page compiles and matches its committed build, the
 # protocol test holds the engine and the page together, and a real browser
 # plays the first turns, every widget, and two random games through the
-# page. GREEN means the page answered everything the engine asked.
+# page, and stages the draft page through every phase. GREEN means the
+# page answered everything the engine asked.
 name: gui
 
 on:
@@ -34,11 +35,16 @@ jobs:
         with:
           node-version: "22"
 
+      # Both entry points: the game page (dist/*.js) and the draft page
+      # (dist/draft/*.js). `diff -r` covers the subdirectory; the `test`
+      # makes a tsconfig that stops emitting it fail here rather than as a
+      # 404 on the draft server.
       - name: The committed page matches its sources
         working-directory: mtg-gui
         run: |
           npm install --no-save typescript@5
           npx tsc -p . --outDir /tmp/gui-dist
+          test -d /tmp/gui-dist/draft
           diff -r dist /tmp/gui-dist
 
       - name: Build the runner
@@ -52,6 +58,12 @@ jobs:
       # before Playwright is installed.
       - name: X funding, page against engine
         run: node mtg-gui/tests/xfunding.js
+
+      # The draft page's fixture views (and the server's, when its test has
+      # written them) have every field the page's protocol declares. No
+      # browser either.
+      - name: Draft fixtures against the page's protocol
+        run: node mtg-gui/tests/draft_fixtures.js
 
       - name: Playwright Chromium
         run: |
@@ -67,6 +79,13 @@ jobs:
           NODE_PATH=$(npm root -g) node mtg-gui/tests/twotabs.js
           NODE_PATH=$(npm root -g) node mtg-gui/tests/reconnect.js
           NODE_PATH=$(npm root -g) node mtg-gui/tests/autoplay.js --games 2 --seed 7 --decisions 200 --shots gui-shots
+
+      # The draft page, staged from its fixtures: every phase at 1280x720
+      # and at phone width, a pick, a deck, a refusal. No draft server.
+      - name: Draft page
+        env:
+          NODE_PATH: /usr/local/lib/node_modules
+        run: NODE_PATH=$(npm root -g) node mtg-gui/tests/draft_page.js --shots gui-shots/draft
 
       - name: Screenshots
         if: always()
