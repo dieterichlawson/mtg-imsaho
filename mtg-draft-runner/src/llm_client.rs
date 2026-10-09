@@ -323,7 +323,7 @@ fn pick_schema_for(num_cards: usize) -> serde_json::Value {
         "properties": {
             "thoughts": {
                 "type": "string",
-                "description": "Concise but complete summary of your reasoning for this pick"
+                "description": "At most two sentences: what decided the pick, and what you are drafting towards."
             },
             "pick": {
                 "type": "integer",
@@ -375,7 +375,7 @@ fn deck_schema_for(pool: &[String]) -> serde_json::Value {
         "properties": {
             "thoughts": {
                 "type": "string",
-                "description": "Concise but complete summary of your deck construction reasoning"
+                "description": "At most two sentences: the deck's plan and what you cut."
             },
             "maindeck": {
                 "type": "object",

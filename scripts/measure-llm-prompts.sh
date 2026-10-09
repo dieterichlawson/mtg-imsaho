@@ -9,8 +9,16 @@
 #
 #   scripts/measure-llm-prompts.sh [seeds...]        # default: 1 2 3 4 5
 #   MTG_LLM_HISTORY=2 scripts/measure-llm-prompts.sh  # with a history window
+#   MTG_LLM_PASS_UNTIL=off scripts/measure-llm-prompts.sh
+#                                                    # without the pass-until row
+#   STUB_PASS_UNTIL=0.8 scripts/measure-llm-prompts.sh
+#                                                    # the stub takes the row 80% of the time
 #   MTG_RUNNER_BIN=/elsewhere/mtg-runner scripts/measure-llm-prompts.sh
 #                                                    # another build, e.g. before a change
+#
+# `auto-pass` is the engine-side pass (nothing to do), `pass-until` the
+# offers the seat passed unasked after taking the row, `stops` how often
+# a pass-until ended.
 #
 # Output goes under logs/llm-prompts/<timestamp>/.
 set -eu
@@ -31,23 +39,27 @@ done
 python3 -I - "$out" $seeds <<'EOF'
 import json, sys, statistics
 out, seeds = sys.argv[1], sys.argv[2:]
-print(f"{'seed':>5} {'calls':>6} {'opened':>7} {'resumed':>8} {'system B':>9} {'prompt B/call':>14} {'min':>5} {'max':>6} {'prompt B/game':>14} {'auto-pass':>9}")
+print(f"{'seed':>5} {'calls':>6} {'opened':>7} {'resumed':>8} {'system B':>9} {'prompt B/call':>14} {'min':>5} {'max':>6} {'prompt B/game':>14} {'auto-pass':>9} {'pass-until':>10} {'stops':>5} {'turns':>5}")
 totals = []
 for seed in seeds:
     rows = [json.loads(l) for l in open(f"{out}/seed-{seed}.calls")]
     log = open(f"{out}/seed-{seed}.log", encoding="utf-8", errors="replace").read()
     auto = log.count("\tAUTO-PASS")
+    until = log.count("\tAUTO_PASS [")
+    stops = log.count("\tAUTO_PASS_STOP [")
+    turns = log.count("── Turn ")
     if not rows:
         print(f"{seed:>5} {0:>6}"); continue
     prompts = [r["prompt_bytes"] for r in rows]
     opened = sum(r["session"] == "opened" for r in rows)
     resumed = sum(r["session"] == "resumed" for r in rows)
     print(f"{seed:>5} {len(rows):>6} {opened:>7} {resumed:>8} {rows[0]['system_bytes']:>9} "
-          f"{statistics.mean(prompts):>14.0f} {min(prompts):>5} {max(prompts):>6} {sum(prompts):>14} {auto:>9}")
-    totals.append((len(rows), rows[0]["system_bytes"], sum(prompts), auto))
+          f"{statistics.mean(prompts):>14.0f} {min(prompts):>5} {max(prompts):>6} {sum(prompts):>14} {auto:>9} {until:>10} {stops:>5} {turns:>5}")
+    totals.append((len(rows), rows[0]["system_bytes"], sum(prompts), auto, until, stops, turns))
 if totals:
     n = len(totals)
     print(f"{'mean':>5} {sum(t[0] for t in totals)/n:>6.0f} {'':>7} {'':>8} {sum(t[1] for t in totals)/n:>9.0f} "
-          f"{'':>14} {'':>5} {'':>6} {sum(t[2] for t in totals)/n:>14.0f} {sum(t[3] for t in totals)/n:>9.0f}")
+          f"{'':>14} {'':>5} {'':>6} {sum(t[2] for t in totals)/n:>14.0f} {sum(t[3] for t in totals)/n:>9.0f} "
+          f"{sum(t[4] for t in totals)/n:>10.0f} {sum(t[5] for t in totals)/n:>5.0f} {sum(t[6] for t in totals)/n:>5.0f}")
 EOF
 echo "records under $out"

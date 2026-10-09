@@ -13,10 +13,16 @@ The answer is a hash of the prompt, so a seed replays, and it leans
 towards doing something: an "up to N" index array is filled rather than
 left empty, which is the shape of question a stub that always answers the
 minimum never exercises (CLAUDE.md, "one decision, four surfaces").
+
+A priority menu's `Pass until something happens` row is picked with
+probability `$STUB_PASS_UNTIL` (default 0.5) rather than as one index
+among many: a stub that picked it one time in eight would not move the
+call count the row exists to move. `STUB_PASS_UNTIL=0` never picks it.
 """
 import hashlib
 import json
 import os
+import re
 import sys
 import uuid
 
@@ -77,6 +83,18 @@ def fill(name, spec):
     return "stub"
 
 
+PASS_UNTIL = re.compile(r"^(\d+): Pass until something happens", re.M)
+
+
+def pass_until_index():
+    """The pass-until row's index, when the stub decides to take it."""
+    m = PASS_UNTIL.search(message)
+    if not m or "action" not in props:
+        return None
+    p = float(os.environ.get("STUB_PASS_UNTIL", "0.5"))
+    return int(m.group(1)) if h(message, "pass-until") % 1000 < p * 1000 else None
+
+
 if "maindeck" in props and "lands" in props:
     md, total = {}, 0
     for n, s in (props["maindeck"].get("properties") or {}).items():
@@ -87,6 +105,9 @@ if "maindeck" in props and "lands" in props:
            "lands": {"Plains": 4, "Island": 4, "Swamp": 3, "Mountain": 3, "Forest": 3}}
 else:
     out = {k: fill(k, v) for k, v in props.items()}
+    until = pass_until_index()
+    if until is not None:
+        out["action"] = until
 
 record = os.environ.get("STUB_CALLS")
 if record:

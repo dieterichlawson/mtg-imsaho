@@ -253,7 +253,7 @@ fn the_damage_amount_schema_offers_exactly_the_legal_amounts() {
 /// default is the low setting and `MTG_LLM_THINKING` moves it.
 #[test]
 fn the_thinking_level_is_sent_the_way_the_model_accepts_it() {
-    use mtg_player::llm::{apply_thinking, parse_thinking_level, ThinkingLevel};
+    use mtg_player::llm::{apply_thinking, max_output_tokens, parse_thinking_level, ThinkingLevel};
 
     assert_eq!(parse_thinking_level(""), Some(ThinkingLevel::Low), "unset is low");
     assert_eq!(parse_thinking_level("OFF"), Some(ThinkingLevel::Off));
@@ -278,12 +278,13 @@ fn the_thinking_level_is_sent_the_way_the_model_accepts_it() {
             assert!(b["thinking"].get("budget_tokens").is_none(), "{model} rejects a budget");
             assert_eq!(b["output_config"]["effort"], effort, "{model} {level:?}");
             assert_eq!(b["output_config"]["format"]["type"], "json_schema", "the format survives");
-            assert!(b["max_tokens"].as_u64().is_some_and(|m| m >= 4096));
+            assert_eq!(b["max_tokens"].as_u64(), Some(max_output_tokens(level)), "{model} {level:?}");
         }
         let mut b = body();
         apply_thinking(&mut b, model, ThinkingLevel::Off);
         assert!(b.get("thinking").is_none(), "{model}: off sends no thinking parameter");
         assert_eq!(b["output_config"]["effort"], "low");
+        assert_eq!(b["max_tokens"].as_u64(), Some(max_output_tokens(ThinkingLevel::Off)));
     }
 
     // Budget models: the budget is the knob, effort would be rejected.
@@ -304,4 +305,25 @@ fn the_thinking_level_is_sent_the_way_the_model_accepts_it() {
         apply_thinking(&mut b, model, ThinkingLevel::Off);
         assert!(b.get("thinking").is_none(), "{model}: off sends no thinking parameter");
     }
+}
+
+/// `max_tokens` is a cap on a runaway, not a budget: it fits the largest
+/// structured answer with room to spare at every level, grows with the
+/// thinking the level asks for, and never exceeds the 8,192 the default
+/// level used to send.
+#[test]
+fn the_output_cap_fits_the_largest_answer_and_grows_with_the_thinking() {
+    use mtg_player::llm::{max_output_tokens, ThinkingLevel, ANSWER_TOKENS};
+    // The largest answer the harness asks for: the draft runner's deck,
+    // every drafted name with a count. Forty-five names at ≈ 8 tokens
+    // each, five basics, two sentences — well under a quarter of this.
+    assert!(ANSWER_TOKENS >= 1024);
+    let off = max_output_tokens(ThinkingLevel::Off);
+    let low = max_output_tokens(ThinkingLevel::Low);
+    let medium = max_output_tokens(ThinkingLevel::Medium);
+    let high = max_output_tokens(ThinkingLevel::High);
+    assert_eq!(off, ANSWER_TOKENS, "off is the answer's own room");
+    assert!(off < low && low <= medium && medium <= high, "{off} {low} {medium} {high}");
+    assert!(low <= 4096, "the default level is capped at half of what it was: {low}");
+    assert!(max_output_tokens(ThinkingLevel::Budget(1024)) > 1024, "a budget fits under its cap");
 }

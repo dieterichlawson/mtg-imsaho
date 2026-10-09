@@ -426,6 +426,62 @@ fn two_flashback_costs_on_one_card_are_two_rows_on_both_surfaces() {
     assert_eq!(llm.cast_keys().len(), 2, "{}", llm.describe());
 }
 
+/// The LLM seat's priority menu carries one row the CLI's never will:
+/// `Pass until something happens`, the seat's own "go". It is not an
+/// engine action — nothing in `LegalActions` stands for it — so it is not
+/// a `DisplayEntry` and the properties above, which hold each surface's
+/// rows against the engine's offers, are stated over `build_action_rows`
+/// and never see it. That exclusion is deliberate: the page has the same
+/// thing as the `f` key and the CLI as its auto-pass mode, a keystroke
+/// each, and a row on one surface with a key on the other is parity of
+/// the decision, not of the menu text. What this test pins is the shape
+/// of what is excluded — exactly one row, right after Pass, the engine's
+/// rows after it in their order and unchanged — so a change that made it
+/// several rows, or moved it, or let it reach the parity sweep, fails
+/// here with the reason written down.
+#[test]
+fn the_pass_until_row_is_the_llm_seats_own_and_outside_the_parity_sweep() {
+    use crate::cli::tests::{legal, view};
+    use crate::llm::{MenuEntry, PASS_UNTIL_ROW};
+    use mtg_engine::ids::ObjectId;
+    use mtg_engine::types::Step;
+
+    let v = view(Step::PrecombatMain, 3, true);
+    let offer = legal(vec![
+        Action::PassPriority,
+        Action::PlayLand { object_id: ObjectId(21) },
+        Action::Concede,
+    ]);
+    // The sweep's own comparison holds on this offer with the row absent
+    // from both surfaces.
+    let (cli, llm) = check_parity(&v, &offer, "pass-until board");
+    assert!(cli.rows.iter().all(|r| !r.contains("Pass until")), "{}", cli.describe());
+    assert!(llm.rows.iter().all(|r| !r.contains("Pass until")), "{}", llm.describe());
+
+    let (engine_entries, engine_rows) = LlmPlayer::build_action_rows(&v, &offer);
+    let (menu, rows) = LlmPlayer::priority_menu(&v, &offer, true);
+    assert_eq!(rows.len(), engine_rows.len() + 1, "one row more than the engine's");
+    assert_eq!(menu.len(), engine_entries.len() + 1, "one index more than the engine's");
+    assert_eq!(rows[0].label(), "Pass");
+    assert_eq!(rows[1].label(), PASS_UNTIL_ROW, "right after Pass");
+    assert_eq!(menu[1], MenuEntry::PassUntil);
+    assert_eq!(menu.iter().filter(|e| **e == MenuEntry::PassUntil).count(), 1, "exactly one");
+    let engine_after: Vec<LlmEntry> = menu.iter().filter_map(|e| match e {
+        MenuEntry::Engine(d) => Some(*d),
+        MenuEntry::PassUntil => None,
+    }).collect();
+    assert_eq!(engine_after, engine_entries, "the engine's entries, in their order");
+    let labels_after: Vec<&str> = rows.iter().enumerate()
+        .filter(|(i, _)| *i != 1).map(|(_, r)| r.label()).collect();
+    let engine_labels: Vec<&str> = engine_rows.iter().map(ActionRow::label).collect();
+    assert_eq!(labels_after, engine_labels, "the engine's rows, unchanged");
+
+    // Left out, the menu is the engine's rows exactly.
+    let (menu, rows) = LlmPlayer::priority_menu(&v, &offer, false);
+    assert_eq!(rows.len(), engine_rows.len());
+    assert!(menu.iter().all(|e| matches!(e, MenuEntry::Engine(_))));
+}
+
 /// The #589 board: three Ulvenwald Mystics with a native index-0 ability,
 /// one of them enchanted with an Aura granting a different index-0
 /// ability. The LLM seat keyed on `(object, index)` and lost the granted

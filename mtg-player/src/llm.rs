@@ -241,7 +241,7 @@ pub fn ordering_schema(n: usize) -> serde_json::Value {
     serde_json::json!({
         "type": "object",
         "properties": {
-            "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+            "thoughts": {"type": "string", "description": THOUGHTS_DESCRIPTION},
             "order": {
                 "type": "array",
                 "items": {"type": "integer", "enum": valid_indices},
@@ -265,7 +265,7 @@ pub fn damage_amount_schema(min: u32, max: u32) -> serde_json::Value {
     serde_json::json!({
         "type": "object",
         "properties": {
-            "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+            "thoughts": {"type": "string", "description": THOUGHTS_DESCRIPTION},
             "amount": {
                 "type": "integer",
                 "enum": amounts,
@@ -496,7 +496,7 @@ pub fn parse_thinking_level(raw: &str) -> Option<ThinkingLevel> {
 pub fn apply_thinking(body: &mut serde_json::Value, model: &str, level: ThinkingLevel) {
     let obj = body.as_object_mut().expect("a request body is a JSON object");
     obj.remove("thinking");
-    let mut max_tokens: u64 = 8192;
+    let mut max_tokens: u64 = max_output_tokens(level);
     if model_takes_a_thinking_budget(model) {
         let budget = match level {
             ThinkingLevel::Off => None,
@@ -509,7 +509,7 @@ pub fn apply_thinking(body: &mut serde_json::Value, model: &str, level: Thinking
         if let Some(budget) = budget {
             obj.insert("thinking".into(), serde_json::json!({"type": "enabled", "budget_tokens": budget}));
             // The budget must be below `max_tokens`, with room for the answer.
-            max_tokens = max_tokens.max(budget + 4096);
+            max_tokens = max_tokens.max(budget + ANSWER_TOKENS);
         }
     } else {
         if level != ThinkingLevel::Off {
@@ -526,6 +526,37 @@ pub fn apply_thinking(body: &mut serde_json::Value, model: &str, level: Thinking
         output_config["effort"] = serde_json::json!(effort);
     }
     obj.insert("max_tokens".into(), serde_json::json!(max_tokens));
+}
+
+/// Output tokens the largest structured answer needs, with room to spare:
+/// an ordering of twelve triggers is ≈ 100 tokens of JSON, a blockers
+/// answer for six creatures ≈ 120, the draft runner's 40-card deck —
+/// every drafted name with a count, five basics, two sentences of
+/// `thoughts` — ≈ 600 (`mtg-draft-runner`'s `deck_schema_for`). The
+/// measured game answer is 60–120 tokens of JSON (`reports/llm-cost.md`).
+pub const ANSWER_TOKENS: u64 = 2048;
+
+/// The `max_tokens` a request is sent at this level — the cap on a
+/// runaway, not a budget the model is expected to use.
+///
+/// Thinking counts against `max_tokens` on the Messages API and on a
+/// `claude -p` seat alike (`CLAUDE_CODE_MAX_OUTPUT_TOKENS` is the CLI's
+/// `max_tokens`), so the cap is the answer plus the thinking the level
+/// asks for. The default `low` was measured at 728 thinking tokens per
+/// decision on average and under 2,000 at most over two games
+/// (`reports/llm-cost.md`, phase 2), so 4,096 is twice the largest
+/// decision seen and half the 8,192 it replaced; `off` is the answer's
+/// own room. A truncated answer is a wasted call — the harness reads no
+/// JSON and falls back — which is why the cap is not tighter.
+#[must_use]
+pub fn max_output_tokens(level: ThinkingLevel) -> u64 {
+    match level {
+        ThinkingLevel::Off => ANSWER_TOKENS,
+        ThinkingLevel::Low => 4096,
+        ThinkingLevel::Medium => 8192,
+        ThinkingLevel::High => 16384,
+        ThinkingLevel::Budget(n) => u64::from(n) + ANSWER_TOKENS,
+    }
 }
 
 /// The `MAX_THINKING_TOKENS` a `claude -p` child is given at this level,
@@ -571,6 +602,90 @@ pub const HISTORY_ENV: &str = "MTG_LLM_HISTORY";
 #[must_use]
 pub fn history_exchanges() -> usize {
     std::env::var(HISTORY_ENV).ok().and_then(|v| v.trim().parse().ok()).unwrap_or(0)
+}
+
+/// `MTG_LLM_PASS_UNTIL`: whether a priority offer carries the
+/// [`PASS_UNTIL_ROW`]. `off` (or `0`, `false`, `no`) leaves the row out,
+/// which is how a run is measured against one without it; unset or
+/// anything else keeps it.
+pub const PASS_UNTIL_ENV: &str = "MTG_LLM_PASS_UNTIL";
+
+/// Whether this run's seats are offered the pass-until row, from
+/// [`PASS_UNTIL_ENV`].
+#[must_use]
+pub fn pass_until_enabled() -> bool {
+    !std::env::var(PASS_UNTIL_ENV).is_ok_and(|v| {
+        matches!(v.trim().to_ascii_lowercase().as_str(), "off" | "0" | "false" | "no")
+    })
+}
+
+/// The one row every priority offer carries beside the engine's actions,
+/// right after `Pass`: the seat's way of saying "go".
+///
+/// A person holding an instant does not deliberate at every priority of
+/// both players' turns; they say "go" and respond when something happens.
+/// The browser page has this as the `f` key and the CLI as its auto-pass
+/// mode. For an LLM seat every priority it is asked is a model call —
+/// nine in ten calls of a game were a seat holding a Lightning Bolt being
+/// asked at every step (`reports/llm-cost.md`) — so the row is offered
+/// where the keystroke would be, and the answers it stands in for are not
+/// sent anywhere. What it stops for is in the row's text, in `GAME_RULES`
+/// and in [`LlmPlayer::pass_until_stop`], which is the conservative side
+/// of the same list.
+pub const PASS_UNTIL_ROW: &str = "Pass until something happens (keep passing priority, \
+unasked, until: the opponent puts a spell or ability on the stack; attackers are declared \
+against you; you must declare attackers or blockers; your next main phase; a land you can \
+play in your main phase; or any other prompt that is not a plain priority pass)";
+
+/// The seat said "go": it is passing every plain priority offer without a
+/// model call until something it would want to see happens. What it was
+/// looking at when it said so, so a later offer can be told apart from it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PassUntil {
+    turn: u32,
+    step: Step,
+    /// Whose turn it was: a pass-until engaged on the opponent's turn
+    /// ends when the seat's own turn starts.
+    our_turn: bool,
+    /// The stack as it stood, bottom first, by each entry's identity. An
+    /// entry resolving off the top is expected; anything else on the stack
+    /// is new.
+    stack: Vec<(ObjectId, mtg_engine::ids::CardId, String)>,
+    /// How many priority offers have been passed unasked since.
+    passes: u32,
+}
+
+impl PassUntil {
+    fn engaged_at(view: &GameView) -> Self {
+        PassUntil {
+            turn: view.turn_number,
+            step: view.step,
+            our_turn: view.active_player == view.you,
+            stack: Self::stack_identity(view),
+            passes: 0,
+        }
+    }
+
+    fn stack_identity(view: &GameView) -> Vec<(ObjectId, mtg_engine::ids::CardId, String)> {
+        view.stack.iter().map(|s| (s.object_id, s.card_id, s.name.clone())).collect()
+    }
+
+    /// Where it was engaged, for the log.
+    fn since(&self) -> String {
+        format!("turn {} {} ({})", self.turn, LlmPlayer::step_name(self.step, false),
+            if self.our_turn { "your turn" } else { "opp's turn" })
+    }
+}
+
+/// One line of the priority menu an LLM seat is sent: an engine offer, or
+/// the seat's own [`PASS_UNTIL_ROW`], which is not an engine action and so
+/// is not a `DisplayEntry` (the surface-parity check holds those against
+/// the CLI's menu, and this row has no CLI row — its CLI counterpart is a
+/// keystroke).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum MenuEntry {
+    Engine(DisplayEntry),
+    PassUntil,
 }
 
 fn record_llm_usage(model: &str, input: u64, output: u64, cache_read: u64, cache_create: u64) {
@@ -966,6 +1081,8 @@ Each prompt has these sections, in this order:
 
 **Your notes from your last decision** (after your first decision): the tail of your own reasoning from the previous prompt. Earlier prompts are not kept in the conversation — every prompt restates the whole position — so this is where your plan carries over. Trust the board below over the notes when they disagree.
 
+**Pass-until stop** (only after you answered `Pass until something happens`): one line saying how many priority offers were passed for you unasked and what stopped it, e.g. `You chose to pass until something happened; after 6 unasked passes it stopped: Grizzly Bears (the opponent's) is on the stack.` Everything that happened meanwhile is in Recent events below.
+
 **Recent events** (only if anything happened since the last prompt): a delta log of game events, yours and your opponent's. It carries at most the most recent 80 entries; when older ones are dropped it opens with a marker line, e.g. `… 227 earlier entries omitted, through turn 94 …`. The board below is always current.
 ```
 Recent events:
@@ -1030,15 +1147,18 @@ Delver of Secrets {U} | Creature — Human Wizard 1/1
 [MAIN PHASE 1]
 Available actions:
 0: Pass
-1: Tap Forest
-2: Play Forest
-3: Cast Kalonian Tusker (tap 2x Forest)
-4: Concede
+1: Pass until something happens (keep passing priority, unasked, until: the opponent puts a spell or ability on the stack; attackers are declared against you; you must declare attackers or blockers; your next main phase; a land you can play in your main phase; or any other prompt that is not a plain priority pass)
+2: Tap Forest
+3: Play Forest
+4: Cast Kalonian Tusker (tap 2x Forest)
+5: Concede
 ```
 A cast option names the spell and its tap plan, not its target: pick it and a follow-up prompt (`<card name>: select a target:`) lists the legal targets. Copies of one permanent that offer the same ability with the same tap plan share one line, one index per copy — pick the index of the copy you mean:
 ```
-5-7: Activate Ludevic's Test Subject ({1}{U}: Put a hatchling counter. At 5, transform.) (tap 2x Island) — one per copy: 5=#43, 6=#45, 7=#46
+6-8: Activate Ludevic's Test Subject ({1}{U}: Put a hatchling counter. At 5, transform.) (tap 2x Island) — one per copy: 6=#43, 7=#45, 8=#46
 ```
+
+`Pass until something happens` is on every priority offer, right after `Pass`, and is the way a person says "go". It passes priority now and keeps passing every later priority offer for you, unasked, until: the opponent puts a spell or ability on the stack; attackers are declared against you; a blocker is declared against your attacker; you must declare attackers or blockers; your next main phase, and any main phase of yours with a land drop or a sorcery-speed cast on offer; your turn begins; or any prompt that is not a plain priority pass. You are then asked again, with everything that happened in between under Recent events and the stop line above it. It never answers a decision for you, but it does pass the instant-speed windows in between — the opponent's end step, a combat damage step — so when you mean to act in one of those, answer `Pass` and you will be asked at the next one.
 
 Combat prompts replace the action list: `Choose attackers:` lists your creatures by index and asks for the indices attacking (empty for none; forced attackers are added for you); `Declare blocks` asks for `{"blocker", "attacker"}` index pairs, at most one per blocker.
 
@@ -1076,6 +1196,14 @@ Before turn 1: `[MULLIGAN DECISION]` shows your seven cards; answer `true` to mu
 - Let combat damage resolve before casting a "creature died this turn" effect.
 - Behind on board and life, look for a line that changes the situation — an equip, an aura, a race — rather than passing to topdeck.
 "#;
+
+/// What every schema's `thoughts` field asks for. The reasoning is private
+/// and the plan carries over as the seat's notes, so the field is the
+/// decision, not the deliberation: "Concise but complete summary of your
+/// internal thoughts" came back at ≈ 300 characters per decision, and
+/// output is the largest term a decision has (`reports/llm-cost.md`).
+pub const THOUGHTS_DESCRIPTION: &str =
+    "At most two sentences: what decided it, and what you plan to do next.";
 
 /// Backend trait for LLM API communication.
 /// Separates provider-specific API mechanics from shared game logic.
@@ -1685,7 +1813,7 @@ impl GeminiBackend {
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
-                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+                "thoughts": {"type": "string", "description": THOUGHTS_DESCRIPTION},
                 "action": {"type": "integer", "minimum": 0}
             },
             "required": ["thoughts", "action"]
@@ -1827,6 +1955,15 @@ pub struct LlmPlayer {
     /// seat's own words, not the thousands of tokens of prompts they came
     /// from.
     notes: Option<String>,
+    /// `Some` while the seat is passing every plain priority offer unasked
+    /// (see [`PassUntil`]); cleared, with a reason, by the first stop.
+    pass_until: Option<PassUntil>,
+    /// How many offers the last pass-until passed and why it stopped, said
+    /// once in the next prompt so the seat knows why it is being asked.
+    pass_until_stopped: Option<(u32, String)>,
+    /// Whether the priority menu carries [`PASS_UNTIL_ROW`] at all
+    /// ([`PASS_UNTIL_ENV`]).
+    offer_pass_until: bool,
 }
 
 impl LlmPlayer {
@@ -1844,6 +1981,9 @@ impl LlmPlayer {
             last_call_failure: None,
             pending_recap: None,
             notes: None,
+            pass_until: None,
+            pass_until_stopped: None,
+            offer_pass_until: pass_until_enabled(),
         }
     }
 
@@ -1866,6 +2006,9 @@ impl LlmPlayer {
             last_call_failure: None,
             pending_recap: None,
             notes: None,
+            pass_until: None,
+            pass_until_stopped: None,
+            offer_pass_until: pass_until_enabled(),
         }
     }
 
@@ -1883,6 +2026,9 @@ impl LlmPlayer {
             last_call_failure: None,
             pending_recap: None,
             notes: None,
+            pass_until: None,
+            pass_until_stopped: None,
+            offer_pass_until: pass_until_enabled(),
         }
     }
 
@@ -1904,6 +2050,9 @@ impl LlmPlayer {
             last_call_failure: None,
             pending_recap: None,
             notes: None,
+            pass_until: None,
+            pass_until_stopped: None,
+            offer_pass_until: pass_until_enabled(),
         }
     }
 
@@ -1923,6 +2072,9 @@ impl LlmPlayer {
             last_call_failure: None,
             pending_recap: None,
             notes: None,
+            pass_until: None,
+            pass_until_stopped: None,
+            offer_pass_until: pass_until_enabled(),
         }
     }
 
@@ -1954,6 +2106,14 @@ impl LlmPlayer {
     #[must_use]
     pub fn with_history(mut self, exchanges: usize) -> Self {
         self.backend.set_history_window(exchanges);
+        self
+    }
+
+    /// Whether this seat's priority menus carry [`PASS_UNTIL_ROW`],
+    /// overriding the run's [`PASS_UNTIL_ENV`] setting.
+    #[must_use]
+    pub fn with_pass_until(mut self, offered: bool) -> Self {
+        self.offer_pass_until = offered;
         self
     }
 
@@ -2002,6 +2162,9 @@ impl LlmPlayer {
         }
         self.backend.init(&deck_info);
         self.last_log_index = 0;
+        // A new game: whatever the seat was passing towards is over.
+        self.pass_until = None;
+        self.pass_until_stopped = None;
         self.own_card_names = your_deck.iter()
             .flat_map(|(name, _)| card_faces(name, registry))
             .map(|(face_name, _)| face_name)
@@ -3452,6 +3615,14 @@ impl LlmPlayer {
             prompt.push_str(notes);
             prompt.push_str("\n\n");
         }
+        // Why the seat is being asked at all, when its last answer was
+        // "pass until something happens": what happened. The events it
+        // passed through are in the recap below, none of them dropped by
+        // the passing itself (`last_log_index` moves only here).
+        if let Some((passes, why)) = self.pass_until_stopped.take() {
+            prompt.push_str(&Self::pass_until_stopped_line(passes, &why));
+            prompt.push_str("\n\n");
+        }
 
         if !new_logs.is_empty() {
             prompt.push_str("Recent events:\n");
@@ -3747,7 +3918,7 @@ impl LlmPlayer {
             "properties": {
                 "thoughts": {
                     "type": "string",
-                    "description": "Concise but complete summary of your internal thoughts",
+                    "description": THOUGHTS_DESCRIPTION,
                 },
                 "indices": {
                     "type": "array",
@@ -4042,7 +4213,7 @@ impl LlmPlayer {
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
-                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+                "thoughts": {"type": "string", "description": THOUGHTS_DESCRIPTION},
                 "floating": {
                     "type": "object",
                     "properties": floating_props,
@@ -4169,7 +4340,7 @@ impl LlmPlayer {
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
-                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+                "thoughts": {"type": "string", "description": THOUGHTS_DESCRIPTION},
                 "confirm": {"type": "boolean", "description": "true to concede, false to cancel"}
             },
             "required": ["thoughts", "confirm"]
@@ -4204,7 +4375,7 @@ impl LlmPlayer {
         serde_json::json!({
             "type": "object",
             "properties": {
-                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+                "thoughts": {"type": "string", "description": THOUGHTS_DESCRIPTION},
                 key: {
                     "type": "integer",
                     "enum": valid,
@@ -4233,6 +4404,15 @@ impl LlmPlayer {
     /// confirmation silently did not happen (issue #209). The guard now
     /// lives with the caller that knows which action an index means.
     fn pick_action_index(&mut self, view: &GameView, action_text: &str, max: usize) -> usize {
+        self.pick_action_index_described(view, action_text, max, "Index of the chosen action")
+    }
+
+    /// [`pick_action_index`](Self::pick_action_index) with the schema's
+    /// description of the index spelled out by the caller — the priority
+    /// menu uses it to say which index is the pass-until row.
+    fn pick_action_index_described(
+        &mut self, view: &GameView, action_text: &str, max: usize, description: &str,
+    ) -> usize {
         assert!(max > 0, "pick_action_index requires at least one option");
         // The state body is built HERE rather than by the caller, so that no
         // caller can ask for an index without it. Four of the five callers
@@ -4243,7 +4423,7 @@ impl LlmPlayer {
         // and the ability-target prompt. The CLI renders the whole board at
         // all four (`run_target_chooser`, #122).
         let prompt = self.build_prompt(view, action_text);
-        let schema = Self::enum_action_schema(max, "action", "Index of the chosen action");
+        let schema = Self::enum_action_schema(max, "action", description);
         let response = self.send_message_structured(&prompt, &schema);
         let idx = response["action"].as_u64().map(|n| usize::try_from(n).unwrap_or(usize::MAX))
             .filter(|n| *n < max)
@@ -4267,6 +4447,14 @@ impl Player for LlmPlayer {
 
     fn choose_action(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
         let legal_actions = &legal.actions;
+        // A seat passing unasked stops at any prompt that is not a plain
+        // priority pass — a target, a set, a sacrifice, the mulligan — and
+        // is asked it with the full prompt, as it would be anyway.
+        if self.pass_until.is_some() && !Self::is_plain_priority_offer(legal) {
+            let what = legal.context.clone()
+                .unwrap_or_else(|| "a prompt that is not a priority pass".to_string());
+            self.stop_pass_until(&format!("you are asked something else: {what}"));
+        }
         // The engine labels the other seat `p1`, and the context line is the
         // one line of the prompt that used to pass that through: every log
         // entry is rewritten to you/opp, and the line that names the decision
@@ -4398,30 +4586,64 @@ impl Player for LlmPlayer {
             return Action::PassPriority;
         }
 
-        let (display_entries, rows) = Self::build_action_rows(view, legal);
+        // The seat said "go" at an earlier offer: pass this one unasked
+        // unless something it would want to see has happened since.
+        if let Some(mode) = self.pass_until.clone() {
+            if let Some(why) = Self::pass_until_stop(view, legal, &mode) {
+                self.stop_pass_until(&why);
+            } else {
+                let passes = mode.passes + 1;
+                self.log("AUTO_PASS", &format!(
+                    "until: {} — turn {} {} ({}), {}; passing since {} ({passes} offer{} passed unasked)",
+                    Self::pass_until_still_passing(view, &mode),
+                    view.turn_number, Self::step_name(view.step, view.first_strike_damage_step),
+                    if view.active_player == view.you { "your turn" } else { "opp's turn" },
+                    if view.stack.is_empty() { "stack empty" } else { "stack unchanged" },
+                    mode.since(), if passes == 1 { "" } else { "s" }));
+                self.pass_until = Some(PassUntil { passes, ..mode });
+                return Action::PassPriority;
+            }
+        }
+
+        let (menu, rows) = Self::priority_menu(view, legal, self.offer_pass_until);
 
         let action_prompt = Self::format_action_prompt(context.as_deref(), &rows, view.you);
 
-        if display_entries.len() != legal_actions.len() {
-            self.log_debug("COLLAPSED", &format!("{} actions → {} options", legal_actions.len(), display_entries.len()));
+        let engine_entries = menu.iter().filter(|e| matches!(e, MenuEntry::Engine(_))).count();
+        if engine_entries != legal_actions.len() {
+            self.log_debug("COLLAPSED", &format!("{} actions → {} options", legal_actions.len(), engine_entries));
         }
-        let idx = self.pick_action_index(view, &action_prompt, display_entries.len());
+        let description = match menu.iter().position(|e| *e == MenuEntry::PassUntil) {
+            Some(i) => format!(
+                "Index of the chosen action. {i} is 'Pass until something happens': pass priority \
+                 now and keep passing, unasked, until something the row lists happens; you are \
+                 then asked again with everything that happened in between."),
+            None => "Index of the chosen action".to_string(),
+        };
+        let idx = self.pick_action_index_described(view, &action_prompt, menu.len(), &description);
 
-        if idx >= display_entries.len() {
+        if idx >= menu.len() {
             return Action::PassPriority;
         }
+        let entry = match menu[idx] {
+            MenuEntry::PassUntil => {
+                self.engage_pass_until(view);
+                return Action::PassPriority;
+            }
+            MenuEntry::Engine(entry) => entry,
+        };
 
         // Confirm a concede here, where the index has been resolved back to
         // the action it stands for. A priority offer always carries exactly
         // one Concede and exactly one PassPriority (the engine's legal
         // -actions invariant), so cancelling means passing.
-        if let DisplayEntry::Direct(action_idx) = &display_entries[idx] {
+        if let DisplayEntry::Direct(action_idx) = &entry {
             if matches!(legal_actions[*action_idx], Action::Concede) && !self.confirm_concede() {
                 return Action::PassPriority;
             }
         }
 
-        match &display_entries[idx] {
+        match &entry {
             DisplayEntry::Direct(action_idx) => {
                 legal_actions[*action_idx].clone()
             }
@@ -4622,6 +4844,200 @@ impl LlmPlayer {
         (display_entries, rows)
     }
 
+    /// The priority menu as the seat is sent it: the engine's rows from
+    /// [`build_action_rows`](Self::build_action_rows), plus
+    /// [`PASS_UNTIL_ROW`] right after `Pass` when it is offered. The row
+    /// is the seat's own, not an engine action: the random seat, the CLI
+    /// and the page do not get it (the page's `f` key and the CLI's
+    /// auto-pass are the same thing as a keystroke), and the surface-parity
+    /// check compares the engine's rows only — `surface_parity.rs` says
+    /// why. One row, at a fixed place, never one per phase.
+    pub(crate) fn priority_menu(
+        view: &GameView, legal: &mtg_engine::engine::LegalActions, offer_pass_until: bool,
+    ) -> (Vec<MenuEntry>, Vec<ActionRow>) {
+        let (entries, mut rows) = Self::build_action_rows(view, legal);
+        let mut menu: Vec<MenuEntry> = entries.into_iter().map(MenuEntry::Engine).collect();
+        if !offer_pass_until {
+            return (menu, rows);
+        }
+        // The row goes after Pass, which is a single-entry row; walk the
+        // rows with their index widths so a copies row ahead of it (there
+        // is none — Pass is the engine's first action) would not shift it.
+        let mut entry_at = 0usize;
+        for (row_pos, row) in rows.iter().enumerate() {
+            let width = match row {
+                ActionRow::One(_) => 1,
+                ActionRow::Copies { ids, .. } => ids.len(),
+            };
+            if let (ActionRow::One(_), Some(MenuEntry::Engine(DisplayEntry::Direct(i)))) = (row, menu.get(entry_at)) {
+                if matches!(legal.actions.get(*i), Some(Action::PassPriority)) {
+                    rows.insert(row_pos + 1, ActionRow::One(PASS_UNTIL_ROW.to_string()));
+                    menu.insert(entry_at + 1, MenuEntry::PassUntil);
+                    return (menu, rows);
+                }
+            }
+            entry_at += width;
+        }
+        // No Pass row: nothing to pass with, so no row either.
+        (menu, rows)
+    }
+
+    /// A plain priority offer: a menu with Pass on it and no prompt of
+    /// another kind. Everything else is a question the seat is asked
+    /// whatever it said earlier.
+    fn is_plain_priority_offer(legal: &mtg_engine::engine::LegalActions) -> bool {
+        legal.combat_prompt.is_none()
+            && legal.resolution_prompt.is_none()
+            && legal.set_prompt.is_none()
+            && !legal.actions.iter().any(|a| matches!(a, Action::MulliganKeep))
+            && legal.actions.iter().any(|a| matches!(a, Action::PassPriority))
+    }
+
+    /// The seat chose [`PASS_UNTIL_ROW`]: pass now, and remember to.
+    fn engage_pass_until(&mut self, view: &GameView) {
+        let mode = PassUntil::engaged_at(view);
+        self.log("AUTO_PASS", &format!("engaged at {}: passing until something happens", mode.since()));
+        self.pass_until = Some(mode);
+    }
+
+    /// A pass-until ends: say why in the log now and in the next prompt.
+    fn stop_pass_until(&mut self, why: &str) {
+        if let Some(mode) = self.pass_until.take() {
+            self.log("AUTO_PASS_STOP", &format!("{why} ({} offer{} passed unasked since {})",
+                mode.passes, if mode.passes == 1 { "" } else { "s" }, mode.since()));
+            self.pass_until_stopped = Some((mode.passes, why.to_string()));
+        }
+    }
+
+    /// The line the first prompt after a pass-until opens with.
+    /// `GAME_RULES` quotes its shape.
+    fn pass_until_stopped_line(passes: u32, why: &str) -> String {
+        format!("You chose to pass until something happened; after {passes} unasked pass{} it stopped: {why}.",
+            if passes == 1 { "" } else { "es" })
+    }
+
+    /// Why a plain priority offer ends a pass-until, or `None` to pass it
+    /// unasked. Conservative on purpose — when in doubt, ask:
+    ///
+    /// - anything on the stack that was not there, below the top, when the
+    ///   seat said "go" (an entry resolving off the top is expected; the
+    ///   stack cannot have moved on without a new entry otherwise, and at
+    ///   any other step every entry is new);
+    /// - the seat's own turn beginning;
+    /// - attackers declared against the seat;
+    /// - a blocker declared against the seat's attacker;
+    /// - the seat's own main phase, any main phase other than the one it
+    ///   said "go" in — and that one too when a land drop or a
+    ///   sorcery-speed cast or activation is on offer, which is what a
+    ///   seat that cast a spell and said "go" to let it resolve is then
+    ///   owed;
+    /// - no Pass on the menu, which is not a priority offer at all.
+    fn pass_until_stop(
+        view: &GameView, legal: &mtg_engine::engine::LegalActions, mode: &PassUntil,
+    ) -> Option<String> {
+        if !legal.actions.iter().any(|a| matches!(a, Action::PassPriority)) {
+            return Some("this is not a priority pass".to_string());
+        }
+        let our_turn = view.active_player == view.you;
+        let same_point = view.turn_number == mode.turn && view.step == mode.step
+            && our_turn == mode.our_turn;
+
+        if !view.stack.is_empty() {
+            let now = PassUntil::stack_identity(view);
+            let unchanged = same_point && now.len() <= mode.stack.len()
+                && mode.stack[..now.len()] == now[..];
+            if !unchanged {
+                let newest = view.stack.iter().rev()
+                    .find(|s| !mode.stack.contains(&(s.object_id, s.card_id, s.name.clone())))
+                    .or_else(|| view.stack.last())
+                    .map_or_else(|| "something".to_string(), |s| format!("{} ({})", s.name,
+                        if s.controller == view.you { "yours" } else { "the opponent's" }));
+                return Some(format!("{newest} is on the stack"));
+            }
+        }
+
+        if our_turn && (!mode.our_turn || view.turn_number > mode.turn) {
+            return Some(format!("your turn {} began", view.turn_number));
+        }
+
+        if !our_turn && view.step == Step::DeclareAttackers {
+            let attackers: Vec<String> = view.battlefield.iter()
+                .filter(|p| p.controller != view.you && p.attacking.is_some())
+                .map(|p| Self::obj_label(view, p.object_id))
+                .collect();
+            if !attackers.is_empty() {
+                return Some(format!("attackers declared against you: {}", attackers.join(", ")));
+            }
+        }
+
+        if our_turn && view.step == Step::DeclareBlockers {
+            let blocked: Vec<String> = view.battlefield.iter()
+                .filter(|p| p.controller == view.you && p.attacking.is_some() && p.blocked)
+                .map(|p| Self::obj_label(view, p.object_id))
+                .collect();
+            if !blocked.is_empty() {
+                return Some(format!("your attacker{} blocked: {}",
+                    if blocked.len() == 1 { " is" } else { "s are" }, blocked.join(", ")));
+            }
+        }
+
+        if our_turn && matches!(view.step, Step::PrecombatMain | Step::PostcombatMain) {
+            if !same_point {
+                return Some(format!("your {}", Self::step_name(view.step, false)));
+            }
+            if legal.actions.iter().any(|a| matches!(a, Action::PlayLand { .. })) {
+                return Some("you can play a land".to_string());
+            }
+            if let Some(cs) = legal.castable_spells.iter().find(|cs| !Self::is_instant_speed_cast(view, cs)) {
+                return Some(format!("you could cast {} at sorcery speed", cs.name));
+            }
+            if let Some(ab) = legal.activatable_abilities.iter().find(|ab| Self::is_sorcery_speed_ability(ab)) {
+                return Some(format!("you could activate {} ({}) at sorcery speed", ab.name, ab.description));
+            }
+        }
+        None
+    }
+
+    /// What a pass-until is still waiting for, for the `AUTO_PASS` line.
+    fn pass_until_still_passing(view: &GameView, mode: &PassUntil) -> String {
+        let our_turn = view.active_player == view.you;
+        if !our_turn {
+            if mode.our_turn {
+                "your next turn, or something of the opponent's".to_string()
+            } else {
+                "your turn, or something of the opponent's".to_string()
+            }
+        } else if matches!(view.step, Step::Untap | Step::Upkeep | Step::Draw | Step::PrecombatMain) {
+            "your main phase".to_string()
+        } else if matches!(view.step, Step::BeginCombat | Step::DeclareAttackers | Step::DeclareBlockers
+            | Step::CombatDamage | Step::EndCombat) {
+            "your postcombat main, or a block".to_string()
+        } else {
+            "your next turn, or something of the opponent's".to_string()
+        }
+    }
+
+    /// Whether a castable spell could be cast at instant speed: an
+    /// instant, or a card with flash. A card the view cannot show (not in
+    /// hand or a graveyard) is taken as sorcery-speed, which is the side
+    /// that asks.
+    fn is_instant_speed_cast(view: &GameView, cs: &mtg_engine::actions::CastableSpell) -> bool {
+        let card = view.your_hand.iter().find(|c| c.object_id == cs.object_id)
+            .or_else(|| view.graveyards.iter().flat_map(|(_, cards)| cards.iter())
+                .find(|c| c.object_id == cs.object_id));
+        card.is_some_and(|c| c.card_types.contains(&CardType::Instant)
+            || c.oracle_text.lines().any(|l| {
+                let l = l.trim();
+                l.eq_ignore_ascii_case("flash") || l.starts_with("Flash ") || l.starts_with("Flash,")
+            }))
+    }
+
+    /// Whether an activation is sorcery-speed: equip, or one that says so.
+    fn is_sorcery_speed_ability(ab: &mtg_engine::actions::ActivatableAbility) -> bool {
+        let d = ab.description.to_ascii_lowercase();
+        d.starts_with("equip") || d.contains("as a sorcery")
+    }
+
     /// Format a card for the mulligan prompt: `Name {cost}[ P/T]`.
     fn format_hand_card(c: &mtg_engine::view::CardView) -> String {
         let cost = c.cost.as_ref().map(|co| format!(" {co}")).unwrap_or_default();
@@ -4759,7 +5175,7 @@ from your hand to put on the bottom of your library.\n\
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
-                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+                "thoughts": {"type": "string", "description": THOUGHTS_DESCRIPTION},
                 "mull": {"type": "boolean", "description": "true = mulligan, false = keep"}
             },
             "required": ["thoughts", "mull"]
@@ -4841,7 +5257,7 @@ from your hand to put on the bottom of your library.\n\
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
-                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+                "thoughts": {"type": "string", "description": THOUGHTS_DESCRIPTION},
                 "card_indices": {
                     "type": "array",
                     "items": {"type": "integer", "enum": valid_indices},
@@ -4967,7 +5383,7 @@ from your hand to put on the bottom of your library.\n\
             "properties": {
                 "thoughts": {
                     "type": "string",
-                    "description": "Concise but complete summary of your internal thoughts"
+                    "description": THOUGHTS_DESCRIPTION
                 },
                 "pile_a": {
                     "type": "object",
@@ -5032,7 +5448,7 @@ from your hand to put on the bottom of your library.\n\
         serde_json::json!({
             "type": "object",
             "properties": {
-                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+                "thoughts": {"type": "string", "description": THOUGHTS_DESCRIPTION},
                 "attacker_indices": {
                     "type": "array",
                     "items": {"type": "integer", "enum": attacker_enum},
@@ -5049,6 +5465,14 @@ from your hand to put on the bottom of your library.\n\
         // the model. One rule, shared with the other three seats (#517).
         if let Some(forced) = crate::forced_combat_answer(prompt) {
             return forced;
+        }
+        // Past here the seat is deciding, so a pass-until ends whichever
+        // half of combat this is — as the CLI's pass mode does.
+        if self.pass_until.is_some() {
+            self.stop_pass_until(match prompt {
+                CombatPrompt::ChooseAttackers { .. } => "you must declare attackers",
+                CombatPrompt::ChooseBlockers { .. } => "you must declare blockers",
+            });
         }
         match prompt {
             CombatPrompt::ChooseAttackers { eligible, must_attack, defending_player,
@@ -5244,7 +5668,7 @@ attacking the planeswalker", both.join(", ")));
         serde_json::json!({
             "type": "object",
             "properties": {
-                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+                "thoughts": {"type": "string", "description": THOUGHTS_DESCRIPTION},
                 "blocks": {
                     "type": "array",
                     "maxItems": blockers,
@@ -5554,7 +5978,7 @@ pub(crate) mod tests {
     #[test]
     fn game_rules_shows_the_action_list_it_actually_sends() {
         let labels: Vec<ActionRow> = [
-            "Pass", "Tap Forest", "Play Forest",
+            "Pass", PASS_UNTIL_ROW, "Tap Forest", "Play Forest",
             "Cast Kalonian Tusker (tap 2x Forest)", "Concede",
         ]
         .iter()
@@ -5566,8 +5990,8 @@ pub(crate) mod tests {
             "GAME_RULES must quote the action list the harness sends. It sends:\n{actual}"
         );
 
-        // And the row copies of one permanent share (issue #461): five
-        // single rows first, so the copies' indices start at 5 as documented.
+        // And the row copies of one permanent share (issue #461): six
+        // single rows first, so the copies' indices start at 6 as documented.
         let mut rows = labels;
         rows.push(ActionRow::Copies {
             label: "Activate Ludevic's Test Subject ({1}{U}: Put a hatchling counter. At 5, transform.) (tap 2x Island)".to_string(),
@@ -5575,7 +5999,7 @@ pub(crate) mod tests {
         });
         let with_copies = LlmPlayer::format_action_prompt(Some("MAIN PHASE 1"), &rows, mtg_engine::ids::PlayerId(0));
         let copies_line = with_copies.lines().last().expect("the copies row is last");
-        assert!(copies_line.starts_with("5-7: "), "{with_copies}");
+        assert!(copies_line.starts_with("6-8: "), "{with_copies}");
         assert!(
             GAME_RULES.contains(copies_line),
             "GAME_RULES must quote the shared row the harness sends. It sends:\n{copies_line}"
@@ -5824,6 +6248,11 @@ pub(crate) mod tests {
             last_call_failure: None,
             pending_recap: None,
             notes: None,
+            pass_until: None,
+            pass_until_stopped: None,
+            // These tests read the engine's rows and their indices; the
+            // seat's own pass-until row is tested on its own, below.
+            offer_pass_until: false,
         };
         (player, prompts)
     }
@@ -6362,7 +6791,7 @@ pub(crate) mod tests {
     }
 
     fn mute_player(name: &str, model: &'static str, failure: Option<&str>) -> LlmPlayer {
-        let mut player = LlmPlayer::for_prompt_tests(name);
+        let mut player = LlmPlayer::for_prompt_tests(name).with_pass_until(false);
         player.backend = Box::new(MuteBackend {
             model,
             failure: failure.map(std::string::ToString::to_string),
@@ -6551,7 +6980,7 @@ pub(crate) mod tests {
     }
 
     fn fixed_player(name: &str, model: &'static str, reply: serde_json::Value) -> LlmPlayer {
-        let mut player = LlmPlayer::for_prompt_tests(name);
+        let mut player = LlmPlayer::for_prompt_tests(name).with_pass_until(false);
         player.backend = Box::new(FixedBackend { model, reply });
         player
     }
@@ -8430,6 +8859,9 @@ mod stateless_decisions {
             last_call_failure: None,
             pending_recap: None,
             notes: None,
+            pass_until: None,
+            pass_until_stopped: None,
+            offer_pass_until: pass_until_enabled(),
         }
     }
 

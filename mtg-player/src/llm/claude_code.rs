@@ -37,6 +37,9 @@ pub const BINARY_ENV: &str = "CLAUDE_CODE_BIN";
 /// run's [`super::thinking_level`].
 pub const THINKING_TOKENS_ENV: &str = "MAX_THINKING_TOKENS";
 
+/// The CLI's `max_tokens` for the request, as an environment variable.
+pub const MAX_OUTPUT_TOKENS_ENV: &str = "CLAUDE_CODE_MAX_OUTPUT_TOKENS";
+
 /// How long one decision may take before the subprocess is killed and the
 /// call retried. Print mode with thinking can run well past the API path's
 /// two minutes.
@@ -642,9 +645,23 @@ impl ClaudeCodeBackend {
                         usage["cache_read_input_tokens"].as_u64().unwrap_or(0),
                         usage["cache_creation_input_tokens"].as_u64().unwrap_or(0),
                     );
-                    if let Some(thinking) = usage["output_tokens_details"]["thinking_tokens"].as_u64() {
+                    let thinking = usage["output_tokens_details"]["thinking_tokens"].as_u64();
+                    if let Some(thinking) = thinking {
                         super::record_llm_thinking(&self.label, thinking);
                     }
+                    // One line per call, so the largest answer of a game —
+                    // what the cap above has to fit — can be read off a log
+                    // rather than guessed from the game's total. Tokens
+                    // only: two runs of one seed write the same log, and a
+                    // wall time here would differ between them.
+                    crate::game_log::write_at(crate::game_log::LogLevel::Debug, file!(), line!(),
+                        &api_label("USAGE", &self.seat), &format!(
+                            "in {} out {} thinking {} cache_read {} cache_write {}",
+                            usage["input_tokens"].as_u64().unwrap_or(0),
+                            usage["output_tokens"].as_u64().unwrap_or(0),
+                            thinking.map_or_else(|| "n/a".to_string(), |t| t.to_string()),
+                            usage["cache_read_input_tokens"].as_u64().unwrap_or(0),
+                            usage["cache_creation_input_tokens"].as_u64().unwrap_or(0)));
                     return Some(json);
                 }
                 Err(e) => {
@@ -743,6 +760,11 @@ pub fn run_print_mode(
         Some(n) => { cmd.env(THINKING_TOKENS_ENV, n.to_string()); }
         None => { cmd.env_remove(THINKING_TOKENS_ENV); }
     }
+    // The CLI's `max_tokens`: a cap on a runaway answer, sized to the
+    // level's thinking plus the largest structured answer
+    // (`super::max_output_tokens`). The CLI's own default is far above
+    // what any decision needs.
+    cmd.env(MAX_OUTPUT_TOKENS_ENV, super::max_output_tokens(super::thinking_level()).to_string());
 
     // Give the child its own process group, so the timeout and the
     // signal handler can reach everything it spawns and not just the
