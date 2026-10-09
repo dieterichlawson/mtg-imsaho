@@ -384,6 +384,7 @@ fn main() {
         let _ = fs::remove_file(&probe);
     }
 
+    let banner: String;
     let (player_names, mut state) = if let Some(ref path) = resume_file {
         // The saved game carries its own decks and RNG: flags that only
         // shape a NEW game are ignored, and silently ignored flags corrupt
@@ -520,12 +521,9 @@ flags: p0={p1_spec}, p1={p2_spec} — pass --p1/--p2 if that is not the lineup y
             mtg_player::stderr_line!("note: --resume without --save; this game is not being saved and '{path}' \
 stops here — pass --save {path} to keep writing it");
         }
-        if !quiet {
-            mtg_player::stdout_line!("MTG Engine — resuming from {} (turn {}, {} vs {}) — p0: {}, p1: {}",
-                path, save.state.turn_number, save.player_names[0], save.player_names[1],
-                p1_spec, p2_spec);
-            mtg_player::stdout_line!();
-        }
+        banner = format!("MTG Engine — resuming from {} (turn {}, {} vs {}) — p0: {}, p1: {}",
+            path, save.state.turn_number, save.player_names[0], save.player_names[1],
+            p1_spec, p2_spec);
         (save.player_names, save.state)
     } else {
         let deck1 = load_deck(deck1_spec, &registry);
@@ -533,13 +531,10 @@ stops here — pass --save {path} to keep writing it");
         let name1 = deck_display_name(deck1_spec);
         let name2 = deck_display_name(deck2_spec);
 
-        if !quiet {
-            match seed {
-                Some(s) => mtg_player::stdout_line!("MTG Engine — p0: {p1_spec} ({name1}) vs p1: {p2_spec} ({name2}) [seed {s}]"),
-                None => mtg_player::stdout_line!("MTG Engine — p0: {p1_spec} ({name1}) vs p1: {p2_spec} ({name2})"),
-            }
-            mtg_player::stdout_line!();
-        }
+        banner = match seed {
+            Some(s) => format!("MTG Engine — p0: {p1_spec} ({name1}) vs p1: {p2_spec} ({name2}) [seed {s}]"),
+            None => format!("MTG Engine — p0: {p1_spec} ({name1}) vs p1: {p2_spec} ({name2})"),
+        };
 
         let config = GameConfig {
             player_names: vec![name1.clone(), name2.clone()],
@@ -568,6 +563,13 @@ stops here — pass --save {path} to keep writing it");
     let p2_origin = origin("--p2", p2_flag.is_some());
     let mut p1 = make_player(&p1_spec, "P1", &p1_origin, "--p1", seed.map(|s| s.wrapping_add(1)));
     let mut p2 = make_player(&p2_spec, "P2", &p2_origin, "--p2", seed.map(|s| s.wrapping_add(2)));
+    // The match is announced once both seats exist: a `gui:PORT` seat binds
+    // in `make_player`, and a banner printed before a taken port described
+    // a game that never started (#745).
+    if !quiet {
+        mtg_player::stdout_line!("{banner}");
+        mtg_player::stdout_line!();
+    }
 
     // Engine log entries the save already carries — the ones a resumed
     // game's --log must not repeat (issue #313). Zero for a fresh game,

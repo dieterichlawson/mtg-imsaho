@@ -254,6 +254,9 @@ root or set {} to the mtg-gui directory", web_dir.display(), mtg_player::gui::WE
         set_data.set_name.clone(),
     );
 
+    // The port first: nothing below is true of a table that cannot listen.
+    let listener = server::bind(&shared).unwrap_or_else(|e| die(&e));
+
     mtg_player::stderr_line!("{} draft: {} seats, best-of-{}, seed {}; log {}",
         set_data.set_name, args.seats.len(), args.best_of, args.seed, args.log);
     if page_missing {
@@ -274,7 +277,7 @@ client still works", shared.config.web_dir.display(), server::PAGE);
         mtg_player::stderr_line!("the draft starts when everybody has joined, or press Enter to start without them");
     }
 
-    if let Err(e) = server::run(&shared) {
+    if let Err(e) = server::run(&shared, listener) {
         die(&e);
     }
     // The log is the table's record: say that the host ended it, and

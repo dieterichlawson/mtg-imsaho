@@ -206,14 +206,24 @@ pub fn join_lines(host: &str, port: u16, seat: usize, key: &str) -> String {
 
 // ───────────────────────────────────────────────────────────── run
 
-/// Serve the table until the host quits. Returns when the host does.
+/// Take the table's port. Done before anything is said or started: an
+/// all-AI table used to start its draft, and log "the draft has started"
+/// and "--- Pack 1 ---", before finding the port taken, leaving a log of a
+/// draft that never ran (#745, the shape of #735).
 ///
 /// # Errors
 /// The listening port cannot be bound.
-pub fn run(shared: &Arc<Shared>) -> Result<(), String> {
-    let listener = TcpListener::bind((shared.config.bind.as_str(), shared.config.port))
-        .map_err(|e| format!("cannot listen on {}:{}: {e}", shared.config.bind, shared.config.port))?;
+pub fn bind(shared: &Arc<Shared>) -> Result<TcpListener, String> {
+    TcpListener::bind((shared.config.bind.as_str(), shared.config.port))
+        .map_err(|e| format!("cannot listen on {}:{}: {e}", shared.config.bind, shared.config.port))
+}
 
+/// Serve the table on `listener` until the host quits. Returns when the
+/// host does.
+///
+/// # Errors
+/// A worker thread cannot be started.
+pub fn run(shared: &Arc<Shared>, listener: TcpListener) -> Result<(), String> {
     let accept = Arc::clone(shared);
     thread::Builder::new().name("draft-accept".into()).spawn(move || {
         for stream in listener.incoming().flatten() {
