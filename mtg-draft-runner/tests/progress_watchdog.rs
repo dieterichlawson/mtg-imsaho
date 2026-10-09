@@ -98,7 +98,9 @@ fn a_tournament_game_that_stops_moving_is_forfeited_and_said_so() {
     // first one that stalls. About a quarter of seeds do. Losing ALL of
     // them is still a failure, because then the fixture no longer
     // exercises what it is for and a human has to find a seed that does.
-    const SEEDS: [&str; 5] = ["106", "107", "108", "101", "102"];
+    // 105 stalls since the pass-until row re-rolled the games (the five
+    // after it were the list before that, and all play out now).
+    const SEEDS: [&str; 6] = ["105", "106", "107", "108", "101", "102"];
     let mut played_out: Vec<&str> = Vec::new();
 
     for seed in SEEDS {
@@ -141,6 +143,10 @@ fn a_tournament_game_that_stops_moving_is_forfeited_and_said_so() {
             played_out.push(seed);
             continue;
         }
+
+        // Which seed it was, for whoever has to re-pin the list after the
+        // next prompt change (`--nocapture`).
+        eprintln!("seed {seed} stalled; the seeds before it played out: {played_out:?}");
 
         // Silence is the other half of the defect: the operator saw an
         // empty stderr for the whole episode.

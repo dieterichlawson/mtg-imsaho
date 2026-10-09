@@ -651,10 +651,12 @@ impl ClaudeCodeBackend {
                     }
                     // One line per call, so the largest answer of a game —
                     // what the cap above has to fit — can be read off a log
-                    // rather than guessed from the game's total.
+                    // rather than guessed from the game's total. Tokens
+                    // only: two runs of one seed write the same log, and a
+                    // wall time here would differ between them.
                     crate::game_log::write_at(crate::game_log::LogLevel::Debug, file!(), line!(),
                         &api_label("USAGE", &self.seat), &format!(
-                            "in {} out {} thinking {} cache_read {} cache_write {} {elapsed_ms}ms",
+                            "in {} out {} thinking {} cache_read {} cache_write {}",
                             usage["input_tokens"].as_u64().unwrap_or(0),
                             usage["output_tokens"].as_u64().unwrap_or(0),
                             thinking.map_or_else(|| "n/a".to_string(), |t| t.to_string()),

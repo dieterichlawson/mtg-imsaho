@@ -23,6 +23,11 @@ use std::path::PathBuf;
 /// A stub `claude` that answers with every key any prompt might want, so it
 /// satisfies each schema without knowing which one it is being asked — and
 /// omits `attacker_indices` when the schema in its argv asks for it.
+///
+/// Its `action` is 2: the first engine row after `Pass`, since index 1 of
+/// every priority menu is the seat's own `Pass until something happens`
+/// (`docs/llm-harness.md`). Answering 1 would pass the whole game unasked,
+/// and a seat that never casts a creature is never asked to attack.
 fn mute_at_combat_stub(dir: &PathBuf) -> PathBuf {
     let bin = dir.join("claude");
     std::fs::write(&bin, r#"#!/bin/sh
@@ -33,7 +38,7 @@ cat > /dev/null
 if [ "$SCHEMA" = "att" ]; then
   INNER='{\"thoughts\":\"t\"}'
 else
-  INNER='{\"thoughts\":\"t\",\"action\":1,\"mull\":false,\"indices\":[],\"card_indices\":[],\"x\":0,\"confirm\":false,\"order\":[]}'
+  INNER='{\"thoughts\":\"t\",\"action\":2,\"mull\":false,\"indices\":[],\"card_indices\":[],\"x\":0,\"confirm\":false,\"order\":[]}'
 fi
 printf '{"type":"result","is_error":false,"result":"%s","session_id":"11111111-2222-4333-8444-555555555555","usage":{"input_tokens":1,"output_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0}}\n' "$INNER"
 exit 0
