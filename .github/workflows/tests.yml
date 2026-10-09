@@ -29,6 +29,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The toolchain the repo is developed and linted against. The runner's
+      # default is newer and its pedantic clippy carries lints this code
+      # has never been held to (doc_markdown on every "XMage", unnecessary_wraps),
+      # which would make this step red for reasons no commit introduced.
+      # Bump it deliberately, with the clippy fixes in the same change.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.0"
+          components: clippy
+
       - name: Cache cargo
         uses: actions/cache@v4
         with:
@@ -36,7 +46,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: tests-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          key: tests-${{ runner.os }}-1.97.0-${{ hashFiles('Cargo.lock') }}
 
       - name: Check, zero warnings
         run: cargo check --workspace --all-targets
@@ -55,6 +65,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.0"
+
       - name: Cache cargo
         uses: actions/cache@v4
         with:
@@ -62,7 +76,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: prompt-shape-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          key: prompt-shape-${{ runner.os }}-1.97.0-${{ hashFiles('Cargo.lock') }}
 
       - name: Build the runner
         run: cargo build --release -p mtg-runner
