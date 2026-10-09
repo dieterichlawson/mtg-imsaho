@@ -1183,6 +1183,7 @@ Pick anywhere from 0 to 1 cards. Name the cards to exile.
 Options:
 0: Reckless Waif (#44)
 ```
+- **Backing out**: the X-funding, exile-from-graveyard, "up to N" target and tap-creatures-for-a-cost prompts carry `cancel`; `true` cancels the cast or activation instead of answering — it is undone and nothing is paid. Use it rather than casting an X spell for 0 you did not mean to.
 - **Sets of cards** (bottoming after a mulligan, cleanup discard, "choose N") are asked the same way: an index array, exactly as many as the prompt says.
 - **Equip** and **flashback** are rows in the action list (`Activate <equipment> (Equip {N})`, `Flashback <card>`), auto-tapped like anything else. Idle equipment is a wasted resource.
 - **Timing**: sorceries, creatures, enchantments, artifacts and lands only in YOUR main phase with an empty stack; instants and abilities whenever you have priority. Spells use the stack; the opponent can respond before yours resolves.
@@ -3904,6 +3905,10 @@ impl LlmPlayer {
         format!("{description}\n\n{count_note} {instruction}\n\nOptions:\n{listing}")
     }
 
+    /// Mark a subset of a numbered list. `cancel` names what the prompt can
+    /// back out of ("the cast"), where the engine accepts `CancelCast`;
+    /// `None` is returned when the seat chose to (#749).
+    #[allow(clippy::too_many_arguments)]
     fn mark_indices(
         &mut self,
         view: &GameView,
@@ -3913,13 +3918,14 @@ impl LlmPlayer {
         description: &str,
         instruction: &str,
         noun: &str,
-    ) -> Vec<usize> {
+        cancel: Option<&str>,
+    ) -> Option<Vec<usize>> {
         let count_note = Self::marked_count_note(min, max, noun);
         let action_text = Self::marked_list_body(labels, description, &count_note, instruction);
         let prompt = self.build_prompt(view, &action_text);
 
         let valid: Vec<usize> = (0..labels.len()).collect();
-        let schema = serde_json::json!({
+        let mut schema = serde_json::json!({
             "type": "object",
             "properties": {
                 "thoughts": {
@@ -3939,8 +3945,14 @@ impl LlmPlayer {
             "required": ["thoughts", "indices"],
             "additionalProperties": false,
         });
+        if let Some(what) = cancel {
+            Self::offer_cancel(&mut schema, what);
+        }
 
         let response = self.send_message_structured(&prompt, &schema);
+        if cancel.is_some() && self.chose_cancel(&response, description) {
+            return None;
+        }
         let answered = response["indices"].is_array();
         let mut chosen: Vec<usize> = Vec::new();
         if let Some(arr) = response["indices"].as_array() {
@@ -3963,7 +3975,30 @@ impl LlmPlayer {
                  instead of the {min} asked for",
                 response["indices"], chosen.len(), labels.len()));
         }
-        chosen
+        Some(chosen)
+    }
+
+    /// Add the `cancel` field to a prompt's schema: the CLI's "c = cancel
+    /// the cast", the page's Cancel button and the random seat's
+    /// `CANCEL_CHANCE`, which this seat alone did not have — an X spell it
+    /// could no longer afford was cast for X = 0 (#749).
+    fn offer_cancel(schema: &mut serde_json::Value, what: &str) {
+        schema["properties"]["cancel"] = serde_json::json!({
+            "type": "boolean",
+            "description": format!("true to cancel {what} instead of answering: it is undone and nothing is paid. false to answer."),
+        });
+        if let Some(required) = schema["required"].as_array_mut() {
+            required.push(serde_json::json!("cancel"));
+        }
+    }
+
+    /// Whether the seat answered `cancel: true`, logged when it did.
+    fn chose_cancel(&mut self, response: &serde_json::Value, description: &str) -> bool {
+        let cancel = response["cancel"].as_bool() == Some(true);
+        if cancel {
+            self.log("CHOSE", &format!("cancel ({description})"));
+        }
+        cancel
     }
 
     ///
@@ -3997,10 +4032,12 @@ impl LlmPlayer {
         // itself, printed `0: 0: Abbey Griffin` on every target prompt
         // (issue #490).
         let labels = Self::target_labels(view, options);
-        let picked = self.mark_indices(
+        let Some(picked) = self.mark_indices(
             view, &labels, min, max, description,
             "Name the targets you want; leaving a slot empty is allowed where the count says so.",
-            "target");
+            "target", Some("the cast")) else {
+            return Action::ResolveChoice { choice: ResolvedChoice::CancelCast };
+        };
         let mut chosen: Vec<Target> = picked.into_iter()
             .filter_map(|i| options.get(i).cloned())
             .collect();
@@ -4033,17 +4070,16 @@ impl LlmPlayer {
         max: usize,
         description: &str,
         verb: &str,
-    ) -> Vec<mtg_engine::ids::ObjectId> {
+        cancel: Option<&str>,
+    ) -> Option<Vec<mtg_engine::ids::ObjectId>> {
         if options.is_empty() {
-            return vec![];
+            return Some(vec![]);
         }
 
         let labels = Self::format_combat_creature_list(view, options);
         let instruction = format!("Name the cards to {verb}.");
-        self.mark_indices(view, &labels, min, max, description, &instruction, "card")
-            .into_iter()
-            .filter_map(|i| options.get(i).copied())
-            .collect()
+        let picked = self.mark_indices(view, &labels, min, max, description, &instruction, "card", cancel)?;
+        Some(picked.into_iter().filter_map(|i| options.get(i).copied()).collect())
     }
 
     /// Exile-from-graveyard additional cost: mark the cards to exile.
@@ -4056,8 +4092,10 @@ impl LlmPlayer {
         description: &str,
     ) -> Action {
         use mtg_engine::actions::ResolvedChoice;
-        let chosen = self.choose_object_subset(
-            view, options, min, max, description, "exile");
+        let Some(chosen) = self.choose_object_subset(
+            view, options, min, max, description, "exile", Some("the cast")) else {
+            return Action::ResolveChoice { choice: ResolvedChoice::CancelCast };
+        };
 
         // For fixed-count costs, the engine validates and cancels on
         // mismatch. We log here so the diagnostic trail is clear.
@@ -4087,10 +4125,13 @@ impl LlmPlayer {
         max: usize,
         description: &str,
         verb: &str,
+        cancel: Option<&str>,
     ) -> Action {
         use mtg_engine::actions::ResolvedChoice;
-        let mut chosen = self.choose_object_subset(
-            view, options, min, max, description, verb);
+        let Some(mut chosen) = self.choose_object_subset(
+            view, options, min, max, description, verb, cancel) else {
+            return Action::ResolveChoice { choice: ResolvedChoice::CancelCast };
+        };
         chosen.truncate(max);
         if chosen.len() < min {
             self.log("VALIDATION", &format!(
@@ -4119,7 +4160,7 @@ impl LlmPlayer {
         view: &GameView,
         options: &mtg_engine::funding::FundingOptions,
         _source_id: mtg_engine::ids::ObjectId,
-        _is_ability: bool,
+        is_ability: bool,
         description: &str,
     ) -> Action {
         use mtg_engine::actions::ResolvedChoice;
@@ -4216,7 +4257,7 @@ impl LlmPlayer {
         let (rocks_props, rocks_req) = category_props(FundingCategory::Rocks);
         let (dorks_props, dorks_req) = category_props(FundingCategory::Dorks);
 
-        let schema = serde_json::json!({
+        let mut schema = serde_json::json!({
             "type": "object",
             "properties": {
                 "thoughts": {"type": "string", "description": THOUGHTS_DESCRIPTION},
@@ -4266,8 +4307,12 @@ impl LlmPlayer {
              Sources with variable output or cost-bearing activation (e.g. pain lands) aren't listed — tap those manually first to float the mana.",
             options.max_announceable_x(),
         );
+        Self::offer_cancel(&mut schema, if is_ability { "the activation" } else { "the cast" });
         let full_prompt = self.build_prompt(view, &prompt_text);
         let response = self.send_message_structured(&full_prompt, &schema);
+        if self.chose_cancel(&response, description) {
+            return Action::ResolveChoice { choice: ResolvedChoice::CancelCast };
+        }
 
         // Parse response. The schema uses string-enum for integer-range
         // fields (see `int_enum_str` above), so values arrive as strings
@@ -4500,14 +4545,16 @@ impl Player for LlmPlayer {
             options, min, max, description, effect,
         }) = legal.resolution_prompt.as_ref()
         {
-            let verb = if matches!(effect, mtg_engine::state::PendingEffect::PayActivationTaps { .. }) {
-                "tap to pay the ability's cost"
+            // Only the cost can be backed out of; an effect resolving has
+            // no cast to cancel.
+            let (verb, cancel) = if matches!(effect, mtg_engine::state::PendingEffect::PayActivationTaps { .. }) {
+                ("tap to pay the ability's cost", Some("the activation"))
             } else {
-                "choose"
+                ("choose", None)
             };
             let (options, min, max, description) =
                 (options.clone(), *min, *max, description.clone());
-            return self.choose_object_set(view, &options, min, max, &description, verb);
+            return self.choose_object_set(view, &options, min, max, &description, verb, cancel);
         }
 
         // Exile-from-graveyard additional cost: which cards to exile.
@@ -7027,6 +7074,85 @@ pub(crate) mod tests {
         match player.choose_action(&view, legal) {
             Action::ResolveChoice { choice: ResolvedChoice::XFunding(f) } => f.x_value(),
             other => panic!("an X funding prompt is answered with a funding response: {other:?}"),
+        }
+    }
+
+    /// A backend that answers a fixed object and keeps every schema it was sent.
+    struct SchemaRecorder {
+        reply: serde_json::Value,
+        schemas: std::rc::Rc<std::cell::RefCell<Vec<serde_json::Value>>>,
+    }
+
+    impl LlmBackend for SchemaRecorder {
+        fn send(&mut self, message: &str) -> String {
+            self.send_with_schema(message, &serde_json::Value::Null).to_string()
+        }
+        fn send_with_schema(&mut self, _m: &str, s: &serde_json::Value) -> serde_json::Value {
+            self.schemas.borrow_mut().push(s.clone());
+            self.reply.clone()
+        }
+        fn init(&mut self, _deck_info: &str) {}
+        fn system_prompt(&self) -> &str { "" }
+        fn model_name(&self) -> &str { "model-749" }
+    }
+
+    /// #749: the engine takes `CancelCast` at X funding, an "up to N" target
+    /// set, an exile-from-graveyard cost and the taps an activation's cost
+    /// asks for, and the CLI, the page and the random seat all offer it.
+    /// This seat had no way to say it: an X spell it could no longer afford
+    /// was cast for X = 0. Each of the four now carries a `cancel` field
+    /// that answers `CancelCast`; an effect resolving, with no cast behind
+    /// it, does not.
+    #[test]
+    fn the_four_cancellable_prompts_offer_cancel_and_take_it() {
+        use mtg_engine::actions::{ResolvedChoice, Target};
+        use mtg_engine::state::{PendingEffect, ResolutionChoiceKind};
+        let with = |kind: ResolutionChoiceKind| mtg_engine::engine::LegalActions {
+            resolution_prompt: Some(kind), ..x_funding_offer()
+        };
+        let ids = vec![ObjectId(501), ObjectId(502)];
+        let prompts = [
+            ("x-funding", x_funding_offer(), true),
+            ("target-set", with(ResolutionChoiceKind::ChooseTargetSet {
+                description: "Memory's Journey: choose up to 3 targets".to_string(),
+                options: ids.iter().map(|&o| Target::Object(o)).collect(), min: 0, max: 2,
+                source_id: ObjectId(400), fixed: vec![], by_count: vec![],
+            }), true),
+            ("exile-cost", with(ResolutionChoiceKind::ChooseExileFromGraveyard {
+                description: "Stitched Drake: exile a creature card".to_string(),
+                options: ids.clone(), min: 1, max: 1, source_id: ObjectId(400),
+            }), true),
+            ("activation-taps", with(ResolutionChoiceKind::ChooseObjectSet {
+                description: "tap two untapped creatures".to_string(),
+                options: ids.clone(), min: 2, max: 2,
+                effect: PendingEffect::PayActivationTaps { source_id: ObjectId(400) },
+            }), true),
+            ("effect", with(ResolutionChoiceKind::ChooseObjectSet {
+                description: "choose two cards".to_string(),
+                options: ids.clone(), min: 2, max: 2,
+                effect: PendingEffect::Destroy { source_name: "Curse".to_string() },
+            }), false),
+        ];
+        for (name, legal, cancellable) in prompts {
+            for cancel in [true, false] {
+                let schemas = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+                let mut p = LlmPlayer::for_prompt_tests(&format!("Seat-749-{name}")).with_pass_until(false);
+                p.backend = Box::new(SchemaRecorder {
+                    reply: serde_json::json!({"thoughts": "t", "cancel": cancel, "indices": [0, 1],
+                        "floating": {}, "lands": {}, "rocks": {"Sol Ring": "2"}, "dorks": {}}),
+                    schemas: schemas.clone(),
+                });
+                let chosen = p.choose_action(&empty_view(), &legal);
+                let schema = schemas.borrow().last().cloned().expect("one call");
+                let offered = schema["properties"].get("cancel").is_some();
+                assert_eq!(offered, cancellable, "{name}: cancel offered: {schema}");
+                if cancellable {
+                    assert!(schema["required"].as_array().unwrap().contains(&serde_json::json!("cancel")),
+                        "{name}: cancel is required, as every other field is");
+                }
+                let cancelled = matches!(chosen, Action::ResolveChoice { choice: ResolvedChoice::CancelCast });
+                assert_eq!(cancelled, cancel && cancellable, "{name}, cancel = {cancel}: {chosen:?}");
+            }
         }
     }
 
