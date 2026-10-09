@@ -19,7 +19,10 @@ fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
-            if path.file_name().is_some_and(|n| n == "target") {
+            // Build output, and the agent worktrees Claude Code keeps under
+            // `.claude/worktrees/` — each a second copy of the whole tree,
+            // which made every "exactly one table" sweep count double.
+            if path.file_name().is_some_and(|n| n == "target" || n == ".claude" || n == ".git") {
                 continue;
             }
             walk(&path, out);
