@@ -1163,7 +1163,7 @@ Delver of Secrets {U} | Creature — Human Wizard 1/1
 [MAIN PHASE 1]
 Available actions:
 0: Pass
-1: Tap Forest
+1: Tap Forest: Add {G}
 2: Play Forest
 3: Cast Kalonian Tusker (tap 2x Forest)
 4: Concede
@@ -1178,7 +1178,7 @@ Combat prompts replace the action list: `Choose attackers:` lists your creatures
 
 ## How the engine works
 
-- **Auto-tap**: `Cast [spell]` and `Activate [ability]` tap the right sources for you, shown in the row (`Cast Doom Blade (tap Swamp, Swamp)`), preferring basics and mana-only sources, then utility lands, then mana creatures, then sources with side effects, and never a choice that leaves another spell in your hand unpayable when a different one keeps it payable. `Tap <source>` rows are for floating mana deliberately, for a mana ability's side effect, or to preserve a specific land; otherwise just cast.
+- **Auto-tap**: `Cast [spell]` and `Activate [ability]` tap the right sources for you, shown in the row (`Cast Doom Blade (tap 2x Swamp)`), preferring basics and mana-only sources, then utility lands, then mana creatures, then sources with side effects, and never a choice that leaves another spell in your hand unpayable when a different one keeps it payable. `Tap <source>` rows are for floating mana deliberately, for a mana ability's side effect, or to preserve a specific land; otherwise just cast.
 - **Mana pools empty between steps**, so tap only what you will spend in the same step.
 - **X costs**: `Cast`/`Activate` pays the non-X part; a follow-up prompt asks how to fund X in buckets (`floating`, `lands`, `rocks`, `dorks`), each value a mana amount. X is the total. Sources with variable output or a cost of their own are not offered — tap them first so the mana floats.
 - **Sacrifice costs**: a spell or ability that sacrifices a creature asks `<source>: choose a creature to sacrifice` after its targets; with one candidate it is chosen for you. The sacrifice is paid at cast time, so the creature is gone even if the spell is countered.
@@ -3434,12 +3434,19 @@ impl LlmPlayer {
     }
 
     /// Format a tap plan as a compact string like "2x Plains, Hinterland Harbor".
+    ///
+    /// A plan taps only the seat's own sources and the seat does not pick
+    /// them, so they are named bare, as the `Tap <land>` rows name them.
+    /// Since #668 gave every battlefield name its id and owner, no two names
+    /// in a plan were equal and the grouping never happened: "(tap Island
+    /// (#1) (your), Island (#2) (your))", about 46 bytes a menu over the
+    /// grouped form, under a GAME_RULES that showed "(tap 2x Island)" (#746).
     fn format_tap_plan(view: &GameView, tap_plan: &[(ObjectId, usize)]) -> String {
         if tap_plan.is_empty() { return String::new(); }
         // Collect names, count duplicates.
         let mut name_counts: Vec<(String, usize)> = Vec::new();
         for &(source_id, _) in tap_plan {
-            let name = Self::obj_name(view, source_id);
+            let name = Self::own_land_name(view, source_id);
             if let Some(entry) = name_counts.iter_mut().find(|(n, _)| *n == name) {
                 entry.1 += 1;
             } else {
@@ -6034,7 +6041,7 @@ pub(crate) mod tests {
     #[test]
     fn game_rules_shows_the_action_list_it_actually_sends() {
         let labels: Vec<ActionRow> = [
-            "Pass", "Tap Forest", "Play Forest",
+            "Pass", "Tap Forest: Add {G}", "Play Forest",
             "Cast Kalonian Tusker (tap 2x Forest)", "Concede",
         ]
         .iter()
@@ -6076,10 +6083,10 @@ pub(crate) mod tests {
             assert_eq!(system.contains(PASS_UNTIL_ROW), offered,
                 "pass-until offered = {offered}, and the system prompt says:\n{system}");
         }
-        let labels: Vec<ActionRow> = ["Pass", PASS_UNTIL_ROW, "Tap Forest"].iter()
+        let labels: Vec<ActionRow> = ["Pass", PASS_UNTIL_ROW, "Tap Forest: Add {G}"].iter()
             .map(|s| ActionRow::One((*s).to_string())).collect();
         let menu = LlmPlayer::format_action_prompt(Some("MAIN PHASE 1"), &labels, mtg_engine::ids::PlayerId(0));
-        assert!(menu.contains(&format!("\n1: {PASS_UNTIL_ROW}\n2: Tap Forest")), "{menu}");
+        assert!(menu.contains(&format!("\n1: {PASS_UNTIL_ROW}\n2: Tap Forest: Add {{G}}")), "{menu}");
         assert!(PASS_UNTIL_RULES.contains(&format!("`1: {PASS_UNTIL_ROW}`")) && PASS_UNTIL_RULES.contains("numbered from 2"));
     }
 
@@ -7890,6 +7897,21 @@ pub(crate) mod tests {
                 targets: vec![],
             }).contains("Garruk Relentless"),
             "the fallback still names the permanent");
+    }
+
+    /// #746: a tap plan groups like sources again, by the bare name the
+    /// `Tap <land>` rows use, and GAME_RULES shows what is sent.
+    #[test]
+    fn a_tap_plan_groups_like_sources_by_name() {
+        let mut view = empty_view();
+        for id in [1, 2] {
+            view.battlefield.push(perm(id, "Island", 0, 0, PlayerId(0)));
+        }
+        view.battlefield.push(perm(3, "Hinterland Harbor", 0, 0, PlayerId(0)));
+        let plan = [(ObjectId(1), 0), (ObjectId(2), 0), (ObjectId(3), 0)];
+        assert_eq!(LlmPlayer::format_tap_plan(&view, &plan), "2x Island, Hinterland Harbor");
+        let two = LlmPlayer::format_tap_plan(&view, &plan[..2]);
+        assert!(GAME_RULES.contains(&format!("(tap {two})")), "GAME_RULES shows a grouped plan: (tap {two})");
     }
 
     fn perm(id: u64, name: &str, power: i32, toughness: i32, controller: PlayerId) -> PermanentView {
