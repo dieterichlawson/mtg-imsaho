@@ -123,8 +123,9 @@ fn a_pay_or_not_question_names_what_paying_will_tap() {
 
     let legal = engine::legal_actions(&state, &reg);
     let context = legal.context.clone().unwrap_or_default();
-    let forest_name = state.obj_name(forest);
-    assert!(context.contains(&format!("tap {forest_name}")),
+    // Named as the `Tap <land>` rows name it: the payer's own, bare (#746).
+    let forest_name = &state.get_object(forest).unwrap().name;
+    assert!(context.contains(&format!("(Pay: tap {forest_name})")),
         "the question names the land paying taps: {context:?}");
     match &legal.resolution_prompt {
         Some(ResolutionChoiceKind::PayOrNot { description, .. }) =>

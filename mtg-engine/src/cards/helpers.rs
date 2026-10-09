@@ -779,26 +779,26 @@ pub fn werewolf_on_upkeep(
 /// Format a tap plan as a short human-readable string like `tap 2x Swamp, Sol Ring`.
 /// Groups identical names with a count prefix; returns an empty string if the
 /// tap plan is empty. Engine-side analogue of `format_tap_plan` in mtg-player,
-/// for use in resolution-prompt descriptions (e.g. Screeching Bat's may-pay).
+/// for use in resolution-prompt descriptions (e.g. Screeching Bat's may-pay,
+/// and the "(Pay: …)" every seat shows for a may-pay, #621).
+///
+/// The sources are the payer's own and the payer does not choose them, so
+/// they are named bare. Through `obj_name`, which always adds the id, no two
+/// names were equal and it read "tap Swamp (#3), Swamp (#4)" — the grouping
+/// this function exists for never happened (#746).
 #[must_use]
 pub fn format_tap_plan_names(state: &GameState, tap_plan: &[(ObjectId, usize)]) -> String {
     if tap_plan.is_empty() {
         return String::new();
     }
-    let names: Vec<String> = tap_plan.iter()
-        .map(|&(id, _)| state.obj_name(id))
-        .collect();
-    // Group consecutive identical names into "Nx Name" form, preserving
-    // the tap plan's order.
+    // Group identical names into "Nx Name" form, in order of first use.
     let mut groups: Vec<(String, usize)> = Vec::new();
-    for name in names {
-        if let Some(last) = groups.last_mut() {
-            if last.0 == name {
-                last.1 += 1;
-                continue;
-            }
+    for &(id, _) in tap_plan {
+        let name = state.get_object(id).map_or_else(|| state.obj_name(id), |o| o.name.clone());
+        match groups.iter_mut().find(|(n, _)| *n == name) {
+            Some(g) => g.1 += 1,
+            None => groups.push((name, 1)),
         }
-        groups.push((name, 1));
     }
     let parts: Vec<String> = groups.into_iter()
         .map(|(n, c)| if c == 1 { n } else { format!("{c}x {n}") })

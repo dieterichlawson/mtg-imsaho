@@ -960,3 +960,17 @@ fn the_view_counts_what_is_put_on_the_stack() {
     assert_eq!(id(&v2.stack[0]), id(&v2.stack[1]), "the two pings look alike on the stack");
     assert_eq!((v1.stack_puts, v2.stack_puts), (before + 1, before + 2), "but each was counted");
 }
+
+/// #746: the engine's tap-plan text — the "(Pay: …)" every seat shows for a
+/// may-pay, Screeching Bat's question — groups like sources by name. It
+/// named each by `obj_name`, which carries the id, so it never grouped.
+#[test]
+fn a_tap_plan_in_a_prompt_groups_like_sources() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let a = named_permanent(&mut state, &reg, "Swamp", P0);
+    let ring = named_permanent(&mut state, &reg, "Sol Ring", P0);
+    let b = named_permanent(&mut state, &reg, "Swamp", P0);
+    let text = mtg_engine::cards::helpers::format_tap_plan_names(&state, &[(a, 0), (ring, 0), (b, 0)]);
+    assert_eq!(text, "tap 2x Swamp, Sol Ring");
+}
