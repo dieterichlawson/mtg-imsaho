@@ -788,6 +788,20 @@ say what your stub says.
   for two different funding plans. Ask also whether floating mana should change
   a menu's *shape* at all — the CLI and the seat both lose their only
   disambiguator for doing something a player is entitled to do
+  — **played 2026-10-09: the collapse is closed, the clause grew.** 40 stub
+  games (every deck in `decks/` and `decks/coverage/`, seeds 2100-2139): 3,129
+  rows carried a tap plan and **0** collided once the clause was stripped, because
+  #611's `cast_cost_note` puts the cost in every cast row. Walking the #611 board
+  (18 Mountain / 4 Past in Flames / 4 Geistflame, seed 2201) from Red:1 to Red:6
+  with a stub that picks the highest `Tap …` row each time kept all four flashback
+  rows apart on the seat and in the CLI. Floating mana does change one shape:
+  per-copy rows merge into one `— one per copy` row, with an index for each copy,
+  which is harmless. What the pass did find is that since #668 the seat's plan
+  can never group (`Island (#1) (your), Island (#2) (your)`, never `2x Island`),
+  while GAME_RULES still shows `(tap 2x Forest)` and its test checks hand-written
+  labels (#746). Lesson: when a helper the labels go through changes, grep
+  GAME_RULES for the old shape. The #611 board plus a stub that floats one more
+  mana each call is a cheap regression walk
 - H22 [proposed 2026-09-29, from #610 and the method that found it] one save,
   two seats, diff the options. #610 was two near-identical copies of the same
   collapse drifting apart — `llm.rs` took #589's fix and `cli.rs` did not — and
@@ -807,6 +821,22 @@ say what your stub says.
   positions with an Aura-granted ability, a graveyard cast, two ways to pay, and
   duplicate permanents — the four places the two copies are known to diverge —
   and extend it to the GUI seat if the page will resume a save
+  — **played 2026-10-09: two found (#748, #749).** Most of this is now a unit
+  test: `mtg-player/src/surface_parity.rs` holds the CLI's and the seat's
+  priority menus to the engine's offer keys over 32 coverage games, so don't
+  re-diff priority menus by hand. What is left uncovered is the page, the
+  sub-flows after a row is chosen, the resolution prompts, and *which answer
+  shapes each seat can send*. The page does resume a `--save`. One Playwright
+  browser batch-resuming harvested saves at `--p1 gui` (~3 s a save) can flag any
+  `ui.verbs` id that is neither drawn nor in a graveyard/exile overlay, and whose
+  stack's drawn member lacks the same label. That needs no game knowledge, and it
+  found the second Darkthicket Wolf's pump unclickable while the first's is on
+  the stack (#748). Listing what the engine accepts at each prompt kind against
+  each seat's schema found that the seat alone can't cancel a cast at X-funding,
+  set-target or exile-from-graveyard prompts (#749). Practicalities: set
+  `MTG_LLM_PASS_UNTIL=off` and bias the stub away from Pass, or the seat reaches
+  nothing; give each game its own directory; and never `pkill -f` a pattern
+  that is in your own command line
 - H23 [proposed 2026-09-29, from #610's fourth surface] the random seat's
   grouping keys, against the engine's. H19 audited the collapse keys the LLM
   seat and the CLI own; there is a fourth copy nobody has read. `random.rs`
