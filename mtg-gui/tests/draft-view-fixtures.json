@@ -2662,12 +2662,12 @@
     "echo": {
       "lands": {},
       "main": [
-        "Abbey Griffin"
+        "Griselbrand"
       ],
       "sideboard": [],
       "type": "deck"
     },
-    "reason": "Deck has 5 cards (need at least 40). Add more cards or basic lands.",
+    "reason": "'Griselbrand' is not in your drafted pool.",
     "type": "refused"
   }
 }

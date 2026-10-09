@@ -469,6 +469,9 @@ impl Lobby {
         lines: &CardLines,
         log: DraftLogger,
     ) -> Result<Self, String> {
+        if packs.len() != config.seats.len() {
+            return Err(format!("{} seats but packs for {}", config.seats.len(), packs.len()));
+        }
         let table = Table::new(packs)?;
         let book = CardBook::new(set_data, &registry, lines);
         let seats: Vec<SeatState> = config.seats.iter().enumerate().map(|(i, kind)| SeatState {
@@ -654,12 +657,27 @@ the order they happened, not in seat order", "");
         self.run_auto_seats();
     }
 
+    /// Whether the table picks for this seat at once rather than on the
+    /// timer: it was kicked, or the host set no pick timer. An absent seat
+    /// under a timer is picked for when the timer runs out, so a person
+    /// who joins a minute late finds the table has taken a few picks, not
+    /// the whole draft (the first playtest lost all 42 in four seconds).
+    fn picks_at_once(&self, seat: usize) -> bool {
+        self.seats[seat].auto && (self.seats[seat].kicked || self.config.pick_seconds.is_none())
+    }
+
+    /// The same for the deck: kicked, or no build timer.
+    fn builds_at_once(&self, seat: usize) -> bool {
+        self.seats[seat].auto && (self.seats[seat].kicked || self.config.build_seconds.is_none())
+    }
+
     /// Give every human seat with a pack and no deadline one, when the host
-    /// set a pick timer.
+    /// set a pick timer. An absent seat's deadline is the table's cue to
+    /// pick for it.
     fn arm_deadlines(&mut self) {
         let Some(secs) = self.config.pick_seconds else { return };
         for seat in 0..self.seats.len() {
-            if !self.seats[seat].is_human() || self.seats[seat].auto {
+            if !self.seats[seat].is_human() || self.seats[seat].kicked {
                 continue;
             }
             match self.table.in_front(seat) {
@@ -780,8 +798,13 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
         let card = cards[index].clone();
         let note = format!("auto-pick: {why}");
         self.apply_pick(seat, pack_id, index, true, &note, &note)?;
-        self.seats[seat].notice = Some(format!(
-            "The table picked {} for you ({why}).", mtg_draft::front_face(&card)));
+        // A kicked seat was told once that it is the table's; a notice
+        // per pick would only write over that line (the lobby test read
+        // "The table picked Moonmist for you" where the kick should be).
+        if !self.seats[seat].kicked {
+            self.seats[seat].notice = Some(format!(
+                "The table picked {} for you ({why}).", mtg_draft::front_face(&card)));
+        }
         self.event(format!("seat {seat}: the table picked {} ({why})", mtg_draft::front_face(&card)));
         Ok(())
     }
@@ -813,11 +836,22 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
         if self.seats[seat].build_deadline.is_some() || self.seats[seat].ready {
             return;
         }
+        // The section opens when the first seat is done, not when the
+        // table is: a seat builds as soon as its own draft is over, and its
+        // pool and deck would otherwise land inside the DRAFT section,
+        // before the header a reader looks for (found in the first
+        // playtest: three of four decks were above "DECK BUILDING").
+        if !self.started_pool_log {
+            self.started_pool_log = true;
+            log_section!(self.log, "DECK BUILDING");
+            mtg_player::game_log::write(file!(), line!(),
+                "NOTE each seat's pool and deck are written as that seat finishes drafting, so they come in the order the seats finished, interleaved with the last picks of the others", "");
+        }
         log_pool_summary!(self.log, seat, self.table.pool(seat));
         let name = self.seats[seat].name.clone();
         self.event(format!("{name} has drafted all {} cards and is building", self.table.pool(seat).len()));
         if self.seats[seat].is_human() {
-            if self.seats[seat].auto {
+            if self.builds_at_once(seat) {
                 self.auto_build(seat, "the table builds for a seat it picks for");
             } else if let Some(secs) = self.config.build_seconds {
                 self.seats[seat].build_deadline = Some(Instant::now() + Duration::from_secs(secs));
@@ -827,22 +861,24 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
 
     fn draft_over(&mut self) {
         self.phase = Phase::Building;
-        if !self.started_pool_log {
-            self.started_pool_log = true;
-            log_section!(self.log, "DECK BUILDING");
-        }
         self.event("the draft is over; every seat is building".to_string());
     }
 
     // ── building ──
 
-    /// A person's deck, re-sendable until `ready`.
+    /// A person's deck, re-sendable until `ready`. A deck that is only
+    /// short is work in progress: it is recorded with what it still needs
+    /// (`deck.problem` in the view) and not refused, because the page and
+    /// the client send the deck after every card moved, and a person
+    /// building one card at a time was refused twenty-two times in a row
+    /// (the first playtest). `ready` is what a short deck is refused at.
     ///
     /// # Errors
-    /// The seat is not building yet, is already ready, or the deck is not
-    /// legal — the reason is the one `validate_deck` gives.
+    /// The seat is not building yet, is already ready, or the deck names
+    /// a card the seat did not draft (or too many copies of one, or a land
+    /// that is not basic) — the reason is the one `validate_deck` gives.
     pub fn submit_deck(
-        &mut self, seat: usize, main: &[String], lands: &HashMap<String, u32>, _sideboard: &[String],
+        &mut self, seat: usize, main: &[String], lands: &HashMap<String, u32>, sideboard: &[String],
     ) -> Result<(), String> {
         if !self.table.seat_done(seat) {
             return Err("you are still drafting".to_string());
@@ -858,15 +894,15 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
                 Ok(())
             }
             Err(problem) => {
-                // Kept, so the page can show what was sent next to why it
-                // was refused.
+                // Kept, so the page can show what was sent next to what is
+                // wrong with it, whether or not it is refused.
                 self.seats[seat].deck = Some(DraftDeck {
                     maindeck: main.to_vec(),
                     lands: lands.clone(),
-                    sideboard: Vec::new(),
+                    sideboard: sideboard.to_vec(),
                 });
                 self.seats[seat].deck_problem = Some(problem.clone());
-                Err(problem)
+                if deck_in_progress(&problem) { Ok(()) } else { Err(problem) }
             }
         }
     }
@@ -1002,21 +1038,23 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
         self.seats[seat].auto
     }
 
-    /// Pick and build for every auto seat with something to do.
+    /// Pick and build for every auto seat with something to do and no
+    /// timer to wait for; the others get their deadlines armed.
     fn run_auto_seats(&mut self) {
         while let Some(seat) = (0..self.seats.len()).find(|&s| {
-            self.seats[s].auto && self.phase == Phase::Drafting
+            self.picks_at_once(s) && self.phase == Phase::Drafting
                 && self.table.in_front(s).is_some()
         }) {
             let _ = self.auto_pick(seat, "the seat is away");
         }
         for seat in 0..self.seats.len() {
-            if self.seats[seat].auto && !self.seats[seat].ready
+            if self.builds_at_once(seat) && !self.seats[seat].ready
                 && self.table.seat_done(seat)
             {
                 self.auto_build(seat, "the seat is away");
             }
         }
+        self.arm_deadlines();
     }
 
     /// The clock: expire pick and build deadlines. Returns whether anything
@@ -1024,15 +1062,17 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
     pub fn tick(&mut self, now: Instant) -> bool {
         let mut changed = false;
         for seat in 0..self.seats.len() {
+            let why = if self.seats[seat].auto { "the seat is away" } else { "the pick timer ran out" };
             if self.seats[seat].pick_deadline.is_some_and(|d| d <= now) {
                 self.seats[seat].pick_deadline = None;
-                if self.auto_pick(seat, "the pick timer ran out").is_ok() {
+                if self.auto_pick(seat, why).is_ok() {
                     changed = true;
                 }
             }
             if self.seats[seat].build_deadline.is_some_and(|d| d <= now) {
                 self.seats[seat].build_deadline = None;
-                self.auto_build(seat, "the build timer ran out");
+                let why = if self.seats[seat].auto { "the seat is away" } else { "the build timer ran out" };
+                self.auto_build(seat, why);
                 changed = true;
             }
         }
@@ -1322,6 +1362,15 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
     }
 }
 
+/// Whether a deck's problem is only that it is short: the one state a
+/// deck passes through on its way to legal, so not a refusal. Every other
+/// problem `validate_deck` reports names a card or a land that cannot be
+/// in the deck at all.
+#[must_use]
+pub fn deck_in_progress(problem: &str) -> bool {
+    problem.starts_with("Deck has ") && problem.contains("need at least")
+}
+
 /// Milliseconds from `now` to `deadline`, 0 once it has passed.
 fn millis_left(deadline: Instant, now: Instant) -> u64 {
     u64::try_from(deadline.saturating_duration_since(now).as_millis()).unwrap_or(u64::MAX)
@@ -1384,6 +1433,19 @@ mod tests {
         assert!(parse_seats("cli,cli", "cc").unwrap_err().contains("at most one cli"));
         assert!(parse_seats("0xhuman,ai", "cc").unwrap_err().contains("nobody"));
         assert!(parse_seats("ai:,human", "cc").unwrap_err().contains("not a seat"));
+    }
+
+    #[test]
+    fn a_short_deck_is_in_progress_and_a_wrong_card_is_not() {
+        let pool: Vec<String> = ["Abbey Griffin", "Chapel Geist"].map(String::from).to_vec();
+        let short = deckbuilding::validate_deck(&pool, &pool[..1], &HashMap::new()).unwrap_err();
+        assert!(deck_in_progress(&short), "{short}");
+        let wrong = deckbuilding::validate_deck(&pool, &["Griselbrand".to_string()], &HashMap::new()).unwrap_err();
+        assert!(!deck_in_progress(&wrong), "{wrong}");
+        let copies = deckbuilding::validate_deck(&pool, &[pool[0].clone(), pool[0].clone()], &HashMap::new()).unwrap_err();
+        assert!(!deck_in_progress(&copies), "{copies}");
+        let land = deckbuilding::validate_deck(&pool, &pool, &HashMap::from([("Shimmering Grotto".to_string(), 1)])).unwrap_err();
+        assert!(!deck_in_progress(&land), "{land}");
     }
 
     #[test]

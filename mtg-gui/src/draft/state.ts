@@ -20,6 +20,9 @@ export interface PageState {
   reconnects: number;
   /** When the next reconnect fires, for the status line. */
   retryAt: number | null;
+  /** The server refused the join itself (wrong key, no such seat): no
+   *  reconnect will change that, so none is scheduled. */
+  rejected: boolean;
   seat: number | null;
   key: string | null;
   view: DraftView | null;
@@ -55,7 +58,7 @@ export interface Actions {
 
 export function initialState(): PageState {
   return {
-    ws: null, connected: false, reconnects: 0, retryAt: null,
+    ws: null, connected: false, reconnects: 0, retryAt: null, rejected: false,
     seat: null, key: null, view: null,
     selected: null, hover: null, pendingPick: null,
     deck: null, cursor: null, readySent: false,

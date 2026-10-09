@@ -48,11 +48,16 @@ fn disjoint_packs(set_data: &SetData) -> Vec<Vec<BoosterPack>> {
 }
 
 fn lobby(seats: Vec<SeatKind>) -> (Lobby, Vec<Vec<BoosterPack>>) {
+    lobby_with(seats, None)
+}
+
+fn lobby_with(seats: Vec<SeatKind>, pick_seconds: Option<u64>) -> (Lobby, Vec<Vec<BoosterPack>>) {
     let set_path = repo_root().join("data/sets/isd.json");
     let mut set_data = SetData::load(&set_path).unwrap();
     let registry = Arc::new(CardRegistry::with_all_cards());
     set_data.filter_implemented(&registry);
-    let packs = disjoint_packs(&set_data);
+    let mut packs = disjoint_packs(&set_data);
+    packs.truncate(seats.len());
     let lines = CardLines::new(&set_data.all_card_names(), &set_data.rarities(), &registry);
     let config = LobbyConfig {
         set_code: "isd".into(),
@@ -61,12 +66,30 @@ fn lobby(seats: Vec<SeatKind>) -> (Lobby, Vec<Vec<BoosterPack>>) {
         best_of: 3,
         seed: 1,
         guide_path: None,
-        pick_seconds: None,
+        pick_seconds,
         build_seconds: None,
         out_dir: None,
     };
     let lobby = Lobby::new(config, &packs, &set_data, registry, &lines, DraftLogger::silent()).unwrap();
     (lobby, packs)
+}
+
+#[test]
+fn a_table_dealt_for_the_wrong_number_of_seats_is_refused() {
+    let set_path = repo_root().join("data/sets/isd.json");
+    let mut set_data = SetData::load(&set_path).unwrap();
+    let registry = Arc::new(CardRegistry::with_all_cards());
+    set_data.filter_implemented(&registry);
+    let packs = disjoint_packs(&set_data);
+    let lines = CardLines::new(&set_data.all_card_names(), &set_data.rarities(), &registry);
+    let config = LobbyConfig {
+        set_code: "isd".into(), set_name: set_data.set_name.clone(),
+        seats: vec![SeatKind::Human, SeatKind::Ai("cc".into())],
+        best_of: 1, seed: 1, guide_path: None, pick_seconds: None, build_seconds: None, out_dir: None,
+    };
+    let err = Lobby::new(config, &packs, &set_data, registry, &lines, DraftLogger::silent()).err()
+        .expect("four seats' packs do not seat two: a pass would go to a seat that is not at the table");
+    assert!(err.contains("2 seats but packs for 4"), "{err}");
 }
 
 fn strings(v: &Value, out: &mut Vec<String>) {
@@ -179,12 +202,16 @@ fn a_seat_never_sees_another_seats_pack_or_pool_and_each_phase_has_a_fixture() {
     let pool: Vec<String> = jv(&lobby, 0)["pool"].as_array().unwrap().iter()
         .map(|c| c["name"].as_str().unwrap().to_string()).collect();
     assert_eq!(pool.len(), 42);
-    let err = lobby.submit_deck(0, &pool[..5], &HashMap::new(), &[]).unwrap_err();
-    assert!(err.contains("need at least 40"), "{err}");
+    // A short deck is recorded as work in progress, not refused; a card
+    // the seat did not draft is refused; `ready` on a short deck is refused.
+    lobby.submit_deck(0, &pool[..5], &HashMap::new(), &[]).expect("a short deck is kept, not refused");
     let v = serde_json::to_value(lobby.view(0)).unwrap();
     assert_eq!(v["deck"]["valid"], false);
     assert!(v["deck"]["problem"].as_str().unwrap().contains("40"));
-    assert!(lobby.ready(0).is_err());
+    let err = lobby.submit_deck(0, &["Griselbrand".to_string()], &HashMap::new(), &[]).unwrap_err();
+    assert!(err.contains("not in your drafted pool"), "{err}");
+    let err = lobby.ready(0).unwrap_err();
+    assert!(err.contains("not legal"), "{err}");
     let fb = fallback_deck(&pool, &registry);
     lobby.submit_deck(0, &fb.maindeck, &fb.lands, &[]).unwrap();
     let v = serde_json::to_value(lobby.view(0)).unwrap();
@@ -268,8 +295,8 @@ draft_view_fixtures` and commit the result.".into()));
     }
     doc.insert("refused".into(), serde_json::to_value(mtg_draft_runner::lobby::Refused {
         kind: "refused",
-        reason: "Deck has 5 cards (need at least 40). Add more cards or basic lands.".into(),
-        echo: serde_json::json!({"type": "deck", "main": ["Abbey Griffin"], "lands": {}, "sideboard": []}),
+        reason: "'Griselbrand' is not in your drafted pool.".into(),
+        echo: serde_json::json!({"type": "deck", "main": ["Griselbrand"], "lands": {}, "sideboard": []}),
     }).unwrap());
     let doc = Value::Object(doc);
     let path = repo_root().join("mtg-gui/tests/draft-view-fixtures.json");
@@ -279,6 +306,54 @@ draft_view_fixtures` and commit the result.".into()));
         assert!(current.is_some(), "{} did not exist; it has been written — commit it", path.display());
         panic!("{} was stale and has been rewritten — commit it", path.display());
     }
+}
+
+/// The host starts without a person who has not arrived. Under a pick
+/// timer the table picks for them when it runs out, not at once — the
+/// first playtest's absent seat lost all 42 picks in four seconds to a
+/// fast table, and the person who joined a minute late found the draft
+/// over. Without a timer the table picks at once, as before; a kicked
+/// seat is picked for at once either way.
+#[test]
+fn an_absent_seat_under_a_timer_is_picked_for_when_the_timer_runs_out() {
+    use std::time::{Duration, Instant};
+    let (mut lobby, _) = lobby_with(vec![SeatKind::Human, SeatKind::Ai("cc".into())], Some(30));
+    lobby.start();
+    assert_eq!(lobby.phase(), Phase::Drafting);
+    let v = jv(&lobby, 0);
+    assert_eq!(v["seats"][0]["auto"], true);
+    assert_eq!(v["picks"].as_array().unwrap().len(), 0, "nothing is picked at once");
+    let left = v["pack"]["deadline_ms"].as_u64().expect("the absent seat's deadline is armed");
+    assert!(left > 25_000 && left <= 30_000, "{left}");
+    assert!(!lobby.tick(Instant::now() + Duration::from_secs(29)), "not yet");
+    assert_eq!(jv(&lobby, 0)["picks"].as_array().unwrap().len(), 0);
+    assert!(lobby.tick(Instant::now() + Duration::from_secs(31)), "the timer picks");
+    let v = jv(&lobby, 0);
+    assert_eq!(v["picks"].as_array().unwrap().len(), 1);
+    assert_eq!(v["picks"][0]["auto"], true);
+    assert!(v["notice"].as_str().unwrap().contains("the seat is away"), "{}", v["notice"]);
+    assert!(v["pack"].is_null(), "a two-seat table: nothing in front until the AI passes");
+    // The AI seat's pack comes in the same way: not taken at once, on the clock.
+    let ai_pack = jv(&lobby, 1)["pack"]["id"].as_u64().unwrap() as usize;
+    lobby.ai_pick(1, ai_pack, 0, "p", "{\"pick\":0}", false).unwrap();
+    let v = jv(&lobby, 0);
+    assert_eq!(v["picks"].as_array().unwrap().len(), 1, "the pack passed in is not taken at once");
+    let id = v["pack"]["id"].as_u64().expect("the AI's pack is in front") as usize;
+    assert!(v["pack"]["deadline_ms"].as_u64().is_some_and(|ms| ms > 25_000), "{}", v["pack"]);
+    // The person arrives: the seat is theirs, with the timer still running.
+    lobby.connected(0);
+    let v = jv(&lobby, 0);
+    assert_eq!(v["seats"][0]["auto"], false);
+    assert_eq!(v["pack"]["id"], id);
+    assert!(v["pack"]["deadline_ms"].as_u64().unwrap() <= 30_000);
+    // Kicked: at once, every pack in front of it.
+    lobby.kick(0).unwrap();
+    assert!(jv(&lobby, 0)["picks"].as_array().unwrap().len() >= 2);
+
+    // No timer: the table picks for an absent seat at once.
+    let (mut lobby, _) = lobby_with(vec![SeatKind::Human, SeatKind::Ai("cc".into())], None);
+    lobby.start();
+    assert!(jv(&lobby, 0)["picks"].as_array().unwrap().len() >= 1);
 }
 
 /// A seat's view as JSON.

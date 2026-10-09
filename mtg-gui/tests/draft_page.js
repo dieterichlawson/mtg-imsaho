@@ -241,6 +241,12 @@ async function main() {
         check(await page.$eval("#ready", b => b.disabled), `${tag}: and Ready stays disabled for it`);
         const recorded = await text("#count-line");
         check(recorded === "20 spells + 15 lands = 35", `${tag}: the recorded deck is counted ("${recorded}")`);
+        // A build timer counts down beside the deck, as the pick timer does.
+        await stage({ ...byName.building, build_deadline_ms: 90000, build_seconds: 90 });
+        await page.waitForTimeout(50);
+        check(/\d+s left/.test((await text("#countdown")) || ""), `${tag}: the build timer counts down (${JSON.stringify(await text("#countdown"))})`);
+        await stage(byName.building_with_deck);
+        await page.waitForTimeout(50);
         // Keys: arrows move the cursor, Enter moves the card.
         await page.keyboard.press("ArrowDown");
         await page.keyboard.press("Enter");
@@ -259,6 +265,19 @@ async function main() {
         await stage(byName.playing_waiting);
         await page.waitForTimeout(50);
         check((await text(".waiting") || "").includes("Waiting for the others"), `${tag}: a seat with no match waits for the others`);
+        // What the server really sends and the plan's sketch did not: a
+        // match whose page is not open yet has no link, a drawn game has
+        // no winner, the whole round is listed with its bye, a seat can be
+        // away, and the table can be picking for one. None of it may
+        // render as "null".
+        await stage(byName.playing_unlinked);
+        await page.waitForTimeout(50);
+        const whole = (await text("#app")) || "";
+        check(!/\b(null|undefined|NaN)\b/.test(whole), `${tag}: nothing on the page reads null/undefined/NaN`);
+        check(await page.$(".match-waiting a") === null && (await text(".match-waiting .match-link") || "").includes("opens when the match starts"), `${tag}: a match with no page yet says so instead of linking null`);
+        check((await text(".match-done .match-games") || "").includes("drawn"), `${tag}: a drawn game is called drawn`);
+        check((await page.$$(".pairings-list li")).length === 4 && (await text(".pairings-list") || "").includes("has a bye"), `${tag}: every pairing of the tournament is listed, the bye included`);
+        check(whole.includes("away") && whole.includes("(table picks)"), `${tag}: the seats table says who is away and whom the table picks for`);
         await stage(byName.done);
         await page.waitForTimeout(50);
         check((await text("h2") || "").includes("Draft over"), `${tag}: done says the draft is over`);
@@ -270,6 +289,21 @@ async function main() {
         await page.waitForTimeout(1200);
         const r = await page.evaluate(() => ({ reconnects: window.mtgDraft.reconnects, connected: window.mtgDraft.connected, conn: document.getElementById("conn").textContent }));
         check(r.reconnects >= 1 && !r.connected && /retrying/.test(r.conn), `${tag}: reconnecting with backoff (${r.reconnects} tries, "${r.conn}")`);
+      }
+
+      // But a join the server itself refused (a wrong key, no such seat)
+      // is not retried: the link is wrong, and the page says so instead
+      // of counting down to the next refusal for ever (the first
+      // playtest: five retries in 2.5 s under a "wrong key" banner).
+      {
+        await page.evaluate(() => { window.mtgDraft.state.view = null; window.mtgDraft.view = null; });
+        await stage({ type: "refused", reason: "wrong key for seat 0", echo: null });
+        const before = await page.evaluate(() => window.mtgDraft.reconnects);
+        await page.waitForTimeout(2500);
+        const r = await page.evaluate(() => ({ reconnects: window.mtgDraft.reconnects, conn: document.getElementById("conn").textContent, banner: (document.querySelector(".banner.refusal") || {}).textContent }));
+        check(r.reconnects <= before + 1, `${tag}: a refused join stops the reconnects (${before} before, ${r.reconnects} after)`);
+        check(/refused — check the link/.test(r.conn), `${tag}: and the status line says to check the link ("${r.conn}")`);
+        check((r.banner || "").includes("wrong key"), `${tag}: with the server's reason on the banner`);
       }
 
       if (errors.length) fail(`${tag}: page errors:\n  ${errors.join("\n  ")}`); else ok(`${tag}: no page errors`);

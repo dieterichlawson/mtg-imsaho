@@ -78,9 +78,11 @@ function connect() {
         }
     };
 }
-/** Reconnect with backoff: half a second, doubling to ten. */
+/** Reconnect with backoff: half a second, doubling to ten — unless the
+ *  server refused this link itself (a wrong key, a seat that is not at
+ *  the table), which no amount of retrying changes. */
 function scheduleReconnect() {
-    if (retryTimer !== null)
+    if (retryTimer !== null || state.rejected)
         return;
     state.reconnects++;
     exposed.reconnects = state.reconnects;
@@ -130,7 +132,11 @@ function onView(view) {
     }
     if (state.selected !== null && (!pack || !pack.cards.some(c => c.index === state.selected)))
         state.selected = null;
-    state.deadlineAt = pack && pack.deadline_ms !== null ? performance.now() + pack.deadline_ms : null;
+    // The countdown: the pick timer while a pack is in front, else the
+    // build timer while the deck is not yet final.
+    const buildLeft = view.phase === "building" && view.build_deadline_ms != null ? view.build_deadline_ms : null;
+    state.deadlineAt = pack && pack.deadline_ms !== null ? performance.now() + pack.deadline_ms
+        : buildLeft !== null ? performance.now() + buildLeft : null;
     // Building: the edit is the person's and survives the views that arrive
     // while they work (another seat's status, a pick elsewhere). It starts
     // from the deck the server records, and goes back to that whenever the
@@ -167,6 +173,10 @@ function sameDeck(a, b) {
 }
 function onRefused(msg) {
     state.refusal = { reason: msg.reason, echo: msg.echo };
+    // A refusal with nothing echoed is the join itself: the link is wrong,
+    // and the socket is about to close for good.
+    if (msg.echo === null && !state.view)
+        state.rejected = true;
     // Back to what the last view describes: the pick is not pending, the
     // deck is the server's, nothing is selected.
     state.pendingPick = null;
@@ -391,8 +401,9 @@ function draw() {
     const v = state.view;
     seatEl.textContent = v ? `seat ${v.seat} of ${v.pod_size} · ${v.set.toUpperCase()} · ${v.phase}` : (state.seat !== null ? `seat ${state.seat}` : "");
     connEl.textContent = state.connected ? "connected"
-        : state.retryAt ? `disconnected — retrying in ${Math.max(0, Math.ceil((state.retryAt - Date.now()) / 1000))}s`
-            : params.has("nosocket") ? "no socket" : "connecting…";
+        : state.rejected ? "refused — check the link"
+            : state.retryAt ? `disconnected — retrying in ${Math.max(0, Math.ceil((state.retryAt - Date.now()) / 1000))}s`
+                : params.has("nosocket") ? "no socket" : "connecting…";
     connEl.className = state.connected ? "ok" : "down";
     tick();
 }
@@ -408,7 +419,7 @@ function tick() {
             el.classList.toggle("urgent", left <= 10);
         }
     }
-    if (!state.connected && state.retryAt) {
+    if (!state.connected && state.retryAt && !state.rejected) {
         connEl.textContent = `disconnected — retrying in ${Math.max(0, Math.ceil((state.retryAt - Date.now()) / 1000))}s`;
     }
 }

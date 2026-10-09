@@ -83,7 +83,9 @@ every pairing, every game and match result, the standings — and reads:
 
 - Enter or `start`: start before everybody has joined. A seat that has
   not joined is picked for by the table until the person arrives, then
-  it is theirs again.
+  it is theirs again — on the pick timer when `--pick-seconds` is set
+  (so somebody a minute late has lost a few picks, not the draft), at
+  once when it is not. The deck likewise, under `--build-seconds`.
 - `kick <seat>`: hand a human seat to the table for good. It is picked
   for and built for, and its matches are forfeit (recorded as such in the
   log and the standings) rather than waited on.
@@ -128,8 +130,12 @@ is not holding their next pack.
 
 Deck building starts for a seat as soon as its own draft is over. A deck
 is any cards of your pool plus basic lands, 40 or more; the server
-validates with the runner's `validate_deck` and refuses an illegal deck
-with the reason. `ready` makes it final. Every deck is written to
+validates with the runner's `validate_deck`. A deck that is still short
+is kept as work in progress with what it needs (the page and the client
+send the deck after every card moved, so that is most of them); a deck
+naming a card you did not draft, or a land that is not basic, is refused
+with the reason. `ready` makes a deck final, and is refused while it is
+short. Every deck is written to
 `<log dir>/decks/seat-N.txt` as `COUNT NAME` lines, which
 `mtg-runner --deck1` plays later. An AI seat builds through the runner's
 LLM deck builder, with the runner's fallback deck on failure (marked in

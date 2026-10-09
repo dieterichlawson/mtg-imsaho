@@ -2,7 +2,7 @@
 // of on top of it, and the socket. Everything the renderer reads is here.
 export function initialState() {
     return {
-        ws: null, connected: false, reconnects: 0, retryAt: null,
+        ws: null, connected: false, reconnects: 0, retryAt: null, rejected: false,
         seat: null, key: null, view: null,
         selected: null, hover: null, pendingPick: null,
         deck: null, cursor: null, readySent: false,

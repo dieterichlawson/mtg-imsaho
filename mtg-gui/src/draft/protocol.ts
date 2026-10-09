@@ -20,6 +20,11 @@ export interface SeatInfo {
   joined: boolean;
   status: SeatStatus;
   picks: number;
+  /** Live sockets right now; a joined seat with none is away. */
+  connected?: number;
+  /** The table picks and builds for this seat (kicked, or absent after
+   *  the host started without it). */
+  auto?: boolean;
 }
 
 /** A card as the pack and the pool describe it: a name, the runner's
@@ -62,16 +67,34 @@ export interface Deck {
   sideboard: string[];
   valid: boolean;
   problem: string | null;
+  /** The deck is final: `ready` was accepted, or the table built it. */
+  ready?: boolean;
 }
 
-export interface GameResult { winner: number }
+/** A game's winner, or null for a draw. */
+export interface GameResult { winner: number | null }
 
+/**
+ * One of the viewing seat's own matches. `url` is this seat's game page;
+ * it is null while the match waits for its pages to open, for a match
+ * the table forfeited without opening one, and on the opponent's side
+ * of the same match (each seat gets its own link, never the other's).
+ */
 export interface Match {
   round: number;
   opponent: number;
-  url: string;
+  url: string | null;
   status: MatchStatus;
   games: GameResult[];
+  result: string | null;
+}
+
+/** Every match of the tournament, for everybody: `b` null is a bye. */
+export interface Pairing {
+  round: number;
+  a: number;
+  b: number | null;
+  status: MatchStatus;
   result: string | null;
 }
 
@@ -80,6 +103,9 @@ export interface Standing {
   wins: number;
   losses: number;
   points: number;
+  draws?: number;
+  game_wins?: number;
+  byes?: number;
 }
 
 export interface DraftView {
@@ -97,6 +123,12 @@ export interface DraftView {
   matches: Match[];
   standings: Standing[];
   notice: string | null;
+  pairings?: Pairing[];
+  /** The host's timers, in seconds, when set. */
+  pick_seconds?: number | null;
+  build_seconds?: number | null;
+  /** Milliseconds left to build, when a build timer runs for this seat. */
+  build_deadline_ms?: number | null;
 }
 
 export interface Refused {
@@ -119,6 +151,8 @@ export type ClientMessage =
  * A field's expected shape, as a string the checker reads:
  *   "string" | "number" | "boolean" | "any"
  *   "<kind>|null"           — nullable
+ *   "<spec>?"               — optional: the field may be absent (the page's
+ *                             own fixtures predate it; the server sends it)
  *   "string[]"              — an array of strings
  *   "map:number"            — an object of string -> number
  *   "enum:a|b|c"            — one of the words
@@ -146,6 +180,10 @@ export const SHAPES: Record<string, Shape> = {
     matches: "array:match",
     standings: "array:standing",
     notice: "string|null",
+    pairings: "array:pairing?",
+    pick_seconds: "number|null?",
+    build_seconds: "number|null?",
+    build_deadline_ms: "number|null?",
   },
   seat: {
     seat: "number",
@@ -154,6 +192,8 @@ export const SHAPES: Record<string, Shape> = {
     joined: "boolean",
     status: "enum:picking|waiting|building|ready|playing|idle",
     picks: "number",
+    connected: "number?",
+    auto: "boolean?",
   },
   card: { name: "string", line: "string", text: "string", rarity: "string", colors: "string[]" },
   pack_card: { index: "number", name: "string", line: "string", text: "string", rarity: "string", colors: "string[]" },
@@ -162,13 +202,20 @@ export const SHAPES: Record<string, Shape> = {
     cards: "array:pack_card", waiting: "number", deadline_ms: "number|null",
   },
   pick: { round: "number", pick: "number", card: "string", auto: "boolean" },
-  deck: { main: "string[]", lands: "map:number", sideboard: "string[]", valid: "boolean", problem: "string|null" },
-  game: { winner: "number" },
+  deck: { main: "string[]", lands: "map:number", sideboard: "string[]", valid: "boolean", problem: "string|null", ready: "boolean?" },
+  game: { winner: "number|null" },
   match: {
-    round: "number", opponent: "number", url: "string",
+    round: "number", opponent: "number", url: "string|null",
     status: "enum:waiting|playing|done", games: "array:game", result: "string|null",
   },
-  standing: { seat: "number", wins: "number", losses: "number", points: "number" },
+  pairing: {
+    round: "number", a: "number", b: "number|null",
+    status: "enum:waiting|playing|done", result: "string|null",
+  },
+  standing: {
+    seat: "number", wins: "number", losses: "number", points: "number",
+    draws: "number?", game_wins: "number?", byes: "number?",
+  },
   refused: { type: "enum:refused", reason: "string", echo: "any" },
 };
 
@@ -183,8 +230,10 @@ export function checkShape(value: unknown, shape: string, path = shape): string[
   if (!spec) return [`${path}: no shape named ${shape}`];
   if (typeof value !== "object" || value === null || Array.isArray(value)) return [`${path}: not an object`];
   const obj = value as Record<string, unknown>;
-  for (const [field, kind] of Object.entries(spec)) {
-    if (!(field in obj)) { out.push(`${path}.${field}: missing`); continue; }
+  for (const [field, fieldSpec] of Object.entries(spec)) {
+    const optional = fieldSpec.endsWith("?");
+    const kind = optional ? fieldSpec.slice(0, -1) : fieldSpec;
+    if (!(field in obj)) { if (!optional) out.push(`${path}.${field}: missing`); continue; }
     out.push(...checkField(obj[field], kind, `${path}.${field}`));
   }
   return out;

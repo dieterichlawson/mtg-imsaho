@@ -3613,6 +3613,826 @@
    ],
    "notice": null
   },
+  "playing_unlinked": {
+   "type": "view",
+   "seat": 0,
+   "pod_size": 4,
+   "set": "isd",
+   "phase": "playing",
+   "seats": [
+    {
+     "seat": 0,
+     "kind": "human",
+     "name": "Lawson",
+     "joined": true,
+     "status": "playing",
+     "picks": 42,
+     "connected": 1
+    },
+    {
+     "seat": 1,
+     "kind": "human",
+     "name": "seat 1",
+     "joined": true,
+     "status": "playing",
+     "picks": 42,
+     "connected": 0
+    },
+    {
+     "seat": 2,
+     "kind": "ai",
+     "name": "seat 2",
+     "joined": true,
+     "status": "playing",
+     "picks": 42,
+     "connected": 0
+    },
+    {
+     "seat": 3,
+     "kind": "ai",
+     "name": "seat 3",
+     "joined": true,
+     "status": "waiting",
+     "picks": 42,
+     "connected": 0,
+     "auto": true
+    }
+   ],
+   "pass_direction": null,
+   "pack": null,
+   "pool": [
+    {
+     "name": "Elder of Laurels",
+     "line": "Elder of Laurels {2}{G} | Creature — Human Advisor 2/3",
+     "text": "{3}{G}: Target creature gets +X/+X until end of turn, where X is the number of creatures you control.",
+     "rarity": "rare",
+     "colors": [
+      "G"
+     ]
+    },
+    {
+     "name": "Somberwald Spider",
+     "line": "Somberwald Spider {4}{G} | Creature — Spider 2/4",
+     "text": "Reach (This creature can block creatures with flying.)\nMorbid — This creature enters with two +1/+1 counters on it if a creature died this turn.",
+     "rarity": "common",
+     "colors": [
+      "G"
+     ]
+    },
+    {
+     "name": "Paraselene",
+     "line": "Paraselene {2}{W} | Sorcery",
+     "text": "Destroy all enchantments. You gain 1 life for each enchantment destroyed this way.",
+     "rarity": "uncommon",
+     "colors": [
+      "W"
+     ]
+    },
+    {
+     "name": "Kessig Wolf",
+     "line": "Kessig Wolf {2}{R} | Creature — Wolf 3/1",
+     "text": "{1}{R}: This creature gains first strike until end of turn.",
+     "rarity": "common",
+     "colors": [
+      "R"
+     ]
+    },
+    {
+     "name": "Midnight Haunting",
+     "line": "Midnight Haunting {2}{W} | Instant",
+     "text": "Create two 1/1 white Spirit creature tokens with flying.",
+     "rarity": "uncommon",
+     "colors": [
+      "W"
+     ]
+    },
+    {
+     "name": "Night Revelers",
+     "line": "Night Revelers {4}{R} | Creature — Vampire 4/4",
+     "text": "This creature has haste as long as an opponent controls a Human.",
+     "rarity": "common",
+     "colors": [
+      "R"
+     ]
+    },
+    {
+     "name": "Ghostly Possession",
+     "line": "Ghostly Possession {2}{W} | Enchantment — Aura",
+     "text": "Enchant creature\nEnchanted creature has flying.\nPrevent all combat damage that would be dealt to and dealt by enchanted creature.",
+     "rarity": "common",
+     "colors": [
+      "W"
+     ]
+    },
+    {
+     "name": "Nightbird's Clutches",
+     "line": "Nightbird's Clutches {1}{R} | Sorcery",
+     "text": "Up to two target creatures can't block this turn.\nFlashback {3}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)",
+     "rarity": "common",
+     "colors": [
+      "R"
+     ]
+    },
+    {
+     "name": "Mausoleum Guard",
+     "line": "Mausoleum Guard {3}{W} | Creature — Human Scout 2/2",
+     "text": "When this creature dies, create two 1/1 white Spirit creature tokens with flying.",
+     "rarity": "uncommon",
+     "colors": [
+      "W"
+     ]
+    },
+    {
+     "name": "Spidery Grasp",
+     "line": "Spidery Grasp {2}{G} | Instant",
+     "text": "Untap target creature. It gets +2/+4 and gains reach until end of turn. (It can block creatures with flying.)",
+     "rarity": "common",
+     "colors": [
+      "G"
+     ]
+    },
+    {
+     "name": "Cellar Door",
+     "line": "Cellar Door {2} | Artifact",
+     "text": "{3}, {T}: Target player puts the bottom card of their library into their graveyard. If it's a creature card, you create a 2/2 black Zombie creature token.",
+     "rarity": "uncommon",
+     "colors": []
+    },
+    {
+     "name": "Riot Devils",
+     "line": "Riot Devils {2}{R} | Creature — Devil 2/3",
+     "text": "",
+     "rarity": "common",
+     "colors": [
+      "R"
+     ]
+    },
+    {
+     "name": "Demonmail Hauberk",
+     "line": "Demonmail Hauberk {4} | Artifact — Equipment",
+     "text": "Equipped creature gets +4/+2.\nEquip—Sacrifice a creature.",
+     "rarity": "uncommon",
+     "colors": []
+    },
+    {
+     "name": "Thraben Purebloods",
+     "line": "Thraben Purebloods {4}{W} | Creature — Dog 3/5",
+     "text": "",
+     "rarity": "common",
+     "colors": [
+      "W"
+     ]
+    },
+    {
+     "name": "Skaab Goliath",
+     "line": "Skaab Goliath {5}{U} | Creature — Zombie Giant 6/9",
+     "text": "As an additional cost to cast this spell, exile two creature cards from your graveyard.\nTrample",
+     "rarity": "uncommon",
+     "colors": [
+      "U"
+     ]
+    },
+    {
+     "name": "Night Terrors",
+     "line": "Night Terrors {2}{B} | Sorcery",
+     "text": "Target player reveals their hand. You choose a nonland card from it. Exile that card.",
+     "rarity": "common",
+     "colors": [
+      "B"
+     ]
+    },
+    {
+     "name": "Urgent Exorcism",
+     "line": "Urgent Exorcism {1}{W} | Instant",
+     "text": "Destroy target Spirit or enchantment.",
+     "rarity": "common",
+     "colors": [
+      "W"
+     ]
+    },
+    {
+     "name": "Geistcatcher's Rig",
+     "line": "Geistcatcher's Rig {6} | Artifact Creature — Construct 4/5",
+     "text": "When this creature enters, you may have it deal 4 damage to target creature with flying.",
+     "rarity": "uncommon",
+     "colors": []
+    },
+    {
+     "name": "Make a Wish",
+     "line": "Make a Wish {3}{G} | Sorcery",
+     "text": "Return two cards at random from your graveyard to your hand.",
+     "rarity": "uncommon",
+     "colors": [
+      "G"
+     ]
+    },
+    {
+     "name": "Moment of Heroism",
+     "line": "Moment of Heroism {1}{W} | Instant",
+     "text": "Target creature gets +2/+2 and gains lifelink until end of turn. (Damage dealt by the creature also causes its controller to gain that much life.)",
+     "rarity": "common",
+     "colors": [
+      "W"
+     ]
+    },
+    {
+     "name": "Rebuke",
+     "line": "Rebuke {2}{W} | Instant",
+     "text": "Destroy target attacking creature.",
+     "rarity": "common",
+     "colors": [
+      "W"
+     ]
+    },
+    {
+     "name": "Naturalize",
+     "line": "Naturalize {1}{G} | Instant",
+     "text": "Destroy target artifact or enchantment.",
+     "rarity": "common",
+     "colors": [
+      "G"
+     ]
+    },
+    {
+     "name": "Bloodline Keeper // Lord of Lineage",
+     "line": "Bloodline Keeper {2}{B}{B} | Creature — Vampire 3/3 // Lord of Lineage",
+     "text": "Flying\n{T}: Create a 2/2 black Vampire creature token with flying.\n{B}: Transform this creature. Activate only if you control five or more Vampires.",
+     "rarity": "common",
+     "colors": [
+      "B"
+     ]
+    },
+    {
+     "name": "Mayor of Avabruck // Howlpack Alpha",
+     "line": "Mayor of Avabruck {1}{G} | Creature — Human Advisor Werewolf 1/1 // Howlpack Alpha",
+     "text": "Other Human creatures you control get +1/+1.\nAt the beginning of each upkeep, if no spells were cast last turn, transform this creature.",
+     "rarity": "common",
+     "colors": [
+      "G"
+     ]
+    },
+    {
+     "name": "Chapel Geist",
+     "line": "Chapel Geist {1}{W}{W} | Creature — Spirit 2/3",
+     "text": "Flying",
+     "rarity": "common",
+     "colors": [
+      "W"
+     ]
+    },
+    {
+     "name": "Rally the Peasants",
+     "line": "Rally the Peasants {2}{W} | Instant",
+     "text": "Creatures you control get +2/+0 until end of turn.\nFlashback {2}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)",
+     "rarity": "uncommon",
+     "colors": [
+      "W"
+     ]
+    },
+    {
+     "name": "Battleground Geist",
+     "line": "Battleground Geist {4}{U} | Creature — Spirit 3/3",
+     "text": "Flying\nOther Spirit creatures you control get +1/+0.",
+     "rarity": "uncommon",
+     "colors": [
+      "U"
+     ]
+    },
+    {
+     "name": "Spare from Evil",
+     "line": "Spare from Evil {1}{W} | Instant",
+     "text": "Creatures you control gain protection from non-Human creatures until end of turn.",
+     "rarity": "common",
+     "colors": [
+      "W"
+     ]
+    },
+    {
+     "name": "Instigator Gang // Wildblood Pack",
+     "line": "Instigator Gang {3}{R} | Creature — Human Werewolf 2/3 // Wildblood Pack",
+     "text": "Attacking creatures you control get +1/+0.\nAt the beginning of each upkeep, if no spells were cast last turn, transform this creature.",
+     "rarity": "common",
+     "colors": [
+      "R"
+     ]
+    },
+    {
+     "name": "Grizzled Outcasts // Krallenhorde Wantons",
+     "line": "Grizzled Outcasts {4}{G} | Creature — Human Werewolf 4/4 // Krallenhorde Wantons",
+     "text": "At the beginning of each upkeep, if no spells were cast last turn, transform this creature.",
+     "rarity": "common",
+     "colors": [
+      "G"
+     ]
+    },
+    {
+     "name": "Shimmering Grotto",
+     "line": "Shimmering Grotto | Land",
+     "text": "{T}: Add {C}.\n{1}, {T}: Add one mana of any color.",
+     "rarity": "common",
+     "colors": []
+    },
+    {
+     "name": "Festerhide Boar",
+     "line": "Festerhide Boar {3}{G} | Creature — Boar 3/3",
+     "text": "Trample\nMorbid — This creature enters with two +1/+1 counters on it if a creature died this turn.",
+     "rarity": "common",
+     "colors": [
+      "G"
+     ]
+    },
+    {
+     "name": "Thraben Sentry // Thraben Militia",
+     "line": "Thraben Sentry {3}{W} | Creature — Human Soldier 2/2 // Thraben Militia",
+     "text": "Vigilance\nWhenever another creature you control dies, you may transform this creature.",
+     "rarity": "common",
+     "colors": [
+      "W"
+     ]
+    },
+    {
+     "name": "Curse of Oblivion",
+     "line": "Curse of Oblivion {3}{B} | Enchantment — Aura Curse",
+     "text": "Enchant player\nAt the beginning of enchanted player's upkeep, that player exiles two cards from their graveyard.",
+     "rarity": "common",
+     "colors": [
+      "B"
+     ]
+    },
+    {
+     "name": "Feeling of Dread",
+     "line": "Feeling of Dread {1}{W} | Instant",
+     "text": "Tap up to two target creatures.\nFlashback {1}{U} (You may cast this card from your graveyard for its flashback cost. Then exile it.)",
+     "rarity": "common",
+     "colors": [
+      "W"
+     ]
+    },
+    {
+     "name": "Rooftop Storm",
+     "line": "Rooftop Storm {5}{U} | Enchantment",
+     "text": "You may pay {0} rather than pay the mana cost for Zombie creature spells you cast.",
+     "rarity": "rare",
+     "colors": [
+      "U"
+     ]
+    },
+    {
+     "name": "Bonds of Faith",
+     "line": "Bonds of Faith {1}{W} | Enchantment — Aura",
+     "text": "Enchant creature\nEnchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block.",
+     "rarity": "common",
+     "colors": [
+      "W"
+     ]
+    },
+    {
+     "name": "Unruly Mob",
+     "line": "Unruly Mob {1}{W} | Creature — Human 1/1",
+     "text": "Whenever another creature you control dies, put a +1/+1 counter on this creature.",
+     "rarity": "common",
+     "colors": [
+      "W"
+     ]
+    },
+    {
+     "name": "Abattoir Ghoul",
+     "line": "Abattoir Ghoul {3}{B} | Creature — Zombie 3/2",
+     "text": "First strike\nWhenever a creature dealt damage by this creature this turn dies, you gain life equal to that creature's toughness.",
+     "rarity": "uncommon",
+     "colors": [
+      "B"
+     ]
+    },
+    {
+     "name": "Pitchburn Devils",
+     "line": "Pitchburn Devils {4}{R} | Creature — Devil 3/3",
+     "text": "When this creature dies, it deals 3 damage to any target.",
+     "rarity": "common",
+     "colors": [
+      "R"
+     ]
+    },
+    {
+     "name": "Selhoff Occultist",
+     "line": "Selhoff Occultist {2}{U} | Creature — Human Rogue 2/3",
+     "text": "Whenever this creature or another creature dies, target player mills a card.",
+     "rarity": "common",
+     "colors": [
+      "U"
+     ]
+    },
+    {
+     "name": "Brain Weevil",
+     "line": "Brain Weevil {3}{B} | Creature — Insect 1/1",
+     "text": "Intimidate (This creature can't be blocked except by artifact creatures and/or creatures that share a color with it.)\nSacrifice this creature: Target player discards two cards. Activate only as a sorcery.",
+     "rarity": "common",
+     "colors": [
+      "B"
+     ]
+    }
+   ],
+   "picks": [
+    {
+     "round": 1,
+     "pick": 1,
+     "card": "Elder of Laurels",
+     "auto": false
+    },
+    {
+     "round": 1,
+     "pick": 2,
+     "card": "Somberwald Spider",
+     "auto": false
+    },
+    {
+     "round": 1,
+     "pick": 3,
+     "card": "Paraselene",
+     "auto": false
+    },
+    {
+     "round": 1,
+     "pick": 4,
+     "card": "Kessig Wolf",
+     "auto": false
+    },
+    {
+     "round": 1,
+     "pick": 5,
+     "card": "Midnight Haunting",
+     "auto": false
+    },
+    {
+     "round": 1,
+     "pick": 6,
+     "card": "Night Revelers",
+     "auto": false
+    },
+    {
+     "round": 1,
+     "pick": 7,
+     "card": "Ghostly Possession",
+     "auto": false
+    },
+    {
+     "round": 1,
+     "pick": 8,
+     "card": "Nightbird's Clutches",
+     "auto": false
+    },
+    {
+     "round": 1,
+     "pick": 9,
+     "card": "Mausoleum Guard",
+     "auto": false
+    },
+    {
+     "round": 1,
+     "pick": 10,
+     "card": "Spidery Grasp",
+     "auto": false
+    },
+    {
+     "round": 1,
+     "pick": 11,
+     "card": "Cellar Door",
+     "auto": false
+    },
+    {
+     "round": 1,
+     "pick": 12,
+     "card": "Riot Devils",
+     "auto": false
+    },
+    {
+     "round": 1,
+     "pick": 13,
+     "card": "Demonmail Hauberk",
+     "auto": false
+    },
+    {
+     "round": 1,
+     "pick": 14,
+     "card": "Thraben Purebloods",
+     "auto": false
+    },
+    {
+     "round": 2,
+     "pick": 1,
+     "card": "Skaab Goliath",
+     "auto": false
+    },
+    {
+     "round": 2,
+     "pick": 2,
+     "card": "Night Terrors",
+     "auto": false
+    },
+    {
+     "round": 2,
+     "pick": 3,
+     "card": "Urgent Exorcism",
+     "auto": false
+    },
+    {
+     "round": 2,
+     "pick": 4,
+     "card": "Geistcatcher's Rig",
+     "auto": false
+    },
+    {
+     "round": 2,
+     "pick": 5,
+     "card": "Make a Wish",
+     "auto": false
+    },
+    {
+     "round": 2,
+     "pick": 6,
+     "card": "Moment of Heroism",
+     "auto": false
+    },
+    {
+     "round": 2,
+     "pick": 7,
+     "card": "Rebuke",
+     "auto": false
+    },
+    {
+     "round": 2,
+     "pick": 8,
+     "card": "Naturalize",
+     "auto": false
+    },
+    {
+     "round": 2,
+     "pick": 9,
+     "card": "Bloodline Keeper // Lord of Lineage",
+     "auto": false
+    },
+    {
+     "round": 2,
+     "pick": 10,
+     "card": "Mayor of Avabruck // Howlpack Alpha",
+     "auto": false
+    },
+    {
+     "round": 2,
+     "pick": 11,
+     "card": "Chapel Geist",
+     "auto": false
+    },
+    {
+     "round": 2,
+     "pick": 12,
+     "card": "Rally the Peasants",
+     "auto": false
+    },
+    {
+     "round": 2,
+     "pick": 13,
+     "card": "Battleground Geist",
+     "auto": false
+    },
+    {
+     "round": 2,
+     "pick": 14,
+     "card": "Spare from Evil",
+     "auto": false
+    },
+    {
+     "round": 3,
+     "pick": 1,
+     "card": "Instigator Gang // Wildblood Pack",
+     "auto": false
+    },
+    {
+     "round": 3,
+     "pick": 2,
+     "card": "Grizzled Outcasts // Krallenhorde Wantons",
+     "auto": false
+    },
+    {
+     "round": 3,
+     "pick": 3,
+     "card": "Shimmering Grotto",
+     "auto": false
+    },
+    {
+     "round": 3,
+     "pick": 4,
+     "card": "Festerhide Boar",
+     "auto": false
+    },
+    {
+     "round": 3,
+     "pick": 5,
+     "card": "Thraben Sentry // Thraben Militia",
+     "auto": false
+    },
+    {
+     "round": 3,
+     "pick": 6,
+     "card": "Curse of Oblivion",
+     "auto": false
+    },
+    {
+     "round": 3,
+     "pick": 7,
+     "card": "Feeling of Dread",
+     "auto": false
+    },
+    {
+     "round": 3,
+     "pick": 8,
+     "card": "Rooftop Storm",
+     "auto": false
+    },
+    {
+     "round": 3,
+     "pick": 9,
+     "card": "Bonds of Faith",
+     "auto": false
+    },
+    {
+     "round": 3,
+     "pick": 10,
+     "card": "Unruly Mob",
+     "auto": false
+    },
+    {
+     "round": 3,
+     "pick": 11,
+     "card": "Abattoir Ghoul",
+     "auto": false
+    },
+    {
+     "round": 3,
+     "pick": 12,
+     "card": "Pitchburn Devils",
+     "auto": false
+    },
+    {
+     "round": 3,
+     "pick": 13,
+     "card": "Selhoff Occultist",
+     "auto": false
+    },
+    {
+     "round": 3,
+     "pick": 14,
+     "card": "Brain Weevil",
+     "auto": false
+    }
+   ],
+   "deck": {
+    "main": [
+     "Elder of Laurels",
+     "Somberwald Spider",
+     "Paraselene",
+     "Midnight Haunting",
+     "Ghostly Possession",
+     "Mausoleum Guard",
+     "Spidery Grasp",
+     "Thraben Purebloods",
+     "Urgent Exorcism",
+     "Make a Wish",
+     "Moment of Heroism",
+     "Rebuke",
+     "Naturalize",
+     "Mayor of Avabruck // Howlpack Alpha",
+     "Chapel Geist",
+     "Rally the Peasants",
+     "Spare from Evil",
+     "Grizzled Outcasts // Krallenhorde Wantons",
+     "Festerhide Boar",
+     "Thraben Sentry // Thraben Militia",
+     "Kessig Wolf",
+     "Night Revelers",
+     "Nightbird's Clutches"
+    ],
+    "lands": {
+     "Plains": 8,
+     "Island": 0,
+     "Swamp": 0,
+     "Mountain": 0,
+     "Forest": 9
+    },
+    "sideboard": [
+     "Cellar Door",
+     "Riot Devils",
+     "Demonmail Hauberk",
+     "Skaab Goliath",
+     "Night Terrors",
+     "Geistcatcher's Rig",
+     "Bloodline Keeper // Lord of Lineage",
+     "Battleground Geist",
+     "Instigator Gang // Wildblood Pack",
+     "Shimmering Grotto",
+     "Curse of Oblivion",
+     "Feeling of Dread",
+     "Rooftop Storm",
+     "Bonds of Faith",
+     "Unruly Mob",
+     "Abattoir Ghoul",
+     "Pitchburn Devils",
+     "Selhoff Occultist",
+     "Brain Weevil"
+    ],
+    "valid": true,
+    "problem": null,
+    "ready": true
+   },
+   "matches": [
+    {
+     "round": 1,
+     "opponent": 3,
+     "url": "http://192.168.1.20:8803/",
+     "status": "done",
+     "games": [
+      {
+       "winner": 0
+      },
+      {
+       "winner": null
+      },
+      {
+       "winner": 0
+      }
+     ],
+     "result": "2-0"
+    },
+    {
+     "round": 2,
+     "opponent": 1,
+     "url": null,
+     "status": "waiting",
+     "games": [],
+     "result": null
+    }
+   ],
+   "standings": [
+    {
+     "seat": 0,
+     "wins": 1,
+     "losses": 0,
+     "points": 3
+    },
+    {
+     "seat": 1,
+     "wins": 1,
+     "losses": 0,
+     "points": 3
+    },
+    {
+     "seat": 2,
+     "wins": 0,
+     "losses": 1,
+     "points": 0
+    },
+    {
+     "seat": 3,
+     "wins": 0,
+     "losses": 1,
+     "points": 0
+    }
+   ],
+   "notice": "Round 2: open your game link.",
+   "pairings": [
+    {
+     "round": 1,
+     "a": 0,
+     "b": 3,
+     "status": "done",
+     "result": "2-0"
+    },
+    {
+     "round": 1,
+     "a": 1,
+     "b": 2,
+     "status": "done",
+     "result": "2-1"
+    },
+    {
+     "round": 2,
+     "a": 0,
+     "b": 1,
+     "status": "waiting",
+     "result": null
+    },
+    {
+     "round": 2,
+     "a": 2,
+     "b": null,
+     "status": "done",
+     "result": "bye"
+    }
+   ],
+   "pick_seconds": null,
+   "build_seconds": 120,
+   "build_deadline_ms": null
+  },
   "done": {
    "type": "view",
    "seat": 0,

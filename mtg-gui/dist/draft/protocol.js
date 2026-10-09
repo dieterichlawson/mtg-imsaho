@@ -23,6 +23,10 @@ export const SHAPES = {
         matches: "array:match",
         standings: "array:standing",
         notice: "string|null",
+        pairings: "array:pairing?",
+        pick_seconds: "number|null?",
+        build_seconds: "number|null?",
+        build_deadline_ms: "number|null?",
     },
     seat: {
         seat: "number",
@@ -31,6 +35,8 @@ export const SHAPES = {
         joined: "boolean",
         status: "enum:picking|waiting|building|ready|playing|idle",
         picks: "number",
+        connected: "number?",
+        auto: "boolean?",
     },
     card: { name: "string", line: "string", text: "string", rarity: "string", colors: "string[]" },
     pack_card: { index: "number", name: "string", line: "string", text: "string", rarity: "string", colors: "string[]" },
@@ -39,13 +45,20 @@ export const SHAPES = {
         cards: "array:pack_card", waiting: "number", deadline_ms: "number|null",
     },
     pick: { round: "number", pick: "number", card: "string", auto: "boolean" },
-    deck: { main: "string[]", lands: "map:number", sideboard: "string[]", valid: "boolean", problem: "string|null" },
-    game: { winner: "number" },
+    deck: { main: "string[]", lands: "map:number", sideboard: "string[]", valid: "boolean", problem: "string|null", ready: "boolean?" },
+    game: { winner: "number|null" },
     match: {
-        round: "number", opponent: "number", url: "string",
+        round: "number", opponent: "number", url: "string|null",
         status: "enum:waiting|playing|done", games: "array:game", result: "string|null",
     },
-    standing: { seat: "number", wins: "number", losses: "number", points: "number" },
+    pairing: {
+        round: "number", a: "number", b: "number|null",
+        status: "enum:waiting|playing|done", result: "string|null",
+    },
+    standing: {
+        seat: "number", wins: "number", losses: "number", points: "number",
+        draws: "number?", game_wins: "number?", byes: "number?",
+    },
     refused: { type: "enum:refused", reason: "string", echo: "any" },
 };
 /**
@@ -61,9 +74,12 @@ export function checkShape(value, shape, path = shape) {
     if (typeof value !== "object" || value === null || Array.isArray(value))
         return [`${path}: not an object`];
     const obj = value;
-    for (const [field, kind] of Object.entries(spec)) {
+    for (const [field, fieldSpec] of Object.entries(spec)) {
+        const optional = fieldSpec.endsWith("?");
+        const kind = optional ? fieldSpec.slice(0, -1) : fieldSpec;
         if (!(field in obj)) {
-            out.push(`${path}.${field}: missing`);
+            if (!optional)
+                out.push(`${path}.${field}: missing`);
             continue;
         }
         out.push(...checkField(obj[field], kind, `${path}.${field}`));

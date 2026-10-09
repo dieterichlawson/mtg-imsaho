@@ -26,6 +26,8 @@ interface Inspected { name: string; zone: string; facts: string[]; pt: string[] 
 interface DebugHook {
   stage(decision: Decision): void;
   render(): number;
+  /** Hand the page a server message, as if the socket had delivered it. */
+  message(msg: ServerMessage): void;
   /** What the inspector would say about the thing at `key`, as text. */
   inspect(key: string, kind?: string): Inspected | null;
   /** The same, about whatever `state.hover` currently is. Two stack chips
@@ -103,7 +105,21 @@ function setView(view: GameView): void {
   state.index = indexView(view);
 }
 
+/**
+ * The seat's next game, on the same page: a hosted draft plays a best-of-3
+ * through one `GuiPlayer`, so the first message after `game_over` is the
+ * next game's, not a late word on the last one. The box comes down and
+ * the last result stays readable as the notice until the person clicks.
+ */
+function nextGame(): void {
+  if (!state.gameOver) return;
+  state.notice = `Last game: ${state.gameOver.split("\n")[0]} The next game has started.`;
+  state.gameOver = null;
+  state.gameOverDismissed = false;
+}
+
 function onMessage(msg: ServerMessage): void {
+  if (msg.type === "view" || msg.type === "decision") nextGame();
   switch (msg.type) {
     case "view":
       setView(msg.view);
@@ -560,6 +576,8 @@ window.mtgDebug = {
     state.hits = render(ctx, state);
   },
   render() { state.hits = render(ctx, state); syncField(); return state.hits.length; },
+  /** Hand the page a server message, as if the socket had delivered it. */
+  message(msg) { onMessage(msg); },
   inspect(key, kind) {
     const l = live();
     if (!l) return null;

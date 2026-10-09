@@ -76,4 +76,19 @@ fn an_absent_human_is_picked_for_until_it_joins() {
     assert!(terminal.contains("kick: seat 1 is an ai seat"), "{terminal}");
     assert!(terminal.contains("kick: there is no seat 9"), "{terminal}");
     assert!(terminal.contains("the tournament is over. Final standings:"), "{terminal}");
+
+    // `quit` ends the server, and the log says the host did.
+    server.type_line("quit");
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        if let Ok(Some(status)) = server.child.try_wait() {
+            assert!(status.success(), "quit exits cleanly: {status}");
+            break;
+        }
+        assert!(std::time::Instant::now() < deadline, "the server did not exit on quit");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let log = server.log_text();
+    assert!(log.contains("NOTE the host quit; the table was done"), "the log records the quit:\n{}",
+        log.chars().rev().take(800).collect::<String>().chars().rev().collect::<String>());
 }

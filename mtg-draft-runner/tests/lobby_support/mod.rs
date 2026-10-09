@@ -205,6 +205,13 @@ impl Drop for Server {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+        // The scratch directory (the stub, the log, decks/, games/) goes
+        // with the server, unless the test is failing and its panic
+        // message may point at the log: thirty of them were found in
+        // /tmp after the first playtest's test runs.
+        if !std::thread::panicking() {
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
     }
 }
 

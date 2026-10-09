@@ -318,6 +318,10 @@ this (2026-10-08, the first implementation):
   table's pick is the first card of the pack the fallback deck would
   play with the pool (else the first card), logged as `auto-pick: <why>`
   in the prompt and response slots and shown to the seat as a notice.
+  An absent seat under `--pick-seconds` is picked for when its timer
+  runs out, not at once (the first playtest's absent seat lost all 42
+  picks to a stub table in four seconds); with no timer, and for a
+  kicked seat, at once. `--build-seconds` paces the deck the same way.
   A kicked (or auto) seat's matches are forfeits — `wins_needed` games
   to the opponent, `stalled_seat` set, a drawn 0-0 when both are away —
   recorded through the same path as a stalled seat's, so the log and the
@@ -357,3 +361,52 @@ this (2026-10-08, the first implementation):
 - **Timing.** Under the stub `claude`, a 4-seat draft with two humans
   runs in about 4 s and the AI-vs-AI game in a few more, so the
   subprocess tests are cheap.
+- **A short deck is work in progress, not a refusal** (from the first
+  playtest). The page and the client send the deck after every card
+  moved, and the server refused each one until the fortieth. A deck whose
+  only problem is its count is recorded with that problem
+  (`deck.problem` in the view) and answered with the view; `ready` is
+  where it is refused. A card the seat did not draft, too many copies or
+  a land that is not basic are refused as before.
+- **A refused join is not retried by the page.** A refusal with nothing
+  echoed before any view is the join itself (a wrong key, no such seat);
+  the page keeps the banner, says "refused — check the link" and
+  schedules no reconnect.
+- **The page declares the server's extra fields and the nulls.**
+  `matches[].url` and `games[].winner` are nullable; `pairings`,
+  `seats[].connected`, `seats[].auto`, `deck.ready` and
+  `build_deadline_ms` are optional in the shape table (a `?` suffix) and
+  rendered: the whole round under "All matches", "away", "(table picks)",
+  a build countdown.
+
+## Known gaps after the first playtest
+
+Found on 2026-10-08 (`reports/playtests/2026-10-08-draft-with-friends.md`)
+and not fixed there, because each is bigger than the seam it showed up
+at or belongs to another piece:
+
+- **Ctrl-C of the server leaves no record.** The server installs no
+  signal handler: SIGINT ends the process by the default action — within
+  2 s, with no stub children left and the ports freed — but the log
+  ends mid-pick with no NOTE or FATAL line, and nothing sweeps a real
+  `claude -p` child that is mid-call the way the runner's fatal path
+  does (`die` in `lib.rs`). The server should take the runner's handler
+  and write the same last line `quit` now writes.
+- **`kick` does not end a match in progress.** The seat's `GuiPlayer`
+  keeps waiting for a browser nobody will open ("Seat0: no browser at
+  ..." for ever), the round cannot finish, and `quit` is the host's only
+  way out. The guide says "kick before the round"; the real fix is a
+  `GuiPlayer` that can be told to give the game up, so the kicked seat's
+  games are forfeit the way an absent seat's are before the round.
+- **A target pick with nothing to click on the game page.** "Cobbled
+  Wings: choose a target — click a highlighted card or player" came up
+  with no highlighted card and only Cancel (t1 round 1 game 1, decision
+  74). A person has Cancel; a driver that reads `window.mtg.hits` does
+  not. This is the game page's and the engine's prompt, not the draft's;
+  the game log is `logs/draft-playtest/t1/games/r1-0v1-g1.log` while
+  that directory exists.
+- **A deck build through the real `claude` CLI was not seen.** The
+  session quota ran out at the ninth real pick; the picks themselves
+  went through, with reasoning, and the seats were handed to the table
+  when their budgets ran out. The build path is the runner's
+  `build_deck_with_llm`, exercised by the stub at every table.
