@@ -154,6 +154,34 @@ Not confirmed in this run: a deck build through the real `claude` CLI
 (the session quota ran out at pick 9); the build path is the runner's
 `build_deck_with_llm`, which the stub exercised at every table.
 
+## Verification
+
+- `cargo check --workspace`: zero warnings.
+- `cargo clippy --workspace --all-targets` is red on this machine's
+  clippy 1.97, on code this branch never touched (`mtg-engine`,
+  `mtg-player/src/cli.rs`, `llm.rs`, `random.rs`, `mtg-draft/src/pack.rs`,
+  `deckbuilding.rs`, `llm_client.rs`, `draft_log.rs`: `similar_names`,
+  `missing_panics_doc`, `must_use_candidate`, `empty_line_after_doc_comments`
+  and others — about 175 hits). `--no-deps` on the changed crates reports
+  nothing in any file this branch changed (`lobby.rs`, `server.rs`, the
+  two binaries, the lobby tests); the diff against master on those other
+  files is empty. Not fixed here: a toolchain drift across the workspace,
+  not a draft finding.
+- The gui workflow's steps locally (`logs/draft-playtest/gui-ci.out`):
+  dist matches its sources, the protocol test, xfunding, draft fixtures,
+  smoke, twotabs, reconnect, next_game, autoplay (2 games) and the draft
+  page all pass; `widgets.js` fails its two "seat-vocabulary" rows
+  (expects `(#66)` ids in band lines that `engineLine` has stripped since
+  #713) — `prompts.ts`, `prompts.js` and `widgets.js` are byte-identical
+  to master's, so that is master's state.
+- `ANTHROPIC_API_KEY=dummy cargo test --workspace -j2 --no-fail-fast`:
+  198 test binaries, no compile error, 197 green; the one failure,
+  `mtg-runner`'s `cli_pty::typing_a_word_containing_y_does_not_concede`,
+  timed out waiting for the "Please answer y or n" prompt under the
+  `-j2` load and passes alone (12 s). The first attempt at the run filled
+  the disk (debuginfo test binaries, 25 GB); the run that counted was
+  made with `CARGO_INCREMENTAL=0` and `debug = 0`.
+
 ## Commits
 
 - `9397b50` gui: the draft page reads what the server really sends
@@ -164,3 +192,5 @@ Not confirmed in this run: a deck build through the real `claude` CLI
 - `ba7c52c` draft server: an absent seat under a pick timer is picked for on the timer, not at once
 - `8c48ad4` draft server: a deck that is only short is work in progress, not a refusal
 - `9b9935c` draft server: the log says the host quit, and where the table was
+- `7e74727` reports, docs/plans: this report, D27-D32, and the known gaps
+- `10b3123` tests: the lobby tests sweep their scratch directories
