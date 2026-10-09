@@ -146,6 +146,7 @@ export interface GameView {
   battlefield: PermanentView[];
   graveyards: [PlayerId, CardView[]][];
   stack: StackItemView[];
+  stack_puts: number;
   first_strike_damage_step: boolean;
   exile: CardView[];
   step: Step;

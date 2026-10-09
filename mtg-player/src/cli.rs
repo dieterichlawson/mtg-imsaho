@@ -10438,6 +10438,7 @@ Mark 1 of the 1 cards below to exile.");
     pub(crate) fn view(step: Step, turn_number: u32, our_turn: bool) -> GameView {
         let you = PlayerId(0);
         GameView {
+            stack_puts: 0,
             you,
             your_hand: vec![],
             your_life: 20,

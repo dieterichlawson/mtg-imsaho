@@ -165,6 +165,7 @@ fn stack_item(id: u64, name: &str, controller: PlayerId) -> StackItemView {
 /// step, the given player active.
 fn view(turn: u32, step: Step, active: PlayerId) -> GameView {
     GameView {
+        stack_puts: 0,
         you: YOU,
         your_hand: vec![card(10, "Lightning Bolt", vec![CardType::Instant],
             "Lightning Bolt deals 3 damage to any target.")],
@@ -337,6 +338,30 @@ fn an_entry_that_was_already_on_the_stack_resolving_does_not_stop_it() {
     later.stack.push(stack_item(40, "Grizzly Bears", OPP));
     seat.choose_action(&later, &offer("RESPOND TO opp's Grizzly Bears"));
     assert_eq!(fake.calls().len(), 4);
+}
+
+#[test]
+fn a_second_activation_just_like_one_already_there_stops_it() {
+    // The seat said "go" to the opponent's Olivia Voldaren ping. The ping
+    // resolved and a second one, from the same Olivia, went on before the
+    // seat had priority again: the same source id, card and name in the
+    // same place. The engine's count of entries put on the stack is what
+    // says it is new (#750).
+    let fake = Fake::new("second-ping");
+    let mut seat = fake.seat();
+    let mut v = view(14, Step::Upkeep, OPP);
+    v.stack.push(stack_item(120, "Olivia Voldaren ability", OPP));
+    v.stack_puts = 30;
+    fake.answer(1);
+    seat.choose_action(&v, &offer("RESPOND TO opp's Olivia Voldaren"));
+    fake.answer(0);
+    // The same ping, the opponent having passed back to the seat: passed.
+    assert!(matches!(seat.choose_action(&v, &offer("RESPOND TO opp's Olivia Voldaren")), Action::PassPriority));
+    assert_eq!(fake.calls().len(), 1, "the entry it said go to is passed unasked");
+    v.stack_puts = 31;
+    seat.choose_action(&v, &offer("RESPOND TO opp's Olivia Voldaren"));
+    assert_eq!(fake.calls().len(), 2, "a second ping is asked");
+    assert!(stop_line(&fake).contains("Olivia Voldaren ability (the opponent's) is on the stack"), "{}", stop_line(&fake));
 }
 
 #[test]

@@ -651,6 +651,11 @@ struct PassUntil {
     /// entry resolving off the top is expected; anything else on the stack
     /// is new.
     stack: Vec<(ObjectId, mtg_engine::ids::CardId, String)>,
+    /// The engine's count of entries ever put on the stack. A second
+    /// activation of an ability already on it, or a repeat of a trigger,
+    /// has the same identity as the first; the count moving is what says
+    /// it is new (#750).
+    stack_puts: u64,
     /// How many priority offers have been passed unasked since.
     passes: u32,
 }
@@ -662,6 +667,7 @@ impl PassUntil {
             step: view.step,
             our_turn: view.active_player == view.you,
             stack: Self::stack_identity(view),
+            stack_puts: view.stack_puts,
             passes: 0,
         }
     }
@@ -4922,7 +4928,8 @@ impl LlmPlayer {
     /// - anything on the stack that was not there, below the top, when the
     ///   seat said "go" (an entry resolving off the top is expected; the
     ///   stack cannot have moved on without a new entry otherwise, and at
-    ///   any other step every entry is new);
+    ///   any other step every entry is new), or anything put on it since,
+    ///   however like an entry that was there it looks;
     /// - the seat's own turn beginning;
     /// - attackers declared against the seat;
     /// - a blocker declared against the seat's attacker;
@@ -4944,8 +4951,8 @@ impl LlmPlayer {
 
         if !view.stack.is_empty() {
             let now = PassUntil::stack_identity(view);
-            let unchanged = same_point && now.len() <= mode.stack.len()
-                && mode.stack[..now.len()] == now[..];
+            let unchanged = same_point && view.stack_puts == mode.stack_puts
+                && now.len() <= mode.stack.len() && mode.stack[..now.len()] == now[..];
             if !unchanged {
                 let newest = view.stack.iter().rev()
                     .find(|s| !mode.stack.contains(&(s.object_id, s.card_id, s.name.clone())))
@@ -7381,6 +7388,7 @@ pub(crate) mod tests {
 
     pub(crate) fn empty_view() -> GameView {
         GameView {
+            stack_puts: 0,
             you: PlayerId(0),
             your_hand: vec![],
             your_life: 20,

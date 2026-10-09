@@ -255,7 +255,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             };
             if let Some(mut t) = trigger {
                 t.source.chosen_targets = vec![chosen_target.clone()];
-                state.stack.push(crate::state::StackEntry::Trigger(t));
+                state.put_on_stack(crate::state::StackEntry::Trigger(t));
                 crate::triggers::log_trigger_pushed(state, registry);
             }
             // Continue processing the remaining pending triggers (may set up

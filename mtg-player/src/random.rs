@@ -751,6 +751,7 @@ mod rolls {
 
     fn view() -> GameView {
         GameView {
+            stack_puts: 0,
             you: PlayerId(0),
             your_hand: vec![],
             your_life: 20,
@@ -1193,6 +1194,7 @@ mod decisions {
 
     fn view() -> GameView {
         GameView {
+            stack_puts: 0,
             you: PlayerId(0),
             your_hand: vec![],
             your_life: 20,

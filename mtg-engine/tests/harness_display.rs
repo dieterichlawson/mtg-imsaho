@@ -937,3 +937,26 @@ fn an_offered_ability_says_whether_it_is_sorcery_speed() {
     assert!(of(weevil).sorcery_speed, "Brain Weevil's sacrifice is activate-only-as-a-sorcery");
     assert!(!of(priest).sorcery_speed, "Avacynian Priest's tap is not");
 }
+
+/// Two activations of one ability are byte-identical stack rows — the
+/// source's id, the card, the name — so the view counts what has been put
+/// on the stack, which is how a seat tells the second from the first (#750).
+#[test]
+fn the_view_counts_what_is_put_on_the_stack() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let olivia = named_permanent(&mut state, &reg, "Olivia Voldaren", P0);
+    let bears = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    add_mana(&mut state, P0, &[(ManaType::Red, 2), (ManaType::Colorless, 2)]);
+    state.priority_player = Some(P0);
+
+    let before = mtg_engine::view::GameView::for_player(&state, P1, &reg).stack_puts;
+    let once = activate_onto_stack(&state, &reg, olivia, Some(Target::Object(bears)));
+    let twice = activate_onto_stack(&once, &reg, olivia, Some(Target::Object(bears)));
+    let (v1, v2) = (mtg_engine::view::GameView::for_player(&once, P1, &reg),
+                    mtg_engine::view::GameView::for_player(&twice, P1, &reg));
+    assert_eq!(v2.stack.len(), 2);
+    let id = |s: &mtg_engine::view::StackItemView| (s.object_id, s.card_id, s.name.clone());
+    assert_eq!(id(&v2.stack[0]), id(&v2.stack[1]), "the two pings look alike on the stack");
+    assert_eq!((v1.stack_puts, v2.stack_puts), (before + 1, before + 2), "but each was counted");
+}

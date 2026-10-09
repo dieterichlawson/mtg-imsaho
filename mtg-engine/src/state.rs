@@ -152,7 +152,15 @@ pub struct GameState {
     pub step: Step,
 
     /// The stack. Last element is top of stack. Contains spells and triggered abilities.
+    /// Entries go on through [`GameState::put_on_stack`].
     pub stack: Vec<StackEntry>,
+
+    /// How many entries have been put on the stack this game. A trigger has
+    /// no object id and an activated ability shows its source's, so two
+    /// activations of one ability are identical entries; this count is what
+    /// tells "the entry that was there" from "a new one just like it" (#750).
+    #[serde(default)]
+    pub stack_puts: u64,
 
     /// Combat state, present only during combat phase.
     pub combat: Option<CombatState>,
@@ -504,6 +512,12 @@ pub fn default_rng_seed() -> u64 {
 }
 
 impl GameState {
+    /// Put an entry on top of the stack (CR 405.1), counting it.
+    pub fn put_on_stack(&mut self, entry: StackEntry) {
+        self.stack.push(entry);
+        self.stack_puts += 1;
+    }
+
     /// CR 400.7: an until-end-of-turn effect created for a permanent that is
     /// no longer on the battlefield applies to nothing — the object it was
     /// about is gone, and the card in the graveyard is a new object that
@@ -583,6 +597,7 @@ impl GameState {
             priority_player: None,
             step: Step::Untap,
             stack: Vec::new(),
+            stack_puts: 0,
             combat: None,
             end_of_combat_exiles: Vec::new(),
             awaiting_action: None,

@@ -604,7 +604,7 @@ pub(crate) fn push_one_pending_trigger(
 
     let Some(req) = target_req else {
         // Untargeted: push directly onto the stack.
-        state.stack.push(StackEntry::Trigger(trigger));
+        state.put_on_stack(StackEntry::Trigger(trigger));
         log_trigger_pushed(state, registry);
         return;
     };
@@ -634,7 +634,7 @@ pub(crate) fn push_one_pending_trigger(
             let target = valid_targets[0].clone();
             let mut t = trigger;
             t.source.chosen_targets = vec![target];
-            state.stack.push(StackEntry::Trigger(t));
+            state.put_on_stack(StackEntry::Trigger(t));
             log_trigger_pushed(state, registry);
         }
         _ => {

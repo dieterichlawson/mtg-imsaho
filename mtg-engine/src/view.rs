@@ -25,6 +25,11 @@ pub struct GameView {
     pub battlefield: Vec<PermanentView>,
     pub graveyards: Vec<(PlayerId, Vec<CardView>)>,
     pub stack: Vec<StackItemView>,
+    /// How many entries have been put on the stack this game
+    /// ([`GameState::stack_puts`](crate::state::GameState::stack_puts)). Two
+    /// activations of one ability are identical stack rows; a count that
+    /// moved says the second is a new one (#750).
+    pub stack_puts: u64,
     /// True while the current combat damage step is the FIRST-STRIKE one
     /// (CR 510.4): with first/double strikers there are two damage steps,
     /// and both rendered as "Combat Damage" (issue #140).
@@ -668,6 +673,7 @@ impl GameView {
             graveyards,
             stack,
             exile,
+            stack_puts: state.stack_puts,
             step: state.step,
             first_strike_damage_step: state.step == crate::types::Step::CombatDamage
                 && state.combat_damage_step_pending,

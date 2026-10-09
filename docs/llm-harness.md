@@ -113,7 +113,9 @@ without a model call, until something the seat would want to see happens.
 The stops are conservative — when in doubt, the seat is asked:
 
 - anything on the stack that was not there when it said "go" (an entry
-  that was there resolving off the top is expected);
+  that was there resolving off the top is expected), or anything put on
+  it since, however like an entry that was there it looks — a second
+  activation of the same ability is new (the view's `stack_puts`, #750);
 - its own turn beginning;
 - attackers declared against it, before blocks;
 - a blocker declared against its attacker;

@@ -629,7 +629,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                                 }
                             }
                         }
-                        state.stack.push(crate::state::StackEntry::Spell(pending.object_id));
+                        state.put_on_stack(crate::state::StackEntry::Spell(pending.object_id));
 
                         // Step 6: fire SpellCast + bookkeeping.
                         let printed = state.face_data(pending.object_id, registry)

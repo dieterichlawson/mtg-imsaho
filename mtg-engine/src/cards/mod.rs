@@ -55,7 +55,7 @@ pub fn push_ability(
     // the source to the graveyard and reset its controller to its owner, so
     // a stolen permanent's own sacrifice ability was filed under its owner.
     if state.get_object(object_id).is_none() { return; }
-    state.stack.push(crate::state::StackEntry::Ability {
+    state.put_on_stack(crate::state::StackEntry::Ability {
         source_id: object_id,
         ability_index,
         behavior_card_id,
@@ -85,7 +85,7 @@ pub fn push_loyalty_ability(
     activator: PlayerId,
 ) {
     if state.get_object(object_id).is_none() { return; }
-    state.stack.push(crate::state::StackEntry::Ability {
+    state.put_on_stack(crate::state::StackEntry::Ability {
         source_id: object_id,
         ability_index,
         behavior_card_id,

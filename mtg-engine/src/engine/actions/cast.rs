@@ -391,7 +391,7 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
             }
         }
 
-        state.stack.push(crate::state::StackEntry::Spell(object_id));
+        state.put_on_stack(crate::state::StackEntry::Spell(object_id));
 
         if has_x {
             // Eager path reached here only when max_x == 0 (X forced to
