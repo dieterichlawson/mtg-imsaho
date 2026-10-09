@@ -58,7 +58,9 @@ async function main() {
       await page.waitForFunction(() => window.mtg && window.mtg.decision, null, { timeout: 30000 }).catch(() => {});
     }
     await page.evaluate(() => { const m = window.mtg; m.ws.onclose = () => {}; m.ws.close(); });
-    const shot = async (name) => { if (shotsDir) { fs.mkdirSync(shotsDir, { recursive: true }); await page.screenshot({ path: path.join(shotsDir, name) }); } };
+    // A row's name can quote what was typed ('x-accepts "  3  "'); the
+    // artifact upload refuses " : < > | * ? and line breaks in a path.
+    const shot = async (name) => { if (shotsDir) { fs.mkdirSync(shotsDir, { recursive: true }); await page.screenshot({ path: path.join(shotsDir, name.replace(/[":<>|*?\r\n\\]/g, "_")) }); } };
 
     // Ids to build prompts from.
     const ids = await page.evaluate(() => {
@@ -840,9 +842,9 @@ async function main() {
         ["started", `Game started (opp on the play)`],
         ["drew", "you drew 7 cards"],
         ["banner", "\u2500\u2500 Turn 5 (opp) \u2500\u2500"],
-        ["attack", "opp declared attackers: Walking Corpse (#66) -> you"],
+        ["attack", "opp declared attackers: Walking Corpse -> you"],
         ["stranger", "p7 did something"],
-        ["card", "Doom Blade (#75) resolved"],
+        ["card", "Doom Blade resolved"],
         ["win", "YOU WIN"],
         ["lose", "OPPONENT WINS"],
         ["draw", "A DRAW"],
