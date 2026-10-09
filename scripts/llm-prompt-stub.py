@@ -17,7 +17,13 @@ minimum never exercises (CLAUDE.md, "one decision, four surfaces").
 A priority menu's `Pass until something happens` row is picked with
 probability `$STUB_PASS_UNTIL` (default 0.5) rather than as one index
 among many: a stub that picked it one time in eight would not move the
-call count the row exists to move. `STUB_PASS_UNTIL=0` never picks it.
+call count the row exists to move. When it is not taken, the stub's own
+pick avoids it, so the probability is exact and `STUB_PASS_UNTIL=0`
+never picks it (#754: the schema fill used to land on it as well).
+
+`cancel` (backing out of a cast at an X-funding, target-set or cost
+prompt, #749) is always false: a stub that cancelled half its casts would
+measure a game nobody plays.
 """
 import hashlib
 import json
@@ -65,7 +71,7 @@ def fill(name, spec):
         hi = spec.get("maximum", lo + 3)
         return lo + h(message, name) % (hi - lo + 1)
     if t == "boolean":
-        return bool(h(message, name) % 2)
+        return False if name == "cancel" else bool(h(message, name) % 2)
     if t == "array":
         items = spec.get("items") or {}
         lo = spec.get("minItems", 0)
@@ -86,13 +92,15 @@ def fill(name, spec):
 PASS_UNTIL = re.compile(r"^(\d+): Pass until something happens", re.M)
 
 
-def pass_until_index():
-    """The pass-until row's index, when the stub decides to take it."""
+def pass_until_row():
+    """The pass-until row's index on this menu, if it has one."""
     m = PASS_UNTIL.search(message)
-    if not m or "action" not in props:
-        return None
+    return int(m.group(1)) if m and "action" in props else None
+
+
+def takes_pass_until():
     p = float(os.environ.get("STUB_PASS_UNTIL", "0.5"))
-    return int(m.group(1)) if h(message, "pass-until") % 1000 < p * 1000 else None
+    return h(message, "pass-until") % 1000 < p * 1000
 
 
 if "maindeck" in props and "lands" in props:
@@ -105,9 +113,14 @@ if "maindeck" in props and "lands" in props:
            "lands": {"Plains": 4, "Island": 4, "Swamp": 3, "Mountain": 3, "Forest": 3}}
 else:
     out = {k: fill(k, v) for k, v in props.items()}
-    until = pass_until_index()
-    if until is not None:
-        out["action"] = until
+    row = pass_until_row()
+    if row is not None:
+        if takes_pass_until():
+            out["action"] = row
+        elif out.get("action") == row:
+            others = [v for v in props["action"].get("enum", []) if v != row]
+            if others:
+                out["action"] = others[h(message, "not-pass-until") % len(others)]
 
 record = os.environ.get("STUB_CALLS")
 if record:

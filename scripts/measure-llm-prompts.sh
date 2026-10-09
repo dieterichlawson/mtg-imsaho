@@ -16,9 +16,11 @@
 #   MTG_RUNNER_BIN=/elsewhere/mtg-runner scripts/measure-llm-prompts.sh
 #                                                    # another build, e.g. before a change
 #
-# `auto-pass` is the engine-side pass (nothing to do), `pass-until` the
-# offers the seat passed unasked after taking the row, `stops` how often
-# a pass-until ended.
+# `engaged` is how often the seat took the pass-until row, `unasked` the
+# priority offers it then passed without a call, `stops` how often a
+# pass-until ended. (`AUTO_PASS` labels both the engagement and each
+# unasked pass; counting the label summed the two, #754.) `schema B` is
+# the mean schema size per call.
 #
 # Output goes under logs/llm-prompts/<timestamp>/.
 set -eu
@@ -37,15 +39,15 @@ for seed in $seeds; do
     --log "$out/seed-$seed.log" > "$out/seed-$seed.stdout" 2>&1 || true
 done
 python3 -I - "$out" $seeds <<'EOF'
-import json, sys, statistics
+import json, re, sys, statistics
 out, seeds = sys.argv[1], sys.argv[2:]
-print(f"{'seed':>5} {'calls':>6} {'opened':>7} {'resumed':>8} {'system B':>9} {'prompt B/call':>14} {'min':>5} {'max':>6} {'prompt B/game':>14} {'auto-pass':>9} {'pass-until':>10} {'stops':>5} {'turns':>5}")
+print(f"{'seed':>5} {'calls':>6} {'opened':>7} {'resumed':>8} {'system B':>9} {'prompt B/call':>14} {'min':>5} {'max':>6} {'prompt B/game':>14} {'schema B':>9} {'engaged':>8} {'unasked':>8} {'stops':>5} {'turns':>5}")
 totals = []
 for seed in seeds:
     rows = [json.loads(l) for l in open(f"{out}/seed-{seed}.calls")]
     log = open(f"{out}/seed-{seed}.log", encoding="utf-8", errors="replace").read()
-    auto = log.count("\tAUTO-PASS")
-    until = log.count("\tAUTO_PASS [")
+    engaged = len(re.findall(r"\tAUTO_PASS \[[^]]*\]\tengaged ", log))
+    until = len(re.findall(r"\tAUTO_PASS \[[^]]*\]\tuntil: ", log))
     stops = log.count("\tAUTO_PASS_STOP [")
     turns = log.count("── Turn ")
     if not rows:
@@ -53,13 +55,14 @@ for seed in seeds:
     prompts = [r["prompt_bytes"] for r in rows]
     opened = sum(r["session"] == "opened" for r in rows)
     resumed = sum(r["session"] == "resumed" for r in rows)
+    schema = statistics.mean(r["schema_bytes"] for r in rows)
     print(f"{seed:>5} {len(rows):>6} {opened:>7} {resumed:>8} {rows[0]['system_bytes']:>9} "
-          f"{statistics.mean(prompts):>14.0f} {min(prompts):>5} {max(prompts):>6} {sum(prompts):>14} {auto:>9} {until:>10} {stops:>5} {turns:>5}")
-    totals.append((len(rows), rows[0]["system_bytes"], sum(prompts), auto, until, stops, turns))
+          f"{statistics.mean(prompts):>14.0f} {min(prompts):>5} {max(prompts):>6} {sum(prompts):>14} {schema:>9.0f} {engaged:>8} {until:>8} {stops:>5} {turns:>5}")
+    totals.append((len(rows), rows[0]["system_bytes"], sum(prompts), schema, engaged, until, stops, turns))
 if totals:
     n = len(totals)
     print(f"{'mean':>5} {sum(t[0] for t in totals)/n:>6.0f} {'':>7} {'':>8} {sum(t[1] for t in totals)/n:>9.0f} "
           f"{'':>14} {'':>5} {'':>6} {sum(t[2] for t in totals)/n:>14.0f} {sum(t[3] for t in totals)/n:>9.0f} "
-          f"{sum(t[4] for t in totals)/n:>10.0f} {sum(t[5] for t in totals)/n:>5.0f} {sum(t[6] for t in totals)/n:>5.0f}")
+          f"{sum(t[4] for t in totals)/n:>8.0f} {sum(t[5] for t in totals)/n:>8.0f} {sum(t[6] for t in totals)/n:>5.0f} {sum(t[7] for t in totals)/n:>5.0f}")
 EOF
 echo "records under $out"
