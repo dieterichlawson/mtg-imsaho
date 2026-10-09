@@ -258,6 +258,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         target_options: Vec<crate::actions::Target>,
         tap_plan: Vec<(ObjectId, usize)>,
         option_combos: Vec<ActivatableAbilityOption>,
+        sorcery_speed: bool,
     }
 
     if state.is_game_over() {
@@ -407,16 +408,17 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 let lookup_card_id = source_card_id.unwrap_or_else(|| {
                     state.get_object(*object_id).map_or(crate::ids::CardId(0), |o| o.card_id)
                 });
-                let desc = registry.get(lookup_card_id)
+                let (desc, sorcery_speed) = registry.get(lookup_card_id)
                     .and_then(|b| {
                         b.activated_abilities(state, *object_id, registry)
                             .into_iter()
                             .find(|a| a.ability_index == *ability_index)
-                            .map(|a| a.description.clone())
+                            .map(|a| (a.description.clone(), a.sorcery_speed_only))
                     }).unwrap_or_default();
                 AbilityGroup {
                     name,
                     description: desc,
+                    sorcery_speed,
                     target_options: Vec::new(),
                     tap_plan: tap_plan.clone(),
                     option_combos: Vec::new(),
@@ -452,6 +454,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 target_options: g.target_options,
                 tap_plan: g.tap_plan,
                 option_combos: g.option_combos,
+                sorcery_speed: g.sorcery_speed,
             }
         })
         .collect();

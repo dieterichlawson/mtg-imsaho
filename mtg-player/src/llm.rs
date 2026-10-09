@@ -4991,7 +4991,7 @@ impl LlmPlayer {
             if let Some(cs) = legal.castable_spells.iter().find(|cs| !Self::is_instant_speed_cast(view, cs)) {
                 return Some(format!("you could cast {} at sorcery speed", cs.name));
             }
-            if let Some(ab) = legal.activatable_abilities.iter().find(|ab| Self::is_sorcery_speed_ability(ab)) {
+            if let Some(ab) = legal.activatable_abilities.iter().find(|ab| ab.sorcery_speed) {
                 return Some(format!("you could activate {} ({}) at sorcery speed", ab.name, ab.description));
             }
         }
@@ -5030,12 +5030,6 @@ impl LlmPlayer {
                 let l = l.trim();
                 l.eq_ignore_ascii_case("flash") || l.starts_with("Flash ") || l.starts_with("Flash,")
             }))
-    }
-
-    /// Whether an activation is sorcery-speed: equip, or one that says so.
-    fn is_sorcery_speed_ability(ab: &mtg_engine::actions::ActivatableAbility) -> bool {
-        let d = ab.description.to_ascii_lowercase();
-        d.starts_with("equip") || d.contains("as a sorcery")
     }
 
     /// Format a card for the mulligan prompt: `Name {cost}[ P/T]`.
@@ -6364,6 +6358,7 @@ pub(crate) mod tests {
             description: desc.to_string(),
             target_options: Vec::new(),
             tap_plan: Vec::new(),
+            sorcery_speed: false,
             option_combos: vec![ActivatableAbilityOption { targets: Vec::new(), sacrifice: None }],
         };
         let hatch = "{1}{U}: Put a hatchling counter. At 5, transform.";
@@ -6456,6 +6451,7 @@ pub(crate) mod tests {
             description: desc.to_string(),
             target_options: Vec::new(),
             tap_plan: Vec::new(),
+            sorcery_speed: false,
             option_combos: vec![ActivatableAbilityOption { targets: Vec::new(), sacrifice: None }],
         };
         let mut actions = vec![Action::PassPriority];
@@ -6563,6 +6559,7 @@ pub(crate) mod tests {
             description: same.to_string(),
             target_options: Vec::new(),
             tap_plan: Vec::new(),
+            sorcery_speed: false,
             option_combos: vec![ActivatableAbilityOption { targets: Vec::new(), sacrifice: None }],
         };
         let legal = mtg_engine::engine::LegalActions {
@@ -8560,6 +8557,7 @@ this Aura deals 1 damage to that player.";
             description: "Equip—Sacrifice a creature".into(),
             target_options: vec![],
             tap_plan: vec![],
+            sorcery_speed: false,
             option_combos: vec![
                 ActivatableAbilityOption { targets: vec![Target::Player(view.you)], sacrifice: Some(mine[0]) },
                 ActivatableAbilityOption { targets: vec![Target::Player(view.you)], sacrifice: Some(mine[1]) },

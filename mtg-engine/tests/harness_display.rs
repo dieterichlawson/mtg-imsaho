@@ -913,3 +913,27 @@ fn every_stack_entry_carries_the_text_it_does_what_it_does_by() {
     let item = view.stack.iter().find(|s| s.source_id == Some(hunter)).expect("the trigger");
     assert_eq!(item.oracle_text, text_of(&state, hunter).oracle_text);
 }
+
+/// Whether an ability is "activate only as a sorcery" rides on the offer,
+/// from the definition the engine enforces, not from its wording: Brain
+/// Weevil's says nothing about sorcery speed, and a seat reading the text
+/// passed its precombat window (#751).
+#[test]
+fn an_offered_ability_says_whether_it_is_sorcery_speed() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let weevil = named_permanent(&mut state, &reg, "Brain Weevil", P0);
+    let priest = named_permanent(&mut state, &reg, "Avacynian Priest", P0);
+    state.get_object_mut(priest).unwrap().summoning_sick = false;
+    named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    add_mana(&mut state, P0, &[(ManaType::White, 1)]);
+    state.priority_player = Some(P0);
+
+    let offered = mtg_engine::engine::legal_actions(&state, &reg).activatable_abilities;
+    let of = |id| offered.iter().find(|a| a.object_id == id)
+        .unwrap_or_else(|| panic!("{id:?} offers its ability: {offered:?}"));
+    assert!(!of(weevil).description.to_ascii_lowercase().contains("sorcery"),
+        "the case that matters is one whose text does not say it: {}", of(weevil).description);
+    assert!(of(weevil).sorcery_speed, "Brain Weevil's sacrifice is activate-only-as-a-sorcery");
+    assert!(!of(priest).sorcery_speed, "Avacynian Priest's tap is not");
+}

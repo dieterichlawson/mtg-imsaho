@@ -12173,6 +12173,7 @@ Mark 1 of the 1 cards below to exile.");
             description: "Equip—Sacrifice a creature".to_string(),
             target_options: (0..n).map(|t| Target::Object(ObjectId(t))).collect(),
             tap_plan: vec![],
+            sorcery_speed: false,
             option_combos: combos,
         }];
         legal
@@ -12240,6 +12241,7 @@ Mark 1 of the 1 cards below to exile.");
             description: "{1}, {T}: Tap target non-Human creature".to_string(),
             target_options: vec![Target::Object(ObjectId(119))],
             tap_plan: vec![],
+            sorcery_speed: false,
             option_combos: vec![mtg_engine::actions::ActivatableAbilityOption {
                 targets: vec![Target::Object(ObjectId(119))],
                 sacrifice: None,
@@ -12287,6 +12289,7 @@ Mark 1 of the 1 cards below to exile.");
             description: "Equip {4}".to_string(),
             target_options: vec![Target::Object(ObjectId(0))],
             tap_plan: vec![],
+            sorcery_speed: false,
             option_combos: vec![mtg_engine::actions::ActivatableAbilityOption {
                 targets: vec![Target::Object(ObjectId(0))],
                 sacrifice: None,

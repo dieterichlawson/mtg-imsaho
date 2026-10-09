@@ -243,6 +243,7 @@ export interface ActivatableAbility {
   target_options: Target[];
   tap_plan: [ObjectId, number][];
   option_combos: ActivatableAbilityOption[];
+  sorcery_speed: boolean;
 }
 
 export type CombatPrompt =

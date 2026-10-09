@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 
-use mtg_engine::actions::{Action, CastTargetSpec, CastableSpell, CombatPrompt, SetPrompt, SetPromptKind};
+use mtg_engine::actions::{Action, ActivatableAbility, ActivatableAbilityOption, CastTargetSpec, CastableSpell, CombatPrompt, SetPrompt, SetPromptKind};
 use mtg_engine::engine::LegalActions;
 use mtg_engine::ids::{CardId, ObjectId, PlayerId};
 use mtg_engine::types::{CardType, ManaPool, Step};
@@ -457,6 +457,40 @@ fn a_land_drop_or_a_sorcery_speed_cast_in_the_same_main_phase_stops_it() {
     with_viper.castable_spells.push(castable(13, "Ambush Viper"));
     assert!(matches!(seat.choose_action(&v, &with_viper), Action::PassPriority));
     assert_eq!(fake.calls().len(), 6);
+}
+
+#[test]
+fn a_sorcery_speed_activation_in_the_same_main_phase_stops_it_whatever_its_text() {
+    // Brain Weevil's sacrifice is activate-only-as-a-sorcery, and its text
+    // ("Sacrifice: Target player discards two cards") does not say so: the
+    // seat used to read sorcery speed from the words and passed it (#751).
+    let fake = Fake::new("weevil");
+    let ability = |id: u64, name: &str, desc: &str, sorcery_speed: bool| ActivatableAbility {
+        object_id: ObjectId(id), ability_index: 0, source_card_id: None,
+        name: name.to_string(), description: desc.to_string(),
+        target_options: vec![], tap_plan: vec![],
+        option_combos: vec![ActivatableAbilityOption { targets: vec![], sacrifice: None }],
+        sorcery_speed,
+    };
+    let activate = |id: u64| Action::ActivateAbility {
+        object_id: ObjectId(id), ability_index: 0, targets: vec![], tap_plan: vec![],
+        sacrifice: None, x_value: None, source_card_id: None,
+    };
+    // An instant-speed ability is passed, like the Bolt.
+    let mut seat = engaged_on_own_turn(&fake);
+    let mut with_pump = offer("MAIN PHASE 1");
+    with_pump.actions.insert(2, activate(22));
+    with_pump.activatable_abilities.push(ability(22, "Darkthicket Wolf", "{2}{G}: +2/+2 until end of turn", false));
+    assert!(matches!(seat.choose_action(&view(3, Step::PrecombatMain, YOU), &with_pump), Action::PassPriority));
+    assert_eq!(fake.calls().len(), 1);
+    // A sorcery-speed one is asked.
+    let mut seat = engaged_on_own_turn(&fake);
+    let mut with_weevil = offer("MAIN PHASE 1");
+    with_weevil.actions.insert(2, activate(63));
+    with_weevil.activatable_abilities.push(ability(63, "Brain Weevil", "Sacrifice: Target player discards two cards", true));
+    seat.choose_action(&view(3, Step::PrecombatMain, YOU), &with_weevil);
+    assert_eq!(fake.calls().len(), 3);
+    assert!(stop_line(&fake).contains("you could activate Brain Weevil"), "{}", stop_line(&fake));
 }
 
 #[test]

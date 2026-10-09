@@ -340,6 +340,11 @@ pub struct ActivatableAbility {
     /// For abilities with no sacrifice cost the sacrifice is None; for untargeted
     /// abilities the targets vector is empty.
     pub option_combos: Vec<ActivatableAbilityOption>,
+    /// "Activate only as a sorcery" (CR 602.5d), as the engine enforces it.
+    /// A seat used to guess this from `description`, which Brain Weevil's
+    /// ("Sacrifice: Target player discards two cards") does not say (#751).
+    #[serde(default)]
+    pub sorcery_speed: bool,
 }
 
 /// One concrete (target, sacrifice) choice for an activated ability.
