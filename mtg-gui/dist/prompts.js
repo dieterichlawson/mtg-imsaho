@@ -143,6 +143,45 @@ export function autoPassDeclines(actions) {
     return actions.filter(a => typeof a === "object" && a !== null
         && ("PlayLand" in a || "CastSpell" in a || "ActivateAbility" in a)).length;
 }
+/**
+ * The turn auto-pass counts from when `f` is pressed at `view`: a stop at
+ * "your next Main Phase 1" is one in a turn after this. Pressed at your own
+ * untap, upkeep or draw step, that main phase is this turn's, so the count
+ * starts a turn earlier — the CLI's `before_our_main` (#45), which the page
+ * never had: `f` at your upkeep passed the whole turn (#753).
+ */
+export function autoPassSince(view) {
+    const beforeOurMain = view.active_player === view.you
+        && (view.step === "Untap" || view.step === "Upkeep" || view.step === "Draw");
+    return beforeOurMain ? view.turn_number - 1 : view.turn_number;
+}
+/**
+ * Why auto-pass, engaged since turn `sinceTurn`, stops at this priority
+ * offer, or null to pass it. `asked` is whether the page has something
+ * other than a plain pass to put to the player.
+ *
+ * The opponent's attack is a stop, as it is for the CLI (#295) and the LLM
+ * seat: a player with no blocker is never shown the block prompt, so
+ * without it the page passed every window of the combat with an instant
+ * in hand (#752).
+ */
+export function autoPassStop(view, actions, sinceTurn, asked) {
+    if (asked)
+        return "you are asked something.";
+    if (view.stack.length > 0)
+        return "something is on the stack.";
+    // A land drop is never auto-passed, whatever the phase: once a turn and
+    // free, it is always worth stopping for — the CLI's #39 (#691).
+    if (offersLandPlay(actions))
+        return "you have a land to play.";
+    const ourTurn = view.active_player === view.you;
+    if (!ourTurn && view.step === "DeclareAttackers"
+        && view.battlefield.some(p => p.controller !== view.you && p.attacking))
+        return "attackers declared against you.";
+    if (ourTurn && view.step === "PrecombatMain" && view.turn_number > sinceTurn)
+        return "your main phase.";
+    return null;
+}
 /** The notice for engaging (`stillOn`) or ending auto-pass, as the CLI words it. */
 export function autoPassNotice(declined, stillOn) {
     const what = (n) => `${n} spell${n === 1 ? "" : "s"}/abilit${n === 1 ? "y" : "ies"}/land play${n === 1 ? "" : "s"}`;
