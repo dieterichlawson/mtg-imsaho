@@ -151,14 +151,16 @@ fn two_humans_and_two_ai_seats_draft_build_and_the_ai_match_plays() {
         assert!(first > header, "the first {needle:?} record is above the DECK BUILDING header");
     }
 
-    // An invalid deck is refused with the reason, and kept with it.
+    // A short deck is work in progress: recorded with its problem, not
+    // refused (the page sends the deck after every card moved).
     let pool: Vec<String> = v0["pool"].as_array().unwrap().iter().map(|c| c["name"].as_str().unwrap().to_string()).collect();
-    c0.send(json!({"type": "deck", "main": pool[..10], "lands": {}, "sideboard": []}));
-    let refusal = c0.next_refusal(T);
-    assert!(refusal["reason"].as_str().unwrap().contains("need at least 40"), "{refusal}");
-    assert_eq!(refusal["echo"]["type"], "deck");
-    let v = c0.view_until("the refused deck is shown with its problem", T, |v| v["deck"]["valid"] == false);
-    assert!(v["deck"]["problem"].as_str().unwrap().contains("40"));
+    c0.send(json!({"type": "deck", "main": pool[..10], "lands": {}, "sideboard": pool[10..]}));
+    let v = c0.view_until("the short deck is shown with its problem", T, |v| v["deck"]["valid"] == false);
+    assert!(v["deck"]["problem"].as_str().unwrap().contains("need at least 40"), "{}", v["deck"]);
+    assert_eq!(v["deck"]["main"].as_array().unwrap().len(), 10);
+    assert_eq!(v["deck"]["sideboard"].as_array().unwrap().len(), 32, "the sideboard sent is the one recorded");
+    assert!(c0.next_message(Duration::from_millis(300)).is_none_or(|m| m["type"] != "refused"), "a short deck is not a refusal");
+    // Ready is where a short deck is refused.
     c0.send(json!({"type": "ready"}));
     let refusal = c0.next_refusal(T);
     assert!(refusal["reason"].as_str().unwrap().contains("not legal"), "{refusal}");

@@ -866,13 +866,19 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
 
     // ── building ──
 
-    /// A person's deck, re-sendable until `ready`.
+    /// A person's deck, re-sendable until `ready`. A deck that is only
+    /// short is work in progress: it is recorded with what it still needs
+    /// (`deck.problem` in the view) and not refused, because the page and
+    /// the client send the deck after every card moved, and a person
+    /// building one card at a time was refused twenty-two times in a row
+    /// (the first playtest). `ready` is what a short deck is refused at.
     ///
     /// # Errors
-    /// The seat is not building yet, is already ready, or the deck is not
-    /// legal — the reason is the one `validate_deck` gives.
+    /// The seat is not building yet, is already ready, or the deck names
+    /// a card the seat did not draft (or too many copies of one, or a land
+    /// that is not basic) — the reason is the one `validate_deck` gives.
     pub fn submit_deck(
-        &mut self, seat: usize, main: &[String], lands: &HashMap<String, u32>, _sideboard: &[String],
+        &mut self, seat: usize, main: &[String], lands: &HashMap<String, u32>, sideboard: &[String],
     ) -> Result<(), String> {
         if !self.table.seat_done(seat) {
             return Err("you are still drafting".to_string());
@@ -888,15 +894,15 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
                 Ok(())
             }
             Err(problem) => {
-                // Kept, so the page can show what was sent next to why it
-                // was refused.
+                // Kept, so the page can show what was sent next to what is
+                // wrong with it, whether or not it is refused.
                 self.seats[seat].deck = Some(DraftDeck {
                     maindeck: main.to_vec(),
                     lands: lands.clone(),
-                    sideboard: Vec::new(),
+                    sideboard: sideboard.to_vec(),
                 });
                 self.seats[seat].deck_problem = Some(problem.clone());
-                Err(problem)
+                if deck_in_progress(&problem) { Ok(()) } else { Err(problem) }
             }
         }
     }
@@ -1356,6 +1362,15 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
     }
 }
 
+/// Whether a deck's problem is only that it is short: the one state a
+/// deck passes through on its way to legal, so not a refusal. Every other
+/// problem `validate_deck` reports names a card or a land that cannot be
+/// in the deck at all.
+#[must_use]
+pub fn deck_in_progress(problem: &str) -> bool {
+    problem.starts_with("Deck has ") && problem.contains("need at least")
+}
+
 /// Milliseconds from `now` to `deadline`, 0 once it has passed.
 fn millis_left(deadline: Instant, now: Instant) -> u64 {
     u64::try_from(deadline.saturating_duration_since(now).as_millis()).unwrap_or(u64::MAX)
@@ -1418,6 +1433,19 @@ mod tests {
         assert!(parse_seats("cli,cli", "cc").unwrap_err().contains("at most one cli"));
         assert!(parse_seats("0xhuman,ai", "cc").unwrap_err().contains("nobody"));
         assert!(parse_seats("ai:,human", "cc").unwrap_err().contains("not a seat"));
+    }
+
+    #[test]
+    fn a_short_deck_is_in_progress_and_a_wrong_card_is_not() {
+        let pool: Vec<String> = ["Abbey Griffin", "Chapel Geist"].map(String::from).to_vec();
+        let short = deckbuilding::validate_deck(&pool, &pool[..1], &HashMap::new()).unwrap_err();
+        assert!(deck_in_progress(&short), "{short}");
+        let wrong = deckbuilding::validate_deck(&pool, &["Griselbrand".to_string()], &HashMap::new()).unwrap_err();
+        assert!(!deck_in_progress(&wrong), "{wrong}");
+        let copies = deckbuilding::validate_deck(&pool, &[pool[0].clone(), pool[0].clone()], &HashMap::new()).unwrap_err();
+        assert!(!deck_in_progress(&copies), "{copies}");
+        let land = deckbuilding::validate_deck(&pool, &pool, &HashMap::from([("Shimmering Grotto".to_string(), 1)])).unwrap_err();
+        assert!(!deck_in_progress(&land), "{land}");
     }
 
     #[test]

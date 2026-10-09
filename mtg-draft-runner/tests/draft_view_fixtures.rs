@@ -202,12 +202,16 @@ fn a_seat_never_sees_another_seats_pack_or_pool_and_each_phase_has_a_fixture() {
     let pool: Vec<String> = jv(&lobby, 0)["pool"].as_array().unwrap().iter()
         .map(|c| c["name"].as_str().unwrap().to_string()).collect();
     assert_eq!(pool.len(), 42);
-    let err = lobby.submit_deck(0, &pool[..5], &HashMap::new(), &[]).unwrap_err();
-    assert!(err.contains("need at least 40"), "{err}");
+    // A short deck is recorded as work in progress, not refused; a card
+    // the seat did not draft is refused; `ready` on a short deck is refused.
+    lobby.submit_deck(0, &pool[..5], &HashMap::new(), &[]).expect("a short deck is kept, not refused");
     let v = serde_json::to_value(lobby.view(0)).unwrap();
     assert_eq!(v["deck"]["valid"], false);
     assert!(v["deck"]["problem"].as_str().unwrap().contains("40"));
-    assert!(lobby.ready(0).is_err());
+    let err = lobby.submit_deck(0, &["Griselbrand".to_string()], &HashMap::new(), &[]).unwrap_err();
+    assert!(err.contains("not in your drafted pool"), "{err}");
+    let err = lobby.ready(0).unwrap_err();
+    assert!(err.contains("not legal"), "{err}");
     let fb = fallback_deck(&pool, &registry);
     lobby.submit_deck(0, &fb.maindeck, &fb.lands, &[]).unwrap();
     let v = serde_json::to_value(lobby.view(0)).unwrap();
@@ -291,8 +295,8 @@ draft_view_fixtures` and commit the result.".into()));
     }
     doc.insert("refused".into(), serde_json::to_value(mtg_draft_runner::lobby::Refused {
         kind: "refused",
-        reason: "Deck has 5 cards (need at least 40). Add more cards or basic lands.".into(),
-        echo: serde_json::json!({"type": "deck", "main": ["Abbey Griffin"], "lands": {}, "sideboard": []}),
+        reason: "'Griselbrand' is not in your drafted pool.".into(),
+        echo: serde_json::json!({"type": "deck", "main": ["Griselbrand"], "lands": {}, "sideboard": []}),
     }).unwrap());
     let doc = Value::Object(doc);
     let path = repo_root().join("mtg-gui/tests/draft-view-fixtures.json");
