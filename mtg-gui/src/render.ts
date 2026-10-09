@@ -510,6 +510,23 @@ function pendingKey(state: State, key: string): string {
   return pending ? key : "";
 }
 
+/**
+ * What a click on this permanent can do in the open menu. A stack draws
+ * one member and hangs only that member's verbs on the card, so members
+ * offered different things are different cards: once one Darkthicket Wolf
+ * had used its once-a-turn pump, with the ability still on the stack and
+ * its P/T not yet changed, the two Wolves were one "x2" card drawn as the
+ * spent one, and the other's pump was on no card a person could click
+ * (#748; #722 and #573 had the same shape from other causes). Whatever
+ * per-object state changes the offer, the offer itself is what tells them
+ * apart; identical lands are offered identical verbs and still stack.
+ */
+export function offerKey(ui: Ui | null, id: ObjectId): string {
+  if (!ui || ui.mode !== "menu" || !ui.verbs) return "";
+  const verbs = ui.verbs.get(id);
+  return verbs ? verbs.map(v => v.label).join("\n") : "";
+}
+
 /** Battlefield permanents of one controller, grouped into the two rows. */
 function splitBoard(state: State, view: GameView, controller: PlayerId): { creatures: PermanentView[][]; groups: PermanentView[][] } {
   const mine = view.battlefield.filter(p => p.controller === controller);
@@ -519,7 +536,7 @@ function splitBoard(state: State, view: GameView, controller: PlayerId): { creat
     const out: PermanentView[][] = []; const byKey = new Map<string, PermanentView[]>();
     for (const p of list) {
       const base = stackKey(p, attachedTo);
-      const k = base === null ? null : `${base}|${pendingKey(state, `o${p.object_id}`)}`;
+      const k = base === null ? null : `${base}|${pendingKey(state, `o${p.object_id}`)}|${offerKey(state.ui, p.object_id)}`;
       const g = k === null ? undefined : byKey.get(k);
       if (g) g.push(p);
       else { const ng = [p]; if (k !== null) byKey.set(k, ng); out.push(ng); }

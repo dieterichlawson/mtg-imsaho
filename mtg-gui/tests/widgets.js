@@ -1138,6 +1138,40 @@ async function main() {
         await page.evaluate((twin) => { const b = window.mtg.view.battlefield; b.splice(b.findIndex(p => p.object_id === twin), 1); }, r.twin);
       }
     }
+    // 28b. Two identical creatures, only one of them offered an ability —
+    // a spent once-a-turn pump on the other, whose P/T has not changed yet.
+    // The stack drew the spent one and the offered pump was on no card a
+    // person could click (#748): a member offered something is its own card.
+    {
+      const r = await page.evaluate(() => {
+        const m = window.mtg; const you = m.view.you;
+        const c = m.view.battlefield.find(p => p.controller === you && p.card_types.includes("Creature"));
+        if (!c) return null;
+        const twin = { ...c, object_id: 9003 };
+        m.view.battlefield.push(twin);
+        return { c: c.object_id, twin: twin.object_id };
+      });
+      const pump = r && { object_id: r.twin, ability_index: 0, source_card_id: null, name: "Twin", description: "{2}{G}: +2/+2 until end of turn",
+        target_options: [], tap_plan: [], option_combos: [{ targets: [], sacrifice: null }], sorcery_speed: false };
+      if (!r) fail("offer-split: no creature of ours to copy");
+      else if (await stage("offer-split", legal({ context: "MAIN PHASE 1", actions: ["PassPriority", "Concede",
+          { ActivateAbility: { object_id: r.twin, ability_index: 0, targets: [], tap_plan: [], sacrifice: null, x_value: null, source_card_id: null } }],
+          activatable_abilities: [pump] }), null, "menu")) {
+        const drawn = await page.evaluate((pair) => {
+          window.mtgDebug.render();
+          return window.mtg.hits.filter(h => h.kind === "perm" && pair.includes(h.id)).map(h => ({ id: h.id, verbs: h.verbs ? h.verbs.map(v => v.label) : [] }));
+        }, [r.c, r.twin]);
+        const offered = drawn.find(d => d.id === r.twin);
+        if (!offered || !offered.verbs.includes(pump.description)) fail(`offer-split: the copy offered a pump drew as ${JSON.stringify(drawn)}`);
+        else {
+          ok(`offer-split: ${drawn.length} cards, the pump on #${r.twin}`);
+          await clickHit(`(h) => h.kind === 'perm' && h.id === ${r.twin}`);
+          await clickHit("(h, m) => h.kind === 'row' && m.popover");
+          await expectSent("offer-split", a => a.ActivateAbility && a.ActivateAbility.object_id === r.twin);
+        }
+        await page.evaluate((twin) => { const b = window.mtg.view.battlefield; b.splice(b.findIndex(p => p.object_id === twin), 1); }, r.twin);
+      }
+    }
     // 29. The typing box does not own the whole keyboard. While a filtered
     // `list` or the X box is up, `syncField` focuses the DOM input on every
     // frame and the keydown handler returned before the switch, so all seven

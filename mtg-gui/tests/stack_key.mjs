@@ -9,7 +9,7 @@
 
 globalThis.Image ??= class { };
 globalThis.document ??= { createElement: () => ({ getContext: () => null }) };
-const { stackKey } = await import("../dist/render.js");
+const { stackKey, offerKey } = await import("../dist/render.js");
 
 let failures = 0;
 const fail = m => { console.error("FAIL: " + m); failures++; };
@@ -33,5 +33,15 @@ if (stackKey(a, none) === stackKey(twin, none)) fail("a copy with its own abilit
 if (stackKey(a, none) === stackKey({ ...corpse(9003), is_copy: true }, none)) fail("a copy stacked with its original");
 if (stackKey(a, none) === stackKey({ ...corpse(9004), owner: 1 }, none)) fail("a borrowed card stacked with your own");
 
+// What the open menu offers on each member splits a stack (#748): a Wolf
+// whose once-a-turn pump is spent and one whose pump is on offer look
+// alike, and the stack drew the spent one.
+const pump = { label: "{2}{G}: +2/+2 until end of turn", run: () => {} };
+const menu = { mode: "menu", verbs: new Map([[22, [pump]]]) };
+if (offerKey(menu, 21) === offerKey(menu, 22)) fail("a Wolf with its pump on offer keyed with one without");
+const lands = { mode: "menu", verbs: new Map([[3, [{ label: "Tap: Add {G}" }]], [4, [{ label: "Tap: Add {G}" }]]]) };
+if (offerKey(lands, 3) !== offerKey(lands, 4)) fail("two Forests offered the same tap no longer stack");
+if (offerKey({ mode: "pick", verbs: menu.verbs }, 22) !== "" || offerKey(null, 22) !== "") fail("only a menu's verbs key a stack");
+
 if (failures) { console.error(`${failures} failure(s)`); process.exit(1); }
-console.log("ok: a copy is its own card");
+console.log("ok: a copy is its own card, and so is a member offered something the others are not");
