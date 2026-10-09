@@ -307,18 +307,39 @@ The seat won both games. What the table says:
 
 Free measurement (`scripts/measure-llm-prompts.sh`, the stub taking the
 row with probability 0.5 or 0.8, `MTG_LLM_PASS_UNTIL=off` for "before"),
-five seeds each:
+five seeds each, re-measured 2026-10-09 after two corrections (#754): the
+script's "offers passed unasked" counted every `AUTO_PASS` line, which
+labels the engagement as well as each unasked pass, so the column was
+engagements plus unasked passes (seed 1's "57" was 44 + 13); and the stub's
+schema fill picked the row on its own besides, so "half the time" was more
+than half. Both are fixed; the figures below are with the row as it now
+stands (its name only, the stops in the system prompt, #757):
 
-| | calls / game | turns / game | calls / turn | offers passed unasked | stops |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| before (row off) | 99, 133, 78, 56, 109 (mean 95) | 86, 84, 54, 59, 76 (mean 72) | 1.32 | 0 | 0 |
-| after, stub takes the row half the time | 121, 125, 94, 54, 87 (mean 96) | 102, 96, 70, 52, 83 (mean 81) | 1.19 | 57, 96, 99, 59, 67 (mean 76) | 40 |
-| after, 80% of the time | 119, 101, 97, 77, 126 (mean 104) | 136, 96, 82, 64, 138 (mean 103) | 1.01 | 129, 126, 123, 112, 157 (mean 129) | 63 |
+| | calls / game | turns / game | calls / turn | engaged | offers passed unasked | prompt B / call | schema B / call | system B |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| before (row off) | 99, 133, 78, 56, 109 (mean 95) | 86, 84, 54, 59, 76 (mean 72) | 1.32 | 0 | 0 | 881–1,350 | 333 | 12,647 |
+| after, stub takes the row half the time | 108, 70, 67, 76, 143 (mean 93) | 98, 52, 56, 64, 108 (mean 76) | 1.22 | 33 | 7, 15, 20, 13, 43 (mean 20) | 1,092–1,485 | 385 | 13,934 |
+| after, 80% of the time | 141, 77, 130, 101, 205 (mean 131) | 136, 92, 134, 94, 138 (mean 119) | 1.10 | 78 | 175, 21, 79, 95, 183 (mean 111) | 1,168–1,600 | 381 | 13,934 |
 
 The stub is not the seat: a stub that passes instead of acting plays a
 longer game, so its calls per game do not fall while its calls per turn
-do. The real games above are the measurement; this is the shape check
-(the "before" row reproduces phase 1's "after" figures exactly).
+do, and a stub's answers are a hash of the prompt, so changing a prompt's
+text replays a different game. The real games above are the measurement;
+this is the shape check. Phase 2's real-game "taken / passed unasked"
+figures were read off their logs by hand, not by the script; whether
+they too counted engagements cannot be checked, as those logs were not
+kept.
+
+What the row costs per call, which 80e0018 did not measure (#757): as
+first shipped it restated its stops in every priority prompt (≈ 300 B a
+prompt, 13–17% of a game's prompt bytes), took the schema's mean from
+≈ 335 B to ≈ 465 B, and added ≈ 1.6 KB to the system prompt whether the
+row was offered or not (#755). It now names itself (`1: Pass until
+something happens`); the one list of stops is a section of the system
+prompt sent only to a seat that is offered the row; and the schema's
+index description points there. Measured with the same stub, seeds 1–5,
+row on: system prompt 14,229 → 13,934 B, schema 461 → 385 B per call;
+row off: system prompt 14,229 → 12,647 B.
 
 What else changed in phase 2:
 

@@ -629,13 +629,25 @@ pub fn pass_until_enabled() -> bool {
 /// nine in ten calls of a game were a seat holding a Lightning Bolt being
 /// asked at every step (`reports/llm-cost.md`) — so the row is offered
 /// where the keystroke would be, and the answers it stands in for are not
-/// sent anywhere. What it stops for is in the row's text, in `GAME_RULES`
-/// and in [`LlmPlayer::pass_until_stop`], which is the conservative side
-/// of the same list.
-pub const PASS_UNTIL_ROW: &str = "Pass until something happens (keep passing priority, \
-unasked, until: the opponent puts a spell or ability on the stack; attackers are declared \
-against you; you must declare attackers or blockers; your next main phase; a land you can \
-play in your main phase; or any other prompt that is not a plain priority pass)";
+/// sent anywhere. What it stops for is listed once, in
+/// [`PASS_UNTIL_RULES`], beside [`LlmPlayer::pass_until_stop`], which is
+/// that list in code. The row used to restate a shorter list in every
+/// priority prompt — about 300 B a prompt, and three stops short of the
+/// one applied (#756, #757).
+pub const PASS_UNTIL_ROW: &str = "Pass until something happens";
+
+/// The system prompt's account of [`PASS_UNTIL_ROW`], sent only to a seat
+/// that is offered the row: with `MTG_LLM_PASS_UNTIL=off` it told the seat
+/// index 1 was the row when index 1 was an engine action (#755). The stops
+/// are the arms of [`LlmPlayer::pass_until_stop`]; a new entry on the stack
+/// is any, the seat's own triggers included (#756).
+const PASS_UNTIL_RULES: &str = r#"
+
+## Pass until something happens
+
+Every priority offer has one more row, right after `Pass`: `1: Pass until something happens`, with the engine's rows after it numbered from 2. It is the way a person says "go". It passes priority now and keeps passing every later priority offer for you, unasked, until: anything new is put on the stack — the opponent's or yours, your own triggers included; your turn begins; attackers are declared against you; a blocker is declared against your attacker; you must declare attackers or blockers; your next main phase, and any main phase of yours with a land drop or a sorcery-speed cast or activation on offer; or any prompt that is not a plain priority pass. It never answers a decision for you, but it does pass the instant-speed windows in between — the opponent's end step, a combat damage step — so when you mean to act in one of those, answer `Pass` and you will be asked at the next one.
+
+When it stops, the next prompt opens (after your notes) with one line saying how many priority offers were passed for you unasked and what stopped it, e.g. `You chose to pass until something happened; after 6 unasked passes it stopped: Grizzly Bears (the opponent's) is on the stack.` Everything that happened meanwhile is in Recent events below it."#;
 
 /// The seat said "go": it is passing every plain priority offer without a
 /// model call until something it would want to see happens. What it was
@@ -1087,8 +1099,6 @@ Each prompt has these sections, in this order:
 
 **Your notes from your last decision** (after your first decision): the tail of your own reasoning from the previous prompt. Earlier prompts are not kept in the conversation — every prompt restates the whole position — so this is where your plan carries over. Trust the board below over the notes when they disagree.
 
-**Pass-until stop** (only after you answered `Pass until something happens`): one line saying how many priority offers were passed for you unasked and what stopped it, e.g. `You chose to pass until something happened; after 6 unasked passes it stopped: Grizzly Bears (the opponent's) is on the stack.` Everything that happened meanwhile is in Recent events below.
-
 **Recent events** (only if anything happened since the last prompt): a delta log of game events, yours and your opponent's. It carries at most the most recent 80 entries; when older ones are dropped it opens with a marker line, e.g. `… 227 earlier entries omitted, through turn 94 …`. The board below is always current.
 ```
 Recent events:
@@ -1153,18 +1163,16 @@ Delver of Secrets {U} | Creature — Human Wizard 1/1
 [MAIN PHASE 1]
 Available actions:
 0: Pass
-1: Pass until something happens (keep passing priority, unasked, until: the opponent puts a spell or ability on the stack; attackers are declared against you; you must declare attackers or blockers; your next main phase; a land you can play in your main phase; or any other prompt that is not a plain priority pass)
-2: Tap Forest
-3: Play Forest
-4: Cast Kalonian Tusker (tap 2x Forest)
-5: Concede
+1: Tap Forest
+2: Play Forest
+3: Cast Kalonian Tusker (tap 2x Forest)
+4: Concede
 ```
 A cast option names the spell and its tap plan, not its target: pick it and a follow-up prompt (`<card name>: select a target:`) lists the legal targets. Copies of one permanent that offer the same ability with the same tap plan share one line, one index per copy — pick the index of the copy you mean:
 ```
-6-8: Activate Ludevic's Test Subject ({1}{U}: Put a hatchling counter. At 5, transform.) (tap 2x Island) — one per copy: 6=#43, 7=#45, 8=#46
+5-7: Activate Ludevic's Test Subject ({1}{U}: Put a hatchling counter. At 5, transform.) (tap 2x Island) — one per copy: 5=#43, 6=#45, 7=#46
 ```
 
-`Pass until something happens` is on every priority offer, right after `Pass`, and is the way a person says "go". It passes priority now and keeps passing every later priority offer for you, unasked, until: the opponent puts a spell or ability on the stack; attackers are declared against you; a blocker is declared against your attacker; you must declare attackers or blockers; your next main phase, and any main phase of yours with a land drop or a sorcery-speed cast on offer; your turn begins; or any prompt that is not a plain priority pass. You are then asked again, with everything that happened in between under Recent events and the stop line above it. It never answers a decision for you, but it does pass the instant-speed windows in between — the opponent's end step, a combat damage step — so when you mean to act in one of those, answer `Pass` and you will be asked at the next one.
 
 Combat prompts replace the action list: `Choose attackers:` lists your creatures by index and asks for the indices attacking (empty for none; forced attackers are added for you); `Declare blocks` asks for `{"blocker", "attacker"}` index pairs, at most one per blocker.
 
@@ -2156,7 +2164,8 @@ impl LlmPlayer {
         // The match structure is a property of the run, not of the rules, so
         // it is composed here where the caller knows it rather than baked
         // into the shared `GAME_RULES` const (issue #210).
-        let mut deck_info = match_format.match_section();
+        let mut deck_info = if self.offer_pass_until { PASS_UNTIL_RULES.to_string() } else { String::new() };
+        deck_info.push_str(&match_format.match_section());
         if let Some(guide) = &self.guide {
             deck_info.push_str("\n\n## Guide\n\n");
             deck_info.push_str(guide);
@@ -4668,9 +4677,8 @@ impl Player for LlmPlayer {
         }
         let description = match menu.iter().position(|e| *e == MenuEntry::PassUntil) {
             Some(i) => format!(
-                "Index of the chosen action. {i} is 'Pass until something happens': pass priority \
-                 now and keep passing, unasked, until something the row lists happens; you are \
-                 then asked again with everything that happened in between."),
+                "Index of the chosen action. {i} is 'Pass until something happens' (the system \
+                 prompt lists what ends it)."),
             None => "Index of the chosen action".to_string(),
         };
         let idx = self.pick_action_index_described(view, &action_prompt, menu.len(), &description);
@@ -6026,7 +6034,7 @@ pub(crate) mod tests {
     #[test]
     fn game_rules_shows_the_action_list_it_actually_sends() {
         let labels: Vec<ActionRow> = [
-            "Pass", PASS_UNTIL_ROW, "Tap Forest", "Play Forest",
+            "Pass", "Tap Forest", "Play Forest",
             "Cast Kalonian Tusker (tap 2x Forest)", "Concede",
         ]
         .iter()
@@ -6039,7 +6047,7 @@ pub(crate) mod tests {
         );
 
         // And the row copies of one permanent share (issue #461): six
-        // single rows first, so the copies' indices start at 6 as documented.
+        // single rows first, so the copies' indices start at 5 as documented.
         let mut rows = labels;
         rows.push(ActionRow::Copies {
             label: "Activate Ludevic's Test Subject ({1}{U}: Put a hatchling counter. At 5, transform.) (tap 2x Island)".to_string(),
@@ -6047,11 +6055,52 @@ pub(crate) mod tests {
         });
         let with_copies = LlmPlayer::format_action_prompt(Some("MAIN PHASE 1"), &rows, mtg_engine::ids::PlayerId(0));
         let copies_line = with_copies.lines().last().expect("the copies row is last");
-        assert!(copies_line.starts_with("6-8: "), "{with_copies}");
+        assert!(copies_line.starts_with("5-7: "), "{with_copies}");
         assert!(
             GAME_RULES.contains(copies_line),
             "GAME_RULES must quote the shared row the harness sends. It sends:\n{copies_line}"
         );
+    }
+
+    /// #755: the rules for the pass-until row are sent to a seat that is
+    /// offered it, and to no other — with the knob off they told the seat
+    /// index 1 was the row when index 1 was an engine action. And they say
+    /// what the menu then sends: the row at 1, the engine's rows from 2.
+    #[test]
+    fn the_pass_until_rules_go_only_to_a_seat_offered_the_row() {
+        let registry = mtg_engine::cards::CardRegistry::default();
+        for offered in [true, false] {
+            let mut p = LlmPlayer::for_prompt_tests("Seat-755").with_pass_until(offered);
+            p.init_conversation(&[], "", &registry, MatchFormat::SingleGame);
+            let system = p.backend.system_prompt().to_string();
+            assert_eq!(system.contains(PASS_UNTIL_ROW), offered,
+                "pass-until offered = {offered}, and the system prompt says:\n{system}");
+        }
+        let labels: Vec<ActionRow> = ["Pass", PASS_UNTIL_ROW, "Tap Forest"].iter()
+            .map(|s| ActionRow::One((*s).to_string())).collect();
+        let menu = LlmPlayer::format_action_prompt(Some("MAIN PHASE 1"), &labels, mtg_engine::ids::PlayerId(0));
+        assert!(menu.contains(&format!("\n1: {PASS_UNTIL_ROW}\n2: Tap Forest")), "{menu}");
+        assert!(PASS_UNTIL_RULES.contains(&format!("`1: {PASS_UNTIL_ROW}`")) && PASS_UNTIL_RULES.contains("numbered from 2"));
+    }
+
+    /// #756: what the rules say ends a pass-until is what does. Every stop
+    /// line `pass_until_stop` can write has its clause in the rules, and the
+    /// stack clause is not "the opponent's" alone — the seat's own triggers
+    /// stop it too.
+    #[test]
+    fn the_pass_until_rules_name_every_stop_that_is_applied() {
+        for clause in [
+            "anything new is put on the stack — the opponent's or yours, your own triggers included",
+            "your turn begins", "attackers are declared against you",
+            "a blocker is declared against your attacker", "you must declare attackers or blockers",
+            "your next main phase", "a land drop or a sorcery-speed cast or activation on offer",
+            "any prompt that is not a plain priority pass",
+        ] {
+            assert!(PASS_UNTIL_RULES.contains(clause), "the rules do not say {clause:?}");
+        }
+        assert!(!PASS_UNTIL_RULES.contains("the opponent puts"), "the stack stop is not the opponent's alone");
+        assert_eq!(PASS_UNTIL_ROW, "Pass until something happens",
+            "the row names itself; the one list of stops is the system prompt's");
     }
 
     /// Any `p<N>` still in the text, which is the token this seat is never

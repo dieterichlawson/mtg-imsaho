@@ -103,7 +103,7 @@ LLM seat has it as one row on every priority menu, right after `Pass`:
 
 ```
 0: Pass
-1: Pass until something happens (keep passing priority, unasked, until: ...)
+1: Pass until something happens
 2: Cast Lightning Bolt (tap Mountain)
 3: Concede
 ```
@@ -124,6 +124,13 @@ The stops are conservative — when in doubt, the seat is asked:
   cast a spell and said "go" to let it resolve is then owed);
 - a combat prompt, a target or set or resolution prompt, the mulligan: any
   prompt that is not a plain priority pass.
+
+The row's text is its name alone. The stops are listed once, in the
+system prompt's "Pass until something happens" section (`PASS_UNTIL_RULES`
+in `llm.rs`), which is sent only to a seat that is offered the row
+(`MTG_LLM_PASS_UNTIL=off` leaves out both, #755); a test holds that list
+to the stops above (#756), and `reports/llm-cost.md` has what the row costs
+per call (#757).
 
 The row is the seat's own, not an engine action: the random seat, the CLI
 and the page do not get it, and `surface_parity.rs` excludes it from the
