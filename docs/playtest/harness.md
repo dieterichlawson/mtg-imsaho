@@ -914,6 +914,14 @@ say what your stub says.
   `MTG_LLM_HISTORY` asks for it, and the per-game figures must stay near
   the report's. File a token regression the way a clipped row is filed:
   it is the same failure on the surface where nothing wraps
+  — **played 2026-10-09: the bound holds, the count does not.** Seeds 1-10:
+  0 `--resume` by default, one system-prompt hash per game, no prompt with two
+  boards, and seeds 1-5 equal to the report's table. But the script's
+  "passed unasked" column also counts each `engaged` line (#754), the system
+  prompt describes the row even when `MTG_LLM_PASS_UNTIL=off` (#755), and the
+  row's bytes were never measured (#757). Next time, split the `AUTO_PASS`
+  labels yourself rather than trusting the column, and diff the system prompt
+  between every knob setting
 - H27 [proposed 2026-10-08, same source] what the seat lost when the
   history went: play a `cc` game with `--log` and at every decision ask
   whether the prompt alone (board, hand, recent events, the `Your notes
@@ -932,3 +940,18 @@ say what your stub says.
   and the recap at the next real prompt must carry everything that
   happened in between. Then the converse: a priority stop with nothing
   to do that was still sent to the model is the cost bug's return
+  — **played 2026-10-09 against the new pass-until row (80e0018): four lost
+  decisions (#750, #751, #752, #753) and a wording gap (#756).** A stub that takes
+  the row on every priority menu, and acts 60% of the time in its own main
+  phase, makes the stretches maximal. 54 games, 2,131 offers passed unasked. The
+  tool that made it readable: a scratch build of HEAD with one log line writing
+  the menu the seat *would* have been sent just before each `AUTO_PASS until:`.
+  Read the stop predicates' *keys*, not their arms: `stack_identity` keys on
+  `(object_id, card_id, name)`, which is the source for an activation and 0 for
+  a trigger, so a second Olivia ping is "stack unchanged" (#750). "Sorcery speed"
+  is read from description text, so Brain Weevil is missed (#751). The
+  four-surfaces half paid off most: the page's `f` has no opponent-attack stop
+  (#752) and never got #45's this-turn Main 1 (#753). Checked, correct: 0 wasted
+  calls (no prompt with only Pass/Concede/mana), the stop line and Recent
+  events after every stretch, the draft runner's seats get the row, and a
+  resume clears a stretch
