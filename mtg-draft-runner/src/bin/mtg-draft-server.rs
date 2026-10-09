@@ -277,6 +277,16 @@ client still works", shared.config.web_dir.display(), server::PAGE);
     if let Err(e) = server::run(&shared) {
         die(&e);
     }
+    // The log is the table's record: say that the host ended it, and
+    // where it was (the first playtest's quit mid-match left the log
+    // ending in a usage summary with no word of why).
+    {
+        let lobby = shared.lobby();
+        let phase = format!("{:?}", lobby.phase()).to_lowercase();
+        let unfinished = lobby.phase() != mtg_draft_runner::lobby::Phase::Done;
+        mtg_player::game_log::write(file!(), line!(), &format!(
+            "NOTE the host quit; the table was {phase}{}", if unfinished { " and is not finished" } else { "" }), "");
+    }
     mtg_player::llm::claude_code_kill_live_calls();
     mtg_player::game_log::flush_all();
     let outcome = {
