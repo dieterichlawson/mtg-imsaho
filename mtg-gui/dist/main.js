@@ -66,7 +66,10 @@ function setView(view) {
 function nextGame() {
     if (!state.gameOver)
         return;
-    state.notice = `Last game: ${state.gameOver.split("\n")[0]} The next game has started.`;
+    // In the page's words, as the box and the panel print it (#519, #713):
+    // the hosted table's headline names seats by p-number (#743).
+    const last = state.view ? engineLine(state, state.gameOver.split("\n")[0]) : state.gameOver.split("\n")[0];
+    state.notice = `Last game: ${last} The next game has started.`;
     state.gameOver = null;
     state.gameOverDismissed = false;
 }

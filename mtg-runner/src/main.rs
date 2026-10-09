@@ -1069,26 +1069,10 @@ use --save if you need a resumable file.");
         format!("p{} ({})", id.0, player_names[id.0 as usize])
     };
 
-    // Say HOW the game was decided, not only who won (issue #86): every
-    // lost player's recorded LossReason joins the headline.
-    let losses: Vec<String> = state.players.iter()
-        .filter(|p| p.lost)
-        .filter_map(|p| p.loss_reason.map(|r|
-            format!("{} {}", seat_label(p.id), r.describe(&state))))
-        .collect();
-    let loss_suffix = if losses.is_empty() {
-        String::new()
-    } else {
-        format!(" ({})", losses.join("; "))
-    };
-    let result_msg = match &state.result {
-        Some(mtg_engine::state::GameResult::Winner(id)) => {
-            let name = seat_label(*id);
-            format!("Game over! {name} wins!{loss_suffix}")
-        }
-        Some(mtg_engine::state::GameResult::Draw) => {
-            format!("Game over! It's a draw!{loss_suffix}")
-        }
+    // Say HOW the game was decided, not only who won (issue #86); the
+    // draft runner's match loop words it the same way (#743).
+    let result_msg = match mtg_player::game_over_headline(&state, seat_label) {
+        Some(headline) => headline,
         // No result and the budget is spent: the runner stopped, the game
         // did not end. It used to be reported as a concede (issue #233).
         None if action_count >= max_actions => format!(

@@ -346,12 +346,18 @@ budget ({why}), so the seat forfeits its match");
         }
     });
 
-    // A page is told how it ended, the way `mtg-runner` tells its page.
-    let summary = match winner {
-        Some(w) => format!("Game over! Seat {w} wins.\nFinal turn: {}", state.turn_number),
+    // A page is told how it ended, in `mtg-runner`'s words: the board's
+    // p-number with the table's seat beside it, and how the loser lost —
+    // conceded, forfeited, decked (#743).
+    let seat_of = |id: PlayerId| if id == PlayerId(0) { seat_a } else { seat_b };
+    let summary = match mtg_player::game_over_headline(&state, |id| format!("p{} (Seat {})", id.0, seat_of(id))) {
+        Some(headline) => format!("{headline}\nFinal turn: {}", state.turn_number),
         None if abandoned => format!("Game abandoned: {max_actions} actions without a result — no winner."),
-        None => format!("Game over! It's a draw.\nFinal turn: {}", state.turn_number),
+        None => format!("Game ended without a result.\nFinal turn: {}", state.turn_number),
     };
+    // And the log is told, as `mtg-runner`'s is: how the game ended was
+    // otherwise said only to a page, never recorded (#743).
+    mtg_player::game_log::write(file!(), line!(), "RESULT", &summary);
     for (pid, player) in [(PlayerId(0), &mut *p1), (PlayerId(1), &mut *p2)] {
         if matches!(player, GameSeat::Gui(_)) {
             player.game_over(&GameView::for_player(&state, pid, registry), &summary);

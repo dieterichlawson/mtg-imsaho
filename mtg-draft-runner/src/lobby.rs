@@ -1153,6 +1153,9 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
         }
         self.event(match outcome.winner {
             Some(w) => format!("round {round}: seat {a} vs seat {b}, game {game_number}: seat {w} wins"),
+            // A game stopped without a result is not a draw (#743): the page
+            // says "Game abandoned" for it, and so does the table.
+            None if outcome.abandoned => format!("round {round}: seat {a} vs seat {b}, game {game_number}: abandoned, no winner"),
             None => format!("round {round}: seat {a} vs seat {b}, game {game_number}: drawn"),
         });
     }

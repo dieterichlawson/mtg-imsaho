@@ -45,11 +45,15 @@ async function main() {
     const r = await page.evaluate(() => {
       const m = window.mtg;
       m.gameOverBefore = null;
-      window.mtgDebug.message({ type: "game_over", seat: m.view.you, view: m.view, summary: "Game over! Seat 1 wins.\nFinal turn: 9" });
+      window.mtgDebug.message({ type: "game_over", seat: m.view.you, view: m.view, summary: "Game over! p1 (Seat 1) wins! (p0 (Seat 0) conceded)\nFinal turn: 9" });
       window.mtgDebug.render();
-      return { gameOver: m.gameOver, decision: !!m.decision, hits: m.hits.length };
+      return { gameOver: m.gameOver, decision: !!m.decision, hits: m.hits.length,
+        headline: window.mtgDebug.outcome(m.gameOver), you: m.view.you };
     });
-    check(r.gameOver === "Game over! Seat 1 wins.\nFinal turn: 9" && !r.decision, `game over is shown and nothing is asked (${JSON.stringify(r)})`);
+    // The draft runner's match loop sends mtg-runner's headline (#743): the
+    // board's p-number, the table's seat, and how the loser lost.
+    check(r.headline === (r.you === 1 ? "YOU WIN" : "OPPONENT WINS"), `the hosted table's headline is read (${JSON.stringify(r.headline)})`);
+    check(r.gameOver === "Game over! p1 (Seat 1) wins! (p0 (Seat 0) conceded)\nFinal turn: 9" && !r.decision, `game over is shown and nothing is asked (${JSON.stringify(r)})`);
 
     // Game 2's first message: a view, then its first decision.
     const after = await page.evaluate(() => {
@@ -65,7 +69,8 @@ async function main() {
       return { afterView, gameOver: m.gameOver, dismissed: m.gameOverDismissed, notice: m.notice, decision: m.decision && m.decision.seq, mode: m.ui && m.ui.mode, buttons: m.hits.filter(h => h.kind === "button" && h.onClick).map(h => h.label) };
     });
     check(after.afterView.gameOver === null, `the next game's first view takes the box down (gameOver=${JSON.stringify(after.afterView.gameOver)})`);
-    check((after.afterView.notice || "").includes("Seat 1 wins") && (after.afterView.notice || "").includes("next game"), `and the last result stays readable as the notice (${JSON.stringify(after.afterView.notice)})`);
+    check((after.afterView.notice || "").includes("(Seat 1)") && (after.afterView.notice || "").includes("next game"), `and the last result stays readable as the notice (${JSON.stringify(after.afterView.notice)})`);
+    check(!/\bp[01]\b/.test(after.afterView.notice || ""), `in the page's words, not p0/p1 (${JSON.stringify(after.afterView.notice)})`);
     check(after.gameOver === null && !after.dismissed, `the first decision of the next game is not under a box (gameOver=${JSON.stringify(after.gameOver)})`);
     check(after.decision === 9001 && after.mode === "menu", `and is offered as a decision (seq ${after.decision}, ${after.mode})`);
     check(after.buttons.includes("Concede"), `with the widget's buttons clickable (${after.buttons.join(", ")})`);
@@ -81,10 +86,10 @@ async function main() {
     // The last message of a real game: game over again, box up again.
     const again = await page.evaluate(() => {
       const m = window.mtg;
-      window.mtgDebug.message({ type: "game_over", seat: m.view.you, view: m.view, summary: "Game over! Seat 0 wins." });
+      window.mtgDebug.message({ type: "game_over", seat: m.view.you, view: m.view, summary: "Game over! p0 (Seat 0) wins!" });
       return m.gameOver;
     });
-    check(again === "Game over! Seat 0 wins.", `the next game's own end puts the box back up`);
+    check(again === "Game over! p0 (Seat 0) wins!", `the next game's own end puts the box back up`);
     if (errors.length) fail(`page errors:\n  ${errors.join("\n  ")}`); else ok("no page errors");
     await page.close();
   } finally {

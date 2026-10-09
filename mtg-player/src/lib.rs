@@ -107,6 +107,32 @@ pub fn cast_cost_note(cs: &CastableSpell) -> Option<String> {
     })
 }
 
+/// The game-over headline: who won, named the way the caller names seats,
+/// and how every losing player lost (issue #86).
+///
+/// `mtg-runner` and the draft runner's match loop both send this to a
+/// page and print it. The draft loop had its own copy — "Game over! Seat 1
+/// wins." with no reason at all, and a draw ending in a full stop — so the
+/// hosted table never said a seat conceded or forfeited, and the page,
+/// which reads `Game over! p<N>` and `It's a draw!` to say YOU WIN or
+/// OPPONENT WINS, said neither (#743). A label must start with `p<N>`, the
+/// id the board and the log use. `None` when the game has no result.
+pub fn game_over_headline(
+    state: &mtg_engine::state::GameState,
+    seat_label: impl Fn(mtg_engine::ids::PlayerId) -> String,
+) -> Option<String> {
+    let losses: Vec<String> = state.players.iter()
+        .filter(|p| p.lost)
+        .filter_map(|p| p.loss_reason.map(|r| format!("{} {}", seat_label(p.id), r.describe(state))))
+        .collect();
+    let loss_suffix = if losses.is_empty() { String::new() } else { format!(" ({})", losses.join("; ")) };
+    match &state.result {
+        Some(mtg_engine::state::GameResult::Winner(id)) => Some(format!("Game over! {} wins!{loss_suffix}", seat_label(*id))),
+        Some(mtg_engine::state::GameResult::Draw) => Some(format!("Game over! It's a draw!{loss_suffix}")),
+        None => None,
+    }
+}
+
 #[must_use]
 pub fn forced_combat_answer(prompt: &CombatPrompt) -> Option<Action> {
     match prompt {
