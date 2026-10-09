@@ -309,12 +309,7 @@ unusable response, substituted {chosen_name} (the first card) — replayed from 
         // gets its own WARN line so `grep WARN` finds it next to the
         // unusable picks (issue #200).
         if fallback {
-            mtg_player::game_log::write(
-                file, line,
-                &format!("[Seat {seat}] WARN deck building failed after {retries} attempt(s); \
-the runner substituted a deck — this seat's deck and results are not a built one"),
-                "",
-            );
+            mtg_player::game_log::write(file, line, &fallback_warning(seat, retries), "");
         }
         mtg_player::game_log::write(file, line, &deck_header(seat, total, retries, fallback), &content);
     }
@@ -469,16 +464,48 @@ macro_rules! log_standings {
 /// tries to get right — "(59 cards, 10 retries)" said nothing about the fact
 /// that attempt 10 failed too and no seat built this (issue #200).
 fn deck_header(seat: usize, total: usize, retries: usize, fallback: bool) -> String {
-    if fallback {
+    if fallback && retries == 0 {
+        format!("[Seat {seat}] DECK ({total} cards, FALLBACK: no deck was submitted)")
+    } else if fallback {
         format!("[Seat {seat}] DECK ({total} cards, FALLBACK after {retries} failed attempts)")
     } else {
         format!("[Seat {seat}] DECK ({total} cards, {retries} retries)")
     }
 }
 
+/// The WARN beside a substituted deck. A seat whose builder tried and
+/// failed (#200) and a seat that submitted nothing — a person at the hosted
+/// table whose build timer ran out, which the table has already logged
+/// with its reason — are different events; the second used to read
+/// "deck building failed after 0 attempt(s); the runner substituted a
+/// deck", though nothing had failed and the table, not the runner, built
+/// it (#747).
+fn fallback_warning(seat: usize, retries: usize) -> String {
+    let what = if retries == 0 {
+        "no deck was submitted".to_string()
+    } else {
+        format!("deck building failed after {retries} attempt(s)")
+    };
+    format!("[Seat {seat}] WARN {what}; a substitute deck was built — \
+this seat's deck and results are not a built one")
+}
+
 #[cfg(test)]
 mod tests {
-    use super::deck_header;
+    use super::{deck_header, fallback_warning};
+
+    /// #747: a seat that submitted no deck is not one whose building failed
+    /// after zero attempts.
+    #[test]
+    fn a_deck_nobody_submitted_does_not_say_building_failed() {
+        let warn = fallback_warning(0, 0);
+        assert!(warn.contains("no deck was submitted"), "{warn}");
+        assert!(!warn.contains("failed after 0") && !warn.contains("the runner"), "{warn}");
+        let header = deck_header(0, 40, 0, true);
+        assert!(header.contains("FALLBACK") && !header.contains("after 0"), "{header}");
+        // The builder that tried and failed still says so (#200).
+        assert!(fallback_warning(1, 10).contains("deck building failed after 10 attempt(s)"));
+    }
 
     #[test]
     fn a_built_deck_reports_its_retries() {

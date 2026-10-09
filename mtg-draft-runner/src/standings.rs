@@ -1,6 +1,6 @@
 //! The standings as both the runner and the lobby print them: one row per
 //! seat, with the qualifiers a row has to carry (byes, substituted
-//! answers, a runner-built deck, forfeits), and the per-match score line.
+//! answers, a substitute deck, forfeits), and the per-match score line.
 
 use std::fmt::Write as _;
 
@@ -42,7 +42,9 @@ pub struct RowTags {
     pub answers_substituted: u64,
     /// Decisions the seat's backend never answered at all (#587).
     pub never_answered: u64,
-    /// The runner built this seat's deck (#200).
+    /// The seat's deck was substituted: its builder failed (#200), or at
+    /// the hosted table it submitted none before its timer ran out (#747).
+    /// "runner-built" was wrong there: the table built it.
     pub runner_built_deck: bool,
     /// Games the watchdog forfeited for this seat (#488).
     pub games_forfeited: usize,
@@ -64,7 +66,7 @@ impl RowTags {
             let _ = write!(out, " [{n} {} never answered]", plural(n, "decision", "decisions"));
         }
         if self.runner_built_deck {
-            out.push_str(" [runner-built deck]");
+            out.push_str(" [substitute deck]");
         }
         if self.games_forfeited > 0 {
             let n = self.games_forfeited as u64;
@@ -165,7 +167,7 @@ mod standings_row_tests {
         assert_eq!(one(RowTags { never_answered: 1, ..RowTags::default() }),
             "1. Seat 1 — 3-0 (6 game wins) [1 decision never answered]");
         assert_eq!(one(RowTags { runner_built_deck: true, ..RowTags::default() }),
-            "1. Seat 1 — 3-0 (6 game wins) [runner-built deck]");
+            "1. Seat 1 — 3-0 (6 game wins) [substitute deck]");
         assert_eq!(one(RowTags { games_forfeited: 1, ..RowTags::default() }),
             "1. Seat 1 — 3-0 (6 game wins) [1 game forfeited]");
         assert_eq!(one(RowTags { matches_from_snapshot: 2, ..RowTags::default() }),
@@ -173,7 +175,7 @@ mod standings_row_tests {
         let mut byed = s.clone();
         byed.byes = 1;
         assert_eq!(standings_row(1, &byed, &RowTags { games_forfeited: 2, runner_built_deck: true, ..RowTags::default() }),
-            "1. Seat 1 — 3-0 (6 game wins) [1 bye] [runner-built deck] [2 games forfeited]");
+            "1. Seat 1 — 3-0 (6 game wins) [1 bye] [substitute deck] [2 games forfeited]");
     }
 }
 
