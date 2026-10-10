@@ -1258,7 +1258,17 @@ illegal or dubious resolutions do.
   path exists (the GUI WebSocket accepts a raw `"Concede"`) and check that the
   half-finished resolution does nothing more, that the loss reason names the
   concession, and that the final save passes L58
-- L60 [proposed 2026-10-05, from L54 and the Grimoire/Moorland cost choosers]
+- L60 [tried 2026-10-10 → #760, #761, #762, #763 (log lines only; no rules
+  defect). Spells never prompt after paying: X funding, up-to-N targets and
+  exile costs ask with nothing paid, and sacrifice choices are made client-side
+  before submission. Only Grimoire of the Dead's discard and Moorland Haunt's
+  2+ exile ask after the tap plan, offer no cancel (legal: the cost is always
+  payable there) and log activated, taps, then the cost. Every cancel tried on
+  the CLI, the page and the random seat restored lands and cards. The bugs here
+  live in the log: check each cost's line appears when it is paid, not at
+  resolution, and that every cancel arm logs at Event with the card's name. Not
+  yet played: Grimgrin/Elder Cathar's counter lines and Skirsdag High Priest's
+  tap-set cancel, which random games rarely reach (morbid)]
   costs that ask a question halfway through paying. Some non-mana costs prompt
   after the tap plan has already run: Grimoire of the Dead's discard, Moorland
   Haunt's exile with two or more creature cards in the graveyard, Skirsdag High
