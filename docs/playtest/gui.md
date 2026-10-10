@@ -517,6 +517,14 @@ random game happened to reach.
   back to the last `view`, never to a pack it invented. Also the game
   link: the URL the draft page shows must be the one the game page
   answers on, on the `--bind` address, not on loopback
+- G29 [proposed 2026-10-10, from the R1 sweep, #752/#753 and #758] the page's
+  `f` against the CLI's auto-pass, clause by clause. Each auto-pass fix has
+  copied only the stop it was filed about, so `autoPassStop` in `mtg-gui/src/`
+  and `should_break_pass` in `mtg-player/src/cli.rs` keep drifting (#45 → #753,
+  #752, then #758's postcombat main). Lay the two functions side by side, list
+  every stop each one makes, and for each stop that only one has, stage the
+  position (a save edit, then `--p1 gui`) and press `f` there. Do the same
+  against the LLM seat's pass-until stop list in `llm.rs`
 
 
 ## Filing
