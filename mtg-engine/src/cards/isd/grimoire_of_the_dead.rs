@@ -115,11 +115,9 @@ impl CardBehavior for GrimoireOfTheDead {
 
         match ability_index {
             0 => {
-                // The discard was the cost; this is the effect.
+                // The discard was the cost; this is the effect. The counter's
+                // line, with the new total, is `add_counters`' (#762).
                 state.add_counters(object_id, CounterType::Study, 1);
-                let count = state.get_counter_count(object_id, CounterType::Study);
-                state.log(crate::state::LogLevel::Event,
-                    format!("Grimoire of the Dead: study counter added ({count}/3)"));
             }
             1 => {
                 // {T}, Remove 3 study counters, sacrifice: Return all graveyard creatures.

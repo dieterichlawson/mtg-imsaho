@@ -1741,7 +1741,7 @@ fn grimgrins_log_line_does_not_claim_an_untap_that_did_not_happen() {
     let after = activate_sacrificing(&state, &reg, grimgrin, 0, vec![], zombie);
     assert!(!after.get_object(grimgrin).unwrap().tapped, "test setup");
     assert!(after.game_log.iter().any(|e|
-        e.message == "Grimgrin: sacrificed creature, untapped, +1/+1 counter"),
+        e.message == "Grimgrin, Corpse-Born untaps"),
         "the real untap is reported; log: {:?}",
         after.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
 
@@ -1757,7 +1757,7 @@ fn grimgrins_log_line_does_not_claim_an_untap_that_did_not_happen() {
     assert_eq!(after.get_object(zombie).unwrap().zone, Zone::Graveyard,
         "and the sacrifice still happened");
     assert!(!after.game_log.iter().any(|e|
-        e.message == "Grimgrin: sacrificed creature, untapped, +1/+1 counter"),
+        e.message == "Grimgrin, Corpse-Born untaps"),
         "nothing untapped, so the log does not say it did; log: {:?}",
         after.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
     assert!(after.game_log.iter().any(|e| e.message.contains("already untapped")),
@@ -3749,4 +3749,20 @@ fn a_horde_entering_from_the_graveyard_counts_the_graveyard_it_leaves() {
     assert!(counters >= 2,
         "the Horde entered with a counter for each Zombie card in the graveyard \
          it came out of, got {counters}");
+}
+
+/// One study counter is one line: `add_counters`' "gets a study counter
+/// (now 1)", not that and the card's own "study counter added (1/3)" (#762).
+#[test]
+fn grimoire_of_the_dead_logs_its_study_counter_once() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let grimoire = named_permanent(&mut state, &reg, "Grimoire of the Dead", P0);
+    let before = state.game_log.len();
+    reg.get(state.get_object(grimoire).unwrap().card_id).unwrap()
+        .resolve_activated_ability(&mut state, grimoire, 0, &[], &reg);
+    let lines: Vec<&String> = state.game_log[before..].iter().map(|e| &e.message)
+        .filter(|m| m.contains("study counter")).collect();
+    assert_eq!(lines.len(), 1, "one counter, one line: {lines:?}");
+    assert!(lines[0].contains("(now 1)"), "{lines:?}");
 }

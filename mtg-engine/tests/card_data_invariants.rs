@@ -1209,7 +1209,8 @@ fn no_card_announces_a_destruction_it_did_not_check() {
         offenders.len(), offenders.join("\n  "));
 }
 
-/// A card that creates tokens or changes a life total does not narrate it.
+/// A card that creates tokens, changes a life total or puts counters on a
+/// permanent does not narrate it.
 ///
 /// `create_token*` logs "pN created K P/T Name token(s)" counted from what
 /// entered, and `change_life*` logs "pN lost N life (T)" with the total —
@@ -1217,7 +1218,8 @@ fn no_card_announces_a_destruction_it_did_not_check() {
 /// says the same thing twice, and with the printed number: "Skirsdag High
 /// Priest creates a 5/5 black Demon token" under "p0 created 2 5/5 Demon
 /// tokens" when Parallel Lives was out, "Bloodgift Demon: … lost 1 life"
-/// under "p1 lost 1 life (19)" (#329, #628, #706).
+/// under "p1 lost 1 life (19)" (#329, #628, #706), "Grimoire of the Dead:
+/// study counter added (1/3)" under "... gets a study counter (now 1)" (#762).
 #[test]
 fn no_card_narrates_a_token_or_life_change_the_engine_logs() {
     let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cards");
@@ -1233,8 +1235,12 @@ fn no_card_narrates_a_token_or_life_change_the_engine_logs() {
     files.sort();
 
     // (what the call does, the call, what a duplicate line would say)
-    let watched: [(&str, &str, &str); 4] = [
+    let watched: [(&str, &str, &str); 5] = [
         ("token", "create_token", "token"),
+        // `add_counters` logs "X gets a study counter (now 1)" (#326); a
+        // card's own "study counter added (1/3)" under it is the same
+        // counter twice (#762).
+        ("counter", "add_counters(", " counter"),
         ("life", "change_life(", " life"),
         ("life", "lose_life(", " life"),
         ("life", "gain_life(", " life"),
@@ -1272,9 +1278,10 @@ fn no_card_narrates_a_token_or_life_change_the_engine_logs() {
     assert!(scanned >= 20,
         "only {scanned} token/life call(s) in src/cards — this invariant has stopped covering anything");
     assert!(offenders.is_empty(),
-        "{} card(s) narrate a token or life change the engine already logs:\n  {}\n\n\
+        "{} card(s) narrate a token, life or counter change the engine already logs:\n  {}\n\n\
          The engine's line is counted from what happened. Use `change_life_for` \
-         to put the card's name on a life change, and say nothing of a token.",
+         to put the card's name on a life change, and say nothing of a token \
+         or a counter.",
         offenders.len(), offenders.join("\n  "));
 }
 

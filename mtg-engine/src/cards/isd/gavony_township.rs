@@ -61,10 +61,10 @@ impl CardBehavior for GavonyTownship {
             .filter(|o| state.is_creature(o.id, registry))
             .map(|o| o.id)
             .collect();
+        // One line per creature, from `add_counters`; a summary under them
+        // said each counter twice (#762).
         for cid in creatures {
             state.add_counters(cid, CounterType::PlusOnePlusOne, 1);
         }
-        state.log(crate::state::LogLevel::Event,
-            format!("Gavony Township puts a +1/+1 counter on each creature p{} controls", controller.0));
     }
 }

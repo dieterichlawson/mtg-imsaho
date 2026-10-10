@@ -120,12 +120,13 @@ impl CardBehavior for GrimgrinCorpseBorn {
         // same way `resolve_card_effect` below would if it did not branch on
         // `DestroyResult` (issue #359).
         let untapped = state.untap(object_id);
-        state.add_counters(object_id, CounterType::PlusOnePlusOne, 1);
         state.log(crate::state::LogLevel::Event, if untapped {
-            "Grimgrin: sacrificed creature, untapped, +1/+1 counter".into()
+            "Grimgrin, Corpse-Born untaps".into()
         } else {
-            "Grimgrin: sacrificed creature, already untapped, +1/+1 counter".to_string()
+            "Grimgrin, Corpse-Born is already untapped".to_string()
         });
+        // The counter's line is `add_counters`' (#762).
+        state.add_counters(object_id, CounterType::PlusOnePlusOne, 1);
     }
 
     fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _attack: AttackInfo, chosen_targets: &[Target], registry: &CardRegistry) {
@@ -154,7 +155,5 @@ impl CardBehavior for GrimgrinCorpseBorn {
         // destroying card uses.
         crate::destruction::try_destroy_by(state, *id, "Grimgrin, Corpse-Born", registry);
         state.add_counters(source_id, crate::types::CounterType::PlusOnePlusOne, 1);
-        state.log(crate::state::LogLevel::Event,
-            "Grimgrin, Corpse-Born: +1/+1 counter from attack trigger".into());
     }
 }

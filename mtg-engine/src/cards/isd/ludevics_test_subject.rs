@@ -103,9 +103,7 @@ impl CardBehavior for LudevicsTestSubject {
             // five by proliferate loses the surplus too.
             state.remove_counters(object_id, CounterType::Hatchling, new_count);
             helpers::apply_transform(state, object_id, registry);
-        } else {
-            state.log(crate::state::LogLevel::Event,
-                format!("Ludevic's Test Subject: hatchling counter added ({new_count}/5)"));
         }
+        // Below five, `add_counters`' "(now N)" is the line (#762).
     }
 }

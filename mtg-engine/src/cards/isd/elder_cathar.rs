@@ -1,7 +1,7 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
-use crate::state::{GameState, LogLevel};
+use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, CounterType};
 
 /// Elder Cathar — {2}{W} 2/2 Human Soldier.
@@ -76,9 +76,7 @@ impl ElderCathar {
     fn apply_counters(&self, state: &mut GameState, target: &Target, registry: &CardRegistry) {
         let Target::Object(id) = target else { return };
         let count = if state.has_subtype(*id, "Human", registry) { 2 } else { 1 };
+        // `add_counters` says how many and where (#762).
         state.add_counters(*id, CounterType::PlusOnePlusOne, count);
-        state.log(LogLevel::Event,
-            format!("Elder Cathar's death granted {} +1/+1 counter{}",
-                count, if count > 1 { "s" } else { "" }));
     }
 }

@@ -128,11 +128,10 @@ impl CardBehavior for MikaeusTheLunarch {
                     .filter(|o| o.id != object_id && state.is_creature(o.id, registry))
                     .map(|o| o.id)
                     .collect();
+                // One line per creature, from `add_counters` (#762).
                 for cid in &other_creatures {
                     state.add_counters(*cid, CounterType::PlusOnePlusOne, 1);
                 }
-                state.log(crate::state::LogLevel::Event,
-                    format!("Mikaeus, the Lunarch: +1/+1 counter on {} other creatures", other_creatures.len()));
             }
             _ => {}
         }
