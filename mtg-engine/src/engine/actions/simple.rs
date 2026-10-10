@@ -73,6 +73,10 @@ fn lose_to_act(state: &mut GameState, reason: crate::events::LossReason) -> Appl
         // forever (issue #559).
         if let Some(player) = state.player_to_act() {
             state.player_loses(player, reason);
+            // CR 104.3a: the player leaves the game immediately, so the game
+            // ends now, not at the next state-based check — which a pending
+            // resolution choice or trigger target is asked before (#764).
+            state.end_game_if_decided();
         }
     Applied::Continue
 }

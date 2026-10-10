@@ -1660,7 +1660,7 @@ fn run_game_loop_inner<F>(
             | Action::CastSpell { .. } => {
                 // Mulligan-phase actions don't touch priority (mulligan advances via
                 // awaiting_action), ability activations and spell casts leave priority
-                // with the current player, and Concede relies on SBAs to end the game.
+                // with the current player, and a Concede has ended the game itself (#764).
             }
 
             Action::ResolveChoice { .. } => {

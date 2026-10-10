@@ -68,6 +68,7 @@ Put it in the file for that rule. If none fits, make one, named for the rule.
 | control and duration | `control_change.rs`, `control_durations.rs`, `enters_under_control.rs` |
 | turn structure and priority | `turn_structure.rs`, `priority.rs`, `apnap.rs`, `no_empty_decisions.rs` |
 | starting the game (CR 103) | `mulligan.rs`, `match_play_draw.rs` |
+| ending the game (CR 104: a concede or forfeit ends it at once) | `concede_ends_the_game_at_once.rs` |
 | choices the engine must not make for a player | `auto_pick.rs`, `sacrifice_choice.rs` |
 | what the player is shown | `harness_display.rs`, `protection_wording.rs` |
 | what the game log has to explain | `log_attribution.rs` |

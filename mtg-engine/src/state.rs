@@ -2868,6 +2868,28 @@ impl GameState {
         self.final_state = Some(Box::new(self.clone()));
     }
 
+    /// End the game if at most one player is left in it (CR 104.2a, a draw
+    /// when none is, CR 104.4a). Returns whether it ended it just now.
+    ///
+    /// The state-based check calls this after its losses; a concede calls it
+    /// at once, because a player who concedes leaves the game immediately
+    /// (CR 104.3a) — waiting for the next state-based check left a pending
+    /// resolution choice to be re-asked of the player who had conceded, and
+    /// the effect to finish after the game was lost (issue #764).
+    pub fn end_game_if_decided(&mut self) -> bool {
+        if self.result.is_some() {
+            return false;
+        }
+        let alive: Vec<PlayerId> = self.players.iter().filter(|p| !p.lost).map(|p| p.id).collect();
+        let result = match alive.as_slice() {
+            [winner] => GameResult::Winner(*winner),
+            [] => GameResult::Draw,
+            _ => return false,
+        };
+        self.end_game(result);
+        true
+    }
+
     /// Put the game back the way it was when it ended, discarding anything
     /// that ran after `end_game` (CR 104.1; see `final_state`). A no-op for
     /// a game still in progress.

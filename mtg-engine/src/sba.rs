@@ -1,7 +1,7 @@
 use crate::cards::CardRegistry;
 use crate::events::LossReason;
 use crate::ids::ObjectId;
-use crate::state::{AwaitingAction, GameResult, GameState, LogLevel, PendingEffect, ResolutionChoiceKind};
+use crate::state::{AwaitingAction, GameState, LogLevel, PendingEffect, ResolutionChoiceKind};
 use crate::types::Zone;
 
 /// Whether the game is part-way through a resolution, waiting on a choice
@@ -362,14 +362,7 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
         }
 
         // Check for game end: only one (or zero) players alive.
-        let alive: Vec<_> = state.players.iter().filter(|p| !p.lost).collect();
-        if alive.len() <= 1 && state.result.is_none() {
-            let result = if alive.len() == 1 {
-                GameResult::Winner(alive[0].id)
-            } else {
-                GameResult::Draw
-            };
-            state.end_game(result);
+        if state.end_game_if_decided() {
             took_action = true;
         }
 
@@ -387,6 +380,7 @@ mod tests {
     use super::*;
     use crate::cards::CardRegistry;
     use crate::ids::{CardId, PlayerId};
+    use crate::state::GameResult;
 
     fn registry() -> CardRegistry {
         CardRegistry::with_all_cards()
