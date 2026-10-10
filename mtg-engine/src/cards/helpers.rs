@@ -1075,3 +1075,21 @@ pub fn shuffle_library(state: &mut GameState, player: PlayerId) {
     state.get_player_mut(player).library_order = order;
     state.events.push(crate::events::GameEvent::LibraryShuffled { player });
 }
+
+/// Exile `card` from a graveyard to pay for an activated ability of `source`
+/// (CR 602.2b: everything before the colon is cost, paid on activation),
+/// saying so as it happens: "p0 exiled Grizzly Bears (#13) from graveyard to
+/// pay for Back from the Brink (#3)'s ability", in `sacrifice_for_ability`'s
+/// words. Back from the Brink paid this silently and then said "exiled" at
+/// resolution, after the token, as if the effect had done it (#760).
+pub fn exile_from_graveyard_for_ability(state: &mut GameState, card: ObjectId, source: ObjectId, registry: &CardRegistry) {
+    // CR 109.1: the cost names a card, and a token in a graveyard is not one.
+    let Some(who) = state.get_object(card).filter(|o| o.zone == Zone::Graveyard && state.is_card(card)).map(|o| o.owner) else {
+        return;
+    };
+    let name = state.obj_name(card);
+    let source_name = state.obj_name(source);
+    state.log(crate::state::LogLevel::Event,
+        format!("p{} exiled {name} from graveyard to pay for {source_name}'s ability", who.0));
+    state.move_object(card, Zone::Exile, registry);
+}

@@ -83,7 +83,7 @@ impl CardBehavior for MoorlandHaunt {
         match creatures_in_gy.len() {
             0 => {}
             1 => {
-                exile_for_cost(state, creatures_in_gy[0], registry);
+                crate::cards::helpers::exile_from_graveyard_for_ability(state, creatures_in_gy[0], object_id, registry);
             }
             _ => {
                 // Which card to exile is the player's choice; `resolve_card_effect`
@@ -107,9 +107,9 @@ impl CardBehavior for MoorlandHaunt {
     /// casting steps, where the ability is on the stack (CR 602.2a) before
     /// costs are paid (CR 601.2h) — so the engine has already pushed it and
     /// this only finishes paying.
-    fn resolve_card_effect(&self, state: &mut GameState, _source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
+    fn resolve_card_effect(&self, state: &mut GameState, source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
         let Target::Object(id) = target else { return };
-        exile_for_cost(state, *id, registry);
+        crate::cards::helpers::exile_from_graveyard_for_ability(state, *id, source_id, registry);
     }
 
     /// "Create a 1/1 white Spirit creature token with flying." The token's
@@ -124,10 +124,3 @@ impl CardBehavior for MoorlandHaunt {
     }
 }
 
-/// Exile one creature card from a graveyard to pay Moorland Haunt's cost.
-fn exile_for_cost(state: &mut GameState, id: ObjectId, registry: &CardRegistry) {
-    let name = state.obj_name(id);
-    state.move_object(id, Zone::Exile, registry);
-    state.log(crate::state::LogLevel::Event,
-        format!("Moorland Haunt exiled {name} from graveyard (cost)"));
-}

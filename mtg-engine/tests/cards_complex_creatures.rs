@@ -1465,6 +1465,30 @@ fn back_from_the_brink_creates_token_copy() {
         "Should have created a token copy");
 }
 
+/// The exile is the cost, paid and said at activation; the resolution line
+/// says only what the effect did (#760: the exile was silent until a line
+/// after the token said "exiled", as if the effect had done it).
+#[test]
+fn back_from_the_brink_says_its_exile_cost_when_it_pays_it() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let enchant = named_permanent(&mut state, &reg, "Back from the Brink", P0);
+    let dead = named_card_in_graveyard(&mut state, &reg, "Kalonian Tusker", P0);
+    let (dead_name, enchant_name) = (state.obj_name(dead), state.obj_name(enchant));
+    let ability_index = usize::try_from(dead.0).unwrap();
+    activate_via_hooks(&mut state, &reg, enchant, ability_index, &[]);
+    assert_eq!(state.get_object(dead).unwrap().zone, Zone::Exile, "the cost is paid at activation");
+    let paid = format!("p0 exiled {dead_name} from graveyard to pay for {enchant_name}'s ability");
+    assert!(state.game_log.iter().any(|e| e.message == paid),
+        "the payment is logged as it happens; log: {:?}", state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+
+    let before = state.game_log.len();
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    let resolution: Vec<&String> = state.game_log[before..].iter().map(|e| &e.message).collect();
+    assert!(!resolution.iter().any(|m| m.contains("exiled")),
+        "the resolution does not claim the exile: {resolution:?}");
+}
+
 #[test]
 fn back_from_the_brink_ability_per_creature_in_graveyard() {
     let reg = registry();

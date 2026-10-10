@@ -110,7 +110,7 @@ impl CardBehavior for BackFromTheBrink {
             return;
         }
 
-        state.move_object(creature_id, Zone::Exile, registry);
+        crate::cards::helpers::exile_from_graveyard_for_ability(state, creature_id, object_id, registry);
     }
 
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
@@ -128,7 +128,9 @@ impl CardBehavior for BackFromTheBrink {
 
         state.create_token_copy(creature_id, controller, registry);
 
+        // The exile was the cost, logged when it was paid (#760); this line
+        // says only what the effect did.
         state.log(crate::state::LogLevel::Event,
-            format!("Back from the Brink: exiled {name} from graveyard, created token copy"));
+            format!("Back from the Brink: created a token copy of {name}"));
     }
 }
