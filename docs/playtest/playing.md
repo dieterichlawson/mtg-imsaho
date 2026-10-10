@@ -1225,7 +1225,15 @@ illegal or dubious resolutions do.
   set is added, grep the new mana costs for these shapes, rerun the brute force
   over them, and file the miss the day such a card exists (Dark Ascension's
   Stromkirk Captain and Diregraf Captain are the first to watch)
-- L58 [proposed 2026-10-05, from L55 and #675] the final position is a real
+- L58 [tried 2026-10-10 → #765, #766; #675 holds for every ending inside the
+  rules (Maniac from a spell, an ability, a trigger and the draw step,
+  first-strike, SBA drain, decking): clean `check_core`, the #316 refusal, nothing
+  logged after the win line. The mulligan phase is #675's shape again — a concede
+  at mulligan or bottom leaves a save `check_core` rejects — and a resolving spell
+  is in no zone of `GameView` at all, so the STACK reads "(empty)" while it asks
+  its question. A scratch crate that loads the save and runs
+  `check_core`/`check_settled` plus `GameView` for both seats is the fast check]
+  the final position is a real
   position. For every way a game can end (a Maniac win inside a spell, an
   ability, a trigger and the draw step; a first-strike kill; an SBA drain; a
   concession at priority and at a prompt; a decking loss), take the `--save`
@@ -1234,7 +1242,15 @@ illegal or dubious resolutions do.
   every object the log last moved (a spell still resolving, a searched card, a
   created token) is in some zone of the final GameView on the CLI and the GUI's
   `game_over`. The fuzzer never checks the state after the last decision
-- L59 [proposed 2026-10-05, from L55 and #676] CR 104.3a at every prompt kind,
+- L59 [tried 2026-10-10 → #764; concede is offered on every CLI screen reached
+  and the loss reason is named on every surface, but a concede is not a
+  state-based action here: at a resolution choice (Night Terrors, Liliana +1) or
+  a trigger-target prompt (Bloodgift Demon) `lose_to_act` waits for the next SBA
+  check, so the loser is asked again and the effect runs on after "conceded"; a
+  `cc` forfeit there loops 100 times into the watchdog. Check that the game
+  ENDS, not that "conceded" is logged. Not yet tried: concede at cast-time target
+  and cost prompts, at the X and damage-assignment readers, and the forfeit path
+  in `mtg-draft-runner`] CR 104.3a at every prompt kind,
   on all four surfaces. List the prompt kinds the engine can raise (mulligan,
   bottom, attackers, blockers, every `ResolutionChoiceKind`, discard to hand
   size, entry choices) and, for each, find the way to concede on the CLI, the
