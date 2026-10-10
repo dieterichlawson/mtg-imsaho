@@ -1195,17 +1195,28 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
     /// when both seats are away.
     #[must_use]
     pub fn forfeit_result(&self, a: usize, b: usize) -> MatchResult {
+        match (self.is_auto(a), self.is_auto(b)) {
+            (true, false) => self.forfeit_by(a, b, a, "the seat is away"),
+            (false, true) => self.forfeit_by(a, b, b, "the seat is away"),
+            _ => MatchResult { player_a: a, player_b: b, wins_a: 0, wins_b: 0, games: Vec::new() },
+        }
+    }
+
+    /// The match `loser` (one of `a`, `b`) forfeits without playing, for
+    /// `why`: every game it would have played goes to its opponent, and each
+    /// game's log says why, so the draft log does. A seat whose game page
+    /// could not be served was announced as forfeiting and recorded as a 0-0
+    /// draw, a point each, with the reason nowhere in the log (#759).
+    #[must_use]
+    pub fn forfeit_by(&self, a: usize, b: usize, loser: usize, why: &str) -> MatchResult {
         let needed = mtg_draft::tournament::wins_needed(self.config.best_of);
-        let (wins_a, wins_b, games) = match (self.is_auto(a), self.is_auto(b)) {
-            (true, false) => (0, needed, vec![(Some(b), Some(a)); needed]),
-            (false, true) => (needed, 0, vec![(Some(a), Some(b)); needed]),
-            _ => (0, 0, Vec::new()),
-        };
+        let winner = if loser == a { b } else { a };
+        let (wins_a, wins_b) = if loser == a { (0, needed) } else { (needed, 0) };
         MatchResult {
             player_a: a, player_b: b, wins_a, wins_b,
-            games: games.into_iter().map(|(winner, stalled)| GameOutcome {
-                winner, turns: 0, game_log: vec!["forfeit: the seat is away".to_string()],
-                stalled_seat: stalled, abandoned: false,
+            games: (0..needed).map(|_| GameOutcome {
+                winner: Some(winner), turns: 0, game_log: vec![format!("forfeit: {why}")],
+                stalled_seat: Some(loser), abandoned: false,
             }).collect(),
         }
     }

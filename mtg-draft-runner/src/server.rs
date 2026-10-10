@@ -472,8 +472,9 @@ fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usiz
                 }
                 Err(e) => {
                     shared.say(&format!("WARN round {round}: no game page for seat {seat}: {e}; \
-the match is forfeit"));
-                    let result = shared.lobby().forfeit_result(a, b);
+seat {seat} forfeits the match"));
+                    let result = shared.lobby().forfeit_by(a, b, seat,
+                        &format!("no game page for seat {seat}: {e}"));
                     return finish(shared, round, a, b, result);
                 }
             },

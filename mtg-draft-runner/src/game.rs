@@ -526,5 +526,14 @@ mod harness_stop_tests {
             " [1 game abandoned: the action budget ran out, no winner]");
         assert_eq!(unplayed_games_note(&[game(Some(1), false), game(None, true), game(None, true)]),
             " [1 game forfeited: a seat stalled] [2 games abandoned: the action budget ran out, no winner]");
+        // A forfeit the table made before any game began says why, as its
+        // log does, not "a seat stalled" (#759).
+        let unplayed = |why: &str| GameOutcome {
+            winner: Some(1), turns: 0, game_log: vec![format!("forfeit: {why}")], stalled_seat: Some(0), abandoned: false,
+        };
+        assert_eq!(unplayed_games_note(&[unplayed("no game page for seat 0"), unplayed("no game page for seat 0")]),
+            " [2 games forfeited: no game page for seat 0]");
+        assert_eq!(unplayed_games_note(&[game(Some(0), false), unplayed("the seat is away")]),
+            " [1 game forfeited: a seat stalled] [1 game forfeited: the seat is away]");
     }
 }

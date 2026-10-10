@@ -81,8 +81,11 @@ impl RowTags {
 }
 
 /// What the score line adds about the match's games that were not played
-/// out: a forfeit is a seat the watchdog caught (#488), an abandoned game is
-/// one the runner stopped at its action budget with no winner (#630).
+/// out: a forfeit is a seat the watchdog caught (#488), or one the hosted
+/// table forfeited before a game began, whose log says why ("forfeit: the
+/// seat is away", "forfeit: no game page for seat 0: ..." — #759, which read
+/// "a seat stalled" when nothing had); an abandoned game is one the runner
+/// stopped at its action budget with no winner (#630).
 #[must_use]
 pub fn unplayed_games_note(games: &[GameOutcome]) -> String {
     let count = |n: usize, what: &str| match n {
@@ -90,13 +93,19 @@ pub fn unplayed_games_note(games: &[GameOutcome]) -> String {
         1 => format!(" [1 game {what}]"),
         n => format!(" [{n} games {what}]"),
     };
-    let forfeits = games.iter().filter(|g| g.stalled_seat.is_some()).count();
+    let mut forfeits: Vec<(String, usize)> = Vec::new();
+    for g in games.iter().filter(|g| g.stalled_seat.is_some()) {
+        let why = g.game_log.first().and_then(|l| l.strip_prefix("forfeit: "))
+            .unwrap_or("a seat stalled").to_string();
+        match forfeits.iter_mut().find(|(w, _)| *w == why) {
+            Some((_, n)) => *n += 1,
+            None => forfeits.push((why, 1)),
+        }
+    }
     let abandoned = games.iter().filter(|g| g.abandoned).count();
-    format!(
-        "{}{}",
-        count(forfeits, "forfeited: a seat stalled"),
-        count(abandoned, "abandoned: the action budget ran out, no winner"),
-    )
+    let mut out: String = forfeits.iter().map(|(why, n)| count(*n, &format!("forfeited: {why}"))).collect();
+    out.push_str(&count(abandoned, "abandoned: the action budget ran out, no winner"));
+    out
 }
 
 /// The per-match progress line on stderr. A forfeited game is a game nobody
