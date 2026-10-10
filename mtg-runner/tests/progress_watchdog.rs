@@ -111,7 +111,9 @@ fn a_seat_that_cannot_finish_a_cast_does_not_re_announce_it_forever() {
     // so a reader does not have to go looking.
     assert!(stderr.contains("stopped making progress"), "stderr: {stderr}");
     assert!(stderr.contains("(p0)"), "it names the seat: {stderr}");
-    assert!(stderr.contains("Exile-choice rejected"),
+    // The last line is the cancel, naming the cast (#761); the rejection
+    // that caused it is the line before.
+    assert!(stderr.contains("Last game-log entry: Stitched Drake") && stderr.contains("cast cancelled"),
         "and what the game kept doing: {stderr}");
     assert!(!stderr.contains("panicked"), "no panic: {stderr}");
 }

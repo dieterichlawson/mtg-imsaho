@@ -404,6 +404,16 @@ fn an_exile_cost_prompt_can_be_cancelled_with_nothing_spent() {
     assert!(cancelled.game_log.iter().any(|e| e.message.contains("cast cancelled")),
         "and the player is told: {:#?}",
         cancelled.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+
+    // A set the cost cannot take (Stitched Drake exiles exactly one) is a
+    // cast the engine cancels, and the line says which cast (#761).
+    let refused = engine::submit_action(&post_cast, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenExileSet(in_gy[..2].to_vec()),
+    }, &registry);
+    assert_eq!(refused.get_object(drake).unwrap().zone, Zone::Hand, "the cast did not happen");
+    let name = post_cast.obj_name(drake);
+    assert!(refused.game_log.iter().any(|e| e.message == format!("{name}: cast cancelled")),
+        "the refusal names the spell: {:#?}", refused.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
 }
 
 /// Issue #614: Harvest Pyre over an empty graveyard has one legal answer to

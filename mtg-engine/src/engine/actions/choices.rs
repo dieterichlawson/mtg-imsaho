@@ -776,9 +776,9 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         // Nothing has been paid: the spell is still in its
                         // origin zone, so a refused set is a cast that did
                         // not happen, not one that happened for nothing.
-                        state.log(LogLevel::Event,
-                            format!("Target choice rejected: {err}; cast cancelled"));
-                        state.pending_spell_cast = None;
+                        // Why, then the one cancel line, naming the card (#761).
+                        state.log(LogLevel::Event, format!("Target choice rejected: {err}"));
+                        cancel_stashed_cast(state, registry);
                         return Applied::ReturnNow;
                     }
                     // The stash STAYS while the cast is resubmitted: it is
@@ -850,9 +850,9 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         // in hand, no mana paid). Matches the rules-strict
                         // "if you can't pay all costs the spell was never
                         // cast" semantics.
-                        state.log(LogLevel::Event,
-                            format!("Exile-choice rejected: {err}; cast cancelled"));
-                        state.pending_spell_cast = None;
+                        // Why, then the one cancel line, naming the card (#761).
+                        state.log(LogLevel::Event, format!("Exile-choice rejected: {err}"));
+                        cancel_stashed_cast(state, registry);
                         return Applied::ReturnNow;
                     }
 
