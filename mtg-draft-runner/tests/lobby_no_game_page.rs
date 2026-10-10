@@ -51,5 +51,9 @@ fn a_seat_without_a_game_page_forfeits_and_the_log_says_why() {
     assert_eq!(game["winner"], 1);
     let me = v["standings"].as_array().unwrap().iter().find(|s| s["seat"] == 0).unwrap().clone();
     assert_eq!(me["tags"], "[substitute deck] [1 game forfeited]", "the standings carry the terminal's tags: {me}");
+    // And everybody's list of matches says it, not a bare "0-1" (#744).
+    let pairing = &v["pairings"][0];
+    assert!(pairing["result"].as_str().is_some_and(|r| r.starts_with("0-1 [1 game forfeited: no game page for seat 0")),
+        "the pairings list carries the forfeit: {pairing}");
     drop(held);
 }

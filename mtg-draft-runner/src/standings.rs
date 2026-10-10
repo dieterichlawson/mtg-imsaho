@@ -21,15 +21,23 @@ pub fn standings_row(rank: usize, s: &Standing, tags: &RowTags) -> String {
     } else {
         String::new()
     };
+    format!(
+        "{}. Seat {} — {}-{}{draws} ({} game wins){}",
+        rank, s.seat, s.match_wins, s.match_losses, s.game_wins, row_notes(s, tags),
+    )
+}
+
+/// Everything a standings row says beside the numbers: " [1 bye]" and the
+/// tags. The terminal, the log and the hosted table's view all print this,
+/// so none of them can drop what another says (#486, #744).
+#[must_use]
+pub fn row_notes(s: &Standing, tags: &RowTags) -> String {
     let byes = match s.byes {
         0 => String::new(),
         1 => " [1 bye]".to_string(),
         n => format!(" [{n} byes]"),
     };
-    format!(
-        "{}. Seat {} — {}-{}{draws} ({} game wins){byes}{}",
-        rank, s.seat, s.match_wins, s.match_losses, s.game_wins, tags.render(),
-    )
+    format!("{byes}{}", tags.render())
 }
 
 /// What a standings row says about a result that is not wholly the seat's

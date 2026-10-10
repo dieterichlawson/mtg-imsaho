@@ -1167,7 +1167,11 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
             game_number = m.games.len();
         }
         self.event(match outcome.winner {
-            Some(w) => format!("round {round}: seat {a} vs seat {b}, game {game_number}: seat {w} wins"),
+            // A stalled seat's game is a forfeit, not a game won (#744).
+            Some(w) => match outcome.stalled_seat {
+                Some(s) => format!("round {round}: seat {a} vs seat {b}, game {game_number}: seat {w} wins, seat {s} forfeited (stalled)"),
+                None => format!("round {round}: seat {a} vs seat {b}, game {game_number}: seat {w} wins"),
+            },
             // A game stopped without a result is not a draw (#743): the page
             // says "Game abandoned" for it, and so does the table.
             None if outcome.abandoned => format!("round {round}: seat {a} vs seat {b}, game {game_number}: abandoned, no winner"),
@@ -1354,7 +1358,10 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
             .collect();
         let mut pairings: Vec<PairingView> = self.matches.iter().map(|m| PairingView {
             round: m.round, a: m.a, b: Some(m.b), status: m.status.word(),
-            result: m.result.as_ref().map(|r| format!("{}-{}", r.wins_a, r.wins_b)),
+            // The table's score-line note: "0-2" alone read as two games
+            // played and lost when they were forfeits (#744).
+            result: m.result.as_ref().map(|r| format!("{}-{}{}", r.wins_a, r.wins_b,
+                crate::standings::unplayed_games_note(&r.games))),
         }).collect();
         if let Some(t) = &self.tournament {
             for r in &t.rounds {
@@ -1372,7 +1379,7 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
             t.sorted_standings().iter().map(|s| StandingView {
                 seat: s.seat, wins: s.match_wins, losses: s.match_losses, draws: s.match_draws,
                 points: s.match_points(), game_wins: s.game_wins, byes: s.byes,
-                tags: tags[s.seat].render().trim_start().to_string(),
+                tags: crate::standings::row_notes(s, &tags[s.seat]).trim_start().to_string(),
             }).collect()
         }).unwrap_or_default();
         View {
