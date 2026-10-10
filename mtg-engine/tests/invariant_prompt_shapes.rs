@@ -261,7 +261,7 @@ fn the_mulligan_phase_is_turn_one_before_anything_happened() {
 
     let mut s = keeping.clone();
     s.combat = Some(mtg_engine::state::CombatState::new());
-    flags(&s, &reg, "with a stack, combat, or a result");
+    flags(&s, &reg, "mulligan phase with a stack or combat");
 
     let mut s = keeping.clone();
     s.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::GrantKeyword {

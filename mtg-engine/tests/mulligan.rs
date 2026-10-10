@@ -497,3 +497,45 @@ fn the_opening_player_is_seeded_random_not_always_p0() {
     assert_eq!(game_with(Some(PlayerId(1)), 42), PlayerId(1));
     assert_eq!(game_with(Some(PlayerId(0)), 42), PlayerId(0));
 }
+
+/// A game conceded or forfeited at the keep prompt or the bottom prompt ends
+/// there, and the position it ended in is a valid final one (CR 104.1,
+/// 104.3a): `--resume` refuses it as a finished game, not as "an invalid
+/// game state" (issue #765, the mulligan sibling of #675).
+#[test]
+fn a_game_ended_in_the_mulligan_phase_leaves_a_valid_final_position() {
+    use mtg_engine::invariants::check_core;
+    for ending in [Action::Concede, Action::Forfeit] {
+        // The move that ends it is a legal one to the transition oracle: the
+        // conceder is the player asked, though nobody holds priority here.
+        let (state, reg) = fresh_game();
+        let ended = engine::submit_action(&state, &ending, &reg);
+        assert_eq!(mtg_engine::invariants::check_transition(&state, Some(&ending), &ended, &reg), Vec::<String>::new(),
+            "{ending:?} at the keep prompt, as a transition");
+
+        // At the first keep prompt.
+        let (mut state, reg) = fresh_game();
+        let mut asked = 0;
+        engine::run_game_loop(&mut state, &reg, |_, _, _| { asked += 1; ending.clone() });
+        assert_eq!(asked, 1, "{ending:?} at the keep prompt ends the game");
+        assert!(state.is_game_over());
+        assert_eq!(check_core(&state, &reg), Vec::<String>::new(), "{ending:?} at the keep prompt");
+
+        // At the bottom prompt after a mulligan.
+        let (mut state, reg) = fresh_game();
+        let mut at_bottom = 0;
+        engine::run_game_loop(&mut state, &reg, |gs, _, legal| {
+            if matches!(gs.awaiting_action, Some(AwaitingAction::BottomAfterMulligan { .. })) {
+                at_bottom += 1;
+                return ending.clone();
+            }
+            if gs.players.iter().all(|p| p.mulligan_count == 0) && legal.permits(&Action::MulliganMull) {
+                return Action::MulliganMull;
+            }
+            if legal.permits(&Action::MulliganKeep) { Action::MulliganKeep } else { Action::Concede }
+        });
+        assert_eq!(at_bottom, 1, "{ending:?} at the bottom prompt ends the game");
+        assert!(state.is_game_over());
+        assert_eq!(check_core(&state, &reg), Vec::<String>::new(), "{ending:?} at the bottom prompt");
+    }
+}

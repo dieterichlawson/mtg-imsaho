@@ -165,8 +165,15 @@ fn mulligan_shape(state: &GameState, v: &mut Violations) {
     if state.priority_player.is_some() {
         v.push(format!("{w} with a priority holder"));
     }
-    if !state.stack.is_empty() || state.combat.is_some() || state.result.is_some() {
-        v.push(format!("{w} with a stack, combat, or a result"));
+    // A game can end here — a concede or a harness forfeit at the keep or
+    // bottom prompt (CR 104.3a) — and the position it ended in is a valid
+    // final one (CR 104.1), as a game ended mid-resolution is (#675). The
+    // result and the loss are checked against each other in `turn.rs`;
+    // rejecting them here made every such final save "an invalid game
+    // state" to `--resume`, not a finished game (issue #765).
+    let over = state.result.is_some();
+    if !state.stack.is_empty() || state.combat.is_some() {
+        v.push(format!("{w} with a stack or combat"));
     }
     if !state.until_end_of_turn.is_empty() || !state.control_effects.is_empty() {
         v.push(format!("{w} with effects in force"));
@@ -181,7 +188,7 @@ fn mulligan_shape(state: &GameState, v: &mut Violations) {
     for p in &state.players {
         // A mulligan count is not turn state and is unbounded (CR 103.4),
         // so it is not checked here.
-        if p.lost || p.has_drawn_from_empty || p.land_plays_remaining != 1 {
+        if (p.lost && !over) || p.has_drawn_from_empty || p.land_plays_remaining != 1 {
             v.push(format!("{w}: p{} already has turn state (lost={}, drew from empty={}, land plays={}, mulligans={})",
                 p.id.0, p.lost, p.has_drawn_from_empty, p.land_plays_remaining, p.mulligan_count));
         }
