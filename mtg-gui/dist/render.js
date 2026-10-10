@@ -738,7 +738,10 @@ function drawBand(ctx, hits, state) {
         ctx.fillStyle = "#201828";
         ctx.fillRect(x, sy, 24, 20);
         drawArt(ctx, x + 2, sy + 2, 16, 12, item.name, [], false);
-        text(ctx, String(i + 1), x + 20, sy + 12, { align: "center", font: "6px Silkscreen", color: "#ffe080" });
+        // The spell resolving now is marked R, not given a place in the queue (#766).
+        // The waiting entries still count from 1 under it.
+        const queued = i + 1 - (view.stack[0]?.resolving ? 1 : 0);
+        text(ctx, item.resolving ? "R" : String(queued), x + 20, sy + 12, { align: "center", font: "6px Silkscreen", color: "#ffe080" });
         // The key stays `o<id>` so a spell on the stack is still clickable as
         // a target; the slot is what says WHICH stack item this chip is, since
         // an ability's id names its source and a trigger's names nothing

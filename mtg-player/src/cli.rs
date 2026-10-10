@@ -5553,9 +5553,12 @@ return",
         // told all five apart (#116) and so did the log afterwards (#326);
         // only the screen recording the decision could not (#555).
         let id = item.source_id.map(|s| format!(" (#{})", s.0)).unwrap_or_default();
+        // The spell resolving now, asking its question or having ended the
+        // game: it is on the stack, and the pane read "(empty)" (#766).
+        let resolving = if item.resolving { " — resolving" } else { "" };
         match item.x_value {
-            Some(x) => format!("{}{id} (X={x}) ({who})", item.name),
-            None => format!("{}{id} ({who})", item.name),
+            Some(x) => format!("{}{id} (X={x}) ({who}){resolving}", item.name),
+            None => format!("{}{id} ({who}){resolving}", item.name),
         }
     }
 
@@ -10638,7 +10641,7 @@ Mark 1 of the 1 cards below to exile.");
             targets: vec![],
             x_value: Some(3),
             cost: None, supertypes: vec![], card_types: vec![],
-            power: None, toughness: None, oracle_text: String::new(),
+            power: None, toughness: None, oracle_text: String::new(), resolving: false,
         };
         assert_eq!(CliPlayer::stack_entry_headline(&v, &item), "Devil's Play (#22) (X=3) (you)");
         item.x_value = Some(0);
@@ -10704,7 +10707,7 @@ Mark 1 of the 1 cards below to exile.");
             targets: vec![],
             x_value: None,
             cost: None, supertypes: vec![], card_types: vec![],
-            power: None, toughness: None, oracle_text: String::new(),
+            power: None, toughness: None, oracle_text: String::new(), resolving: false,
         };
         let rows: Vec<String> = [27, 31, 81, 82, 83].iter()
             .map(|&id| CliPlayer::stack_entry_headline(&v, &trigger(id)))
@@ -11332,11 +11335,28 @@ Mark 1 of the 1 cards below to exile.");
             targets: vec![Target::Player(PlayerId(1))],
             x_value: None,
             cost: None, supertypes: vec![], card_types: vec![],
-            power: None, toughness: None, oracle_text: String::new(),
+            power: None, toughness: None, oracle_text: String::new(), resolving: false,
         }];
         let refs = CliPlayer::build_card_refs(&v, &registry, "");
         let named: Vec<&str> = refs.iter().map(|r| r.data.name.as_str()).collect();
         assert_eq!(named, vec!["Nephalia Drownyard"], "one entry for one card");
+    }
+
+    /// Issue #766: the spell resolving now is on the stack, and its entry
+    /// says it is resolving — the pane read "(empty)" over its question.
+    #[test]
+    fn the_resolving_spell_is_marked_on_the_stack() {
+        let v = view(Step::PrecombatMain, 5, true);
+        let mut item = mtg_engine::view::StackItemView {
+            object_id: ObjectId(27), card_id: mtg_engine::ids::CardId(0),
+            name: "Night Terrors".to_string(), source_id: Some(ObjectId(27)),
+            controller: PlayerId(0), targets: vec![], x_value: None,
+            cost: None, supertypes: vec![], card_types: vec![],
+            power: None, toughness: None, oracle_text: String::new(), resolving: true,
+        };
+        assert_eq!(CliPlayer::stack_entry_headline(&v, &item), "Night Terrors (#27) (you) — resolving");
+        item.resolving = false;
+        assert_eq!(CliPlayer::stack_entry_headline(&v, &item), "Night Terrors (#27) (you)");
     }
 
     /// Issue #512: every numbered prompt drawn through `render_paged` runs

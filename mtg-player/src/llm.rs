@@ -2779,7 +2779,10 @@ impl LlmPlayer {
                 // The entry's controller sits by the entry, not after the
                 // targets: there it read as one phrase with the target's own
                 // tag — "Grizzly Bears (#228) (opponent's) (your)" (#671).
-                writeln!(s, "  {}{id}{x} ({who}){}", i.name, targets_str).unwrap();
+                // The spell resolving now is on the stack too (#766): the
+                // seat answering its question saw no stack at all.
+                let resolving = if i.resolving { " — resolving" } else { "" };
+                writeln!(s, "  {}{id}{x} ({who}){}{resolving}", i.name, targets_str).unwrap();
             }
         }
 
@@ -8445,7 +8448,7 @@ this Aura deals 1 damage to that player.";
             targets,
             x_value: None,
             cost: None, supertypes: vec![], card_types: vec![],
-            power: None, toughness: None, oracle_text: String::new(),
+            power: None, toughness: None, oracle_text: String::new(), resolving: false,
         };
         view.stack = vec![
             spell(100, PlayerId(1), vec![mtg_engine::actions::Target::Object(ObjectId(12))]),
@@ -8463,6 +8466,11 @@ this Aura deals 1 damage to that player.";
         let body = LlmPlayer::format_state_body(&view);
         assert!(body.contains("  Geistflame (#100) (opponent's) targeting Mountain (#12) (your)\n"),
             "the entry's controller sits by the entry, the target's by the target: {body}");
+
+        // The spell resolving now is on the stack, and says so (#766).
+        view.stack[1].resolving = true;
+        let body = LlmPlayer::format_state_body(&view);
+        assert!(body.contains("  Geistflame (#101) (your) — resolving\n"), "{body}");
     }
 
     #[test]

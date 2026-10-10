@@ -323,6 +323,14 @@ pub struct StackItemView {
     /// that said what it would do — at exactly the moment the player decides
     /// whether to respond (issue #646).
     pub oracle_text: String,
+    /// This is the spell resolving now: it has left `state.stack` but is
+    /// still on the stack until it finishes (CR 608.2n), and it is asking a
+    /// question of its resolution, or it ended the game part-way (CR 104.1).
+    /// It used to be in no zone of the view at all — the STACK pane read
+    /// "(empty)" over Night Terrors' own question, and the card a game was
+    /// won with was missing from the final board (#766). Always the first
+    /// entry when present.
+    pub resolving: bool,
 }
 
 /// The rules text of the card an ability on the stack is printed on.
@@ -538,29 +546,36 @@ impl GameView {
             .collect();
 
         // Stack.
-        let stack = state.stack.iter()
+        let spell_item = |obj_id: ObjectId, resolving: bool| {
+            let obj = state.get_object(obj_id)?;
+            let card = card_view(state, obj, registry);
+            Some(StackItemView {
+                object_id: obj.id,
+                card_id: obj.card_id,
+                name: card.name,
+                source_id: Some(obj.id),
+                controller: obj.controller,
+                targets: obj.targets.clone(),
+                x_value: obj.x_value,
+                cost: card.cost,
+                supertypes: card.supertypes,
+                card_types: card.card_types,
+                power: card.power,
+                toughness: card.toughness,
+                oracle_text: card.oracle_text,
+                resolving,
+            })
+        };
+        // The spell resolving now is still on the stack (CR 608.2n), above
+        // everything waiting under it (#766).
+        let resolving = state.resolving_spell
+            .filter(|id| state.get_object(*id).is_some_and(|o| o.zone == Zone::Stack))
+            .and_then(|id| spell_item(id, true));
+        let stack = resolving.into_iter().chain(state.stack.iter()
             .rev() // top of stack first
             .filter_map(|entry| {
                 match entry {
-                    crate::state::StackEntry::Spell(obj_id) => {
-                        let obj = state.get_object(*obj_id)?;
-                        let card = card_view(state, obj, registry);
-                        Some(StackItemView {
-                            object_id: obj.id,
-                            card_id: obj.card_id,
-                            name: card.name,
-                            source_id: Some(obj.id),
-                            controller: obj.controller,
-                            targets: obj.targets.clone(),
-                            x_value: obj.x_value,
-                            cost: card.cost,
-                            supertypes: card.supertypes,
-                            card_types: card.card_types,
-                            power: card.power,
-                            toughness: card.toughness,
-                            oracle_text: card.oracle_text,
-                        })
-                    }
+                    crate::state::StackEntry::Spell(obj_id) => spell_item(*obj_id, false),
                     crate::state::StackEntry::Trigger(trigger) => {
                         Some(StackItemView {
                             object_id: ObjectId(0), // a trigger is not an object
@@ -582,6 +597,7 @@ impl GameView {
                             power: None,
                             toughness: None,
                             oracle_text: ability_text(registry, trigger.behavior_card_id()),
+                            resolving: false,
                         })
                     }
                     crate::state::StackEntry::Ability { source_id, behavior_card_id, activator, targets, x_value, .. } => {
@@ -615,10 +631,11 @@ impl GameView {
                             power: None,
                             toughness: None,
                             oracle_text: ability_text(registry, *behavior_card_id),
+                            resolving: false,
                         })
                     }
                 }
-            })
+            }))
             .collect();
 
         // Exile.

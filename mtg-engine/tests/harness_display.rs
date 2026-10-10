@@ -974,3 +974,34 @@ fn a_tap_plan_in_a_prompt_groups_like_sources() {
     let text = mtg_engine::cards::helpers::format_tap_plan_names(&state, &[(a, 0), (ring, 0), (b, 0)]);
     assert_eq!(text, "tap 2x Swamp, Sol Ring");
 }
+
+/// The spell resolving now is on the stack (CR 608.2n), and the view says
+/// so: Night Terrors asking "choose a nonland card to exile" is the first
+/// stack entry, marked resolving, for both players. It was in no zone of
+/// the view — the STACK pane read "(empty)" over its own question, and a
+/// spell that won the game mid-resolution was missing from the final
+/// board (#766).
+#[test]
+fn the_spell_asking_its_resolution_question_is_on_the_views_stack() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let nt = castable_spell(&mut state, &reg, "Night Terrors", P0);
+    spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
+    spell_in_hand(&mut state, &reg, "Moment of Heroism", P1);
+    let state = cast_and_resolve(&state, &reg, nt, vec![Target::Player(P1)]);
+    assert!(state.awaiting_action.is_some() && state.stack.is_empty() && state.resolving_spell == Some(nt),
+        "test precondition: Night Terrors is resolving and asking");
+    for p in [P0, P1] {
+        let view = mtg_engine::view::GameView::for_player(&state, p, &reg);
+        assert_eq!(view.stack.len(), 1, "the resolving spell, and nothing else");
+        assert_eq!(view.stack[0].object_id, nt);
+        assert!(view.stack[0].resolving, "and it is marked as resolving");
+    }
+    // A spell waiting on the stack is not marked.
+    let mut waiting = game_at_step(Step::PrecombatMain, P0);
+    let nt = castable_spell(&mut waiting, &reg, "Night Terrors", P0);
+    let waiting = cast_onto_stack(&waiting, &reg, nt, vec![Target::Player(P1)]);
+    let view = mtg_engine::view::GameView::for_player(&waiting, P0, &reg);
+    assert_eq!(view.stack.len(), 1);
+    assert!(!view.stack[0].resolving);
+}

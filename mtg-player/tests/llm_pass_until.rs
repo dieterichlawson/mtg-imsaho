@@ -158,6 +158,7 @@ fn stack_item(id: u64, name: &str, controller: PlayerId) -> StackItemView {
         power: Some(2),
         toughness: Some(2),
         oracle_text: String::new(),
+        resolving: false,
     }
 }
 
