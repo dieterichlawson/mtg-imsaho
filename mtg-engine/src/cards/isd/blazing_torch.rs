@@ -83,8 +83,8 @@ impl CardBehavior for BlazingTorch {
     fn pay_activation_cost(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         if ability_index == 1 {
             if let Some(torch) = attached_torch(state, object_id, registry) {
-                crate::destruction::sacrifice_by(
-                    state, torch, "to pay for its own ability", registry);
+                // The ability is the equipped creature's (#763).
+                crate::destruction::sacrifice_for_ability(state, torch, object_id, registry);
             }
         }
     }

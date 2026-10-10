@@ -267,6 +267,27 @@ pub fn sacrifice_by(
     sacrifice(state, id, registry)
 }
 
+/// Sacrifice `id` to pay for an activated ability of `source`: "to pay for its
+/// own ability" when they are the same object, "to pay for Grizzly Bears
+/// (#13)'s ability" when not. Every sacrifice-as-activation-cost goes through
+/// here, so the wording is decided by the two ids and not by the caller —
+/// Blazing Torch, whose sacrifice pays for the equipped creature's ability,
+/// passed "its own ability" by hand under "activated ability on Grizzly
+/// Bears" (#763).
+pub fn sacrifice_for_ability(
+    state: &mut GameState,
+    id: ObjectId,
+    source: ObjectId,
+    registry: &CardRegistry,
+) -> bool {
+    let reason = if id == source {
+        "to pay for its own ability".to_string()
+    } else {
+        format!("to pay for {}'s ability", state.obj_name(source))
+    };
+    sacrifice_by(state, id, &reason, registry)
+}
+
 /// Apply regeneration: tap, remove damage, consume one shield, remove from combat.
 fn regenerate(state: &mut GameState, id: ObjectId) {
     state.tap(id);

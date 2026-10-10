@@ -152,20 +152,13 @@ pub(crate) fn pay_activation_costs(
     match &cost.sacrifice_cost {
         SacrificeCost::None => {}
         SacrificeCost::SacrificeThis => {
-            crate::destruction::sacrifice_by(
-                &mut *state, object_id, "to pay for its own ability", registry);
+            crate::destruction::sacrifice_for_ability(&mut *state, object_id, object_id, registry);
         }
         SacrificeCost::SacrificeCreature | SacrificeCost::SacrificeAnotherCreature => {
             let Some(sac_id) = cost.sacrifice else { return };
             // "Sacrifice a creature" with two eligible creatures: the menu
             // said which one would pay, and the log did not.
-            let source_name = state.obj_name(object_id);
-            let reason = if sac_id == object_id {
-                "to pay for its own ability".to_string()
-            } else {
-                format!("to pay for {source_name}'s ability")
-            };
-            crate::destruction::sacrifice_by(&mut *state, sac_id, &reason, registry);
+            crate::destruction::sacrifice_for_ability(&mut *state, sac_id, object_id, registry);
         }
     }
     if cost.once_per_turn {

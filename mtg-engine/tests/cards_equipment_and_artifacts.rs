@@ -394,6 +394,14 @@ fn blazing_torch_deals_damage_to_player() {
     // Torch should be in graveyard (sacrificed).
     assert_eq!(new_state.get_object(torch).unwrap().zone, Zone::Graveyard,
         "Blazing Torch should be sacrificed");
+
+    // The ability is the creature's, so the sacrifice pays for the
+    // creature's ability, not the Torch's "own" (#763).
+    let creature_name = state.obj_name(creature);
+    let paid: Vec<&String> = new_state.game_log.iter().map(|e| &e.message)
+        .filter(|m| m.contains("sacrificed Blazing Torch")).collect();
+    assert_eq!(paid.len(), 1, "{paid:?}");
+    assert!(paid[0].ends_with(&format!("to pay for {creature_name}'s ability")), "{paid:?}");
 }
 
 /// "{T}, Sacrifice Blazing Torch: Blazing Torch deals 2 damage to any target."
