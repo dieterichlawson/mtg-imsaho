@@ -534,8 +534,12 @@ fn life_and_loss(prev: &GameState, cur: &GameState, action: Option<&Action>, eve
                     }
                 }
                 Some(LossReason::Conceded) => {
-                    if !matches!(action, Some(Action::Concede)) || prev.priority_player != Some(p) {
-                        v.push(format!("p{} conceded without holding priority on a Concede action", p.0));
+                    // The conceder is the player being asked, as
+                    // `lose_to_act` takes it (#559): at a mulligan nobody
+                    // holds priority, and at a blocker prompt or the other
+                    // player's resolution choice priority is not theirs.
+                    if !matches!(action, Some(Action::Concede)) || prev.player_to_act() != Some(p) {
+                        v.push(format!("p{} conceded without being the player to act on a Concede action", p.0));
                     }
                 }
                 Some(LossReason::Forfeited) => {

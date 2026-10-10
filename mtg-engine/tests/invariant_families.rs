@@ -2077,8 +2077,8 @@ fn the_life_and_loss_ledger_is_checked() {
     flags_transition(&prev, None, &empty_draw(false), &reg,
         "lost to an empty-library draw that is not recorded (CR 704.5b)");
 
-    // CR 104.3a: a concede is the conceding player's own action, taken with
-    // priority. Each half alone.
+    // CR 104.3a: a concede is the conceding player's own action, taken by
+    // the player being asked. Each half alone.
     let conceded = |priority: Option<PlayerId>| {
         let mut p = prev.clone();
         p.priority_player = priority;
@@ -2091,11 +2091,11 @@ fn the_life_and_loss_ledger_is_checked() {
     };
     let concede = Action::Concede;
     let (p, c) = conceded(Some(P1));
-    quiet_transition_about(&p, Some(&concede), &c, &reg, "conceded without holding priority");
+    quiet_transition_about(&p, Some(&concede), &c, &reg, "conceded without being the player to act");
     let (p, c) = conceded(Some(P1));
-    flags_transition(&p, None, &c, &reg, "conceded without holding priority on a Concede action");
+    flags_transition(&p, None, &c, &reg, "conceded without being the player to act on a Concede action");
     let (p, c) = conceded(Some(P0));
-    flags_transition(&p, Some(&concede), &c, &reg, "conceded without holding priority on a Concede action");
+    flags_transition(&p, Some(&concede), &c, &reg, "conceded without being the player to act on a Concede action");
 
     // #742: a forfeit is the harness's action, recorded as itself — not a
     // concede, and not without one.
@@ -4431,7 +4431,7 @@ fn every_loss_says_why_in_a_way_the_state_bears_out() {
     let mut p = prev.clone();
     p.priority_player = Some(P0);
     let s = lost(20, mtg_engine::events::LossReason::Conceded, &p);
-    flags_transition(&p, None, &s, &reg, "conceded without holding priority on a Concede action");
+    flags_transition(&p, None, &s, &reg, "conceded without being the player to act on a Concede action");
 
     // "The opponent won" is a claim about the result.
     let mut s = lost(20, mtg_engine::events::LossReason::OpponentWon { source: mtg_engine::ids::ObjectId(0) }, &prev);
