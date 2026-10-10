@@ -1263,9 +1263,13 @@ fn no_card_narrates_a_token_or_life_change_the_engine_logs() {
                     continue;
                 }
                 scanned += 1;
-                // The card's next log statement, if it comes within the
-                // same few lines, and the lines it spans.
-                let after: Vec<&str> = lines[n + 1..].iter().take(12).copied().collect();
+                // The card's next log statement in the same function, and
+                // the lines it spans. A fixed window of 12 lines missed
+                // Gutter Grime's line, 18 lines down past its token (#762).
+                let after: Vec<&str> = lines[n + 1..].iter()
+                    .take_while(|l| !l.trim_start().starts_with("fn ") && !l.trim_start().starts_with("pub fn ")
+                        && !l.trim_start().starts_with("pub(crate) fn ") && **l != "}")
+                    .take(40).copied().collect();
                 let Some(at) = after.iter().position(|l| l.contains("state.log(")) else { continue };
                 let statement: String = after[at..].iter().take(5).copied().collect::<Vec<_>>().join(" ");
                 let statement = statement.split(");").next().unwrap_or("").to_lowercase();

@@ -68,9 +68,10 @@ impl CardBehavior for GutterGrime {
             vec!["Ooze".into()],
             registry,
         );
+        // The counter's line is `add_counters`' (#762); this one says only
+        // what the token's P/T is.
         state.log(crate::state::LogLevel::Event,
-            format!("Gutter Grime: added slime counter (now {slime_count}); \
-its Ooze's power and toughness are that count"));
+            format!("Gutter Grime: each of its Oozes is {slime_count}/{slime_count}"));
     }
 
     /// The token's own card text, which it has no face to print — the
