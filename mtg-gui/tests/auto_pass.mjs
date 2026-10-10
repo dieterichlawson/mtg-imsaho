@@ -59,8 +59,32 @@ if (P.autoPassStop(view({ step: "DeclareAttackers", battlefield: [{ object_id: 5
   fail("your own attack is not an attack on you");
 // The stops it had before still hold.
 if (P.autoPassStop(theirs("Upkeep", false), ["PassPriority"], 6, true) === null) fail("a question is a stop");
-if (P.autoPassStop(view({ active_player: 1, step: "EndStep", stack: [{}] }), ["PassPriority"], 6, false) === null) fail("the stack is a stop");
+if (P.autoPassStop(view({ active_player: 1, step: "EndStep", stack: [{}] }), ["PassPriority", bolt], 6, false) !== "something is on the stack.")
+  fail("the stack is a stop when there is an answer to it");
+// As the CLI's StackResponse (#758): a pass, a concede and a mana ability are no answer.
+if (P.autoPassStop(view({ active_player: 1, step: "EndStep", stack: [{}] }), ["PassPriority", mana, "Concede"], 6, false) !== null)
+  fail("the stack with nothing but a mana ability to answer it is passed");
 if (P.autoPassStop(view({ active_player: 1, step: "EndStep" }), ["PassPriority", land], 6, false) === null) fail("a land is a stop");
 
+// Your own postcombat main is a stop, as the CLI's YourPostcombatMain (#758):
+// `f` at your Main Phase 1 passed it and the opponent's whole turn.
+{
+  const since = P.autoPassSince(view({ step: "PrecombatMain" }));
+  const pump = { ActivateAbility: { object_id: 3, ability_index: 0 } };
+  for (const acts of [["PassPriority", cast, "Concede"], ["PassPriority", pump, "Concede"], ["PassPriority", "Concede"]])
+    if (P.autoPassStop(view({ step: "PostcombatMain" }), acts, since, false) !== "your postcombat main phase.")
+      fail(`your own Main Phase 2 is a stop (${JSON.stringify(acts[1])})`);
+  if (P.autoPassStop(view({ active_player: 1, step: "PostcombatMain", turn_number: 7 }), ["PassPriority", bolt], since, false) !== null)
+    fail("the opponent's Main Phase 2 is not a stop (#295)");
+  // The CLI's MeaningfulAction: on your own turn, once it is reached, a spell
+  // or ability on offer stops it — your next upkeep with an instant castable.
+  if (P.autoPassStop(view({ step: "Upkeep", turn_number: 8 }), ["PassPriority", bolt, "Concede"], since, false) !== "you have a spell or ability to use.")
+    fail("your next turn's upkeep with an instant castable is a stop");
+  if (P.autoPassStop(view({ step: "Upkeep", turn_number: 8 }), ["PassPriority", mana, "Concede"], since, false) !== null)
+    fail("a mana ability alone is not an action to stop for");
+  if (P.autoPassStop(view({ step: "EndStep" }), ["PassPriority", bolt], since, false) !== null)
+    fail("this turn's end step, before the target turn, is passed with an instant");
+}
+
 if (failures) { console.error(`${failures} failure(s)`); process.exit(1); }
-console.log("ok: auto-pass stops for a land, an attack and this turn's main phase, and says what it declined");
+console.log("ok: auto-pass stops for a land, an attack, your postcombat main, an action on your reached turn and this turn's main phase, and says what it declined");

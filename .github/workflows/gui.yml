@@ -59,6 +59,12 @@ jobs:
       - name: X funding, page against engine
         run: node mtg-gui/tests/xfunding.js
 
+      # The page's pure helpers (auto-pass stops, labels, clipping): no
+      # browser and no runner. They were run by hand only, so a stop the
+      # page lost would have gone unnoticed here (#758).
+      - name: Pure page helpers
+        run: for t in mtg-gui/tests/*.mjs; do echo "== $t"; node "$t" || exit 1; done
+
       # The draft page's fixture views (and the server's, when its test has
       # written them) have every field the page's protocol declares. No
       # browser either.

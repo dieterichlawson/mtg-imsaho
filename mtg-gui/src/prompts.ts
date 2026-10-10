@@ -173,14 +173,29 @@ export function autoPassSince(view: GameView): number {
  */
 export function autoPassStop(view: GameView, actions: Action[], sinceTurn: number, asked: boolean): string | null {
   if (asked) return "you are asked something.";
-  if (view.stack.length > 0) return "something is on the stack.";
   // A land drop is never auto-passed, whatever the phase: once a turn and
   // free, it is always worth stopping for — the CLI's #39 (#691).
   if (offersLandPlay(actions)) return "you have a land to play.";
   const ourTurn = view.active_player === view.you;
+  const reached = view.turn_number > sinceTurn;
+  if (ourTurn && view.step === "PrecombatMain" && reached) return "your main phase.";
+  // On your own turn, once the turn it passes towards is here, a spell or an
+  // ability on offer is a stop wherever it is — the CLI's MeaningfulAction:
+  // the page passed your upkeep and draw with an instant castable (#758).
+  if (ourTurn && reached && actions.some(a => typeof a === "object" && a !== null
+      && ("CastSpell" in a || "ActivateAbility" in a))) return "you have a spell or ability to use.";
+  // Something on the stack is a stop when there is an answer to it, not
+  // just a pass, a concede or a mana ability — the CLI's StackResponse; any
+  // entry used to stop it, and `f` pressed over one engaged and passed the
+  // response window the CLI refuses to pass (#758).
+  if (view.stack.length > 0 && actions.some(a => a !== "PassPriority" && a !== "Concede"
+      && !(typeof a === "object" && a !== null && "ActivateManaAbility" in a))) return "something is on the stack.";
   if (!ourTurn && view.step === "DeclareAttackers"
       && view.battlefield.some(p => p.controller !== view.you && p.attacking)) return "attackers declared against you.";
-  if (ourTurn && view.step === "PrecombatMain" && view.turn_number > sinceTurn) return "your main phase.";
+  // Your own postcombat main, for removal on what combat damaged: the CLI's
+  // YourPostcombatMain and the LLM seat's pass-until both keep it, and `f` at
+  // your Main Phase 1 passed it and the whole of the opponent's turn (#758).
+  if (ourTurn && view.step === "PostcombatMain") return "your postcombat main phase.";
   return null;
 }
 

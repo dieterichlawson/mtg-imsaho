@@ -195,7 +195,9 @@ function onMessage(msg: ServerMessage): void {
 /**
  * Auto-pass (`f`): pass every plain priority until something happens —
  * a prompt that is not a pass, a spell on the stack, a land to play, an
- * attack on you, or your next precombat main phase (`autoPassStop`).
+ * attack on you, your postcombat main phase, a spell or ability on offer on
+ * your own turn once it is here, or your next precombat main phase
+ * (`autoPassStop`).
  * Returns true when it answered the decision.
  */
 function autoPassDecides(): boolean {
@@ -225,8 +227,15 @@ function toggleAutoPass(): void {
   // say so instead, as the CLI refuses it (#48, #39, #691).
   if (offersLandPlay(actions)) { state.notice = "Auto-pass would pass up your land drop — play a land first, or pass."; return; }
   // Nor over an attack it would stop for (#752), as the CLI refuses (#48).
-  if (autoPassStop(v, actions, autoPassSince(v), false) === "attackers declared against you.") {
+  const here = autoPassStop(v, actions, autoPassSince(v), false);
+  if (here === "attackers declared against you.") {
     state.notice = "Auto-pass would pass the attack on you — answer it, or pass."; return;
+  }
+  // Nor over any other stop it would make right here, as the CLI refuses
+  // them (#48, #758): something on the stack to answer, your postcombat
+  // main, or a spell of yours on offer once its target turn is here.
+  if (here) {
+    state.notice = `Auto-pass would stop here: ${here} Use it, or pass.`; return;
   }
   // And say what this pass turns down: it used to clear the notice, so a
   // castable spell passed up on the way in was mentioned nowhere (#618, #691).
