@@ -46,7 +46,7 @@ export const SHAPES = {
     },
     pick: { round: "number", pick: "number", card: "string", auto: "boolean" },
     deck: { main: "string[]", lands: "map:number", sideboard: "string[]", valid: "boolean", problem: "string|null", ready: "boolean?" },
-    game: { winner: "number|null" },
+    game: { winner: "number|null", forfeited_by: "number|null?", abandoned: "boolean?" },
     match: {
         round: "number", opponent: "number", url: "string|null",
         status: "enum:waiting|playing|done", games: "array:game", result: "string|null",
@@ -57,7 +57,7 @@ export const SHAPES = {
     },
     standing: {
         seat: "number", wins: "number", losses: "number", points: "number",
-        draws: "number?", game_wins: "number?", byes: "number?",
+        draws: "number?", game_wins: "number?", byes: "number?", tags: "string?",
     },
     refused: { type: "enum:refused", reason: "string", echo: "any" },
 };

@@ -308,6 +308,18 @@ pub struct MatchView {
 #[derive(Debug, Clone, Serialize)]
 pub struct GameView {
     pub winner: Option<usize>,
+    /// The seat that forfeited this game — the watchdog's stall, or a seat
+    /// the table forfeited before any game began — so a forfeit does not
+    /// read as a game played and won (#744).
+    pub forfeited_by: Option<usize>,
+    /// Stopped at the action budget with no winner: not a draw (#743).
+    pub abandoned: bool,
+}
+
+impl GameView {
+    fn of(outcome: &GameOutcome) -> Self {
+        Self { winner: outcome.winner, forfeited_by: outcome.stalled_seat, abandoned: outcome.abandoned }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -329,6 +341,9 @@ pub struct StandingView {
     pub points: usize,
     pub game_wins: usize,
     pub byes: usize,
+    /// The tags the terminal and log standings carry for this seat, in
+    /// their words: " [1 game forfeited] [substitute deck]", or "" (#744).
+    pub tags: String,
 }
 
 /// A message to a seat that is not a view: its request was refused.
@@ -407,7 +422,7 @@ struct MatchState {
     b: usize,
     urls: [Option<String>; 2],
     status: MatchStatus,
-    games: Vec<Option<usize>>,
+    games: Vec<GameView>,
     result: Option<MatchResult>,
 }
 
@@ -1148,7 +1163,7 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
     pub fn game_finished(&mut self, round: usize, a: usize, b: usize, outcome: &GameOutcome) {
         let mut game_number = 0;
         if let Some(m) = self.match_mut(round, a, b) {
-            m.games.push(outcome.winner);
+            m.games.push(GameView::of(outcome));
             game_number = m.games.len();
         }
         self.event(match outcome.winner {
@@ -1169,7 +1184,7 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
         }
         self.event(format!("round {round}: {}", crate::standings::match_score_line(&result).trim_start()));
         if let Some(m) = self.match_mut(round, a, b) {
-            m.games = result.games.iter().map(|g| g.winner).collect();
+            m.games = result.games.iter().map(GameView::of).collect();
             m.result = Some(result);
             m.status = MatchStatus::Done;
         }
@@ -1221,6 +1236,17 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
         }
     }
 
+    /// Each seat's standings tags, for the terminal, the log and the view
+    /// alike: one source, so the view cannot drop what the others say (#744).
+    fn row_tags(&self, t: &mtg_draft::tournament::Tournament) -> Vec<RowTags> {
+        (0..self.seats.len()).map(|seat| RowTags {
+            runner_built_deck: self.seats[seat].deck_fallback,
+            games_forfeited: t.rounds.iter().flat_map(|r| r.results.iter())
+                .flat_map(|m| m.games.iter()).filter(|g| g.stalled_seat == Some(seat)).count(),
+            ..RowTags::default()
+        }).collect()
+    }
+
     fn finish(&mut self) {
         if self.phase == Phase::Done {
             return;
@@ -1228,12 +1254,7 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
         self.phase = Phase::Done;
         let Some(t) = &self.tournament else { return };
         let sorted = t.sorted_standings();
-        let tags: Vec<RowTags> = (0..self.seats.len()).map(|seat| RowTags {
-            runner_built_deck: self.seats[seat].deck_fallback,
-            games_forfeited: t.rounds.iter().flat_map(|r| r.results.iter())
-                .flat_map(|m| m.games.iter()).filter(|g| g.stalled_seat == Some(seat)).count(),
-            ..RowTags::default()
-        }).collect();
+        let tags = self.row_tags(t);
         log_section!(self.log, "FINAL STANDINGS");
         log_standings!(self.log, &sorted, &tags);
         self.event("the tournament is over. Final standings:".to_string());
@@ -1326,7 +1347,7 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
                     opponent,
                     url: m.urls[me].clone(),
                     status: m.status.word(),
-                    games: m.games.iter().map(|w| GameView { winner: *w }).collect(),
+                    games: m.games.clone(),
                     result: m.result.as_ref().map(|r| score_for(r, seat)),
                 }
             })
@@ -1347,9 +1368,11 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
         }
         pairings.sort_by_key(|p| (p.round, p.a));
         let standings: Vec<StandingView> = self.tournament.as_ref().map(|t| {
+            let tags = self.row_tags(t);
             t.sorted_standings().iter().map(|s| StandingView {
                 seat: s.seat, wins: s.match_wins, losses: s.match_losses, draws: s.match_draws,
                 points: s.match_points(), game_wins: s.game_wins, byes: s.byes,
+                tags: tags[s.seat].render().trim_start().to_string(),
             }).collect()
         }).unwrap_or_default();
         View {

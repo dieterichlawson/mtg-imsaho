@@ -276,6 +276,24 @@ async function main() {
         check(!/\b(null|undefined|NaN)\b/.test(whole), `${tag}: nothing on the page reads null/undefined/NaN`);
         check(await page.$(".match-waiting a") === null && (await text(".match-waiting .match-link") || "").includes("opens when the match starts"), `${tag}: a match with no page yet says so instead of linking null`);
         check((await text(".match-done .match-games") || "").includes("drawn"), `${tag}: a drawn game is called drawn`);
+        // A forfeit is said as one, an abandoned game is not a draw, and the
+        // standings carry the terminal's tags and draws (#743, #744).
+        {
+          const v = JSON.parse(JSON.stringify(byName.playing_unlinked));
+          const done = v.matches.find(m => m.status === "done");
+          done.games = [{ winner: done.opponent, forfeited_by: v.seat, abandoned: false }, { winner: null, forfeited_by: null, abandoned: true }];
+          v.standings[0].tags = "[substitute deck] [1 game forfeited]";
+          v.standings[0].draws = 1;
+          await stage(v);
+          await page.waitForTimeout(50);
+          const games = (await text(".match-done .match-games")) || "";
+          check(games.includes("G1") && games.includes("(you forfeited)"), `${tag}: a forfeited game says who forfeited (${games})`);
+          check(games.includes("G2 abandoned") && !games.includes("drawn"), `${tag}: an abandoned game is not a draw (${games})`);
+          const table = (await text(".standings")) || "";
+          check(table.includes("[substitute deck] [1 game forfeited]"), `${tag}: the standings carry the tags`);
+          const record = await page.$eval(".standings tbody tr:first-child td.num", td => td.textContent);
+          check(table.includes("W-L-D") && /^\d+-\d+-1$/.test(record || ""), `${tag}: a drawn match is in the record (${record})`);
+        }
         check((await page.$$(".pairings-list li")).length === 4 && (await text(".pairings-list") || "").includes("has a bye"), `${tag}: every pairing of the tournament is listed, the bye included`);
         check(whole.includes("away") && whole.includes("(table picks)"), `${tag}: the seats table says who is away and whom the table picks for`);
         await stage(byName.done);

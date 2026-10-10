@@ -319,6 +319,16 @@ fn render(v: &Value, build: &Build) -> (String, String) {
                 if let Some(r) = m["result"].as_str() {
                     s.push_str(&format!(" — {r}"));
                 }
+                // A forfeit or an abandoned game is said, as the table's own
+                // score line says it; a bare "1-0" read as a game won (#744).
+                let games = m["games"].as_array().cloned().unwrap_or_default();
+                let count = |n: usize, what: &str| match n {
+                    0 => String::new(),
+                    1 => format!(" [1 game {what}]"),
+                    n => format!(" [{n} games {what}]"),
+                };
+                s.push_str(&count(games.iter().filter(|g| !g["forfeited_by"].is_null()).count(), "forfeited"));
+                s.push_str(&count(games.iter().filter(|g| g["abandoned"] == true).count(), "abandoned, no winner"));
                 s.push('\n');
             }
             for p in v["pairings"].as_array().into_iter().flatten() {
@@ -330,7 +340,11 @@ fn render(v: &Value, build: &Build) -> (String, String) {
             if let Some(st) = v["standings"].as_array() {
                 s.push_str("Standings:\n");
                 for (rank, x) in st.iter().enumerate() {
-                    s.push_str(&format!("  {}. seat {} {}-{} ({} points)\n", rank + 1, x["seat"],
+                    // W-L-D as the terminal standings print it, with their
+                    // tags: a drawn match vanished from "0-0" (#744).
+                    let draws = x["draws"].as_u64().filter(|d| *d > 0).map(|d| format!("-{d}")).unwrap_or_default();
+                    let tags = x["tags"].as_str().filter(|t| !t.is_empty()).map(|t| format!(" {t}")).unwrap_or_default();
+                    s.push_str(&format!("  {}. seat {} {}-{}{draws} ({} points){tags}\n", rank + 1, x["seat"],
                         x["wins"], x["losses"], x["points"]));
                 }
             }
@@ -365,6 +379,31 @@ mod tests {
         assert!(!mine.contains("8801"), "a finished match's page is not offered:\n{mine}");
         assert!(mine.contains("Round 2 vs Lawson: playing — open http://h:8803/\n"), "{mine}");
         assert!(mine.contains("Round 3 vs Lawson: waiting\n"), "{mine}");
+    }
+
+    /// Issue #744: a forfeit, an abandoned game, a drawn match and the
+    /// standings' tags are said, as the terminal standings say them.
+    #[test]
+    fn a_forfeit_a_draw_and_the_tags_are_said() {
+        let v = serde_json::json!({
+            "type": "view", "phase": "done", "seat": 0, "set": "isd",
+            "seats": [{"seat": 0, "name": "seat 0", "kind": "human", "status": "done", "picks": 42, "joined": true},
+                      {"seat": 1, "name": "Lawson", "kind": "ai", "status": "done", "picks": 42, "joined": true}],
+            "matches": [
+                {"round": 1, "opponent": 1, "url": null, "status": "done", "result": "0-1",
+                 "games": [{"winner": 1, "forfeited_by": 0, "abandoned": false}]},
+                {"round": 2, "opponent": 1, "url": null, "status": "done", "result": "0-0",
+                 "games": [{"winner": null, "forfeited_by": null, "abandoned": true}]},
+            ],
+            "pairings": [], "pool": [], "picks": [], "deck": null, "notice": null,
+            "standings": [{"seat": 1, "wins": 1, "losses": 0, "draws": 1, "points": 4, "tags": ""},
+                          {"seat": 0, "wins": 0, "losses": 1, "draws": 1, "points": 1, "tags": "[substitute deck] [1 game forfeited]"}],
+        });
+        let (_, mine) = render(&v, &Build::default());
+        assert!(mine.contains("Round 1 vs Lawson: done — 0-1 [1 game forfeited]\n"), "{mine}");
+        assert!(mine.contains("Round 2 vs Lawson: done — 0-0 [1 game abandoned, no winner]\n"), "{mine}");
+        assert!(mine.contains("  1. seat 1 1-0-1 (4 points)\n"), "{mine}");
+        assert!(mine.contains("  2. seat 0 0-1-1 (1 points) [substitute deck] [1 game forfeited]\n"), "{mine}");
     }
 }
 

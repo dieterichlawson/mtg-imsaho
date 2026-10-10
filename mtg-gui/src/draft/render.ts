@@ -128,17 +128,26 @@ function standingsTable(view: DraftView): HTMLElement {
   if (view.standings.length === 0) return h("p", { class: "muted", text: "No results yet." });
   const rows = view.standings.map((s, i) => h("tr", { class: s.seat === view.seat ? "me" : "" },
     h("td", { text: String(i + 1) }),
-    h("td", { text: seatName(view, s.seat) + (s.seat === view.seat ? " (you)" : "") }),
-    h("td", { class: "num", text: `${s.wins}-${s.losses}` }),
+    // The tags the terminal standings carry, in their words (#744).
+    h("td", { text: seatName(view, s.seat) + (s.seat === view.seat ? " (you)" : "") + (s.tags ? ` ${s.tags}` : "") }),
+    // A drawn match is in the record too: it vanished from "0-0" (#744).
+    h("td", { class: "num", text: `${s.wins}-${s.losses}${s.draws ? `-${s.draws}` : ""}` }),
     h("td", { class: "num", text: String(s.points) }),
   ));
   return h("table", { class: "standings" },
-    h("thead", {}, h("tr", {}, ...["#", "seat", "W-L", "points"].map(t => h("th", { text: t })))),
+    h("thead", {}, h("tr", {}, ...["#", "seat", "W-L-D", "points"].map(t => h("th", { text: t })))),
     h("tbody", {}, ...rows));
 }
 
 function matchRow(view: DraftView, m: Match): HTMLElement {
-  const games = m.games.map((g, i) => `G${i + 1} ${g.winner === null ? "drawn" : g.winner === view.seat ? "you" : seatName(view, g.winner)}`).join(", ");
+  // A forfeit is not a game played and won, and an abandoned game is not a
+  // draw (#743, #744).
+  const who = (s: number) => s === view.seat ? "you" : seatName(view, s);
+  const games = m.games.map((g, i) => {
+    const won = g.winner === null ? (g.abandoned ? "abandoned" : "drawn") : who(g.winner);
+    const forfeit = g.forfeited_by !== undefined && g.forfeited_by !== null ? ` (${who(g.forfeited_by)} forfeited)` : "";
+    return `G${i + 1} ${won}${forfeit}`;
+  }).join(", ");
   const status = m.status === "done" ? `done${m.result ? `, ${m.result}` : ""}` : m.status === "playing" ? "playing now" : "waiting to start";
   // The link is this seat's own page. It is null until the match's pages
   // are open (a beat after the pairing), and stays null for a match the

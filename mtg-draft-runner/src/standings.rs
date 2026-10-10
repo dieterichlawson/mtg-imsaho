@@ -54,7 +54,10 @@ pub struct RowTags {
 }
 
 impl RowTags {
-    fn render(&self) -> String {
+    /// The row's tags, " [1 game forfeited] [substitute deck]", as the
+    /// terminal, the log and the hosted table's view all print them (#744).
+    #[must_use]
+    pub fn render(&self) -> String {
         let plural = |n: u64, one: &str, many: &str| if n == 1 { one.to_string() } else { many.to_string() };
         let mut out = String::new();
         if self.answers_substituted > 0 {

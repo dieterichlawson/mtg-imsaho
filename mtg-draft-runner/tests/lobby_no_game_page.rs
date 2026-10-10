@@ -41,5 +41,15 @@ fn a_seat_without_a_game_page_forfeits_and_the_log_says_why() {
     assert!(!terminal.contains("(drawn)"), "the terminal does not call it drawn:\n{terminal}");
     assert!(terminal.contains("[1 game forfeited: no game page for seat 0"),
         "the score line gives the reason, not \"a seat stalled\":\n{terminal}");
+    // The seat's own view says it was a forfeit, as the terminal does: it
+    // used to carry only `{winner}` and the W-L, so the page and the client
+    // read a plain 0-1 (#744).
+    let v = c0.view_until("the view after the tournament", Duration::from_secs(30),
+        |v| v["phase"] == "done" && v["matches"].as_array().is_some_and(|m| !m.is_empty()));
+    let game = &v["matches"][0]["games"][0];
+    assert_eq!(game["forfeited_by"], 0, "the game is the seat's forfeit: {game}");
+    assert_eq!(game["winner"], 1);
+    let me = v["standings"].as_array().unwrap().iter().find(|s| s["seat"] == 0).unwrap().clone();
+    assert_eq!(me["tags"], "[substitute deck] [1 game forfeited]", "the standings carry the terminal's tags: {me}");
     drop(held);
 }

@@ -797,9 +797,13 @@
       {
         "games": [
           {
+            "abandoned": false,
+            "forfeited_by": null,
             "winner": 0
           },
           {
+            "abandoned": false,
+            "forfeited_by": null,
             "winner": 0
           }
         ],
@@ -812,12 +816,18 @@
       {
         "games": [
           {
+            "abandoned": false,
+            "forfeited_by": null,
             "winner": 0
           },
           {
+            "abandoned": false,
+            "forfeited_by": null,
             "winner": 0
           },
           {
+            "abandoned": false,
+            "forfeited_by": null,
             "winner": 2
           }
         ],
@@ -1538,6 +1548,7 @@
         "losses": 0,
         "points": 6,
         "seat": 0,
+        "tags": "",
         "wins": 2
       },
       {
@@ -1547,6 +1558,7 @@
         "losses": 1,
         "points": 3,
         "seat": 3,
+        "tags": "",
         "wins": 1
       },
       {
@@ -1556,6 +1568,7 @@
         "losses": 1,
         "points": 3,
         "seat": 2,
+        "tags": "",
         "wins": 1
       },
       {
@@ -1565,6 +1578,7 @@
         "losses": 2,
         "points": 0,
         "seat": 1,
+        "tags": "[substitute deck]",
         "wins": 0
       }
     ],
@@ -1920,6 +1934,8 @@
       {
         "games": [
           {
+            "abandoned": false,
+            "forfeited_by": null,
             "winner": 0
           }
         ],
@@ -2626,6 +2642,7 @@
         "losses": 0,
         "points": 0,
         "seat": 0,
+        "tags": "",
         "wins": 0
       },
       {
@@ -2635,6 +2652,7 @@
         "losses": 0,
         "points": 0,
         "seat": 1,
+        "tags": "[substitute deck]",
         "wins": 0
       },
       {
@@ -2644,6 +2662,7 @@
         "losses": 0,
         "points": 0,
         "seat": 2,
+        "tags": "",
         "wins": 0
       },
       {
@@ -2653,6 +2672,7 @@
         "losses": 0,
         "points": 0,
         "seat": 3,
+        "tags": "",
         "wins": 0
       }
     ],
