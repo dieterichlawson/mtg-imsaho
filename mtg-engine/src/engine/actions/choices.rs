@@ -505,11 +505,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                 // time, so cancel is refused there like any non-answer.
                 (ResolutionChoiceKind::ChooseXFunding { is_ability: false, .. },
                  ResolvedChoice::ChosenTarget(None) | ResolvedChoice::CancelCast) => {
-                    let pending = state.pending_spell_cast.take();
-                    let name = pending.as_ref()
-                        .map(|p| card_name(&*state, registry, p.object_id))
-                        .unwrap_or_else(|| "spell".into());
-                    state.log(LogLevel::Debug, format!("{name}: X cast cancelled"));
+                    cancel_stashed_cast(state, registry);
                 }
                 // An ability's costs are no longer paid before its X is
                 // announced (CR 601.2b via 602.2b), so backing out here is a
@@ -824,9 +820,8 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                 // Backing out of the target choice is backing out of the
                 // cast, the same escape the exile-cost prompt gives (#262).
                 (ResolutionChoiceKind::ChooseTargetSet { .. }, ResolvedChoice::CancelCast) => {
-                    state.pending_spell_cast = None;
+                    cancel_stashed_cast(state, registry);
                     state.awaiting_action = None;
-                    state.log(LogLevel::Event, "Cast cancelled at the target choice".to_string());
                     return Applied::ReturnNow;
                 }
                 (ResolutionChoiceKind::ChooseExileFromGraveyard { min, max, options, .. },
@@ -893,11 +888,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                 // refusal below, and the question stands.
                 (ResolutionChoiceKind::ChooseExileFromGraveyard { .. },
                  ResolvedChoice::CancelCast) => {
-                    let pending = state.pending_spell_cast.take();
-                    let name = pending.as_ref()
-                        .map(|p| card_name(&*state, registry, p.object_id))
-                        .unwrap_or_else(|| "spell".into());
-                    state.log(LogLevel::Event, format!("{name}: cast cancelled"));
+                    cancel_stashed_cast(state, registry);
                 }
                 // An answer of the wrong shape for the question asked — a
                 // yes/no handed to a "choose a target" prompt. Same rule as a
@@ -929,4 +920,17 @@ fn is_permutation(order: &[usize], n: usize) -> bool {
     }
     let mut seen = vec![false; n];
     order.iter().all(|&i| i < n && !std::mem::replace(&mut seen[i], true))
+}
+
+/// Back out of the cast stashed in `pending_spell_cast`, saying so in the one
+/// line every cast-time cancel writes: "Devil's Play (#11): cast cancelled",
+/// at `Event`, so every surface shows it. The X-funding arm wrote "X cast
+/// cancelled" at `Debug`, which no surface shows, and the target-set arm
+/// "Cast cancelled at the target choice" without the card (#761).
+fn cancel_stashed_cast(state: &mut GameState, registry: &CardRegistry) {
+    let pending = state.pending_spell_cast.take();
+    let name = pending.as_ref()
+        .map(|p| card_name(&*state, registry, p.object_id))
+        .unwrap_or_else(|| "spell".into());
+    state.log(LogLevel::Event, format!("{name}: cast cancelled"));
 }

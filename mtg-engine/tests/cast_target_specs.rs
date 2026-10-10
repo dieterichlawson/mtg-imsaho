@@ -211,6 +211,11 @@ fn an_up_to_slot_is_chosen_through_a_prompt_the_cast_raises() {
     assert_eq!(backed_out.get_object(dread).unwrap().zone, Zone::Hand);
     assert_eq!(backed_out.get_player(P0).mana_pool.total(), pool_before, "nothing was paid");
     assert!(backed_out.pending_spell_cast.is_none() && backed_out.awaiting_action.is_none());
+    // And says which cast, where every surface reads it (#761).
+    let name = asked.obj_name(dread);
+    assert!(backed_out.game_log.iter().any(|e| e.message == format!("{name}: cast cancelled")
+        && e.level >= mtg_engine::state::LogLevel::Info),
+        "the cancel names the spell at Info or above: {:?}", backed_out.game_log.last());
 }
 
 /// A modal spell's spec offers the candidates of every mode at once — the

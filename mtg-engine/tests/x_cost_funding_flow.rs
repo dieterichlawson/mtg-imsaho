@@ -349,6 +349,12 @@ fn spell_x_funding_can_be_cancelled_with_nothing_spent() {
     assert!(cancelled.stack.is_empty(), "nothing was cast");
     assert!(cancelled.objects.values().filter(|o| o.zone == Zone::Battlefield)
         .all(|o| !o.tapped), "no mana source was tapped");
+    // Said where every surface reads it, as the other cancels are (#761):
+    // it was a Debug line no LOG pane, page or seat showed.
+    let name = post_cast.obj_name(dp);
+    assert!(cancelled.game_log.iter().any(|e| e.message == format!("{name}: cast cancelled")
+        && e.level >= mtg_engine::state::LogLevel::Info),
+        "the cancel is an Info-or-above line naming the spell: {:?}", cancelled.game_log.last());
 
     // And the cast is still available — cancelling lost nothing.
     let recast = cast_devils_play(&cancelled, &registry, dp);
