@@ -5333,10 +5333,11 @@ impl CliPlayer {
         // engine fired the back face's ability (issue #240). The
         // view already resolves the active face.
         if !perm.oracle_text.is_empty() {
-            let _ = execute!(out, Print("\n"),
-                SetForegroundColor(Color::Yellow),
-                Print(format!("  {}\n", perm.oracle_text)),
-                ResetColor);
+            let _ = execute!(out, Print("\n"), SetForegroundColor(Color::Yellow));
+            for line in Self::oracle_lines(&perm.oracle_text, Self::term_width()) {
+                let _ = execute!(out, Print(format!("{line}\n")));
+            }
+            let _ = execute!(out, ResetColor);
         }
 
         // CR 706.2: what the copy effect's "except it has ..." added. The
@@ -5819,9 +5820,21 @@ return",
         let _ = execute!(out, Print(footer));
     }
 
+    /// Oracle text as the detail pages print it: each paragraph indented by
+    /// two and wrapped to `width` under that indent. Printed raw, a line
+    /// wider than the terminal was broken by the terminal mid-word ("th" /
+    /// "en put a +1/+1 counter"), and every ability after the first began
+    /// at column 0 (#777).
+    fn oracle_lines(text: &str, width: usize) -> Vec<String> {
+        text.split('\n')
+            .flat_map(|p| Self::wrap_indented(&format!("  {p}"), width.saturating_sub(1)))
+            .collect()
+    }
+
     /// Paint the deck browser's detail page for one card. Wraps its own
     /// writer for the same reason `paint_paged_page` does (#470).
-    fn paint_card_detail(out: &mut impl Write, data: &mtg_engine::cards::CardData) {
+    fn paint_card_detail(out: &mut impl Write, data: &mtg_engine::cards::CardData,
+                         back: Option<&mtg_engine::cards::CardData>, width: usize) {
         let out = &mut CrlfWriter::new(out);
         Self::print_colored(out, Color::Cyan, &format!(" {}", data.name));
         let cost = data.cost.as_ref().map_or_else(|| "(none)".into(), |c| format!("{c}"));
@@ -5842,12 +5855,34 @@ return",
                 Print(format!("  Keywords: {}\n", kws.join(", "))), ResetColor);
         }
         if !data.oracle_text.is_empty() {
-            let _ = execute!(out, SetForegroundColor(Color::Yellow),
-                Print(format!("\n  {}\n", data.oracle_text)), ResetColor);
+            let _ = execute!(out, Print("\n"), SetForegroundColor(Color::Yellow));
+            for line in Self::oracle_lines(&data.oracle_text, width) {
+                let _ = execute!(out, Print(format!("{line}\n")));
+            }
+            let _ = execute!(out, ResetColor);
         }
         if let Some(fb) = &data.flashback_cost {
             let _ = execute!(out, SetForegroundColor(Color::Cyan),
                 Print(format!("  Flashback: {fb}\n")), ResetColor);
+        }
+        // A double-faced card's other face, as the CARDS pane shows it: the
+        // deck page never mentioned Garruk, the Veil-Cursed (#777).
+        if let Some(back) = back {
+            let _ = execute!(out, Print("\n"), SetForegroundColor(Color::Cyan),
+                Print(clip_cols(&format!("  Back face: {}", back.name), width.saturating_sub(1))),
+                Print("\n"), ResetColor);
+            let _ = execute!(out, Print(format!("  Type: {}\n", mtg_engine::types::type_line(
+                &back.supertypes, &back.card_types, &back.subtypes))));
+            if let (Some(p), Some(t)) = (back.power, back.toughness) {
+                let _ = execute!(out, Print(format!("  Power/Toughness: {p}/{t}\n")));
+            }
+            if !back.oracle_text.is_empty() {
+                let _ = execute!(out, SetForegroundColor(Color::Yellow));
+                for line in Self::oracle_lines(&back.oracle_text, width) {
+                    let _ = execute!(out, Print(format!("{line}\n")));
+                }
+                let _ = execute!(out, ResetColor);
+            }
         }
         let _ = execute!(out, Print("\n  Press enter to return to list..."));
     }
@@ -6017,8 +6052,11 @@ return",
             if let Ok(idx) = typed.parse::<usize>() {
                 if idx < deck_cards.len() {
                     let data = deck_cards[idx];
+                    let back = registry.get_id_by_name(&data.name)
+                        .and_then(|id| registry.get(id))
+                        .and_then(|b| b.back_face_data());
                     let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
-                    Self::paint_card_detail(&mut out, data);
+                    Self::paint_card_detail(&mut out, data, back.as_ref(), Self::term_width());
                     let _ = out.flush();
                     let _ = Self::read_line("");
                     continue;
@@ -12379,10 +12417,39 @@ Mark 1 of the 1 cards below to exile.");
         let id = registry.get_id_by_name("Brimstone Volley").expect("card in the pool");
         let data = registry.card_data(id).expect("card data");
         let mut detail: Vec<u8> = Vec::new();
-        CliPlayer::paint_card_detail(&mut detail, &data);
+        CliPlayer::paint_card_detail(&mut detail, &data, None, 100);
         let text = String::from_utf8_lossy(&detail).to_string();
         assert!(text.contains("Brimstone Volley"), "name missing from {text}");
         assert_crlf("show_deck_browser detail", &detail);
+    }
+
+    /// Issue #777: the detail pages wrap oracle text under its indent, every
+    /// paragraph, and the deck page shows a double-faced card's back.
+    #[test]
+    fn detail_pages_wrap_oracle_text_and_show_the_back_face() {
+        let registry = mtg_engine::cards::CardRegistry::with_all_cards();
+        let id = registry.get_id_by_name("Grimgrin, Corpse-Born").expect("card in the pool");
+        let data = registry.card_data(id).expect("card data");
+        for line in CliPlayer::oracle_lines(&data.oracle_text, 80) {
+            assert!(str_cols(&line) < 80, "fits: {line:?}");
+            assert!(line.starts_with("  "), "indented: {line:?}");
+        }
+        assert!(CliPlayer::oracle_lines(&data.oracle_text, 80).len() > data.oracle_text.lines().count(),
+            "test premise: a paragraph wraps at 80");
+
+        let id = registry.get_id_by_name("Garruk Relentless").expect("card in the pool");
+        let data = registry.card_data(id).expect("card data");
+        let back = registry.get(id).and_then(|b| b.back_face_data());
+        let mut detail: Vec<u8> = Vec::new();
+        CliPlayer::paint_card_detail(&mut detail, &data, back.as_ref(), 80);
+        let text = String::from_utf8_lossy(&detail).to_string();
+        assert!(text.contains("Back face: Garruk, the Veil-Cursed"), "{text}");
+        for line in text.lines() {
+            let plain: String = line.split('\u{1b}').enumerate()
+                .map(|(i, part)| if i == 0 { part } else { part.split_once('m').map_or("", |(_, t)| t) })
+                .collect();
+            assert!(str_cols(plain.trim_end_matches('\r')) < 80, "fits at 80: {plain:?}");
+        }
     }
 
     #[test]
