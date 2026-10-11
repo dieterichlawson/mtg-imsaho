@@ -966,6 +966,17 @@ const ORDER_HOW_TO: &str = " Type the numbers in order, e.g. \"2 0 1\". [enter =
 
 
 
+/// One row of one side of the battlefield pane.
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum BfRow {
+    /// The lands summary, drawn entry by entry in its own colours, standing
+    /// for this many lands.
+    Lands(usize),
+    /// Any other row: its colour, its text, and how many permanents it
+    /// stands for (a collapsed "3x" row is three).
+    Line(Option<Color>, String, usize),
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct MenuPage {
     /// The first row shown.
@@ -1943,7 +1954,7 @@ impl CliPlayer {
         // runs long, and the board and hand budget their rows against that
         // line rather than being painted over by it.
         let min_block = Self::prompt_block_min_rows(
-            message, notice, actions, has_right, mid_w, reserve_below);
+            message, notice, actions, has_right, mid_w, h, reserve_below);
         // The first row the anchored block may claim.
         let block_floor = h.saturating_sub(min_block);
 
@@ -1967,25 +1978,33 @@ impl CliPlayer {
         let _ = execute!(out, SetAttribute(Attribute::Reset), ResetColor);
         row += 1;
 
-        // Opponent board
-        let bf_content_start = row;
+        // Both sides are built before either is drawn, so the rows the frame
+        // has above the prompt block can be shared out between them and the
+        // hand. Printed whole, a tall side ran under the block, and what the
+        // block painted over was always the bottom of the board: the
+        // player's own creatures, lands, life line and hand (#774).
         let opp_perms: Vec<&PermanentView> = view.battlefield.iter()
             .filter(|p| p.controller != view.you).collect();
-        row = Self::render_battlefield_at(&mut out, &opp_perms, Color::Red, mid_col, row, mid_w, &view.battlefield, false, view.you);
-        let opp_rows = row - bf_content_start;
-
-        // Your board (measure first to calculate padding)
         let your_perms: Vec<&PermanentView> = view.battlefield.iter()
             .filter(|p| p.controller == view.you).collect();
-        // Count how many rows your side will take (lands + creatures + artifacts + enchantments)
-        let your_row_count = {
-            let has_type = |p: &&PermanentView, t: CardType| p.card_types.contains(&t);
-            let lands: Vec<_> = your_perms.iter().filter(|p| has_type(p, CardType::Land)).collect();
-            let creatures: Vec<_> = your_perms.iter().filter(|p| has_type(p, CardType::Creature)).collect();
-            let other: usize = your_perms.iter().filter(|p|
-                !has_type(p, CardType::Land) && !has_type(p, CardType::Creature)).count();
-            usize::from(!lands.is_empty()) + creatures.len() + other
+        let opp_bf = Self::battlefield_rows(&opp_perms, Color::Red, mid_w, &view.battlefield, false, view.you);
+        let your_bf = Self::battlefield_rows(&your_perms, Color::Green, mid_w, &view.battlefield, true, view.you);
+        let has_mana = !view.your_mana_pool.is_empty();
+        let hand_rows = view.your_hand.len().max(1) + usize::from(has_mana);
+        // Under the two sides: the divider, your status line and the hand's
+        // rule, which are never given up.
+        let board_budget = block_floor.saturating_sub(row as usize + 3);
+        let limits = if opp_bf.len() + your_bf.len() + hand_rows <= board_budget {
+            vec![opp_bf.len(), your_bf.len(), hand_rows]
+        } else {
+            Self::share_rows(&[opp_bf.len(), your_bf.len(), hand_rows], board_budget)
         };
+
+        // Opponent board
+        let bf_content_start = row;
+        row = Self::render_battlefield_at(&mut out, &opp_perms, Color::Red, mid_col, row, mid_w, &opp_bf, limits[0]);
+        let opp_rows = row - bf_content_start;
+        let your_row_count = limits[1].min(your_bf.len());
 
         // Pad the divider area so the total battlefield is at least 9 lines
         // (opp_status + opp_board + divider + your_board + your_status = content)
@@ -1999,7 +2018,7 @@ impl CliPlayer {
         // The padding is the first thing a short pane gives up: rows the
         // block would otherwise paint over hold the hand (#695).
         let natural_end = row as usize + padding as usize + your_row_count + 2
-            + view.your_hand.len().max(1) + usize::from(!view.your_mana_pool.is_empty());
+            + hand_rows;
         let padding = if natural_end > block_floor { 1 } else { padding };
 
         // Draw divider with padding
@@ -2011,7 +2030,7 @@ impl CliPlayer {
         row += padding;
 
         // Your board
-        row = Self::render_battlefield_at(&mut out, &your_perms, Color::Green, mid_col, row, mid_w, &view.battlefield, true, view.you);
+        row = Self::render_battlefield_at(&mut out, &your_perms, Color::Green, mid_col, row, mid_w, &your_bf, limits[1]);
 
         // Your status line
         let _ = execute!(out, cursor::MoveTo(mid_col, row));
@@ -2036,7 +2055,6 @@ impl CliPlayer {
         // Hand, in the rows above the block. A hand that does not fit says
         // how much of it is hidden: at 120x21 the block painted over three
         // of seven cards and nothing on screen said so (#695).
-        let has_mana = !view.your_mana_pool.is_empty();
         let (hand_shown, mana_shown) = Self::fit_hand(
             view.your_hand.len(), has_mana, block_floor.saturating_sub(row as usize));
         if view.your_hand.is_empty() {
@@ -2361,13 +2379,15 @@ impl CliPlayer {
         format!(" {{{}}}", parts.join(", "))
     }
 
-    /// Render battlefield permanents at a specific column/row, return next row.
-    fn render_battlefield_at(out: &mut io::Stdout, perms: &[&PermanentView], color: Color,
-                              col: u16, mut row: u16, max_w: usize,
-                              all_perms: &[PermanentView], lands_last: bool,
-                              view_you: mtg_engine::ids::PlayerId) -> u16 {
+    /// One side's rows of the battlefield pane, in the order they are drawn.
+    /// Built before anything is printed, so a side can be measured and cut
+    /// to the rows the frame has for it (#774).
+    #[allow(clippy::too_many_arguments)]
+    fn battlefield_rows(perms: &[&PermanentView], color: Color, max_w: usize,
+                        all_perms: &[PermanentView], lands_last: bool,
+                        view_you: mtg_engine::ids::PlayerId) -> Vec<BfRow> {
         let has_type = |p: &&PermanentView, t: CardType| p.card_types.contains(&t);
-        let lands: Vec<_> = perms.iter().filter(|p| has_type(p, CardType::Land)).collect();
+        let lands = perms.iter().filter(|p| has_type(p, CardType::Land)).count();
         let creatures: Vec<_> = perms.iter().filter(|p| has_type(p, CardType::Creature)).collect();
         let enchantments: Vec<_> = perms.iter().filter(|p|
             has_type(p, CardType::Enchantment) && !has_type(p, CardType::Creature)).collect();
@@ -2391,7 +2411,105 @@ impl CliPlayer {
                 Self::attachment_marks(host, all_perms, view_you));
         }
 
-        // Helper: render the lands summary line
+        let mut rows: Vec<BfRow> = Vec::new();
+        for (n, parts) in Self::creature_rows(&creatures, &aura_map) {
+            rows.push(BfRow::Line(Some(color), Self::counted_row(n, &parts, max_w), n));
+        }
+        let enchantment_parts: Vec<_> = enchantments.iter()
+            .filter(|e| e.attached_to.is_none())
+            .map(|e| Self::enchantment_row_parts(e, view_you))
+            .collect();
+        for (n, parts) in Self::collapse_rows(enchantment_parts) {
+            rows.push(BfRow::Line(Some(Color::Magenta), Self::counted_row(n, &parts, max_w), n));
+        }
+        // Attached Equipment rides on its creature's line (above), like
+        // attached auras — not in the standalone artifact list.
+        let artifact_parts: Vec<_> = artifacts.iter()
+            .filter(|a| a.attached_to.is_none())
+            .map(|a| Self::artifact_row_parts(a))
+            .collect();
+        for (n, parts) in Self::collapse_rows(artifact_parts) {
+            rows.push(BfRow::Line(None, Self::counted_row(n, &parts, max_w), n));
+        }
+        for pw in &planeswalkers {
+            rows.push(BfRow::Line(Some(Color::Cyan),
+                Self::counted_row(1, &Self::planeswalker_row_parts(pw), max_w), 1));
+        }
+        if lands > 0 {
+            if lands_last {
+                rows.push(BfRow::Lands(lands));
+            } else {
+                rows.insert(0, BfRow::Lands(lands));
+            }
+        }
+        rows
+    }
+
+    /// Which of a side's rows fit in `limit` rows, in drawing order: `Some(i)`
+    /// is row `i`, `None` is the "… N more" marker standing in for the rest,
+    /// with N (the permanents it stands for) returned beside the plan.
+    ///
+    /// A side taller than its share used to be printed whole and painted
+    /// over by the prompt block, so the rows lost were the bottom of the
+    /// board — the player's own creatures, lands, life and hand — with
+    /// nothing saying they existed (#774). The lands summary is one row
+    /// that stands for a whole mana base, so it is the last row a side
+    /// gives up; the marker takes the place of the rows it replaces.
+    fn board_cut(rows: &[BfRow], limit: usize) -> (Vec<Option<usize>>, usize) {
+        if rows.len() <= limit {
+            return ((0..rows.len()).map(Some).collect(), 0);
+        }
+        let perms = |r: &BfRow| match r { BfRow::Lands(n) | BfRow::Line(_, _, n) => *n };
+        if limit <= 1 {
+            let plan = if limit == 1 { vec![None] } else { Vec::new() };
+            return (plan, rows.iter().map(perms).sum());
+        }
+        let lands_at = rows.iter().position(|r| matches!(r, BfRow::Lands(_)));
+        let mut room = limit - 1 - usize::from(lands_at.is_some());
+        let mut plan = Vec::new();
+        let mut hidden = 0;
+        for (i, r) in rows.iter().enumerate() {
+            if Some(i) == lands_at { continue; }
+            if room > 0 {
+                plan.push(Some(i));
+                room -= 1;
+            } else {
+                hidden += perms(r);
+            }
+        }
+        plan.push(None);
+        match lands_at {
+            Some(0) => plan.insert(0, Some(0)),
+            Some(i) => plan.push(Some(i)),
+            None => {}
+        }
+        (plan, hidden)
+    }
+
+    /// Split `budget` rows between sections that each want `demands[i]`:
+    /// the smallest wants are met in full and what is left is shared
+    /// evenly among the rest, so one tall side cannot take every row from
+    /// the other side and the hand (#774).
+    fn share_rows(demands: &[usize], budget: usize) -> Vec<usize> {
+        let mut order: Vec<usize> = (0..demands.len()).collect();
+        order.sort_by_key(|&i| demands[i]);
+        let mut give = vec![0; demands.len()];
+        let mut left = budget;
+        for (k, &i) in order.iter().enumerate() {
+            let fair = left / (demands.len() - k);
+            give[i] = demands[i].min(fair);
+            left -= give[i];
+        }
+        give
+    }
+
+    /// Draw one side of the battlefield from `row`, at most `limit` rows of
+    /// it, and return the next row.
+    #[allow(clippy::too_many_arguments)]
+    fn render_battlefield_at(out: &mut io::Stdout, perms: &[&PermanentView], color: Color,
+                              col: u16, mut row: u16, max_w: usize, rows: &[BfRow],
+                              limit: usize) -> u16 {
+        let lands: Vec<_> = perms.iter().filter(|p| p.card_types.contains(&CardType::Land)).collect();
         let render_lands = |out: &mut io::Stdout, row: &mut u16| {
             if !lands.is_empty() {
                 let mut summary: Vec<(String, usize, usize)> = Vec::new();
@@ -2458,52 +2576,34 @@ impl CliPlayer {
             }
         };
 
-
-        // Helper: render creatures, enchantments, artifacts
-        let render_nonlands = |out: &mut io::Stdout, row: &mut u16| {
-            for (n, parts) in Self::creature_rows(&creatures, &aura_map) {
-                let _ = execute!(out, cursor::MoveTo(col, *row),
-                    SetForegroundColor(color), Print(Self::counted_row(n, &parts, max_w)), ResetColor);
-                *row += 1;
+        let (plan, hidden) = Self::board_cut(rows, limit);
+        for entry in plan {
+            match entry.map(|i| &rows[i]) {
+                Some(BfRow::Lands(_)) => render_lands(out, &mut row),
+                Some(BfRow::Line(c, text, _)) => {
+                    let _ = execute!(out, cursor::MoveTo(col, row));
+                    if let Some(c) = c {
+                        let _ = execute!(out, SetForegroundColor(*c));
+                    }
+                    let _ = execute!(out, Print(text), ResetColor);
+                    row += 1;
+                }
+                None => {
+                    let marker = clip_cols(&Self::board_more_marker(hidden), max_w);
+                    let _ = execute!(out, cursor::MoveTo(col, row), SetForegroundColor(color),
+                        SetAttribute(Attribute::Dim), Print(marker),
+                        SetAttribute(Attribute::Reset), ResetColor);
+                    row += 1;
+                }
             }
-            let enchantment_parts: Vec<_> = enchantments.iter()
-                .filter(|e| e.attached_to.is_none())
-                .map(|e| Self::enchantment_row_parts(e, view_you))
-                .collect();
-
-            for (n, parts) in Self::collapse_rows(enchantment_parts) {
-                let _ = execute!(out, cursor::MoveTo(col, *row),
-                    SetForegroundColor(Color::Magenta), Print(Self::counted_row(n, &parts, max_w)), ResetColor);
-                *row += 1;
-            }
-            // Attached Equipment rides on its creature's line (above), like
-            // attached auras — not in the standalone artifact list.
-            let artifact_parts: Vec<_> = artifacts.iter()
-                .filter(|a| a.attached_to.is_none())
-                .map(|a| Self::artifact_row_parts(a))
-                .collect();
-
-            for (n, parts) in Self::collapse_rows(artifact_parts) {
-                let _ = execute!(out, cursor::MoveTo(col, *row),
-                    Print(Self::counted_row(n, &parts, max_w)));
-                *row += 1;
-            }
-            for pw in &planeswalkers {
-                let _ = execute!(out, cursor::MoveTo(col, *row), SetForegroundColor(Color::Cyan),
-                    Print(Self::counted_row(1, &Self::planeswalker_row_parts(pw), max_w)), ResetColor);
-                *row += 1;
-            }
-        };
-
-        if lands_last {
-            render_nonlands(out, &mut row);
-            render_lands(out, &mut row);
-        } else {
-            render_lands(out, &mut row);
-            render_nonlands(out, &mut row);
         }
-
         row
+    }
+
+    /// The row that stands in for the part of a side the pane cannot hold.
+    fn board_more_marker(hidden: usize) -> String {
+        let noun = if hidden == 1 { "permanent" } else { "permanents" };
+        format!("  \u{2026} {hidden} more {noun} \u{2014} i to inspect them")
     }
 
     // (Old render_battlefield removed — replaced by render_battlefield_at)
@@ -4385,12 +4485,16 @@ impl CliPlayer {
         terminal::size().unwrap_or((100, 30)).0 as usize
     }
 
+    fn term_height() -> usize {
+        terminal::size().unwrap_or((100, 30)).1 as usize
+    }
+
     /// The least height of the prompt block: the rule and the question
-    /// under it, any notice, and for a menu one option, its paging marker,
+    /// under it, any notice, and for a menu its `list_floor` of options, its paging marker,
     /// the hint and the input row — each at the height it wraps to.
     fn prompt_block_min_rows(message: Option<&str>, notice: Option<&str>,
                              actions: Option<&[MenuLabel]>, has_right: bool,
-                             mid_w: usize, reserve_below: usize) -> usize {
+                             mid_w: usize, h: usize, reserve_below: usize) -> usize {
         // One row for the rule, whatever the heading says, plus the
         // rows the question under it takes.
         let title_rows = message.map_or(1, |msg| {
@@ -4405,7 +4509,7 @@ impl CliPlayer {
         let menu_rows = actions.map_or(1, |labels| {
             let hint_h = Self::wrap_indented(&Self::menu_hints(labels, has_right), mid_w).len();
             let marker_h = Self::marker_lines(labels.len().saturating_sub(1), MENU_PAGE_KEYS, mid_w);
-            1 + marker_h + hint_h + 1
+            Self::list_floor(labels.len(), h).max(1) + marker_h + hint_h + 1
         });
         // A caller that draws its own question under the rule — the two
         // combat prompts, which append an eligible-creature list, its
@@ -4453,15 +4557,19 @@ impl CliPlayer {
         }
     }
 
-    /// How many lines of a prompt's own list must survive the board above it.
+    /// How many lines of a prompt's own list must survive the board above it,
+    /// on a pane `h` rows tall.
     ///
-    /// One, whenever there is anything to list: `menu_page_lines` draws a row
-    /// taller than its budget rather than skipping it, so one line of
-    /// reservation is enough to put the first entry on the screen. None when
-    /// there is nothing to list, so an empty prompt does not push the board
-    /// off for a row it will not draw (#352).
-    fn list_floor(n: usize) -> usize {
-        usize::from(n > 0)
+    /// At least one whenever there is anything to list: `menu_page_lines`
+    /// draws a row taller than its budget rather than skipping it, so one
+    /// line of reservation is enough to put the first entry on the screen.
+    /// None when there is nothing to list, so an empty prompt does not push
+    /// the board off for a row it will not draw (#352). And an eighth of the
+    /// pane when the list is that long: with exactly one, a tall board left
+    /// the priority menu one row a page and a 25-target prompt 25 pages
+    /// (#774).
+    fn list_floor(n: usize, h: usize) -> usize {
+        n.min((h / 8).max(1))
     }
 
     /// The readable name of the step the view is in.
@@ -6017,7 +6125,7 @@ return",
             // least one creature, the marker that says how many more there
             // are, and the furniture above (#352).
             Self::render_reserving(view, Some("DECLARE ATTACKERS"), &view.display_log,
-                1 + Self::list_floor(eligible.len()) + marker_h + reserved);
+                1 + Self::list_floor(eligible.len(), Self::term_height()) + marker_h + reserved);
             let mut out = stdout();
             let mut r = cursor::position().unwrap_or((0, 20)).1;
             let h = terminal::size().map_or(30, |(_, h)| h as usize);
@@ -6027,7 +6135,7 @@ return",
                 Print(" Eligible attackers:"), SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
             let avail = h.saturating_sub(r as usize + reserved)
-                .max(Self::list_floor(eligible.len()));
+                .max(Self::list_floor(eligible.len(), Self::term_height()));
             // Every row laid out first, so the page is measured in the lines
             // the rows actually take (issue #318).
             let layouts: Vec<CombatRowLayout> = eligible.iter().enumerate().map(|(i, &id)| {
@@ -6288,8 +6396,8 @@ return",
             // row and the prompt asked for `blocker:attacker` pairs with
             // neither list visible (#352).
             Self::render_reserving(view, Some("DECLARE BLOCKERS"), &view.display_log,
-                2 + Self::list_floor(attacker_ids.len()) + atk_marker_h
-                  + Self::list_floor(eligible_blockers.len()) + blk_marker_h
+                2 + Self::list_floor(attacker_ids.len(), Self::term_height()) + atk_marker_h
+                  + Self::list_floor(eligible_blockers.len(), Self::term_height()) + blk_marker_h
                   + hint_lines.len() + 2);
             let mut out = stdout();
             let mut r = cursor::position().unwrap_or((0, 20)).1;
@@ -7356,7 +7464,7 @@ impl CliPlayer {
         // The frame, with the rule and any refusal under it, reserving the
         // header, at least one row, the marker and the furniture below.
         Self::render_paged_noticed(view, None, Some(&pick.title), notice, &view.display_log, "", None, 0,
-            header.len() + Self::list_floor(pick.rows.len()) + marker_h + reserved);
+            header.len() + Self::list_floor(pick.rows.len(), Self::term_height()) + marker_h + reserved);
         let mut out = stdout();
         let mut r = cursor::position().unwrap_or((0, 20)).1;
         let h = terminal::size().map_or(30, |(_, h)| h as usize);
@@ -7374,7 +7482,7 @@ impl CliPlayer {
         // The rows: "  [x] 3: Forest", wrapped under a hanging indent so
         // the text of every row and every continuation line starts in the
         // same column.
-        let avail = h.saturating_sub(r as usize + reserved).max(Self::list_floor(pick.rows.len()));
+        let avail = h.saturating_sub(r as usize + reserved).max(Self::list_floor(pick.rows.len(), Self::term_height()));
         let idx_w = pick.rows.len().saturating_sub(1).to_string().chars().count();
         let plen = 8 + idx_w; // "  [x] " + index + ": "
         let rows: Vec<Vec<String>> = Self::menu_row_texts(&pick.rows).iter()
@@ -9171,9 +9279,11 @@ Mark 1 of the 1 cards below to exile.");
         // One line of list is reserved whenever there is anything to list,
         // and none when there is not: an empty prompt does not push the board
         // off for a row it will not draw.
-        assert_eq!(CliPlayer::list_floor(0), 0);
-        assert_eq!(CliPlayer::list_floor(1), 1);
-        assert_eq!(CliPlayer::list_floor(8), 1);
+        assert_eq!(CliPlayer::list_floor(0, 20), 0);
+        assert_eq!(CliPlayer::list_floor(1, 20), 1);
+        assert_eq!(CliPlayer::list_floor(8, 20), 2);
+        // A pane too short for an eighth still keeps one (#774).
+        assert_eq!(CliPlayer::list_floor(8, 7), 1);
 
         // A pane with room to spare leaves the board where it ended.
         assert_eq!(CliPlayer::prompt_block_row(12, 45, 8), 12,
@@ -9190,7 +9300,7 @@ Mark 1 of the 1 cards below to exile.");
         let panel = CliPlayer::middle_panel_width_at(70);
         let hint_lines = CliPlayer::wrap_indented(&viewer_hints('p'), panel).len();
         let marker_h = CliPlayer::marker_lines(1, MENU_PAGE_KEYS, panel);
-        let reserve = 1 + CliPlayer::list_floor(2) + marker_h + (2 + hint_lines);
+        let reserve = 1 + CliPlayer::list_floor(2, 20) + marker_h + (2 + hint_lines);
         // The board on this screen runs to the foot of a 20-row pane.
         let row = CliPlayer::prompt_block_row(19, 20, 1 + reserve);
         let avail = 20usize.saturating_sub(row + 1 + (2 + hint_lines));
@@ -11289,14 +11399,54 @@ Mark 1 of the 1 cards below to exile.");
             let hint_h = CliPlayer::wrap_indented(&CliPlayer::menu_hints(&labels, true), mid_w).len();
             let marker_h = CliPlayer::marker_lines(2, MENU_PAGE_KEYS, mid_w);
             let block = CliPlayer::prompt_block_min_rows(
-                Some("MAIN PHASE 1"), None, Some(&labels), true, mid_w, 0);
-            // The rule, one option, the marker, the hint, the input row.
-            assert_eq!(block, 1 + 1 + marker_h + hint_h + 1,
+                Some("MAIN PHASE 1"), None, Some(&labels), true, mid_w, 16, 0);
+            // The rule, the options a 16-row pane keeps (two), the marker,
+            // the hint, the input row.
+            assert_eq!(block, 1 + 2 + marker_h + hint_h + 1,
                 "at {mid_w} the hint is {hint_h} rows and the marker {marker_h}");
             if mid_w <= 58 {
                 assert!(hint_h >= 2, "test premise: the hint wraps at {mid_w}");
             }
         }
+    }
+
+    /// Issue #774: a side of the battlefield taller than its share is cut
+    /// to it, keeps its lands line, and says how many permanents it hides.
+    #[test]
+    fn a_tall_side_is_cut_with_its_lands_and_a_count() {
+        let line = |n| BfRow::Line(None, "x".into(), n);
+        // The player's side: creatures, then the lands line last.
+        let mine = vec![line(1), line(2), line(1), line(1), BfRow::Lands(6)];
+        assert_eq!(CliPlayer::board_cut(&mine, 5).0.len(), 5, "fits whole");
+        let (plan, hidden) = CliPlayer::board_cut(&mine, 3);
+        assert_eq!(plan, vec![Some(0), None, Some(4)], "a creature, the marker, the lands");
+        assert_eq!(hidden, 4, "2x + 1 + 1 permanents behind the marker");
+        // The opponent's side: lands first.
+        let theirs = vec![BfRow::Lands(6), line(1), line(1), line(1)];
+        let (plan, hidden) = CliPlayer::board_cut(&theirs, 3);
+        assert_eq!(plan, vec![Some(0), Some(1), None]);
+        assert_eq!(hidden, 2);
+        // One row is the marker alone, standing for everything.
+        assert_eq!(CliPlayer::board_cut(&theirs, 1), (vec![None], 9));
+        assert_eq!(CliPlayer::board_cut(&theirs, 0), (vec![], 9));
+        assert_eq!(CliPlayer::board_more_marker(1),
+            "  \u{2026} 1 more permanent \u{2014} i to inspect them");
+    }
+
+    /// Issue #774: the rows above the prompt block are shared, so a tall
+    /// side cannot take them all from the other side and the hand.
+    #[test]
+    fn the_board_rows_are_shared_between_the_sides_and_the_hand() {
+        // The 80x24 repro: the opponent's 27 rows, the player's 4, a
+        // 5-card hand, 9 rows between them.
+        assert_eq!(CliPlayer::share_rows(&[27, 4, 5], 9), vec![3, 3, 3]);
+        // A small want is met in full and the rest goes to the others.
+        assert_eq!(CliPlayer::share_rows(&[27, 2, 5], 12), vec![5, 2, 5]);
+        // Room for everything: everything.
+        assert_eq!(CliPlayer::share_rows(&[3, 4, 5], 20), vec![3, 4, 5]);
+        // Two tall sides split evenly.
+        assert_eq!(CliPlayer::share_rows(&[30, 30, 1], 21), vec![10, 10, 1]);
+        assert_eq!(CliPlayer::share_rows(&[30, 30, 1], 0), vec![0, 0, 0]);
     }
 
     /// Issue #695: a hand that does not fit above the prompt block says
