@@ -5250,7 +5250,9 @@ impl CliPlayer {
             perm.keywords.iter().copied().map(keyword_title).collect();
         abilities.extend(perm.protections.iter().cloned());
         if !abilities.is_empty() {
-            let _ = execute!(out, Print(format!("  Keywords: {}\n", abilities.join(", "))));
+            for line in Self::wrap_indented(&format!("  Keywords: {}", abilities.join(", ")), Self::term_width().saturating_sub(1)) {
+                let _ = execute!(out, Print(format!("{line}\n")));
+            }
         }
         // What it may not do, or must, on a line of its own: these are not
         // keywords, and the page answers one question per line. The row and
@@ -5383,6 +5385,23 @@ impl CliPlayer {
             let _ = execute!(out, ResetColor);
         }
 
+        // A double-faced card's other face (CR 712.2): what it transforms
+        // into, or back into. The deck page shows a back face; this page,
+        // the one for the permanent that will actually transform, did not
+        // (#777). Which face is up is read from the name the view shows.
+        let registry = mtg_engine::cards::CardRegistry::with_all_cards();
+        let other = registry.get(perm.card_id).and_then(|b| b.back_face_data())
+            .and_then(|back| if back.name == perm.name { registry.card_data(perm.card_id) } else { Some(back) });
+        if let Some(other) = other {
+            let _ = execute!(out, Print("\n"), SetForegroundColor(Color::Cyan),
+                Print(clip_cols(&format!("  Other face: {}", other.name), Self::term_width().saturating_sub(1))),
+                Print("\n"), SetForegroundColor(Color::Yellow));
+            for line in Self::oracle_lines(&other.oracle_text, Self::term_width()) {
+                let _ = execute!(out, Print(format!("{line}\n")));
+            }
+            let _ = execute!(out, ResetColor);
+        }
+
         // CR 706.2: what the copy effect's "except it has ..." added. The
         // text above is the COPIED card's and says nothing about it, so an
         // Evil Twin clone's destroy ability was offered in the action menu
@@ -5392,7 +5411,9 @@ impl CliPlayer {
         if !perm.granted_abilities.is_empty() {
             let _ = execute!(out, Print("\n"), SetForegroundColor(Color::Yellow));
             for ability in &perm.granted_abilities {
-                let _ = execute!(out, Print(format!("  {ability}\n")));
+                for line in Self::oracle_lines(ability, Self::term_width()) {
+                    let _ = execute!(out, Print(format!("{line}\n")));
+                }
             }
             let _ = execute!(out, ResetColor,
                 Print("  (gained as it entered as a copy — CR 706.2)\n"));
@@ -5894,8 +5915,11 @@ return",
         if !data.keywords.is_empty() {
             let kws: Vec<String> =
                 data.keywords.iter().copied().map(keyword_title).collect();
-            let _ = execute!(out, SetForegroundColor(Color::Blue),
-                Print(format!("  Keywords: {}\n", kws.join(", "))), ResetColor);
+            let _ = execute!(out, SetForegroundColor(Color::Blue));
+            for line in Self::wrap_indented(&format!("  Keywords: {}", kws.join(", ")), width.saturating_sub(1)) {
+                let _ = execute!(out, Print(format!("{line}\n")));
+            }
+            let _ = execute!(out, ResetColor);
         }
         if !data.oracle_text.is_empty() {
             let _ = execute!(out, Print("\n"), SetForegroundColor(Color::Yellow));
@@ -11626,6 +11650,25 @@ Mark 1 of the 1 cards below to exile.");
         assert_eq!(CliPlayer::list_floor_lines(&[], 16), 0, "nothing to list");
         assert_eq!(CliPlayer::list_floor_lines(&[1, 1, 1], 16), 2, "an eighth of 16 rows");
         assert_eq!(CliPlayer::list_floor_lines(&[1, 3, 1], 8), 3, "the three-line row whole");
+    }
+
+    /// Issue #777: the inspector shows a double-faced permanent's other face.
+    #[test]
+    fn the_inspector_shows_a_double_faced_permanents_other_face() {
+        let registry = mtg_engine::cards::CardRegistry::with_all_cards();
+        let id = registry.get_id_by_name("Garruk Relentless").expect("card in the pool");
+        let mut v = view(Step::PrecombatMain, 4, true);
+        let mut perm = creature(7, "Garruk Relentless", 0);
+        perm.card_id = id;
+        v.battlefield = vec![perm.clone()];
+        let mut buf: Vec<u8> = Vec::new();
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &perm);
+        assert!(String::from_utf8_lossy(&buf).contains("Other face: Garruk, the Veil-Cursed"));
+        // Transformed, the other face is the front.
+        perm.name = "Garruk, the Veil-Cursed".into();
+        let mut buf: Vec<u8> = Vec::new();
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &perm);
+        assert!(String::from_utf8_lossy(&buf).contains("Other face: Garruk Relentless"));
     }
 
     /// Issue #775: the block's floor holds the tallest option whole. One
