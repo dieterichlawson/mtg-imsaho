@@ -6404,7 +6404,13 @@ return",
             let h = terminal::size().map_or(30, |(_, h)| h as usize);
             Self::clear_mid_from(&mut out, r);
             let body = h.saturating_sub(r as usize + 3 + hint_lines.len());
-            let atk_avail = (body / 2).max(1);
+            // Each list keeps the floor the reservation above asked for: an
+            // even split gave the attackers half the body whatever their
+            // floor, which left the blockers under theirs (#774).
+            let atk_floor = Self::list_floor(attacker_ids.len(), h).max(1);
+            let blk_floor = Self::list_floor(eligible_blockers.len(), h).max(1);
+            let atk_avail = (body / 2).max(atk_floor)
+                .min(body.saturating_sub(blk_floor + blk_marker_h).max(atk_floor));
             let _ = execute!(out, cursor::MoveTo(Self::middle_panel_col(), r),
                 SetForegroundColor(Color::Red), SetAttribute(Attribute::Bold),
                 Print(" Attackers:"), SetAttribute(Attribute::Reset), ResetColor);
@@ -6442,7 +6448,7 @@ return",
                 SetForegroundColor(Color::Green), SetAttribute(Attribute::Bold),
                 Print(" Your blockers:"), SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
-            let blk_avail = h.saturating_sub(r as usize + 3).max(1);
+            let blk_avail = h.saturating_sub(r as usize + 3).max(blk_floor);
             let blk_layouts: Vec<CombatRowLayout> = eligible_blockers.iter().enumerate().map(|(i, &id)| {
                 // Which attackers this creature may legally block (CR 509.1b —
                 // evasion like flying is per-pairing, so say it up front).
@@ -6707,7 +6713,14 @@ impl CliPlayer {
             // log panel mid-word — "Max X = 1" read as "Max X = 13 (p0) ──"
             // — and left the stale main-phase menu on screen, so players
             // pressed Enter "to retry" and silently funded X = 0 (#56).
-            Self::render(view, Some(description), &view.display_log, "", None);
+            // The rows drawn under the rule are reserved against the board:
+            // the Max X line, the pool, one per source group, the payable
+            // line, and the input and refusal rows. Drawn under a plain
+            // render they ran past the foot of the pane whenever the board
+            // was tall (#774).
+            let pool_rows = usize::from(options.pool.values().any(|n| *n > 0));
+            Self::render_reserving(view, Some(description), &view.display_log,
+                1 + pool_rows + options.groups.len() + usize::from(!contiguous) + 2);
             let (term_w, _) = terminal::size().unwrap_or((100, 30));
             let side = term_w as usize / 5;
             let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
