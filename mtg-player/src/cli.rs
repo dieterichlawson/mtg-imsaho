@@ -6632,7 +6632,9 @@ return",
             let mut r = cursor::position().unwrap_or((0, 20)).1;
             let h = terminal::size().map_or(30, |(_, h)| h as usize);
             Self::clear_mid_from(&mut out, r);
-            let body = h.saturating_sub(r as usize + 3 + hint_lines.len());
+            // Both headings, the hint, and the prompt and refusal rows: what
+            // the reservation above asked for besides the two lists.
+            let body = h.saturating_sub(r as usize + 4 + hint_lines.len());
             // Each list keeps the floor the reservation above asked for: an
             // even split gave the attackers half the body whatever their
             // floor, which left the blockers under theirs (#774).
