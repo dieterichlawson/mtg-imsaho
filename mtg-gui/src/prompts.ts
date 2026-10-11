@@ -741,6 +741,14 @@ function beginMark(state: LiveState, ui: Ui, { title, options, min, max, onConfi
 }
 
 /** Actions that are each one choice of a card or target: pick on the board. */
+/** The other copies, in your hand, of the card `id` is, if `id` is in your hand. */
+export function copiesInHand(state: LiveState, id: ObjectId): ObjectId[] {
+  const hand = state.view.your_hand || [];
+  const card = hand.find(c => c.object_id === id);
+  if (!card) return [];
+  return hand.filter(c => c.card_id === card.card_id && c.object_id !== id).map(c => c.object_id);
+}
+
 function beginPickFromActions(state: LiveState, ui: Ui, actions: Action[], title: string, send: Send): Ui {
   const options: (Target | ObjectId)[] = []; const byKey = new Map<string, Action>(); let decline: Action | null = null; const rows: Row[] = [];
   for (const a of actions) {
@@ -751,6 +759,12 @@ function beginPickFromActions(state: LiveState, ui: Ui, actions: Action[], title
       const k = targetKey(c.ChosenTarget); if (k) { options.push(c.ChosenTarget); byKey.set(k, a); }
     } else if ("ChosenCard" in c) {
       options.push(c.ChosenCard); byKey.set(`o${c.ChosenCard}`, a);
+      // The engine offers one copy of each card in a hand (#739): a click
+      // on any other copy of it is the same answer, or four of five
+      // Scholars in the hand would not respond.
+      for (const id of copiesInHand(state, c.ChosenCard)) {
+        if (!byKey.has(`o${id}`)) { options.push(id); byKey.set(`o${id}`, a); }
+      }
     } else {
       rows.push({ label: describeAction(state, a), run: () => send(a) });
     }
