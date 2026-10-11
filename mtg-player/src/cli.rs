@@ -4491,12 +4491,7 @@ impl CliPlayer {
 
     // ── Input ──────────────────────────────────────────────────────
 
-    fn read_line(prompt: &str) -> String {
-        Self::read_line_redrawing(prompt, &|| {})
-    }
-
-    /// [`read_line`](Self::read_line), plus what to do when the terminal is
-    /// resized: `redraw` repaints the frame this prompt sits in, and the
+    /// Read a line of input. `redraw` repaints the frame this prompt sits in, and the
     /// prompt and everything typed so far are painted again on top of it.
     ///
     /// The TUI only ever drew when it was about to ask something, and
@@ -5432,16 +5427,17 @@ impl CliPlayer {
         // comes from the view, which resolves the face that is up. Reading
         // the registry by `card_id` is what gave a transformed permanent its
         // front face's text and P/T (issue #240).
-        let mut out = stdout();
-        let mut page = 0usize;
-        let mut notice: Option<String> = None;
-
-        loop {
+        let all_perms = Self::inspect_permanents(view);
+        let rows = Self::inspect_rows(view);
+        let page = std::cell::Cell::new(0usize);
+        let notice: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
+        // What the last paint laid out — heights, room, where the page
+        // ended, whether it paged — for n/p after the read. A resize
+        // repaints the page at the new size (#778).
+        let laid = std::cell::RefCell::new((Vec::<usize>::new(), 0usize, 0usize, false));
+        let paint = || {
+            let mut out = stdout();
             clear_frame(&mut out);
-
-            let all_perms = Self::inspect_permanents(view);
-            let rows = Self::inspect_rows(view);
-
             let (term_w, term_h) = terminal::size().unwrap_or((80, 24));
             let (w, h) = (term_w as usize, term_h as usize);
             let heights: Vec<usize> = rows.iter()
@@ -5453,8 +5449,8 @@ impl CliPlayer {
                 + 2
                 + Self::wrapped_height(str_cols(DECK_PAGED_FOOTER), w);
             let avail = Self::viewer_avail(h, chrome);
-            let (start, shown, paged) = Self::menu_page_lines(&heights, avail, page, 0);
-            page = start;
+            let (start, shown, paged) = Self::menu_page_lines(&heights, avail, page.get(), 0);
+            page.set(start);
             let end = start + shown;
 
             let heading = if paged {
@@ -5463,19 +5459,26 @@ impl CliPlayer {
             } else {
                 " INSPECT BATTLEFIELD".to_string()
             };
-            let footer = Self::viewer_footer(notice.take(),
+            let footer = Self::viewer_footer(notice.borrow().clone(),
                 if paged { DECK_PAGED_FOOTER }
                 else { "  Enter number for details, or press enter to return: " }, w);
             Self::paint_inspect_page(&mut out, &heading, &rows[start..end], &footer);
             let _ = out.flush();
-            let input = Self::read_line("");
+            *laid.borrow_mut() = (heights, avail, end, paged);
+        };
+
+        loop {
+            paint();
+            let input = Self::read_line_redrawing("", &paint);
+            notice.borrow_mut().take();
+            let (heights, avail, end, paged) = laid.borrow().clone();
 
             if input.is_empty() { return; }
             let typed = input.trim();
             match typed {
-                "n" if end < rows.len() => { page = end; continue; }
-                "p" if page > 0 => {
-                    page = Self::prev_menu_offset_lines(&heights, avail, page, 0);
+                "n" if end < rows.len() => { page.set(end); continue; }
+                "p" if page.get() > 0 => {
+                    page.set(Self::prev_menu_offset_lines(&heights, avail, page.get(), 0));
                     continue;
                 }
                 _ => {}
@@ -5484,17 +5487,21 @@ impl CliPlayer {
             if let Ok(i) = typed.parse::<usize>() {
                 if i < all_perms.len() {
                     let perm = all_perms[i];
-                    clear_frame(&mut out);
-                    Self::paint_permanent_detail(&mut out, view, perm);
-                    let _ = out.flush();
-                    let _ = Self::read_line("");
+                    let detail = || {
+                        let mut out = stdout();
+                        clear_frame(&mut out);
+                        Self::paint_permanent_detail(&mut out, view, perm);
+                        let _ = out.flush();
+                    };
+                    detail();
+                    let _ = Self::read_line_redrawing("", &detail);
                     continue;
                 }
             }
             // Anything else: say so. A viewer that repaints the identical
             // page is indistinguishable from a hung one (#563).
-            notice = Some(Self::viewer_refusal(
-                typed, all_perms.len(), paged, page == 0, end >= rows.len()));
+            *notice.borrow_mut() = Some(Self::viewer_refusal(
+                typed, all_perms.len(), paged, page.get() == 0, end >= rows.len()));
         }
     }
 
@@ -5637,34 +5644,43 @@ return",
     }
 
     fn show_paged_lines(title: &str, lines: &[InfoLine], start_at_end: bool) {
-        let mut out = stdout();
-        let (term_w, term_h) = terminal::size().unwrap_or((80, 24));
-        let (w, h) = (term_w as usize, term_h as usize);
-        // Pages are measured in the rows the entries actually take once the
-        // terminal wraps them, not in entries (#365).
-        let heights: Vec<usize> = lines.iter()
-            .map(|l| Self::wrapped_height(Self::info_line_cols(l), w))
-            .collect();
-        // The heading is measured at its widest — which slice it names is not
-        // known until the page is chosen, the same bind `marker_lines`
-        // solves for the menu's marker.
-        let n = lines.len();
-        let widest_heading = format!("{title} (showing {n}-{n} of {n})");
-        let chrome = Self::wrapped_height(str_cols(&widest_heading), w)
-            + 1
-            + Self::wrapped_height(str_cols(VIEWER_PAGED_FOOTER), w);
-        let avail = Self::viewer_avail(h, chrome);
+        // Laid out at the terminal's size when it is painted, not once: a
+        // resize repaints the page for the new size, and n/p turn the page
+        // the repaint drew (#778). Measured once, outside the loop, a page
+        // stayed laid out for the old size even after a keystroke.
+        let layout = || -> (Vec<usize>, usize) {
+            let (term_w, term_h) = terminal::size().unwrap_or((80, 24));
+            let (w, h) = (term_w as usize, term_h as usize);
+            // Pages are measured in the rows the entries actually take once
+            // the terminal wraps them, not in entries (#365).
+            let heights: Vec<usize> = lines.iter()
+                .map(|l| Self::wrapped_height(Self::info_line_cols(l), w))
+                .collect();
+            // The heading is measured at its widest — which slice it names is
+            // not known until the page is chosen, the same bind
+            // `marker_lines` solves for the menu's marker.
+            let n = lines.len();
+            let widest_heading = format!("{title} (showing {n}-{n} of {n})");
+            let chrome = Self::wrapped_height(str_cols(&widest_heading), w)
+                + 1
+                + Self::wrapped_height(str_cols(VIEWER_PAGED_FOOTER), w);
+            (heights, Self::viewer_avail(h, chrome))
+        };
         // The last window is the page that ends at the last entry, which is
         // exactly what `p` from the top already means.
-        let mut offset = if start_at_end {
+        let offset = std::cell::Cell::new(if start_at_end {
+            let (heights, avail) = layout();
             Self::prev_menu_offset_lines(&heights, avail, 0, 0)
         } else {
             0
-        };
-        loop {
-            let (start, shown, paged) = Self::menu_page_lines(&heights, avail, offset, 0);
-            offset = start;
+        });
+        let laid = std::cell::RefCell::new((Vec::<usize>::new(), 0usize, 0usize));
+        let paint = || {
+            let (heights, avail) = layout();
+            let (start, shown, paged) = Self::menu_page_lines(&heights, avail, offset.get(), 0);
+            offset.set(start);
             let end = start + shown;
+            let mut out = stdout();
             clear_frame(&mut out);
             let heading = if paged {
                 format!("{} (showing {}-{} of {})", title, start + 1, end, lines.len())
@@ -5678,13 +5694,19 @@ return",
             };
             Self::paint_paged_page(&mut out, &heading, &lines[start..end], footer);
             let _ = out.flush();
-            match Self::read_line("").trim() {
-                "n" if end < lines.len() => offset = end,
+            *laid.borrow_mut() = (heights, avail, end);
+        };
+        loop {
+            paint();
+            let input = Self::read_line_redrawing("", &paint);
+            let (heights, avail, end) = laid.borrow().clone();
+            match input.trim() {
+                "n" if end < lines.len() => offset.set(end),
                 "n" => {}
                 // `p` from the top stays at the top: a viewer scrolls, it
                 // does not wrap around the way the action menu does.
-                "p" if offset > 0 =>
-                    offset = Self::prev_menu_offset_lines(&heights, avail, offset, 0),
+                "p" if offset.get() > 0 =>
+                    offset.set(Self::prev_menu_offset_lines(&heights, avail, offset.get(), 0)),
                 "p" => {}
                 _ => return,
             }
@@ -5961,7 +5983,6 @@ return",
 
     fn show_deck_browser(view: &GameView) {
         let registry = mtg_engine::cards::CardRegistry::with_all_cards();
-        let mut out = stdout();
 
         // Count per-zone for each card name the player owns.
         let mut hand_counts: HashMap<String, usize> = HashMap::new();
@@ -6026,58 +6047,60 @@ return",
             + exile_counts.values().sum::<usize>()
             + lib_counts.values().sum::<usize>();
 
-        let mut page = 0usize;
-        let mut notice: Option<String> = None;
-        loop {
-            clear_frame(&mut out);
-
-            let mut cards: Vec<mtg_engine::cards::CardData> = Vec::new();
-            for name in &all_names {
-                if let Some(id) = registry.get_id_by_name(name) {
-                    if let Some(data) = registry.card_data(id) {
-                        cards.push(data);
-                    }
+        let mut cards: Vec<mtg_engine::cards::CardData> = Vec::new();
+        for name in &all_names {
+            if let Some(id) = registry.get_id_by_name(name) {
+                if let Some(data) = registry.card_data(id) {
+                    cards.push(data);
                 }
             }
-            cards.sort_by(|a, b| a.name.cmp(&b.name));
+        }
+        cards.sort_by(|a, b| a.name.cmp(&b.name));
+        let deck_cards: Vec<&mtg_engine::cards::CardData> = cards.iter().collect();
 
-            let deck_cards: Vec<&mtg_engine::cards::CardData> = cards.iter().collect();
+        let rows: Vec<(String, String)> = deck_cards.iter().enumerate().map(|(i, data)| {
+            let cost = data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
+            let pt = match (data.power, data.toughness) {
+                (Some(p), Some(t)) => format!(" {p}/{t}"),
+                _ => String::new(),
+            };
+            let hand = hand_counts.get(&data.name).copied().unwrap_or(0);
+            let b = board_counts.get(&data.name).copied().unwrap_or(0);
+            let g = gy_counts.get(&data.name).copied().unwrap_or(0);
+            let e = exile_counts.get(&data.name).copied().unwrap_or(0);
+            let lib = lib_counts.get(&data.name).copied().unwrap_or(0);
+            let total = hand + b + g + e + lib;
 
-            // Clamp to the terminal height and page — an unclamped list
-            // scrolled the header and the first entries off the top with
-            // no way to reach them (issue #102). The rows are built before
-            // they are paged, because a page is as many rows as fit once the
-            // terminal wraps them, not a fixed count of entries: at 34
-            // columns four of fourteen deck lines wrapped, so the heading and
-            // the first four entries scrolled away — and with the entry count
-            // fitting, the footer offered no `n`/`p` to get them back (#365).
+            // Build location breakdown
+            let mut locs = Vec::new();
+            if hand > 0 { locs.push(format!("{hand}hand")); }
+            if b > 0 { locs.push(format!("{b}board")); }
+            if g > 0 { locs.push(format!("{g}gy")); }
+            if e > 0 { locs.push(format!("{e}exile")); }
+            if lib > 0 { locs.push(format!("{lib}lib")); }
+            let loc_str = if locs.is_empty() { String::new() } else { format!(" ({})", locs.join(", ")) };
+
+            (format!("  {i:>2}"),
+             format!(": {}x {}{}{}{}", total, data.name, cost, pt, loc_str))
+        }).collect();
+
+        // Clamp to the terminal height and page — an unclamped list
+        // scrolled the header and the first entries off the top with no way
+        // to reach them (issue #102). A page is as many rows as fit once the
+        // terminal wraps them, not a fixed count of entries: at 34 columns
+        // four of fourteen deck lines wrapped, so the heading and the first
+        // four entries scrolled away — and with the entry count fitting, the
+        // footer offered no `n`/`p` to get them back (#365). Laid out when
+        // painted, so a resize repaints the page at the new size and n/p
+        // turn the page it drew (#778).
+        let page = std::cell::Cell::new(0usize);
+        let notice: std::cell::RefCell<Option<String>> = std::cell::RefCell::new(None);
+        let laid = std::cell::RefCell::new((Vec::<usize>::new(), 0usize, 0usize, false));
+        let paint = || {
+            let mut out = stdout();
+            clear_frame(&mut out);
             let (term_w, term_h) = terminal::size().unwrap_or((80, 24));
             let (w, h) = (term_w as usize, term_h as usize);
-            let rows: Vec<(String, String)> = deck_cards.iter().enumerate().map(|(i, data)| {
-                let cost = data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
-                let pt = match (data.power, data.toughness) {
-                    (Some(p), Some(t)) => format!(" {p}/{t}"),
-                    _ => String::new(),
-                };
-                let hand = hand_counts.get(&data.name).copied().unwrap_or(0);
-                let b = board_counts.get(&data.name).copied().unwrap_or(0);
-                let g = gy_counts.get(&data.name).copied().unwrap_or(0);
-                let e = exile_counts.get(&data.name).copied().unwrap_or(0);
-                let lib = lib_counts.get(&data.name).copied().unwrap_or(0);
-                let total = hand + b + g + e + lib;
-
-                // Build location breakdown
-                let mut locs = Vec::new();
-                if hand > 0 { locs.push(format!("{hand}hand")); }
-                if b > 0 { locs.push(format!("{b}board")); }
-                if g > 0 { locs.push(format!("{g}gy")); }
-                if e > 0 { locs.push(format!("{e}exile")); }
-                if lib > 0 { locs.push(format!("{lib}lib")); }
-                let loc_str = if locs.is_empty() { String::new() } else { format!(" ({})", locs.join(", ")) };
-
-                (format!("  {i:>2}"),
-                 format!(": {}x {}{}{}{}", total, data.name, cost, pt, loc_str))
-            }).collect();
             let heights: Vec<usize> = rows.iter()
                 .map(|(a, b)| Self::wrapped_height(str_cols(a) + str_cols(b), w))
                 .collect();
@@ -6090,8 +6113,8 @@ return",
                 + 2
                 + Self::wrapped_height(str_cols(DECK_PAGED_FOOTER), w);
             let avail = Self::viewer_avail(h, chrome);
-            let (start, shown, paged) = Self::menu_page_lines(&heights, avail, page, 0);
-            page = start;
+            let (start, shown, paged) = Self::menu_page_lines(&heights, avail, page.get(), 0);
+            page.set(start);
             let end = start + shown;
             let heading = if paged {
                 format!(" YOUR DECK ({total_cards} cards, showing {}-{} of {} entries)",
@@ -6099,12 +6122,18 @@ return",
             } else {
                 format!(" YOUR DECK ({total_cards} cards)")
             };
-            let footer = Self::viewer_footer(notice.take(),
+            let footer = Self::viewer_footer(notice.borrow().clone(),
                 if paged { DECK_PAGED_FOOTER }
                 else { "  Enter number for details, or press enter to return: " }, w);
             Self::paint_deck_page(&mut out, &heading, &rows[start..end], &footer);
             let _ = out.flush();
-            let input = Self::read_line("");
+            *laid.borrow_mut() = (heights, avail, end, paged);
+        };
+        loop {
+            paint();
+            let input = Self::read_line_redrawing("", &paint);
+            notice.borrow_mut().take();
+            let (heights, avail, end, paged) = laid.borrow().clone();
 
             if input.is_empty() { return; }
             let typed = input.trim();
@@ -6113,9 +6142,9 @@ return",
                 // starts where this one ended, and `p` walks back by whole
                 // rows rather than by a fixed count that uneven heights made
                 // a guess.
-                "n" if end < deck_cards.len() => { page = end; continue; }
-                "p" if page > 0 => {
-                    page = Self::prev_menu_offset_lines(&heights, avail, page, 0);
+                "n" if end < deck_cards.len() => { page.set(end); continue; }
+                "p" if page.get() > 0 => {
+                    page.set(Self::prev_menu_offset_lines(&heights, avail, page.get(), 0));
                     continue;
                 }
                 _ => {}
@@ -6127,17 +6156,21 @@ return",
                     let back = registry.get_id_by_name(&data.name)
                         .and_then(|id| registry.get(id))
                         .and_then(|b| b.back_face_data());
-                    clear_frame(&mut out);
-                    Self::paint_card_detail(&mut out, data, back.as_ref(), Self::term_width());
-                    let _ = out.flush();
-                    let _ = Self::read_line("");
+                    let detail = || {
+                        let mut out = stdout();
+                        clear_frame(&mut out);
+                        Self::paint_card_detail(&mut out, data, back.as_ref(), Self::term_width());
+                        let _ = out.flush();
+                    };
+                    detail();
+                    let _ = Self::read_line_redrawing("", &detail);
                     continue;
                 }
             }
             // Anything else: say so. A viewer that repaints the identical
             // page is indistinguishable from a hung one (#563).
-            notice = Some(Self::viewer_refusal(
-                typed, deck_cards.len(), paged, page == 0, end >= deck_cards.len()));
+            *notice.borrow_mut() = Some(Self::viewer_refusal(
+                typed, deck_cards.len(), paged, page.get() == 0, end >= deck_cards.len()));
         }
     }
 

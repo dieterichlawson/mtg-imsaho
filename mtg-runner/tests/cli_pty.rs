@@ -1325,3 +1325,31 @@ fn the_card_browser_fits_the_terminal() {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Issue #778: the full-screen viewers repaint on a resize. They read with
+/// a redraw that did nothing, so a deck browser opened paged on a short
+/// terminal stayed paged, over a band of blank rows, after the terminal
+/// grew — until a keystroke.
+#[test]
+fn a_resize_in_the_deck_browser_repaints_it() {
+    let mut g = PtyGame::spawn_sized(150, 20, &[
+        "--p1", "cli", "--p2", "random",
+        "--deck1", "decks/rb-vampires.txt", "--deck2", "decks/gw-humans.txt",
+        "--seed", "2301", "--on-the-play", "1", "--quiet",
+    ]);
+    g.expect("Keep opening hand", T);
+    g.answer("0\r");
+    g.expect("Pass priority", T);
+    g.answer("d\r");
+    g.expect("YOUR DECK (", T);
+    g.expect("showing 1-", T);
+    std::thread::sleep(Duration::from_millis(300));
+
+    g.forget();
+    g.resize(150, 70);
+    // Unpaged at the new size, with no keystroke.
+    g.expect(" cards)", T);
+
+    g.send("\x03");
+    assert_clean_exit(&mut g);
+}
