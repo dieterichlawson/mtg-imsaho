@@ -4912,6 +4912,16 @@ impl CliPlayer {
                     Self::clear_panel_row(&mut out, px, py);
                     let _ = execute!(out, cursor::MoveTo(px, py), Print(&shown));
                     echo_col = px + u16::try_from(shown.chars().count()).unwrap_or(0);
+                } else {
+                    // A screen with no redraw to give (the card browser):
+                    // the question alone, at the top of a cleared screen,
+                    // rather than over a frame the terminal hard-wrapped.
+                    // The screen is drawn again once it is answered.
+                    clear_frame(&mut out);
+                    let shown = clip_cols(prompt.trim_start(), (w as usize).saturating_sub(1));
+                    (px, py) = (0, 0);
+                    let _ = execute!(out, cursor::MoveTo(0, 0), Print(&shown));
+                    echo_col = u16::try_from(shown.chars().count()).unwrap_or(0);
                 }
                 echo_cap = Self::echo_cap_at(w as usize, echo_col);
                 repaint_input_line(&mut out, echo_col, py, &buf, echo_cap);

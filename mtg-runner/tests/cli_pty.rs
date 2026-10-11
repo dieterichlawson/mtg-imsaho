@@ -1320,6 +1320,17 @@ fn the_card_browser_fits_the_terminal() {
         let printed = last.matches('\n').count();
         assert!(printed < usize::from(rows),
             "at {cols}x{rows} the browser printed {printed} rows, so its top scrolled away");
+        // #779 in the browser, which has no redraw to give the concede
+        // question: a resize asks it again on a cleared screen.
+        g.send("concede");
+        g.answer("\r");
+        g.expect("Are you sure", T);
+        std::thread::sleep(Duration::from_millis(300));
+        g.forget();
+        g.resize(cols - 10, rows);
+        g.expect("Are you sure", T);
+        g.answer("n\r");
+        g.expect("Filter: _", T);
         g.send("\x03");
         let _ = g.wait_exit(T);
     }
