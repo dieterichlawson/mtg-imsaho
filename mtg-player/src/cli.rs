@@ -6656,7 +6656,10 @@ return",
                 SetForegroundColor(Color::Green), SetAttribute(Attribute::Bold),
                 Print(" Your blockers:"), SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
-            let blk_avail = h.saturating_sub(r as usize + 3).max(blk_floor);
+            // Under the list: the hint at its wrapped height, then the
+            // prompt and refusal rows. A flat three ran the list past the
+            // input row when the hint wrapped (#775's review).
+            let blk_avail = h.saturating_sub(r as usize + hint_lines.len() + 2).max(blk_floor);
             let (blk_off, blk_n, blk_paged) =
                 Self::menu_page_lines(&blk_heights, blk_avail, blk_offset.get(), blk_marker_h);
             blk_shown.set(blk_n);
