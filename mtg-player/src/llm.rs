@@ -2491,10 +2491,8 @@ impl LlmPlayer {
     /// Rewrite a single engine log entry so it reads as "you"/"opp"
     /// relative to the viewing player, instead of the engine-global
     /// `p0`/`p1` labels. Handles the turn banner, the game-started
-    /// wrapper, possessives (`p0's` → `your` / `opp's`), and the small
-    /// set of present-tense verbs (`keeps`, `mulligans`, `concedes`,
-    /// `passes`, `wins`) that need conjugation when the subject becomes
-    /// "you".
+    /// wrapper, possessives (`p0's` → `your` / `opp's`), and the
+    /// present-tense verb after a subject that becomes "you" (`base_form`).
     fn rewrite_log_entry(entry: &str, you: mtg_engine::ids::PlayerId) -> String {
         if let Some(rewritten) = Self::rewrite_turn_banner(entry, you) {
             return rewritten;
