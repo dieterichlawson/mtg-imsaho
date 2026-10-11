@@ -75,3 +75,16 @@ fn the_loop_asks_nothing_after_a_concede_at_a_resolution_choice() {
     assert_eq!(asked.len(), 1, "asked after the concede: {asked:#?}");
     assert_eq!(state.result, Some(GameResult::Winner(P1)));
 }
+
+/// Issue #773: the concede is counted in the frozen end of the game too.
+/// The game ended inside the action, so the state was frozen before the
+/// action was counted, and a save of the finished game said one action
+/// fewer than the runner's summary ("Total actions: 5" / "4 actions").
+#[test]
+fn the_frozen_end_of_a_conceded_game_counts_the_concede() {
+    let (state, reg) = night_terrors_asking();
+    let after = submit_action(&state, &Action::Concede, &reg);
+    assert_eq!(after.submit_seq, state.submit_seq + 1);
+    let frozen = after.final_state.as_ref().expect("the ended game is frozen");
+    assert_eq!(frozen.submit_seq, after.submit_seq, "the frozen state counts the concede");
+}

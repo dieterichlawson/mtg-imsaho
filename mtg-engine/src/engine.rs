@@ -490,6 +490,14 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
     // Counted once per action the caller submits; a cast that re-enters
     // through its own cost prompt is still one action.
     new_state.submit_seq = state.submit_seq + 1;
+    // The frozen end of the game counts the action that ended it too. An
+    // action that ends the game from inside itself (a concede, since #764)
+    // froze the state before this count, and whatever restores or saves
+    // the frozen copy — a resume's "finished game" refusal — said one
+    // action fewer than the runner's summary (#773).
+    if let Some(frozen) = new_state.final_state.as_mut().filter(|_| !state.is_game_over()) {
+        frozen.submit_seq = new_state.submit_seq;
+    }
     new_state
 }
 
