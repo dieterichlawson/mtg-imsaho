@@ -725,10 +725,10 @@ fn prompt_offers(state: &GameState, acting: PlayerId, legal: &LegalActions, regi
                     expect(v, want);
                 }
                 K::YesNo { .. } => expect(v, vec![format!("{:?}", ResolvedChoice::YesNoDecision(true)), format!("{:?}", ResolvedChoice::YesNoDecision(false))]),
-                K::ChooseCardFromHand { cards, .. } => expect(v, cards.iter().map(|c| format!("{:?}", ResolvedChoice::ChosenCard(*c))).collect()),
-                // One offer per distinct card looked at, the first copy of
-                // each, in order: which copy is kept is no choice (#721).
-                K::ChooseFromLookedAt { looked_at, .. } => {
+                // One offer per distinct card, the first copy of each, in
+                // order: which copy is kept or taken is no choice (#721,
+                // #739 for the hand).
+                K::ChooseCardFromHand { cards: looked_at, .. } | K::ChooseFromLookedAt { looked_at, .. } => {
                     let mut seen = HashSet::new();
                     expect(v, looked_at.iter()
                         .filter(|c| seen.insert(state.get_object(**c).map(|o| o.card_id)))

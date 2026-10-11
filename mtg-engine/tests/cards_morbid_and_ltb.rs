@@ -1845,3 +1845,47 @@ fn frightful_delusion_discard_on_pay() {
         "Frightful Delusion: opponent should discard even after paying mana. \
          Hand has {hand_count} cards (should be 0)");
 }
+
+/// Issue #739: a choice from hand offers one copy of each card. Three
+/// Islands and a Plains in hand are two answers, not four rows; the
+/// random seat picked uniformly over the rows, so it weighted its discard
+/// by copy count. The offered copy is discarded and the others stay.
+#[test]
+fn a_discard_from_hand_offers_one_row_per_card() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let bears = castable_spell(&mut state, &reg, "Grizzly Bears", P0);
+    let mut state = cast_onto_stack(&state, &reg, bears, vec![]);
+    let held: Vec<ObjectId> = ["Island", "Plains", "Island", "Island"].iter().map(|name| {
+        let card_id = reg.get_id_by_name(name).unwrap();
+        let id = state.create_object(card_id, P0, Zone::Hand, None, None);
+        state.get_object_mut(id).unwrap().name = (*name).into();
+        id
+    }).collect();
+
+    let fd = spell_in_hand(&mut state, &reg, "Frightful Delusion", P1);
+    add_mana_for(&mut state, &reg, "Frightful Delusion", P1);
+    state.priority_player = Some(P1);
+    let state = cast_and_resolve(&state, &reg, fd, vec![Target::Object(bears)]);
+    let state = engine::submit_action(&state, &Action::ResolveChoice {
+        choice: mtg_engine::actions::ResolvedChoice::PayDecision(false) }, &reg);
+
+    let legal = engine::legal_actions(&state, &reg);
+    let violations = mtg_engine::invariants::check_legal(&state, P0, &legal, &reg);
+    assert!(violations.is_empty(), "{violations:?}");
+    let offers: Vec<_> = legal.actions.into_iter()
+        .filter_map(|a| match a {
+            Action::ResolveChoice { choice: mtg_engine::actions::ResolvedChoice::ChosenCard(id) } => Some(id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(offers, vec![held[0], held[1]], "one offer per card, the first copy of each");
+
+    let state = engine::submit_action(&state, &Action::ResolveChoice {
+        choice: mtg_engine::actions::ResolvedChoice::ChosenCard(held[0]) }, &reg);
+    assert_eq!(state.get_object(held[0]).unwrap().zone, Zone::Graveyard);
+    for &c in &held[1..] {
+        assert_eq!(state.get_object(c).unwrap().zone, Zone::Hand, "the other copies stay");
+    }
+}

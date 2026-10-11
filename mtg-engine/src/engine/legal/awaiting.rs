@@ -254,9 +254,15 @@ pub(crate) fn legal_actions_while_awaiting(
                         },
                     ]
                 }
-                ResolutionChoiceKind::ChooseCardFromHand { cards, .. } => cards
-                    .iter()
-                    .map(|&id| Action::ResolveChoice {
+                // One offer per card here too: two copies in a hand are the
+                // same card, and which of them is discarded or put down is
+                // no choice. Per copy, Civilized Scholar's discard was seven
+                // rows for two answers and the random seat weighted its pick
+                // by copy count (#739).
+                ResolutionChoiceKind::ChooseCardFromHand { cards, .. } =>
+                    crate::cards::helpers::one_of_each_card(state, cards.clone())
+                    .into_iter()
+                    .map(|id| Action::ResolveChoice {
                         choice: ResolvedChoice::ChosenCard(id),
                     })
                     .collect(),
