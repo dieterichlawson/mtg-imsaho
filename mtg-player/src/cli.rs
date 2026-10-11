@@ -8005,13 +8005,21 @@ impl CliPlayer {
             // Alchemy: choose a card to put into your hand") — the literal
             // "Search Library" implied free tutoring for prompts that
             // reveal a fixed set, or discard from hand (issue #95).
+            // Every row of this screen is measured in the rows it renders to,
+            // and the list gets what is left (#783). The list was sized as
+            // the terminal less a guessed eight, while the detail and the
+            // footer took ten or more, so any list longer than that — every
+            // unfiltered Nevermore — scrolled the title, the Filter line and
+            // the highlighted row off the top. Nothing printed is wider than
+            // the terminal, so nothing is wrapped by it.
+            let (term_w_now, term_height) = terminal::size().unwrap_or((80, 24));
+            let width = (term_w_now as usize).saturating_sub(1).max(10);
             let _ = execute!(out, SetForegroundColor(Color::Yellow),
-                Print(format!("═══ {title} ═══\n\r")),
+                Print(clip_cols(&format!("═══ {title} ═══"), width)), Print("\n\r"),
                 ResetColor);
             // Clipped by display columns; an unclipped 10k-char filter was
             // 50 rows of echo re-painted per keystroke and looked like a
             // hang (#109). The tail is shown — it's what was last typed.
-            let (term_w_now, _) = terminal::size().unwrap_or((80, 24));
             let avail = (term_w_now as usize).saturating_sub("Filter: _".len() + 1);
             let shown = if str_cols(&filter) > avail {
                 let tail: String = filter.chars().rev().collect::<String>();
@@ -8023,56 +8031,63 @@ impl CliPlayer {
             };
             let _ = execute!(out, Print(format!("Filter: {shown}_\n\r\n\r")));
 
-            let (_, term_height) = terminal::size().unwrap_or((80, 24));
-            let max_list = (term_height as usize).saturating_sub(8); // Leave room for detail
+            // The rows under the list, laid out before it is sized.
+            let no_match = filtered.is_empty() && !filter.is_empty();
+            let detail: Vec<String> = filtered.get(selected).map(|card| {
+                let mut lines = vec![String::new()];
+                lines.push(clip_cols(&format!("  {} {}", card.name, card.cost), width));
+                let pt = if card.pt.is_empty() { String::new() } else { format!("  {}", card.pt) };
+                lines.push(clip_cols(&format!("  {}{pt}", card.type_line), width));
+                lines.extend(Self::oracle_lines(&card.oracle_text, width + 1));
+                lines
+            }).unwrap_or_default();
+            let footer = Self::wrap_indented(
+                &Self::card_browser_footer(&filter, decline.is_some(), filtered.is_empty()), width);
+            let max_list = (term_height as usize)
+                .saturating_sub(3 + usize::from(no_match) + detail.len() + 1 + footer.len())
+                .max(1);
 
             let start = selected.saturating_sub(max_list / 2);
             let visible: Vec<_> = filtered.iter().enumerate().skip(start).take(max_list).collect();
 
             // An empty result on a mandatory prompt must say so — a blank
             // list with "Enter to select" read as a hung game (issue #124).
-            if filtered.is_empty() && !filter.is_empty() {
+            if no_match {
                 let _ = execute!(out, SetForegroundColor(Color::Yellow),
-                    Print(format!("  No cards match '{shown}' — press Esc or Backspace to clear the filter.\n\r")),
-                    ResetColor);
+                    Print(clip_cols(&format!("  No cards match '{shown}' — press Esc or Backspace to clear the filter."), width)),
+                    Print("\n\r"), ResetColor);
             }
 
             for (i, card) in &visible {
                 if *i == selected {
                     let _ = execute!(out, SetForegroundColor(Color::Black),
                         SetAttribute(Attribute::Reverse),
-                        Print(format!(" > {} ", card.name)),
+                        Print(clip_cols(&format!(" > {} ", card.name), width)),
                         SetAttribute(Attribute::Reset),
                         ResetColor,
                         Print("\n\r"));
                 } else {
-                    let _ = execute!(out, Print(format!("   {}\n\r", card.name)));
+                    let _ = execute!(out, Print(clip_cols(&format!("   {}", card.name), width)), Print("\n\r"));
                 }
             }
 
-            // Show detail for selected card.
-            if let Some(card) = filtered.get(selected) {
-                let _ = execute!(out, Print("\n\r"));
-                let _ = execute!(out, Print("  "));
-                Self::print_with_mana(&mut out, &format!("{} {}", card.name, card.cost), Some(Color::Cyan));
-                let _ = execute!(out, Print("\n\r"), ResetColor);
-                let _ = execute!(out, SetForegroundColor(Color::DarkGrey),
-                    Print(format!("  {}", card.type_line)),
-                    ResetColor);
-                if !card.pt.is_empty() {
-                    let _ = execute!(out, Print(format!("  {}", card.pt)));
+            // Show detail for selected card: the name and cost, the type
+            // line, then the oracle text, wrapped under its indent like the
+            // detail pages' (#777).
+            for (k, line) in detail.iter().enumerate() {
+                match k {
+                    0 => {}
+                    1 => Self::print_with_mana(&mut out, line, Some(Color::Cyan)),
+                    2 => { let _ = execute!(out, SetForegroundColor(Color::DarkGrey), Print(line), ResetColor); }
+                    _ => { let _ = execute!(out, Print(line)); }
                 }
-                let _ = execute!(out, Print("\n\r"));
-                // Oracle text — wrap lines.
-                for line in card.oracle_text.split('\n') {
-                    let _ = execute!(out, Print(format!("  {line}\n\r")));
-                }
+                let _ = execute!(out, ResetColor, Print("\n\r"));
             }
 
-            let _ = execute!(out, Print("\n\r"),
-                SetForegroundColor(Color::DarkGrey),
-                Print(Self::card_browser_footer(&filter, decline.is_some(), filtered.is_empty())),
-                ResetColor, Print("\n\r"));
+            // The footer, with no newline after its last row: one more
+            // would scroll the screen by a row.
+            let _ = execute!(out, Print("\n\r"), SetForegroundColor(Color::DarkGrey),
+                Print(footer.join("\n\r")), ResetColor);
             let _ = out.flush();
 
             // Read input.

@@ -1263,3 +1263,65 @@ fn after_a_resize_the_menu_pages_by_the_new_page() {
     g.send("\x03");
     assert_clean_exit(&mut g);
 }
+
+/// Issue #783: the card browser fits the terminal. Its list was sized as
+/// the terminal less a guessed eight rows while the detail and footer took
+/// more, so an unfiltered Nevermore scrolled the title, the Filter line and
+/// the highlighted row off the top. Counted here as the rows the browser's
+/// last frame prints after it clears the screen.
+#[test]
+fn the_card_browser_fits_the_terminal() {
+    let dir = std::env::temp_dir().join(format!("mtg-cli-pty-783-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("temp dir");
+    let deck = dir.join("nevermore.txt");
+    std::fs::write(&deck, "20 Plains\n4 Nevermore\n16 Savannah Lions\n").expect("write deck");
+    let save = dir.join("nevermore.save");
+    let (deck, save_s) = (deck.to_str().expect("utf-8"), save.to_str().expect("utf-8").to_string());
+
+    // A save at p0's first main phase, then Nevermore in hand and three
+    // Plains on the battlefield.
+    let mut g = PtyGame::spawn(&["--p1", "cli", "--p2", "cli", "--deck1", deck, "--deck2", deck,
+        "--seed", "3", "--on-the-play", "1", "--save", &save_s, "--quiet"]);
+    g.expect("Keep opening hand", T);
+    g.answer("0\r");
+    g.forget();
+    g.expect("Keep opening hand", T);
+    g.answer("0\r");
+    g.expect("MAIN PHASE 1", T);
+    g.send("\x03");
+    let _ = g.wait_exit(T);
+    let mut d: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&save).expect("save")).expect("json");
+    let state = &mut d["state"];
+    let lib: Vec<u64> = state["players"][0]["library_order"].as_array().expect("library")
+        .iter().filter_map(serde_json::Value::as_u64).collect();
+    let named = |n: &str, k: usize| lib.iter().copied()
+        .filter(|i| state["objects"][i.to_string()]["name"] == n).take(k).collect::<Vec<_>>();
+    let (nevermore, plains) = (named("Nevermore", 1), named("Plains", 3));
+    for (ids, zone) in [(&nevermore, "Hand"), (&plains, "Battlefield")] {
+        for i in ids {
+            let o = &mut state["objects"][i.to_string()];
+            o["zone"] = zone.into();
+            o["summoning_sick"] = false.into();
+        }
+    }
+    let moved: Vec<u64> = nevermore.iter().chain(&plains).copied().collect();
+    state["players"][0]["library_order"] = lib.iter().copied().filter(|i| !moved.contains(i))
+        .collect::<Vec<_>>().into();
+    std::fs::write(&save, d.to_string()).expect("write save");
+
+    for (cols, rows) in [(120u16, 40u16), (80, 24)] {
+        let mut g = PtyGame::spawn_sized(cols, rows, &["--resume", &save_s, "--quiet"]);
+        g.expect("MAIN PHASE 1", T);
+        g.answer_option("Cast Nevermore", T);
+        g.expect("Filter: _", T);
+        g.expect("Esc = clear filter", T);
+        g.pump(Duration::from_millis(500));
+        let last = g.seen.rsplit("\x1b[2J").next().unwrap_or("");
+        let printed = last.matches('\n').count();
+        assert!(printed < usize::from(rows),
+            "at {cols}x{rows} the browser printed {printed} rows, so its top scrolled away");
+        g.send("\x03");
+        let _ = g.wait_exit(T);
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}
