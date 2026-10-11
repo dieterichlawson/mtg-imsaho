@@ -4509,7 +4509,14 @@ impl CliPlayer {
         let menu_rows = actions.map_or(1, |labels| {
             let hint_h = Self::wrap_indented(&Self::menu_hints(labels, has_right), mid_w).len();
             let marker_h = Self::marker_lines(labels.len().saturating_sub(1), MENU_PAGE_KEYS, mid_w);
-            Self::list_floor(labels.len(), h).max(1) + marker_h + hint_h + 1
+            // The options at their wrapped height: at least the tallest
+            // row, since a page holds a row whole. Counting the one option
+            // as one line put the input row on the hint's second line
+            // whenever the page's option wrapped (#775).
+            let idx_w = labels.len().saturating_sub(1).to_string().chars().count();
+            let tallest = Self::wrap_menu_rows(labels, mid_w.saturating_sub(4 + idx_w))
+                .iter().map(|r| r.len().max(1)).max().unwrap_or(1);
+            Self::list_floor(labels.len(), h).max(tallest) + marker_h + hint_h + 1
         });
         // A caller that draws its own question under the rule — the two
         // combat prompts, which append an eligible-creature list, its
@@ -11421,6 +11428,29 @@ Mark 1 of the 1 cards below to exile.");
                 assert!(hint_h >= 2, "test premise: the hint wraps at {mid_w}");
             }
         }
+    }
+
+    /// Issue #775: the block's floor holds the tallest option whole. One
+    /// line for a page's one option put the input row over the hint's
+    /// second line when that option wrapped.
+    #[test]
+    fn the_prompt_block_floor_holds_a_wrapped_option() {
+        let mid_w = 60;
+        let short: Vec<MenuLabel> = ["Pass priority", "Cast Doom Blade"]
+            .iter().map(|l| MenuLabel::plain((*l).to_string())).collect();
+        let mut long = short.clone();
+        long.push(MenuLabel::plain("Cast Altar's Reap (sacrifice a creature, tap Swamp (your), Mountain (your))"));
+        let rows = CliPlayer::wrap_menu_rows(&long, mid_w - 5);
+        assert_eq!(rows[2].len(), 2, "test premise: the third option wraps at {mid_w}");
+        let floor = |labels: &[MenuLabel]| {
+            let hint_h = CliPlayer::wrap_indented(&CliPlayer::menu_hints(labels, true), mid_w).len();
+            let marker_h = CliPlayer::marker_lines(labels.len() - 1, MENU_PAGE_KEYS, mid_w);
+            CliPlayer::prompt_block_min_rows(Some("MAIN PHASE 1"), None, Some(labels), true, mid_w, 8, 0)
+                - (1 + marker_h + hint_h + 1)
+        };
+        // An 8-row pane keeps one option; it is two lines when it wraps.
+        assert_eq!(floor(&short), 1);
+        assert_eq!(floor(&long), 2);
     }
 
     /// Issue #774: a side of the battlefield taller than its share is cut
