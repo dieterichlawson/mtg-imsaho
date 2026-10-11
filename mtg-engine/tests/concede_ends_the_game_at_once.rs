@@ -60,6 +60,15 @@ fn a_harness_forfeit_at_a_resolution_choice_ends_the_game_there() {
         "a forfeit sent to a resolution choice ends the game, not re-asks it (the stall watchdog spun 100 times)");
     assert_eq!(after.players[0].loss_reason, Some(mtg_engine::events::LossReason::Forfeited));
     assert_eq!(check_core(&after, &reg), Vec::<String>::new());
+    // As a transition too: the forfeit clause of the oracle passes a forfeit
+    // recorded as one, and flags one recorded any other way.
+    assert_eq!(mtg_engine::invariants::check_transition(&state, Some(&Action::Forfeit), &after, &reg),
+        Vec::<String>::new(), "the forfeit, as a transition");
+    let mut conceded = after.clone();
+    conceded.players[0].loss_reason = Some(mtg_engine::events::LossReason::Conceded);
+    assert!(mtg_engine::invariants::check_transition(&state, Some(&Action::Forfeit), &conceded, &reg)
+        .iter().any(|m| m.contains("forfeited but is not recorded")),
+        "a forfeit recorded as a concede is flagged");
 }
 
 /// Through the loop every runner drives: the conceding player is not asked
