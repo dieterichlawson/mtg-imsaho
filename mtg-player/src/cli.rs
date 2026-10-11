@@ -4724,7 +4724,7 @@ impl CliPlayer {
                 return line;
             }
             // Declined: the screen asks its question again, as it was.
-            Self::concede_if_confirmed();
+            Self::concede_if_confirmed(Some(redraw));
             redraw();
         }
     }
@@ -4733,13 +4733,16 @@ impl CliPlayer {
     /// whatever screen is asking — its answer is never given — to
     /// `answer_or_concede`, which returns `Action::Concede` in its place: a
     /// concede typed at the mulligan must not keep the hand first.
-    fn concede_if_confirmed() {
+    ///
+    /// `redraw` repaints the screen the word was typed at, for a resize
+    /// while the question is up; None where that screen has none.
+    fn concede_if_confirmed(redraw: Option<&dyn Fn()>) {
         // In the prompt panel, under the line that was typed — not at
         // column 0, over the LOG pane, where the reader's newline leaves
         // the cursor. The menu's own Concede row does the same.
         let row = cursor::position().map_or(24, |(_, r)| r);
         let _ = execute!(stdout(), cursor::MoveTo(Self::middle_panel_col(), row));
-        if Self::confirm_yn("  Are you sure you want to concede? (y/n)> ") {
+        if Self::confirm_yn("  Are you sure you want to concede? (y/n)> ", redraw) {
             std::panic::resume_unwind(Box::new(ConcedeRequested));
         }
     }
@@ -4831,12 +4834,18 @@ impl CliPlayer {
     /// `n` or Esc declines, anything else visibly re-prompts. Runs in raw
     /// mode with explicit echo, so a stray keystroke can never sit
     /// invisibly in a line buffer (issue #42).
-    fn confirm_yn(prompt: &str) -> bool {
+    ///
+    /// `redraw` repaints the screen the question was asked over. On a resize
+    /// the frame behind the question is repainted at the new size and the
+    /// question asked again under its input row; repainting the echo alone
+    /// left the old frame hard-wrapped by the terminal for as long as the
+    /// question was up (#779).
+    fn confirm_yn(prompt: &str, redraw: Option<&dyn Fn()>) -> bool {
         let mut out = stdout();
         // Remember where the prompt starts: a rejected key redraws THIS row
         // in place. The old reprompt printed a fresh row per junk key,
         // eating the LOG panel one row at a time (issue #125).
-        let (px, py) = cursor::position().unwrap_or((0, 20));
+        let (mut px, mut py) = cursor::position().unwrap_or((0, 20));
         let _ = execute!(out, Print(prompt));
         let _ = out.flush();
         let was_raw = terminal::is_raw_mode_enabled().unwrap_or(false);
@@ -4857,7 +4866,7 @@ impl CliPlayer {
         // with no Enter, while they were still typing (issue #249). The
         // answer is short, but "the keystroke that ends the game" cannot be
         // one the player has not finished choosing.
-        let echo_col = px + u16::try_from(prompt.chars().count()).unwrap_or(0);
+        let mut echo_col = px + u16::try_from(prompt.chars().count()).unwrap_or(0);
         // The panel's border, like the other two readers — this was the
         // terminal's width, so everything typed past column 118 of a 150-column
         // terminal printed straight through the frame and over the CARDS pane,
@@ -4872,7 +4881,19 @@ impl CliPlayer {
                 Some(ev) => ev,
                 None => continue,
             };
-            if let Event::Resize(w, _) = ev {
+            if let Event::Resize(w, h) = ev {
+                if let Some(redraw) = redraw {
+                    redraw();
+                    // The question goes under the frame's input row, where
+                    // it was asked.
+                    let row = cursor::position().map_or(py, |(_, r)| r);
+                    py = (row + 1).min(h.saturating_sub(1));
+                    px = Self::middle_panel_col();
+                    let shown = clip_cols(prompt, Self::middle_panel_edge_at(w as usize).saturating_sub(usize::from(px)));
+                    Self::clear_panel_row(&mut out, px, py);
+                    let _ = execute!(out, cursor::MoveTo(px, py), Print(&shown));
+                    echo_col = px + u16::try_from(shown.chars().count()).unwrap_or(0);
+                }
                 echo_cap = Self::echo_cap_at(w as usize, echo_col);
                 repaint_input_line(&mut out, echo_col, py, &buf, echo_cap);
                 continue;
@@ -4940,7 +4961,7 @@ impl CliPlayer {
             }
             // The same word as at every other prompt (#676); declined, the
             // menu is drawn again and asks again.
-            Self::concede_if_confirmed();
+            Self::concede_if_confirmed(Some(redraw));
             redraw();
         }
     }
@@ -8064,7 +8085,7 @@ impl CliPlayer {
                     // (#715).
                     KeyCode::Enter if is_concede_word(&filter) => {
                         let _ = execute!(out, event::DisableBracketedPaste);
-                        Self::concede_if_confirmed();
+                        Self::concede_if_confirmed(None);
                         tui_raw_on();
                         let _ = execute!(out, event::EnableBracketedPaste);
                         filter.clear();
@@ -8647,7 +8668,10 @@ impl CliPlayer {
                             let action = &legal_actions[*action_idx];
                             if matches!(action, Action::Concede) {
                                 let _ = execute!(stdout(), cursor::MoveTo(col, cursor::position().unwrap_or((0, 24)).1));
-                                if !Self::confirm_yn("  Are you sure you want to concede? (y/n)> ") {
+                                if !Self::confirm_yn("  Are you sure you want to concede? (y/n)> ", Some(&|| {
+                                    Self::render_paged(view, Some(&display_labels), legal.context.as_deref(),
+                                        &view.display_log, &self.card_filter, pass_label, menu_offset);
+                                })) {
                                     continue;
                                 }
                             }

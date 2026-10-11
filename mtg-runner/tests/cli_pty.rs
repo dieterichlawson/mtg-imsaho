@@ -1211,3 +1211,31 @@ fn the_working_indicator_paints_while_the_program_works() {
     g.send("\x03");
     let _ = g.wait_exit(T);
 }
+
+/// Issue #779: a resize while "Are you sure you want to concede?" is up
+/// repaints the frame behind the question, not just its echo, and asks the
+/// question again under the new frame's input row.
+#[test]
+fn a_resize_at_the_concede_question_repaints_the_frame() {
+    let mut g = seeded_game();
+    g.expect("Keep opening hand", T);
+    g.answer("0\r");
+    g.expect("2: Concede", T);
+    g.answer("2\r");
+    g.expect("Are you sure", T);
+    std::thread::sleep(Duration::from_millis(300));
+
+    g.forget();
+    g.resize(130, 40);
+    // The frame is drawn again — its turn bar and its menu — and the
+    // question is asked again under it, with no keystroke.
+    g.expect("(you are p0", T);
+    g.expect("Are you sure", T);
+    // And the question still answers: a no keeps the game.
+    g.answer("n\r");
+    g.expect("1: Play land", T);
+    g.expect_absent("Game over", Duration::from_secs(1));
+
+    g.send("\x03");
+    assert_clean_exit(&mut g);
+}
