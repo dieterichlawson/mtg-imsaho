@@ -62,3 +62,24 @@ fn an_ability_whose_cost_removed_its_source_keeps_its_target_requirement() {
         other => panic!("expected the ability on the stack, got {other:?}"),
     }
 }
+
+/// An ability with no X carries no X onto the stack, whatever the last X
+/// ability left behind. Resolving an X ability leaves its X in
+/// `last_activated_x_value`; activation clears it for an ability without
+/// X, or the next one — Selfless Cathar after a Kessig Wolf Run — goes on
+/// the stack saying "(X=3)" on every surface that shows the stack.
+#[test]
+fn an_ability_without_x_carries_no_x_onto_the_stack() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let cathar = named_permanent(&mut state, &reg, "Selfless Cathar", P0);
+    add_mana(&mut state, P0, &[(ManaType::White, 1), (ManaType::Colorless, 1)]);
+    // What a Kessig Wolf Run for 3 leaves behind once it has resolved.
+    state.last_activated_x_value = Some(3);
+
+    let state = activate_onto_stack(&state, &reg, cathar, None);
+    match state.stack.last() {
+        Some(StackEntry::Ability { x_value, .. }) => assert_eq!(*x_value, None, "no X on a non-X ability"),
+        other => panic!("expected the ability on the stack, got {other:?}"),
+    }
+}
