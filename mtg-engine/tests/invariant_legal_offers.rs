@@ -875,15 +875,15 @@ fn every_resolution_prompt_enumerates_to_its_own_options() {
     let bear = named_permanent(&mut state, &reg, "Grizzly Bears", P0);
     let other = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
     let card = spell_in_hand(&mut state, &reg, "Moment of Heroism", P0);
-    let card2 = spell_in_hand(&mut state, &reg, "Moment of Heroism", P0);
-    // Two different cards: copies of one card are one offer at a look (#721).
+    // Two different cards: copies of one card are one offer at a look (#721)
+    // and at a choice from hand (#739).
     let other_card = spell_in_hand(&mut state, &reg, "Giant Growth", P0);
     state.priority_player = Some(P0);
 
     let kinds = [
         ResolutionChoiceKind::YesNo { description: "?".into(), source_card: bear },
         ResolutionChoiceKind::ChooseCardFromHand {
-            description: "?".into(), player: P0, cards: vec![card, card2],
+            description: "?".into(), player: P0, cards: vec![card, other_card],
             discard_immediately: true, remaining: 1 },
         ResolutionChoiceKind::ChooseFromLookedAt {
             description: "?".into(), looked_at: vec![card, other_card] },
