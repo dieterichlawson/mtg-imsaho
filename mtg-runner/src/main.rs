@@ -1090,8 +1090,13 @@ use --save if you need a resumable file.");
     } else {
         String::new()
     };
+    // A finished game's count is the engine's, the one its save records and
+    // a resume of it reports: the runner's own counter also counts answers
+    // the engine refused and asked again, so a game with a refused answer
+    // read one number here and another from the save (#773).
+    let total = if state.result.is_some() { state.submit_seq } else { state.submit_seq.max(action_count) };
     let summary = format!("{}\nTotal actions: {}{}\nFinal turn: {}",
-        result_msg, state.submit_seq.max(action_count), resumed_note, state.turn_number);
+        result_msg, total, resumed_note, state.turn_number);
     // A page is told how it ended before the process that serves it goes.
     for (seat, player) in [(PlayerId(0), &mut p1), (PlayerId(1), &mut p2)] {
         if let PlayerKind::Gui(gui) = player {
