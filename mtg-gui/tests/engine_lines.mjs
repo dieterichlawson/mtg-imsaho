@@ -28,6 +28,20 @@ eq(w("p0 cast Doom Blade"), "you cast Doom Blade");
 eq(w("p0 winston"), "you winston");
 eq(w("p7 passes"), "p7 passes");
 
+// #737: any verb, not a list of six; an object is not a subject.
+eq(w("Forbidden Alchemy: p0 looks at the top 4 cards of their library"),
+  "Forbidden Alchemy: you look at the top 4 cards of their library");
+eq(w("Gavony Township puts a +1/+1 counter on each creature p0 controls"),
+  "Gavony Township puts a +1/+1 counter on each creature you control");
+eq(w("Night Terrors: p0 reveals hand: Plains"), "Night Terrors: you reveal hand: Plains");
+eq(w("Heretic's Punishment: p0 has an empty library"), "Heretic's Punishment: you have an empty library");
+eq(w("p0 gains control of Olivia Voldaren"), "you gain control of Olivia Voldaren");
+eq(w("p0 searches, p0 copies it"), "you search, you copy it");
+eq(w("p1 reveals hand"), "opp reveals hand");
+eq(w("deals 3 damage to p0 ones"), "deals 3 damage to you ones");
+eq(P.baseForm("dies"), "die");
+eq(P.baseForm("its"), null);
+
 // #714: no engine ids in a log line.
 eq(w("p1 cast Doom Blade (#74) targeting Grizzly Bears (#25)"), "opp cast Doom Blade targeting Grizzly Bears");
 eq(w("Kalonian Tusker (#31) resolved"), "Kalonian Tusker resolved");

@@ -77,20 +77,45 @@ export function inOurWords(state: LiveState, line: string): string {
   // A token is a possessive, or the subject of a present-tense verb, as
   // often as it is a bare name: swapping the word alone wrote "you's
   // unspent mana", "you keeps" and "Game over! you (red-green) wins!"
-  // (#713). The verbs are the engine's and the runner's present-tense ones,
-  // the same list the LLM seat conjugates (`try_rewrite_player_token`); a
-  // parenthetical between subject and verb — the deck name in the game-over
-  // line — is carried across.
-  return line.replace(/\bp(\d+)\b('s\b)?((?: \([^()]*\))?) ?(\b(?:keeps|mulligans|concedes|passes|wins|mills)\b)?/g,
-    (whole: string, n: string, poss: string | undefined, _paren: string, verb: string | undefined) => {
+  // (#713). Any verb is conjugated, not a list of them — a list of six left
+  // "you looks", "you has" and "each creature you controls" (#737) — unless
+  // the token is a preposition's object. A parenthetical between subject
+  // and verb — the deck name in the game-over line — is carried across.
+  return line.replace(/\bp(\d+)\b('s\b)?((?: \([^()]*\))?)(?: ([a-z]+)\b(?!'))?/g,
+    (whole: string, n: string, poss: string | undefined, paren: string, word: string | undefined,
+     offset: number, all: string) => {
       const pid = Number(n);
       const you = pid === state.view.you;
       if (!you && !state.view.opponents.some(o => o.id === pid)) return whole;
       const head = poss ? (you ? "your" : "opp's") : (you ? "you" : "opp");
       let rest = whole.slice(1 + n.length + (poss ? 2 : 0));
-      if (verb && you && !poss) rest = rest.slice(0, rest.length - verb.length) + VERB_BASE[verb];
+      const base = word && you && !poss && !followsPreposition(all.slice(0, offset)) ? baseForm(word) : null;
+      if (base !== null) rest = `${paren} ${base}`;
       return head + rest;
     });
+}
+
+/**
+ * The base form of a third-person-singular present verb ("reveals" →
+ * "reveal", "has" → "have", "searches" → "search", "copies" → "copy"), or
+ * null when the word does not read as one. The LLM seat's `base_form` in
+ * mtg-player/src/llm.rs is the same rule (#737).
+ */
+export function baseForm(word: string): string | null {
+  const irregular: Record<string, string> = { has: "have", is: "are", was: "were", does: "do" };
+  if (word in irregular) return irregular[word];
+  const notVerbs = ["its", "this", "his", "hers", "us", "plus", "thus", "yes", "always", "less"];
+  if (word.length < 3 || !word.endsWith("s") || word.endsWith("ss") || notVerbs.includes(word)) return null;
+  if (word.length > 4 && word.endsWith("ies")) return word.slice(0, -3) + "y";
+  if (["sses", "shes", "ches", "xes", "zes", "oes"].some(e => word.endsWith(e))) return word.slice(0, -2);
+  return word.slice(0, -1);
+}
+
+/** Whether `before` ends with a preposition, which makes the token after it an object. */
+function followsPreposition(before: string): boolean {
+  const m = /\b([A-Za-z]+) $/.exec(before);
+  return m !== null && ["to", "from", "at", "of", "by", "for", "with", "against", "than", "target"]
+    .includes(m[1].toLowerCase());
 }
 
 /**
@@ -104,10 +129,6 @@ export function inOurWords(state: LiveState, line: string): string {
 export function engineLine(state: LiveState, line: string): string {
   return withoutIds(inOurWords(state, line));
 }
-
-const VERB_BASE: Record<string, string> = {
-  keeps: "keep", mulligans: "mulligan", concedes: "concede", passes: "pass", wins: "win", mills: "mill",
-};
 
 /**
  * An object's name, with whose zone it is in when that zone is a graveyard
