@@ -3693,15 +3693,18 @@ impl CliPlayer {
         loop {
             let title = notice.take().map_or_else(|| label.to_string(),
                 |n| format!("{n} — {label}"));
-            let page = Self::render_paged(
-                view, Some(&labels), Some(&title), &view.display_log, "", None, menu_offset);
+            let page = std::cell::RefCell::new(Self::render_paged(
+                view, Some(&labels), Some(&title), &view.display_log, "", None, menu_offset));
             // A resize repaints the chooser for the new size, as the menu
             // and combat readers do since #250; this one kept the frame
-            // drawn for the old width until a keystroke (#700).
+            // drawn for the old width until a keystroke (#700). The page it
+            // draws is the one m/p then turn: paging by the page measured
+            // before the resize skipped rows or did nothing (#780).
             let input = Self::read_line_redrawing("", &|| {
-                let _ = Self::render_paged(
+                *page.borrow_mut() = Self::render_paged(
                     view, Some(&labels), Some(&title), &view.display_log, "", None, menu_offset);
             });
+            let page = page.take();
             match Self::parse_target_input(&input, options.len(), rows) {
                 TargetInput::Pick(idx) => return UpToPick::Pick(options[idx].clone()),
                 TargetInput::Done => return UpToPick::Done,
@@ -7196,9 +7199,12 @@ impl CliPlayer {
         let mut notice: Option<String> = None;
         let mut offset = 0usize;
         loop {
-            let page = Self::draw_ordering_screen(view, prompt, &rows, notice.take().as_deref(), offset);
-            let redraw = || { Self::draw_ordering_screen(view, prompt, &rows, None, offset); };
+            // The page a resize redraws is the page m/p turn (#780).
+            let page = std::cell::Cell::new(
+                Self::draw_ordering_screen(view, prompt, &rows, notice.take().as_deref(), offset));
+            let redraw = || page.set(Self::draw_ordering_screen(view, prompt, &rows, None, offset));
             let input = Self::read_line_redrawing("  Order> ", &redraw);
+            let page = page.get();
             match Self::parse_order_input(&input, n) {
                 OrderInput::Order(order) => {
                     return Action::ResolveChoice {
@@ -7501,9 +7507,12 @@ impl CliPlayer {
         let mut notice: Option<String> = None;
         let mut offset = 0usize;
         loop {
-            let page = Self::draw_set_screen(view, pick, &marked, notice.take().as_deref(), offset);
-            let redraw = || { Self::draw_set_screen(view, pick, &marked, None, offset); };
+            // The page a resize redraws is the page m/p turn (#780).
+            let page = std::cell::RefCell::new(
+                Self::draw_set_screen(view, pick, &marked, notice.take().as_deref(), offset));
+            let redraw = || { *page.borrow_mut() = Self::draw_set_screen(view, pick, &marked, None, offset); };
             let input = Self::read_line_redrawing("  Mark> ", &redraw);
+            let page = page.take();
             match Self::parse_card_set_input(&input, pick.rows.len(), pick.cancel.is_some()) {
                 SetInput::Toggle(ks) => {
                     touched = true;
@@ -8537,10 +8546,15 @@ impl CliPlayer {
             // at the old width for the player to type blindly into (#250).
             let filter = self.card_filter.clone();
             let context = legal.context.clone();
+            // The page a resize redraws is the page m/p turn: the menu paged
+            // by the page measured before the resize, so the first m after
+            // a shrink did nothing or skipped rows (#780).
+            let page = std::cell::RefCell::new(page);
             let input = Self::read_line_with_search_redrawing(col, &|| {
-                Self::render_paged(view, Some(&display_labels), context.as_deref(),
+                *page.borrow_mut() = Self::render_paged(view, Some(&display_labels), context.as_deref(),
                     &view.display_log, &filter, pass_label, menu_offset);
             });
+            let page = page.take();
 
             // '/' triggers card search immediately (returns None to re-render)
             if input.is_none() {

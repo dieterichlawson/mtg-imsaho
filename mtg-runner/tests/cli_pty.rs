@@ -1239,3 +1239,27 @@ fn a_resize_at_the_concede_question_repaints_the_frame() {
     g.send("\x03");
     assert_clean_exit(&mut g);
 }
+
+/// Issue #780: after a resize, `m` pages by the page the repaint drew. The
+/// menu kept the page measured before the resize, so on a menu that had
+/// fitted whole the first `m` after a shrink wrapped to the top and did
+/// nothing.
+#[test]
+fn after_a_resize_the_menu_pages_by_the_new_page() {
+    let mut g = seeded_game();
+    g.expect("Keep opening hand", T);
+    g.answer("0\r");
+    // Pass / Play land / Concede, all on one page at 40 rows.
+    g.expect("2: Concede", T);
+    std::thread::sleep(Duration::from_millis(300));
+
+    g.forget();
+    g.resize(150, 12);
+    g.expect("showing 0-0 of 0-2", T);
+    g.forget();
+    g.answer("m\r");
+    g.expect("showing 1-1 of 0-2", T);
+
+    g.send("\x03");
+    assert_clean_exit(&mut g);
+}
