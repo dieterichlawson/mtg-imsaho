@@ -1236,6 +1236,12 @@ impl CardRegistry {
         self.name_to_id.keys().map(String::as_str).collect()
     }
 
+    /// Every name a card in the registry can have on the battlefield: the
+    /// registered names and the back faces of double-faced cards.
+    pub fn all_face_names(&self) -> Vec<&str> {
+        self.name_to_id.keys().chain(self.back_name_to_id.keys()).map(String::as_str).collect()
+    }
+
     /// Build a registry with all built-in cards.
     #[must_use]
     pub fn with_all_cards() -> Self {

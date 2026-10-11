@@ -4134,8 +4134,21 @@ impl CliPlayer {
             let comma = last_comma
                 .filter(|&(_, at)| at * 2 >= width || last_space.is_none())
                 .map(|(i, _)| i);
-            let cut = comma.or(last_space).unwrap_or(hard_end);
-
+            // Never inside a card name that has its own comma. Past the
+            // front half the rule above takes any comma, and a name that
+            // came late in the row — "…targeting Mikaeus, the Lunarch" —
+            // was split at its comma (#776). Inside such a name the break
+            // falls back to the space before it, or to the comma or space
+            // the scan found before that.
+            let pick = comma.or(last_space).unwrap_or(hard_end);
+            let cut = match Self::comma_name_spans(rest).iter()
+                .filter(|&&(a, b)| a < pick && pick < b).map(|&(a, _)| a).min()
+            {
+                Some(a) if a > 0 => a,
+                // A name that starts the row and is wider than it: nothing
+                // better than splitting it.
+                _ => pick,
+            };
             let (line, tail) = rest.split_at(cut);
             lines.push(line.trim_end().to_string());
             rest = tail.trim_start();
@@ -4143,6 +4156,30 @@ impl CliPlayer {
                 return lines;
             }
         }
+    }
+
+    /// The byte spans of `text` that are card names with a comma in them
+    /// ("Mikaeus, the Lunarch", "Grimgrin, Corpse-Born"): a row is never
+    /// broken inside one (#776). The names are every face in the card pool
+    /// that has a comma, so a new one needs no change here.
+    fn comma_name_spans(text: &str) -> Vec<(usize, usize)> {
+        static NAMES: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+        let names = NAMES.get_or_init(|| {
+            let reg = mtg_engine::cards::CardRegistry::with_all_cards();
+            let mut names: Vec<String> = reg.all_face_names().into_iter()
+                .filter(|n| n.contains(", "))
+                .map(str::to_string)
+                .collect();
+            names.sort();
+            names.dedup();
+            names
+        });
+        if !text.contains(", ") {
+            return Vec::new();
+        }
+        names.iter()
+            .flat_map(|n| text.match_indices(n.as_str()).map(move |(i, m)| (i, i + m.len())))
+            .collect()
     }
 
     /// Whether the comma just before `after` separates the parts of an
@@ -11426,6 +11463,29 @@ Mark 1 of the 1 cards below to exile.");
                 "at {mid_w} the hint is {hint_h} rows and the marker {marker_h}");
             if mid_w <= 58 {
                 assert!(hint_h >= 2, "test premise: the hint wraps at {mid_w}");
+            }
+        }
+    }
+
+    /// Issue #776: a row is never broken inside a card name's own comma,
+    /// wherever in the row the name comes.
+    #[test]
+    fn a_comma_name_late_in_a_row_is_not_split() {
+        let row = "10: Garruk Relentless (your): 0: Deal 3 damage to target creature, it fights back targeting Mikaeus, the Lunarch 2/2 (your)";
+        for width in 40..=130 {
+            let lines = CliPlayer::wrap_row(row, width);
+            for l in &lines {
+                assert!(!l.ends_with("Mikaeus,"), "split at {width}: {lines:?}");
+                assert!(str_cols(l) <= width, "fits at {width}: {lines:?}");
+            }
+            assert!(lines.iter().any(|l| l.contains("Mikaeus, the Lunarch")), "{lines:?}");
+        }
+        let sac = "3: Grimgrin, Corpse-Born 5/5 (your): Sacrifice another creature: Untap Grimgrin, +1/+1 counter, sacrificing Mikaeus, the Lunarch 1/1 (your)";
+        for width in 40..=130 {
+            let lines = CliPlayer::wrap_row(sac, width);
+            // "Untap Grimgrin, +1/+1 counter" is the effect's own list.
+            for name in ["Grimgrin, Corpse-Born", "Mikaeus, the Lunarch"] {
+                assert!(lines.iter().any(|l| l.contains(name)), "{name} split at {width}: {lines:?}");
             }
         }
     }
