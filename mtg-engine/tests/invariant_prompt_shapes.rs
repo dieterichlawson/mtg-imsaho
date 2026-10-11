@@ -929,6 +929,21 @@ fn a_library_choice_offers_one_copy_of_each_card() {
     let mut s = state.clone();
     s.awaiting_action = Some(choose(vec![copies[0]]));
     quiet_about(&s, &reg, "library choice offers two copies");
+
+    // The library search's own prompt is held to it too, not only a card's
+    // hand-rolled target prompt.
+    let search = |options: Vec<ObjectId>| AwaitingAction::ResolutionChoice {
+        player: P0, source,
+        choice: ResolutionChoiceKind::ChooseFromLibrary {
+            description: "search".into(), options, searcher: P0, source_id: source,
+            destination: Zone::Hand, tapped: false,
+        } };
+    let mut s = state.clone();
+    s.awaiting_action = Some(search(copies.clone()));
+    flags(&s, &reg, "library choice offers two copies of Forest");
+    let mut s = state.clone();
+    s.awaiting_action = Some(search(vec![copies[0]]));
+    quiet_about(&s, &reg, "library choice offers two copies");
 }
 
 /// CR 601.2b/608.2: a pay-or-not prompt is about a spell on the stack,

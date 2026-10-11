@@ -118,3 +118,35 @@ fn the_activation_can_be_cancelled() {
     assert!(others.iter().all(|&o| !after.get_object(o).unwrap().tapped));
     assert_eq!(priest_offers(&after, &reg, priest).len(), 1, "and it is offered again");
 }
+
+/// The oracle's clause for this prompt: an option is another untapped
+/// creature the activator controls on the battlefield, and every way of
+/// failing that is flagged — tapped, the opponent's, the source itself,
+/// not a creature. A clause loosened to any one of those reads a bad cost
+/// prompt as a good one, and the fuzzer stops seeing the class (CR 602.2b).
+#[test]
+fn the_checker_flags_every_option_that_is_not_another_untapped_creature_of_yours() {
+    let (mut state, reg, priest, others) = priest_with(3);
+    let tapped = others[2];
+    state.get_object_mut(tapped).unwrap().tapped = true;
+    let theirs = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let ring = named_permanent(&mut state, &reg, "Sol Ring", P0);
+    let asked = activate_onto_stack(&state, &reg, priest, None);
+    assert!(cost_prompt(&asked).is_some(), "test premise: the cost is asked");
+    let with_options = |options: Vec<ObjectId>| {
+        let mut s = asked.clone();
+        if let Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseObjectSet { options: o, .. }, .. }) = &mut s.awaiting_action {
+            *o = options;
+        }
+        mtg_engine::invariants::check_core(&s, &reg)
+    };
+    let quiet = with_options(vec![others[0], others[1]]);
+    assert!(!quiet.iter().any(|m| m.contains("activation cost prompt offers")), "{quiet:?}");
+    for (bad, what) in [(tapped, "a tapped creature"), (theirs, "the opponent's creature"),
+                        (priest, "the source"), (ring, "a noncreature")] {
+        let v = with_options(vec![others[0], bad]);
+        assert!(v.iter().any(|m| m.contains("activation cost prompt offers")),
+            "{what} is flagged: {v:?}");
+    }
+}
