@@ -374,7 +374,7 @@ pub fn reset_terminal_for_exit() {
     let mut out = stdout();
     // Defensive: bracketed paste must never survive into the user's shell.
     let _ = execute!(out, event::DisableBracketedPaste);
-    let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+    clear_frame(&mut out);
     let _ = out.flush();
 }
 
@@ -460,6 +460,16 @@ pub fn start_working() {
         }
     });
     *slot = Some(Working { running });
+}
+
+/// Clear the whole terminal for a new frame, stopping the working
+/// indicator first. Every full-screen painter goes through this: two that
+/// cleared the screen themselves — the ordering screen and the card
+/// browser — never stopped it, so "working ⠙" spun over the screen's own
+/// title for as long as the program waited on the player (#782).
+fn clear_frame(out: &mut impl Write) {
+    stop_working();
+    let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
 }
 
 /// Stop the indicator, if it is running, before anything draws over it.
@@ -1804,7 +1814,7 @@ impl CliPlayer {
         stop_working();
 
         let mut out = stdout();
-        let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+        clear_frame(&mut out);
 
         let (term_w, term_h) = terminal::size().unwrap_or((100, 30));
         let w = term_w as usize;
@@ -5368,7 +5378,7 @@ impl CliPlayer {
         let mut notice: Option<String> = None;
 
         loop {
-            let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+            clear_frame(&mut out);
 
             let all_perms = Self::inspect_permanents(view);
             let rows = Self::inspect_rows(view);
@@ -5415,7 +5425,7 @@ impl CliPlayer {
             if let Ok(i) = typed.parse::<usize>() {
                 if i < all_perms.len() {
                     let perm = all_perms[i];
-                    let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+                    clear_frame(&mut out);
                     Self::paint_permanent_detail(&mut out, view, perm);
                     let _ = out.flush();
                     let _ = Self::read_line("");
@@ -5596,7 +5606,7 @@ return",
             let (start, shown, paged) = Self::menu_page_lines(&heights, avail, offset, 0);
             offset = start;
             let end = start + shown;
-            let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+            clear_frame(&mut out);
             let heading = if paged {
                 format!("{} (showing {}-{} of {})", title, start + 1, end, lines.len())
             } else {
@@ -5957,7 +5967,7 @@ return",
         let mut page = 0usize;
         let mut notice: Option<String> = None;
         loop {
-            let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+            clear_frame(&mut out);
 
             let mut cards: Vec<mtg_engine::cards::CardData> = Vec::new();
             for name in &all_names {
@@ -6055,7 +6065,7 @@ return",
                     let back = registry.get_id_by_name(&data.name)
                         .and_then(|id| registry.get(id))
                         .and_then(|b| b.back_face_data());
-                    let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+                    clear_frame(&mut out);
                     Self::paint_card_detail(&mut out, data, back.as_ref(), Self::term_width());
                     let _ = out.flush();
                     let _ = Self::read_line("");
@@ -7727,7 +7737,7 @@ impl CliPlayer {
         let (term_w, term_h) = terminal::size().unwrap_or((100, 30));
         let (w, h) = (term_w as usize, term_h as usize);
         let text_w = w.saturating_sub(2).max(20);
-        let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+        clear_frame(&mut out);
 
         // Header: what is being decided.
         let (title, rule) = match prompt.kind {
@@ -7960,7 +7970,7 @@ impl CliPlayer {
             }
 
             // Render.
-            let _ = execute!(out, terminal::Clear(ClearType::All), cursor::MoveTo(0, 0));
+            clear_frame(&mut out);
             // The header names the effect and the choice ("Forbidden
             // Alchemy: choose a card to put into your hand") — the literal
             // "Search Library" implied free tutoring for prompts that
@@ -8064,7 +8074,7 @@ impl CliPlayer {
                         if let Some(card) = filtered.get(selected) {
                             let _ = execute!(out, event::DisableBracketedPaste);
                             tui_raw_off();
-                            let _ = execute!(out, terminal::Clear(ClearType::All), cursor::MoveTo(0, 0));
+                            clear_frame(&mut out);
                             return actions[card.action_index].clone();
                         }
                     }
@@ -8096,7 +8106,7 @@ impl CliPlayer {
                             if let Some(decline_action) = decline {
                                 let _ = execute!(out, event::DisableBracketedPaste);
                                 tui_raw_off();
-                                let _ = execute!(out, terminal::Clear(ClearType::All), cursor::MoveTo(0, 0));
+                                clear_frame(&mut out);
                                 return decline_action;
                             }
                         }
@@ -11526,6 +11536,21 @@ Mark 1 of the 1 cards below to exile.");
                 assert!(lines.iter().any(|l| l.contains(name)), "{name} split at {width}: {lines:?}");
             }
         }
+    }
+
+    /// Issue #782: a frame cleared for a new screen stops the working
+    /// indicator, and every full-screen clear in this file is that one.
+    #[test]
+    fn a_new_frame_stops_the_working_indicator() {
+        start_working();
+        let mut sink: Vec<u8> = Vec::new();
+        clear_frame(&mut sink);
+        assert!(WORKING.lock().unwrap().is_none(), "the frame stopped it");
+        // The ordering screen and the card browser cleared the screen
+        // themselves and never stopped it.
+        let src = include_str!("cli.rs");
+        let clears = src.matches(concat!("Clear(ClearType", "::All)")).count();
+        assert_eq!(clears, 1, "one full-screen clear, in clear_frame");
     }
 
     /// Issue #775: the block's floor holds the tallest option whole. One
