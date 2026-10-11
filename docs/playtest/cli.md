@@ -1243,7 +1243,7 @@ whether it told the truth.
   they wrap (#698); `wrap_row`'s comma preference splits card names
   ("Mikaeus," / "the Lunarch", #701). Width alone is now well covered —
   vary the height and which side is wide
-- V54 [proposed 2026-10-06, from V53 and #695] the tall side. V53 swept
+- V54 [tried 2026-10-11 → #774, #775; proposed 2026-10-06, from V53 and #695] the tall side. V53 swept
   widths; the screen broke on height. Stage a board where ONE side is taller
   than the pane (26 distinct creatures for the opponent — V53's staging in
   #701 does it), then at 120x40 and 80x24 list what the player at the
@@ -1251,14 +1251,45 @@ whether it told the truth.
   Repeat at every prompt kind (priority menu, target, sacrifice, attackers,
   blockers, mulligan), then with the tall side being yours. Pass if
   everything is shown or something says the rest exists. A stray `├` tee on
-  a prompt row is the trace of a row drawn below the last line — count them- V55 [proposed 2026-10-06, from #700] every reader that cannot repaint.
+  a prompt row is the trace of a row drawn below the last line — count them
+
+  **Answered 2026-10-11: whenever a board is taller than the pane, the
+  player's own half is what is lost (#774).** One side of 26 distinct
+  creatures, staged by save edit (the script is in #774's Repro). At
+  120x40 the player sees a few creature rows and no life line, Lands line
+  or hand, with no marker, at priority, target, sacrifice, attackers and
+  blockers. At 80x24 they see none of their permanents. The menu shrinks
+  to one row a page. A wrapped one-option page loses the hint's second
+  row, because `prompt_block_min_rows` reserves one line for the option
+  (#775). The page keeps the player's whole half (the opponent's row
+  overlaps by design). The mulligan could not be reached with a board.
+  Once #774 is fixed, re-run it at the mulligan by staging permanents
+  before the keep.
+- V55 [tried 2026-10-11 → #778, #779, #780, #782, #783; proposed 2026-10-06, from #700] every reader that cannot repaint.
   #250 gave the menu and combat readers a redraw on resize; #700 found
   `run_target_chooser` and the X reader still calling `read_line`, which is
   `read_line_redrawing(prompt, &|| {})`. Grep `cli.rs` for every `read_line(`
   call and every `&|| {}` redraw, open each of those prompts in tmux, shrink
   the pane by 20 columns and then grow it by 20 rows, and capture before
   any keystroke. Pass if the frame is redrawn at the new size; a frame
-  hard-wrapped by the terminal or a blank band is a #250 escape- V56 [proposed 2026-10-06, from #701, the third comma after #633 and
+  hard-wrapped by the terminal or a blank band is a #250 escape
+
+  **Answered 2026-10-11: #700 holds; the readers it deferred do not
+  repaint (#778, #779).** The target chooser, the X reader, the menu,
+  the mulligan, bottoming, combat, damage order and amount, `/` search
+  and every `pick_set` prompt all re-lay at the new size. The deck
+  browser, the inspector, both detail pages and the `l`/`g`/`e`/`s` pager
+  (which also measures the terminal once) do not. Nor does `confirm_yn`,
+  which the `read_line(` grep misses because it handles Resize by
+  repainting only its echo. Repainting is not enough on its own: the
+  first `m` after a resize pages with the old `MenuPage` (#780). Side
+  finds: the "working" spinner runs through two prompts (#782), and the
+  card browser is taller than the terminal (#783). Next time, grep for
+  `Event::Resize` arms that don't call a frame painter, and for redraw
+  closures that throw away what they render. A lead not yet reproduced:
+  the ordering prompt's redraw passes `None` for its notice, so a refusal
+  shown there should vanish on a resize.
+- V56 [tried 2026-10-11 → #776, #777, #781; proposed 2026-10-06, from #701, the third comma after #633 and
   #681] commas that are not cost separators. `wrap_row` prefers the longest
   comma-terminated prefix, and `comma_is_inside_a_cost` guards only costs.
   List every pool card whose name contains a comma (Mikaeus, Grimgrin,
@@ -1267,7 +1298,23 @@ whether it told the truth.
   it…"), put them on the battlefield, and read their menu, target, attack
   and block rows at 80-200 columns. Pass if no first line ends inside a
   name or leaves a fragment under a quarter of the width. Cheaper still:
-  run `wrap_row` from a scratch test over every label the pool produces- V57 [proposed 2026-10-06, from #704 and #705] the untap half and the
+  run `wrap_row` from a scratch test over every label the pool produces
+
+  **Answered 2026-10-11: #701's short fragment is gone; the name split
+  moved to the back half (#776).** The pool has only three comma names
+  (Mikaeus, Grimgrin, Garruk, the Veil-Cursed); Urza and the rest exist
+  only in `data/oracle_cache.json`. When staging a transformed card,
+  `is_transformed` needs `name` set to the back face too, or resume
+  refuses the save. 104 captures at 80-200 and a scratch copy of
+  `wrap_row` over 19k labels found no first line under a quarter of the
+  width. But a name after "targeting" or ", sacrificing" still breaks at
+  its own comma at 175-200 columns, and only a name-aware `wrap_row` can
+  fix that. Side finds: the detail pages don't wrap (#777), and an
+  equipped creature's row cuts "[e…" open and drops the Equipment below
+  ~130 columns (#781, the middle branch of `elide_middle` that #702 did
+  not touch). `word_wrap`, the page's `wrap` and the LLM text break only
+  at spaces.
+- V57 [tried 2026-10-11, nothing found; proposed 2026-10-06, from #704 and #705] the untap half and the
   LOG pane's wrap, without playing a game. (1) Grep `mtg-engine/src` for
   every `.untap(` and bare `.tap(` caller (not `tap_for`); stage each card
   by save edit, use it, and check `--log` and the LOG pane both get a line
@@ -1278,3 +1325,13 @@ whether it told the truth.
   continuation row (two-space indent) holding a single word — the resumed
   pane redraws the whole history, so one save covers every line length
 
+  **Answered 2026-10-11: both halves hold.** (1) Every `.tap(`/`.untap(`
+  caller is either logged through `tap_for`/`untap_for` or implied by its
+  own line (attack, mana, "regenerated", the activation). (2) A 532-action
+  random game was un-finished by save edit: clear `result`, `lost`,
+  `loss_reason` and `events`, and set life above 0. Resumed at every width
+  from 80 to 200, it gave 25 LOG pane widths and 1,841 continuation rows,
+  and every wrapped entry equals its greedy re-wrap. The check script
+  compares each entry to a greedy re-wrap, which is sharper than "single
+  word"; a single-word continuation is often correct. Re-run only after a
+  change to `word_wrap` or the LOG pane.
