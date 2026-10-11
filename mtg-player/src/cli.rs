@@ -381,8 +381,13 @@ pub fn reset_terminal_for_exit() {
 /// Handle for the background spinner thread. Drop to stop.
 pub struct SpinnerHandle {
     running: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    thread: Option<std::thread::JoinHandle<()>>,
 }
+
+/// The thinking spinner's flag while one runs, so that [`stop_working`] —
+/// and with it every new frame and every stderr line — stops it too
+/// (#782's review: a forfeit WARN printed under it).
+static THINKING: std::sync::Mutex<Option<std::sync::Arc<std::sync::atomic::AtomicBool>>> =
+    std::sync::Mutex::new(None);
 
 /// The "working" indicator a person sees while the program does work they
 /// are waiting on (issue #566): the engine resolving what they just did,
@@ -476,22 +481,24 @@ fn clear_frame(out: &mut impl Write) {
 /// Stop the indicator, if it is running, before anything draws over it.
 pub fn stop_working() {
     let mut slot = match WORKING.lock() { Ok(g) => g, Err(e) => e.into_inner() };
+    let thinking = match THINKING.lock() { Ok(mut g) => g.take(), Err(e) => e.into_inner().take() };
+    if let Some(t) = &thinking {
+        t.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
     if let Some(w) = slot.take() {
         w.running.store(false, std::sync::atomic::Ordering::SeqCst);
-        // Wait out a paint in progress: past this lock it paints no more.
-        drop(match WORKING_PAINT.lock() { Ok(g) => g, Err(e) => e.into_inner() });
     }
+    // Wait out a paint in progress: past this lock neither paints again.
+    drop(match WORKING_PAINT.lock() { Ok(g) => g, Err(e) => e.into_inner() });
 }
 
 impl Drop for SpinnerHandle {
     fn drop(&mut self) {
         self.running.store(false, std::sync::atomic::Ordering::SeqCst);
-        // Joined, so its last glyph lands before the next frame draws, not
-        // after it: left to die on its own, one more paint could land over
-        // the new frame (#782, the handshake `stop_working` already has).
-        if let Some(t) = self.thread.take() {
-            let _ = t.join();
-        }
+        // Wait out a paint in progress, the handshake `stop_working` has:
+        // left to die on its own, one more glyph could land over the next
+        // frame (#782).
+        drop(match WORKING_PAINT.lock() { Ok(g) => g, Err(e) => e.into_inner() });
     }
 }
 
@@ -8833,22 +8840,32 @@ impl CliPlayer {
             let mut i = 0;
             let mut out = stdout();
             while running_clone.load(std::sync::atomic::Ordering::SeqCst) {
-                let _ = execute!(out,
-                    cursor::SavePosition,
-                    cursor::MoveTo(col, spinner_row),
-                    SetForegroundColor(Color::Red),
-                    Print(frames[i % frames.len()]),
-                    ResetColor,
-                    cursor::RestorePosition,
-                );
-                let _ = out.flush();
+                {
+                    // Painted under the lock `stop_working` waits on, and
+                    // only while still running once it is held.
+                    let _paint = match WORKING_PAINT.lock() { Ok(g) => g, Err(e) => e.into_inner() };
+                    if !running_clone.load(std::sync::atomic::Ordering::SeqCst) {
+                        break;
+                    }
+                    let _ = execute!(out,
+                        cursor::SavePosition,
+                        cursor::MoveTo(col, spinner_row),
+                        SetForegroundColor(Color::Red),
+                        Print(frames[i % frames.len()]),
+                        ResetColor,
+                        cursor::RestorePosition,
+                    );
+                    let _ = out.flush();
+                }
                 std::thread::sleep(std::time::Duration::from_millis(80));
                 i += 1;
             }
             // Don't restore caret — the next render overwrites it.
         });
 
-        SpinnerHandle { running, thread: Some(handle) }
+        let _ = handle; // detach — it stops when `running` goes false
+        *match THINKING.lock() { Ok(g) => g, Err(e) => e.into_inner() } = Some(running.clone());
+        SpinnerHandle { running }
     }
 
     pub fn choose_combat(&mut self, view: &GameView, prompt: &CombatPrompt) -> Action {
@@ -11699,6 +11716,17 @@ Mark 1 of the 1 cards below to exile.");
         start_working();
         crate::stderr_line!("");
         assert!(WORKING.lock().unwrap().is_none(), "the line stopped it");
+    }
+
+    /// Issue #782, the thinking spinner: what stops the working indicator —
+    /// a new frame, a stderr line — stops it too. A forfeit WARN printed
+    /// under it while it kept painting.
+    #[test]
+    fn a_line_on_stderr_stops_the_thinking_spinner() {
+        let running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        *THINKING.lock().unwrap() = Some(running.clone());
+        crate::stderr_line!("");
+        assert!(!running.load(std::sync::atomic::Ordering::SeqCst), "the line stopped it");
     }
 
     /// Issue #777: the inspector shows a double-faced permanent's other face.
