@@ -2539,8 +2539,17 @@ impl LlmPlayer {
             let prev_is_word = out.as_bytes().last()
                 .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_');
             if !prev_is_word && remaining.starts_with('p') {
-                if let Some((rewritten, consumed)) = Self::try_rewrite_player_token(remaining, you) {
-                    out.push_str(&rewritten);
+                let after_preposition = follows_preposition(&out);
+                if let Some((rewritten, consumed)) = Self::try_rewrite_player_token(remaining, you, after_preposition) {
+                    // A line that opens with a possessive opens with a
+                    // capital, as one that opens with "You" does (#737).
+                    if out.is_empty() {
+                        let mut cs = rewritten.chars();
+                        out.extend(cs.next().map(|c| c.to_ascii_uppercase()));
+                        out.push_str(cs.as_str());
+                    } else {
+                        out.push_str(&rewritten);
+                    }
                     remaining = &remaining[consumed..];
                     continue;
                 }
@@ -2554,9 +2563,9 @@ impl LlmPlayer {
 
     /// Try to match `p<digits>` at the start of `s` and return the
     /// rewritten text plus the number of input bytes to skip. Handles
-    /// possessive (`p0's`) and five present-tense verbs that need
-    /// conjugation when the subject becomes "You".
-    fn try_rewrite_player_token(s: &str, you: mtg_engine::ids::PlayerId) -> Option<(String, usize)> {
+    /// possessive (`p0's`) and the present-tense verb after a token that
+    /// becomes "You", unless the token is a preposition's object.
+    fn try_rewrite_player_token(s: &str, you: mtg_engine::ids::PlayerId, after_preposition: bool) -> Option<(String, usize)> {
         let bytes = s.as_bytes();
         if bytes.len() < 2 || bytes[0] != b'p' || !bytes[1].is_ascii_digit() {
             return None;
@@ -2575,28 +2584,17 @@ impl LlmPlayer {
             return Some((tag.to_string(), end + 2));
         }
 
-        // Present-tense verb conjugation when subject becomes "You".
-        if is_you {
-            const VERBS: &[(&str, &str)] = &[
-                (" keeps", " keep"),
-                (" mulligans", " mulligan"),
-                (" concedes", " concede"),
-                (" passes", " pass"),
-                (" wins", " win"),
-                // Action rows say what an effect *would* do, so they carry
-                // present-tense verbs the past-tense log never did: without
-                // this, `instead p1 mills 4 cards` became "You mills" (#543).
-                (" mills", " mill"),
-            ];
-            for (from, to) in VERBS {
-                if rest.starts_with(from) {
-                    let after_verb = rest.as_bytes().get(from.len()).copied();
-                    let word_end = match after_verb {
-                        None => true,
-                        Some(c) => !c.is_ascii_alphabetic(),
-                    };
-                    if word_end {
-                        return Some((format!("You{to}"), end + from.len()));
+        // Present-tense verb conjugation when subject becomes "You": any
+        // third-person verb, not a list of them. The list named six, so
+        // every other player-subject line read "You reveals hand", "You
+        // has an empty library", "each creature You controls" (#737).
+        if is_you && !after_preposition {
+            if let Some(word) = rest.strip_prefix(' ') {
+                let len = word.bytes().take_while(u8::is_ascii_lowercase).count();
+                let ends = word.as_bytes().get(len).is_none_or(|c| !c.is_ascii_alphanumeric() && *c != b'\'');
+                if len > 0 && ends {
+                    if let Some(base) = base_form(&word[..len]) {
+                        return Some((format!("You {base}"), end + 1 + len));
                     }
                 }
             }
@@ -5941,6 +5939,42 @@ attacking the planeswalker", both.join(", ")));
 
 // Crate-visible for the fixtures `surface_parity.rs` replays against both
 // surfaces.
+/// The base form of `word` when it is a third-person-singular present
+/// verb ("reveals" → "reveal", "has" → "have", "searches" → "search",
+/// "copies" → "copy"), or None when it does not read as one. The engine
+/// writes its player-subject lines as "p0 <verb>s"; a reader's own lines
+/// say "you <verb>", whatever the verb (#737). The page's `baseForm` in
+/// mtg-gui/src/prompts.ts is the same rule.
+pub(crate) fn base_form(word: &str) -> Option<String> {
+    const NOT_VERBS: &[&str] = &["its", "this", "his", "hers", "us", "plus", "thus", "yes", "always", "less"];
+    match word {
+        "has" => return Some("have".into()),
+        "is" => return Some("are".into()),
+        "was" => return Some("were".into()),
+        "does" => return Some("do".into()),
+        _ => {}
+    }
+    if word.len() < 3 || !word.ends_with('s') || word.ends_with("ss") || NOT_VERBS.contains(&word) {
+        return None;
+    }
+    if word.len() > 4 && word.ends_with("ies") {
+        return Some(format!("{}y", &word[..word.len() - 3]));
+    }
+    if ["sses", "shes", "ches", "xes", "zes", "oes"].iter().any(|e| word.ends_with(e)) {
+        return Some(word[..word.len() - 2].to_string());
+    }
+    Some(word[..word.len() - 1].to_string())
+}
+
+/// Whether the text before a player token ends with a preposition, which
+/// makes the token an object ("deals 3 damage to p0"), so the word after
+/// it is not its verb.
+pub(crate) fn follows_preposition(before: &str) -> bool {
+    const PREPOSITIONS: &[&str] = &["to", "from", "at", "of", "by", "for", "with", "against", "than", "target"];
+    let last = before.trim_end().rsplit(|c: char| !c.is_ascii_alphabetic()).next().unwrap_or("");
+    before.ends_with(' ') && PREPOSITIONS.contains(&last.to_ascii_lowercase().as_str())
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -8154,6 +8188,31 @@ this Aura deals 1 damage to that player.";
         assert_eq!(LlmPlayer::parse_order_response(&serde_json::json!([]), 0), Some(vec![]));
     }
 
+    /// Issue #737: a line whose subject becomes "You" conjugates whatever
+    /// its verb is, not one of a listed six; a token after a preposition is
+    /// not a subject; and a line opening with a possessive is capitalised.
+    #[test]
+    fn any_verb_after_you_is_conjugated() {
+        let you = PlayerId(0);
+        let w = |l: &str| LlmPlayer::generic_player_rewrite(l, you);
+        assert_eq!(w("Night Terrors: p0 reveals hand: Plains"), "Night Terrors: You reveal hand: Plains");
+        assert_eq!(w("Heretic's Punishment: p0 has an empty library"), "Heretic's Punishment: You have an empty library");
+        assert_eq!(w("Forbidden Alchemy: p0 looks at the top 4 cards"), "Forbidden Alchemy: You look at the top 4 cards");
+        assert_eq!(w("a counter on each creature p0 controls"), "a counter on each creature You control");
+        assert_eq!(w("p0 gains control of Olivia Voldaren"), "You gain control of Olivia Voldaren");
+        assert_eq!(w("p0 searches, p0 copies it, p0 passes"), "You search, You copy it, You pass");
+        assert_eq!(w("p0 keeps (0 mulligans)"), "You keep (0 mulligans)");
+        // The opponent's verb, a past tense, and an object are left alone.
+        assert_eq!(w("p1 reveals hand"), "Opp reveals hand");
+        assert_eq!(w("p0 cast Doom Blade"), "You cast Doom Blade");
+        assert_eq!(w("deals 3 damage to p0 ones"), "deals 3 damage to You ones");
+        // A possessive opening the line is capitalised.
+        assert_eq!(w("p0's Ashmouth Hound (#38)'s block trigger"), "Your Ashmouth Hound (#38)'s block trigger");
+        assert_eq!(super::base_form("dies").as_deref(), Some("die"));
+        assert_eq!(super::base_form("its"), None);
+        assert_eq!(super::base_form("less"), None);
+    }
+
     /// Issue #713: the pool-emptying line (#708) read "your unspent mana
     /// empties from their pool" once the seat's token was rewritten. The
     /// engine now names the pool once, as a possessive every surface turns
@@ -8162,9 +8221,9 @@ this Aura deals 1 damage to that player.";
     fn the_pool_emptying_line_reads_as_one_owner() {
         let you = PlayerId(0);
         assert_eq!(LlmPlayer::generic_player_rewrite("p0's mana pool empties (Green:1)", you),
-            "your mana pool empties (Green:1)");
+            "Your mana pool empties (Green:1)");
         assert_eq!(LlmPlayer::generic_player_rewrite("p1's mana pool empties (Black:2)", you),
-            "opp's mana pool empties (Black:2)");
+            "Opp's mana pool empties (Black:2)");
     }
 
     /// Issue #724: the board says who is attacking and who is blocking whom.
