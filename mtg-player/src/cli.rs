@@ -4629,6 +4629,15 @@ impl CliPlayer {
         n.min((h / 8).max(1))
     }
 
+    /// `list_floor` for a list whose rows wrap, in lines: at least the
+    /// tallest row's height, since a page holds a row whole. Counted in
+    /// entries, a page whose one row wrapped ran a line past its
+    /// reservation, over the hints or the input row (#775).
+    fn list_floor_lines(heights: &[usize], h: usize) -> usize {
+        let floor = Self::list_floor(heights.len(), h);
+        if floor == 0 { 0 } else { floor.max(heights.iter().copied().max().unwrap_or(1)) }
+    }
+
     /// The readable name of the step the view is in.
     fn step_name(view: &GameView) -> &'static str {
         match view.step {
@@ -6240,8 +6249,18 @@ return",
             // list being budgeted out of existence below it: the heading, at
             // least one creature, the marker that says how many more there
             // are, and the furniture above (#352).
+            // Every row laid out first, so the page is measured in the lines
+            // the rows actually take (issue #318).
+            let layouts: Vec<CombatRowLayout> = eligible.iter().enumerate().map(|(i, &id)| {
+                let tag = if must_attack.contains(&id) { " [MUST ATTACK]" } else { "" };
+                Self::combat_row_layout(view, id, eligible, str_cols(&format!("  {i}: ")), tag, panel_w)
+            }).collect();
+            let heights: Vec<usize> = layouts.iter().map(CombatRowLayout::height).collect();
+            // In lines, at least the tallest row's: a page holds a row whole
+            // (#775).
+            let floor = Self::list_floor_lines(&heights, Self::term_height());
             Self::render_reserving(view, Some("DECLARE ATTACKERS"), &view.display_log,
-                1 + Self::list_floor(eligible.len(), Self::term_height()) + marker_h + reserved);
+                1 + floor + marker_h + reserved);
             let mut out = stdout();
             let mut r = cursor::position().unwrap_or((0, 20)).1;
             let h = terminal::size().map_or(30, |(_, h)| h as usize);
@@ -6250,15 +6269,7 @@ return",
                 SetForegroundColor(Color::Yellow), SetAttribute(Attribute::Bold),
                 Print(" Eligible attackers:"), SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
-            let avail = h.saturating_sub(r as usize + reserved)
-                .max(Self::list_floor(eligible.len(), Self::term_height()));
-            // Every row laid out first, so the page is measured in the lines
-            // the rows actually take (issue #318).
-            let layouts: Vec<CombatRowLayout> = eligible.iter().enumerate().map(|(i, &id)| {
-                let tag = if must_attack.contains(&id) { " [MUST ATTACK]" } else { "" };
-                Self::combat_row_layout(view, id, eligible, str_cols(&format!("  {i}: ")), tag, panel_w)
-            }).collect();
-            let heights: Vec<usize> = layouts.iter().map(CombatRowLayout::height).collect();
+            let avail = h.saturating_sub(r as usize + reserved).max(floor);
             let (offset, shown, paged) =
                 Self::menu_page_lines(&heights, avail, list_offset.get(), marker_h);
             list_shown.set(shown);
@@ -6511,26 +6522,6 @@ return",
             // hints and the two input rows. Without this the board took every
             // row and the prompt asked for `blocker:attacker` pairs with
             // neither list visible (#352).
-            Self::render_reserving(view, Some("DECLARE BLOCKERS"), &view.display_log,
-                2 + Self::list_floor(attacker_ids.len(), Self::term_height()) + atk_marker_h
-                  + Self::list_floor(eligible_blockers.len(), Self::term_height()) + blk_marker_h
-                  + hint_lines.len() + 2);
-            let mut out = stdout();
-            let mut r = cursor::position().unwrap_or((0, 20)).1;
-            let h = terminal::size().map_or(30, |(_, h)| h as usize);
-            Self::clear_mid_from(&mut out, r);
-            let body = h.saturating_sub(r as usize + 3 + hint_lines.len());
-            // Each list keeps the floor the reservation above asked for: an
-            // even split gave the attackers half the body whatever their
-            // floor, which left the blockers under theirs (#774).
-            let atk_floor = Self::list_floor(attacker_ids.len(), h).max(1);
-            let blk_floor = Self::list_floor(eligible_blockers.len(), h).max(1);
-            let atk_avail = (body / 2).max(atk_floor)
-                .min(body.saturating_sub(blk_floor + blk_marker_h).max(atk_floor));
-            let _ = execute!(out, cursor::MoveTo(Self::middle_panel_col(), r),
-                SetForegroundColor(Color::Red), SetAttribute(Attribute::Bold),
-                Print(" Attackers:"), SetAttribute(Attribute::Reset), ResetColor);
-            r += 1;
             // Rows are laid out whole and the page measured in their lines
             // (issue #318).
             let atk_layouts: Vec<CombatRowLayout> = attacker_ids.iter().enumerate().map(|(i, &id)| {
@@ -6543,6 +6534,45 @@ return",
                 Self::combat_row_layout(view, id, attacker_ids, str_cols(&format!("  {i}: ")), &note, panel_w)
             }).collect();
             let atk_heights: Vec<usize> = atk_layouts.iter().map(CombatRowLayout::height).collect();
+            let blk_layouts: Vec<CombatRowLayout> = eligible_blockers.iter().enumerate().map(|(i, &id)| {
+                // Which attackers this creature may legally block (CR 509.1b —
+                // evasion like flying is per-pairing, so say it up front).
+                let legal: Vec<String> = legal_blocks.get(&id)
+                    .map(|atts| attacker_ids.iter().enumerate()
+                        .filter(|(_, a)| atts.contains(a))
+                        .map(|(ai, _)| ai.to_string())
+                        .collect())
+                    .unwrap_or_default();
+                let note = if legal.len() == attacker_ids.len() {
+                    String::new()
+                } else if legal.is_empty() {
+                    " (can block: none)".to_string()
+                } else {
+                    format!(" (can block: {})", legal.join(" "))
+                };
+                Self::combat_row_layout(view, id, eligible_blockers, str_cols(&format!("  {i}: ")), &note, panel_w)
+            }).collect();
+            let blk_heights: Vec<usize> = blk_layouts.iter().map(CombatRowLayout::height).collect();
+            // Each list's floor in lines, at least its tallest row (#775).
+            let atk_floor = Self::list_floor_lines(&atk_heights, Self::term_height()).max(1);
+            let blk_floor = Self::list_floor_lines(&blk_heights, Self::term_height()).max(1);
+            Self::render_reserving(view, Some("DECLARE BLOCKERS"), &view.display_log,
+                2 + atk_floor + atk_marker_h + blk_floor + blk_marker_h
+                  + hint_lines.len() + 2);
+            let mut out = stdout();
+            let mut r = cursor::position().unwrap_or((0, 20)).1;
+            let h = terminal::size().map_or(30, |(_, h)| h as usize);
+            Self::clear_mid_from(&mut out, r);
+            let body = h.saturating_sub(r as usize + 3 + hint_lines.len());
+            // Each list keeps the floor the reservation above asked for: an
+            // even split gave the attackers half the body whatever their
+            // floor, which left the blockers under theirs (#774).
+            let atk_avail = (body / 2).max(atk_floor)
+                .min(body.saturating_sub(blk_floor + blk_marker_h).max(atk_floor));
+            let _ = execute!(out, cursor::MoveTo(Self::middle_panel_col(), r),
+                SetForegroundColor(Color::Red), SetAttribute(Attribute::Bold),
+                Print(" Attackers:"), SetAttribute(Attribute::Reset), ResetColor);
+            r += 1;
             let (atk_off, atk_n, atk_paged) =
                 Self::menu_page_lines(&atk_heights, atk_avail, atk_offset.get(), atk_marker_h);
             atk_shown.set(atk_n);
@@ -6565,25 +6595,6 @@ return",
                 Print(" Your blockers:"), SetAttribute(Attribute::Reset), ResetColor);
             r += 1;
             let blk_avail = h.saturating_sub(r as usize + 3).max(blk_floor);
-            let blk_layouts: Vec<CombatRowLayout> = eligible_blockers.iter().enumerate().map(|(i, &id)| {
-                // Which attackers this creature may legally block (CR 509.1b —
-                // evasion like flying is per-pairing, so say it up front).
-                let legal: Vec<String> = legal_blocks.get(&id)
-                    .map(|atts| attacker_ids.iter().enumerate()
-                        .filter(|(_, a)| atts.contains(a))
-                        .map(|(ai, _)| ai.to_string())
-                        .collect())
-                    .unwrap_or_default();
-                let note = if legal.len() == attacker_ids.len() {
-                    String::new()
-                } else if legal.is_empty() {
-                    " (can block: none)".to_string()
-                } else {
-                    format!(" (can block: {})", legal.join(" "))
-                };
-                Self::combat_row_layout(view, id, eligible_blockers, str_cols(&format!("  {i}: ")), &note, panel_w)
-            }).collect();
-            let blk_heights: Vec<usize> = blk_layouts.iter().map(CombatRowLayout::height).collect();
             let (blk_off, blk_n, blk_paged) =
                 Self::menu_page_lines(&blk_heights, blk_avail, blk_offset.get(), blk_marker_h);
             blk_shown.set(blk_n);
@@ -7598,8 +7609,16 @@ impl CliPlayer {
 
         // The frame, with the rule and any refusal under it, reserving the
         // header, at least one row, the marker and the furniture below.
+        let idx_w = pick.rows.len().saturating_sub(1).to_string().chars().count();
+        let plen = 8 + idx_w; // "  [x] " + index + ": "
+        let rows: Vec<Vec<String>> = Self::menu_row_texts(&pick.rows).iter()
+            .map(|row| Self::wrap_row(row, panel_w.saturating_sub(plen).max(10)))
+            .collect();
+        // At least the tallest row, in lines: a page holds a row whole (#775).
+        let heights: Vec<usize> = rows.iter().map(|r| r.len().max(1)).collect();
+        let floor = Self::list_floor_lines(&heights, Self::term_height());
         Self::render_paged_noticed(view, None, Some(&pick.title), notice, &view.display_log, "", None, 0,
-            header.len() + Self::list_floor(pick.rows.len(), Self::term_height()) + marker_h + reserved);
+            header.len() + floor + marker_h + reserved);
         let mut out = stdout();
         let mut r = cursor::position().unwrap_or((0, 20)).1;
         let h = terminal::size().map_or(30, |(_, h)| h as usize);
@@ -7617,13 +7636,7 @@ impl CliPlayer {
         // The rows: "  [x] 3: Forest", wrapped under a hanging indent so
         // the text of every row and every continuation line starts in the
         // same column.
-        let avail = h.saturating_sub(r as usize + reserved).max(Self::list_floor(pick.rows.len(), Self::term_height()));
-        let idx_w = pick.rows.len().saturating_sub(1).to_string().chars().count();
-        let plen = 8 + idx_w; // "  [x] " + index + ": "
-        let rows: Vec<Vec<String>> = Self::menu_row_texts(&pick.rows).iter()
-            .map(|row| Self::wrap_row(row, panel_w.saturating_sub(plen).max(10)))
-            .collect();
-        let heights: Vec<usize> = rows.iter().map(|l| l.len().max(1)).collect();
+        let avail = h.saturating_sub(r as usize + reserved).max(floor);
         let (offset, shown, paged) = Self::menu_page_lines(&heights, avail, offset, marker_h);
         let indent = " ".repeat(plen);
         'rows: for (i, lines) in rows.iter().enumerate().skip(offset).take(shown) {
@@ -11604,6 +11617,15 @@ Mark 1 of the 1 cards below to exile.");
         let src = include_str!("cli.rs");
         let clears = src.matches(concat!("Clear(ClearType", "::All)")).count();
         assert_eq!(clears, 1, "one full-screen clear, in clear_frame");
+    }
+
+    /// Issue #775, the combat lists and the set screen: a list's floor is
+    /// in lines, at least its tallest row.
+    #[test]
+    fn a_list_floor_in_lines_holds_its_tallest_row() {
+        assert_eq!(CliPlayer::list_floor_lines(&[], 16), 0, "nothing to list");
+        assert_eq!(CliPlayer::list_floor_lines(&[1, 1, 1], 16), 2, "an eighth of 16 rows");
+        assert_eq!(CliPlayer::list_floor_lines(&[1, 3, 1], 8), 3, "the three-line row whole");
     }
 
     /// Issue #775: the block's floor holds the tallest option whole. One
