@@ -381,3 +381,34 @@ fn a_blocker_that_goes_home_after_being_hit_was_blocking_when_it_was_hit() {
         .collect();
     assert!(complaints.is_empty(), "{complaints:?}");
 }
+
+/// The lifelink clause reads the controller at the time of the damage from
+/// the first change of control *of the source* after it (#682) — not from
+/// any change of control in the window. A lifelinker that never changed
+/// hands, dealing damage in the same window as another permanent moving
+/// from p1 to p0, gained life for p0, and that is no violation (CR 702.15b).
+/// Read off the other permanent's change, the checker would look for p1's
+/// gain and call a correct game wrong.
+#[test]
+fn a_lifelinkers_gain_is_not_read_off_another_permanents_change_of_control() {
+    use mtg_engine::events::{DamageTarget, GameEvent};
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let lifelinker = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(lifelinker).unwrap().keywords.push(Keyword::Lifelink);
+    let moved = ready_creature(&mut state, P1, 1, 1);
+    state.get_object_mut(moved).unwrap().controller = P0;
+
+    state.players[1].life = 18;
+    state.players[0].life = 22;
+    state.events = vec![
+        GameEvent::NonCombatDamageDealt { source: lifelinker, target: DamageTarget::Player(P1), amount: 2 },
+        GameEvent::LifeChanged { player: P1, old: 20, new_life: 18 },
+        GameEvent::LifeChanged { player: P0, old: 20, new_life: 22 },
+        GameEvent::ControlChanged { object: moved, from: P1, to: P0 },
+    ];
+    let complaints: Vec<String> = mtg_engine::invariants::check_settled(&state, &reg).into_iter()
+        .filter(|c| c.contains("lifelink"))
+        .collect();
+    assert!(complaints.is_empty(), "{complaints:?}");
+}
