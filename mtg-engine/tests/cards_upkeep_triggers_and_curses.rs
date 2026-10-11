@@ -542,6 +542,43 @@ fn angel_of_flight_alabaster_returns_spirit() {
         "Spirit should be returned to hand");
 }
 
+/// The return is told in the log, once, whichever Spirit was chosen. The
+/// effect skips its own line only for a bounce off the battlefield, which
+/// the engine already tells (#716); a card coming back from the graveyard
+/// has no other line, and with the zone test inverted the Angel's return
+/// happened with nothing in the log saying so.
+#[test]
+fn angel_of_flight_alabaster_says_what_it_returned() {
+    let reg = registry();
+    let lines = |state: &GameState, name: &str| state.game_log.iter()
+        .filter(|e| e.message.contains(name) && e.message.contains("to hand"))
+        .count();
+
+    let mut state = game_at_step(Step::Upkeep, P0);
+    named_permanent(&mut state, &reg, "Angel of Flight Alabaster", P0);
+    named_card_in_graveyard(&mut state, &reg, "Chapel Geist", P0);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
+    assert_eq!(lines(&state, "Chapel Geist"), 1, "one Spirit: {:?}",
+        state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+
+    // Two Spirits: the controller chooses, and the one chosen is told.
+    let mut state = game_at_step(Step::Upkeep, P0);
+    named_permanent(&mut state, &reg, "Angel of Flight Alabaster", P0);
+    named_card_in_graveyard(&mut state, &reg, "Chapel Geist", P0);
+    let voiceless = named_card_in_graveyard(&mut state, &reg, "Voiceless Spirit", P0);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
+    if state.awaiting_action.is_some() {
+        state = mtg_engine::engine::submit_action(&state, &mtg_engine::actions::Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(voiceless))) }, &reg);
+    }
+    while !state.stack.is_empty() {
+        mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    }
+    assert_eq!(state.get_object(voiceless).unwrap().zone, Zone::Hand, "test premise: it came back");
+    assert_eq!(lines(&state, "Voiceless Spirit"), 1, "two Spirits: {:?}",
+        state.game_log.iter().map(|e| &e.message).collect::<Vec<_>>());
+}
+
 /// Ruling 2011-09-22: "The Spirit card must already be in your graveyard when
 /// the ability triggers at the beginning of your upkeep. If there is no Spirit
 /// card in your graveyard when your upkeep begins, the ability will be removed
