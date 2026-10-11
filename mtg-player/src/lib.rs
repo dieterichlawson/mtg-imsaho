@@ -9,10 +9,15 @@ pub mod random;
 /// out into a panic: `mtg-runner` exited 101, and a draft tournament exited
 /// 1 with no reason written anywhere (#652, #685). Every runtime line on
 /// stderr in the game backends and both runners goes through this.
+///
+/// A line printed over the terminal ends the CLI's "working" indicator
+/// first: the hot reload's rebuild and a seat's forfeit WARN printed while
+/// it kept painting at row 0 (#782).
 #[macro_export]
 macro_rules! stderr_line {
     ($($arg:tt)*) => {{
         use std::io::Write as _;
+        $crate::cli::stop_working();
         let _ = writeln!(std::io::stderr(), $($arg)*);
     }};
 }

@@ -381,6 +381,7 @@ pub fn reset_terminal_for_exit() {
 /// Handle for the background spinner thread. Drop to stop.
 pub struct SpinnerHandle {
     running: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    thread: Option<std::thread::JoinHandle<()>>,
 }
 
 /// The "working" indicator a person sees while the program does work they
@@ -484,9 +485,13 @@ pub fn stop_working() {
 
 impl Drop for SpinnerHandle {
     fn drop(&mut self) {
-        self.running.store(false, std::sync::atomic::Ordering::Relaxed);
-        // Don't join — let the thread die on its own. The next render
-        // will overwrite whatever it last printed.
+        self.running.store(false, std::sync::atomic::Ordering::SeqCst);
+        // Joined, so its last glyph lands before the next frame draws, not
+        // after it: left to die on its own, one more paint could land over
+        // the new frame (#782, the handshake `stop_working` already has).
+        if let Some(t) = self.thread.take() {
+            let _ = t.join();
+        }
     }
 }
 
@@ -8791,7 +8796,7 @@ impl CliPlayer {
             let frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
             let mut i = 0;
             let mut out = stdout();
-            while running_clone.load(std::sync::atomic::Ordering::Relaxed) {
+            while running_clone.load(std::sync::atomic::Ordering::SeqCst) {
                 let _ = execute!(out,
                     cursor::SavePosition,
                     cursor::MoveTo(col, spinner_row),
@@ -8807,8 +8812,7 @@ impl CliPlayer {
             // Don't restore caret — the next render overwrites it.
         });
 
-        let _ = handle; // detach — thread stops when `running` goes false
-        SpinnerHandle { running }
+        SpinnerHandle { running, thread: Some(handle) }
     }
 
     pub fn choose_combat(&mut self, view: &GameView, prompt: &CombatPrompt) -> Action {
@@ -11650,6 +11654,15 @@ Mark 1 of the 1 cards below to exile.");
         assert_eq!(CliPlayer::list_floor_lines(&[], 16), 0, "nothing to list");
         assert_eq!(CliPlayer::list_floor_lines(&[1, 1, 1], 16), 2, "an eighth of 16 rows");
         assert_eq!(CliPlayer::list_floor_lines(&[1, 3, 1], 8), 3, "the three-line row whole");
+    }
+
+    /// Issue #782: a line printed on stderr ends the working indicator
+    /// first, as a frame does: the hot reload's rebuild printed under it.
+    #[test]
+    fn a_line_on_stderr_stops_the_working_indicator() {
+        start_working();
+        crate::stderr_line!("");
+        assert!(WORKING.lock().unwrap().is_none(), "the line stopped it");
     }
 
     /// Issue #777: the inspector shows a double-faced permanent's other face.
