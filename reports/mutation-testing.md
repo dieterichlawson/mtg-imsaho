@@ -1203,3 +1203,53 @@ accepted.**
   was watched failing under the mutant.
 - `change_life_inner`, `> → >=` on `delta`: **accepted, equivalent.** A zero
   delta returns early on the line above.
+
+## 2026-10-10 run 38059149910 (issues #767-#772)
+
+Eighteen new survivors across six shards: nine killed, nine accepted.
+Every kill was watched failing under its exact mutant, applied by hand.
+
+**Oracle clauses (#769, #770, #772): all killed.** The highest-value kind.
+
+- `events::damage`, lifelink's controller lookup with its source guard
+  replaced by `true` (#769): any change of control in the window answered,
+  so a lifelinker dealing damage beside another permanent changing hands was
+  checked against the wrong player — a false positive the fuzz would abort
+  games over. `olivia_voldaren::a_lifelinkers_gain_is_not_read_off_another_permanents_change_of_control`.
+- `prompts::check_choice` (#770): the library-copies clause's
+  `ChooseFromLibrary` arm, which no test reached (the #692 test drives a
+  card's own ChooseTarget search; it now drives the library prompt too), and
+  four `&& → ||` in the activation-cost prompt's option check (#670). One
+  property test offers a tapped creature, the opponent's, the source and a
+  noncreature and expects each flagged
+  (`tap_creatures_cost::the_checker_flags_every_option_that_is_not_another_untapped_creature_of_yours`).
+- `transition::action_contract`'s Forfeit clause, `delete !` and `!= → ==`
+  (#772): both flag every correct forfeit. The forfeit test now checks the
+  transition, clean and with a forfeit recorded as a concede.
+
+**Engine (#767, #771): three killed, two accepted.**
+
+- `effects::apply_pending_effect`, ReturnToHand's zone test (#767, `== → !=`
+  and `delete !`): Angel of Flight Alabaster, the effect's one user, returned
+  its Spirit with no log line saying so.
+  `cards_upkeep_triggers_and_curses::angel_of_flight_alabaster_says_what_it_returned`.
+- `abilities::finish_activation`, `delete !` on clearing the last X (#771):
+  a non-X ability activated after an X ability resolved went on the stack
+  carrying the old X, shown as "(X=3)" wherever the stack is shown.
+  `activation_controller::an_ability_without_x_carries_no_x_onto_the_stack`.
+- `activate_ability` `== → !=` and `set_mode_phrase` `== → !=`: singular
+  versus plural in a prompt's wording. Accepted, bucket 5.
+
+**Auto-tap (#768): eight accepted.** `keep_the_hand_castable` only replaces
+the greedy plan with candidates that pass `pool_after`, so its six survivors
+— a tie-break, two repair gates, the exhaustive-search size — choose among
+plans that pay or bound a search; they never make a plan that does not pay
+(buckets 3 and 6). In `greedy_autotap`, the `+= → -=` is Phase 1's generic
+for a cost-bearing {C} source, which only a {C}-pip cost reaches and no card
+in the pool has; the artifact's second `+= → -=` (:554, Phase 2's excess) is
+zero for every coloured source in the pool, none of which makes two mana of
+a colour; and `> → >=` at :636 lets Shimmering Grotto's net-zero filter pay
+generic, which never out-ranks its free {C}. The accepted entries are keyed
+by text, so they also cover the same operator elsewhere in each function,
+which the brute-force oracle kills today (`remaining.generic` at :555 was
+watched failing under the oracle while checking this).

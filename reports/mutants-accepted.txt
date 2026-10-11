@@ -630,3 +630,31 @@ mtg-engine/src/invariants/permanents.rs: replace match guard is_equipment with f
 # early on the line above, so `>= 0` cannot be reached with a different
 # value: equivalent.
 mtg-engine/src/state.rs: replace > with >= in GameState::change_life_inner
+
+# ── 2026-10-10 run 38059149910, shard 1 (issue #768) ────────────────
+# `keep_the_hand_castable` chooses among plans that already pay: every
+# candidate it keeps passes `pool_after`, so these change which paying plan
+# is offered (the `<` tie-break at :326, the repair gates `>` at :344/:360)
+# or how big a board is searched exhaustively (`+` at :362), never whether
+# the plan pays. Heuristic and performance (the guide's buckets 3 and 6).
+mtg-engine/src/mana.rs: replace < with <= in keep_the_hand_castable
+mtg-engine/src/mana.rs: replace > with == in keep_the_hand_castable
+mtg-engine/src/mana.rs: replace > with < in keep_the_hand_castable
+mtg-engine/src/mana.rs: replace > with >= in keep_the_hand_castable
+mtg-engine/src/mana.rs: replace + with - in keep_the_hand_castable
+mtg-engine/src/mana.rs: replace + with * in keep_the_hand_castable
+# `greedy_autotap`: :512 is Phase 1's `generic += ability_cost`, which only
+# a {C}-pip cost reaches, and no card in the pool has one; :554 is Phase 2's
+# `excess += total_produced - 1`, zero for every coloured source in the pool
+# (none makes two mana of a colour); :636 `>` → `>=` admits Shimmering
+# Grotto's net-zero filter for generic, which never wins the hand-demand
+# ranking over its free {C} listed first. Unreachable with the current pool.
+mtg-engine/src/mana.rs: replace += with -= in greedy_autotap
+mtg-engine/src/mana.rs: replace > with >= in greedy_autotap
+
+# ── 2026-10-10 run 38059149910, shard 9 (issue #771) ────────────────
+# Plural wording: "creature"/"creatures" in the tap-cost prompt's question
+# (abilities.rs:310) and "target"/"targets" in a modal set's phrase
+# (cast.rs:439). Display wording (bucket 5).
+mtg-engine/src/engine/actions/abilities.rs: replace == with != in activate_ability
+mtg-engine/src/engine/actions/cast.rs: replace == with != in set_mode_phrase
