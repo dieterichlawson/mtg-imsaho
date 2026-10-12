@@ -380,7 +380,9 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   isn't). Mandatory decisions are safe — the auto-pass path is gated on
   `has_pass`, and every mandatory choice in this program lacks a Pass option — so
   hunt the contract, not the rules. #269 is what makes the extra stops visible at
-  all, and fixing it will HIDE #295's stops without removing them
+  all, and fixing it will HIDE #295's stops without removing them. (Since
+  #799 a mandatory choice ends auto-pass, as on the page and the LLM seat, so
+  no screen shows `[AUTO-PASS]` any more.)
 - V32 [tried 2026-09-06 → #281, #282, #283, #284] the input line as an editor:
   is the string rendered after the `>` the string Enter submits? Read `read_line`,
   `read_line_with_search` and their `echoed_chars`/`echoed_cols` bookkeeping

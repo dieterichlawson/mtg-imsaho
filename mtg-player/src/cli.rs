@@ -8725,7 +8725,11 @@ impl CliPlayer {
                     // key toggled it, and at the one kind of screen that ever
                     // SHOWS `[AUTO-PASS]` — a mandatory menu, with no Pass —
                     // this arm was wrapped in `if has_pass` and swallowed the
-                    // key without a word (issue #296).
+                    // key without a word (issue #296). Since #799 a menu
+                    // with no Pass ends auto-pass before it is drawn, so no
+                    // screen shows `[AUTO-PASS]` and this arm finds it off;
+                    // it stays as the off switch should a menu ever be drawn
+                    // with the mode on.
                     if self.pass_mode.is_some() {
                         self.pass_mode = None;
                         notice = Some("Auto-pass off.".to_string());

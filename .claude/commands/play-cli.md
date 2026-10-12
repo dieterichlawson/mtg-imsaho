@@ -127,7 +127,7 @@ Your blockers:
 - **`0:0 1:0`** = both blockers block attacker 0 (double block)
 
 ### Shortcuts
-- **`f` C-m** = toggle auto-pass mode: passes priority for you until your next Main Phase 1. Press `f` again at any prompt to turn it off. Shows `[AUTO-PASS]` in the header. See "Auto-Pass Behavior" below for exactly where it stops.
+- **`f` C-m** = toggle auto-pass mode: passes priority for you until your next Main Phase 1. It runs between screens — any screen you are shown has it off, and the first one after it stops says so (and what engaging declined). See "Auto-Pass Behavior" below for exactly where it stops.
 - **`g` C-m** = view graveyards
 - **`e` C-m** = view exile zone
 - **`d` C-m** = browse deck

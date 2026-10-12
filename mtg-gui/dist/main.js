@@ -171,7 +171,8 @@ function onMessage(msg) {
 /**
  * Auto-pass (`f`): pass every plain priority until something happens —
  * a prompt that is not a pass, a spell on the stack, a land to play, an
- * attack on you, your postcombat main phase, a spell or ability on offer on
+ * attack on you, your attacker blocked, your postcombat main phase, a spell
+ * or ability on offer on
  * your own turn once it is here, or your next precombat main phase
  * (`autoPassStop`).
  * Returns true when it answered the decision.
@@ -236,8 +237,9 @@ function toggleAutoPass() {
         return;
     }
     // Nor over any other stop it would make right here, as the CLI refuses
-    // them (#48, #758): something on the stack to answer, your postcombat
-    // main, or a spell of yours on offer once its target turn is here.
+    // them (#48, #758): something on the stack to answer, your attacker
+    // blocked, your postcombat main, or a spell of yours on offer once its
+    // target turn is here.
     if (here) {
         state.notice = `Auto-pass would stop here: ${here} Use it, or pass.`;
         return;
