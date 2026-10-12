@@ -545,6 +545,26 @@ random game happened to reach.
   every stop each one makes, and for each stop that only one has, stage the
   position (a save edit, then `--p1 gui`) and press `f` there. Do the same
   against the LLM seat's pass-until stop list in `llm.rs`
+  [2026-10-12] **The predicates match the CLI's clause for clause; what `f`
+  says does not** (#795-#797), and the LLM and the CLI each keep one stop
+  the others lack (#798, #799). The unit test checks `autoPassNotice()`'s
+  text, not that it reaches a frame: trap writes with
+  `Object.defineProperty(window.mtg, "notice", {set(v){log.push(v)…}})`
+  and watch the value be set and nulled in one tick. Seed 4129 with the
+  default decks, `--p1 gui --p2 random`, is deterministic; save edits stage
+  positions by setting an object's `zone` and the player's
+  `library_order`/`graveyard_order`.
+- G30 [proposed 2026-10-12, from #785 and #786] what the page is never sent.
+  The CLI holds a `CardRegistry` and the engine's `legal.context`; the page
+  has only `GameView` and the prompt payload. List every
+  `CardRegistry::with_all_cards()` call in `mtg-player/src/cli.rs` (the
+  other face, the trigger-ordering sources' text, Nevermore's per-name
+  oracle text, the card reference panel) and every place
+  `mtg-engine/src/engine/legal/awaiting.rs` puts information in `context`
+  that the payload's `description` lacks, and for each ask whether the
+  page can show it at all — a `fillText` hook over a staged prompt answers
+  it in a minute. #786 was the #362 tag living only in `context` while
+  `prompts.ts:449` reads `rp.description` first.
 
 
 ## Filing
