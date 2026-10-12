@@ -197,9 +197,22 @@ random game happened to reach.
   opponent's life, a stack item, a land, the log. Nothing should answer
   the prompt by accident, and Escape and right-click should always back
   out of a cast that has not been paid for.
+  [2026-10-12] **Cards, zones, the band and the inspector hold** (0 sends at
+  every widget reached), but **player strips have keys too**: `p1` parsed as
+  object 1 played a Mountain off the opponent's life (#801). Any
+  `Number(key.slice(1))` that ignores the `o`/`p` prefix is this bug — grep
+  for it rather than clicking. Method: wrap `WebSocket.prototype.send` in an
+  init script and click with `page.mouse` at `window.mtg.hits` coordinates
+  scaled by `canvas.getBoundingClientRect().width / canvas.width`.
 - G7 double-click, right-click, wheel, Enter and Escape at every widget,
   in the wrong order. Enter on a mark with too few marked must refuse
   out loud; Enter on a menu passes and must be the only key that does.
+  [2026-10-12] Enter-only-passes holds. **Escape and right-click are two
+  handlers with different fallbacks** (`keydown` has `noAnswerHere`, the
+  `contextmenu` handler does not, #803): test each separately at every
+  widget, check that each widget sets `ui.onCancel` (the X prompt and the
+  concede confirmation don't, #802), and after any refusal check whether the
+  notice outlives its prompt (#804). Double-click Pass, not only rows (#806).
 - G8 `f` at the wrong moments: engaged at your own main phase (it skips
   it, and says so), during combat, with a spell on the stack.
   [2026-09-17] The first half holds: engaged at your own precombat main,
