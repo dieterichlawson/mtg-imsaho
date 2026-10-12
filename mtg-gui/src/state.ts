@@ -116,6 +116,9 @@ export interface State {
   // decision (#806).
   clickSeq?: number | null;
   doubleDropped?: boolean;
+  // When the decision on screen was first drawn (performance.now()): a held
+  // Enter does not answer it in its first moments (#806).
+  shownAt?: number;
   hover: Hit | null;
   hits: Hit[];
   popover: Popover | null;

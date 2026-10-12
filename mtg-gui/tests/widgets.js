@@ -588,6 +588,24 @@ async function main() {
           await expectSent("double-pass-then-click", a => a === "PassPriority");
         }
       }
+      // A held Enter is the keyboard's double-click: its repeats do not answer
+      // a question in its first moments on screen (#806's review).
+      if (ids.hand.length) {
+        const res = await page.evaluate((seq) => {
+          const m = window.mtg; m.autoPass = null;
+          const cast = { CastSpell: { object_id: m.view.your_hand[0].object_id, targets: [], sacrifice: null, exile_count: null, exile_ids: [], alternative_cost: null, tap_plan: [] } };
+          window.mtgDebug.message({ type: "decision", seq, view: m.view, combat: null,
+            legal: { actions: ["PassPriority", "Concede", cast], combat_prompt: null, castable_spells: [], activatable_abilities: [], context: "MAIN PHASE 1", resolution_prompt: null, set_prompt: null } });
+          const n0 = window.mtgDebug.sent.length;
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", repeat: true, bubbles: true, cancelable: true }));
+          const afterRepeat = window.mtgDebug.sent.length - n0;
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+          return { afterRepeat, afterPress: window.mtgDebug.sent.length - n0 };
+        }, seq + 600);
+        if (res.afterRepeat !== 0) fail(`held-enter: a repeat answered a question just drawn (${JSON.stringify(res)})`);
+        else if (res.afterPress !== 1) fail(`held-enter: a fresh Enter did not pass (${JSON.stringify(res)})`);
+        else ok("held-enter: a repeat waits, a press passes");
+      }
     }
     // 14. Enter at a mark prompt: refuses out loud below the minimum, and
     // never commits an empty answer nobody chose. Enter is the idle key —

@@ -148,6 +148,7 @@ function onMessage(msg: ServerMessage): void {
       // since the PREVIOUS stop is what they have not seen (issue #523).
       // The two branches above return without touching these, which is how
       // an interval of ten auto-answered priorities stays one interval.
+      state.shownAt = performance.now();
       state.logSince = state.logSeen ?? 0;
       state.logSeen = v.display_log.length;
       window.mtgDebug.trace.push(`${what}: ${state.ui ? state.ui.mode : "?"}`);
@@ -487,6 +488,12 @@ window.addEventListener("keydown", (ev) => {
   switch (ev.key) {
     case "Enter":
       if (!ui) return;
+      // A held Enter repeats about every 30 ms: it would answer each new
+      // question the moment it is drawn, the keyboard's double-click (#806).
+      // A repeat is ignored for its first 300 ms on screen, so holding Enter
+      // still passes through a turn, one readable frame at a time; the
+      // terminal drains keys typed before its prompt the same way (#71).
+      if (ev.repeat && performance.now() - (state.shownAt ?? 0) < 300) { ev.preventDefault(); return; }
       if (ui.mode === "menu" && ui.canPass) send("PassPriority");
       else if (ui.onConfirm) ui.onConfirm();
       else if (ui.mode === "number" && ui.submit) ui.submit();
