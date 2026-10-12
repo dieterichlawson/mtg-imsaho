@@ -86,5 +86,18 @@ if (P.autoPassStop(view({ active_player: 1, step: "EndStep" }), ["PassPriority",
     fail("this turn's end step, before the target turn, is passed with an instant");
 }
 
+// Your attacker blocked is a stop, as it is for the LLM seat's pass-until:
+// `f` at your declare-attackers passed the after-blockers window with Giant
+// Growth castable (#798). An unblocked attack is not.
+{
+  const since = P.autoPassSince(view({ step: "DeclareAttackers" }));
+  const tusker = (blocked) => ({ object_id: 30, controller: 0, attacking: { Player: 1 }, blocked });
+  const growth = { CastSpell: { object_id: 39, targets: [{ Object: 30 }] } };
+  if (P.autoPassStop(view({ step: "DeclareBlockers", battlefield: [tusker(true)] }), ["PassPriority", growth], since, false) !== "your attacker is blocked.")
+    fail("your blocked attacker is a stop");
+  if (P.autoPassStop(view({ step: "DeclareBlockers", battlefield: [tusker(false)] }), ["PassPriority", growth], since, false) !== null)
+    fail("an unblocked attacker is not");
+}
+
 if (failures) { console.error(`${failures} failure(s)`); process.exit(1); }
 console.log("ok: auto-pass stops for a land, an attack, your postcombat main, an action on your reached turn and this turn's main phase, and says what it declined");

@@ -148,6 +148,7 @@ Two different things pass for you, and they stop at different places.
 - an action of yours — a **cast or an activated ability** — on **your own turn**, once that turn is reached;
 - something **on the stack** that you have a real answer to (a mana ability alone does not count);
 - the opponent **actually attacking** (an opponent who declares no attackers is not a stop);
+- an attacker of yours **blocked**, for the window before damage;
 - your **own** postcombat main phase, so removal can be aimed at damaged creatures;
 - a **declare-attackers or declare-blockers prompt** with anything eligible on it — combat is always yours to declare, and answering it leaves auto-pass off.
 

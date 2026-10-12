@@ -215,6 +215,13 @@ export function autoPassStop(view, actions, sinceTurn, asked) {
     if (!ourTurn && view.step === "DeclareAttackers"
         && view.battlefield.some(p => p.controller !== view.you && p.attacking))
         return "attackers declared against you.";
+    // Your attacker blocked: the combat changed after you passed, and the
+    // window before damage is the one a pump spell is for — the LLM seat's
+    // pass-until stops here, and the page passed it with Giant Growth in hand
+    // (#798).
+    if (ourTurn && view.step === "DeclareBlockers"
+        && view.battlefield.some(p => p.controller === view.you && p.attacking && p.blocked))
+        return "your attacker is blocked.";
     // Your own postcombat main, for removal on what combat damaged: the CLI's
     // YourPostcombatMain and the LLM seat's pass-until both keep it, and `f` at
     // your Main Phase 1 passed it and the whole of the opponent's turn (#758).

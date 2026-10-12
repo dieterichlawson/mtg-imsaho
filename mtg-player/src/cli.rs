@@ -567,6 +567,8 @@ enum BreakReason {
     StackResponse,
     /// The opponent is attacking.
     Attackers,
+    /// An attacker of yours was blocked (#798).
+    Blocked,
     /// Your own postcombat main, for removal on damaged creatures.
     YourPostcombatMain,
 }
@@ -586,6 +588,8 @@ impl BreakReason {
                 "something on the stack to respond to. Pass with 0 to decline",
             BreakReason::Attackers =>
                 "an attack to respond to. Pass with 0 to decline",
+            BreakReason::Blocked =>
+                "a blocked attacker of yours to respond to. Pass with 0 to decline",
             BreakReason::YourPostcombatMain =>
                 "your postcombat main phase, a stop auto-pass always honours. \
                  Pass with 0 to move on",
@@ -1398,6 +1402,16 @@ impl CliPlayer {
                     if under_attack {
                         return Some(BreakReason::Attackers);
                     }
+                }
+
+                // Break when an attacker of ours is blocked: the window
+                // before damage is the one a pump spell is for, and the LLM
+                // seat's pass-until already stops here (#798).
+                if our_turn && view.step == Step::DeclareBlockers
+                    && view.battlefield.iter().any(|p| p.controller == view.you
+                        && p.attacking.is_some() && p.blocked)
+                {
+                    return Some(BreakReason::Blocked);
                 }
 
                 // Break after combat ends so the player can use removal or
@@ -11126,6 +11140,23 @@ Mark 1 of the 1 cards below to exile.");
         v.battlefield = vec![attacker(9, "Bear", 1)];
         assert_eq!(CliPlayer::should_break_pass(&v, &pass_concede_plus(vec![]), &mode),
             Some(BreakReason::Attackers), "an actual attack is a stop");
+    }
+
+    /// Issue #798: an attacker of yours blocked is a stop, as it is for the
+    /// LLM seat's pass-until and the page; an unblocked one is not.
+    #[test]
+    fn your_blocked_attacker_is_a_stop() {
+        let mode = CliPlayer::new_pass_mode(&view(Step::DeclareAttackers, 4, true));
+        let mut v = view(Step::DeclareBlockers, 4, true);
+        let mut tusker = creature(30, "Kalonian Tusker", 0);
+        tusker.attacking = Some(mtg_engine::view::AttackTarget::Player(PlayerId(1)));
+        v.battlefield = vec![tusker.clone()];
+        assert_eq!(CliPlayer::should_break_pass(&v, &pass_concede_plus(vec![]), &mode), None,
+            "unblocked, nothing to stop for");
+        tusker.blocked = true;
+        v.battlefield = vec![tusker];
+        assert_eq!(CliPlayer::should_break_pass(&v, &pass_concede_plus(vec![]), &mode),
+            Some(BreakReason::Blocked), "blocked is a stop");
     }
 
     /// Issue #295: the postcombat-main stop's own rationale is a your-turn
