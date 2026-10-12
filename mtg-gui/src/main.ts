@@ -2,7 +2,7 @@
 
 import { loadManifest, fontsReady, artNames } from "./assets.js";
 import { render, inspecting, inspectorFacts, inspectorPt, wrap, wrapCapped, bandTurnLine, bandLogLines, badgeStrip, permBadges, clampScroll, outcomeHeadline, showsGameOverBox, BAND_W, BADGE_ROOM, W, H, PANEL_X } from "./render.js";
-import { beginDecision, indexView, beginList, engineLine, offersLandPlay, autoPassDeclines, autoPassNotice, autoPassSince, autoPassStop } from "./prompts.js";
+import { beginDecision, indexView, beginList, engineLine, offersLandPlay, autoPassDeclines, autoPassNotice, autoPassSince, autoPassStop, objectOfKey } from "./prompts.js";
 import type { Action, ClientMessage, Decision, GameView, ServerMessage } from "./protocol.js";
 import type { Hit, LiveState, Row, State, Ui } from "./state.js";
 
@@ -30,9 +30,9 @@ interface DebugHook {
   message(msg: ServerMessage): void;
   /** What the inspector would say about the thing at `key`, as text. */
   inspect(key: string, kind?: string): Inspected | null;
-  /** The same, about whatever `state.hover` currently is. Two stack chips
-   *  share a key, so a key is not enough to tell them apart — which is the
-   *  thing being tested. */
+  /** The same, about whatever `state.hover` currently is: a stack chip is
+   *  read by its slot, not by the id its key once carried (#527, #807) —
+   *  which is the thing being tested. */
   inspectHover(): Inspected | null;
   /** The card names a stack item's display name could be art for. */
   artNames(name: string): string[];
@@ -350,7 +350,9 @@ canvas.addEventListener("click", (ev) => {
   if (state.popover && (!h || (h.kind !== "row" && h.kind !== "popover"))) { state.popover = null; draw(); return; }
   if (h && h.onClick) h.onClick(h);
   else if (h && h.kind === "modal") { /* inside a modal: nothing */ }
-  else if (h && h.key && h.id !== undefined) state.selected = h.id;
+  // Only a key that names an object selects it: an ability's stack chip
+  // carries its source's id and is no object of its own (#807).
+  else if (h && objectOfKey(h.key) !== null && h.id !== undefined) state.selected = h.id;
   syncField();
   draw();
 });

@@ -1,7 +1,7 @@
 // The page: one WebSocket to the seat, one canvas, one state object.
 import { loadManifest, fontsReady, artNames } from "./assets.js";
 import { render, inspecting, inspectorFacts, inspectorPt, wrap, wrapCapped, bandTurnLine, bandLogLines, badgeStrip, permBadges, clampScroll, outcomeHeadline, showsGameOverBox, BAND_W, BADGE_ROOM, W, H, PANEL_X } from "./render.js";
-import { beginDecision, indexView, beginList, engineLine, offersLandPlay, autoPassDeclines, autoPassNotice, autoPassSince, autoPassStop } from "./prompts.js";
+import { beginDecision, indexView, beginList, engineLine, offersLandPlay, autoPassDeclines, autoPassNotice, autoPassSince, autoPassStop, objectOfKey } from "./prompts.js";
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const field = document.getElementById("field");
@@ -341,7 +341,9 @@ canvas.addEventListener("click", (ev) => {
     if (h && h.onClick)
         h.onClick(h);
     else if (h && h.kind === "modal") { /* inside a modal: nothing */ }
-    else if (h && h.key && h.id !== undefined)
+    // Only a key that names an object selects it: an ability's stack chip
+    // carries its source's id and is no object of its own (#807).
+    else if (h && objectOfKey(h.key) !== null && h.id !== undefined)
         state.selected = h.id;
     syncField();
     draw();

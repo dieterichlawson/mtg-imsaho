@@ -665,6 +665,15 @@ async function main() {
         return { chip, board, permName: p.name, chipKeys };
       }, perm);
       if (JSON.stringify(both.chipKeys) !== JSON.stringify(["s0"])) fail(`stack-chip-key: an ability's chip is keyed ${JSON.stringify(both.chipKeys)}`);
+      // And a click on it does not select the source permanent (#807).
+      if (await stage("stack-chip-click", legal({ context: "MAIN PHASE 1", actions: ["PassPriority", "Concede"] }), null, "menu")) {
+        await page.evaluate((perm) => { const m = window.mtg; const p = m.view.battlefield.find(x => x.object_id === perm);
+          m.view.stack = [{ object_id: perm, card_id: 1, name: `${p.name} ability`, controller: m.view.you, targets: [], x_value: null }]; m.selected = null; }, perm);
+        await clickHit("(h) => h.kind === 'stack'");
+        const sel = await page.evaluate(() => { const s = window.mtg.selected; window.mtg.view.stack = []; window.mtgDebug.render(); return s; });
+        if (sel !== null) fail(`stack-chip-click: a click on an ability's chip selected object ${sel}`);
+        else ok("stack-chip-click: the chip selects nothing");
+      }
       if (!both.chip || both.chip.zone !== "stack" || !/ ability$/.test(both.chip.name))
         fail(`stack-chip-inspect: ${JSON.stringify(both.chip)}`);
       else ok(`stack-chip-inspect → ${both.chip.name} (${both.chip.zone})`);

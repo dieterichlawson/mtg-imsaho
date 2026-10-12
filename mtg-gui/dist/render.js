@@ -809,7 +809,9 @@ function stackLines(ctx, hits, state) {
             const to = key ? rectOf(key) : null;
             if (!to)
                 continue;
-            const hovered = state.hover !== null && state.hover.key === `o${item.object_id}`;
+            // The chip's own key: an ability's is its slot (#807), so hovering its
+            // source permanent no longer lights the ability's arrow either.
+            const hovered = state.hover !== null && state.hover.key === stackChipKey(item, i);
             ctx.strokeStyle = hovered ? "#ffe080" : item.controller === view.you ? "rgba(160,140,220,0.8)" : "rgba(220,120,120,0.8)";
             ctx.lineWidth = 1;
             ctx.beginPath();
