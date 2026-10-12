@@ -310,6 +310,20 @@ function draftingKey(ev: KeyboardEvent, view: DraftView): void {
   ev.preventDefault();
   if (ev.key !== "Escape" && ev.key !== "Enter") { state.hint = null; state.refusal = null; }
   draw();
+  if (state.selected !== null) carryFocus(`.tile[data-card-index="${state.selected}"]`);
+}
+
+/**
+ * Arrows and digits move the selection or the cursor; where a control has
+ * the keyboard focus, the focus moves with them. Left on the control that
+ * was clicked (draw() puts it back, #788), it took the next Enter — which
+ * is the control's own since #787 — and Enter re-selected the old tile or
+ * toggled the old row instead of acting on the one the arrows reached.
+ */
+function carryFocus(selector: string): void {
+  if (!(document.activeElement instanceof HTMLElement) || !root.contains(document.activeElement)) return;
+  const el = root.querySelector<HTMLElement>(selector);
+  if (el) el.focus({ preventScroll: true });
 }
 
 function buildingKey(ev: KeyboardEvent, view: DraftView): void {
@@ -339,6 +353,7 @@ function buildingKey(ev: KeyboardEvent, view: DraftView): void {
   ev.preventDefault();
   if (ev.key !== "Escape" && ev.key !== "Enter") state.hint = null;
   draw();
+  if (state.cursor !== null) carryFocus(`.row[data-pool-index="${state.cursor}"]`);
   const el = state.cursor !== null ? root.querySelector<HTMLElement>(`.row[data-pool-index="${state.cursor}"]`) : null;
   if (el) el.scrollIntoView({ block: "nearest" });
 }

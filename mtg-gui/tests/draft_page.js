@@ -180,6 +180,17 @@ async function main() {
         await page.waitForTimeout(50);
         check((await sent()).length === count0, `${tag}: Enter on a focused tile sent ${JSON.stringify(await lastSent())} for the selected card`);
         check(await page.$(`.tile[data-card-index="5"].selected`) !== null, `${tag}: Enter on a focused tile selects that tile`);
+        // A click focuses the tile; an arrow then moves the selection and the
+        // focus with it, so Enter acts on the tile the arrow reached (#787's review).
+        await stage(view);
+        await page.click(`.tile[data-card-index="2"]`);
+        await page.keyboard.press("ArrowRight");
+        await page.waitForTimeout(50);
+        const count1 = (await sent()).length;
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(50);
+        const arrowed = await lastSent();
+        check((await sent()).length === count1 + 1 && arrowed.type === "pick" && arrowed.index === 3, `${tag}: click 3rd, ArrowRight, Enter sent ${JSON.stringify(arrowed)}`);
         // On a phone the detail sits above the pack: a hover must not change
         // it, or the pack moves under the pointer and a tap selects nothing
         // (#791). Beside the pack (1280) a hover reads the card.
