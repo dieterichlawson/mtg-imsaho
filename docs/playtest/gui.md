@@ -521,6 +521,13 @@ random game happened to reach.
   look. A 14-card pack on one screen, rules text wrapped not clipped, no
   horizontal scroll at phone width, the pool readable at 45 cards, the
   deck checklist and the land steppers reachable by keyboard
+  [2026-10-12] **Fits at 1280x720; breaks at 390 px and on focus.** The
+  fixtures use short spaced names, so stage one-word 17-24 character names
+  (the server's cap) and a tagged standings row (#789, #790). Tap with a
+  `hasTouch: true` context and `page.touchscreen.tap`, never `page.click`:
+  the hover redraw moves the pack before the tap lands (#791). On the
+  keyboard, press Enter on a *focused button*, not just digits and arrows
+  (#787), and count Tabs after one press (#788).
 - G28 [proposed 2026-10-08, same source] the draft page says what the
   server knows: against a live `mtg-draft-server` table under a stub
   `claude`, compare the raw `view` (`/api/view?seat=N&key=K`) with what
