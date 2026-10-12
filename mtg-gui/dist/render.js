@@ -199,7 +199,9 @@ function pulse() { return (Math.sin(Date.now() / 220) + 1) / 2; }
 function manaDots(ctx, cost, x, y) {
     if (!cost || !cost.symbols)
         return x;
-    const col = { White: "#f0e6c0", Blue: "#5088e0", Black: "#403050", Red: "#e05040", Green: "#50a050" };
+    // Black is lighter than the panels it sits on (#793's review): #403050
+    // was a disc of nearly the panel's colour, and a dot has no letter.
+    const col = { White: "#f0e6c0", Blue: "#5088e0", Black: "#8a6aa0", Red: "#e05040", Green: "#50a050" };
     for (const s of cost.symbols) {
         let fill = "#9a9aa0", label = "";
         if (s === "X")

@@ -160,7 +160,7 @@ function matchRow(view: DraftView, m: Match): HTMLElement {
   }
   return h("li", { class: `match match-${m.status}` },
     h("div", { class: "match-head" },
-      h("span", { text: `Round ${m.round} vs ${seatName(view, m.opponent)} — ${status}` })),
+      h("span", {}, ...withRecords(`Round ${m.round} vs ${seatName(view, m.opponent)} — ${status}`))),
     link,
     games ? h("div", { class: "match-games muted", text: games }) : null,
   );
@@ -174,7 +174,7 @@ function pairingsList(view: DraftView): HTMLElement | null {
     const who = p.b === null ? `${seatName(view, p.a)} has a bye` : `${seatName(view, p.a)} vs ${seatName(view, p.b)}`;
     const how = p.b === null ? "" : p.status === "done" ? ` — ${p.result ?? "done"}` : p.status === "playing" ? " — playing" : " — waiting";
     const mine = p.a === view.seat || p.b === view.seat;
-    return h("li", { class: mine ? "me" : "", text: `Round ${p.round}: ${who}${how}` });
+    return h("li", { class: mine ? "me" : "" }, ...withRecords(`Round ${p.round}: ${who}${how}`));
   });
   return h("div", { class: "pairings" }, h("h3", { text: "All matches" }), h("ul", { class: "pairings-list" }, ...rows));
 }
@@ -399,4 +399,15 @@ export function urlPieces(url: string): (string | HTMLElement)[] {
     out.push(part);
   }
   return out;
+}
+
+/**
+ * Text with each match record ("2-1", "1-0-1") in a span that does not
+ * wrap: the standings table's records broke at their hyphens at phone
+ * width (#790), and so did the same records in a match's heading and the
+ * pairings list.
+ */
+export function withRecords(text: string): (string | HTMLElement)[] {
+  return text.split(/(\b\d+(?:-\d+)+\b)/).filter(t => t !== "")
+    .map(t => /^\d+(?:-\d+)+$/.test(t) ? h("span", { class: "rec", text: t }) : t);
 }

@@ -129,7 +129,7 @@ function matchRow(view, m) {
             ? h("div", { class: "match-link" }, "Open your game: ", h("a", { href: m.url, target: "_blank", rel: "noopener" }, ...urlPieces(m.url)))
             : h("div", { class: "match-link muted", text: m.status === "waiting" ? "Your game page opens when the match starts." : "No game page for this match." });
     }
-    return h("li", { class: `match match-${m.status}` }, h("div", { class: "match-head" }, h("span", { text: `Round ${m.round} vs ${seatName(view, m.opponent)} — ${status}` })), link, games ? h("div", { class: "match-games muted", text: games }) : null);
+    return h("li", { class: `match match-${m.status}` }, h("div", { class: "match-head" }, h("span", {}, ...withRecords(`Round ${m.round} vs ${seatName(view, m.opponent)} — ${status}`))), link, games ? h("div", { class: "match-games muted", text: games }) : null);
 }
 /** Every match of the tournament, the whole table's, round by round. */
 function pairingsList(view) {
@@ -140,7 +140,7 @@ function pairingsList(view) {
         const who = p.b === null ? `${seatName(view, p.a)} has a bye` : `${seatName(view, p.a)} vs ${seatName(view, p.b)}`;
         const how = p.b === null ? "" : p.status === "done" ? ` — ${p.result ?? "done"}` : p.status === "playing" ? " — playing" : " — waiting";
         const mine = p.a === view.seat || p.b === view.seat;
-        return h("li", { class: mine ? "me" : "", text: `Round ${p.round}: ${who}${how}` });
+        return h("li", { class: mine ? "me" : "" }, ...withRecords(`Round ${p.round}: ${who}${how}`));
     });
     return h("div", { class: "pairings" }, h("h3", { text: "All matches" }), h("ul", { class: "pairings-list" }, ...rows));
 }
@@ -343,4 +343,14 @@ export function urlPieces(url) {
         out.push(part);
     }
     return out;
+}
+/**
+ * Text with each match record ("2-1", "1-0-1") in a span that does not
+ * wrap: the standings table's records broke at their hyphens at phone
+ * width (#790), and so did the same records in a match's heading and the
+ * pairings list.
+ */
+export function withRecords(text) {
+    return text.split(/(\b\d+(?:-\d+)+\b)/).filter(t => t !== "")
+        .map(t => /^\d+(?:-\d+)+$/.test(t) ? h("span", { class: "rec", text: t }) : t);
 }

@@ -331,9 +331,10 @@ async function main() {
         await stage(wide);
         await page.waitForTimeout(50);
         const fit = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, w: innerWidth,
-          broken: [...document.querySelectorAll(".standings td.num, .standings th")].filter(el => { const r = document.createRange(); r.selectNodeContents(el); return new Set([...r.getClientRects()].map(b => Math.round(b.top))).size > 1; }).map(el => el.textContent) }));
+          broken: [...document.querySelectorAll(".standings td.num, .standings th, .rec")].filter(el => { const r = document.createRange(); r.selectNodeContents(el); return new Set([...r.getClientRects()].map(b => Math.round(b.top))).size > 1; }).map(el => el.textContent) }));
         check(fit.sw <= fit.w, `${tag}: a 24-letter name keeps the page on screen (${fit.sw} <= ${fit.w})`);
         check(fit.broken.length === 0, `${tag}: no record or heading breaks across lines (${JSON.stringify(fit.broken)})`);
+        check(await page.$$eval(".pairings-list .rec, .match-head .rec", els => els.length) > 0 || !(await page.$(".pairings-list")), `${tag}: the pairings' records are held whole`);
         // A black pip is a disc on the panel, as the other colours are (#793).
         const pip = await page.evaluate(() => { const el = document.createElement("span"); el.className = "pip pip-B"; document.body.append(el); const c = getComputedStyle(el).backgroundColor; el.remove(); return c; });
         check(pip !== "rgb(42, 30, 48)", `${tag}: the B pip is not the panel's colour (${pip})`);
