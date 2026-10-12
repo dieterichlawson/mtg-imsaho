@@ -404,6 +404,28 @@ async function main() {
             const disabled = await page.evaluate(() => { window.mtgDebug.render(); const b = window.mtg.hits.find(h => h.kind === 'button' && h.label.startsWith('Block')); return b && !b.onClick; });
             if (!disabled) fail("blockers: a single blocker on a menace attacker was confirmable");
             await clickHit(`(h) => h.id === ${mineCreatures[0]} && h.onClick`); // unassign
+            // A selected blocker is a block half made (#805): Enter does not
+            // throw it away as "No blocks", and Escape and right-click put it down.
+            const blockState = () => page.evaluate(() => ({ sent: window.mtgDebug.sent.length, sel: window.mtg.ui.selectedBlocker, notice: window.mtg.notice }));
+            await clickHit(`(h) => h.id === ${mineCreatures[0]} && h.onClick`);
+            const before = await blockState();
+            await page.keyboard.press("Enter");
+            await page.waitForTimeout(60);
+            const afterEnter = await blockState();
+            if (!before.sel) fail("blockers-selected: a click did not select the blocker");
+            else if (afterEnter.sent !== before.sent) fail("blockers-selected: Enter sent an answer over a selected blocker");
+            else if (afterEnter.sel !== before.sel || !(afterEnter.notice || "").includes("blocks nothing")) fail(`blockers-selected: Enter → ${JSON.stringify(afterEnter)}`);
+            else ok("blockers-selected Enter → " + afterEnter.notice);
+            await page.keyboard.press("Escape");
+            await page.waitForTimeout(60);
+            if ((await blockState()).sel !== null) fail("blockers-selected: Escape did not put the blocker down");
+            await clickHit(`(h) => h.id === ${mineCreatures[0]} && h.onClick`);
+            await page.evaluate(() => { const c = document.querySelector("canvas"); c.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })); });
+            await page.waitForTimeout(60);
+            if ((await blockState()).sel !== null) fail("blockers-selected: right-click did not put the blocker down");
+            await clickHit(`(h) => h.id === ${attackers[0]} && h.onClick`);
+            const lone = await blockState();
+            if (!(lone.notice || "").includes("Click one of your creatures first")) fail(`blockers: an attacker clicked with nothing selected said ${JSON.stringify(lone.notice)}`);
             await clickHit("(h) => h.kind === 'button' && h.label.startsWith('No block')");
             await expectSent("blockers", a => a.DeclareBlockers && a.DeclareBlockers.assignments.length === 0);
           }

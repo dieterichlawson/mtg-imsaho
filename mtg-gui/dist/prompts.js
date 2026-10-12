@@ -1258,25 +1258,37 @@ function beginBlockers(state, c, send) {
     ui.minBlockers = minBlockers;
     const assignments = new Map();
     ui.assignments = assignments;
-    ui.selectedBlocker = null;
+    // A selected blocker is a block half made: Escape and right-click put it
+    // down, and while one is up the widget will not commit (#805) — Enter sent
+    // "No blocks" over a blue-framed creature and threw the selection away.
+    const select = (key) => {
+        ui.selectedBlocker = key;
+        if (key)
+            ui.onCancel = () => select(null);
+        else
+            delete ui.onCancel;
+    };
+    select(null);
     ui.clickBlocker = (key) => {
         if (assignments.has(key)) {
             assignments.delete(key);
-            ui.selectedBlocker = null;
+            select(null);
             return;
         }
-        ui.selectedBlocker = ui.selectedBlocker === key ? null : key;
+        select(ui.selectedBlocker === key ? null : key);
     };
     ui.clickAttacker = (key) => {
-        if (!ui.selectedBlocker)
+        if (!ui.selectedBlocker) {
+            state.notice = "Click one of your creatures first, then the attacker it blocks.";
             return;
+        }
         const allowed = legal.get(ui.selectedBlocker);
         if (allowed && !allowed.has(key)) {
             state.notice = `${nameOf(state, Number(ui.selectedBlocker.slice(1)))} cannot block that.`;
             return;
         }
         assignments.set(ui.selectedBlocker, key);
-        ui.selectedBlocker = null;
+        select(null);
     };
     ui.canAttackerTake = (key) => !!ui.selectedBlocker && (!legal.get(ui.selectedBlocker) || legal.get(ui.selectedBlocker).has(key));
     ui.badge = (key) => {
@@ -1297,6 +1309,10 @@ function beginBlockers(state, c, send) {
     };
     ui.canConfirm = canConfirm;
     ui.onConfirm = () => {
+        if (ui.selectedBlocker) {
+            state.notice = `${nameOf(state, Number(ui.selectedBlocker.slice(1)))} is selected but blocks nothing — click the attacker it blocks, or press Escape to put it down.`;
+            return;
+        }
         if (!canConfirm()) {
             state.notice = "An attacker with menace needs two or more blockers, or none.";
             return;
