@@ -12621,9 +12621,13 @@ Mark 1 of the 1 cards below to exile.");
         let mut buf: Vec<u8> = Vec::new();
         CliPlayer::paint_permanent_detail(&mut buf, &v, &perm);
         let text = String::from_utf8_lossy(&buf).to_string();
-        assert!(text.contains("{U}{B}, {T}: Destroy target creature with the same name"),
+        // The text is wrapped to the terminal, so a phrase is looked for
+        // with its line breaks read as spaces: at 100 columns (CI, no tty)
+        // "transform this" ends a row.
+        let flat = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(flat.contains("{U}{B}, {T}: Destroy target creature with the same name"),
             "the granted ability is missing from {text}");
-        assert!(text.contains("transform this creature"),
+        assert!(flat.contains("transform this creature"),
             "and the copied card's own text is still there: {text}");
         assert!(text.contains("CR 706.2"), "said to be a copy effect's: {text}");
         assert_crlf("permanent detail with a granted ability", &buf);
