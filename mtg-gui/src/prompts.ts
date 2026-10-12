@@ -368,7 +368,10 @@ function newUi(mode: Ui["mode"], title: string): Ui {
  * nothing a person can find (#694, the page's half of #634).
  */
 export function withoutIds(s: string): string {
-  return s.replace(/ \(#\d+\)/g, "").replace(/,\s*#\d+(?=\])/g, "").replace(/ #\d+\b/g, "");
+  return s.replace(/ \(#\d+\)/g, "").replace(/,\s*#\d+(?=\])/g, "").replace(/ #\d+\b/g, "")
+    // A damage-assignment-order row tells same-named blockers apart with
+    // "[#62]" or "[#62, 1 damage]" (combat.rs); the id goes, the damage stays.
+    .replace(/ \[#\d+\]/g, "").replace(/\[#\d+, /g, "[");
 }
 
 /** A widget over a set of targets or object ids. */
@@ -860,7 +863,9 @@ function beginOrder(state: LiveState, ui: Ui, rp: ResolutionPayload, title: stri
   // Each row's source, from its `[source …, #id]` tag: two Thraben Sentries'
   // rows strip to the same words, and hovering one shows which (#786).
   const order = ((rp.options ?? []) as string[]).map((label, i) => {
-    const src = sourceOfTag(label);
+    // A damage-assignment-order row names its blocker "[#62, …]" instead.
+    const m = /\[#(\d+)[,\]]/.exec(label);
+    const src = sourceOfTag(label) ?? (m ? Number(m[1]) : null);
     return { label: withoutIds(label), i, key: src === null ? undefined : `o${src}` };
   });
   ui.order = order;

@@ -16,6 +16,9 @@ const cases = [
   ["Unruly Mob [source 2/2, #42]", "Unruly Mob [source 2/2]"],
   ["choose X funding (0-15)", "choose X funding (0-15)"],
   ["p0 tapped Grizzly Bears #5 and Forest #7", "p0 tapped Grizzly Bears and Forest"],
+  // Same-named blockers in a damage-assignment order (#786's review).
+  ["Grizzly Bears 2/2 [#62]", "Grizzly Bears 2/2"],
+  ["Grizzly Bears 2/2 [#63, 1 damage]", "Grizzly Bears 2/2 [1 damage]"],
 ];
 for (const [input, want] of cases) {
   const got = P.withoutIds(input);
