@@ -150,7 +150,8 @@ Two different things pass for you, and they stop at different places.
 - the opponent **actually attacking** (an opponent who declares no attackers is not a stop);
 - an attacker of yours **blocked**, for the window before damage;
 - your **own** postcombat main phase, so removal can be aimed at damaged creatures;
-- a **declare-attackers or declare-blockers prompt** with anything eligible on it — combat is always yours to declare, and answering it leaves auto-pass off.
+- a **declare-attackers or declare-blockers prompt** with anything eligible on it — combat is always yours to declare, and answering it leaves auto-pass off;
+- **any other question that is not a priority pass** — a discard to hand size, a target, a "may" — which turns auto-pass off, as the page and the LLM seat do.
 
 Two consequences worth knowing:
 

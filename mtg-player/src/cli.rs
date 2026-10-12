@@ -1301,6 +1301,17 @@ impl CliPlayer {
 
     // ── Pass mode logic ─────────────────────────────────────────────
 
+    /// A decision that is not a priority offer — a discard, a target, a
+    /// may — ends auto-pass, as it does on the page ("you are asked
+    /// something") and for the LLM seat's pass-until ("this is not a
+    /// priority pass"). The CLI answered a cleanup discard with auto-pass
+    /// still on and passed the whole of the next turn (#799).
+    fn end_pass_mode_unless_priority(&mut self, legal: &mtg_engine::engine::LegalActions) {
+        if !legal.actions.iter().any(|a| matches!(a, Action::PassPriority)) {
+            self.pass_mode = None;
+        }
+    }
+
     /// The pass mode 'f' would engage at the current prompt.
     fn new_pass_mode(view: &GameView) -> PassMode {
         PassMode::UntilNextTurn {
@@ -8510,6 +8521,7 @@ impl Player for CliPlayer {
 impl CliPlayer {
     fn choose_action_screen(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
         let legal_actions = &legal.actions;
+        self.end_pass_mode_unless_priority(legal);
 
         // X-cost funding: prompt the user for an X value and auto-distribute
         // across pool mana and tap sources (pool first, then by category).
@@ -11140,6 +11152,19 @@ Mark 1 of the 1 cards below to exile.");
         v.battlefield = vec![attacker(9, "Bear", 1)];
         assert_eq!(CliPlayer::should_break_pass(&v, &pass_concede_plus(vec![]), &mode),
             Some(BreakReason::Attackers), "an actual attack is a stop");
+    }
+
+    /// Issue #799: a prompt with no Pass on it — the cleanup discard —
+    /// ends auto-pass; a priority offer leaves it on.
+    #[test]
+    fn a_prompt_that_is_not_a_priority_offer_ends_auto_pass() {
+        let mut cli = CliPlayer::new("p");
+        let v = view(Step::EndStep, 3, true);
+        cli.pass_mode = Some(CliPlayer::new_pass_mode(&v));
+        cli.end_pass_mode_unless_priority(&pass_concede_plus(vec![]));
+        assert!(cli.pass_mode.is_some(), "a priority offer keeps it on");
+        cli.end_pass_mode_unless_priority(&legal(vec![Action::DiscardCards { cards: vec![] }, Action::Concede]));
+        assert!(cli.pass_mode.is_none(), "the discard ends it");
     }
 
     /// Issue #798: an attacker of yours blocked is a stop, as it is for the
