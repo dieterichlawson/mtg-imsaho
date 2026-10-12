@@ -337,6 +337,13 @@ export function targetKey(t: Target | null | undefined): string | null {
   return null;
 }
 
+/** The object a board key names: `o12` is object 12, and a player's key
+ * (`p1`) is no object. Read as `Number(key.slice(1))`, `p1` was object 1, so
+ * the opponent's life strip lit up and opened object #1's verbs (#801). */
+export function objectOfKey(key: string | null | undefined): ObjectId | null {
+  return key && key[0] === "o" ? Number(key.slice(1)) : null;
+}
+
 function newUi(mode: Ui["mode"], title: string): Ui {
   return { mode, title: withoutIds(title), hint: "", buttons: [], marked: [] };
 }
@@ -383,7 +390,7 @@ function offBoardRows(state: LiveState, ui: Ui, run: (key: string) => void): Row
   // under a panel titled "You: graveyard" (#690).
   const zones = new Map<string, { zone: "graveyard" | "exile"; pid: PlayerId }>();
   for (const [key, t] of ui.options ?? []) {
-    const id = key[0] === "o" ? Number(key.slice(1)) : null;
+    const id = objectOfKey(key);
     const e = id === null ? null : state.index.get(id);
     if (key[0] === "p" || (e && ON_BOARD.has(e.zone))) continue;
     if (e && (e.zone === "graveyard" || e.zone === "exile") && e.owner !== null) zones.set(`${e.zone}:${e.owner}`, { zone: e.zone, pid: e.owner });

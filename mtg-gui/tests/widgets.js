@@ -523,11 +523,16 @@ async function main() {
         const m = window.mtg;
         const p = m.view.battlefield.find(x => x.object_id === perm);
         m.view.stack = [{ object_id: perm, card_id: 1, name: `${p.name} ability`, controller: m.view.you, targets: [], x_value: null }];
-        const chip = window.mtgDebug.inspect(`o${perm}`, "stack");
+        const chip = window.mtgDebug.inspect("s0", "stack");
         const board = window.mtgDebug.inspect(`o${perm}`, "perm");
+        // The chip is not the source permanent to a click (#807): keyed by
+        // its slot, never `o<source>`.
+        window.mtgDebug.render();
+        const chipKeys = m.hits.filter(h => h.kind === "stack").map(h => h.key);
         m.view.stack = [];
-        return { chip, board, permName: p.name };
+        return { chip, board, permName: p.name, chipKeys };
       }, perm);
+      if (JSON.stringify(both.chipKeys) !== JSON.stringify(["s0"])) fail(`stack-chip-key: an ability's chip is keyed ${JSON.stringify(both.chipKeys)}`);
       if (!both.chip || both.chip.zone !== "stack" || !/ ability$/.test(both.chip.name))
         fail(`stack-chip-inspect: ${JSON.stringify(both.chip)}`);
       else ok(`stack-chip-inspect → ${both.chip.name} (${both.chip.zone})`);

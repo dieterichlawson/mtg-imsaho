@@ -4,7 +4,7 @@
 // what each one is and what a click on it does. Input never looks at the
 // view; it looks at the last frame.
 import { drawArt, frameColor, darker, uiImage } from "./assets.js";
-import { nameOf, targetLabel, playerLabel, engineLine } from "./prompts.js";
+import { nameOf, targetLabel, playerLabel, engineLine, objectOfKey } from "./prompts.js";
 export const W = 640, H = 360;
 export const PANEL_X = 480;
 const BOARD_W = PANEL_X;
@@ -325,7 +325,19 @@ export function permBadges(p, state) {
         b.push({ t: "→" + nameOf(state, p.attached_to).slice(0, 4), c: "#c0a0e0" });
     return b;
 }
-function highlightFor(state, key) {
+/**
+ * A stack chip's board key. A spell is an object, `o<id>`, and can be a
+ * target. An ability has no characteristics (CR 113.1: no card types) and
+ * the view gives it its source's id, so keyed `o<id>` its chip was the
+ * source permanent to every click: at a target pick it lit as an option and
+ * a click on it targeted the creature, and in the menu it opened the
+ * creature's verbs (#807). An ability's chip is keyed by its slot, `s<i>`,
+ * which names no object.
+ */
+export function stackChipKey(item, i) {
+    return item.card_types && item.card_types.length ? `o${item.object_id}` : `s${i}`;
+}
+export function highlightFor(state, key) {
     const ui = state.ui;
     if (!ui)
         return null;
@@ -340,18 +352,19 @@ function highlightFor(state, key) {
         if (ui.attackers.has(key))
             return ui.canAttackerTake(key) ? "target" : null;
     }
-    if (ui.mode === "menu" && ui.verbs && ui.verbs.has(Number(key.slice(1))))
+    const id = objectOfKey(key);
+    if (ui.mode === "menu" && ui.verbs && id !== null && ui.verbs.has(id))
         return "verb";
     return null;
 }
 const HL = { option: "#e0c040", marked: "#60e060", selected: "#60c0ff", target: "#ff6060", verb: "#c8b060" };
 const HL_DIM = { option: "#a08830", marked: "#40a040", selected: "#4080b0", target: "#b04040", verb: "#8a7a50" };
 function highlightColor(hl) { return pulse() > 0.5 ? HL[hl] : HL_DIM[hl]; }
-function clickFor(state, key) {
+export function clickFor(state, key) {
     const ui = state.ui;
     if (!ui)
         return null;
-    const id = Number(key.slice(1));
+    const id = objectOfKey(key);
     const isOption = ui.isOption ? ui.isOption(key) : false;
     switch (ui.mode) {
         case "pick": return isOption ? () => ui.onPick(key) : null;
@@ -364,7 +377,7 @@ function clickFor(state, key) {
                 return () => ui.clickAttacker(key);
             return null;
         case "menu":
-            if (ui.verbs && ui.verbs.has(id))
+            if (ui.verbs && id !== null && ui.verbs.has(id))
                 return (hit) => { state.popover = { id, items: ui.verbs.get(id), x: hit.x, y: hit.y }; };
             return null;
         default: return null;
@@ -729,7 +742,7 @@ function drawBand(ctx, hits, state) {
     text(ctx, bandTurnLine(ctx, mine, view.step), BAND_X, y + 2, { font: "7px Silkscreen", color: mine ? "#ffe080" : "#c0b0d0" });
     bandLogLines(state).forEach((l, i) => text(ctx, clip(ctx, engineLine(state, l), BAND_W, "7px Silkscreen"), BAND_X, y + 12 + i * 8, { font: "7px Silkscreen", color: "#8a8898" }));
     view.stack.forEach((item, i) => {
-        const key = `o${item.object_id}`;
+        const key = stackChipKey(item, i);
         const x = sx0 + i * 28, sy = y + 9;
         const hovered = state.hover !== null && state.hover.key === key;
         const hl = highlightFor(state, key);
@@ -742,10 +755,9 @@ function drawBand(ctx, hits, state) {
         // The waiting entries still count from 1 under it.
         const queued = i + 1 - (view.stack[0]?.resolving ? 1 : 0);
         text(ctx, item.resolving ? "R" : String(queued), x + 20, sy + 12, { align: "center", font: "6px Silkscreen", color: "#ffe080" });
-        // The key stays `o<id>` so a spell on the stack is still clickable as
-        // a target; the slot is what says WHICH stack item this chip is, since
-        // an ability's id names its source and a trigger's names nothing
-        // (issue #527).
+        // A spell's key stays `o<id>` so it is still clickable as a target; the
+        // slot is what says WHICH stack item this chip is, since an ability's id
+        // names its source and a trigger's names nothing (issue #527).
         hits.push({ x: x - 1, y: sy - 1, w: 26, h: 22, kind: "stack", key, id: item.object_id, stackIndex: i, onClick: clickFor(state, key) });
     });
 }
@@ -996,7 +1008,7 @@ export function inspecting(state) {
         const item = state.view.stack[h.stackIndex];
         return item ? { obj: item, zone: "stack", owner: item.controller } : undefined;
     }
-    const hoverId = h && h.key ? Number(h.key.slice(1)) : null;
+    const hoverId = h ? objectOfKey(h.key) : null;
     if (hoverId !== null)
         return state.index.get(hoverId);
     return state.selected !== null ? state.index.get(state.selected) : undefined;
