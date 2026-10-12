@@ -29,6 +29,8 @@ DUALS = {
 }
 # Colorless utility lands, one per deck until they run out.
 UTILITY_LANDS = ["Ghost Quarter", "Shimmering Grotto"]
+# (artifact, card it must share a deck with) — see the swap in main().
+TOGETHER = [("Inquisitor's Flail", "Undead Alchemist")]
 
 
 def mana_value(cost: str) -> int:
@@ -75,6 +77,21 @@ def main() -> None:
 
     for i, (_, name) in enumerate(sorted(artifacts)):
         decks[PAIRS[i % len(PAIRS)]].append(name)
+
+    # Cards that must share a deck: an artifact dealt elsewhere trades
+    # places with an artifact in its partner's deck. Inquisitor's Flail and
+    # Undead Alchemist are the one pairing in the pool that raises the CR
+    # 616.1 damage-effect choice, which no fuzz game asked while they were
+    # dealt apart (#784); mtg-engine/tests/deck_coverage.rs pins it.
+    artifact_names = {n for _, n in artifacts}
+    for artifact, partner in TOGETHER:
+        home = next((p for p in PAIRS if artifact in decks[p]), None)
+        there = next((p for p in PAIRS if partner in decks[p]), None)
+        if home is None or there is None or home == there:
+            continue
+        swap = next(n for n in decks[there] if n in artifact_names and n != artifact)
+        decks[home][decks[home].index(artifact)] = swap
+        decks[there][decks[there].index(swap)] = artifact
 
     utility = list(UTILITY_LANDS)
     for pair in PAIRS:

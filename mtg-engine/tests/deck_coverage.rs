@@ -62,3 +62,21 @@ fn the_coverage_decks_contain_every_implemented_card() {
         "coverage deck entries name cards the registry does not know:\n  {}",
         unknown.join("\n  "));
 }
+
+/// Issue #784: the CR 616.1 damage-effect choice needs Inquisitor's Flail on
+/// a Zombie whose controller has an Undead Alchemist. Dealt into different
+/// coverage decks, the two never met and the nightly fuzz never asked the
+/// question. scripts/make_coverage_decks.py keeps them together (TOGETHER);
+/// this holds the decks to it, regenerated or edited by hand.
+#[test]
+fn the_flail_and_the_alchemist_share_a_coverage_deck() {
+    let entries = coverage_deck_entries();
+    let decks_of = |card: &str| -> BTreeSet<String> {
+        entries.iter().filter(|(_, n)| n == card).map(|(d, _)| d.clone()).collect()
+    };
+    let flail = decks_of("Inquisitor's Flail");
+    let alchemist = decks_of("Undead Alchemist");
+    assert!(flail.intersection(&alchemist).next().is_some(),
+        "Inquisitor's Flail is in {flail:?} and Undead Alchemist in {alchemist:?}: \
+         no fuzz game can raise the damage-effect choice (#784)");
+}
