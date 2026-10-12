@@ -309,6 +309,20 @@ canvas.addEventListener("click", (ev) => {
     }
     const { x, y } = canvasPoint(ev);
     const h = hitAt(x, y);
+    // The second click of a double-click lands on whatever is there by then.
+    // Pass sits where the next decision's Pass is, so a double-click passed
+    // two priorities and the second answered a stop (Begin combat, with an
+    // instant in hand) that was never on screen to be read (#806). A second
+    // click on a decision that arrived after the first is dropped, once.
+    const seq = state.decision ? state.decision.seq : null;
+    const straddles = ev.detail >= 2 && seq !== state.clickSeq;
+    state.clickSeq = seq;
+    state.doubleDropped = straddles;
+    if (straddles && h && h.onClick) {
+        state.notice = "A new question came up between the two clicks; the second was ignored. Read it, then click again.";
+        draw();
+        return;
+    }
     state.notice = null;
     if (state.popover && (!h || (h.kind !== "row" && h.kind !== "popover"))) {
         state.popover = null;
@@ -327,6 +341,8 @@ canvas.addEventListener("click", (ev) => {
 canvas.addEventListener("dblclick", (ev) => {
     const { x, y } = canvasPoint(ev);
     const h = hitAt(x, y);
+    if (state.doubleDropped)
+        return;
     if (h && h.verbs && h.verbs.length === 1) {
         state.popover = null;
         h.verbs[0].run();

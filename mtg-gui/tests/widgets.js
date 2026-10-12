@@ -469,6 +469,28 @@ async function main() {
         await page.keyboard.press("Enter");
         await expectSent("menu-pass", a => a === "PassPriority");
       }
+      // A double-click on Pass that straddles the next decision passes once
+      // (#806): the second click would answer a question nobody saw drawn.
+      const passMenu = legal({ context: "MAIN PHASE 1", actions: ["PassPriority", "Concede"] });
+      if (await stage("double-pass", passMenu, null, "menu")) {
+        const box = await page.evaluate(() => { window.mtgDebug.render(); const h = window.mtg.hits.find(h => h.kind === "button" && /pass/i.test(h.label)); return h ? [h.x + h.w / 2, h.y + h.h / 2] : null; });
+        if (!box) fail("double-pass: no Pass button");
+        else {
+          const sent0 = await page.evaluate(() => window.mtgDebug.sent.length);
+          await page.mouse.move(box[0] * 2, box[1] * 2);
+          await page.mouse.down({ clickCount: 1 }); await page.mouse.up({ clickCount: 1 });
+          await stage("double-pass-next", legal({ context: "BEGIN COMBAT", actions: ["PassPriority", "Concede"] }), null, "menu");
+          await page.mouse.down({ clickCount: 2 }); await page.mouse.up({ clickCount: 2 });
+          await page.waitForTimeout(60);
+          const after = await page.evaluate(() => ({ sent: window.mtgDebug.sent.length, notice: window.mtg.notice, mode: window.mtg.ui && window.mtg.ui.mode }));
+          if (after.sent !== sent0 + 1) fail(`double-pass: ${after.sent - sent0} passes sent for one double-click`);
+          else if (after.mode !== "menu" || !(after.notice || "").includes("new question")) fail(`double-pass: ${JSON.stringify(after)}`);
+          else ok("double-pass → " + after.notice);
+          // A deliberate click on the new decision goes through.
+          await page.mouse.down({ clickCount: 1 }); await page.mouse.up({ clickCount: 1 });
+          await expectSent("double-pass-then-click", a => a === "PassPriority");
+        }
+      }
     }
     // 14. Enter at a mark prompt: refuses out loud below the minimum, and
     // never commits an empty answer nobody chose. Enter is the idle key —

@@ -108,6 +108,11 @@ export interface State {
    * board can be read; the result stays in the panel (#712).
    */
   gameOverDismissed?: boolean;
+  // The decision on screen at the last click, and whether the last click
+  // was dropped as the second half of a double-click that straddled a new
+  // decision (#806).
+  clickSeq?: number | null;
+  doubleDropped?: boolean;
   hover: Hit | null;
   hits: Hit[];
   popover: Popover | null;
