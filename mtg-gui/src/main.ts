@@ -140,7 +140,7 @@ function onMessage(msg: ServerMessage): void {
         && actions.length > 0 && actions.every(a => a === "PassPriority" || a === "Concede") && actions.includes("PassPriority");
       const v = msg.view;
       const what = `seq ${msg.seq} T${v.turn_number} ${v.step} active=${v.active_player} you=${v.you} ctx=${msg.legal.context}`;
-      if (onlyPass && !state.stopAtPass) { window.mtgDebug.trace.push(`${what}: only pass`); send("PassPriority"); return; }
+      if (onlyPass && !state.stopAtPass) { window.mtgDebug.trace.push(`${what}: only pass`); passUnseen(); return; }
       beginDecision(state as LiveState, send);
       if (autoPassDecides()) { window.mtgDebug.trace.push(`${what}: auto-passed`); return; }
       // Past here the page is stopping and a person will read this frame.
@@ -219,8 +219,22 @@ function autoPassDecides(): boolean {
     pushSettings();
     return false;
   }
-  send("PassPriority");
+  passUnseen();
   return true;
+}
+
+/**
+ * Pass a priority the person never sees. send() clears the notice for the
+ * question that comes next, which is right after a person answers one — and
+ * wrong here: no question was drawn, so the line on screen is still the last
+ * thing they were told. Cleared by these passes, "Auto-pass on — it declined
+ * …" lasted until the seat's next priority, milliseconds (#795's review),
+ * and so did "Last game: …" when the next game opened on a pass.
+ */
+function passUnseen(): void {
+  const said = state.notice;
+  send("PassPriority");
+  state.notice = said;
 }
 
 function toggleAutoPass(): void {

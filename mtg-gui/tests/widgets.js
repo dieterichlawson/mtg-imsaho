@@ -548,6 +548,15 @@ async function main() {
           if (!after.autoPass) ok(`f-notice: auto-pass not engaged here (${after.notice}); skipped`);
           else if (!(after.notice || "").includes("declined 1 spell/ability/land play")) fail(`f-notice: ${JSON.stringify(after)}`);
           else ok("f-notice → " + after.notice);
+          // And it outlasts the passes auto-pass answers unseen after it.
+          if (after.autoPass) {
+            const kept = await page.evaluate((seq) => {
+              window.mtgDebug.message({ type: "decision", seq, view: window.mtg.view, combat: null,
+                legal: { actions: ["PassPriority", "Concede"], combat_prompt: null, castable_spells: [], activatable_abilities: [], context: "UPKEEP", resolution_prompt: null, set_prompt: null } });
+              return window.mtg.notice;
+            }, seq + 500);
+            if (kept !== after.notice) fail(`f-notice: the next unseen pass replaced it with ${JSON.stringify(kept)}`);
+          }
           // The seat's echo of the setting keeps the count (#796).
           if (after.autoPass) {
             await page.evaluate((t) => window.mtgDebug.message({ type: "settings", stop_at_pass: false, auto_pass_since_turn: t }), after.autoPass.sinceTurn);
