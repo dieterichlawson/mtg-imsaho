@@ -97,7 +97,7 @@ function statusWord(s) {
     return s.auto ? `${s.status} (table picks)` : s.status;
 }
 function seatsTable(view) {
-    const rows = view.seats.map((s) => h("tr", { class: s.seat === view.seat ? "me" : "" }, h("td", { text: String(s.seat) }), h("td", { text: s.name + (s.seat === view.seat ? " (you)" : "") }), h("td", { text: s.kind }), h("td", { text: presence(s) }), h("td", { text: statusWord(s) }), h("td", { class: "num", text: String(s.picks) })));
+    const rows = view.seats.map((s) => h("tr", { class: s.seat === view.seat ? "me" : "" }, h("td", { text: String(s.seat) }), h("td", { class: "name", text: s.name + (s.seat === view.seat ? " (you)" : "") }), h("td", { text: s.kind }), h("td", { text: presence(s) }), h("td", { text: statusWord(s) }), h("td", { class: "num", text: String(s.picks) })));
     return h("table", { class: "seats" }, h("thead", {}, h("tr", {}, ...["seat", "name", "kind", "joined", "status", "picks"].map(t => h("th", { text: t })))), h("tbody", {}, ...rows));
 }
 function standingsTable(view) {
@@ -105,7 +105,7 @@ function standingsTable(view) {
         return h("p", { class: "muted", text: "No results yet." });
     const rows = view.standings.map((s, i) => h("tr", { class: s.seat === view.seat ? "me" : "" }, h("td", { text: String(i + 1) }), 
     // The tags the terminal standings carry, in their words (#744).
-    h("td", { text: seatName(view, s.seat) + (s.seat === view.seat ? " (you)" : "") + (s.tags ? ` ${s.tags}` : "") }), 
+    h("td", { class: "name", text: seatName(view, s.seat) + (s.seat === view.seat ? " (you)" : "") + (s.tags ? ` ${s.tags}` : "") }), 
     // A drawn match is in the record too: it vanished from "0-0" (#744).
     h("td", { class: "num", text: `${s.wins}-${s.losses}${s.draws ? `-${s.draws}` : ""}` }), h("td", { class: "num", text: String(s.points) })));
     return h("table", { class: "standings" }, h("thead", {}, h("tr", {}, ...["#", "seat", "W-L-D", "points"].map(t => h("th", { text: t })))), h("tbody", {}, ...rows));
@@ -126,7 +126,7 @@ function matchRow(view, m) {
     let link = null;
     if (m.status !== "done") {
         link = m.url
-            ? h("div", { class: "match-link" }, "Open your game: ", h("a", { href: m.url, target: "_blank", rel: "noopener", text: m.url }))
+            ? h("div", { class: "match-link" }, "Open your game: ", h("a", { href: m.url, target: "_blank", rel: "noopener" }, ...urlPieces(m.url)))
             : h("div", { class: "match-link muted", text: m.status === "waiting" ? "Your game page opens when the match starts." : "No game page for this match." });
     }
     return h("li", { class: `match match-${m.status}` }, h("div", { class: "match-head" }, h("span", { text: `Round ${m.round} vs ${seatName(view, m.opponent)} — ${status}` })), link, games ? h("div", { class: "match-games muted", text: games }) : null);
@@ -328,4 +328,19 @@ export function packColumns(root) {
         return 1;
     const top = tiles[0].offsetTop;
     return Math.max(1, tiles.filter(t => t.offsetTop === top).length);
+}
+/**
+ * A URL as text pieces with a line break allowed only before a ':' or '/'
+ * and after the '//': at phone width `word-break: break-all` split it at
+ * any character, and "HTTP://192.168.1.20:8" / "805/" is the wrong port
+ * for a person copying it to another device (#794).
+ */
+export function urlPieces(url) {
+    const out = [];
+    for (const part of url.split(/(?=[:/])|(?<=\/\/)/)) {
+        if (out.length)
+            out.push(document.createElement("wbr"));
+        out.push(part);
+    }
+    return out;
 }

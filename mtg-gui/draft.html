@@ -59,7 +59,12 @@
   /* Cells wrap between words, never inside one: the body's overflow-wrap
      broke "JOINED" into "JOINE D" in a six-column table at 390px. */
   th, td { text-align: left; padding: 3px 10px 3px 0; border-bottom: 1px solid #2e2638; font-size: 13px; overflow-wrap: normal; }
-  th { color: var(--muted); font-weight: normal; }
+  th { color: var(--muted); font-weight: normal; white-space: nowrap; }
+  /* A record is one number: "2-1-1" broke at its hyphens (#790). */
+  td.num { white-space: nowrap; }
+  /* A name is the one cell that may break inside a word: a 24-letter name
+     with no space pushed the table off a phone's screen (#789). */
+  td.name { overflow-wrap: anywhere; }
   tr.me td { color: var(--accent); }
 
   /* --- mana pips and frames --- */
@@ -69,7 +74,7 @@
     font-size: 9px; line-height: 14px; text-align: center; color: #111; background: #bbb; font-weight: bold;
   }
   .pip-W { background: var(--W); } .pip-U { background: var(--U); color: #fff; }
-  .pip-B { background: #2a1e30; color: #ddd; } .pip-R { background: var(--R); color: #fff; }
+  .pip-B { background: var(--B); color: #fff; } .pip-R { background: var(--R); color: #fff; }
   .pip-G { background: var(--G); color: #fff; } .pip-N { background: #999; }
   .frame-W { border-color: var(--W); } .frame-U { border-color: var(--U); } .frame-B { border-color: var(--B); }
   .frame-R { border-color: var(--R); } .frame-G { border-color: var(--G); } .frame-M { border-color: var(--M); } .frame-C { border-color: var(--C); }
@@ -164,7 +169,7 @@
   .matches { list-style: none; padding: 0; margin: 0; }
   .match { padding: 6px 8px; margin: 4px 0; background: var(--panel); border: 1px solid #2e2638; }
   .match-playing { border-color: var(--accent); }
-  .match-link a { word-break: break-all; }
+  .match-link a { word-break: normal; overflow-wrap: normal; }
   .pairings-list { list-style: none; padding: 0; margin: 0; font-size: 13px; }
   .pairings-list li { padding: 2px 0; color: var(--muted); }
   .pairings-list li.me { color: var(--text); }

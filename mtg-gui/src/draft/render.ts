@@ -113,7 +113,7 @@ function statusWord(s: SeatInfo): string {
 function seatsTable(view: DraftView): HTMLElement {
   const rows = view.seats.map((s: SeatInfo) => h("tr", { class: s.seat === view.seat ? "me" : "" },
     h("td", { text: String(s.seat) }),
-    h("td", { text: s.name + (s.seat === view.seat ? " (you)" : "") }),
+    h("td", { class: "name", text: s.name + (s.seat === view.seat ? " (you)" : "") }),
     h("td", { text: s.kind }),
     h("td", { text: presence(s) }),
     h("td", { text: statusWord(s) }),
@@ -129,7 +129,7 @@ function standingsTable(view: DraftView): HTMLElement {
   const rows = view.standings.map((s, i) => h("tr", { class: s.seat === view.seat ? "me" : "" },
     h("td", { text: String(i + 1) }),
     // The tags the terminal standings carry, in their words (#744).
-    h("td", { text: seatName(view, s.seat) + (s.seat === view.seat ? " (you)" : "") + (s.tags ? ` ${s.tags}` : "") }),
+    h("td", { class: "name", text: seatName(view, s.seat) + (s.seat === view.seat ? " (you)" : "") + (s.tags ? ` ${s.tags}` : "") }),
     // A drawn match is in the record too: it vanished from "0-0" (#744).
     h("td", { class: "num", text: `${s.wins}-${s.losses}${s.draws ? `-${s.draws}` : ""}` }),
     h("td", { class: "num", text: String(s.points) }),
@@ -155,7 +155,7 @@ function matchRow(view: DraftView, m: Match): HTMLElement {
   let link: HTMLElement | null = null;
   if (m.status !== "done") {
     link = m.url
-      ? h("div", { class: "match-link" }, "Open your game: ", h("a", { href: m.url, target: "_blank", rel: "noopener", text: m.url }))
+      ? h("div", { class: "match-link" }, "Open your game: ", h("a", { href: m.url, target: "_blank", rel: "noopener" }, ...urlPieces(m.url)))
       : h("div", { class: "match-link muted", text: m.status === "waiting" ? "Your game page opens when the match starts." : "No game page for this match." });
   }
   return h("li", { class: `match match-${m.status}` },
@@ -384,4 +384,19 @@ export function packColumns(root: HTMLElement): number {
   if (tiles.length === 0) return 1;
   const top = tiles[0].offsetTop;
   return Math.max(1, tiles.filter(t => t.offsetTop === top).length);
+}
+
+/**
+ * A URL as text pieces with a line break allowed only before a ':' or '/'
+ * and after the '//': at phone width `word-break: break-all` split it at
+ * any character, and "HTTP://192.168.1.20:8" / "805/" is the wrong port
+ * for a person copying it to another device (#794).
+ */
+export function urlPieces(url: string): (string | HTMLElement)[] {
+  const out: (string | HTMLElement)[] = [];
+  for (const part of url.split(/(?=[:/])|(?<=\/\/)/)) {
+    if (out.length) out.push(document.createElement("wbr"));
+    out.push(part);
+  }
+  return out;
 }

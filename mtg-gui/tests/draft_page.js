@@ -315,6 +315,28 @@ async function main() {
         const href = await page.$eval(".match-playing a", a => a.getAttribute("href"));
         check(href === "http://192.168.1.20:8805/", `${tag}: the live match links its game (${href})`);
         check((await page.$$(".standings tbody tr")).length === 4, `${tag}: standings list every seat`);
+        // The port is never split across lines (#794): its text piece is one
+        // line box wherever the URL wraps.
+        const portLines = await page.$eval(".match-playing a", a => {
+          const node = [...a.childNodes].find(n => n.nodeType === 3 && n.textContent.startsWith(":") && /\d/.test(n.textContent));
+          if (!node) return -1;
+          const r = document.createRange(); r.selectNodeContents(node); return r.getClientRects().length;
+        });
+        check(portLines === 1, `${tag}: the game link's port sits on one line (${portLines} line boxes)`);
+        // A long one-word name and the #744 tags fit a phone (#789), and a
+        // record is never broken at its hyphen (#790).
+        const wide = JSON.parse(JSON.stringify(byName.playing));
+        wide.seats[1].name = "Featherstonehaughmaximus";
+        wide.standings.forEach((r, i) => { r.draws = i % 2; r.tags = "[substitute deck] [1 game forfeited]"; });
+        await stage(wide);
+        await page.waitForTimeout(50);
+        const fit = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, w: innerWidth,
+          broken: [...document.querySelectorAll(".standings td.num, .standings th")].filter(el => { const r = document.createRange(); r.selectNodeContents(el); return new Set([...r.getClientRects()].map(b => Math.round(b.top))).size > 1; }).map(el => el.textContent) }));
+        check(fit.sw <= fit.w, `${tag}: a 24-letter name keeps the page on screen (${fit.sw} <= ${fit.w})`);
+        check(fit.broken.length === 0, `${tag}: no record or heading breaks across lines (${JSON.stringify(fit.broken)})`);
+        // A black pip is a disc on the panel, as the other colours are (#793).
+        const pip = await page.evaluate(() => { const el = document.createElement("span"); el.className = "pip pip-B"; document.body.append(el); const c = getComputedStyle(el).backgroundColor; el.remove(); return c; });
+        check(pip !== "rgb(42, 30, 48)", `${tag}: the B pip is not the panel's colour (${pip})`);
         await stage(byName.playing_waiting);
         await page.waitForTimeout(50);
         check((await text(".waiting") || "").includes("Waiting for the others"), `${tag}: a seat with no match waits for the others`);
