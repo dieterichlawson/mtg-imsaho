@@ -423,9 +423,12 @@ export function beginDecision(state: LiveState, send: Send): Ui {
 
 function concedeButton(state: LiveState, send: Send): Ui["buttons"][number] {
   return { label: "Concede", run: () => {
-    beginList(state, newUi("list", "Concede the game?"),
-      [{ label: "Yes, concede", run: () => send("Concede") }, { label: "No", run: () => beginDecision(state, send) }],
+    const back = () => { beginDecision(state, send); };
+    const ui = beginList(state, newUi("list", "Concede the game?"),
+      [{ label: "Yes, concede", run: () => send("Concede") }, { label: "No", run: back }],
       "Concede the game?", send, false, true);
+    // Escape and right-click say No, as they back out of everything else (#802).
+    ui.onCancel = back;
   } };
 }
 
@@ -1033,7 +1036,10 @@ function beginNumber(state: LiveState, ui: Ui, opts: FundingOptions, title: stri
     send(resolve({ XFunding: allocateForX(opts, x).response }));
   };
   ui.buttons.push({ label: "Confirm", primary: true, run: ui.submit });
-  ui.buttons.push({ label: "Cancel", run: () => send(resolve({ ChosenTarget: null })) });
+  // Nothing is paid until X is confirmed, so the cast backs out by Escape and
+  // right-click as well as by the button (#802).
+  ui.onCancel = () => send(resolve({ ChosenTarget: null }));
+  ui.buttons.push({ label: "Cancel", run: ui.onCancel });
   state.ui = ui;
   return ui;
 }

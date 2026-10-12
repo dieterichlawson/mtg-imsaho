@@ -354,13 +354,29 @@ canvas.addEventListener("dblclick", (ev) => {
   if (h && h.verbs && h.verbs.length === 1) { state.popover = null; h.verbs[0].run(); syncField(); draw(); }
 });
 
-// Right-click backs out of whatever is open, like Escape.
-canvas.addEventListener("contextmenu", (ev) => {
-  ev.preventDefault();
+/**
+ * Escape and right-click: put away the popover or the overlay, else back out
+ * of the widget, else say why nothing happened. Right-click was the same
+ * chain without the last step, so where Escape explained itself a
+ * right-click did nothing and said nothing (#803, #570 on the other input).
+ */
+function backOut(key: string): void {
   const ui = state.ui;
   if (state.popover) state.popover = null;
   else if (state.overlay) state.overlay = null;
-  else if (ui && ui.onCancel) ui.onCancel();
+  else if (ui && ui.onCancel) {
+    // What was said about the widget being left goes with it: a refusal
+    // that named its Cancel button was left over the menu Escape restored,
+    // which has no Cancel and where Enter does pass (#804).
+    state.notice = null;
+    ui.onCancel();
+  } else if (ui) state.notice = noAnswerHere(ui, key);
+}
+
+// Right-click backs out of whatever is open, like Escape.
+canvas.addEventListener("contextmenu", (ev) => {
+  ev.preventDefault();
+  backOut("Right-click");
   draw();
 });
 
@@ -452,10 +468,7 @@ window.addEventListener("keydown", (ev) => {
       else state.notice = noAnswerHere(ui, "Enter");
       break;
     case "Escape":
-      if (state.popover) state.popover = null;
-      else if (state.overlay) state.overlay = null;
-      else if (ui && ui.onCancel) ui.onCancel();
-      else if (ui) state.notice = noAnswerHere(ui, "Escape");
+      backOut("Escape");
       break;
     case "l": state.logOpen = !state.logOpen; state.logScroll = 0; break;
     case "g": if (v) toggleZone("graveyard", v.you); break;

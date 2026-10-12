@@ -260,6 +260,24 @@ async function main() {
           else ok(`x-refuses ${JSON.stringify(token)} → ${JSON.stringify(notice)}`);
         }
       }
+      // Right-click backs out of the unpaid cast, as the Cancel button does (#802).
+      const rightClick = () => page.evaluate(() => { const c = document.querySelector("canvas"); c.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })); });
+      if (await stage("x-right-click", xPrompt(), null, "number")) {
+        await rightClick();
+        await expectSent("x-right-click", a => a.ResolveChoice && a.ResolveChoice.choice.ChosenTarget === null);
+      }
+      // And out of the Concede question, back to the prompt it was asked over.
+      if (await stage("concede-right-click", legal({ context: "MAIN PHASE 1", actions: ["PassPriority", "Concede"] }), null, "menu")) {
+        const sent0 = await page.evaluate(() => window.mtgDebug.sent.length);
+        await clickHit("(h) => h.kind === 'button' && h.label === 'Concede'");
+        const asked = await page.evaluate(() => window.mtg.ui.title);
+        await rightClick();
+        await page.waitForTimeout(40);
+        const back = await page.evaluate(() => ({ mode: window.mtg.ui.mode, sent: window.mtgDebug.sent.length }));
+        if (!/concede/i.test(asked)) fail(`concede-right-click: the Concede button asked ${JSON.stringify(asked)}`);
+        else if (back.mode !== "menu" || back.sent !== sent0) fail(`concede-right-click: ${JSON.stringify(back)}`);
+        else ok("concede-right-click → back at the menu");
+      }
       // And the forms it does take, which `str::parse::<u32>()` takes too.
       for (const [token, funded] of [["2", 2], ["+2", 2], ["002", 2], ["  3  ", 3], ["0", 0]]) {
         if (!await stage(`x-accepts-${JSON.stringify(token)}`, xPrompt(), null, "number")) continue;
@@ -436,6 +454,12 @@ async function main() {
     {
       const actions = [rc({ ChosenIndex: [0, "Left"] }), rc({ ChosenIndex: [1, "Right"] })];
       if (await stage("unknown-kind", legal({ actions, resolution_prompt: { ChooseSomethingNew: { description: "A prompt from the future", options: ["Left", "Right"] } } }), null, "list")) {
+        // Right-click where it cannot back out says so, as Escape does (#803).
+        await page.evaluate(() => { const c = document.querySelector("canvas"); c.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true })); });
+        await page.waitForTimeout(40);
+        const said = await page.evaluate(() => window.mtg.notice);
+        if (!(said || "").startsWith("Right-click does not answer this")) fail(`right-click at a list said ${JSON.stringify(said)}`);
+        else ok("right-click at a list → " + said);
         await clickHit("(h, m) => h.kind === 'row' && h.y === Math.max(...m.hits.filter(x => x.kind === 'row').map(x => x.y))");
         await expectSent("unknown-kind", a => a.ResolveChoice && a.ResolveChoice.choice.ChosenIndex[1] === "Right");
       }
@@ -452,6 +476,22 @@ async function main() {
         if (mode !== "pick") fail(`menu-cast: after choosing Cast the widget is ${mode}, expected pick`);
         await clickHit(`(h) => h.kind === 'player' && h.pid === ${ids.opp}`);
         await expectSent("menu-cast", a => a.CastSpell && a.CastSpell.targets[0].Player === ids.opp && a.CastSpell.tap_plan.length === 1);
+      }
+      // A refusal does not outlive the prompt it refused (#804): Enter at the
+      // target pick is refused, Escape backs out to the menu, and the menu
+      // does not carry "Enter does not answer this … or press Cancel".
+      if (await stage("menu-cast-back", legal({ context: "MAIN PHASE 1", actions, castable_spells: [cs] }), null, "menu")) {
+        await clickHit(`(h) => h.kind === 'hand' && h.id === ${ids.hand[0]}`);
+        await clickHit("(h, m) => h.kind === 'row' && m.popover");
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(40);
+        const refused = await page.evaluate(() => window.mtg.notice);
+        await page.keyboard.press("Escape");
+        await page.waitForTimeout(40);
+        const back = await page.evaluate(() => ({ mode: window.mtg.ui.mode, notice: window.mtg.notice }));
+        if (!(refused || "").startsWith("Enter does not answer this")) fail(`menu-cast-back: Enter at the pick said ${JSON.stringify(refused)}`);
+        else if (back.mode !== "menu" || back.notice) fail(`menu-cast-back: after Escape ${JSON.stringify(back)}`);
+        else ok("menu-cast-back: the refusal went with the pick");
       }
       const ab = { object_id: ids.mine[0], ability_index: 0, source_card_id: null, name: "Sac outlet", description: "Sacrifice a creature: draw a card", target_options: [], tap_plan: [],
         option_combos: [{ targets: [], sacrifice: ids.mine[0] }, { targets: [], sacrifice: ids.mine[1] }] };
