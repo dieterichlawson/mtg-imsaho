@@ -12,6 +12,8 @@ import { fromView, problem, toMessage } from "./deck.js";
 import { packColumns, render } from "./render.js";
 import { initialState } from "./state.js";
 const root = document.getElementById("app");
+/** draft.html's phone breakpoint: one column, the detail above the pack. */
+const ONE_COLUMN = window.matchMedia("(max-width: 760px)");
 const connEl = document.getElementById("conn");
 const seatEl = document.getElementById("seatline");
 const nameField = document.getElementById("name");
@@ -207,6 +209,18 @@ const actions = {
         draw();
     },
     hover(index) {
+        // In the one-column layout (draft.html's 760px breakpoint) the detail
+        // panel is ABOVE the pack, so a hover that changes it moves every tile:
+        // a tap fired hover first, the pack jumped and the tap landed on nothing
+        // (#791), and a pointer left over the pack swapped the detail between
+        // two cards on every redraw. There the panel follows the selection only.
+        if (ONE_COLUMN.matches) {
+            if (state.hover !== null) {
+                state.hover = null;
+                draw();
+            }
+            return;
+        }
         if (state.hover === index)
             return;
         state.hover = index;
@@ -264,6 +278,12 @@ window.addEventListener("keydown", (ev) => {
         return;
     }
     if (ev.ctrlKey || ev.metaKey || ev.altKey)
+        return;
+    // Enter on a focused control is that control's: the browser clicks it.
+    // Taken here, Enter picked the selected card instead of the focused one,
+    // and on Ready or a land's "+" moved a pool card (#787). Enter acts on the
+    // selection or the cursor only when no control has the focus.
+    if (ev.key === "Enter" && ev.target instanceof Element && ev.target.closest("button, a[href], input, select, textarea"))
         return;
     const view = state.view;
     if (!view)
@@ -391,12 +411,39 @@ nameField.addEventListener("change", () => {
         send({ type: "name", name });
 });
 // ----------------------------------------------------------------- frame
+/**
+ * A selector for the focused control that finds the same control in the
+ * rebuilt tree, or null. Every draw rebuilds the page, so the focus went to
+ * <body> on each press: adding 17 basic lands from the keyboard took 764
+ * Tabs (#788), and a hover's redraw between a Tab and an Enter sent the
+ * Enter to the page instead of the control (#787).
+ */
+function focusKey(el) {
+    if (!(el instanceof HTMLElement) || !root.contains(el))
+        return null;
+    if (el.id)
+        return `#${CSS.escape(el.id)}`;
+    if (el.dataset.cardIndex !== undefined)
+        return `.tile[data-card-index="${el.dataset.cardIndex}"]`;
+    if (el.dataset.poolIndex !== undefined)
+        return `.row[data-pool-index="${el.dataset.poolIndex}"]`;
+    const land = el.closest("[data-land]");
+    if (land && el.classList.length)
+        return `[data-land="${land.dataset.land}"] > .${CSS.escape(el.classList[0])}`;
+    return null;
+}
 function draw() {
+    const refocus = focusKey(document.activeElement);
     try {
         render(root, state, actions);
     }
     catch (e) {
         console.error(e);
+    }
+    if (refocus) {
+        const again = root.querySelector(refocus);
+        if (again && !again.disabled)
+            again.focus({ preventScroll: true });
     }
     const v = state.view;
     seatEl.textContent = v ? `seat ${v.seat} of ${v.pod_size} · ${v.set.toUpperCase()} · ${v.phase}` : (state.seat !== null ? `seat ${state.seat}` : "");

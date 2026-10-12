@@ -169,6 +169,29 @@ async function main() {
         await page.waitForTimeout(50);
         const keyed = await lastSent();
         check(JSON.stringify(keyed) === JSON.stringify({ type: "pick", pack_id: view.pack.id, index: 1 }), `${tag}: digit 2 then Enter sent ${JSON.stringify(keyed)}`);
+        // Enter on a focused tile is a click on that tile, not a pick of the
+        // selected one (#787): select 2, focus 6, Enter selects 6 and sends nothing.
+        await stage(view);
+        await page.keyboard.press("2");
+        await page.waitForTimeout(50);
+        const count0 = (await sent()).length;
+        await page.focus(`.tile[data-card-index="5"]`);
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(50);
+        check((await sent()).length === count0, `${tag}: Enter on a focused tile sent ${JSON.stringify(await lastSent())} for the selected card`);
+        check(await page.$(`.tile[data-card-index="5"].selected`) !== null, `${tag}: Enter on a focused tile selects that tile`);
+        // On a phone the detail sits above the pack: a hover must not change
+        // it, or the pack moves under the pointer and a tap selects nothing
+        // (#791). Beside the pack (1280) a hover reads the card.
+        await stage(view);
+        await page.keyboard.press("1");
+        await page.waitForTimeout(50);
+        const detail0 = await text("#detail");
+        await page.hover(`.tile[data-card-index="7"]`);
+        await page.waitForTimeout(50);
+        const detail1 = await text("#detail");
+        if (viewport.width < 760) check(detail1 === detail0, `${tag}: a hover left the detail above the pack alone`);
+        else check(detail1 !== detail0, `${tag}: a hover beside the pack reads the hovered card`);
       }
 
       // A refusal is shown with its reason, and the page is back at the view.
@@ -253,6 +276,25 @@ async function main() {
         await page.waitForTimeout(50);
         const toggled = await lastSent();
         check(toggled && toggled.type === "deck" && toggled.main.length + Object.values(toggled.lands).reduce((a, b) => a + b, 0) !== 35, `${tag}: ArrowDown then Enter moves a card (${toggled && toggled.main.length} main)`);
+        // Enter on a focused land "+" adds the land; it does not move the
+        // card under the cursor (#787).
+        await page.keyboard.press("ArrowDown");
+        await page.waitForTimeout(50);
+        const mainBefore = (await lastSent()).main.length;
+        await page.focus(".inc:not([disabled])");
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(50);
+        const landed = await lastSent();
+        const landsOf = m => Object.values(m.lands).reduce((a, b) => a + b, 0);
+        check(landed.main.length === mainBefore && landsOf(landed) === landsOf(toggled) + 1, `${tag}: Enter on a focused "+" sent ${JSON.stringify(landed)}`);
+        // And the focus survives the rebuild, so Enter again adds another
+        // (#788: every press dropped the focus to <body>).
+        await page.keyboard.press("Enter");
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(50);
+        const thrice = await lastSent();
+        check(landsOf(thrice) === landsOf(toggled) + 3, `${tag}: three Enters on a focused "+" add three lands (${landsOf(thrice) - landsOf(toggled)})`);
+        check(await page.evaluate(() => document.activeElement && document.activeElement.classList.contains("inc")), `${tag}: the "+" keeps the focus across the rebuild`);
       }
 
       // Playing: the game link is a link; waiting is said; done shows the standings.
