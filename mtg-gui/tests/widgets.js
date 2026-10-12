@@ -450,6 +450,33 @@ async function main() {
         }
       } else ok("no creature of ours yet; combat widgets skipped");
     }
+    // 11b. Two same-named sources (#786): a prompt the engine tagged
+    // "[source 2/2, #id]" points at that permanent — the inspector shows it
+    // and the board outlines it — and the ordering rows are each keyed by
+    // their source, so hovering one shows which it is.
+    {
+      const yn = (v) => rc({ YesNoDecision: v });
+      const seen = [];
+      for (const id of ids.mine.slice(0, 2)) {
+        const ctx = `Transform Thraben Sentry into Thraben Militia? [source 2/2, #${id}]`;
+        if (!await stage(`source-tag-${id}`, legal({ actions: [yn(true), yn(false)], context: ctx, resolution_prompt: { YesNo: { description: "Transform Thraben Sentry into Thraben Militia?", source_card: id } } }), null, "list")) continue;
+        seen.push(await page.evaluate((id) => { window.mtgDebug.render(); const m = window.mtg; const lit = m.hits.filter(h => h.kind === "perm" && h.key === `o${id}`).length;
+          return { selected: m.selected, source: m.ui.source, keepBoard: m.ui.keepBoard, hint: m.ui.hint, lit }; }, id));
+      }
+      if (seen.length === 2) {
+        const [a, b] = seen;
+        if (a.selected !== ids.mine[0] || b.selected !== ids.mine[1]) fail(`source-tag: the inspector shows ${a.selected} and ${b.selected}, not the two sources`);
+        else if (a.source === b.source || !a.keepBoard) fail(`source-tag: ${JSON.stringify(seen)}`);
+        else if (!/outlined on the board/.test(a.hint)) fail(`source-tag: the hint says ${JSON.stringify(a.hint)}`);
+        else ok("source-tag → " + a.hint);
+      }
+      const opts = ids.mine.slice(0, 2).map(id => `Thraben Sentry trigger (may transform Thraben Sentry) [source 2/2, #${id}]`);
+      if (opts.length === 2 && await stage("source-tag-order", legal({ actions: [rc({ ChosenOrder: [0, 1] })], context: "Order", resolution_prompt: { ChooseTriggerOrder: { description: "Order", options: opts, ap_queue: true, indices: [0, 1], details: [] } } }), null, "order")) {
+        const keys = await page.evaluate(() => { window.mtgDebug.render(); return window.mtg.hits.filter(h => h.kind === "row" && h.key).map(h => h.key); });
+        if (JSON.stringify(keys) !== JSON.stringify(ids.mine.slice(0, 2).map(id => `o${id}`))) fail(`source-tag-order: row keys ${JSON.stringify(keys)}`);
+        else ok("source-tag-order rows keyed " + keys.join(", "));
+      }
+    }
     // 12. An unknown prompt kind: the offered actions as a list, never nothing.
     {
       const actions = [rc({ ChosenIndex: [0, "Left"] }), rc({ ChosenIndex: [1, "Right"] })];

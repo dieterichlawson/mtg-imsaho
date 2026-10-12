@@ -468,55 +468,89 @@ function beginDecisionWidget(state: LiveState, send: Send): Ui {
   }
 
   // A mid-resolution prompt.
-  if (legal.resolution_prompt) {
-    const kind = tag(legal.resolution_prompt);
-    const rp = legal.resolution_prompt[kind];
-    const desc = withoutIds(rp.description || legal.context || kind);
-    const ids = (rp.options ?? []) as ObjectId[];
-    switch (kind) {
-      case "ChooseXFunding": return beginNumber(state, ui, rp.options as unknown as FundingOptions, desc, send);
-      case "AssignCombatDamage": return beginDamageAmount(state, ui, rp, desc, send);
-      case "ChooseExileFromGraveyard":
-        return beginMark(state, ui, { title: desc, options: ids, min: rp.min ?? 0, max: rp.max ?? ids.length,
-          onConfirm: (chosen) => send(resolve({ ChosenExileSet: chosen as ObjectId[] })),
-          onCancel: () => send(resolve("CancelCast")), cancelLabel: "Cancel cast" });
-      case "ChooseObjectSet": {
-        // The creatures an activation's cost taps (#670) are a cost still
-        // being assembled: nothing is paid, so it can be backed out of. An
-        // effect resolving cannot.
-        const isCost = typeof rp.effect === "object" && rp.effect !== null && "PayActivationTaps" in rp.effect;
-        return beginMark(state, ui, { title: desc, options: ids, min: rp.min ?? 0, max: rp.max ?? ids.length,
-          onConfirm: (chosen) => send(resolve({ ChosenObjectSet: chosen as ObjectId[] })),
-          ...(isCost ? { onCancel: () => send(resolve("CancelCast")), cancelLabel: "Cancel activation" } : {}) });
-      }
-      case "ChooseTargetSet": {
-        const targets = (rp.options ?? []) as Target[];
-        return beginMark(state, ui, { title: desc, options: targets, min: rp.min ?? 0, max: rp.max ?? targets.length,
-          onConfirm: (chosen) => send(resolve({ ChosenTargetSet: chosen as Target[] })),
-          onCancel: () => send(resolve("CancelCast")), cancelLabel: "Cancel cast" });
-      }
-      case "DividePermanentsIntoPiles": {
-        const perms = rp.permanents ?? [];
-        return beginMark(state, ui, { title: desc + " (mark pile A)", options: perms, min: 0, max: perms.length,
-          onConfirm: (chosen) => send(resolve({ ChosenSubset: chosen as ObjectId[] })) });
-      }
-      case "ChooseTriggerOrder":
-      case "ChooseDamageAssignmentOrder":
-        return beginOrder(state, ui, rp, desc, send);
-      case "ChooseTarget":
-      case "ChooseCardFromHand":
-      case "ChooseFromLookedAt":
-      case "ChooseFromLibrary":
-        return beginPickFromActions(state, ui, actions, desc, send);
-      default:
-        // PayOrNot, YesNo, ChooseCardType, ChooseDamageEffect, ChoosePile,
-        // ChooseCardName, and anything newer: the offered actions as rows.
-        return beginList(state, ui, actions, desc, send, kind === "ChooseCardName");
-    }
-  }
+  if (legal.resolution_prompt) return aboutSource(state, beginResolution(state, ui, legal, actions, send), legal.context);
 
   // Every action is a resolution answer with no prompt record (a library
   // search offered as ChosenCard rows, for one): rows or board picks.
+  return beginOther(state, ui, legal, actions, send);
+}
+
+/**
+ * The permanent a prompt's `[source 2/2, #12]` tag names (`cards_flow::
+ * source_tag`), or null. The engine adds the tag only where the card's name
+ * cannot say which permanent a prompt is about — the player controls two of
+ * that name (#362) — and the trigger-ordering rows carry it per row (#116).
+ * The page strips ids from what it prints (#694), which turned two tagged
+ * prompts into the same words, so it reads the id here instead and points at
+ * the permanent (#786).
+ */
+export function sourceOfTag(s: string | null | undefined): ObjectId | null {
+  const m = s ? /\[source [^\]]*#(\d+)\]/.exec(s) : null;
+  return m ? Number(m[1]) : null;
+}
+
+/** Which of two same-named permanents a prompt is about: shown in the
+ * inspector and outlined on a board the prompt leaves undimmed. */
+function aboutSource(state: LiveState, ui: Ui, context: string | null | undefined): Ui {
+  const id = sourceOfTag(context);
+  const e = id === null ? undefined : state.index.get(id);
+  if (id === null || !e) return ui;
+  state.selected = id;
+  ui.source = `o${id}`;
+  ui.keepBoard = true;
+  const pt = "effective_power" in e.obj && e.obj.effective_power !== null ? ` (${e.obj.effective_power}/${e.obj.effective_toughness})` : "";
+  ui.hint = `About the ${e.obj.name}${pt} outlined on the board. ${ui.hint}`.trim();
+  return ui;
+}
+
+function beginResolution(state: LiveState, ui: Ui, legal: LegalActions, actions: Action[], send: Send): Ui {
+  const kind = tag(legal.resolution_prompt!);
+  const rp = legal.resolution_prompt![kind];
+  const desc = withoutIds(rp.description || legal.context || kind);
+  const ids = (rp.options ?? []) as ObjectId[];
+  switch (kind) {
+    case "ChooseXFunding": return beginNumber(state, ui, rp.options as unknown as FundingOptions, desc, send);
+    case "AssignCombatDamage": return beginDamageAmount(state, ui, rp, desc, send);
+    case "ChooseExileFromGraveyard":
+      return beginMark(state, ui, { title: desc, options: ids, min: rp.min ?? 0, max: rp.max ?? ids.length,
+        onConfirm: (chosen) => send(resolve({ ChosenExileSet: chosen as ObjectId[] })),
+        onCancel: () => send(resolve("CancelCast")), cancelLabel: "Cancel cast" });
+    case "ChooseObjectSet": {
+      // The creatures an activation's cost taps (#670) are a cost still
+      // being assembled: nothing is paid, so it can be backed out of. An
+      // effect resolving cannot.
+      const isCost = typeof rp.effect === "object" && rp.effect !== null && "PayActivationTaps" in rp.effect;
+      return beginMark(state, ui, { title: desc, options: ids, min: rp.min ?? 0, max: rp.max ?? ids.length,
+        onConfirm: (chosen) => send(resolve({ ChosenObjectSet: chosen as ObjectId[] })),
+        ...(isCost ? { onCancel: () => send(resolve("CancelCast")), cancelLabel: "Cancel activation" } : {}) });
+    }
+    case "ChooseTargetSet": {
+      const targets = (rp.options ?? []) as Target[];
+      return beginMark(state, ui, { title: desc, options: targets, min: rp.min ?? 0, max: rp.max ?? targets.length,
+        onConfirm: (chosen) => send(resolve({ ChosenTargetSet: chosen as Target[] })),
+        onCancel: () => send(resolve("CancelCast")), cancelLabel: "Cancel cast" });
+    }
+    case "DividePermanentsIntoPiles": {
+      const perms = rp.permanents ?? [];
+      return beginMark(state, ui, { title: desc + " (mark pile A)", options: perms, min: 0, max: perms.length,
+        onConfirm: (chosen) => send(resolve({ ChosenSubset: chosen as ObjectId[] })) });
+    }
+    case "ChooseTriggerOrder":
+    case "ChooseDamageAssignmentOrder":
+      return beginOrder(state, ui, rp, desc, send);
+    case "ChooseTarget":
+    case "ChooseCardFromHand":
+    case "ChooseFromLookedAt":
+    case "ChooseFromLibrary":
+      return beginPickFromActions(state, ui, actions, desc, send);
+    default:
+      // PayOrNot, YesNo, ChooseCardType, ChooseDamageEffect, ChoosePile,
+      // ChooseCardName, and anything newer: the offered actions as rows.
+      return beginList(state, ui, actions, desc, send, kind === "ChooseCardName");
+  }
+}
+
+function beginOther(state: LiveState, ui: Ui, legal: LegalActions, actions: Action[], send: Send): Ui {
   if (actions.length > 0 && actions.every(a => isObj(a) && "ResolveChoice" in a)) {
     return beginPickFromActions(state, ui, actions, legal.context || "Choose", send);
   }
@@ -823,7 +857,12 @@ export function beginList(state: LiveState, ui: Ui, rows: (Row | Action)[], titl
 function beginOrder(state: LiveState, ui: Ui, rp: ResolutionPayload, title: string, send: Send): Ui {
   ui.mode = "order";
   ui.title = withoutIds(title);
-  const order = ((rp.options ?? []) as string[]).map((label, i) => ({ label: withoutIds(label), i }));
+  // Each row's source, from its `[source …, #id]` tag: two Thraben Sentries'
+  // rows strip to the same words, and hovering one shows which (#786).
+  const order = ((rp.options ?? []) as string[]).map((label, i) => {
+    const src = sourceOfTag(label);
+    return { label: withoutIds(label), i, key: src === null ? undefined : `o${src}` };
+  });
   ui.order = order;
   ui.hint = "First listed goes first. Use ▲ ▼ to reorder, then confirm.";
   ui.move = (pos, dir) => {

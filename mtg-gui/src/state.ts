@@ -80,7 +80,10 @@ export interface Ui {
   scroll?: number;
   keepBoard?: boolean;
   // order
-  order?: { label: string; i: number }[];
+  order?: { label: string; i: number; key?: string }[];
+  // The board key of the permanent a prompt is about, when the engine had to
+  // say which of two same-named ones (#786): outlined on the board.
+  source?: string;
   move?: (pos: number, dir: number) => void;
   // number
   value?: string;

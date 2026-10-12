@@ -355,6 +355,8 @@ export function highlightFor(state, key) {
     const id = objectOfKey(key);
     if (ui.mode === "menu" && ui.verbs && id !== null && ui.verbs.has(id))
         return "verb";
+    if (ui.source === key)
+        return "selected";
     return null;
 }
 const HL = { option: "#e0c040", marked: "#60e060", selected: "#60c0ff", target: "#ff6060", verb: "#c8b060" };
@@ -1202,7 +1204,7 @@ export const MODAL_ROWS = 20;
  * (issue #530). One function, so the two cannot disagree again.
  */
 export function modalRows(ui) {
-    const rows = ui.rows ?? (ui.order ? ui.order.map((o, pos) => ({ label: o.label, pos })) : []);
+    const rows = ui.rows ?? (ui.order ? ui.order.map((o, pos) => ({ label: o.label, pos, key: o.key })) : []);
     if (ui.mode !== "list" || !ui.query)
         return rows;
     const q = ui.query.toLowerCase();
@@ -1273,6 +1275,11 @@ function modal(ctx, hits, state) {
         const ry = ty + i * rowH;
         panel(ctx, x + 6, ry, w - 12, rowH - 1, "#2a2430", "#4a4a5a");
         if (ui.mode === "order") {
+            // The row itself is a hover target keyed by its source, so the
+            // inspector shows which permanent a row is (#786); the arrows are
+            // pushed after it and sit on top.
+            if (r.key)
+                hits.push({ x: x + 6, y: ry, w: w - 46, h: rowH - 1, kind: "row", key: r.key });
             text(ctx, `${scroll + i + 1}.`, x + 9, ry + 2, { color: "#ffe080" });
             text(ctx, clip(ctx, r.label, w - 70, "7px Silkscreen"), x + 26, ry + 2, { font: "7px Silkscreen" });
             button(ctx, hits, x + w - 34, ry + 1, 12, rowH - 3, "▲", () => ui.move(r.pos, -1));
