@@ -509,6 +509,27 @@ async function main() {
         await page.keyboard.press("Enter");
         await expectSent("menu-pass", a => a === "PassPriority");
       }
+      // `f` says what engaging passed up, on the frame after it (#795), and
+      // counts one spell however many targets it was offered at (#797).
+      if (ids.hand.length) {
+        const castAt = (t) => ({ CastSpell: { object_id: ids.hand[0], targets: [{ Player: t }], sacrifice: null, exile_count: null, exile_ids: [], alternative_cost: null, tap_plan: [] } });
+        if (await stage("f-notice", legal({ context: "MAIN PHASE 1", actions: ["PassPriority", "Concede", castAt(ids.you), castAt(ids.opp)] }), null, "menu")) {
+          await page.evaluate(() => { const v = window.mtg.view; v.stack = []; });
+          await page.keyboard.press("f");
+          await page.waitForTimeout(60);
+          const after = await page.evaluate(() => ({ notice: window.mtg.notice, autoPass: window.mtg.autoPass }));
+          if (!after.autoPass) ok(`f-notice: auto-pass not engaged here (${after.notice}); skipped`);
+          else if (!(after.notice || "").includes("declined 1 spell/ability/land play")) fail(`f-notice: ${JSON.stringify(after)}`);
+          else ok("f-notice → " + after.notice);
+          // The seat's echo of the setting keeps the count (#796).
+          if (after.autoPass) {
+            await page.evaluate((t) => window.mtgDebug.message({ type: "settings", stop_at_pass: false, auto_pass_since_turn: t }), after.autoPass.sinceTurn);
+            const kept = await page.evaluate(() => window.mtg.autoPass);
+            if (!kept || kept.declined !== 1) fail(`f-notice: the settings echo left ${JSON.stringify(kept)}`);
+            await page.evaluate(() => window.mtgDebug.message({ type: "settings", stop_at_pass: false, auto_pass_since_turn: null }));
+          }
+        }
+      }
       // A double-click on Pass that straddles the next decision passes once
       // (#806): the second click would answer a question nobody saw drawn.
       const passMenu = legal({ context: "MAIN PHASE 1", actions: ["PassPriority", "Concede"] });

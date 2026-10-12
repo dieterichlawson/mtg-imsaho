@@ -170,7 +170,13 @@ function onMessage(msg: ServerMessage): void {
       // The seat's settings, not this page's. Applied without echoing them
       // back, or two tabs would bounce the message between them.
       state.stopAtPass = msg.stop_at_pass;
-      state.autoPass = msg.auto_pass_since_turn === null ? null : { sinceTurn: msg.auto_pass_since_turn };
+      // The echo of this page's own `f` carries no count of what engaging
+      // declined; keep the one this page made, or the stop could never say
+      // it (#796).
+      state.autoPass = msg.auto_pass_since_turn === null ? null : {
+        sinceTurn: msg.auto_pass_since_turn,
+        declined: state.autoPass && state.autoPass.sinceTurn === msg.auto_pass_since_turn ? state.autoPass.declined : 0,
+      };
       break;
     case "notice":
       state.notice = msg.text;
@@ -241,9 +247,12 @@ function toggleAutoPass(): void {
   // castable spell passed up on the way in was mentioned nowhere (#618, #691).
   const declined = autoPassDeclines(actions);
   state.autoPass = { sinceTurn: autoPassSince(v), declined };
-  state.notice = autoPassNotice(declined, true);
   pushSettings();
   send("PassPriority");
+  // After the send, which clears the notice for the next question: set
+  // before it, the line was wiped in the same tick and never drawn (#795).
+  state.notice = autoPassNotice(declined, true);
+  draw();
 }
 
 /**

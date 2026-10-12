@@ -23,6 +23,10 @@ if (!P.offersLandPlay(["PassPriority", land, "Concede"])) fail("a land play is s
 if (P.offersLandPlay(["PassPriority", cast, mana, "Concede"])) fail("no land play, none seen");
 if (P.autoPassDeclines(["PassPriority", land, cast, ability, mana, "Concede"]) !== 3)
   fail("a land play, a spell and an ability are what passing declines; not mana, pass or concede");
+// One per spell however many targets it is offered with (#797).
+const boltAt = (t) => ({ CastSpell: { object_id: 34, targets: [{ Player: t }] } });
+if (P.autoPassDeclines(["PassPriority", boltAt(0), boltAt(1), "Concede"]) !== 1)
+  fail(`one Lightning Bolt at two targets is one declined spell, not ${P.autoPassDeclines(["PassPriority", boltAt(0), boltAt(1)])}`);
 
 const on = P.autoPassNotice(2, true);
 if (!on || !on.includes("declined 2 spells/abilities/land plays")) fail(`engaging says what it declined: ${on}`);

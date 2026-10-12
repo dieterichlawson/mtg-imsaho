@@ -163,8 +163,21 @@ export function offersLandPlay(actions) {
  * here, and so what it has to say it declined — the CLI's #296/#618.
  */
 export function autoPassDeclines(actions) {
-    return actions.filter(a => typeof a === "object" && a !== null
-        && ("PlayLand" in a || "CastSpell" in a || "ActivateAbility" in a)).length;
+    // One per spell, land or ability, however many targets it is offered
+    // with: the engine emits one CastSpell per target, and one Lightning Bolt
+    // read "declined 2" (#797, the CLI's `declined_by_auto_pass` since #618).
+    const seen = new Set();
+    for (const a of actions) {
+        if (typeof a !== "object" || a === null)
+            continue;
+        if ("PlayLand" in a)
+            seen.add(`land ${a.PlayLand.object_id}`);
+        else if ("CastSpell" in a)
+            seen.add(`cast ${a.CastSpell.object_id}`);
+        else if ("ActivateAbility" in a)
+            seen.add(`ability ${a.ActivateAbility.object_id} ${a.ActivateAbility.ability_index}`);
+    }
+    return seen.size;
 }
 /**
  * The turn auto-pass counts from when `f` is pressed at `view`: a stop at
