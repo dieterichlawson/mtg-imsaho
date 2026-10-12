@@ -11,7 +11,6 @@
 2 Ghost Quarter
 2 Armored Skaab
 2 Avacynian Priest
-2 Blazing Torch
 2 Champion of the Parish
 2 Creepy Doll
 2 Curiosity
@@ -23,6 +22,7 @@
 2 Frightful Delusion
 2 Geist of Saint Traft
 2 Geist-Honored Monk
+2 Inquisitor's Flail
 2 Invisible Stalker
 2 Midnight Haunting
 2 Murder of Crows

@@ -9,6 +9,7 @@
 14 Forest
 2 Woodland Cemetery
 2 Ambush Viper
+2 Blazing Torch
 2 Bloodgift Demon
 2 Brain Weevil
 2 Disciple of Griselbrand
@@ -18,7 +19,6 @@
 2 Grave Bramble
 2 Grimoire of the Dead
 2 Gutter Grime
-2 Inquisitor's Flail
 2 Lumberknot
 2 Markov Patrician
 2 Mayor of Avabruck

@@ -250,3 +250,50 @@ fn a_tap_creatures_cost_is_answered_with_a_random_pair_or_backed_out_of() {
     assert!(paid > 200 && cancelled > 0, "paid {paid}, cancelled {cancelled}");
     assert_eq!(pairs.len(), 6, "every pair of the four is reached: {pairs:?}");
 }
+
+/// Issue #784: the CR 616.1 damage-effect choice was asked in no game of a
+/// 12,103-game campaign, because no fuzz deck held both halves of the one
+/// pairing in the pool that raises it — Inquisitor's Flail and Undead
+/// Alchemist, now together in decks/coverage/wu-coverage.txt. With the two
+/// on the board and the mana to equip, random seats on both sides play
+/// their way into the question (equip, attack, no block) and the defender
+/// answers it both ways.
+#[test]
+fn random_seats_equip_a_flail_onto_an_alchemist_and_reach_the_damage_effect_choice() {
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+    let (mut start, reg) = main_phase();
+    named_permanent(&mut start, &reg, "Undead Alchemist", P0);
+    named_permanent(&mut start, &reg, "Inquisitor's Flail", P0);
+    named_permanent(&mut start, &reg, "Island", P0);
+    named_permanent(&mut start, &reg, "Island", P0);
+    for _ in 0..20 {
+        let id = start.create_object(mtg_engine::ids::CardId(9999), P1, Zone::Library, None, None);
+        start.get_player_mut(P1).library_order.push(id);
+    }
+
+    let mut asked = 0;
+    let mut answers = std::collections::BTreeSet::new();
+    for seed in 0..300u64 {
+        let mut seats = [RandomPlayer::with_seed("p0", seed), RandomPlayer::with_seed("p1", seed + 1000)];
+        let mut state = start.clone();
+        mtg_engine::engine::run_game_loop(&mut state, &reg, |gs, who, legal| {
+            // This turn's combat is the one in question; the game ends after it.
+            if gs.turn_number > 3 { return Action::Concede; }
+            let seat = &mut seats[who.0 as usize];
+            if let Some(prompt) = &legal.combat_prompt { return seat.choose_combat(prompt); }
+            let action = seat.choose_action(&GameView::for_player(gs, who, &reg), legal);
+            if let Some(AwaitingAction::ResolutionChoice {
+                choice: ResolutionChoiceKind::ChooseDamageEffect { .. }, .. }) = &gs.awaiting_action
+            {
+                assert_eq!(who, P1, "the damaged player chooses (CR 616.1)");
+                if let Action::ResolveChoice { choice: mtg_engine::actions::ResolvedChoice::ChosenIndex(i, _) } = &action {
+                    answers.insert(*i);
+                }
+                asked += 1;
+            }
+            action
+        });
+    }
+    assert!(asked >= 5, "the choice is reached under random play: {asked} of 300 games");
+    assert_eq!(answers.len(), 2, "and answered both ways: {answers:?}");
+}
