@@ -203,6 +203,8 @@ fn color_letter(c: Color) -> &'static str {
 pub struct View {
     #[serde(rename = "type")]
     pub kind: &'static str,
+    /// The phase this seat is in: the table's, except that a seat which
+    /// has drafted all its cards is `Building` while others still draft.
     pub phase: Phase,
     pub seat: usize,
     pub pod_size: usize,
@@ -1429,14 +1431,23 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
                 tags: crate::standings::row_notes(s, &tags[s.seat]).trim_start().to_string(),
             }).collect()
         }).unwrap_or_default();
+        // The seat's own phase: one that has drafted all its cards is
+        // building, and its build clock running, while the others still
+        // draft. The table's phase put it on a "waiting for a pack" screen
+        // for as long as the slowest seat took (#811).
+        let phase = if self.phase == Phase::Drafting && self.table.seat_done(seat) {
+            Phase::Building
+        } else {
+            self.phase
+        };
         View {
             kind: "view",
-            phase: self.phase,
+            phase,
             seat,
             pod_size: self.seats.len(),
             set: self.config.set_code.clone(),
             seats,
-            pass_direction: self.table.pass_direction().filter(|_| self.phase == Phase::Drafting),
+            pass_direction: self.table.pass_direction().filter(|_| phase == Phase::Drafting),
             pack,
             pool,
             picks,

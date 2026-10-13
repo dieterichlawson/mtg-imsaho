@@ -408,6 +408,42 @@ fn the_build_clock_keeps_the_deck_a_person_sent() {
     }
 }
 
+/// #811: a seat that has drafted all its cards is building — its view
+/// says so, with its deck and its clock — while a slower seat still picks.
+/// The view carried the table's phase, so the page and the client showed
+/// "waiting for a pack" while the build clock ran.
+#[test]
+fn a_seat_that_finishes_first_is_shown_building_while_others_draft() {
+    let (mut lobby, _) = lobby_timed(vec![SeatKind::Human, SeatKind::Ai("cc".into())], None, Some(60));
+    lobby.connected(0);
+    lobby.start();
+    // The person picks whenever a pack is in front of them; the AI seat
+    // only when the person has nothing to do, so it finishes last.
+    while jv(&lobby, 0)["picks"].as_array().unwrap().len() < 42 {
+        let v = jv(&lobby, 0);
+        if let Some(id) = v["pack"]["id"].as_u64() {
+            lobby.pick(0, id as usize, 0).unwrap();
+        } else {
+            let id = jv(&lobby, 1)["pack"]["id"].as_u64().expect("the AI seat holds the pack");
+            lobby.ai_pick(1, id as usize, 0, "prompt", "{\"pick\":0}", false).unwrap();
+        }
+    }
+    assert_eq!(lobby.phase(), Phase::Drafting, "the AI seat is still picking");
+    assert!(jv(&lobby, 1)["pack"].is_object(), "the AI seat has its last pack");
+    assert_eq!(jv(&lobby, 1)["phase"], "drafting");
+    let v = jv(&lobby, 0);
+    assert_eq!(v["phase"], "building", "the seat that is done is building: {}", v["seats"]);
+    assert_eq!(v["seats"][0]["status"], "building");
+    assert!(v["build_deadline_ms"].as_u64().is_some(), "its clock is running");
+    assert!(v["pass_direction"].is_null(), "nothing is passed to a seat that is building");
+    // What the building screen needs is there, and a deck is taken.
+    let pool: Vec<String> = v["pool"].as_array().unwrap().iter()
+        .map(|c| c["name"].as_str().unwrap().to_string()).collect();
+    let lands: HashMap<String, u32> = [("Island".to_string(), 17)].into();
+    lobby.submit_deck(0, &pool[..23], &lands, &[]).unwrap();
+    assert_eq!(jv(&lobby, 0)["deck"]["valid"], true);
+}
+
 /// A seat's view as JSON.
 fn jv(lobby: &Lobby, seat: usize) -> Value {
     serde_json::to_value(lobby.view(seat)).unwrap()

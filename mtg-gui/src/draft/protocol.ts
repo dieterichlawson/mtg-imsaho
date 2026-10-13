@@ -114,6 +114,8 @@ export interface Standing {
 
 export interface DraftView {
   type: "view";
+  /** This seat's phase: a seat that has drafted all its cards is
+   *  "building" while the others still draft. */
   phase: Phase;
   seat: number;
   pod_size: number;
