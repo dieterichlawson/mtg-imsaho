@@ -465,7 +465,7 @@ macro_rules! log_standings {
 /// that attempt 10 failed too and no seat built this (issue #200).
 fn deck_header(seat: usize, total: usize, retries: usize, fallback: bool) -> String {
     if fallback && retries == 0 {
-        format!("[Seat {seat}] DECK ({total} cards, FALLBACK: no deck was submitted)")
+        format!("[Seat {seat}] DECK ({total} cards, FALLBACK: no playable deck was submitted)")
     } else if fallback {
         format!("[Seat {seat}] DECK ({total} cards, FALLBACK after {retries} failed attempts)")
     } else {
@@ -482,7 +482,7 @@ fn deck_header(seat: usize, total: usize, retries: usize, fallback: bool) -> Str
 /// it (#747).
 fn fallback_warning(seat: usize, retries: usize) -> String {
     let what = if retries == 0 {
-        "no deck was submitted".to_string()
+        "no playable deck was submitted".to_string()
     } else {
         format!("deck building failed after {retries} attempt(s)")
     };
@@ -499,7 +499,7 @@ mod tests {
     #[test]
     fn a_deck_nobody_submitted_does_not_say_building_failed() {
         let warn = fallback_warning(0, 0);
-        assert!(warn.contains("no deck was submitted"), "{warn}");
+        assert!(warn.contains("no playable deck was submitted"), "{warn}");
         assert!(!warn.contains("failed after 0") && !warn.contains("the runner"), "{warn}");
         let header = deck_header(0, 40, 0, true);
         assert!(header.contains("FALLBACK") && !header.contains("after 0"), "{header}");

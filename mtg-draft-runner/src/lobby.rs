@@ -293,7 +293,8 @@ pub struct DeckView {
     pub sideboard: Vec<String>,
     pub valid: bool,
     pub problem: Option<String>,
-    /// The deck is final: `ready` was sent, or the table built it.
+    /// The deck is final: `ready` was sent, or the build clock ran out
+    /// (the deck as last sent, or the table's own).
     pub ready: bool,
 }
 
@@ -965,7 +966,8 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
         if self.seats[seat].ready {
             return;
         }
-        if let Some((deck, added)) = self.sent_deck_completed(seat) {
+        let sent = self.sent_deck_completed(seat);
+        if let Ok((deck, added)) = sent {
             let kept = match &added {
                 None => "the deck it sent is the one played".to_string(),
                 Some((n, land)) => format!("the deck it sent was {n} short; the table added {n} {land}"),
@@ -982,37 +984,52 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
             return;
         }
         let deck = deckbuilding::fallback_deck(self.table.pool(seat), &self.registry);
+        // A deck that was sent and could not be played is said so, with
+        // why: the log's DECK line only knows the table built this one.
+        let unusable = sent.err().flatten().map(|why_not| format!("; the deck it sent could not be played: {why_not}"))
+            .unwrap_or_default();
         mtg_player::game_log::write(file!(), line!(),
-            &format!("[Seat {seat}] WARN the table built this seat's deck: {why}"), "");
-        self.seats[seat].notice = Some(format!("The table built your deck ({why})."));
-        self.event(format!("seat {seat}: the table built its deck ({why})"));
+            &format!("[Seat {seat}] WARN the table built this seat's deck: {why}{unusable}"), "");
+        self.seats[seat].notice = Some(format!("The table built your deck ({why}){}.",
+            unusable.replace("; the deck it sent", "; the deck you sent")));
+        self.event(format!("seat {seat}: the table built its deck ({why}){unusable}"));
         self.finish_deck(seat, &deck, &[], 0, true);
     }
 
     /// The deck the seat last sent, if it is legal or only short of 40;
     /// a short one is filled with the basic it already plays most of (the
     /// table's choice of colour when it plays none), and the count and
-    /// name of what was added come back with it.
-    fn sent_deck_completed(&self, seat: usize) -> Option<(DraftDeck, Option<(u32, String)>)> {
-        let sent = self.seats[seat].deck.as_ref()?;
+    /// name of what was added come back with it. A deck that would need
+    /// more than `MAX_TOPPED_UP_LANDS` lands to reach 40 is not a deck the
+    /// seat built — one card toggled in and left is not 1 spell and 39
+    /// basics — and the table builds instead. The error is why a deck that
+    /// was sent cannot be played, or None when none was sent.
+    fn sent_deck_completed(&self, seat: usize) -> Result<(DraftDeck, Option<(u32, String)>), Option<String>> {
+        let sent = self.seats[seat].deck.as_ref().ok_or(None)?;
         let pool = self.table.pool(seat);
         match &self.seats[seat].deck_problem {
-            None => Some((sent.clone(), None)),
+            None => Ok((sent.clone(), None)),
             Some(problem) if deck_in_progress(problem) => {
                 let total = sent.maindeck.len() + sent.lands.values().sum::<u32>() as usize;
-                let short = u32::try_from(40usize.saturating_sub(total)).ok()?;
+                let short = u32::try_from(40usize.saturating_sub(total)).map_err(|_| None)?;
+                let lands_after = sent.lands.values().sum::<u32>() + short;
+                if lands_after > MAX_TOPPED_UP_LANDS {
+                    return Err(Some(format!(
+                        "it was {short} cards short, and {lands_after} lands is not a deck")));
+                }
                 let most = |lands: &HashMap<String, u32>| lands.iter()
                     .filter(|(_, n)| **n > 0)
                     .max_by(|a, b| a.1.cmp(b.1).then_with(|| b.0.cmp(a.0)))
                     .map(|(land, _)| land.clone());
                 let land = most(&sent.lands)
-                    .or_else(|| most(&deckbuilding::fallback_deck(pool, &self.registry).lands))?;
+                    .or_else(|| most(&deckbuilding::fallback_deck(pool, &self.registry).lands))
+                    .ok_or(None)?;
                 let mut lands = sent.lands.clone();
                 *lands.entry(land.clone()).or_insert(0) += short;
-                let deck = deckbuilding::validate_deck(pool, &sent.maindeck, &lands).ok()?;
-                Some((deck, Some((short, land))))
+                let deck = deckbuilding::validate_deck(pool, &sent.maindeck, &lands).map_err(Some)?;
+                Ok((deck, Some((short, land))))
             }
-            Some(_) => None,
+            Some(problem) => Err(Some(problem.clone())),
         }
     }
 
@@ -1463,6 +1480,10 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
         }
     }
 }
+
+/// The most lands the table tops a short deck up to when the build clock
+/// runs out; a deck that would need more gets the table's deck instead.
+const MAX_TOPPED_UP_LANDS: u32 = 18;
 
 /// Whether a deck's problem is only that it is short: the one state a
 /// deck passes through on its way to legal, so not a refusal. Every other

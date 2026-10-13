@@ -136,7 +136,11 @@ is kept as work in progress with what it needs (the page and the client
 send the deck after every card moved, so that is most of them); a deck
 naming a card you did not draft, or a land that is not basic, is refused
 with the reason. `ready` makes a deck final, and is refused while it is
-short. Every deck is written to
+short. Under `--build-seconds` the page and the client show the clock;
+when it runs out the deck as you last sent it is final, a short one
+filled with the basic it plays most of (up to 18 lands), and the table
+builds its own only when you sent nothing it can play, saying why.
+Every deck is written to
 `<log dir>/decks/seat-N.txt` as `COUNT NAME` lines, which
 `mtg-runner --deck1` plays later. An AI seat builds through the runner's
 LLM deck builder, with the runner's fallback deck on failure (marked in

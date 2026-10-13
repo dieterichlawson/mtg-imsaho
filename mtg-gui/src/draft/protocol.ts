@@ -67,7 +67,8 @@ export interface Deck {
   sideboard: string[];
   valid: boolean;
   problem: string | null;
-  /** The deck is final: `ready` was accepted, or the table built it. */
+  /** The deck is final: `ready` was accepted, or the build clock ran out
+   *  (the deck as last sent, or the table's own). */
   ready?: boolean;
 }
 

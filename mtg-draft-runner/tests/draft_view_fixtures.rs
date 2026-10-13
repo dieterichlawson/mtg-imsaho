@@ -378,6 +378,9 @@ fn the_build_clock_keeps_the_deck_a_person_sent() {
         (Some((22, lands(&[("Island", 9), ("Swamp", 8)]))), Some(lands(&[("Island", 10), ("Swamp", 8)]))),
         // Nothing sent: the table's deck.
         (None, None),
+        // Five spells and no lands is not a deck the seat built: 35 basics
+        // would be, so the table builds, and says why it did not keep it.
+        (Some((5, lands(&[]))), None),
     ] {
         let (mut lobby, _) = lobby_timed(vec![SeatKind::Human, SeatKind::Ai("cc".into())], None, Some(20));
         lobby.connected(0);
@@ -403,7 +406,10 @@ fn the_build_clock_keeps_the_deck_a_person_sent() {
                 assert_eq!(got_main.len(), main.len(), "the spells sent are kept: {v}");
                 assert!(notice.contains("as you last sent it"), "{notice}");
             }
-            None => assert!(notice.contains("The table built your deck"), "{notice}"),
+            None => {
+                assert!(notice.contains("The table built your deck"), "{notice}");
+                assert_eq!(notice.contains("the deck you sent could not be played"), sent.is_some(), "{notice}");
+            }
         }
     }
 }
