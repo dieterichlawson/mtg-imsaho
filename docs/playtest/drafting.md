@@ -814,3 +814,44 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   prompt carries (pack, pool, pool shape, seat, pass direction, the
   seat's notes from its last pick) must be there — the table builds its
   prompts through the same function, and this checks it stayed that way
+- D33 [from reading `build_deadline`/`auto_build` in `lobby.rs`] the build
+  clock: host with `--build-seconds N` and let it run out with the seat
+  in each state — untouched, a short deck sent, a legal 40 sent without
+  Ready, a 40 edited card by card, a 40 sent then the tab closed, Ready
+  just before the deadline. Scripted WebSocket seats put six states on
+  one 8-seat table. Verify the deck played (`decks/seat-N.txt`) is the one
+  the person built where there was one, the log's reason is true, and the
+  page and the client show the clock and then what happened. Also try
+  `0` and u64::MAX for both clocks.
+
+  **Run 2026-10-13: the clock throws the person's deck away.** Only Ready
+  survives it. Every other sent deck became `fallback_deck`, logged "no
+  deck was submitted" (#810). An early finisher builds on the clock under
+  "Waiting for a pack" (#811). u64::MAX panics and wedges the table (#812).
+  The client shows no clock (#813) and a stale deck (#815). The page's
+  notice lasts ~1 ms (#817).
+- D34 [from `next_round`'s `log_bye!` and the even-only D27-D31 tables]
+  the bye with a person at it: host 3- and 5-seat tables with a human at
+  the bye in round 1 and again in a later round, page and client both, and
+  `mtg-draft-runner --players 3` on the same seed beside it. Verify the
+  Swiss bye rule, the bye's score on every surface, the pass direction and
+  pick numbering with an odd pod, and what the seat at the bye is told.
+
+  **Run 2026-10-13: paired and scored right, equal to the runner. The
+  person is barely told.** The bye seat sees "No pairings yet", and the
+  client says nothing (#814). The terminal and client use seat numbers
+  once the tournament starts (#816). "done" beside 0-0 standings (#818).
+  Event order (#819). Log threads (#820).
+- D35 [from `play_one`/`forfeit_by` in `server.rs` and two D28 gaps] a
+  person leaves mid-match: close the game tab, close the draft tab, reopen
+  the game URL, `kick` mid-match and before the round, the opponent
+  concedes while the seat is away, SIGINT and `quit` mid-match, on
+  `human,human` and `human,ai` tables. Verify the match ends or waits and
+  says which on every surface, a forfeit is recorded as one with a
+  reason, the next round pairs, and nothing is orphaned.
+
+  **Run 2026-10-13: a kick mid-match never ends the match**, so the
+  table cannot finish (#821). SIGINT leaves no line (#823). A closed game
+  page reads "OPPONENT IS THINKING" and "here" (#822). `quit` resets
+  sockets unannounced (#824). A kick is unlogged (#825). Text (#826).
+  After a fix for #821, re-run the kick and the concede-while-away case.
