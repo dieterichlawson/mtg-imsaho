@@ -336,7 +336,7 @@ fn render(v: &Value, build: &Build) -> (String, String) {
             if let (Some(ms), false) = (v["build_deadline_ms"].as_u64(), v["deck"]["ready"].as_bool().unwrap_or(false)) {
                 table.push_str(&format!(
                     "  {}s left to build; then the deck as you last sent it is played \
-(basics fill a short one), or the table builds one\n", ms / 1000));
+(basics fill a short one, up to 18 lands), or else the table builds one\n", ms / 1000));
             }
             s.push_str(&build_listing(v, build));
         }

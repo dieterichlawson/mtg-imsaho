@@ -36,8 +36,8 @@ Options:
   --pick-seconds <N>     Pick for a human who has not picked in N seconds
                          (1 to 86400, as is --build-seconds)
   --build-seconds <N>    Finish a human's deck after N seconds of building: the
-                         deck they last sent (basics fill a short one), or the
-                         table's own when they sent none
+                         deck they last sent (basics fill a short one, up to
+                         18 lands), or else the table's own
   --log <path>           The draft log  (default logs/draft-with-friends/draft.log);
                          decks/ and games/ go in the directory beside it
   --quiet, -q            No event lines on the terminal

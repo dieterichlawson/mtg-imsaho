@@ -229,7 +229,7 @@ function building(view, state, actions) {
     panel.append(h("h3", { text: ready ? "Deck — ready" : "Deck" }));
     panel.append(h("div", { class: "count-line", id: "count-line", text: `${c.spells} spells + ${c.lands} lands = ${c.total}` }));
     if (!ready && view.build_deadline_ms != null) {
-        panel.append(h("div", { class: "build-timer" }, h("span", { id: "countdown", class: "countdown" }), h("span", { class: "muted", text: " to build; then the deck as you last sent it is played (basics fill a short one), or the table builds one" })));
+        panel.append(h("div", { class: "build-timer" }, h("span", { id: "countdown", class: "countdown" }), h("span", { class: "muted", text: " to build; then the deck as you last sent it is played (basics fill a short one, up to 18 lands), or else the table builds one" })));
     }
     const landsEl = h("div", { class: "lands" });
     for (const b of BASICS) {
