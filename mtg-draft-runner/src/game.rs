@@ -382,6 +382,14 @@ so the seat forfeits its match"),
         None if abandoned => format!("Game abandoned: {max_actions} actions without a result — no winner."),
         None => format!("Game ended without a result.\nFinal turn: {}", state.turn_number),
     };
+    // The engine's word for a forfeit is "stopped answering"; a page taken
+    // out of the game (a kick, #821) is told what actually happened.
+    let mut summary = summary;
+    for (pid, player) in [(PlayerId(0), &*p1), (PlayerId(1), &*p2)] {
+        if let Some(why) = player.withdrawn() {
+            summary.push_str(&format!("\nSeat {} was withdrawn: {why}.", seat_of(pid)));
+        }
+    }
     // And the log is told, as `mtg-runner`'s is: how the game ended was
     // otherwise said only to a page, never recorded (#743).
     mtg_player::game_log::write(file!(), line!(), "RESULT", &summary);

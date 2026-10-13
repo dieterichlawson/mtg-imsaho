@@ -42,6 +42,7 @@ fn a_kick_mid_match_forfeits_the_match_and_the_table_finishes() {
     assert!(terminal.contains("withdrawn from the game (the host kicked seat 0)"), "{terminal}");
     // Named as a kick everywhere the forfeit is told, not as a stall.
     assert!(terminal.contains("seat 0 forfeited (the host kicked seat 0)"), "{terminal}");
+    assert!(log.contains("Seat 0 was withdrawn: the host kicked seat 0."), "the result says why:\n{log}");
     assert!(log.contains("WITHDRAWN (Seat 0 vs Seat 1)") && !log.contains("STALLED"), "{log}");
     assert!(terminal.contains("[1 game forfeited: the host kicked seat 0]") && !terminal.contains("a seat stalled"),
         "{terminal}");
