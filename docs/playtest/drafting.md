@@ -855,3 +855,34 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   page reads "OPPONENT IS THINKING" and "here" (#822). `quit` resets
   sockets unannounced (#824). A kick is unlogged (#825). Text (#826).
   After a fix for #821, re-run the kick and the concede-while-away case.
+- D36 [proposed 2026-10-13, from D33/#811] the uneven finish: host
+  `--seats human,human,ai,ai --pick-seconds 30 --build-seconds 60` behind
+  a stub that sleeps 5-10 s a pick, so the people finish drafting first.
+  Build and send a deck in the gap while the phase is still `drafting`, on
+  the page and the client. Verify both show the deck screen and the clock
+  from the last pick, the deck sent in the gap is the one played, the
+  timer starts when building is possible, and DECK BUILDING in the log
+  stays readable with the last picks interleaved.
+- D37 [proposed 2026-10-13, from D34/#818] mid-round truth: on a 5- or
+  7-seat table hold one human's game open while the AI matches and the
+  bye finish. Snapshot the page, the client, `/api/view` and the host
+  terminal at paired, one match done, all but one done, and round over.
+  Verify pairings, standings, seat statuses and the waiting line agree at
+  every step, and the bye seat and an early finisher are each told what
+  they are waiting for.
+- D38 [proposed 2026-10-13, from D35/#821/#822] a seat that leaves between
+  games: `--seats human,human,ai,ai --best-of 3`. Play game 1 out, close
+  one human's game tab before game 2 is dealt, and separately kill a
+  terminal client at game 2's mulligan. Verify whether game 2 is dealt to
+  an empty page, what the opponent's game and draft pages say, whether
+  `status` names the seat the table waits on, and that a reconnect partway
+  through game 2 resumes at the right game number and score.
+- D39 [proposed 2026-10-13, from R1/#809 and #808] every answer sent
+  twice: at a table with packs waiting, drive `mtg-draft-client` through a
+  timestamping wrapper and send each answer twice 50-300 ms apart — a pick
+  number, `add N`/`drop N`, `ready`. The page's equivalents are a
+  double-click and a held Enter. Verify a second answer never lands on a
+  pack or state printed less than ~300 ms earlier (the page's #806 guard,
+  the CLI's #71). While there, feed one cost per colour (W/U/B/R/G/C)
+  through the game page's `costText`, its pool strip and both pages' pips,
+  and check every letter.
