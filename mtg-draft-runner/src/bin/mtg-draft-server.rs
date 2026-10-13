@@ -34,6 +34,7 @@ Options:
                          logged when not given
   --guide <path>         Draft guide file prepended to every AI seat's prompt
   --pick-seconds <N>     Pick for a human who has not picked in N seconds
+                         (1 to 86400, as is --build-seconds)
   --build-seconds <N>    Finish a human's deck after N seconds of building: the
                          deck they last sent (basics fill a short one), or the
                          table's own when they sent none
@@ -128,8 +129,10 @@ fn parse_args() -> Args {
             }
             "--seed" => args.seed = number(&value(&mut i, flag), flag),
             "--guide" => args.guide = Some(value(&mut i, flag)),
-            "--pick-seconds" => args.pick_seconds = Some(number(&value(&mut i, flag), flag)),
-            "--build-seconds" => args.build_seconds = Some(number(&value(&mut i, flag), flag)),
+            "--pick-seconds" | "--build-seconds" => {
+                let secs = timer_seconds(number(&value(&mut i, flag), flag), flag);
+                if flag == "--pick-seconds" { args.pick_seconds = Some(secs) } else { args.build_seconds = Some(secs) }
+            }
             "--log" => args.log = value(&mut i, flag),
             "--resume" => args.resume = Some(value(&mut i, flag)),
             other => die(&format!("unknown flag '{other}' (see --help)")),
@@ -138,6 +141,20 @@ fn parse_args() -> Args {
     }
     args.seats = parse_seats(&seats_spec, &default_ai).unwrap_or_else(|e| die(&format!("--seats: {e}")));
     args
+}
+
+/// The longest a pick or build timer may run: a day. A sentinel like
+/// 2^64 overflowed the deadline and wedged the table (#812).
+const MAX_TIMER_SECONDS: u64 = 86_400;
+
+/// A timer's seconds, 1 to `MAX_TIMER_SECONDS`. Zero is refused, as
+/// `--best-of 0` is: a 0-second build clock built every person's deck the
+/// moment their draft ended, and leaving the flag out is how to have none.
+fn timer_seconds(secs: u64, flag: &str) -> u64 {
+    if !(1..=MAX_TIMER_SECONDS).contains(&secs) {
+        die(&format!("{flag}: a timer runs 1 to {MAX_TIMER_SECONDS} seconds (leave the flag out for none)"));
+    }
+    secs
 }
 
 /// Refuse a model spec a seat cannot run before anything is dealt, as

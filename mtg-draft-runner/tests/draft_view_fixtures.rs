@@ -450,6 +450,21 @@ fn a_seat_that_finishes_first_is_shown_building_while_others_draft() {
     assert_eq!(jv(&lobby, 0)["deck"]["valid"], true);
 }
 
+/// #812: a timer too long for an `Instant` panicked inside the person's
+/// connection while it held the lobby, wedging the table. The flags refuse
+/// one now; the lobby, which is a library, takes it as no deadline.
+#[test]
+fn a_timer_too_long_for_the_clock_is_no_deadline_not_a_panic() {
+    let (mut lobby, _) = lobby_timed(vec![SeatKind::Human, SeatKind::Ai("cc".into())], Some(u64::MAX), Some(u64::MAX));
+    lobby.connected(0);
+    lobby.start();
+    assert!(jv(&lobby, 0)["pack"]["deadline_ms"].is_null());
+    draft_to_the_end(&mut lobby, None);
+    let v = jv(&lobby, 0);
+    assert_eq!(v["phase"], "building");
+    assert!(v["build_deadline_ms"].is_null());
+}
+
 /// A seat's view as JSON.
 fn jv(lobby: &Lobby, seat: usize) -> Value {
     serde_json::to_value(lobby.view(seat)).unwrap()

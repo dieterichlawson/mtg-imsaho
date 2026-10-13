@@ -700,7 +700,7 @@ the order they happened, not in seat order", "");
             }
             match self.table.in_front(seat) {
                 Some(_) if self.seats[seat].pick_deadline.is_none() => {
-                    self.seats[seat].pick_deadline = Some(Instant::now() + Duration::from_secs(secs));
+                    self.seats[seat].pick_deadline = deadline_in(secs);
                 }
                 Some(_) => {}
                 None => self.seats[seat].pick_deadline = None,
@@ -872,7 +872,7 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
             if self.builds_at_once(seat) {
                 self.auto_build(seat, "the table builds for a seat it picks for");
             } else if let Some(secs) = self.config.build_seconds {
-                self.seats[seat].build_deadline = Some(Instant::now() + Duration::from_secs(secs));
+                self.seats[seat].build_deadline = deadline_in(secs);
             }
         }
     }
@@ -1492,6 +1492,13 @@ const MAX_TOPPED_UP_LANDS: u32 = 18;
 #[must_use]
 pub fn deck_in_progress(problem: &str) -> bool {
     problem.starts_with("Deck has ") && problem.contains("need at least")
+}
+
+/// The deadline `secs` from now. A timer too long for an `Instant` is no
+/// deadline at all, rather than the panic that wedged the table holding
+/// the lobby's lock (#812); the server's flags refuse one anyway.
+fn deadline_in(secs: u64) -> Option<Instant> {
+    Instant::now().checked_add(Duration::from_secs(secs))
 }
 
 /// Milliseconds from `now` to `deadline`, 0 once it has passed.
