@@ -16,8 +16,10 @@ mtg-draft-client — sit at a hosted draft from the terminal
 
 Usage: mtg-draft-client ws://host:8800/ws?seat=N&key=K [--name <name>]
 
-While drafting, type a card's number to pick it. While building: add <n>,
-drop <n> (by the pool numbers shown), lands plains=7 island=10, show, ready.
+While drafting, type a card's number to pick it (a number typed before a
+new pack has been up 300 ms is not taken: type it again). While building:
+add <n>, drop <n> (by the pool numbers shown), lands plains=7 island=10,
+show, ready.
 Any time: name <name>, help, quit.";
 
 fn out(line: &str) {
