@@ -331,6 +331,13 @@ fn render(v: &Value, build: &Build) -> (String, String) {
             s.push_str(&pool_listing(v));
         }
         "building" => {
+            // The clock the page shows beside the deck, and what happens
+            // when it runs out (#813, #810).
+            if let (Some(ms), false) = (v["build_deadline_ms"].as_u64(), v["deck"]["ready"].as_bool().unwrap_or(false)) {
+                table.push_str(&format!(
+                    "  {}s left to build; then the deck as you last sent it is played \
+(basics fill a short one), or the table builds one\n", ms / 1000));
+            }
             s.push_str(&build_listing(v, build));
         }
         "playing" | "done" => {
@@ -408,6 +415,24 @@ mod tests {
         assert!(!mine.contains("8801"), "a finished match's page is not offered:\n{mine}");
         assert!(mine.contains("Round 2 vs Lawson: playing — open http://h:8803/\n"), "{mine}");
         assert!(mine.contains("Round 3 vs Lawson: waiting\n"), "{mine}");
+    }
+
+    /// #813: a seat building under --build-seconds is shown its clock, and
+    /// what the clock does, as the page shows it; a final deck has none.
+    #[test]
+    fn the_build_clock_is_shown_while_the_deck_is_not_final() {
+        let mut v = serde_json::json!({
+            "type": "view", "phase": "building", "seat": 0, "set": "isd",
+            "seats": [{"seat": 0, "name": "seat 0", "kind": "human", "status": "building", "picks": 42, "joined": true}],
+            "matches": [], "pairings": [], "standings": [], "pool": [], "picks": [], "notice": null,
+            "deck": {"main": [], "lands": {}, "sideboard": [], "valid": false, "problem": null, "ready": false},
+            "build_seconds": 60, "build_deadline_ms": 41_500,
+        });
+        let (table, _) = render(&v, &Build::default());
+        assert!(table.contains("41s left to build; then the deck as you last sent it is played"), "{table}");
+        v["deck"]["ready"] = true.into();
+        let (table, _) = render(&v, &Build::default());
+        assert!(!table.contains("left to build"), "{table}");
     }
 
     /// Issue #744: a forfeit, an abandoned game, a drawn match and the
