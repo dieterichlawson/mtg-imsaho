@@ -34,7 +34,9 @@ Options:
                          logged when not given
   --guide <path>         Draft guide file prepended to every AI seat's prompt
   --pick-seconds <N>     Pick for a human who has not picked in N seconds
-  --build-seconds <N>    Build for a human who has not built in N seconds
+  --build-seconds <N>    Finish a human's deck after N seconds of building: the
+                         deck they last sent (basics fill a short one), or the
+                         table's own when they sent none
   --log <path>           The draft log  (default logs/draft-with-friends/draft.log);
                          decks/ and games/ go in the directory beside it
   --quiet, -q            No event lines on the terminal

@@ -68,7 +68,7 @@ address (or say to replace `0.0.0.0` with it when that cannot be found).
 | `--seed <N>` | generated | packs, shuffles, play/draw; in the log header |
 | `--guide <path>` | none | a draft guide prepended to every AI seat's prompt |
 | `--pick-seconds <N>` | none | pick for a human who has not in N seconds |
-| `--build-seconds <N>` | none | build for a human who has not in N seconds |
+| `--build-seconds <N>` | none | after N seconds building, a human's deck is final: the one they last sent (basics fill a short one), or the table's when they sent none |
 | `--log <path>` | `logs/draft-with-friends/draft.log` | the draft log; `decks/` and `games/` beside it |
 | `--quiet` | | no event lines on the terminal |
 

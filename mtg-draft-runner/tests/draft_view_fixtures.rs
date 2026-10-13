@@ -52,6 +52,12 @@ fn lobby(seats: Vec<SeatKind>) -> (Lobby, Vec<Vec<BoosterPack>>) {
 }
 
 fn lobby_with(seats: Vec<SeatKind>, pick_seconds: Option<u64>) -> (Lobby, Vec<Vec<BoosterPack>>) {
+    lobby_timed(seats, pick_seconds, None)
+}
+
+fn lobby_timed(
+    seats: Vec<SeatKind>, pick_seconds: Option<u64>, build_seconds: Option<u64>,
+) -> (Lobby, Vec<Vec<BoosterPack>>) {
     let set_path = repo_root().join("data/sets/isd.json");
     let mut set_data = SetData::load(&set_path).unwrap();
     let registry = Arc::new(CardRegistry::with_all_cards());
@@ -67,7 +73,7 @@ fn lobby_with(seats: Vec<SeatKind>, pick_seconds: Option<u64>) -> (Lobby, Vec<Ve
         seed: 1,
         guide_path: None,
         pick_seconds,
-        build_seconds: None,
+        build_seconds,
         out_dir: None,
     };
     let lobby = Lobby::new(config, &packs, &set_data, registry, &lines, DraftLogger::silent()).unwrap();
@@ -354,6 +360,52 @@ fn an_absent_seat_under_a_timer_is_picked_for_when_the_timer_runs_out() {
     let (mut lobby, _) = lobby_with(vec![SeatKind::Human, SeatKind::Ai("cc".into())], None);
     lobby.start();
     assert!(jv(&lobby, 0)["picks"].as_array().unwrap().len() >= 1);
+}
+
+/// #810: when the build clock runs out, the deck the person sent is the
+/// one played — as sent when it is legal, topped up with basics when it is
+/// only short — and the table's own deck is for a seat that sent nothing.
+#[test]
+fn the_build_clock_keeps_the_deck_a_person_sent() {
+    use std::time::{Duration, Instant};
+    let lands = |pairs: &[(&str, u32)]| -> HashMap<String, u32> {
+        pairs.iter().map(|(l, n)| ((*l).to_string(), *n)).collect()
+    };
+    for (sent, want) in [
+        // A legal 40, never marked ready.
+        (Some((23, lands(&[("Island", 9), ("Swamp", 8)]))), Some(lands(&[("Island", 9), ("Swamp", 8)]))),
+        // 39: one more of the basic it plays most of.
+        (Some((22, lands(&[("Island", 9), ("Swamp", 8)]))), Some(lands(&[("Island", 10), ("Swamp", 8)]))),
+        // Nothing sent: the table's deck.
+        (None, None),
+    ] {
+        let (mut lobby, _) = lobby_timed(vec![SeatKind::Human, SeatKind::Ai("cc".into())], None, Some(20));
+        lobby.connected(0);
+        lobby.start();
+        draft_to_the_end(&mut lobby, None);
+        let pool: Vec<String> = jv(&lobby, 0)["pool"].as_array().unwrap().iter()
+            .map(|c| c["name"].as_str().unwrap().to_string()).collect();
+        let main: Vec<String> = sent.as_ref().map(|(n, _)| pool[..*n].to_vec()).unwrap_or_default();
+        if let Some((_, l)) = &sent {
+            lobby.submit_deck(0, &main, l, &[]).unwrap();
+        }
+        assert!(jv(&lobby, 0)["build_deadline_ms"].as_u64().is_some(), "the clock is armed");
+        assert!(lobby.tick(Instant::now() + Duration::from_secs(21)), "the clock runs out");
+        let v = jv(&lobby, 0);
+        assert_eq!(v["deck"]["ready"], true);
+        let notice = v["notice"].as_str().unwrap();
+        match want {
+            Some(want) => {
+                let got: HashMap<String, u32> = serde_json::from_value(v["deck"]["lands"].clone()).unwrap();
+                assert_eq!(got, want, "the lands sent are kept: {v}");
+                let got_main: Vec<String> = v["deck"]["main"].as_array().unwrap().iter()
+                    .map(|c| c.as_str().unwrap().to_string()).collect();
+                assert_eq!(got_main.len(), main.len(), "the spells sent are kept: {v}");
+                assert!(notice.contains("as you last sent it"), "{notice}");
+            }
+            None => assert!(notice.contains("The table built your deck"), "{notice}"),
+        }
+    }
 }
 
 /// A seat's view as JSON.

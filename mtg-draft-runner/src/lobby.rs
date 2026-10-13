@@ -954,9 +954,29 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
         self.finish_deck(seat, &result.deck.clone(), &attempts, result.retries, result.fallback);
     }
 
-    /// The table builds a seat's deck.
+    /// The table finishes a seat's deck. A legal deck the seat sent is
+    /// the one played, and one that is only short is topped up with basics:
+    /// the seat chose those cards, and the clock running out is not a
+    /// reason to throw them away (#810). Only a seat that sent nothing
+    /// usable gets the table's own deck.
     pub fn auto_build(&mut self, seat: usize, why: &str) {
         if self.seats[seat].ready {
+            return;
+        }
+        if let Some((deck, added)) = self.sent_deck_completed(seat) {
+            let kept = match &added {
+                None => "the deck it sent is the one played".to_string(),
+                Some((n, land)) => format!("the deck it sent was {n} short; the table added {n} {land}"),
+            };
+            mtg_player::game_log::write(file!(), line!(),
+                &format!("[Seat {seat}] WARN {why}: {kept}"), "");
+            self.seats[seat].notice = Some(match &added {
+                None => format!("Your deck is final as you last sent it ({why})."),
+                Some((n, land)) => format!(
+                    "Your deck is final as you last sent it, with {n} {land} added to reach 40 ({why})."),
+            });
+            self.event(format!("seat {seat}: {why}; {kept}"));
+            self.finish_deck(seat, &deck, &[], 0, false);
             return;
         }
         let deck = deckbuilding::fallback_deck(self.table.pool(seat), &self.registry);
@@ -965,6 +985,33 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
         self.seats[seat].notice = Some(format!("The table built your deck ({why})."));
         self.event(format!("seat {seat}: the table built its deck ({why})"));
         self.finish_deck(seat, &deck, &[], 0, true);
+    }
+
+    /// The deck the seat last sent, if it is legal or only short of 40;
+    /// a short one is filled with the basic it already plays most of (the
+    /// table's choice of colour when it plays none), and the count and
+    /// name of what was added come back with it.
+    fn sent_deck_completed(&self, seat: usize) -> Option<(DraftDeck, Option<(u32, String)>)> {
+        let sent = self.seats[seat].deck.as_ref()?;
+        let pool = self.table.pool(seat);
+        match &self.seats[seat].deck_problem {
+            None => Some((sent.clone(), None)),
+            Some(problem) if deck_in_progress(problem) => {
+                let total = sent.maindeck.len() + sent.lands.values().sum::<u32>() as usize;
+                let short = u32::try_from(40usize.saturating_sub(total)).ok()?;
+                let most = |lands: &HashMap<String, u32>| lands.iter()
+                    .filter(|(_, n)| **n > 0)
+                    .max_by(|a, b| a.1.cmp(b.1).then_with(|| b.0.cmp(a.0)))
+                    .map(|(land, _)| land.clone());
+                let land = most(&sent.lands)
+                    .or_else(|| most(&deckbuilding::fallback_deck(pool, &self.registry).lands))?;
+                let mut lands = sent.lands.clone();
+                *lands.entry(land.clone()).or_insert(0) += short;
+                let deck = deckbuilding::validate_deck(pool, &sent.maindeck, &lands).ok()?;
+                Some((deck, Some((short, land))))
+            }
+            Some(_) => None,
+        }
     }
 
     fn finish_deck(

@@ -288,7 +288,7 @@ function building(view: DraftView, state: PageState, actions: Actions): HTMLElem
   panel.append(h("div", { class: "count-line", id: "count-line", text: `${c.spells} spells + ${c.lands} lands = ${c.total}` }));
   if (!ready && view.build_deadline_ms != null) {
     panel.append(h("div", { class: "build-timer" }, h("span", { id: "countdown", class: "countdown" }),
-      h("span", { class: "muted", text: " to send a deck, or the table builds one for you" })));
+      h("span", { class: "muted", text: " to build; then the deck as you last sent it is played (basics fill a short one), or the table builds one" })));
   }
   const landsEl = h("div", { class: "lands" });
   for (const b of BASICS) {
