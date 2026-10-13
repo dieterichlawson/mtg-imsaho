@@ -1235,7 +1235,9 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
         self.event(match outcome.winner {
             // A stalled seat's game is a forfeit, not a game won (#744).
             Some(w) => match outcome.stalled_seat {
-                Some(s) => format!("round {round}: seat {a} vs seat {b}, game {game_number}: seat {w} wins, seat {s} forfeited (stalled)"),
+                Some(s) => format!("round {round}: seat {a} vs seat {b}, game {game_number}: seat {w} wins, seat {s} forfeited ({})",
+                    // The reason a forfeit carries, as the standings read it (#821).
+                    outcome.game_log.first().and_then(|l| l.strip_prefix("forfeit: ")).unwrap_or("stalled")),
                 None => format!("round {round}: seat {a} vs seat {b}, game {game_number}: seat {w} wins"),
             },
             // A game stopped without a result is not a draw (#743): the page
@@ -1415,7 +1417,9 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
                 MatchView {
                     round: m.round,
                     opponent,
-                    url: m.urls[me].clone(),
+                    // A kicked seat's game is the table's: no link to it,
+                    // beside a notice saying the seat was handed over (#821).
+                    url: if self.seats[seat].kicked { None } else { m.urls[me].clone() },
                     status: m.status.word(),
                     games: m.games.clone(),
                     result: m.result.as_ref().map(|r| score_for(r, seat)),

@@ -69,6 +69,15 @@ impl GameSeat {
         }
     }
 
+    /// Why a page's seat was taken out of its game (a hosted table's kick,
+    /// #821); an LLM seat that gave up is not withdrawn.
+    fn withdrawn(&self) -> Option<String> {
+        match self {
+            GameSeat::Llm(_) => None,
+            GameSeat::Gui(p) => Player::gave_up(p),
+        }
+    }
+
     /// Show a page the board while the other seat decides.
     fn observe(&mut self, view: &GameView) {
         if let GameSeat::Gui(p) = self {
@@ -149,7 +158,7 @@ pub fn play_match(
 
     while !match_is_over(best_of, games.len(), wins_a, wins_b) {
         let game_number = games.len() + 1;
-        let outcome = play_game(
+        let mut outcome = play_game(
             &mut a,
             &mut b,
             registry,
@@ -171,6 +180,17 @@ pub fn play_match(
             None => {}
         }
 
+        // A withdrawn seat's forfeit says why, the way the hosted table's
+        // other forfeits do ("forfeit: <why>" first, which the standings
+        // note and the table's game line read), not "a seat stalled".
+        let withdrawn = [(seat_a, &a.player), (seat_b, &b.player)].into_iter()
+            .find_map(|(seat, p)| p.withdrawn().map(|why| (seat, format!("forfeit: {why}"))));
+        if let Some((seat, line)) = &withdrawn {
+            if outcome.stalled_seat == Some(*seat) {
+                outcome.game_log.insert(0, line.clone());
+            }
+        }
+
         after_game(&outcome);
         games.push(outcome);
 
@@ -186,7 +206,8 @@ pub fn play_match(
             while !match_is_over(best_of, games.len(), wins_a, wins_b) {
                 if winner == seat_a { wins_a += 1 } else { wins_b += 1 }
                 let forfeit = GameOutcome {
-                    winner: Some(winner), turns: 0, game_log: Vec::new(),
+                    winner: Some(winner), turns: 0,
+                    game_log: withdrawn.iter().map(|(_, line)| line.clone()).collect(),
                     stalled_seat: Some(dead), abandoned: false,
                 };
                 after_game(&forfeit);
@@ -268,7 +289,7 @@ fn play_game(
                 mtg_player::stderr_line!("\nWARN: {report} The game is forfeit to seat {}.",
                     if acting_player == PlayerId(0) { seat_b } else { seat_a });
                 draft_log::DraftLogger::stalled_game(
-                    seat_a, seat_b, seat,
+                    false, seat_a, seat_b, seat,
                     game_state.turn_number,
                     &format!("{:?}", game_state.step),
                     &report,
@@ -324,6 +345,7 @@ so the seat forfeits its match"),
                     };
                     mtg_player::stderr_line!("\nWARN: {report}.");
                     draft_log::DraftLogger::stalled_game(
+                        matches!(player, GameSeat::Gui(_)),
                         seat_a, seat_b, seat,
                         game_state.turn_number,
                         &format!("{:?}", game_state.step),

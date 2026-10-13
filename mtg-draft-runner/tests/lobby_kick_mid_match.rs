@@ -40,6 +40,12 @@ fn a_kick_mid_match_forfeits_the_match_and_the_table_finishes() {
         "the kicked seat forfeits its match:\n{log}");
     let terminal = server.stderr();
     assert!(terminal.contains("withdrawn from the game (the host kicked seat 0)"), "{terminal}");
+    // Named as a kick everywhere the forfeit is told, not as a stall.
+    assert!(terminal.contains("seat 0 forfeited (the host kicked seat 0)"), "{terminal}");
+    assert!(log.contains("WITHDRAWN (Seat 0 vs Seat 1)") && !log.contains("STALLED"), "{log}");
+    assert!(terminal.contains("[1 game forfeited: the host kicked seat 0]") && !terminal.contains("a seat stalled"),
+        "{terminal}");
     let v = c0.view_until("the view after the tournament", Duration::from_secs(30), |v| v["phase"] == "done");
     assert_eq!(v["matches"][0]["games"][0]["winner"], 1, "{}", v["matches"]);
+    assert!(v["matches"][0]["url"].is_null(), "a kicked seat is not offered its game: {}", v["matches"]);
 }

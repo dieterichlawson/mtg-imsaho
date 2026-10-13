@@ -352,7 +352,11 @@ unusable response, substituted {chosen_name} (the first card) — replayed from 
     /// A game the progress watchdog forfeited. Logged where the match is
     /// logged, because the standings count it as a loss and nothing else in
     /// the run would say it was not played out (#488).
+    ///
+    /// `withdrawn` is a page's seat taken out of its game (a kick, #821):
+    /// it did not stall, and the headline says WITHDRAWN.
     pub fn stalled_game(
+        withdrawn: bool,
         seat_a: usize,
         seat_b: usize,
         stalled: usize,
@@ -364,8 +368,13 @@ unusable response, substituted {chosen_name} (the first card) — replayed from 
     ) {
         mtg_player::game_log::write(
             file, line,
-            &format!("STALLED (Seat {seat_a} vs Seat {seat_b}) — Seat {stalled} stopped making \
-progress at turn {turn} {step}; the game is forfeit"),
+            &if withdrawn {
+                format!("WITHDRAWN (Seat {seat_a} vs Seat {seat_b}) — Seat {stalled} was taken out \
+of the game at turn {turn} {step}; the game is forfeit")
+            } else {
+                format!("STALLED (Seat {seat_a} vs Seat {seat_b}) — Seat {stalled} stopped making \
+progress at turn {turn} {step}; the game is forfeit")
+            },
             detail,
         );
     }
