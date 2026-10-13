@@ -294,10 +294,23 @@ pub const MAX_RETRY_BACKOFF: std::time::Duration = std::time::Duration::from_sec
 /// which is how the give-up path is tested in seconds.
 #[must_use]
 pub fn retry_budget(env: &str) -> std::time::Duration {
+    env_seconds(env, RETRY_BUDGET)
+}
+
+/// The longest a seconds override from the environment is taken as: a day.
+/// Every such duration is added to an `Instant`, and a sentinel like 2^64
+/// panicked there ("overflow when adding duration to instant"), killing
+/// the seat's thread (#812's flags, found again in these test knobs).
+pub const MAX_ENV_SECONDS: u64 = 86_400;
+
+/// `default`, unless `env` names a number of seconds to use instead, capped
+/// at [`MAX_ENV_SECONDS`].
+#[must_use]
+pub fn env_seconds(env: &str, default: std::time::Duration) -> std::time::Duration {
     std::env::var(env)
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
-        .map_or(RETRY_BUDGET, std::time::Duration::from_secs)
+        .map_or(default, |secs| std::time::Duration::from_secs(secs.min(MAX_ENV_SECONDS)))
 }
 
 /// How long to wait before attempt number `attempt` (1-based on retries).
@@ -9253,5 +9266,26 @@ mod stateless_decisions {
         let second = player.build_prompt(&view, "[MAIN PHASE 1]\nAvailable actions:\n0: Pass\n");
         assert!(!second.contains("Game resumed"), "and the second does not:\n{second}");
         assert_eq!(player.conversation_len_for_test(), 0);
+    }
+}
+
+#[cfg(test)]
+mod env_seconds_cap {
+    use super::*;
+
+    /// A seconds override from the environment is capped at a day, so the
+    /// deadline it makes cannot overflow an `Instant` (#812).
+    #[test]
+    fn an_override_too_long_for_the_clock_is_a_day() {
+        // A name no other test or run sets, so setting it races nothing.
+        const ENV: &str = "MTG_TEST_ENV_SECONDS_CAP_812";
+        std::env::set_var(ENV, "18446744073709551615");
+        let d = env_seconds(ENV, std::time::Duration::from_secs(5));
+        assert_eq!(d, std::time::Duration::from_secs(MAX_ENV_SECONDS));
+        assert!(std::time::Instant::now().checked_add(d).is_some());
+        std::env::set_var(ENV, "7");
+        assert_eq!(env_seconds(ENV, std::time::Duration::from_secs(5)), std::time::Duration::from_secs(7));
+        std::env::remove_var(ENV);
+        assert_eq!(env_seconds(ENV, std::time::Duration::from_secs(5)), std::time::Duration::from_secs(5));
     }
 }

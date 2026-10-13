@@ -50,10 +50,7 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(300);
 const CALL_TIMEOUT_ENV: &str = "MTG_CLAUDE_CODE_TIMEOUT_SECS";
 
 fn call_timeout() -> Duration {
-    std::env::var(CALL_TIMEOUT_ENV)
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .map_or(CALL_TIMEOUT, Duration::from_secs)
+    super::env_seconds(CALL_TIMEOUT_ENV, CALL_TIMEOUT)
 }
 
 /// Overrides [`super::RETRY_BUDGET`] for a game seat, so the give-up path can
@@ -123,10 +120,7 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 const PROBE_TIMEOUT_ENV: &str = "MTG_CLAUDE_CODE_PROBE_TIMEOUT_SECS";
 
 fn probe_timeout() -> Duration {
-    std::env::var(PROBE_TIMEOUT_ENV)
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .map_or(PROBE_TIMEOUT, Duration::from_secs)
+    super::env_seconds(PROBE_TIMEOUT_ENV, PROBE_TIMEOUT)
 }
 
 /// Whether the Claude Code binary can be executed at all — the seat's
