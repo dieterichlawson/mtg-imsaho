@@ -169,6 +169,28 @@ fn browser_notice(name: &str, url: &str, connected: usize, said: &mut bool) -> O
     Some(format!("{name}: no browser at {url} — open it to answer"))
 }
 
+/// Takes a page's seat out of its game from another thread: a hosted
+/// table's host kicking a person mid-match (#821). Once withdrawn, the
+/// seat answers its pending and every later decision with a forfeit and
+/// reports why through `Player::gave_up`, so the game loop forfeits it the
+/// game and the match, as it does an LLM seat that stopped answering.
+#[derive(Clone, Default)]
+pub struct Withdraw(Arc<Mutex<Option<String>>>);
+
+impl Withdraw {
+    /// Withdraw the seat, saying why. The first reason given stands.
+    pub fn withdraw(&self, why: &str) {
+        let mut slot = self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if slot.is_none() {
+            *slot = Some(why.to_string());
+        }
+    }
+
+    fn why(&self) -> Option<String> {
+        self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
+    }
+}
+
 /// A seat played through a browser page.
 pub struct GuiPlayer {
     name: String,
@@ -178,6 +200,7 @@ pub struct GuiPlayer {
     /// The address the page is served at.
     pub url: String,
     said_waiting: bool,
+    withdrawn: Withdraw,
 }
 
 impl GuiPlayer {
@@ -242,7 +265,14 @@ impl GuiPlayer {
             seq: 0,
             url: format!("http://{bound}/"),
             said_waiting: false,
+            withdrawn: Withdraw::default(),
         })
+    }
+
+    /// A handle that withdraws this seat from its game; see [`Withdraw`].
+    #[must_use]
+    pub fn withdraw_handle(&self) -> Withdraw {
+        self.withdrawn.clone()
     }
 
     /// Show the page the board while another seat decides.
@@ -264,6 +294,9 @@ impl GuiPlayer {
 
     /// Ask the page and wait for its answer.
     fn ask(&mut self, view: &GameView, legal: &LegalActions, combat: Option<&CombatPrompt>) -> Action {
+        if self.withdrawn.why().is_some() {
+            return crate::watchdog::forfeit_move();
+        }
         self.seq += 1;
         let seq = self.seq;
         let msg = serde_json::to_string(&Outbound::Decision {
@@ -284,7 +317,13 @@ impl GuiPlayer {
             // `AbandonGame` this used to return on `Err` was unreachable
             // for that reason, and the comment above it described a state
             // that cannot occur.)
-            let answer = match self.answers.recv_timeout(BROWSER_CHECK) {
+            let answer = self.answers.recv_timeout(BROWSER_CHECK);
+            // Withdrawn while the page held the decision: the seat is no
+            // longer the person's, and an answer from the page is not taken.
+            if self.withdrawn.why().is_some() {
+                return crate::watchdog::forfeit_move();
+            }
+            let answer = match answer {
                 Ok(answer) => answer,
                 Err(_) => {
                     if let Some(line) = browser_notice(
@@ -368,6 +407,10 @@ impl Player for GuiPlayer {
 
     fn choose_action(&mut self, view: &GameView, legal: &LegalActions) -> Action {
         self.ask(view, legal, None)
+    }
+
+    fn gave_up(&self) -> Option<String> {
+        self.withdrawn.why()
     }
 }
 
@@ -620,7 +663,46 @@ mod tests {
             seq: 1,
             url: String::new(),
             said_waiting: false,
+            withdrawn: Withdraw::default(),
         }
+    }
+
+    /// #821: a seat withdrawn while its page holds a decision answers it
+    /// with a forfeit and says why from then on; nobody was at the page,
+    /// so it used to wait for ever, and a hosted table's kick never reached
+    /// a running match.
+    #[test]
+    fn a_withdrawn_seat_stops_waiting_and_gives_up() {
+        use mtg_engine::cards::CardRegistry;
+        use mtg_engine::engine::{legal_actions, setup_game, Decklist, GameConfig};
+        use mtg_engine::ids::PlayerId;
+        let registry = CardRegistry::with_all_cards();
+        let deck = Decklist { entries: vec![("Forest".to_string(), 20), ("Grizzly Bears".to_string(), 20)] };
+        let state = setup_game(&GameConfig {
+            player_names: vec!["you".into(), "opp".into()],
+            decklists: vec![deck.clone(), deck],
+            starting_life: 20,
+            starting_player: Some(PlayerId(0)),
+            rng_seed: Some(7),
+        }, &registry);
+        let view = GameView::for_player(&state, PlayerId(0), &registry);
+        let legal = legal_actions(&state, &registry);
+
+        let mut seat = test_seat();
+        assert!(Player::gave_up(&seat).is_none());
+        let handle = seat.withdraw_handle();
+        let kicker = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(200));
+            handle.withdraw("the host kicked seat 0");
+        });
+        let began = std::time::Instant::now();
+        let answer = seat.choose_action(&view, &legal);
+        kicker.join().unwrap();
+        assert!(matches!(answer, Action::Forfeit), "{answer:?}");
+        assert!(began.elapsed() < BROWSER_CHECK * 2, "it stopped waiting within a beat");
+        assert_eq!(Player::gave_up(&seat).as_deref(), Some("the host kicked seat 0"));
+        // Every later decision is the same, without asking the page.
+        assert!(matches!(seat.choose_action(&view, &legal), Action::Forfeit));
     }
 
     /// #647: a refused answer is told to the page that sent it, and to no

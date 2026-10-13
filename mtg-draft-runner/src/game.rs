@@ -315,8 +315,13 @@ fn play_game(
                 if stalled_seat.is_none() {
                     let seat = if acting_player == PlayerId(0) { seat_a } else { seat_b };
                     stalled_seat = Some(seat);
-                    let report = format!("Seat {seat}'s backend never answered within its retry \
-budget ({why}), so the seat forfeits its match");
+                    let report = match player {
+                        GameSeat::Llm(_) => format!("Seat {seat}'s backend never answered within its retry \
+budget ({why}), so the seat forfeits its match"),
+                        // A page's seat taken out of the game: a kick (#821).
+                        GameSeat::Gui(_) => format!("Seat {seat} was withdrawn from the game ({why}), \
+so the seat forfeits its match"),
+                    };
                     mtg_player::stderr_line!("\nWARN: {report}.");
                     draft_log::DraftLogger::stalled_game(
                         seat_a, seat_b, seat,

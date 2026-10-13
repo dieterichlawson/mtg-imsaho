@@ -88,7 +88,10 @@ every pairing, every game and match result, the standings — and reads:
   once when it is not. The deck likewise, under `--build-seconds`.
 - `kick <seat>`: hand a human seat to the table for good. It is picked
   for and built for, and its matches are forfeit (recorded as such in the
-  log and the standings) rather than waited on.
+  log and the standings) rather than waited on — a match it is playing
+  too: within a couple of seconds its page stops being asked, the game in
+  progress and the rest of the match go to the opponent, and the round
+  carries on.
 - `status`: where everybody is.
 - `quit`: stop the server. It stays up after the tournament so the pages
   can be read until you do.
@@ -173,8 +176,6 @@ the WebSocket at `/ws?seat=N&key=K` after every change.
 - No snapshot or resume: `--resume` is accepted, noted in the log, and
   ignored. A server that dies takes the draft with it.
 - No `cli` seat (see above).
-- `kick` does not interrupt a game already in progress: a page nobody is
-  at waits, as the game runner's does. Kick before the round.
 - Spectators, chat, cubes, more than one set, and anything past the key
   for access control are out of scope.
 - The browser page is a separate piece of work; until it lands in

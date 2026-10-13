@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 
 use mtg_draft::tournament::GameOutcome;
 use mtg_engine::cards::CardRegistry;
-use mtg_player::gui::GuiPlayer;
+use mtg_player::gui::{GuiPlayer, Withdraw};
 
 use crate::card_lines::CardLines;
 use crate::deck::build_deck_with_llm;
@@ -58,6 +58,9 @@ pub struct Shared {
     pub set_name: String,
     /// The host asked to quit.
     quit: AtomicBool,
+    /// The game pages of the people in a match now, by seat: what a kick
+    /// reaches into a running match with (#821).
+    in_game: Mutex<Vec<(usize, Withdraw)>>,
 }
 
 struct Client {
@@ -83,7 +86,41 @@ impl Shared {
             card_reference,
             set_name,
             quit: AtomicBool::new(false),
+            in_game: Mutex::new(Vec::new()),
         })
+    }
+
+    /// Hand a human seat to the table, and take it out of the game it is
+    /// playing, if any: the game and the rest of the match are forfeit,
+    /// as the kick says. The kick used to reach only matches not yet
+    /// started, so a running one waited for ever on the kicked person's
+    /// page and the round never ended (#821).
+    ///
+    /// # Errors
+    /// As `Lobby::kick`.
+    pub fn kick(&self, seat: usize) -> Result<(), String> {
+        self.lobby().kick(seat)?;
+        self.withdraw_if_auto(seat);
+        Ok(())
+    }
+
+    /// Withdraw the seat's game page if the table now plays for the seat.
+    fn withdraw_if_auto(&self, seat: usize) {
+        if !self.lobby().is_auto(seat) {
+            return;
+        }
+        let in_game = self.in_game.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        for (_, handle) in in_game.iter().filter(|(s, _)| *s == seat) {
+            handle.withdraw(&format!("the host kicked seat {seat}"));
+        }
+    }
+
+    fn set_in_game(&self, seat: usize, handle: Option<Withdraw>) {
+        let mut in_game = self.in_game.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        in_game.retain(|(s, _)| *s != seat);
+        if let Some(handle) = handle {
+            in_game.push((seat, handle));
+        }
     }
 
     /// The lobby, poisoned or not: a panic in one worker must not take the
@@ -286,7 +323,7 @@ fn host_loop(shared: &Arc<Shared>) {
             Some("kick") => {
                 let result = words.get(1).and_then(|n| n.parse::<usize>().ok())
                     .ok_or_else(|| "kick takes a seat number".to_string())
-                    .and_then(|seat| shared.lobby().kick(seat));
+                    .and_then(|seat| shared.kick(seat));
                 match result {
                     Ok(()) => shared.notify(),
                     Err(e) => shared.say(&format!("kick: {e}")),
@@ -468,6 +505,7 @@ fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usiz
             SeatKind::Human | SeatKind::Cli => match game_page(shared, &name) {
                 Ok(gui) => {
                     urls[i] = Some(gui.url.clone());
+                    shared.set_in_game(seat, Some(gui.withdraw_handle()));
                     seats.push(GameSeat::Gui(gui));
                 }
                 Err(e) => {
@@ -482,6 +520,9 @@ seat {seat} forfeits the match"));
     }
     shared.lobby().match_started(round, a, b, urls);
     shared.notify();
+    // A kick between the check above and the page being registered.
+    shared.withdraw_if_auto(a);
+    shared.withdraw_if_auto(b);
 
     let mut seats = seats.into_iter();
     let (player_a, player_b) = (seats.next().expect("seat a"), seats.next().expect("seat b"));
@@ -499,6 +540,8 @@ seat {seat} forfeits the match"));
             shared.notify();
         },
     );
+    shared.set_in_game(a, None);
+    shared.set_in_game(b, None);
     let next = shared.lobby().match_finished(round, a, b, result);
     shared.notify();
     next
