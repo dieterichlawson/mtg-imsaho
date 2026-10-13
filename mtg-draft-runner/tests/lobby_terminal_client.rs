@@ -113,3 +113,55 @@ fn the_client_refuses_a_bad_link_and_a_wrong_key() {
     assert!(String::from_utf8_lossy(&out.stdout).contains("refused: wrong key for seat 0"),
         "{}", String::from_utf8_lossy(&out.stdout));
 }
+
+#[test]
+fn a_pick_typed_twice_is_not_spent_on_the_next_pack() {
+    // #809: the client stamped a typed number with whatever pack was on
+    // screen when it got round to the line, so a `0` typed twice picked
+    // card 0 of the next pack 50 ms after it was printed.
+    if !lobby_support::python3_available() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let server = Server::start("client-twice", "human,ai", &[]);
+    let mut child = Command::new(env!("CARGO_BIN_EXE_mtg-draft-client"))
+        .arg(server.ws_url(0, server.key(0)))
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
+        .spawn().expect("the client starts");
+    let out = Arc::new(Mutex::new(String::new()));
+    let sink = Arc::clone(&out);
+    let stdout = child.stdout.take().unwrap();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            let mut s = sink.lock().unwrap();
+            s.push_str(&line);
+            s.push('\n');
+        }
+    });
+    let mut stdin = child.stdin.take().unwrap();
+    wait_for(&out, "Pack 1 pick 1 of 14", Duration::from_secs(30));
+    // The AI seat has passed its pack by now, so the next one is waiting.
+    server.wait_for_log("[Seat 1] PICK Pack 1 Pick 1 |", Duration::from_secs(30));
+    std::thread::sleep(Duration::from_millis(600));
+
+    writeln!(stdin, "0").unwrap();
+    // The second 0 the moment the next pack is printed, as a repeat would.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !out.lock().unwrap().contains("Pack 1 pick 2 of 14") {
+        assert!(Instant::now() < deadline, "the second pack never came:\n{}", out.lock().unwrap());
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    writeln!(stdin, "0").unwrap();
+    let text = wait_for(&out, "0 was not picked", Duration::from_secs(10));
+    assert!(text.contains("type it again to pick from this pack"), "{text}");
+    std::thread::sleep(Duration::from_millis(500));
+    let log = server.log_text();
+    assert!(log.contains("[Seat 0] PICK Pack 1 Pick 1 |"), "{log}");
+    assert!(!log.contains("[Seat 0] PICK Pack 1 Pick 2 |"), "the repeat picked from a pack nobody read:\n{log}");
+
+    // Typed again once the pack has been up a moment, it picks.
+    writeln!(stdin, "0").unwrap();
+    server.wait_for_log("[Seat 0] PICK Pack 1 Pick 2 |", Duration::from_secs(10));
+    writeln!(stdin, "quit").unwrap();
+    assert!(child.wait().unwrap().success());
+}

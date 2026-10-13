@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::{BufRead, Write};
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
@@ -25,6 +25,13 @@ fn out(line: &str) {
     let _ = writeln!(stdout, "{line}");
     let _ = stdout.flush();
 }
+
+/// A pick typed this soon after its pack was printed is not taken: it was
+/// typed for the pack before (a number typed twice, a repeated Enter), and
+/// the pack it would land on has not been read (#809). The page ignores a
+/// repeat for its first 300 ms on screen and the game's terminal drains
+/// keys typed ahead of its prompt (#806, #71); this is the same guard.
+const PICK_GRACE: Duration = Duration::from_millis(300);
 
 /// What the client keeps between views: the deck it is building.
 #[derive(Default)]
@@ -79,16 +86,18 @@ fn main() {
 
     // Commands come in on a channel; the one thread reads the socket and
     // writes to it, the way the server's pump does.
-    let (tx, rx) = mpsc::channel::<String>();
+    // Each line carries the moment it was read, so a pick can be held
+    // against the pack that was on screen when it was typed.
+    let (tx, rx) = mpsc::channel::<(Instant, String)>();
     std::thread::spawn(move || {
         let stdin = std::io::stdin();
         for line in stdin.lock().lines() {
             let Ok(line) = line else { break };
-            if tx.send(line).is_err() {
+            if tx.send((Instant::now(), line)).is_err() {
                 break;
             }
         }
-        let _ = tx.send("\u{0}eof".to_string());
+        let _ = tx.send((Instant::now(), "\u{0}eof".to_string()));
     });
 
     let mut view: Option<Value> = None;
@@ -96,13 +105,17 @@ fn main() {
     let mut shown_table = String::new();
     let mut build = Build::default();
     let mut built_for_phase = String::new();
+    // The pack on screen (id and pick) and when it was printed.
+    let mut pack_shown: Option<(Value, Instant)> = None;
     loop {
-        while let Ok(line) = rx.try_recv() {
+        while let Ok((typed_at, line)) = rx.try_recv() {
             if line == "\u{0}eof" {
                 // Nobody is typing: stay attached and keep printing.
                 continue;
             }
-            match command(&line, view.as_ref(), &mut build) {
+            let early = pack_shown.as_ref()
+                .and_then(|(_, at)| (*at + PICK_GRACE).checked_duration_since(typed_at));
+            match command(&line, view.as_ref(), &mut build, early) {
                 Command::Send(msgs) => {
                     for m in msgs {
                         if ws.send(tungstenite::Message::Text(m.to_string().into())).is_err() {
@@ -139,6 +152,12 @@ fn main() {
                             out(&table_line(&msg));
                         }
                         shown_table = table;
+                        let pack = serde_json::json!([msg["pack"]["id"], msg["pack"]["pick"]]);
+                        if !msg["pack"].is_object() {
+                            pack_shown = None;
+                        } else if pack_shown.as_ref().is_none_or(|(p, _)| *p != pack) {
+                            pack_shown = Some((pack, Instant::now()));
+                        }
                         view = Some(msg);
                     }
                     Some("refused") => {
@@ -204,7 +223,9 @@ fn deck_message(view: &Value, build: &Build) -> Value {
     serde_json::json!({"type": "deck", "main": main, "lands": build.lands, "sideboard": side})
 }
 
-fn command(line: &str, view: Option<&Value>, build: &mut Build) -> Command {
+/// `early` is set when the line was typed before the pack on screen had
+/// been up for `PICK_GRACE`: how much sooner than that.
+fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Option<Duration>) -> Command {
     let words: Vec<&str> = line.split_whitespace().collect();
     let Some(first) = words.first() else { return Command::Nothing };
     let phase = view.map(|v| v["phase"].as_str().unwrap_or("")).unwrap_or("");
@@ -241,6 +262,12 @@ fn command(line: &str, view: Option<&Value>, build: &mut Build) -> Command {
         }
         word => match (word.parse::<usize>(), view) {
             (Ok(index), Some(v)) if phase == "drafting" => match v["pack"]["id"].as_u64() {
+                Some(_) if early.is_some() => Command::Print(format!(
+                    "{index} was not picked: it was typed {} this pack came up; type it again to pick from this pack",
+                    match early.map(|e| PICK_GRACE.saturating_sub(e)) {
+                        Some(after) if after > Duration::ZERO => format!("{} ms after", after.as_millis()),
+                        _ => "before".to_string(),
+                    })),
                 Some(id) => Command::Send(vec![serde_json::json!({"type": "pick", "pack_id": id, "index": index})]),
                 None => Command::Print("no pack in front of you right now".into()),
             },
