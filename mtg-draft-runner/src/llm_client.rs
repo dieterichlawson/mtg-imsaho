@@ -1346,6 +1346,12 @@ impl DraftLlmClient {
         self.notes.as_deref()
     }
 
+    /// Put back the notes a snapshot kept, before its picks are replayed
+    /// (#836).
+    pub fn restore_notes(&mut self, notes: Option<String>) {
+        self.notes = notes;
+    }
+
     /// The notes block a prompt opens with, when there are notes.
     #[must_use]
     pub fn notes_section(notes: Option<&str>) -> String {

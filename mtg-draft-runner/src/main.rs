@@ -500,6 +500,11 @@ fn guide_digest(text: &str) -> String {
     format!("{h:016x}")
 }
 
+/// Each seat's notes, in seat order, for the snapshot.
+fn seat_notes(clients: &[llm_client::DraftLlmClient]) -> Vec<Option<String>> {
+    clients.iter().map(|c| c.notes().map(str::to_string)).collect()
+}
+
 /// A draft in progress: enough to deal the same packs again and replay every
 /// pick that has been made.
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -533,6 +538,13 @@ struct DraftSave {
     /// field existed, where the flag is all there is to go on.
     #[serde(default)]
     best_of: Option<usize>,
+    /// Each seat's notes — the tail of its last pick's reasoning, which is
+    /// how a seat sent no history carries "I am green-white, taking removal
+    /// now" to its next pick. A replayed pick asks no model, so a resume
+    /// that did not keep these opened its first live pick with no plan at
+    /// all (#836, the game runner's save had the same hole).
+    #[serde(default)]
+    notes: Vec<Option<String>>,
 }
 
 /// A seat's deck as the snapshot keeps it.
@@ -932,6 +944,7 @@ this draft will be made under {} — this draft is a mixture of the two",
     let best_of_recorded = resumed.as_ref().is_some_and(|s| s.best_of.is_some());
     let resumed_decks: Vec<SavedDeck> = resumed.as_ref().map(|s| s.decks.clone()).unwrap_or_default();
     let resumed_matches: Vec<SavedMatch> = resumed.as_ref().map(|s| s.matches.clone()).unwrap_or_default();
+    let resumed_notes: Vec<Option<String>> = resumed.as_ref().map(|s| s.notes.clone()).unwrap_or_default();
     let replaying: Vec<PickRecord> = resumed.map(|s| s.picks).unwrap_or_default();
     if let Err(e) = check_snapshot_shape(&replaying, args.players, draft.cards_remaining(0)) {
         die(&format!("draft save '{}' cannot be replayed: {e}",
@@ -1037,6 +1050,11 @@ resume with the --best-of its run was played at)", args.best_of) };
     // (issue #207). Seats that match an earlier seat verbatim — the usual
     // case — are logged as a reference to it, so the common run's log is no
     // larger than before.
+    // The plan each seat had when the snapshot was written: the picks are
+    // replayed without asking, so nothing else would give it back (#836).
+    for (client, notes) in clients.iter_mut().zip(&resumed_notes) {
+        client.restore_notes(notes.clone());
+    }
     for seat in 0..clients.len() {
         let prompt = clients[seat].system_prompt();
         let same_as = (0..seat).find(|&earlier| clients[earlier].system_prompt() == prompt);
@@ -1057,7 +1075,8 @@ resume with the --best-of its run was played at)", args.best_of) };
     // The cost summary counts this process's calls only, so it has to say
     // which part of the draft it is the cost of (issue #578).
     llm_client::note_replayed_picks(replaying.len());
-    let write_snapshot = |picks: &[PickRecord], decks: &[SavedDeck], matches: &[SavedMatch]| {
+    let write_snapshot = |picks: &[PickRecord], decks: &[SavedDeck], matches: &[SavedMatch],
+                          notes: Vec<Option<String>>| {
         let Some(path) = &args.save else { return };
         let save = DraftSave {
             seed: args.seed,
@@ -1068,6 +1087,7 @@ resume with the --best-of its run was played at)", args.best_of) };
             decks: decks.to_vec(),
             matches: matches.to_vec(),
             best_of: Some(args.best_of),
+            notes,
         };
         // Write-then-rename: a snapshot half-written when the run dies is
         // worse than none, because it looks resumable.
@@ -1246,7 +1266,7 @@ substituting {} (the first card). Response: {}",
             draft.rotate_packs();
             // After the round, not during it: a snapshot is only resumable
             // at a pick boundary, where every seat has picked.
-            write_snapshot(&recorded, &[], &[]);
+            write_snapshot(&recorded, &[], &[], seat_notes(&clients));
         }
     }
 
@@ -1368,7 +1388,7 @@ its build attempts are in that run's log"), "");
     // them rather than waiting for this run to finish one of its own — the
     // only write there was, which left a resume's `--save` with none (#732).
     let mut saved_matches: Vec<SavedMatch> = resumed_matches.clone();
-    write_snapshot(&recorded, &saved_decks, &saved_matches);
+    write_snapshot(&recorded, &saved_decks, &saved_matches, seat_notes(&clients));
     // Matches this process did not play, per seat, for the standings.
     let mut from_snapshot = vec![0usize; args.players];
 
@@ -1516,7 +1536,7 @@ and the FINAL STANDINGS below record none",
             drop(finished_tx);
             for finished in finished_rx {
                 saved_matches.push(SavedMatch { round: round_num, result: without_game_logs(finished) });
-                write_snapshot(&recorded, &saved_decks, &saved_matches);
+                write_snapshot(&recorded, &saved_decks, &saved_matches, seat_notes(&clients));
             }
 
             handles

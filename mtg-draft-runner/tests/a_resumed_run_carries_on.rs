@@ -20,6 +20,8 @@ for i, a in enumerate(argv):
     if a in ("--session-id", "--resume") and i + 1 < len(argv): sid = argv[i + 1]
     if a == "--json-schema" and i + 1 < len(argv): sc = argv[i + 1]
 with open(os.environ["CALLS"], "a") as f: f.write("x\n")
+if os.environ.get("PROMPTS"):
+    with open(os.environ["PROMPTS"], "a") as f: f.write(msg + "\n\x00\n")
 def fill(s):
     if "enum" in s: return s["enum"][0]
     t = s.get("type")
@@ -347,4 +349,46 @@ fn a_refused_resume_writes_no_log_claiming_a_replay() {
     assert!(!out.status.success());
     let log = std::fs::read_to_string(pod.path("bad.log")).unwrap_or_default();
     assert!(!log.contains("resumed from"), "no header for a replay that never happened:\n{log}");
+}
+
+/// #836: a seat's notes — the tail of its last pick's reasoning, the only
+/// way a seat sent no history carries its plan to the next pick — are in
+/// the snapshot, and a resume gives them back. A replayed pick asks no
+/// model, so the first live pick after a resume opened with no plan.
+#[test]
+fn a_resumed_draft_gives_each_seat_its_notes_back() {
+    if !have_python() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let pod = Pod::new("notes");
+    let mut saved = pod.finished_snapshot("snap.json");
+    let notes = saved["notes"].as_array().expect("the snapshot keeps the seats' notes").clone();
+    assert_eq!(notes.len(), 2, "one per seat: {notes:?}");
+    assert!(notes.iter().all(|n| n.is_string()), "both seats left notes: {notes:?}");
+
+    // Back to after pack 1 pick 1, with notes only this test could have
+    // written, so the first live pick shows whether they came back.
+    saved["picks"] = serde_json::Value::Array(saved["picks"].as_array().unwrap()[..2].to_vec());
+    saved["decks"] = serde_json::json!([]);
+    saved["matches"] = serde_json::json!([]);
+    saved["notes"] = serde_json::json!(["seat 0 plan: blue-black fliers", "seat 1 plan: red aggro"]);
+    let snap = pod.write("early.json", &saved);
+
+    let prompts = pod.path("prompts.txt");
+    let resumed = std::process::Command::new(env!("CARGO_BIN_EXE_mtg-draft-runner"))
+        .args(["--model", "cc", "--players", "2", "--best-of", "1", "--seed", "7"])
+        .args(["--log", pod.path("resumed.log").to_str().unwrap(), "--resume", &snap])
+        .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
+        .env("CLAUDE_CODE_BIN", &pod.bin)
+        .env("CALLS", pod.path("resumed.calls"))
+        .env("PROMPTS", &prompts)
+        .output()
+        .expect("the runner runs");
+    assert!(resumed.status.success(), "{}", String::from_utf8_lossy(&resumed.stderr));
+    let asked = std::fs::read_to_string(&prompts).unwrap();
+    for plan in ["seat 0 plan: blue-black fliers", "seat 1 plan: red aggro"] {
+        assert!(asked.contains(&format!("Your notes from your last pick:\n{plan}")),
+            "the first live pick after the resume carries {plan:?}");
+    }
 }
