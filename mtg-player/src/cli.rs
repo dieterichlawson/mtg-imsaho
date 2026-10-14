@@ -2393,13 +2393,20 @@ impl CliPlayer {
         [status, label]
     }
 
+    /// `clip_closed`, or a plain cut when not even "x…" fits.
+    fn clip_closed_or_cut(s: &str, room: usize) -> String {
+        let cut = Self::clip_closed(s, room);
+        if cut.is_empty() { clip_cols(s, room) } else { cut }
+    }
+
     /// The least room a region is given before `elide_middle` falls back to
     /// cutting the head: enough for "[T] [S]" or a word and its "…]".
     const MIN_SHARE: usize = 12;
 
     /// `s` in at most `room` columns: whole if it fits, else cut from its
     /// end with "…" and every bracket or parenthesis it opened closed after
-    /// it — or "" when not even that fits.
+    /// it (a brace is cut back to before it) — or "" when not even that
+    /// fits.
     fn clip_closed(s: &str, room: usize) -> String {
         if str_cols(s) <= room {
             return s.to_string();
@@ -2424,6 +2431,11 @@ impl CliPlayer {
                 break;
             }
             let close = closers(kept);
+            // A brace is a mana symbol or a counters list: "{B…}" is
+            // neither, so the cut goes back to before it instead.
+            if close.contains('}') {
+                continue;
+            }
             if str_cols(kept) + 1 + close.chars().count() <= room {
                 return format!("{kept}…{close}");
             }
@@ -2525,8 +2537,14 @@ impl CliPlayer {
         }
 
         let mut rows: Vec<BfRow> = Vec::new();
-        for (n, parts) in Self::creature_rows(&creatures, &aura_map) {
-            rows.push(BfRow::Line(Some(color), Self::counted_row(n, &parts, max_w), n));
+        // A creature row stands for its creatures and for what is attached
+        // to them, which has no row of its own: when the row is cut, "… N
+        // more" counts the Equipment and Auras that went with it (#781's
+        // review). Rows group only identical attachment marks, so every
+        // member carries as many as the first.
+        for (n, parts, first) in Self::creature_groups(&creatures, &aura_map) {
+            let attached = all_perms.iter().filter(|p| p.attached_to == Some(first)).count();
+            rows.push(BfRow::Line(Some(color), Self::counted_row(n, &parts, max_w), n * (1 + attached)));
         }
         let enchantment_parts: Vec<_> = enchantments.iter()
             .filter(|e| e.attached_to.is_none())
@@ -2966,8 +2984,16 @@ impl CliPlayer {
     /// Torch could not be read off the main screen (issue #634). Rows that
     /// collapse are interchangeable and stay id-free; a name nothing else
     /// shares needs no id to be matched.
+    #[cfg(test)]
     fn creature_rows(creatures: &[&&PermanentView], aura_map: &HashMap<ObjectId, String>)
         -> Vec<(usize, (String, String, String))>
+    {
+        Self::creature_groups(creatures, aura_map).into_iter().map(|(n, parts, _)| (n, parts)).collect()
+    }
+
+    /// `creature_rows`, with the first creature each row stands for.
+    fn creature_groups(creatures: &[&&PermanentView], aura_map: &HashMap<ObjectId, String>)
+        -> Vec<(usize, (String, String, String), ObjectId)>
     {
         let parts: Vec<_> = creatures.iter()
             .map(|c| Self::creature_row_parts(c, aura_map.get(&c.object_id)))
@@ -2994,7 +3020,7 @@ impl CliPlayer {
                 } else {
                     head.clone()
                 };
-                (*n, (head, mid.clone(), tail.clone()))
+                (*n, (head, mid.clone(), tail.clone()), *id)
             })
             .collect()
     }
@@ -3014,7 +3040,9 @@ impl CliPlayer {
                   text: &str, color: Option<Color>, bold: bool) {
         let _ = execute!(out, cursor::MoveTo(col, *row));
         if bold { let _ = execute!(out, SetAttribute(Attribute::Bold)); }
-        let truncated: String = text.chars().take(max_w).collect();
+        // Cut by columns and closed, not by characters: "Moan of the
+        // Unhallowed {2}{B" left a mana symbol open (#781's review).
+        let truncated = Self::clip_closed_or_cut(text, max_w);
         Self::print_with_mana(out, &truncated, color);
         if bold { let _ = execute!(out, SetAttribute(Attribute::Reset)); }
         let _ = execute!(out, ResetColor);
@@ -4788,7 +4816,8 @@ impl CliPlayer {
             "─── BATTLEFIELD "
         };
         let line = format!("{label}{}", "─".repeat(width.saturating_sub(label.chars().count())));
-        clip_cols(&line, width)
+        // Closed when the pane is narrower than the label (#781's review).
+        Self::clip_closed_or_cut(&line, width)
     }
 
     fn status_text(view: &GameView, step_name: &str) -> String {
@@ -7053,7 +7082,7 @@ impl CliPlayer {
             let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
             let w = term_w as usize;
             let mid_w = if w >= 100 { w.saturating_sub(2 * side + 2) } else { w.saturating_sub(side + 1) };
-            let clip = |s: &str| -> String { s.chars().take(mid_w).collect() };
+            let clip = |s: &str| -> String { Self::clip_closed_or_cut(s, mid_w) };
             let mut r = cursor::position().unwrap_or((0, 20)).1;
             let mut out = stdout();
 
@@ -12448,6 +12477,40 @@ Mark 1 of the 1 cards below to exile.");
             assert_eq!(s.matches('(').count(), s.matches(')').count(), "closed at {width}: {s}");
             assert!(l.is_empty() || l == " [AUTO-PASS]", "whole or absent at {width}: {l}");
         }
+    }
+
+    /// #781's second review: the rest of the screen's cuts close what they
+    /// open — the battlefield rule narrower than its label, a hand row
+    /// through a mana cost — and a cut creature row's "… N more" counts the
+    /// Equipment that rode on it.
+    #[test]
+    fn every_cut_on_the_screen_closes_what_it_opened_and_counts_what_it_hid() {
+        let mut v = view(Step::PrecombatMain, 5, true);
+        v.creature_died_this_turn = true;
+        for width in 20..=50 {
+            let rule = CliPlayer::battlefield_rule(&v, width);
+            assert!(str_cols(&rule) <= width, "{rule}");
+            assert_eq!(rule.matches('(').count(), rule.matches(')').count(), "closed at {width}: {rule}");
+        }
+        for room in 8..=31 {
+            let row = CliPlayer::clip_closed_or_cut("  Moan of the Unhallowed {2}{B}", room);
+            assert!(str_cols(&row) <= room, "{row}");
+            assert_eq!(row.matches('{').count(), row.matches('}').count(), "no open mana symbol at {room}: {row}");
+        }
+
+        let mut g = creature(70, "Grimgrin, Corpse-Born", 0);
+        g.controller = v.you;
+        let mut hauberk = creature(71, "Demonmail Hauberk", 0);
+        hauberk.card_types = vec![CardType::Artifact];
+        hauberk.power = None; hauberk.toughness = None;
+        hauberk.effective_power = None; hauberk.effective_toughness = None;
+        hauberk.attached_to = Some(g.object_id);
+        hauberk.controller = v.you;
+        let all = vec![g.clone(), hauberk.clone()];
+        let side: Vec<&PermanentView> = all.iter().collect();
+        let rows = CliPlayer::battlefield_rows(&side, Color::Green, 80, &all, true, v.you);
+        let counted: usize = rows.iter().map(|r| match r { BfRow::Lands(n) | BfRow::Line(_, _, n) => *n }).sum();
+        assert_eq!(counted, 2, "the creature's row stands for it and its Equipment");
     }
 
     /// An Elite Inquisitor: the pool's longest ability list, which is what
