@@ -4929,8 +4929,9 @@ impl CliPlayer {
         // assume too. This row was handed straight to `Print`, so a hint 3
         // columns wider than the panel drew over the frame's own border, and
         // then over the CARDS pane beside it (issue #320).
-        let shown: String = prompt.chars().take(Self::middle_panel_width_at(Self::term_width()))
-            .collect();
+        // Cut closed, like the board's rows: "(0-5, c = cancel the
+        // activation, or conce" left its parenthesis open (#781's review).
+        let shown = Self::clip_closed_or_cut(prompt, Self::middle_panel_width_at(Self::term_width()));
         let _ = execute!(out, Print(&shown));
         let _ = out.flush();
         tui_raw_on();
@@ -4957,8 +4958,7 @@ impl CliPlayer {
                 redraw();
                 // The panel is a different width now, so the prompt is
                 // re-clipped to the new one rather than to the old.
-                let reshown: String = prompt.chars()
-                    .take(Self::middle_panel_width_at(w as usize)).collect();
+                let reshown = Self::clip_closed_or_cut(prompt, Self::middle_panel_width_at(w as usize));
                 let _ = execute!(out, Print(&reshown));
                 let _ = out.flush();
                 (start_col, start_row) = cursor::position().unwrap_or((start_col, start_row));
@@ -5053,7 +5053,7 @@ impl CliPlayer {
                     let row = cursor::position().map_or(py, |(_, r)| r);
                     py = (row + 1).min(h.saturating_sub(1));
                     px = Self::middle_panel_col();
-                    let shown = clip_cols(prompt, Self::middle_panel_edge_at(w as usize).saturating_sub(usize::from(px)));
+                    let shown = Self::clip_closed_or_cut(prompt, Self::middle_panel_edge_at(w as usize).saturating_sub(usize::from(px)));
                     Self::clear_panel_row(&mut out, px, py);
                     let _ = execute!(out, cursor::MoveTo(px, py), Print(&shown));
                     echo_col = px + u16::try_from(shown.chars().count()).unwrap_or(0);
@@ -5063,7 +5063,7 @@ impl CliPlayer {
                     // rather than over a frame the terminal hard-wrapped.
                     // The screen is drawn again once it is answered.
                     clear_frame(&mut out);
-                    let shown = clip_cols(prompt.trim_start(), (w as usize).saturating_sub(1));
+                    let shown = Self::clip_closed_or_cut(prompt.trim_start(), (w as usize).saturating_sub(1));
                     (px, py) = (0, 0);
                     let _ = execute!(out, cursor::MoveTo(0, 0), Print(&shown));
                     echo_col = u16::try_from(shown.chars().count()).unwrap_or(0);
@@ -5103,7 +5103,8 @@ impl CliPlayer {
                                 .take_while(|c| c.is_whitespace()).collect();
                             let msg = format!("{indent}Please answer y or n. {}",
                                 prompt.trim_start());
-                            let clipped = clip_cols(&msg,
+                            // "…concede? (y/n" at 80 columns (#781's review).
+                            let clipped = Self::clip_closed_or_cut(&msg,
                                 Self::middle_panel_edge().saturating_sub(usize::from(px)));
                             Self::clear_panel_row(&mut stdout(), px, py);
                             let _ = execute!(stdout(), Print(clipped));
@@ -8277,7 +8278,7 @@ impl CliPlayer {
             let no_match = filtered.is_empty() && !filter.is_empty();
             let detail: Vec<String> = filtered.get(selected).map(|card| {
                 let mut lines = vec![String::new()];
-                lines.push(clip_cols(&format!("  {} {}", card.name, card.cost), width));
+                lines.push(Self::clip_closed_or_cut(&format!("  {} {}", card.name, card.cost), width));
                 let pt = if card.pt.is_empty() { String::new() } else { format!("  {}", card.pt) };
                 lines.push(clip_cols(&format!("  {}{pt}", card.type_line), width));
                 lines.extend(Self::oracle_lines(&card.oracle_text, width + 1));
@@ -12496,6 +12497,18 @@ Mark 1 of the 1 cards below to exile.");
             let row = CliPlayer::clip_closed_or_cut("  Moan of the Unhallowed {2}{B}", room);
             assert!(str_cols(&row) <= room, "{row}");
             assert_eq!(row.matches('{').count(), row.matches('}').count(), "no open mana symbol at {room}: {row}");
+        }
+
+        // The prompt lines a person types after (#781's third review): the
+        // concede reprompt at 80 columns, an X hint at 60.
+        for (prompt, room) in [
+            ("  Please answer y or n. Are you sure you want to concede? (y/n)> ", 63),
+            ("  X (0-5, c = cancel the activation, or concede) = ", 47),
+            ("  Amount 1-5 (Enter = 1, lethal; or concede)> ", 40),
+        ] {
+            let shown = CliPlayer::clip_closed_or_cut(prompt, room);
+            assert!(str_cols(&shown) <= room, "{shown}");
+            assert_eq!(shown.matches('(').count(), shown.matches(')').count(), "closed: {shown}");
         }
 
         let mut g = creature(70, "Grimgrin, Corpse-Born", 0);
