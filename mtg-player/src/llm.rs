@@ -1148,7 +1148,7 @@ Opp board:
 Stack:
   Lightning Bolt (#41) (opponent's) targeting Goblin Piker (#45) (your)
 ```
-Wherever an object is named — on the stack, in the action list — it carries its id and whose it is: `(your)` / `(opponent's)` by controller, `(in your graveyard)` / `(in opponent's graveyard)`, `(exiled)`.
+Wherever an object is named — on the stack, in the action list — it carries its id and whose it is: `(your)` / `(opponent's)` by controller, `(in your graveyard)` / `(in opponent's graveyard)`, `(in your exile)` / `(in opponent's exile)`.
 
 **Hand**: one indented card per line, with mana cost and (for creatures) base P/T:
 ```
@@ -1158,7 +1158,7 @@ Hand:
   Lightning Bolt {R}
 ```
 
-**Graveyards** (only if non-empty): `Your graveyard:` / `Opp graveyard:`, one indented card per line.
+**Graveyards** and **exile** (only if non-empty): `Your graveyard:` / `Opp graveyard:`, then `Your exile:` / `Opp exile:`, one indented card per line.
 
 **Flashback available** (only if relevant): cards in your graveyard you can cast for a flashback cost, each cost named; the action list says which cost a row charges.
 
@@ -2823,6 +2823,28 @@ impl LlmPlayer {
             }
         }
 
+        // Exile, both players', the way the graveyards are listed: the one
+        // public zone the prompt only counted. A seat holding Runic
+        // Repetition could not see which of its flashback cards it could
+        // return, and the opponent's exiled cards were rules text under
+        // "cards in view" alone (#828). The CLI has its exile view and the
+        // page its exile overlay.
+        for (whose, mine) in [("Your", true), ("Opp", false)] {
+            let cards: Vec<&mtg_engine::view::CardView> = view.exile.iter()
+                .filter(|c| (c.owner == view.you) == mine)
+                .collect();
+            if !cards.is_empty() {
+                writeln!(s, "{whose} exile:").unwrap();
+                for c in cards {
+                    let pt = match (c.power, c.toughness) {
+                        (Some(p), Some(t)) => format!(" {p}/{t}"),
+                        _ => String::new(),
+                    };
+                    writeln!(s, "  {}{}", c.name, pt).unwrap();
+                }
+            }
+        }
+
         // Show flashback-eligible cards in your graveyard.
         //
         // Every cost the card carries, not just the printed one: CR 702.33
@@ -3539,7 +3561,7 @@ impl LlmPlayer {
             return format!("{} (#{}) (in {} graveyard)", c.name, id.0, whose(owner));
         }
         if let Some(c) = view.exile.iter().find(|c| c.object_id == id) {
-            return format!("{} (#{}) (exiled)", c.name, id.0);
+            return format!("{} (#{}) (in {} exile)", c.name, id.0, whose(c.owner));
         }
         view.your_hand.iter()
             .find(|c| c.object_id == id)
@@ -7809,6 +7831,38 @@ pub(crate) mod tests {
         assert!(body.contains("Geistflame (flashback {R} or {3}{R})"),
             "both instances are payable and the seat is offered both, so the \
              section that names the cost names both:\n{body}");
+    }
+
+    /// Issue #828: exile was the one public zone the prompt only counted
+    /// ("3exile"). A seat holding Runic Repetition chose whether to cast it
+    /// without seeing which of its cards it could return, and a target
+    /// prompt naming an exiled card did not say whose it was.
+    #[test]
+    fn the_state_body_lists_both_players_exile() {
+        let card = |id: u64, name: &str, owner: u8| mtg_engine::view::CardView {
+            object_id: ObjectId(id),
+            card_id: mtg_engine::ids::CardId(u32::try_from(id).unwrap()),
+            name: name.to_string(),
+            cost: None,
+            supertypes: vec![],
+            card_types: vec![mtg_engine::types::CardType::Instant],
+            power: None,
+            toughness: None,
+            oracle_text: String::new(),
+            owner: PlayerId(owner),
+            flashback_costs: vec![],
+        };
+        let mut view = empty_view();
+        view.exile = vec![card(23, "Think Twice", 0), card(40, "Dead Weight", 1)];
+        let body = LlmPlayer::format_state_body(&view);
+        assert!(body.contains("Your exile:\n  Think Twice\n"), "{body}");
+        assert!(body.contains("Opp exile:\n  Dead Weight\n"), "{body}");
+        assert_eq!(LlmPlayer::obj_name(&view, ObjectId(23)), "Think Twice (#23) (in your exile)");
+        assert_eq!(LlmPlayer::obj_name(&view, ObjectId(40)), "Dead Weight (#40) (in opponent's exile)");
+
+        view.exile.clear();
+        let body = LlmPlayer::format_state_body(&view);
+        assert!(!body.contains("exile:"), "an empty exile is not listed: {body}");
     }
 
     /// Issue #460: the engine offers one action per (object, ability_index),
