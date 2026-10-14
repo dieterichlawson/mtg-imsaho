@@ -1159,6 +1159,54 @@ async function main() {
         else ok(`inspector-fit: all ${inBox.length} lines in the inspector's text box stay in it`);
       }
     }
+    // 24b. What this turn has done that no zone shows is on the board
+    // (#832): "creature died" in the band for morbid, short of the stack
+    // at x=180, and each player's "Cast N" in their strip for werewolves,
+    // inside the board.
+    {
+      const drawn = await page.evaluate(() => {
+        const m = window.mtg, you = m.view.you, opp = m.view.opponents[0].id;
+        const keep = JSON.parse(JSON.stringify([m.view.creature_died_this_turn, m.view.spells_cast_this_turn,
+          m.view.first_strike_damage_step, m.view.your_mana_pool]));
+        const orig = CanvasRenderingContext2D.prototype.fillText;
+        const out = [];
+        try {
+          CanvasRenderingContext2D.prototype.fillText = function (s, x) {
+            const w = this.measureText(String(s)).width;
+            const left = this.textAlign === "center" ? x - w / 2 : this.textAlign === "right" ? x - w : x;
+            out.push({ s: String(s), left, right: left + w });
+            return orig.apply(this, arguments);
+          };
+          // Both band flags at once — first-strike damage that killed
+          // something — and the widest strip: a pool of every colour.
+          m.view.creature_died_this_turn = true;
+          m.view.first_strike_damage_step = true;
+          m.view.spells_cast_this_turn = [[you, 2], [opp, 1]];
+          m.view.your_mana_pool = { mana: { White: 19, Blue: 19, Black: 19, Red: 19, Green: 19, Colorless: 19 } };
+          window.mtgDebug.render();
+        } finally {
+          CanvasRenderingContext2D.prototype.fillText = orig;
+          [m.view.creature_died_this_turn, m.view.spells_cast_this_turn,
+            m.view.first_strike_damage_step, m.view.your_mana_pool] = keep;
+          window.mtgDebug.render();
+        }
+        return out;
+      });
+      const died = drawn.find(d => d.s === "creature died");
+      if (!died) fail("turn-facts: no \"creature died\" in the band");
+      else if (died.right > 180) fail(`turn-facts: "creature died" runs into the stack: ${JSON.stringify(died)}`);
+      else if (drawn.some(d => d.s === "first strike" && d.right > died.left))
+        fail(`turn-facts: "creature died" is drawn over "first strike": ${JSON.stringify(drawn.filter(d => d.s === "first strike" || d === died))}`);
+      else ok("turn-facts: the band says a creature died");
+      const casts = drawn.filter(d => d.s === "Cast 2" || d.s === "Cast 1");
+      if (casts.length !== 2) fail(`turn-facts: each strip says its spells cast, got ${JSON.stringify(casts)}`);
+      else if (casts.some(d => d.right > 480)) fail(`turn-facts: a strip's cast count leaves the board: ${JSON.stringify(casts)}`);
+      else ok("turn-facts: both strips carry their cast counts");
+      const pool = drawn.filter(d => d.s.startsWith("Pool"));
+      if (!pool.length) fail("turn-facts: the pool is not drawn at all");
+      else if (pool.some(d => d.right > 480)) fail(`turn-facts: a strip runs past the board: ${JSON.stringify(pool)}`);
+      else ok("turn-facts: a full pool after the cast count stays on the board");
+    }
     // 25. A key that cannot answer says so. Enter walks three chances and
     // Escape three more; `pick` and `list` set none of them, so the key was
     // consumed, an identical frame was drawn and nothing was said — on

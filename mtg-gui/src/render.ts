@@ -633,10 +633,19 @@ function drawStrip(ctx: Ctx, hits: Hit[], state: LiveState, y: number, pid: Play
     50, y + 3, { color: active ? "#ffe080" : "#c0b8c8" });
   const parts = [`Hand ${handSize}`, `Lib ${library}`, `GY ${gy}`];
   if (exile) parts.push(`Exile ${exile}`);
+  // Spells this player cast this turn: a werewolf transforms at the next
+  // upkeep on it, and no zone shows it (#832).
+  const cast = ((state.view.spells_cast_this_turn || []).find(([p]) => p === pid) || [pid, 0])[1];
+  if (cast) parts.push(`Cast ${cast}`);
   const poolText = Object.entries((pool && pool.mana) || {}).filter(([, n]) => (n ?? 0) > 0).map(([k, n]) => `${n}${k[0]}`).join(" ");
   if (poolText) parts.push(`Pool ${poolText}`);
   let x = 150;
-  for (const part of parts) {
+  for (const whole of parts) {
+    // Hand, library, graveyard, exile, cast and a five-colour pool can be
+    // wider than the strip: the run is clipped at the board's edge rather
+    // than painted into the side panel (#832 added "Cast N").
+    if (x > BOARD_W - 24) break;
+    const part = clip(ctx, whole, BOARD_W - 4 - x);
     ctx.font = "8px Silkscreen"; const w = ctx.measureText(part).width;
     const zone: Hit["zone"] | null = part.startsWith("GY") ? "graveyard" : part.startsWith("Exile") ? "exile" : part.startsWith("Lib") ? "library" : null;
     text(ctx, part, x, y + 3, { color: zone ? "#b0c0e0" : "#c0b8c8" });
@@ -660,7 +669,15 @@ function drawBand(ctx: Ctx, hits: Hit[], state: LiveState): void {
     ctx.fillStyle = on ? "#c9a84a" : "#2a2430"; ctx.fillRect(sx, sy, 13, 12);
     text(ctx, STEP_SHORT[s], sx + 7, sy + 3, { align: "center", font: "7px Silkscreen", color: on ? "#101010" : "#9a90a0" });
   });
-  if (view.first_strike_damage_step) text(ctx, "first strike", 40, y + 3, { color: "#e0c0a0", font: "7px Silkscreen" });
+  let flagX = 40;
+  if (view.first_strike_damage_step) {
+    text(ctx, "first strike", flagX, y + 3, { color: "#e0c0a0", font: "7px Silkscreen" });
+    ctx.font = "7px Silkscreen"; flagX += ctx.measureText("first strike").width + 6;
+  }
+  // What morbid reads, which nothing on the board shows once the log has
+  // moved past the death (#832). After "first strike" — after first-strike
+  // damage is exactly when both are on — and clipped short of the stack.
+  if (view.creature_died_this_turn) text(ctx, clip(ctx, "creature died", 176 - flagX, "7px Silkscreen"), flagX, y + 3, { color: "#e09080", font: "7px Silkscreen" });
   // The stack: newest on the right.
   const sx0 = 180;
   text(ctx, view.stack.length ? "STACK →" : "stack empty", sx0, y + 2, { color: "#8a8090", font: "7px Silkscreen" });
