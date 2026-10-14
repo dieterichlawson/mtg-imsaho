@@ -153,6 +153,25 @@ export function targetLabel(state, t) {
         return playerLabel(state, t.Player);
     return JSON.stringify(t);
 }
+/**
+ * A target a verb commits to without asking, named so it can be told from
+ * its namesakes: a battlefield or stack object also says whose it is, as the
+ * CLI's row does. "Cast → Invisible Stalker" read alike with a Stalker on
+ * each side and only yours legal (#829); a picker needs none of this, since
+ * its options are the objects on the board.
+ */
+export function forcedTargetLabel(state, t) {
+    const label = targetLabel(state, t);
+    if (typeof t !== "object" || !("Object" in t))
+        return label;
+    const e = state.index.get(t.Object);
+    if (!e || (e.zone !== "battlefield" && e.zone !== "stack"))
+        return label;
+    const who = e.obj.controller ?? e.owner;
+    if (who === null || who === undefined)
+        return label;
+    return `${label} (${who === state.view.you ? "yours" : "opponent's"})`;
+}
 /** Whether a priority offer includes playing a land. */
 export function offersLandPlay(actions) {
     return actions.some(a => typeof a === "object" && a !== null && "PlayLand" in a);
@@ -637,13 +656,13 @@ function beginMenu(state, ui, actions, legal, send) {
         const notes = [costNote(cs), cs.additional_cost_label || ""].filter(n => n);
         const extra = notes.length ? ` (${notes.join(", ")})` : "";
         const forced = forcedTargets(cs.target_spec);
-        const named = forced.length ? ` → ${forced.map(t => targetLabel(state, t)).join(", ")}` : "";
+        const named = forced.length ? ` → ${forced.map(t => forcedTargetLabel(state, t)).join(", ")}` : "";
         const sac = cs.sacrifice_options.length === 1 ? `, sacrificing ${nameOf(state, cs.sacrifice_options[0])}` : "";
         add(cs.object_id, `${verb}${extra}${named}${sac}`, () => castFlow(state, cs, send));
     }
     for (const ab of legal.activatable_abilities || []) {
         const { targets, sacrifices } = abilitySlots(ab);
-        const named = targets.length === 1 && targets[0].length ? ` → ${targets[0].map(t => targetLabel(state, t)).join(", ")}` : "";
+        const named = targets.length === 1 && targets[0].length ? ` → ${targets[0].map(t => forcedTargetLabel(state, t)).join(", ")}` : "";
         const sac = sacrifices.length === 1 && sacrifices[0] !== null && sacrifices[0] !== ab.object_id
             ? `, sacrificing ${nameOf(state, sacrifices[0])}` : "";
         add(ab.object_id, `${ab.description || ab.name || "Activate"}${named}${sac}`, () => abilityFlow(state, ab, send));
