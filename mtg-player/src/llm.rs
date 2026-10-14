@@ -1181,7 +1181,7 @@ Available actions:
 3: Cast Kalonian Tusker (tap 2x Forest)
 4: Concede
 ```
-A cast option names the spell and its tap plan, not its target: pick it and a follow-up prompt (`<card name>: select a target:`) lists the legal targets. Copies of one permanent that offer the same ability with the same tap plan share one line, one index per copy — pick the index of the copy you mean:
+A cast option names the spell and its tap plan; pick it and a follow-up prompt (`<card name>: select a target:`) lists the legal targets. With only one legal target there is no prompt: the row names it (`Cast Brimstone Volley (tap 3x Mountain) targeting you`), as `Activate` rows do. Copies of one permanent that offer the same ability with the same tap plan share one line, one index per copy — pick the index of the copy you mean:
 ```
 5-7: Activate Ludevic's Test Subject ({1}{U}: Put a hatchling counter. At 5, transform.) (tap 2x Island) — one per copy: 5=#43, 6=#45, 7=#46
 ```
@@ -1194,7 +1194,7 @@ Combat prompts replace the action list: `Choose attackers:` lists your creatures
 - **Auto-tap**: `Cast [spell]` and `Activate [ability]` tap the right sources for you, shown in the row (`Cast Doom Blade (tap 2x Swamp)`), preferring basics and mana-only sources, then utility lands, then mana creatures, then sources with side effects, and never a choice that leaves another spell in your hand unpayable when a different one keeps it payable. `Tap <source>` rows are for floating mana deliberately, for a mana ability's side effect, or to preserve a specific land; otherwise just cast.
 - **Mana pools empty between steps**, so tap only what you will spend in the same step.
 - **X costs**: `Cast`/`Activate` pays the non-X part; a follow-up prompt asks how to fund X in buckets (`floating`, `lands`, `rocks`, `dorks`), each value a mana amount. X is the total. Sources with variable output or a cost of their own are not offered — tap them first so the mana floats.
-- **Sacrifice costs**: a spell or ability that sacrifices a creature asks `<source>: choose a creature to sacrifice` after its targets; with one candidate it is chosen for you. The sacrifice is paid at cast time, so the creature is gone even if the spell is countered.
+- **Sacrifice costs**: a spell or ability that sacrifices a creature asks `<source>: choose a creature to sacrifice` after its targets; with one candidate it is chosen for you, and the row names it when no target choice comes first. The sacrifice is paid at cast time, so the creature is gone even if the spell is countered.
 - **Exile-from-graveyard costs** (Harvest Pyre, Stitched Drake, Skaab Ruinator, Makeshift Mauler, Corpse Lunge, Skaab Goliath): pick `Cast`, then a prompt numbers the eligible cards and asks for the positions to exile as an index array under `indices`. A fixed count must be met exactly or the cast is cancelled:
 ```
 Harvest Pyre: choose 0-1 cards to exile from your graveyard (each exiled card adds to the spell's X)
@@ -3301,7 +3301,7 @@ impl LlmPlayer {
         };
 
         // Step 2: Choose sacrifice if the spell has a sacrifice additional cost.
-        // NOTE: If you change this, also update the "Spells with sacrifice costs"
+        // NOTE: If you change this, also update the "Sacrifice costs"
         // bullet in GAME_RULES so the agent's system prompt stays accurate.
         let chosen_sacrifice = match spell.sacrifice_options.len() {
             0 => None,
@@ -3353,16 +3353,7 @@ impl LlmPlayer {
         }
 
         // Collect unique targets and unique sacrifices from all combos.
-        let mut unique_target_sets: Vec<&Vec<mtg_engine::actions::Target>> = Vec::new();
-        let mut unique_sacrifices: Vec<Option<ObjectId>> = Vec::new();
-        for opt in &ab.option_combos {
-            if !unique_target_sets.iter().any(|t| **t == opt.targets) {
-                unique_target_sets.push(&opt.targets);
-            }
-            if !unique_sacrifices.contains(&opt.sacrifice) {
-                unique_sacrifices.push(opt.sacrifice);
-            }
-        }
+        let (unique_target_sets, _) = Self::ability_slots(ab);
 
         // Step 1: Pick targets (if there are multiple target options)
         let chosen_targets = if unique_target_sets.len() <= 1 {
@@ -3471,6 +3462,51 @@ impl LlmPlayer {
             })
             .collect::<Vec<_>>()
             .join(", ")
+    }
+
+    /// An ability's distinct target sets and distinct sacrifices, in offer
+    /// order: the slots `choose_ability_targets` asks one at a time, and a
+    /// slot with one value it fills without asking.
+    fn ability_slots(ab: &mtg_engine::actions::ActivatableAbility)
+        -> (Vec<&Vec<mtg_engine::actions::Target>>, Vec<Option<ObjectId>>)
+    {
+        let mut targets: Vec<&Vec<mtg_engine::actions::Target>> = Vec::new();
+        let mut sacrifices: Vec<Option<ObjectId>> = Vec::new();
+        for opt in &ab.option_combos {
+            if !targets.contains(&&opt.targets) { targets.push(&opt.targets); }
+            if !sacrifices.contains(&opt.sacrifice) { sacrifices.push(opt.sacrifice); }
+        }
+        (targets, sacrifices)
+    }
+
+    /// What a cast or activation row will commit to WITHOUT asking: the
+    /// target when there is exactly one (CR 601.2c, 602.2b) and the
+    /// creature sacrificed when there is exactly one (CR 601.2h) — `""`
+    /// when every slot is still a choice. The seat takes a forced option
+    /// without a follow-up prompt, so the row is the only place it can
+    /// read where the spell goes: a Brimstone Volley whose one legal
+    /// target was its own caster read exactly like one aimed at the
+    /// opponent (#827, the CLI's #254). `source` is the activating
+    /// permanent, so a cost that sacrifices it reads "itself".
+    fn forced_suffix(view: &GameView, targets: &[mtg_engine::actions::Target],
+        sacrifice: Option<ObjectId>, source: Option<ObjectId>) -> String
+    {
+        use mtg_engine::actions::Target;
+        let mut s = String::new();
+        if !targets.is_empty() {
+            let names: Vec<String> = targets.iter().map(|t| match t {
+                Target::Object(id) => Self::obj_name(view, *id),
+                Target::Player(pid) => if *pid == view.you { "you".into() } else { "opponent".into() },
+                Target::Illegal => unreachable!("Target::Illegal is substituted at resolution; it is never offered to a player"),
+            }).collect();
+            write!(s, " targeting {}", names.join(", ")).unwrap();
+        }
+        match sacrifice {
+            Some(id) if Some(id) == source => s.push_str(", sacrificing itself"),
+            Some(id) => write!(s, ", sacrificing {}", Self::obj_name(view, id)).unwrap(),
+            None => {}
+        }
+        s
     }
 
     /// How the seat names an object: in a public zone two objects can share
@@ -4821,10 +4857,21 @@ impl LlmPlayer {
                             if let Some(note) = crate::cast_cost_note(cs) { extras.push(note); }
                             if !cost_note.is_empty() { extras.push(cost_note.to_string()); }
                             if !tap_str.is_empty() { extras.push(format!("tap {tap_str}")); }
+                            // The target and sacrifice taken without a
+                            // prompt (`choose_cast_targets`), named (#827).
+                            let forced_targets: &[mtg_engine::actions::Target] = match &cs.target_spec {
+                                mtg_engine::actions::CastTargetSpec::SingleTarget(o) if o.len() == 1 => o,
+                                _ => &[],
+                            };
+                            let forced_sac = match cs.sacrifice_options.as_slice() {
+                                [only] => Some(*only),
+                                _ => None,
+                            };
+                            let forced = Self::forced_suffix(view, forced_targets, forced_sac, None);
                             let label = if extras.is_empty() {
-                                format!("{} {}{zone_note}{}", verb, cs.name, x_suffix)
+                                format!("{} {}{zone_note}{}{forced}", verb, cs.name, x_suffix)
                             } else {
-                                format!("{} {}{zone_note}{} ({})", verb, cs.name, x_suffix, extras.join(", "))
+                                format!("{} {}{zone_note}{} ({}){forced}", verb, cs.name, x_suffix, extras.join(", "))
                             };
                             // Deduplicate identical cast labels (e.g. two copies of same spell).
                             if seen_cast_labels.contains(&label) { continue; }
@@ -4842,11 +4889,25 @@ impl LlmPlayer {
                             seen_ability_keys.push(key);
                             let ab = &legal.activatable_abilities[ab_idx];
                             let tap_str = Self::format_tap_plan(view, &ab.tap_plan);
-                            let tail = if tap_str.is_empty() {
+                            let mut tail = if tap_str.is_empty() {
                                 format!(" ({})", ab.description)
                             } else {
                                 format!(" ({}) (tap {})", ab.description, tap_str)
                             };
+                            // The slots `choose_ability_targets` fills
+                            // without a prompt, named (#827). Part of the
+                            // grouping key too: copies aimed at different
+                            // forced targets are not one row.
+                            let (targets, sacrifices) = Self::ability_slots(ab);
+                            let forced_targets: &[mtg_engine::actions::Target] = match targets.as_slice() {
+                                [only] => only,
+                                _ => &[],
+                            };
+                            let forced_sac = match sacrifices.as_slice() {
+                                [only] => *only,
+                                _ => None,
+                            };
+                            tail.push_str(&Self::forced_suffix(view, forced_targets, forced_sac, Some(ab.object_id)));
                             // The engine names the permanent `Name (#id)`;
                             // the row shared by its copies names the card.
                             let id_suffix = format!(" (#{})", ab.object_id.0);
@@ -6543,6 +6604,79 @@ pub(crate) mod tests {
         }
     }
 
+    /// Issue #827: a cast or activation with one legal target is aimed
+    /// without a follow-up prompt (CR 601.2c), so the row is the only place
+    /// the seat can read where it goes. Brimstone Volley against Witchbane
+    /// Orb read "Cast Brimstone Volley (tap 3x Mountain)" and hit its own
+    /// caster seven times. A row with a choice left in it names nothing.
+    #[test]
+    fn a_row_with_one_legal_target_names_it() {
+        use mtg_engine::actions::{ActivatableAbility, ActivatableAbilityOption,
+            CastTargetSpec, CastableSpell, Target};
+        let view = empty_view();
+        let me = Target::Player(view.you);
+        let opp = Target::Player(mtg_engine::ids::PlayerId(1 - view.you.0));
+        let cast = |id: u64, t: Target| Action::CastSpell {
+            object_id: ObjectId(id), targets: vec![t], sacrifice: None, exile_count: None,
+            exile_ids: Vec::new(), alternative_cost: None, tap_plan: Vec::new(),
+        };
+        let spell = |id: u64, name: &str, options: Vec<Target>| CastableSpell {
+            object_id: ObjectId(id), name: name.to_string(), is_flashback: false,
+            from_graveyard: false, target_spec: CastTargetSpec::SingleTarget(options),
+            tap_plan: Vec::new(), exile_x_from_gy_max: None, sacrifice_options: Vec::new(),
+            additional_cost_label: None, alternative_cost: None,
+        };
+        let ability = |id: u64, targets: Vec<Vec<Target>>| ActivatableAbility {
+            object_id: ObjectId(id), ability_index: 0, source_card_id: None,
+            name: format!("Prodder (#{id})"), description: "{T}: 1 damage to any target.".into(),
+            target_options: Vec::new(), tap_plan: Vec::new(), sorcery_speed: false,
+            option_combos: targets.into_iter()
+                .map(|t| ActivatableAbilityOption { targets: t, sacrifice: None }).collect(),
+        };
+        let activate = |id: u64, t: Target| Action::ActivateAbility {
+            object_id: ObjectId(id), ability_index: 0, targets: vec![t], tap_plan: Vec::new(),
+            sacrifice: None, x_value: None, source_card_id: None,
+        };
+        let legal = mtg_engine::engine::LegalActions {
+            actions: vec![
+                Action::PassPriority,
+                cast(41, me.clone()),
+                cast(42, me.clone()), cast(42, opp.clone()),
+                activate(50, opp.clone()),
+                activate(51, me.clone()), activate(51, opp.clone()),
+                Action::Concede,
+            ],
+            combat_prompt: None,
+            castable_spells: vec![
+                spell(41, "Brimstone Volley", vec![me.clone()]),
+                spell(42, "Geistflame", vec![me.clone(), opp.clone()]),
+            ],
+            activatable_abilities: vec![
+                ability(50, vec![vec![opp.clone()]]),
+                ability(51, vec![vec![me.clone()], vec![opp.clone()]]),
+            ],
+            context: Some("MAIN PHASE 2".to_string()),
+            resolution_prompt: None,
+            set_prompt: None,
+        };
+        let (_, rows) = LlmPlayer::build_action_rows(&view, &legal);
+        let text: Vec<String> = rows.iter().map(|r| match r {
+            ActionRow::One(l) => l.clone(),
+            ActionRow::Copies { label, .. } => label.clone(),
+        }).collect();
+        let row = |needle: &str| text.iter().find(|l| l.contains(needle))
+            .unwrap_or_else(|| panic!("no row for {needle}: {text:#?}")).clone();
+        assert!(row("Brimstone Volley").ends_with(" targeting you"),
+            "the forced target is named: {text:#?}");
+        assert!(!row("Geistflame").contains("targeting"),
+            "a target still to choose is not: {text:#?}");
+        assert!(row("(#50)").ends_with(" targeting opponent"),
+            "nor is an ability's forced target left out: {text:#?}");
+        assert!(!row("(#51)").contains("targeting"), "{text:#?}");
+        assert!(GAME_RULES.contains("targeting you`"),
+            "GAME_RULES says a row with one target names it");
+    }
+
     /// Issue #461: N copies of one permanent with one activated ability
     /// were N rows differing only in their `(#id)`, comma-joined onto one
     /// unwrapped line with everything else. Copies share a row with an index
@@ -7506,13 +7640,14 @@ pub(crate) mod tests {
         assert!(!GAME_RULES.contains("p0 drew a card"), "no stale seat label in the example");
     }
 
-    /// A cast option names its tap plan, never a target — targets come from
-    /// a follow-up prompt, which is what the contract now says.
+    /// A cast option with several legal targets names none — they come from
+    /// a follow-up prompt, which is what the contract says (a forced target
+    /// is named on the row instead, #827).
     #[test]
     fn game_rules_does_not_promise_inline_targets() {
         assert!(
             !GAME_RULES.contains("Cast Lightning Bolt → Goblin Piker"),
-            "cast labels never carry a target; the follow-up prompt asks"
+            "a cast row never offers a choice of targets inline; the follow-up prompt asks"
         );
         assert!(
             GAME_RULES.contains("select a target:"),
