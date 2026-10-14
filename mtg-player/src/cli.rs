@@ -834,24 +834,6 @@ fn clip_cols(s: &str, max: usize) -> String {
     out
 }
 
-/// Clip a row made of several styled runs to one shared column budget.
-///
-/// A middle-panel row is not always a single `Print`: the turn/phase header
-/// is a bold status followed by a yellow pass-mode label. The bound belongs
-/// to the row, not to each run — clipping them independently lets the pair
-/// overrun together — so later runs are shortened, and emptied, as the
-/// budget runs out (#350).
-fn clip_row(runs: &[&str], budget: usize) -> Vec<String> {
-    let mut left = budget;
-    runs.iter()
-        .map(|r| {
-            let s = clip_cols(r, left);
-            left -= str_cols(&s);
-            s
-        })
-        .collect()
-}
-
 /// The page of a menu `render_paged` drew: which rows, and what it had to
 /// fit them in — enough for the caller to page backwards exactly when the
 /// rows are of uneven height (issue #318).
@@ -1965,7 +1947,7 @@ impl CliPlayer {
         // The header is two runs sharing the panel's width: unbounded, it ran
         // past the border and the terminal soft-wrapped the tail onto the
         // STACK/LOG pane below (#350).
-        let header = clip_row(&[&status, &pass_label], mid_w);
+        let header = Self::header_runs(&status, &pass_label, mid_w);
         let _ = execute!(out, cursor::MoveTo(mid_col, row),
             SetAttribute(Attribute::Bold), Print(&header[0]), SetAttribute(Attribute::Reset));
         if !header[1].is_empty() {
@@ -2344,28 +2326,109 @@ impl CliPlayer {
         if fixed + str_cols(elastic) <= budget {
             return format!("{head}{elastic}{tail}");
         }
+        let long_tail = str_cols(tail) * 2 > budget;
         if fixed <= budget {
-            let room = budget - fixed;
-            if room <= 1 {
-                return format!("{head}{tail}");
+            // The middle is cut, and a bracket it opened is closed: the cut
+            // used to land anywhere, so "[equip Demonmail Hauberk]" read
+            // "[e…" with the tail's own "[" straight after it (#781). When
+            // there is no room left for any of it beside a long tail, the
+            // two share instead, below.
+            let mid = Self::clip_closed(elastic, budget - fixed);
+            if !mid.is_empty() || !long_tail {
+                return format!("{head}{mid}{tail}");
             }
-            return format!("{head}{}…{tail}", clip_cols(elastic, room - 1));
+        }
+        // Head and tail together do not fit — a long restriction in the tail
+        // ("[doesn't untap during its controller's untap step]") did this at
+        // 140 columns. The head is what the row IS (name, P/T), so it stays
+        // whole while there is room for a useful share of the rest, and the
+        // tail and the middle split what is left, each cut from its end with
+        // its brackets closed. The tail's leading flags ([T], [S]) are what
+        // survive of it; the middle's first entry is what survives of it, so
+        // an attached Equipment is not dropped off the pane (#781).
+        // Only when there IS a middle to lose and the tail is itself most of
+        // the row: a short tail is the row's identity or live state — a
+        // Curse's "[enchanting opponent]" (#507), "[can't block this turn]"
+        // (#510) — and an enchantment's long one ("[names: Brimstone
+        // Volley]") has no middle beside it; both keep priority over the
+        // name below.
+        let rest = budget.saturating_sub(str_cols(head));
+        if !elastic.is_empty() && rest >= Self::MIN_SHARE && long_tail {
+            let tail_room = str_cols(tail).min((rest / 2).max(Self::MIN_SHARE));
+            let tail_cut = Self::clip_closed(tail, tail_room);
+            let mid = Self::clip_closed(elastic, rest - str_cols(&tail_cut));
+            let mid = if mid.is_empty() && str_cols(&tail_cut) + 2 <= rest {
+                " …".to_string()
+            } else {
+                mid
+            };
+            return format!("{head}{mid}{tail_cut}");
         }
         let head_room = budget.saturating_sub(str_cols(tail));
         if head_room > 1 {
-            return format!("{}…{tail}", clip_cols(head, head_room - 1));
+            // Closed like the rest: the head can carry "(#45)" or a
+            // counters "{2 +1/+1}" (#781's review).
+            let cut = Self::clip_closed(head, head_room);
+            if !cut.is_empty() {
+                return format!("{cut}{tail}");
+            }
         }
         // The tail alone is wider than the row. It is still cut, but it
         // says so, and a bracket it opened is closed: "Galvanic Juggernaut
         // 5/5 [attacks each combat if able, doesn't" read as a whole row
         // that happened to end mid-phrase (#702).
         let joined = format!("{head}{tail}");
-        let closes = joined.ends_with(']');
-        let keep = budget.saturating_sub(1 + usize::from(closes));
-        if keep == 0 {
-            return clip_cols(&joined, budget);
+        let cut = Self::clip_closed(&joined, budget);
+        if cut.is_empty() { clip_cols(&joined, budget) } else { cut }
+    }
+
+    /// The middle pane's header, as its two runs: the status cut with a
+    /// "…" and its parenthesis closed, and the pass-mode label whole or not
+    /// at all. A plain clip printed "(you are p1, on th" and "[AUTO-P"
+    /// (#781's review).
+    fn header_runs(status: &str, label: &str, width: usize) -> [String; 2] {
+        let status = Self::clip_closed(status, width);
+        let room = width.saturating_sub(str_cols(&status));
+        let label = if str_cols(label) <= room { label.to_string() } else { String::new() };
+        [status, label]
+    }
+
+    /// The least room a region is given before `elide_middle` falls back to
+    /// cutting the head: enough for "[T] [S]" or a word and its "…]".
+    const MIN_SHARE: usize = 12;
+
+    /// `s` in at most `room` columns: whole if it fits, else cut from its
+    /// end with "…" and every bracket or parenthesis it opened closed after
+    /// it — or "" when not even that fits.
+    fn clip_closed(s: &str, room: usize) -> String {
+        if str_cols(s) <= room {
+            return s.to_string();
         }
-        format!("{}…{}", clip_cols(&joined, keep).trim_end(), if closes { "]" } else { "" })
+        let closers = |t: &str| -> String {
+            let mut open: Vec<char> = Vec::new();
+            for ch in t.chars() {
+                match ch {
+                    '[' => open.push(']'),
+                    '(' => open.push(')'),
+                    '{' => open.push('}'),
+                    ']' | ')' | '}' if open.last() == Some(&ch) => { open.pop(); }
+                    _ => {}
+                }
+            }
+            open.iter().rev().collect()
+        };
+        for keep in (1..room).rev() {
+            let kept = clip_cols(s, keep);
+            let kept = kept.trim_end();
+            if kept.trim().is_empty() {
+                break;
+            }
+            let close = closers(kept);
+            if str_cols(kept) + 1 + close.chars().count() <= room {
+                return format!("{kept}…{close}");
+            }
+        }
+        String::new()
     }
 
     /// Group identical rows into one `(count, row)` entry, first-appearance
@@ -9555,7 +9618,7 @@ Mark 1 of the 1 cards below to exile.");
         assert!(str_cols(&status) > panel,
             "test precondition: {} columns of header in a {panel}-column panel",
             str_cols(&status));
-        assert!(str_cols(&clip_row(&[&status, ""], panel).concat()) <= panel);
+        assert!(str_cols(&CliPlayer::header_runs(&status, "", panel).concat()) <= panel);
 
         // The header gets longer during ordinary play, and the pass-mode
         // label rides after it on the same row: the bound is on the row, so
@@ -9563,14 +9626,14 @@ Mark 1 of the 1 cards below to exile.");
         let v = view(Step::Cleanup, 12, false);
         let status = CliPlayer::status_text(&v, CliPlayer::step_name(&v));
         assert_eq!(status, " Turn 12 - Cleanup (Discard to 7) | Opponent's turn (you are p0)");
-        let row = clip_row(&[&status, " [passing to end of turn]"], panel);
+        let row = CliPlayer::header_runs(&status, " [passing to end of turn]", panel);
         assert!(str_cols(&row.concat()) <= panel,
             "status plus pass label fits: {row:?}");
         assert!(row[1].is_empty(),
             "a header that already spends the budget leaves the label nothing: {row:?}");
 
         // A label that does fit is kept whole, after the run before it.
-        let short = clip_row(&[" Turn 2 - Draw | Your turn (you are p0)", " [auto-pass]"], panel);
+        let short = CliPlayer::header_runs(" Turn 2 - Draw | Your turn (you are p0)", " [auto-pass]", panel);
         assert_eq!(short[1], " [auto-pass]", "a label that fits is not cut: {short:?}");
         assert!(str_cols(&short.concat()) <= panel);
 
@@ -12337,6 +12400,55 @@ Mark 1 of the 1 cards below to exile.");
         }
     }
 
+    /// Issue #781: an equipped Grimgrin's row at the widths a person plays
+    /// at. The cut middle left "[e…" open with the tail's own "[" after it,
+    /// and narrower than ~130 columns the Equipment and the P/T were gone,
+    /// for a static restriction kept whole. Every bracket a row opens is
+    /// closed, the name and P/T stay, and the Equipment is on the row.
+    #[test]
+    fn an_equipped_creature_keeps_its_name_its_size_and_its_equipment() {
+        let mut g = creature(70, "Grimgrin, Corpse-Born", 0);
+        g.power = Some(9); g.toughness = Some(7);
+        g.effective_power = Some(9); g.effective_toughness = Some(7);
+        g.restrictions = vec!["doesn't untap during its controller's untap step".into()];
+        let equip = " [equip Demonmail Hauberk]".to_string();
+        let parts = CliPlayer::creature_row_parts(&g, Some(&equip));
+        let balanced = |row: &str| {
+            let mut depth = 0i32;
+            for ch in row.chars() {
+                match ch { '[' => depth += 1, ']' => depth -= 1, _ => {} }
+                if depth < 0 || depth > 1 { return false; }
+            }
+            depth == 0
+        };
+        for max_w in [48usize, 56, 64, 72, 80, 95, 110] {
+            let row = CliPlayer::counted_row(1, &parts, max_w);
+            assert!(str_cols(&row) <= max_w, "fits {max_w}: {row}");
+            assert!(balanced(&row), "every bracket is closed, none nested, at {max_w}: {row}");
+            assert!(row.contains("Grimgrin, Corpse-Born 9/7"), "name and size at {max_w}: {row}");
+            assert!(row.contains("[equip"), "the Equipment is on the row at {max_w}: {row}");
+            assert!(row.contains("[doesn't"), "and so is the restriction at {max_w}: {row}");
+        }
+
+        // A head that opens a parenthesis is cut closed too: two Grizzly
+        // Bears told apart by id, one under a restriction.
+        for budget in 30..=46 {
+            let row = CliPlayer::elide_middle("Grizzly Bears 2/2 (#45)", "", " [can't block this turn]", budget);
+            assert!(str_cols(&row) <= budget, "{row}");
+            assert_eq!(row.matches('(').count(), row.matches(')').count(), "closed at {budget}: {row}");
+        }
+
+        // And the pane's header: the status closes its parenthesis, and the
+        // pass-mode label is whole or absent, never "[AUTO-P".
+        let status = " Turn 1 - Main Phase 1 | Opponent's turn (you are p1, on the draw)";
+        for width in 40..=80 {
+            let [s, l] = CliPlayer::header_runs(status, " [AUTO-PASS]", width);
+            assert!(str_cols(&s) + str_cols(&l) <= width, "{s}{l}");
+            assert_eq!(s.matches('(').count(), s.matches(')').count(), "closed at {width}: {s}");
+            assert!(l.is_empty() || l == " [AUTO-PASS]", "whole or absent at {width}: {l}");
+        }
+    }
+
     /// An Elite Inquisitor: the pool's longest ability list, which is what
     /// forces elision at any width a person actually uses.
     fn inquisitor(id: u64) -> mtg_engine::view::PermanentView {
@@ -12378,7 +12490,8 @@ Mark 1 of the 1 cards below to exile.");
         let row = CliPlayer::counted_row(2, &parts, 37);
         assert_eq!(str_cols(&row), 37, "the row spends its pane exactly: {row}");
         assert!(row.starts_with("  2x Elite Inquisitor"), "got {row}");
-        assert!(row.ends_with("… [S]"), "the flag is whole, and the cut is marked: {row}");
+        // The cut middle closes what it opened (#781): "(first strike, …)".
+        assert!(row.ends_with("…) [S]"), "the flag is whole, and the cut is marked: {row}");
 
         // And at every count and width, not just that one.
         for n in [1usize, 2, 3, 9, 10, 63] {
