@@ -904,6 +904,23 @@ say what your stub says.
   per source object across boards of 2..20 creatures for every card whose
   `activated_abilities` length depends on the board, and flag anything
   superlinear
+  — **played 2026-10-14: the labels hold in every zone, and the gaps are where
+  nothing is shown.** Every LLM and CLI label on a both-players-same-name board
+  carries an owner or a printed id; Skirsdag High Priest is 1 action at every
+  size (#670 holds); the Cultist and Hauberk products are asked one slot at a
+  time everywhere. But the seat aims a one-target spell with no prompt and no
+  target in the row, against GAME_RULES' promise of a follow-up (#827, #254 on
+  its fourth surface), exile is a count only (#828), and the page's forced verb
+  names a battlefield target bare (#829). Method that found #827: grep the
+  `len() == 1` shortcuts in `llm.rs` (single target, single combo, single
+  sacrifice) against the CLI's `forced_*` helpers, and check each is both said
+  in GAME_RULES and named in the row the model picks. A delegating stub
+  (`#827`'s repro: run `scripts/llm-prompt-stub.py`, then override `action`
+  with the first row matching `$PICK`) steers a free game into one card. An
+  in-crate `#[cfg(test)] #[path = "/abs/scratch.rs"] mod x;` reaches the
+  private label helpers; revert it after. The (b) sweep must set
+  `creature_died_this_turn` and try `is_transformed`, or gated abilities read
+  as zero
 - H26 [proposed 2026-10-08, from reports/llm-cost.md] the cost of a
   decision: run `scripts/measure-llm-prompts.sh` over ten seeds and read
   the per-call bytes and session counts. The request for decision N must
