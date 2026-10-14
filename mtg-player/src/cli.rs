@@ -10863,6 +10863,8 @@ Mark 1 of the 1 cards below to exile.");
             stack: vec![],
             exile: vec![],
             first_strike_damage_step: false,
+            creature_died_this_turn: false,
+            spells_cast_this_turn: vec![],
             step,
             active_player: if our_turn { you } else { PlayerId(1) },
             priority_player: Some(you),

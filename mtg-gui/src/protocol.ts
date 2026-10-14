@@ -153,6 +153,8 @@ export interface GameView {
   stack_puts: number;
   first_strike_damage_step: boolean;
   exile: CardView[];
+  creature_died_this_turn: boolean;
+  spells_cast_this_turn: [PlayerId, number][];
   step: Step;
   active_player: PlayerId;
   priority_player: PlayerId | null;

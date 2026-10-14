@@ -1118,7 +1118,7 @@ Recent events:
 You drew a card
 ```
 
-**Player status**: `You: 20hp, 7cards, 33lib, 0gy, 0exile` and the same for `Opp:` — life, hand size, library, graveyard and exile counts.
+**Player status**: `You: 20hp, 7cards, 33lib, 0gy, 0exile` and the same for `Opp:` — life, hand size, library, graveyard and exile counts. Then `This turn: spells cast — you 0, opp 1; a creature died`: the spells each side has cast this turn (a werewolf transforms at the next upkeep on these), and `; a creature died` only once one has (morbid).
 
 **Mana pool** (only if non-empty): `Mana pool: Green:1, Red:2`
 
@@ -2735,6 +2735,20 @@ impl LlmPlayer {
                 opp.life, opp.hand_size, opp.library_size,
                 opp_gy_count, opp_exile_count).unwrap();
         }
+
+        // What this turn has done that no zone shows: morbid reads whether
+        // a creature died, a werewolf flips at the next upkeep on the spell
+        // counts. They reached the seat only as a "Recent events" line in
+        // the one prompt after the event, and the prompt after that had no
+        // trace of them (#832).
+        let cast = |mine: bool| -> u32 {
+            view.spells_cast_this_turn.iter()
+                .filter(|(p, _)| (*p == view.you) == mine)
+                .map(|(_, n)| n).sum()
+        };
+        writeln!(s, "This turn: spells cast — you {}, opp {}{}",
+            cast(true), cast(false),
+            if view.creature_died_this_turn { "; a creature died" } else { "" }).unwrap();
 
         if !view.your_mana_pool.is_empty() {
             let pool_parts: Vec<String> = view.your_mana_pool.mana.iter()
@@ -7864,6 +7878,8 @@ pub(crate) mod tests {
             graveyards: vec![],
             stack: vec![],
             first_strike_damage_step: false,
+            creature_died_this_turn: false,
+            spells_cast_this_turn: vec![],
             exile: vec![],
             step: Step::PrecombatMain,
             active_player: PlayerId(0),
@@ -7907,6 +7923,25 @@ pub(crate) mod tests {
         assert!(body.contains("Geistflame (flashback {R} or {3}{R})"),
             "both instances are payable and the seat is offered both, so the \
              section that names the cost names both:\n{body}");
+    }
+
+    /// Issue #832: whether a creature died this turn (morbid) and how many
+    /// spells each side cast (werewolves) were in the prompt only as the
+    /// one "Recent events" line after the event. The view carries them and
+    /// every prompt states them.
+    #[test]
+    fn every_prompt_says_what_this_turn_has_done() {
+        let (mut state, registry) = view_for_contract_test();
+        let view = GameView::for_player(&state, PlayerId(0), &registry);
+        let body = LlmPlayer::format_state_body(&view);
+        assert!(body.contains("This turn: spells cast — you 0, opp 0\n"), "{body}");
+
+        state.creature_died_this_turn = true;
+        state.num_spells_cast_this_turn.insert(PlayerId(1), 2);
+        let view = GameView::for_player(&state, PlayerId(0), &registry);
+        assert!(view.creature_died_this_turn);
+        let body = LlmPlayer::format_state_body(&view);
+        assert!(body.contains("This turn: spells cast — you 0, opp 2; a creature died\n"), "{body}");
     }
 
     /// Issue #828: exile was the one public zone the prompt only counted

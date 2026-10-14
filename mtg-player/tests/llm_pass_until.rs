@@ -183,6 +183,8 @@ fn view(turn: u32, step: Step, active: PlayerId) -> GameView {
         graveyards: vec![(YOU, vec![]), (OPP, vec![])],
         stack: vec![],
         first_strike_damage_step: false,
+        creature_died_this_turn: false,
+        spells_cast_this_turn: vec![],
         exile: vec![],
         step,
         active_player: active,

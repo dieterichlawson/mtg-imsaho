@@ -35,6 +35,15 @@ pub struct GameView {
     /// and both rendered as "Combat Damage" (issue #140).
     pub first_strike_damage_step: bool,
     pub exile: Vec<CardView>,
+    /// Whether a creature has died this turn — what morbid reads (Brimstone
+    /// Volley, Morkrut Banshee, Hollowhenge Scavenger). No zone shows it, and
+    /// a seat that is sent no history saw it only in the one prompt after the
+    /// death (#832).
+    pub creature_died_this_turn: bool,
+    /// Spells each player has cast this turn: a werewolf transforms at the
+    /// next upkeep on this count (no spells cast; two or more by one
+    /// player). Every player is listed, with 0 for none (#832).
+    pub spells_cast_this_turn: Vec<(PlayerId, u32)>,
 
     pub step: Step,
     pub active_player: PlayerId,
@@ -691,6 +700,10 @@ impl GameView {
             stack,
             exile,
             stack_puts: state.stack_puts,
+            creature_died_this_turn: state.creature_died_this_turn,
+            spells_cast_this_turn: state.players.iter()
+                .map(|p| (p.id, state.num_spells_cast_this_turn.get(&p.id).copied().unwrap_or(0)))
+                .collect(),
             step: state.step,
             first_strike_damage_step: state.step == crate::types::Step::CombatDamage
                 && state.combat_damage_step_pending,
