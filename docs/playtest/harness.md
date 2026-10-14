@@ -947,6 +947,19 @@ say what your stub says.
   a flashback. Where the seat visibly forgets, say what one line in the
   prompt would have carried it, and file it as a sufficiency gap (H5's
   kind), not a cost one
+  — **played 2026-10-14: the notes line is faithful (88/88 in-game prompts
+  equal the previous THOUGHT, none truncated); what is lost is outside it.**
+  The mulligan and bottom prompts skip `build_prompt` and carry no notes, and
+  a seat that planned "bottom Falkenrath Marauders" bottomed the Curse (#830);
+  the concede confirmation is one blind line (#831); morbid and
+  spells-cast-this-turn live in one prompt's delta only (#832); `--resume`
+  drops the notes (#836); own exile is named nowhere (#828). Games against
+  `random` end in 9-14 turns, before plans span turns, so read the keep →
+  bottom pair first: it is the one two-decision plan every mulligan has. A
+  ten-line checker (each prompt's notes == the previous THOUGHT) beats reading
+  94 prompts; parse the header too, since a one-line PROMPT has no body. Kill a
+  game by `pgrep -f "mtg-runner.*--seed N"`, never `pkill -f "seed N"`, which
+  matches your own shell
 - H28 [proposed 2026-10-08, same source] the decisions the seat is no
   longer asked: with `--log`, list every `AUTO-PASS` line (and, once the
   seat can say "pass until something happens", every stretch it passes
