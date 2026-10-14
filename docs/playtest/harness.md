@@ -985,3 +985,22 @@ say what your stub says.
   calls (no prompt with only Pass/Concede/mana), the stop line and Recent
   events after every stretch, the draft runner's seats get the row, and a
   resume clears a stretch
+- H29 [proposed 2026-10-14, from #830 and #831] every caller of
+  `send_message_structured`, against `build_prompt`: list each caller in
+  `llm.rs` (about a dozen) and, for each, check its prompt goes through
+  `build_prompt_with_header` (turn header, the seat's notes, board, recent
+  events) or that a comment says why it may not. Then run a stub game that
+  reaches each one and confirm the PROMPT line agrees. The mulligan, the
+  bottom and the concede confirmation were the three that did not on
+  2026-10-14; #463 (the cleanup discard) was the last sweep of this kind,
+  and it predates the notes. A prompt off that path is a decision the seat
+  makes without its own plan in front of it
+- H30 [proposed 2026-10-14, from #832] a this-turn ledger: grep the card
+  pool for every rules text that says "this turn" or "last turn" (morbid,
+  the werewolves' transform, "if you cast", "attacked this turn") and, for
+  each fact one names, find where the prompt states it outright, not just in
+  the Recent events of the one prompt after it happened. Tool: a tracker over
+  a stub game's log that collects each prompt's Recent events since the turn
+  banner and reports any event absent from every later prompt of the same
+  turn. Do the same for the CLI and the page; `GameView` has to carry the
+  fact first
