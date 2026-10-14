@@ -164,13 +164,13 @@ An empty turn (play land, nothing else) takes **1–2 keypresses**. A full comba
 ```
 ┌─── STACK ───────┬─ Turn N - Phase | Whose turn ─────────────────┬─── CARDS ───────┐
 │ (stack items)   │ BATTLEFIELD                                   │ (card reference) │
-│                 │  Opp: 20hp  33lib  0gy  0ex  7hand            │ Card Name {cost} │
+│                 │  Opp: 20hp  33lib  0gy  0ex  7hand  0cast     │ Card Name {cost} │
 │                 │  Lands: 2x Mountain, 1x Forest                │ Type line        │
 │                 │  Goblin Piker 2/1 [T]                         │ Oracle text...   │
 │                 │                · · ·                          │                  │
 │                 │  Your creatures...                            │                  │
 │                 │  Lands: ...                                   │                  │
-├─── LOG ─────────│▸ You: 20hp  33lib  0gy  0ex  7hand            │                  │
+├─── LOG ─────────│▸ You: 20hp  33lib  0gy  0ex  7hand  1cast     │                  │
 │ (game events)   ├─── HAND ──────────────────────────────────────│                  │
 │                 │  Mountain                                     │                  │
 │                 │  Goblin Piker {1}{R} 2/1                      │                  │
@@ -181,6 +181,8 @@ An empty turn (play land, nothing else) takes **1–2 keypresses**. A full comba
 │                 │  >                                             │                  │
 └─────────────────┴───────────────────────────────────────────────┴──────────────────┘
 ```
+
+`Ncast` is the spells that player has cast this turn (werewolves flip on it), and the BATTLEFIELD rule reads `BATTLEFIELD (a creature died this turn)` once one has (morbid).
 
 **Creature flags:** `[T]`=tapped, `[S]`=summoning sick, `(2d)`=2 damage marked, `[Pacifism]`=attached aura
 

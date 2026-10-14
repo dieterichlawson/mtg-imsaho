@@ -1989,11 +1989,15 @@ impl CliPlayer {
         let your_caret = if is_your_turn { "▸ " } else { "  " };
         let opp_caret = if is_your_turn { "  " } else { "▸ " };
 
-        let your_stats = format!("{}You: {}hp  {}lib  {}gy  {}ex  {}hand",
-            your_caret, view.your_life, view.your_library_size, your_gy, your_exile, view.your_hand.len());
+        // `Ncast`: the spells each side has cast this turn, which a werewolf
+        // transforms on at the next upkeep and no zone shows (#832).
+        let your_stats = format!("{}You: {}hp  {}lib  {}gy  {}ex  {}hand  {}cast",
+            your_caret, view.your_life, view.your_library_size, your_gy, your_exile, view.your_hand.len(),
+            Self::spells_cast_this_turn(view, true));
         let opp_stats = view.opponents.first().map(|opp|
-            format!("{}Opp: {}hp  {}lib  {}gy  {}ex  {}hand",
-                opp_caret, opp.life, opp.library_size, opp_gy, opp_exile, opp.hand_size)
+            format!("{}Opp: {}hp  {}lib  {}gy  {}ex  {}hand  {}cast",
+                opp_caret, opp.life, opp.library_size, opp_gy, opp_exile, opp.hand_size,
+                Self::spells_cast_this_turn(view, false))
         ).unwrap_or_default();
 
         // The prompt block's least height, measured before the board is
@@ -2006,8 +2010,7 @@ impl CliPlayer {
         let block_floor = h.saturating_sub(min_block);
 
         // ── BATTLEFIELD section (combined) ──
-        let bf_label = "─── BATTLEFIELD ";
-        let bf_line = format!("{}{}", bf_label, "─".repeat(mid_w.saturating_sub(bf_label.chars().count())));
+        let bf_line = Self::battlefield_rule(view, mid_w);
         let _ = execute!(out, cursor::MoveTo(mid_col, row),
             SetAttribute(Attribute::Dim), Print(&bf_line), SetAttribute(Attribute::Reset));
         let _ = execute!(out, cursor::MoveTo(u16::try_from(left_w).unwrap_or(u16::MAX), row),
@@ -4704,6 +4707,27 @@ impl CliPlayer {
     /// Built apart from the drawing so the widths that matter can be stated
     /// without a terminal to measure, the way `middle_panel_width_at` is
     /// (#350).
+    /// The spells your side (`mine`) or the other has cast this turn.
+    fn spells_cast_this_turn(view: &GameView, mine: bool) -> u32 {
+        view.spells_cast_this_turn.iter()
+            .filter(|(p, _)| (*p == view.you) == mine)
+            .map(|(_, n)| n).sum()
+    }
+
+    /// The rule over the battlefield, `width` columns at most. It says when
+    /// a creature has died this turn — what morbid reads, and nothing on
+    /// the board shows it once the log has scrolled past the death (#832).
+    /// The header row above is already full on turn 1, so it rides here.
+    fn battlefield_rule(view: &GameView, width: usize) -> String {
+        let label = if view.creature_died_this_turn {
+            "─── BATTLEFIELD (a creature died this turn) "
+        } else {
+            "─── BATTLEFIELD "
+        };
+        let line = format!("{label}{}", "─".repeat(width.saturating_sub(label.chars().count())));
+        clip_cols(&line, width)
+    }
+
     fn status_text(view: &GameView, step_name: &str) -> String {
         let whose_turn = if view.active_player == view.you { "Your turn" } else { "Opponent's turn" };
         let on_play = if view.turn_number == 1 {
@@ -9552,8 +9576,8 @@ Mark 1 of the 1 cards below to exile.");
 
         // The two life-stat lines are one run each, and the widest of them
         // fits once bounded.
-        for stats in ["▸ Opp: 20hp  53lib  0gy  0ex  7hand",
-                      "  You: 20hp  53lib  0gy  0ex  7hand"] {
+        for stats in ["▸ Opp: 20hp  53lib  0gy  0ex  7hand  0cast",
+                      "  You: 20hp  53lib  0gy  0ex  7hand  0cast"] {
             assert!(str_cols(&clip_cols(stats, panel)) <= panel, "{stats:?}");
         }
         // At the narrow widths in the matrix they are genuinely cut, which is
@@ -9562,6 +9586,26 @@ Mark 1 of the 1 cards below to exile.");
         let cut = clip_cols("▸ Opp: 20hp  53lib  0gy  0ex  7hand", narrow);
         assert!(str_cols(&cut) <= narrow, "{cut:?} in {narrow} columns");
         assert!(cut.starts_with("▸ Opp:"), "the head is what survives: {cut:?}");
+    }
+
+    /// Issue #832: what this turn has done that no zone shows — a creature
+    /// died (morbid), and how many spells each side cast (werewolves) — is
+    /// on screen, and the rule that carries the death fits its panel.
+    #[test]
+    fn the_screen_says_what_this_turn_has_done() {
+        let mut v = view(Step::PrecombatMain, 5, true);
+        v.spells_cast_this_turn = vec![(PlayerId(0), 1), (PlayerId(1), 2)];
+        assert_eq!(CliPlayer::spells_cast_this_turn(&v, true), 1);
+        assert_eq!(CliPlayer::spells_cast_this_turn(&v, false), 2);
+
+        let quiet = CliPlayer::battlefield_rule(&v, 58);
+        assert!(quiet.starts_with("─── BATTLEFIELD ─"), "{quiet}");
+        v.creature_died_this_turn = true;
+        for width in [58, 30, 12] {
+            let rule = CliPlayer::battlefield_rule(&v, width);
+            assert!(str_cols(&rule) <= width, "{rule:?} in {width} columns");
+        }
+        assert!(CliPlayer::battlefield_rule(&v, 58).contains("(a creature died this turn)"));
     }
 
     /// Issue #352: a combat prompt's creature list is the content the prompt
