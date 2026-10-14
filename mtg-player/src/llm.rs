@@ -895,7 +895,11 @@ pub fn card_faces(
     // "Front // Back"; the registry knows both, and the front face is what
     // the card's data is under.
     let lookup = name.split(" // ").next().unwrap_or(name);
-    let Some(id) = registry.get_id_by_name(lookup) else { return Vec::new() };
+    // A transformed permanent is named by its back face; that names the
+    // same card, both faces, so an opponent's Insectile Aberration in view
+    // is described rather than printed as an empty entry (#785's review).
+    let Some(id) = registry.get_id_by_name(lookup)
+        .or_else(|| registry.get_id_by_back_name(lookup)) else { return Vec::new() };
     let Some(front) = registry.card_data(id) else { return Vec::new() };
 
     let mut faces = vec![(front.name.clone(), front)];
@@ -7956,6 +7960,17 @@ pub(crate) mod tests {
         assert!(body.contains("Geistflame (flashback {R} or {3}{R})"),
             "both instances are payable and the seat is offered both, so the \
              section that names the cost names both:\n{body}");
+    }
+
+    /// #785's review: a transformed permanent is named by its back face, and
+    /// that name found no card, so an opponent's Insectile Aberration was an
+    /// empty entry under "Opp's cards in view". It names the same card.
+    #[test]
+    fn a_back_face_name_is_described_with_both_faces() {
+        let registry = mtg_engine::cards::CardRegistry::with_all_cards();
+        let entry = card_reference_entry("Insectile Aberration", &registry);
+        assert!(entry.contains("Delver of Secrets") && entry.contains("Insectile Aberration"), "{entry}");
+        assert!(entry.to_lowercase().contains("flying"), "the back's text: {entry}");
     }
 
     /// Issue #832: whether a creature died this turn (morbid) and how many

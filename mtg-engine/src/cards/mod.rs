@@ -1162,6 +1162,14 @@ impl CardRegistry {
         })
     }
 
+    /// The card whose BACK face has this name: Insectile Aberration is
+    /// Delver of Secrets. `get_id_by_name` knows front faces only, so a
+    /// transformed permanent's name found no card at all (#785's review).
+    #[must_use]
+    pub fn get_id_by_back_name(&self, name: &str) -> Option<CardId> {
+        self.back_name_to_id.get(name).copied()
+    }
+
     /// The continuous effects printed on a card's active face — the back
     /// face when `transformed` and the card has one (CR 712.8a), the front
     /// face otherwise.
