@@ -4007,9 +4007,13 @@ impl CliPlayer {
             // hole showed up as an unplayable card: every place the CLI named
             // its target printed `obj#NN`, and no pane anywhere shows object
             // ids (issue #332, the same hole #38 closed for the library).
+            // It says whose exile, as a graveyard card says whose graveyard
+            // (#669): the exile view lists cards by owner with no ids, and
+            // two same-named exiled cards read alike as targets (#828).
             .or_else(|| view.exile.iter()
                 .find(|c| c.object_id == id)
-                .map(|c| c.name.clone()))
+                .map(|c| format!("{} ({})", c.name,
+                    if c.owner == view.you { "your exile" } else { "opp exile" })))
             .or_else(|| view.revealed_names.get(&id).cloned())
             .unwrap_or_else(|| format!("{id}"))
     }
@@ -11591,8 +11595,10 @@ Mark 1 of the 1 cards below to exile.");
         v.exile = vec![card(24, "Dream Twist"), card(25, "Think Twice")];
         v.graveyards = vec![(PlayerId(0), vec![card(30, "Armored Skaab")])];
 
-        assert_eq!(CliPlayer::perm_name(&v, ObjectId(24)), "Dream Twist");
-        assert_eq!(CliPlayer::perm_name(&v, ObjectId(25)), "Think Twice");
+        v.exile[1].owner = PlayerId(1);
+        assert_eq!(CliPlayer::perm_name(&v, ObjectId(24)), "Dream Twist (your exile)");
+        assert_eq!(CliPlayer::perm_name(&v, ObjectId(25)), "Think Twice (opp exile)",
+            "and says whose exile, as the graveyard does (#828)");
         assert_eq!(CliPlayer::perm_name(&v, ObjectId(30)), "Armored Skaab (your graveyard)",
             "the zone next door, which already worked (and says whose, #669)");
         // An id in no visible zone still falls back, so the resolver has not
