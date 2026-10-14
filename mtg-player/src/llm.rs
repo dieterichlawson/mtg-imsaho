@@ -1211,7 +1211,7 @@ Options:
 - **Damage assignment** (CR 510.1c-d): when one of your attackers is blocked by two or more creatures you are asked for its damage assignment order once, after blocks — `order`: every blocker index exactly once, the one you most want dead first. Lethal must go to each blocker in that order before any spills to the next; a trampler sends the rest to the player. When there is more damage than the blockers' lethal total you are then asked, blocker by blocker, how much of what is left goes to it (`amount`, from lethal to all of it); lethal is the ordinary answer.
 - **Ordering your triggers** (CR 603.3b): simultaneous triggers of yours are one `order` prompt. The first index you list goes on the stack first and resolves LAST; put the trigger you want to resolve first at the END.
 - **Choosing between replacement and prevention effects on damage.** When two or more apply to one damage event and the order changes the result — Inquisitor's Flail (double it) and Undead Alchemist (mill instead), or Ghostly Possession (prevent it) and the Alchemist — the AFFECTED player chooses: the player being damaged, or the controller of the creature being damaged (CR 616.1). The context line names the event (`Walking Corpse (#30) would deal 2 combat damage to you`) and the options say what each effect would do (`double it to 4`, `instead You mill 2 cards`, `prevent all of it`). Pick the effect to apply FIRST; the others apply after only if they still can — a prevention or a mill ends the damage, doubling leaves more for the rest. You are asked only when the choice matters.
-- **Concede** is always offered; picking it asks you to confirm.
+- **Concede** is always offered; picking it asks you to confirm (`[CONFIRM CONCEDE]`); cancelling passes priority.
 
 ## London mulligan
 
@@ -2191,9 +2191,13 @@ impl LlmPlayer {
         }
         self.backend.init(&deck_info);
         self.last_log_index = 0;
-        // A new game: whatever the seat was passing towards is over.
+        // A new game: whatever the seat was passing towards is over, and
+        // so is the plan it had for the last game's board — the draft
+        // runner plays a match's games with one seat, and game 2's
+        // mulligan prompt carried game 1's last thought (#830).
         self.pass_until = None;
         self.pass_until_stopped = None;
+        self.notes = None;
         self.own_card_names = your_deck.iter()
             .flat_map(|(name, _)| card_faces(name, registry))
             .map(|(face_name, _)| face_name)
@@ -3669,6 +3673,31 @@ impl LlmPlayer {
         entry.strip_prefix("── Turn ")?.split_once(' ').map(|(n, _)| n)
     }
 
+    /// The notes block: the seat's own plan from its last decision, the
+    /// one thing the bounded conversation would otherwise lose (see
+    /// `notes`), or `""` before the first decision. Every prompt carries it,
+    /// including the ones built outside `build_prompt_with_header`: the
+    /// keep-then-bottom pair is the one two-step plan every game has, and
+    /// the bottom prompt was asked without the "keep and bottom X" the keep
+    /// had just said (#830).
+    fn notes_section(&self) -> String {
+        self.notes.as_ref().map_or_else(String::new,
+            |notes| format!("Your notes from your last decision:\n{notes}\n\n"))
+    }
+
+    /// `prompt` with the notes block after its first line, the context
+    /// marker (`[MULLIGAN DECISION]`) that leads every prompt.
+    fn with_notes_after_marker(&self, prompt: &str) -> String {
+        let notes = self.notes_section();
+        if notes.is_empty() {
+            return prompt.to_string();
+        }
+        match prompt.split_once('\n') {
+            Some((marker, rest)) => format!("{marker}\n\n{notes}{rest}"),
+            None => format!("{prompt}\n\n{notes}"),
+        }
+    }
+
     fn build_prompt_with_header(
         &mut self,
         view: &GameView,
@@ -3703,11 +3732,7 @@ impl LlmPlayer {
         }
         // The seat's own plan, from its last decision: the one thing the
         // bounded conversation would otherwise lose (see `notes`).
-        if let Some(notes) = &self.notes {
-            prompt.push_str("Your notes from your last decision:\n");
-            prompt.push_str(notes);
-            prompt.push_str("\n\n");
-        }
+        prompt.push_str(&self.notes_section());
         // Why the seat is being asked at all, when its last answer was
         // "pass until something happens": what happened. The events it
         // passed through are in the recap below, none of them dropped by
@@ -4471,7 +4496,11 @@ impl LlmPlayer {
     }
 
     /// Confirm concede via structured output. Returns true if the AI confirms.
-    fn confirm_concede(&mut self) -> bool {
+    ///
+    /// Asked through `build_prompt` (#831): since every decision is its own
+    /// call, the bare question was all the seat saw — no board, and not the
+    /// reasoning that had just chosen Concede, which the notes block carries.
+    fn confirm_concede(&mut self, view: &GameView) -> bool {
         self.log("CONCEDE-CHECK", "AI chose Concede, confirming...");
 
         let schema = serde_json::json!({
@@ -4483,7 +4512,8 @@ impl LlmPlayer {
             "required": ["thoughts", "confirm"]
         });
 
-        let prompt = "You chose to CONCEDE the game. Are you sure? Confirm true to concede, false to cancel.".to_string();
+        let prompt = self.build_prompt(view,
+            "[CONFIRM CONCEDE]\nYou chose to CONCEDE the game. Are you sure? Confirm true to concede, false to cancel.");
         let response = self.send_message_structured(&prompt, &schema);
         let confirmed = match response["confirm"].as_bool() {
             Some(c) => c,
@@ -4776,7 +4806,7 @@ impl Player for LlmPlayer {
         // one Concede and exactly one PassPriority (the engine's legal
         // -actions invariant), so cancelling means passing.
         if let DisplayEntry::Direct(action_idx) = &entry {
-            if matches!(legal_actions[*action_idx], Action::Concede) && !self.confirm_concede() {
+            if matches!(legal_actions[*action_idx], Action::Concede) && !self.confirm_concede(view) {
                 return Action::PassPriority;
             }
         }
@@ -5322,13 +5352,13 @@ from your hand to put on the bottom of your library.\n\
             "You are on the draw"
         };
 
-        let full_prompt = Self::mulligan_prompt(
+        let full_prompt = self.with_notes_after_marker(&Self::mulligan_prompt(
             play_draw,
             mulls_taken,
             keep_size,
             &opp_mulls_text,
             &hand_text,
-        );
+        ));
 
         let schema = serde_json::json!({
             "type": "object",
@@ -5382,7 +5412,8 @@ from your hand to put on the bottom of your library.\n\
                 } else {
                     "You are on the draw"
                 };
-                Self::mulligan_bottom_prompt(play_draw, n, &opp_mulls_text, &hand_text)
+                self.with_notes_after_marker(
+                    &Self::mulligan_bottom_prompt(play_draw, n, &opp_mulls_text, &hand_text))
             }
             SetPromptKind::DiscardToHandSize => {
                 // Through `build_prompt` like every other in-game decision:
@@ -6519,6 +6550,51 @@ pub(crate) mod tests {
         );
         assert!(asked[1].contains("CONCEDE"), "the second prompt is the confirmation: {}", asked[1]);
         assert!(matches!(chosen, Action::PassPriority), "a cancelled concede passes instead, got {chosen:?}");
+    }
+
+    /// Issues #830 and #831: the mulligan, bottom-after-mulligan and
+    /// concede-confirmation prompts were built outside `build_prompt`, so
+    /// they carried no notes: a seat that said "keep and bottom Falkenrath
+    /// Marauders" bottomed something else, and the concede was confirmed
+    /// with no board and not the reasoning that chose it.
+    #[test]
+    fn the_mulligan_bottom_and_concede_prompts_carry_the_notes() {
+        use mtg_engine::actions::{SetPrompt, SetPromptKind};
+        let (state, registry) = view_for_contract_test();
+        let view = GameView::for_player(&state, mtg_engine::ids::PlayerId(0), &registry);
+        let plan = "keep, and bottom Falkenrath Marauders";
+
+        let (mut player, prompts) = scripted_player(vec![serde_json::json!({"mull": false})]);
+        player.notes = Some(plan.to_string());
+        player.choose_mulligan(&view, &[Action::MulliganKeep, Action::MulliganMull]);
+        let keep = prompts.borrow()[0].clone();
+        assert!(keep.starts_with("[MULLIGAN DECISION]\n"), "the marker still leads:\n{keep}");
+        assert!(keep.contains(&format!("Your notes from your last decision:\n{plan}")), "{keep}");
+
+        let hand: Vec<ObjectId> = view.your_hand.iter().map(|c| c.object_id).collect();
+        assert!(!hand.is_empty(), "the contract view has a hand to bottom from");
+        let (mut player, prompts) = scripted_player(vec![serde_json::json!({"card_indices": [0]})]);
+        player.notes = Some(plan.to_string());
+        player.choose_card_set(&view, &SetPrompt {
+            kind: SetPromptKind::BottomAfterMulligan, player: view.you,
+            options: hand, min: 1, max: 1,
+        });
+        let bottom = prompts.borrow()[0].clone();
+        assert!(bottom.starts_with("[BOTTOM 1 CARD AFTER MULLIGAN]\n"), "{bottom}");
+        assert!(bottom.contains(&format!("Your notes from your last decision:\n{plan}")), "{bottom}");
+
+        let (mut player, prompts) = scripted_player(vec![serde_json::json!({"confirm": false})]);
+        player.notes = Some("Concede: no outs against lethal next turn.".to_string());
+        assert!(!player.confirm_concede(&view));
+        let confirm = prompts.borrow()[0].clone();
+        assert!(confirm.contains("Your notes from your last decision:\nConcede: no outs"), "{confirm}");
+        assert!(confirm.contains("You: "), "the board is in front of the question:\n{confirm}");
+        assert!(confirm.contains("[CONFIRM CONCEDE]"), "{confirm}");
+
+        // The next game of a match starts with no notes: the plan was for
+        // the last game's board.
+        player.init_conversation(&[], "", &registry, MatchFormat::SingleGame);
+        assert!(player.notes_section().is_empty(), "a new game's first prompt has no notes");
     }
 
     /// Issue #637: the division prompt is asked as the amount, and the

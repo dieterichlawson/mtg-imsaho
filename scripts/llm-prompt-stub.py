@@ -71,7 +71,11 @@ def fill(name, spec):
         hi = spec.get("maximum", lo + 3)
         return lo + h(message, name) % (hi - lo + 1)
     if t == "boolean":
-        return False if name == "cancel" else bool(h(message, name) % 2)
+        # Never back out of a cast, and never confirm a concede: the
+        # confirmation carries the board now (#831), so a hashed answer
+        # conceded about half the games it was asked in, and a measured
+        # game has to play out to be measured.
+        return False if name in ("cancel", "confirm") else bool(h(message, name) % 2)
     if t == "array":
         items = spec.get("items") or {}
         lo = spec.get("minItems", 0)

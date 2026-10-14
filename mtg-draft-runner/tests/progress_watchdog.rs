@@ -38,7 +38,7 @@ def fill(name, spec):
         v = spec["enum"]; return v[h(message, name) % len(v)] if v else None
     if t == "string": return "stub"
     if t in ("integer", "number"): return 0
-    if t == "boolean": return bool(h(message, name) % 2)
+    if t == "boolean": return False if name == "confirm" else bool(h(message, name) % 2)
     if t == "array": return []
     if t == "object" or "properties" in spec:
         return {k: fill(name + "." + k, v) for k, v in (spec.get("properties") or {}).items()}
@@ -98,9 +98,10 @@ fn a_tournament_game_that_stops_moving_is_forfeited_and_said_so() {
     // first one that stalls. About a quarter of seeds do. Losing ALL of
     // them is still a failure, because then the fixture no longer
     // exercises what it is for and a human has to find a seed that does.
-    // 105 stalls since the pass-until row re-rolled the games (the five
-    // after it were the list before that, and all play out now).
-    const SEEDS: [&str; 6] = ["105", "106", "107", "108", "101", "102"];
+    // 106, 108 and 101 stall since the concede confirmation began carrying
+    // the board (#831) and the seat was told never to confirm one — a
+    // hashed yes/no ended every game early by concession.
+    const SEEDS: [&str; 6] = ["106", "108", "101", "105", "107", "102"];
     let mut played_out: Vec<&str> = Vec::new();
 
     for seed in SEEDS {
