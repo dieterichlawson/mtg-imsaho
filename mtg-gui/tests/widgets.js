@@ -1207,6 +1207,39 @@ async function main() {
       else if (pool.some(d => d.right > 480)) fail(`turn-facts: a strip runs past the board: ${JSON.stringify(pool)}`);
       else ok("turn-facts: a full pool after the cast count stays on the board");
     }
+    // 24c. A double-faced card's inspector names its other face (#785):
+    // the back of a front-up card, the front of a transformed one, and the
+    // other face's text is drawn.
+    {
+      const got = await page.evaluate(() => {
+        const m = window.mtg, card = m.view.your_hand[0];
+        const keep = JSON.parse(JSON.stringify(m.view.double_faces || {}));
+        const orig = CanvasRenderingContext2D.prototype.fillText;
+        const drawn = [];
+        try {
+          m.view.double_faces = { [String(card.card_id)]: [
+            { name: card.name, oracle_text: "the front's text" },
+            { name: "Test Back Face", oracle_text: "the back's own words" },
+          ] };
+          CanvasRenderingContext2D.prototype.fillText = function (s) { drawn.push(String(s)); return orig.apply(this, arguments); };
+          const front = window.mtgDebug.inspect("o" + card.object_id);
+          const was = [m.selected, m.hover];
+          m.selected = card.object_id; m.hover = null;
+          window.mtgDebug.render();
+          [m.selected, m.hover] = was;
+          return { front: front && front.otherFace, drawn };
+        } finally {
+          CanvasRenderingContext2D.prototype.fillText = orig;
+          m.view.double_faces = keep;
+          window.mtgDebug.render();
+        }
+      });
+      if (got.front !== "Test Back Face") fail(`double-faced: the inspector's other face is ${JSON.stringify(got.front)}`);
+      else ok("double-faced: the inspector names the other face");
+      if (!got.drawn.some(t => t.includes("Other face: Test Back Face")) || !got.drawn.some(t => t.includes("back's own words")))
+        fail(`double-faced: the other face is not drawn: ${JSON.stringify(got.drawn.filter(t => /face|back/i.test(t)))}`);
+      else ok("double-faced: the other face and its text are drawn");
+    }
     // 25. A key that cannot answer says so. Enter walks three chances and
     // Escape three more; `pick` and `list` set none of them, so the key was
     // consumed, an identical frame was drawn and nothing was said — on

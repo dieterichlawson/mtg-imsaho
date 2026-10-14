@@ -28,6 +28,12 @@ export type Zone = string;
 
 export type Target = { Object: ObjectId } | { Player: PlayerId } | "Illegal";
 
+/** One face of a double-faced card (`GameView.double_faces`, #785). */
+export interface FaceText {
+  name: string;
+  oracle_text: string;
+}
+
 export interface CardView {
   object_id: ObjectId;
   card_id: CardId;
@@ -153,6 +159,7 @@ export interface GameView {
   stack_puts: number;
   first_strike_damage_step: boolean;
   exile: CardView[];
+  double_faces: Record<string, [FaceText, FaceText]>;
   creature_died_this_turn: boolean;
   spells_cast_this_turn: [PlayerId, number][];
   step: Step;

@@ -44,6 +44,12 @@ pub struct GameView {
     /// next upkeep on this count (no spells cast; two or more by one
     /// player). Every player is listed, with 0 for none (#832).
     pub spells_cast_this_turn: Vec<(PlayerId, u32)>,
+    /// Both faces of every double-faced card in this view, keyed by card
+    /// (CR 712.2): what a Delver of Secrets transforms into, and what an
+    /// Insectile Aberration was. A view showed only the face up, so the
+    /// page's inspector could not say what a transform decision does (#785).
+    /// A copy of a face is keyed by its own card and has no entry.
+    pub double_faces: std::collections::BTreeMap<CardId, [FaceText; 2]>,
 
     pub step: Step,
     pub active_player: PlayerId,
@@ -58,6 +64,13 @@ pub struct GameView {
     /// Names of objects referenced in pending choices (revealed cards, opponent's
     /// hand from Night Terrors, etc.) that aren't otherwise visible in the view.
     pub revealed_names: std::collections::HashMap<ObjectId, String>,
+}
+
+/// One face of a double-faced card: its name and rules text.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct FaceText {
+    pub name: String,
+    pub oracle_text: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -367,13 +380,13 @@ impl GameView {
         let player_state = state.get_player(player);
 
         // Your hand: you can see all cards.
-        let your_hand = state.objects_in_zone(Zone::Hand, player)
+        let your_hand: Vec<CardView> = state.objects_in_zone(Zone::Hand, player)
             .iter()
             .map(|obj| card_view(state, obj, registry))
             .collect();
 
         // Your library cards (you know what's in your deck, not the order).
-        let your_library_cards = player_state.library_order.iter()
+        let your_library_cards: Vec<CardView> = player_state.library_order.iter()
             .filter_map(|&obj_id| state.get_object(obj_id))
             .map(|obj| card_view(state, obj, registry))
             .collect();
@@ -399,7 +412,7 @@ impl GameView {
             Keyword::Haste, Keyword::Defender, Keyword::Hexproof,
             Keyword::Intimidate, Keyword::Menace, Keyword::Indestructible,
         ];
-        let battlefield = state.all_objects_in_zone(Zone::Battlefield)
+        let battlefield: Vec<PermanentView> = state.all_objects_in_zone(Zone::Battlefield)
             .iter()
             .map(|obj| {
                 // One scan for the fifteen, not fifteen scans. Each one
@@ -544,7 +557,7 @@ impl GameView {
             .collect();
 
         // Graveyards: public zones, all visible.
-        let graveyards = state.players.iter()
+        let graveyards: Vec<(PlayerId, Vec<CardView>)> = state.players.iter()
             .map(|p| {
                 let cards = state.objects_in_zone(Zone::Graveyard, p.id)
                     .iter()
@@ -580,7 +593,7 @@ impl GameView {
         let resolving = state.resolving_spell
             .filter(|id| state.get_object(*id).is_some_and(|o| o.zone == Zone::Stack))
             .and_then(|id| spell_item(id, true));
-        let stack = resolving.into_iter().chain(state.stack.iter()
+        let stack: Vec<StackItemView> = resolving.into_iter().chain(state.stack.iter()
             .rev() // top of stack first
             .filter_map(|entry| {
                 match entry {
@@ -648,10 +661,33 @@ impl GameView {
             .collect();
 
         // Exile.
-        let exile = state.all_objects_in_zone(Zone::Exile)
+        let exile: Vec<CardView> = state.all_objects_in_zone(Zone::Exile)
             .iter()
             .map(|obj| card_view(state, obj, registry))
             .collect();
+
+        // Both faces of every double-faced card the seat can see (#785).
+        let mut double_faces = std::collections::BTreeMap::new();
+        {
+            let visible = your_hand.iter().map(|c: &CardView| c.card_id)
+                .chain(your_library_cards.iter().map(|c: &CardView| c.card_id))
+                .chain(battlefield.iter().map(|p: &PermanentView| p.card_id))
+                .chain(graveyards.iter().flat_map(|(_, cs): &(PlayerId, Vec<CardView>)| cs.iter().map(|c| c.card_id)))
+                .chain(exile.iter().map(|c: &CardView| c.card_id))
+                // A spell on the stack is a card; a trigger is not and has
+                // no card of its own (`CardId(0)`).
+                .chain(stack.iter().map(|s: &StackItemView| s.card_id).filter(|id| *id != CardId(0)));
+            for card_id in visible {
+                if double_faces.contains_key(&card_id) { continue; }
+                let back = registry.get(card_id).and_then(crate::cards::CardBehavior::back_face_data);
+                if let (Some(front), Some(back)) = (registry.card_data(card_id), back) {
+                    double_faces.insert(card_id, [
+                        FaceText { name: front.name, oracle_text: front.oracle_text },
+                        FaceText { name: back.name, oracle_text: back.oracle_text },
+                    ]);
+                }
+            }
+        }
 
         // Collect names of objects referenced in pending resolution choices
         // that might not be in any visible zone (e.g. opponent's hand, library).
@@ -700,6 +736,7 @@ impl GameView {
             stack,
             exile,
             stack_puts: state.stack_puts,
+            double_faces,
             creature_died_this_turn: state.creature_died_this_turn,
             spells_cast_this_turn: state.players.iter()
                 .map(|p| (p.id, state.num_spells_cast_this_turn.get(&p.id).copied().unwrap_or(0)))

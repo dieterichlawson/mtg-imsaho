@@ -1039,6 +1039,25 @@ export function inspecting(state) {
         return state.index.get(hoverId);
     return state.selected !== null ? state.index.get(state.selected) : undefined;
 }
+/**
+ * A double-faced card's other face (CR 712.2): the back of a front-up card,
+ * the front of a transformed one. The inspector showed only the face up, so
+ * hovering a Delver of Secrets said "transform this creature" and nothing of
+ * what it becomes (#785). A copy of a face is keyed by its own card and has
+ * none.
+ */
+export function otherFace(state, o) {
+    if (o.card_id === undefined || o.card_id === null)
+        return null;
+    const faces = (state.view.double_faces || {})[String(o.card_id)];
+    if (!faces)
+        return null;
+    if (o.name === faces[0].name)
+        return faces[1];
+    if (o.name === faces[1].name)
+        return faces[0];
+    return null;
+}
 function inspector(ctx, state, x, y, w) {
     const e = inspecting(state);
     if (!e) {
@@ -1082,10 +1101,25 @@ function inspector(ctx, state, x, y, w) {
             ty += 8;
         }
     const oracle = [o.oracle_text || "", ...(o.granted_abilities || [])].filter(Boolean).join("\n");
+    const other = otherFace(state, o);
     const maxLines = Math.max(0, Math.floor((y + 200 - ty) / 9));
-    for (const l of wrapCapped(ctx, oracle, w - 8, "8px Silkscreen", maxLines)) {
+    // The other face keeps a few lines of the pane: its name and the start of
+    // its text, rather than being pushed out by a long face-up text.
+    const ownLines = other ? Math.max(1, maxLines - 4) : maxLines;
+    for (const l of wrapCapped(ctx, oracle, w - 8, "8px Silkscreen", ownLines)) {
         text(ctx, l, x + 4, ty, { color: "#e8e0d0" });
         ty += 9;
+    }
+    if (other) {
+        const left = Math.max(0, Math.floor((y + 200 - ty) / 9));
+        if (left > 0) {
+            text(ctx, clip(ctx, `Other face: ${other.name}`, w - 8, "7px Silkscreen"), x + 4, ty + 1, { font: "7px Silkscreen", color: "#a0d0e0" });
+            ty += 9;
+            for (const l of wrapCapped(ctx, other.oracle_text, w - 8, "8px Silkscreen", left - 1)) {
+                text(ctx, l, x + 4, ty, { color: "#b8c8d0" });
+                ty += 9;
+            }
+        }
     }
     return ty;
 }

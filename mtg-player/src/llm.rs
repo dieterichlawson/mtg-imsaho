@@ -7912,6 +7912,7 @@ pub(crate) mod tests {
             first_strike_damage_step: false,
             creature_died_this_turn: false,
             spells_cast_this_turn: vec![],
+            double_faces: Default::default(),
             exile: vec![],
             step: Step::PrecombatMain,
             active_player: PlayerId(0),

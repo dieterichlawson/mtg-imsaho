@@ -1704,3 +1704,46 @@ fn moonmist_does_not_write_a_refusal_for_every_human() {
         "the spell's own line is the account: {:?}",
         state.game_log.iter().map(|e| e.message.clone()).collect::<Vec<_>>());
 }
+
+/// #785: a view carries both faces of every double-faced card the seat can
+/// see — the page's inspector had only the face up, so it could not say
+/// what a Delver transforms into or what an Insectile Aberration was — and
+/// nothing of a double-faced card in the other player's hand.
+#[test]
+fn a_view_carries_both_faces_of_the_double_faced_cards_it_shows() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let delver = named_permanent(&mut state, &reg, "Delver of Secrets", P0);
+    let hidden = spell_in_hand(&mut state, &reg, "Civilized Scholar", P1);
+
+    let view = mtg_engine::view::GameView::for_player(&state, P0, &reg);
+    let faces = view.double_faces.get(&state.get_object(delver).unwrap().card_id)
+        .expect("the Delver on the battlefield has both faces in the view");
+    assert_eq!(faces[0].name, "Delver of Secrets");
+    assert_eq!(faces[1].name, "Insectile Aberration");
+    assert!(faces[1].oracle_text.contains("Flying") || faces[1].oracle_text.contains("flying"),
+        "the back's text: {:?}", faces[1].oracle_text);
+    assert!(!view.double_faces.contains_key(&state.get_object(hidden).unwrap().card_id),
+        "a double-faced card in the opponent's hand is not described");
+
+    // From the other seat the Scholar is in hand and the Delver in view.
+    let theirs = mtg_engine::view::GameView::for_player(&state, P1, &reg);
+    assert!(theirs.double_faces.contains_key(&state.get_object(hidden).unwrap().card_id));
+}
+
+/// #785's review: a double-faced spell on the stack is public and the page
+/// inspects it; its faces are in the view even with no other copy in view.
+#[test]
+fn a_double_faced_spell_on_the_stack_has_both_faces_in_the_view() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P1);
+    let delver = spell_in_hand(&mut state, &reg, "Delver of Secrets", P1);
+    state.get_player_mut(P1).mana_pool.add(ManaType::Blue, 1);
+    let state = cast_onto_stack(&state, &reg, delver, vec![]);
+    let card_id = state.get_object(delver).unwrap().card_id;
+    assert!(state.stack.iter().any(|e| matches!(e, StackEntry::Spell { .. })), "the Delver is on the stack");
+
+    let view = mtg_engine::view::GameView::for_player(&state, P0, &reg);
+    let faces = view.double_faces.get(&card_id).expect("the spell's faces are in the opponent's view");
+    assert_eq!(faces[1].name, "Insectile Aberration");
+}
