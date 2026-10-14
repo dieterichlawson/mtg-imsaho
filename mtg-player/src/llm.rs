@@ -1983,6 +1983,10 @@ pub struct LlmPlayer {
     /// seat's own words, not the thousands of tokens of prompts they came
     /// from.
     notes: Option<String>,
+    /// Where the runner keeps a copy of `notes` for its save file, when it
+    /// asked for one (`mirror_notes_to`): a save that held the game but not
+    /// the plan lost the plan on every `--resume` (#836).
+    notes_mirror: Option<std::sync::Arc<std::sync::Mutex<Option<String>>>>,
     /// `Some` while the seat is passing every plain priority offer unasked
     /// (see [`PassUntil`]); cleared, with a reason, by the first stop.
     pass_until: Option<PassUntil>,
@@ -2009,6 +2013,7 @@ impl LlmPlayer {
             last_call_failure: None,
             pending_recap: None,
             notes: None,
+            notes_mirror: None,
             pass_until: None,
             pass_until_stopped: None,
             offer_pass_until: pass_until_enabled(),
@@ -2034,6 +2039,7 @@ impl LlmPlayer {
             last_call_failure: None,
             pending_recap: None,
             notes: None,
+            notes_mirror: None,
             pass_until: None,
             pass_until_stopped: None,
             offer_pass_until: pass_until_enabled(),
@@ -2054,6 +2060,7 @@ impl LlmPlayer {
             last_call_failure: None,
             pending_recap: None,
             notes: None,
+            notes_mirror: None,
             pass_until: None,
             pass_until_stopped: None,
             offer_pass_until: pass_until_enabled(),
@@ -2078,6 +2085,7 @@ impl LlmPlayer {
             last_call_failure: None,
             pending_recap: None,
             notes: None,
+            notes_mirror: None,
             pass_until: None,
             pass_until_stopped: None,
             offer_pass_until: pass_until_enabled(),
@@ -2100,6 +2108,7 @@ impl LlmPlayer {
             last_call_failure: None,
             pending_recap: None,
             notes: None,
+            notes_mirror: None,
             pass_until: None,
             pass_until_stopped: None,
             offer_pass_until: pass_until_enabled(),
@@ -2197,7 +2206,7 @@ impl LlmPlayer {
         // mulligan prompt carried game 1's last thought (#830).
         self.pass_until = None;
         self.pass_until_stopped = None;
-        self.notes = None;
+        self.set_notes(None);
         self.own_card_names = your_deck.iter()
             .flat_map(|(name, _)| card_faces(name, registry))
             .map(|(face_name, _)| face_name)
@@ -2266,7 +2275,7 @@ impl LlmPlayer {
         // its own: a resume used to cost a whole API call to be told
         // "ready", and the conversation no longer keeps earlier turns.
         self.pending_recap = Some(recap.clone());
-        self.notes = None;
+        self.set_notes(None);
         // Set log index to current length so we don't re-send these entries.
         self.last_log_index = game_log.len();
         // Log the recap body, not just its size. It is the largest message
@@ -2356,6 +2365,28 @@ impl LlmPlayer {
     #[must_use]
     pub fn pending_recap_for_test(&self) -> Option<&str> {
         self.pending_recap.as_deref()
+    }
+
+    /// Keep a copy of the seat's notes in `cell` from now on, for a save
+    /// file to carry across `--resume` (#836).
+    pub fn mirror_notes_to(&mut self, cell: std::sync::Arc<std::sync::Mutex<Option<String>>>) {
+        if let Ok(mut c) = cell.lock() { c.clone_from(&self.notes); }
+        self.notes_mirror = Some(cell);
+    }
+
+    /// Put back the notes a save carried, after `resume_from_log`: the
+    /// first prompt after a resume carries the plan made before the save.
+    pub fn restore_notes(&mut self, notes: Option<String>) {
+        self.set_notes(notes);
+    }
+
+    /// Every change to the notes goes through here, so the mirror a save
+    /// reads never goes stale.
+    fn set_notes(&mut self, notes: Option<String>) {
+        if let Some(cell) = &self.notes_mirror {
+            if let Ok(mut c) = cell.lock() { c.clone_from(&notes); }
+        }
+        self.notes = notes;
     }
 
     /// The notes the next decision prompt will carry, for tests.
@@ -3612,7 +3643,7 @@ impl LlmPlayer {
         if let Some(thinking) = self.backend.take_thinking() {
             self.log("THOUGHT", &thinking);
             if let Some(notes) = Self::notes_from(&thinking) {
-                self.notes = Some(notes);
+                self.set_notes(Some(notes));
             }
         }
     }
@@ -6528,6 +6559,7 @@ pub(crate) mod tests {
             last_call_failure: None,
             pending_recap: None,
             notes: None,
+            notes_mirror: None,
             pass_until: None,
             pass_until_stopped: None,
             // These tests read the engine's rows and their indices; the
@@ -9440,6 +9472,7 @@ mod stateless_decisions {
             last_call_failure: None,
             pending_recap: None,
             notes: None,
+            notes_mirror: None,
             pass_until: None,
             pass_until_stopped: None,
             offer_pass_until: pass_until_enabled(),

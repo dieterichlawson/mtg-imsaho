@@ -33,6 +33,13 @@ struct SaveData {
     /// empty list means "the flags decide", which is the old behaviour.
     #[serde(default)]
     seats: Vec<String>,
+    /// Each LLM seat's notes — the tail of its last decision's reasoning,
+    /// which is how a seat sent no history carries a plan to its next
+    /// decision. A save that held the game but not these lost the plan on
+    /// every `--resume` (#836). Indexed like `seats`; `None` for a seat that
+    /// keeps none. Each seat is given back only its own.
+    #[serde(default)]
+    seat_notes: Vec<Option<String>>,
 }
 
 enum PlayerKind {
@@ -385,6 +392,7 @@ fn main() {
     }
 
     let banner: String;
+    let mut resumed_notes: Vec<Option<String>> = Vec::new();
     let (player_names, mut state) = if let Some(ref path) = resume_file {
         // The saved game carries its own decks and RNG: flags that only
         // shape a NEW game are ignored, and silently ignored flags corrupt
@@ -524,6 +532,7 @@ stops here — pass --save {path} to keep writing it");
         banner = format!("MTG Engine — resuming from {} (turn {}, {} vs {}) — p0: {}, p1: {}",
             path, save.state.turn_number, save.player_names[0], save.player_names[1],
             p1_spec, p2_spec);
+        resumed_notes = std::mem::take(&mut save.seat_notes);
         (save.player_names, save.state)
     } else {
         let deck1 = load_deck(deck1_spec, &registry);
@@ -640,11 +649,20 @@ stops here — pass --save {path} to keep writing it");
             .collect();
         if let PlayerKind::Llm(ref mut llm) = p1 {
             llm.resume_from_log(&full_log, mtg_engine::ids::PlayerId(0));
+            llm.restore_notes(resumed_notes.first().cloned().flatten());
         }
         if let PlayerKind::Llm(ref mut llm) = p2 {
             llm.resume_from_log(&full_log, mtg_engine::ids::PlayerId(1));
+            llm.restore_notes(resumed_notes.get(1).cloned().flatten());
         }
     }
+    // Where each LLM seat keeps a copy of its notes for the save (#836).
+    let notes_cells: [std::sync::Arc<std::sync::Mutex<Option<String>>>; 2] = Default::default();
+    if let PlayerKind::Llm(ref mut llm) = p1 { llm.mirror_notes_to(notes_cells[0].clone()); }
+    if let PlayerKind::Llm(ref mut llm) = p2 { llm.mirror_notes_to(notes_cells[1].clone()); }
+    let seat_notes = || -> Vec<Option<String>> {
+        notes_cells.iter().map(|c| c.lock().ok().and_then(|n| n.clone())).collect()
+    };
 
     let has_human = matches!(p1, PlayerKind::Cli(_)) || matches!(p2, PlayerKind::Cli(_));
     let has_gui = matches!(p1, PlayerKind::Gui(_)) || matches!(p2, PlayerKind::Gui(_));
@@ -914,6 +932,7 @@ stops here — pass --save {path} to keep writing it");
                 state: game_state.clone(),
                 player_names: player_names_ref.clone(),
                 seats: seats_ref.clone(),
+                seat_notes: seat_notes(),
             };
             let json = serde_json::to_string(&save).expect("Failed to serialize game state");
             // The hot-reload snapshot, so `rr` works without --save. Nobody
@@ -1036,6 +1055,7 @@ use --save if you need a resumable file.");
             state: state.clone(),
             player_names: player_names.clone(),
             seats: vec![p1_spec.clone(), p2_spec.clone()],
+            seat_notes: seat_notes(),
         };
         match serde_json::to_string(&save) {
             Ok(json) => {

@@ -260,3 +260,72 @@ fn a_refused_resume_says_why_in_the_log() {
     assert!(text.contains("FATAL save file") && text.contains("is not a valid game save"),
         "the log says why the run stopped:\n{text}");
 }
+
+/// #836: the notes block — the tail of an LLM seat's last reasoning — is
+/// how a seat sent no history carries a plan to its next decision, and the
+/// save did not hold it, so the first prompt after `--resume` had the
+/// recap and the board and not the plan made just before the save.
+///
+/// A stub seat kills the runner partway through, the way an operator's
+/// Ctrl-C or a dead machine would; the resumed game's first prompt has to
+/// carry the notes the save was written with.
+#[test]
+fn a_resumed_llm_seat_gets_its_notes_back() {
+    let scratch = Scratch::new("notes");
+    let stub = scratch.path("seat.py");
+    std::fs::write(&stub, format!(r#"#!/usr/bin/env python3
+import os, signal, subprocess, sys
+stub = {real:?}
+if sys.argv[1:2] == ["--version"]:
+    os.execv(sys.executable, [sys.executable, stub, "--version"])
+counter = {counter:?}
+n = int(open(counter).read()) if os.path.exists(counter) else 0
+open(counter, "w").write(str(n + 1))
+if os.environ.get("KILL_AT") and n + 1 == int(os.environ["KILL_AT"]):
+    os.kill(os.getppid(), signal.SIGKILL)
+    sys.exit(1)
+msg = sys.stdin.read()
+r = subprocess.run([sys.executable, stub, *sys.argv[1:]], input=msg, capture_output=True, text=True)
+sys.stdout.write(r.stdout)
+"#, real = repo_root().join("scripts/llm-prompt-stub.py").to_string_lossy(),
+        counter = scratch.path("calls")))
+    .unwrap();
+    std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let save = scratch.path("game.json");
+
+    let killed = runner()
+        .current_dir(repo_root())
+        .env("TMPDIR", &scratch.dir)
+        .env("CLAUDE_CODE_BIN", &stub)
+        .env("STUB_CALLS", "/dev/null")
+        .env("KILL_AT", "12")
+        .args(["--p1", "cc", "--p2", "random", "--seed", "5", "--quiet", "--save", &save])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .expect("the runner runs");
+    assert!(!killed.success(), "the stub killed the run mid-game");
+    let saved: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&save).unwrap()).unwrap();
+    let notes = saved["seat_notes"][0].as_str()
+        .unwrap_or_else(|| panic!("the save holds seat p0's notes: {}", saved["seat_notes"]))
+        .to_string();
+    assert!(saved["seat_notes"][1].is_null(), "the random seat keeps none");
+
+    let log = scratch.path("resumed.log");
+    let resumed = runner()
+        .current_dir(repo_root())
+        .env("TMPDIR", &scratch.dir)
+        .env("CLAUDE_CODE_BIN", &stub)
+        .env("STUB_CALLS", "/dev/null")
+        .args(["--resume", &save, "--seed", "5", "--quiet", "--log", &log])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .expect("the resumed runner runs");
+    assert!(resumed.success(), "the resumed game plays out: {resumed}");
+    let logged = std::fs::read_to_string(&log).unwrap();
+    let first_prompt = logged.split("\tPROMPT [").nth(1).expect("the resumed seat was asked something");
+    let first_prompt = first_prompt.split("\n20").next().unwrap();
+    assert!(first_prompt.contains(&format!("Your notes from your last decision:\n{notes}")),
+        "the first prompt after the resume carries the saved notes {notes:?}:\n{first_prompt}");
+}
