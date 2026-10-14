@@ -33,5 +33,13 @@ const labels = [...state.ui.verbs.values()].flat().map(v => v.label);
 if (!labels.some(l => l.endsWith("→ Invisible Stalker (yours)"))) fail(`the cast's verb says whose: ${JSON.stringify(labels)}`);
 if (!labels.some(l => l.endsWith("→ Invisible Stalker (opponent's)"))) fail(`and so does the ability's: ${JSON.stringify(labels)}`);
 
+// A loyalty ability's verb is one action per target, so each commits on a
+// click too (#829's review); so does a committed target set as a row.
+const loyalty = { ActivateLoyaltyAbility: { object_id: 40, ability_index: 0, targets: [{ Object: 31 }] } };
+const row = P.describeAction(state, loyalty);
+if (!row.endsWith("→ Invisible Stalker (opponent's)")) fail(`a loyalty verb says whose: ${row}`);
+const set = P.describeAction(state, { ResolveChoice: { choice: { ChosenTargetSet: [{ Object: 30 }, { Object: 31 }] } } });
+if (!set.includes("Invisible Stalker (yours), Invisible Stalker (opponent's)")) fail(`a committed set says whose: ${set}`);
+
 if (failures) { console.error(`forced target owner: ${failures} FAILED`); process.exit(1); }
 console.log("forced target owner: all checks passed");

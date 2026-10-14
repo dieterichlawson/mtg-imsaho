@@ -319,7 +319,7 @@ export function describeAction(state: LiveState, a: Action): string {
     // The amount, not just that there is one: two flashback costs on one
     // card are two different casts (#611).
     const alt = v.alternative_cost ? ` (cost ${costText(v.alternative_cost) || "{0}"})` : "";
-    const t = v.targets.length ? ` → ${v.targets.map(x => targetLabel(state, x)).join(", ")}` : "";
+    const t = v.targets.length ? ` → ${v.targets.map(x => forcedTargetLabel(state, x)).join(", ")}` : "";
     return `Cast ${nameOf(state, v.object_id)}${alt}${t}`;
   }
   if ("ActivateManaAbility" in a) {
@@ -330,14 +330,14 @@ export function describeAction(state: LiveState, a: Action): string {
   }
   if ("ActivateAbility" in a) {
     const v = a.ActivateAbility;
-    const t = v.targets.length ? ` → ${v.targets.map(x => targetLabel(state, x)).join(", ")}` : "";
+    const t = v.targets.length ? ` → ${v.targets.map(x => forcedTargetLabel(state, x)).join(", ")}` : "";
     return `${nameOf(state, v.object_id)}: ability ${v.ability_index}${t}`;
   }
   if ("ActivateLoyaltyAbility" in a) {
     const v = a.ActivateLoyaltyAbility;
     const p = state.index.get(v.object_id)?.obj;
     const d = p?.loyalty_abilities?.find(([i]) => i === v.ability_index)?.[1] || `loyalty ${v.ability_index}`;
-    const t = v.targets.length ? ` → ${v.targets.map(x => targetLabel(state, x)).join(", ")}` : "";
+    const t = v.targets.length ? ` → ${v.targets.map(x => forcedTargetLabel(state, x)).join(", ")}` : "";
     return `${nameOf(state, v.object_id)}: ${d}${t}`;
   }
   if ("DeclareAttackers" in a) return `Attack with ${a.DeclareAttackers.attackers.length + (a.DeclareAttackers.planeswalker_attacks || []).length}`;
@@ -358,7 +358,7 @@ function describeChoice(state: LiveState, c: ResolvedChoice): string {
   if ("ChosenOrder" in c) return `Order: ${c.ChosenOrder.join(", ")}`;
   if ("ChosenSubset" in c) return `Pile: ${c.ChosenSubset.map(id => nameOf(state, id)).join(", ")}`;
   if ("ChosenExileSet" in c) return `Exile ${c.ChosenExileSet.map(id => nameOf(state, id)).join(", ")}`;
-  if ("ChosenTargetSet" in c) return `Targets: ${c.ChosenTargetSet.map(x => targetLabel(state, x)).join(", ")}`;
+  if ("ChosenTargetSet" in c) return `Targets: ${c.ChosenTargetSet.map(x => forcedTargetLabel(state, x)).join(", ")}`;
   if ("ChosenObjectSet" in c) return `Choose ${c.ChosenObjectSet.map(id => nameOf(state, id)).join(", ")}`;
   if ("XFunding" in c) return `X funding ${JSON.stringify(c.XFunding)}`;
   return JSON.stringify(c);
