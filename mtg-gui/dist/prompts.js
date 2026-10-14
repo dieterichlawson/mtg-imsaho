@@ -253,6 +253,15 @@ export function autoPassNotice(declined, stillOn) {
         return null;
     return `Auto-pass has stopped. When it was turned on it declined ${what(declined)}.`;
 }
+/**
+ * The letter a colour or mana type is written with: W U B R G, and C for
+ * colourless. The first letter of the name made Blue and Black both "B"
+ * (#808): Think Twice's flashback read "{2}{B}", a floating blue "Pool 1B".
+ */
+export function manaLetter(name) {
+    const letters = { White: "W", Blue: "U", Black: "B", Red: "R", Green: "G", Colorless: "C" };
+    return letters[name] ?? name;
+}
 /** Mana cost as text: {1}{R}. */
 export function costText(cost) {
     if (!cost || !cost.symbols)
@@ -263,9 +272,13 @@ export function costText(cost) {
         if (typeof s === "string")
             return `{${s}}`;
         if ("Colored" in s)
-            return `{${String(s.Colored)[0]}}`;
+            return `{${manaLetter(String(s.Colored))}}`;
         if ("Generic" in s)
             return `{${String(s.Generic)}}`;
+        // `{C}`, colourless mana specifically (CR 107.4c): serde writes it as
+        // `{"Colorless": n}` — no card in the pool costs it yet.
+        if ("Colorless" in s)
+            return "{C}".repeat(Number(s.Colorless));
         return `{${JSON.stringify(s)}}`;
     }).join("");
 }

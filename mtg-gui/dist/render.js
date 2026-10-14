@@ -4,7 +4,7 @@
 // what each one is and what a click on it does. Input never looks at the
 // view; it looks at the last frame.
 import { drawArt, frameColor, darker, uiImage } from "./assets.js";
-import { nameOf, targetLabel, playerLabel, engineLine, objectOfKey } from "./prompts.js";
+import { nameOf, targetLabel, playerLabel, engineLine, objectOfKey, manaLetter } from "./prompts.js";
 export const W = 640, H = 360;
 export const PANEL_X = 480;
 const BOARD_W = PANEL_X;
@@ -703,7 +703,7 @@ function drawStrip(ctx, hits, state, y, pid, life, handSize, library, gy, exile,
     const cast = ((state.view.spells_cast_this_turn || []).find(([p]) => p === pid) || [pid, 0])[1];
     if (cast)
         parts.push(`Cast ${cast}`);
-    const poolText = Object.entries((pool && pool.mana) || {}).filter(([, n]) => (n ?? 0) > 0).map(([k, n]) => `${n}${k[0]}`).join(" ");
+    const poolText = Object.entries((pool && pool.mana) || {}).filter(([, n]) => (n ?? 0) > 0).map(([k, n]) => `${n}${manaLetter(k)}`).join(" ");
     if (poolText)
         parts.push(`Pool ${poolText}`);
     let x = 150;

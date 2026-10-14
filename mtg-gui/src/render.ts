@@ -5,7 +5,7 @@
 // view; it looks at the last frame.
 
 import { drawArt, frameColor, darker, uiImage } from "./assets.js";
-import { nameOf, targetLabel, playerLabel, engineLine, objectOfKey } from "./prompts.js";
+import { nameOf, targetLabel, playerLabel, engineLine, objectOfKey, manaLetter } from "./prompts.js";
 import type { CardView, Color, FaceText, GameView, ManaCost, ManaPool, ObjectId, PermanentView, PlayerId, Step, ViewObject } from "./protocol.js";
 import type { Hit, IndexEntry, LiveState, Row, State, Ui } from "./state.js";
 
@@ -637,7 +637,7 @@ function drawStrip(ctx: Ctx, hits: Hit[], state: LiveState, y: number, pid: Play
   // upkeep on it, and no zone shows it (#832).
   const cast = ((state.view.spells_cast_this_turn || []).find(([p]) => p === pid) || [pid, 0])[1];
   if (cast) parts.push(`Cast ${cast}`);
-  const poolText = Object.entries((pool && pool.mana) || {}).filter(([, n]) => (n ?? 0) > 0).map(([k, n]) => `${n}${k[0]}`).join(" ");
+  const poolText = Object.entries((pool && pool.mana) || {}).filter(([, n]) => (n ?? 0) > 0).map(([k, n]) => `${n}${manaLetter(k)}`).join(" ");
   if (poolText) parts.push(`Pool ${poolText}`);
   let x = 150;
   for (const whole of parts) {

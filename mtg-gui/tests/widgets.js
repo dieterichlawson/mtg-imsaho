@@ -1204,6 +1204,8 @@ async function main() {
       else ok("turn-facts: both strips carry their cast counts");
       const pool = drawn.filter(d => d.s.startsWith("Pool"));
       if (!pool.length) fail("turn-facts: the pool is not drawn at all");
+      else if (!pool[0].s.includes("19U") || !pool[0].s.includes("19B"))
+        fail(`turn-facts: blue and black are written apart in the pool (#808): ${pool[0].s}`);
       else if (pool.some(d => d.right > 480)) fail(`turn-facts: a strip runs past the board: ${JSON.stringify(pool)}`);
       else ok("turn-facts: a full pool after the cast count stays on the board");
     }
