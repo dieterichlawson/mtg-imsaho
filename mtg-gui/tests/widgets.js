@@ -1223,11 +1223,22 @@ async function main() {
           ] };
           CanvasRenderingContext2D.prototype.fillText = function (s) { drawn.push(String(s)); return orig.apply(this, arguments); };
           const front = window.mtgDebug.inspect("o" + card.object_id);
+          // The same card as a permanent with its trigger on the stack.
+          const perm = { ...JSON.parse(JSON.stringify(m.view.battlefield[0] || {})), object_id: 9901, card_id: card.card_id, name: card.name };
+          const trig = { object_id: 0, name: card.name + " ability", controller: m.view.you, targets: [], source_id: 9901, card_id: 0 };
+          const keepB = m.view.battlefield, keepS = m.view.stack;
+          m.view.battlefield = keepB.concat([perm]); m.view.stack = keepS.concat([trig]);
+          let trigger = null;
+          try {
+            m.hover = { key: "stack0", kind: "stack", stackIndex: m.view.stack.length - 1 };
+            const t = window.mtgDebug.inspectHover();
+            trigger = t && t.otherFace;
+          } finally { m.view.battlefield = keepB; m.view.stack = keepS; m.hover = null; }
           const was = [m.selected, m.hover];
           m.selected = card.object_id; m.hover = null;
           window.mtgDebug.render();
           [m.selected, m.hover] = was;
-          return { front: front && front.otherFace, drawn };
+          return { front: front && front.otherFace, trigger, drawn };
         } finally {
           CanvasRenderingContext2D.prototype.fillText = orig;
           m.view.double_faces = keep;
@@ -1235,6 +1246,7 @@ async function main() {
         }
       });
       if (got.front !== "Test Back Face") fail(`double-faced: the inspector's other face is ${JSON.stringify(got.front)}`);
+      else if (got.trigger !== "Test Back Face") fail(`double-faced: a trigger from the permanent names no other face: ${JSON.stringify(got.trigger)}`);
       else ok("double-faced: the inspector names the other face");
       if (!got.drawn.some(t => t.includes("Other face: Test Back Face")) || !got.drawn.some(t => t.includes("back's own words")))
         fail(`double-faced: the other face is not drawn: ${JSON.stringify(got.drawn.filter(t => /face|back/i.test(t)))}`);

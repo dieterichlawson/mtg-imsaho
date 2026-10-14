@@ -1047,14 +1047,22 @@ export function inspecting(state) {
  * none.
  */
 export function otherFace(state, o) {
-    if (o.card_id === undefined || o.card_id === null)
+    // A trigger has no card of its own (`card_id` 0): Delver's upkeep trigger
+    // is read off the permanent it fired from, which is what transforms.
+    let card = o;
+    if (!o.card_id && o.source_id !== undefined && o.source_id !== null) {
+        const src = state.view.battlefield.find(p => p.object_id === o.source_id);
+        if (src)
+            card = src;
+    }
+    if (card.card_id === undefined || card.card_id === null)
         return null;
-    const faces = (state.view.double_faces || {})[String(o.card_id)];
+    const faces = (state.view.double_faces || {})[String(card.card_id)];
     if (!faces)
         return null;
-    if (o.name === faces[0].name)
+    if (card.name === faces[0].name)
         return faces[1];
-    if (o.name === faces[1].name)
+    if (card.name === faces[1].name)
         return faces[0];
     return null;
 }
