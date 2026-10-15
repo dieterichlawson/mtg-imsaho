@@ -192,8 +192,58 @@ pub fn compute_autotap(
     sources: &[ManaSource],
     hand_costs: &[ManaCost],
 ) -> Option<Vec<(ObjectId, usize)>> {
-    let plan = greedy_autotap(cost, pool, sources, hand_costs)?;
-    Some(keep_the_hand_castable(plan, cost, pool, sources, hand_costs))
+    let demands: Vec<Demand> = hand_costs.iter()
+        .map(|c| Demand { cost: c.clone(), keep: None })
+        .collect();
+    compute_autotap_around(cost, pool, sources, &demands)
+}
+
+/// Something else the player could pay for, which a plan for one cost
+/// should not leave unpayable when another plan would not: a spell in hand,
+/// a card castable from the graveyard (flashback, CR 702.34a), or an
+/// activated ability of a permanent they control.
+///
+/// `keep` is the permanent an ability taps as part of its cost (`{T}`,
+/// CR 602.2h): tapping it for mana spends the ability too, and it cannot
+/// pay for its own ability. A utility land's `{T}: Add {C}` is the first
+/// thing Phase 3 spends on generic, and the hand-only check never noticed
+/// that it took Nephalia Drownyard's mill off the menu while a redundant
+/// Swamp would have paid as well (issue #837).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Demand {
+    pub cost: ManaCost,
+    pub keep: Option<ObjectId>,
+}
+
+impl Demand {
+    /// Whether this could be paid from `pool` and `sources` with `tapped`
+    /// already spent.
+    fn payable(&self, pool: &ManaPool, sources: &[ManaSource], tapped: &[(ObjectId, usize)]) -> bool {
+        if self.keep.is_some_and(|k| tapped.iter().any(|(id, _)| *id == k)) {
+            return false;
+        }
+        let rest: Vec<ManaSource> = sources.iter()
+            .filter(|s| Some(s.object_id) != self.keep
+                && !tapped.iter().any(|(id, _)| *id == s.object_id))
+            .cloned()
+            .collect();
+        greedy_autotap(&self.cost, pool, &rest, &[]).is_some()
+    }
+}
+
+/// [`compute_autotap`] around everything in `demands`, not only spells in
+/// hand: the plan's colour preferences count their pips, and a plan that
+/// leaves one unpayable is repaired when another plan would not.
+#[must_use]
+pub fn compute_autotap_around(
+    cost: &ManaCost,
+    pool: &ManaPool,
+    sources: &[ManaSource],
+    demands: &[Demand],
+) -> Option<Vec<(ObjectId, usize)>> {
+    let costs: Vec<ManaCost> = demands.iter().map(|d| d.cost.clone()).collect();
+    let plan = greedy_autotap(cost, pool, sources, &costs)?;
+    Some(keep_the_hand_castable(plan, cost, pool, sources, demands))
 }
 
 /// The pips of `hand_costs` that only one kind of mana pays — coloured and
@@ -265,15 +315,16 @@ fn keep_the_hand_castable(
     cost: &ManaCost,
     pool: &ManaPool,
     sources: &[ManaSource],
-    hand_costs: &[ManaCost],
+    demands: &[Demand],
 ) -> Vec<(ObjectId, usize)> {
-    let castable_before: Vec<&ManaCost> = hand_costs.iter()
-        .filter(|h| greedy_autotap(h, pool, sources, &[]).is_some())
+    let castable_before: Vec<&Demand> = demands.iter()
+        .filter(|d| d.payable(pool, sources, &[]))
         .collect();
     if castable_before.is_empty() {
         return plan;
     }
-    let reserve = hand_reserve(hand_costs);
+    let costs: Vec<ManaCost> = demands.iter().map(|d| d.cost.clone()).collect();
+    let reserve = hand_reserve(&costs);
     let tapped = |p: &[(ObjectId, usize)]| -> Vec<&ManaSource> {
         p.iter()
             .filter_map(|(id, _)| sources.iter().find(|s| s.object_id == *id))
@@ -287,12 +338,8 @@ fn keep_the_hand_castable(
     };
     let stranded = |p: &[(ObjectId, usize)]| -> Option<usize> {
         let left = pool_after(p, pool, sources, cost, &reserve)?;
-        let untapped: Vec<ManaSource> = sources.iter()
-            .filter(|s| !p.iter().any(|(id, _)| *id == s.object_id))
-            .cloned()
-            .collect();
         Some(castable_before.iter()
-            .filter(|h| greedy_autotap(h, &left, &untapped, &[]).is_none())
+            .filter(|d| !d.payable(&left, sources, p))
             .count())
     };
     let Some(base) = stranded(&plan) else { return plan };
@@ -309,9 +356,13 @@ fn keep_the_hand_castable(
     // below, which would otherwise run on every offer while such a spell
     // sits in hand, is skipped.
     let floor = castable_before.iter()
-        .filter(|h| {
-            let both = ManaCost::new(cost.symbols.iter().chain(h.symbols.iter()).cloned().collect());
-            !within_reach(&both, pool, sources)
+        .filter(|d| {
+            let both = ManaCost::new(cost.symbols.iter().chain(d.cost.symbols.iter()).cloned().collect());
+            let rest: Vec<ManaSource> = sources.iter()
+                .filter(|s| Some(s.object_id) != d.keep)
+                .cloned()
+                .collect();
+            !within_reach(&both, pool, &rest)
         })
         .count();
     if base <= floor {
