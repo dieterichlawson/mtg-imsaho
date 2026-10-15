@@ -7437,6 +7437,7 @@ pub(crate) mod tests {
             }],
             max_x: 4,
             x_discount: 0,
+            pool_order: vec![],
         };
         mtg_engine::engine::LegalActions {
             actions: Vec::new(),

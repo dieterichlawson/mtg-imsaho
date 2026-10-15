@@ -213,6 +213,9 @@ fn the_page_is_given_the_engines_x_funding_answers() {
     let mut cases = Vec::new();
     for (name, groups) in boards {
         for (pool_red, pool_white) in [(0, 0), (1, 0), (2, 1)] {
+            // A floating-mana order from the engine (`pool_order`, spending
+            // around what the hand needs) against none (largest bucket first).
+            for (order_name, pool_order) in [("", vec![]), ("/spend-W-first", vec![ManaType::White, ManaType::Red])] {
             for x_discount in [0, 2] {
                 let mut pool = std::collections::BTreeMap::new();
                 if pool_red > 0 {
@@ -223,7 +226,9 @@ fn the_page_is_given_the_engines_x_funding_answers() {
                 }
                 let max_x = pool_red + pool_white
                     + groups.iter().map(FundingGroup::max_contribution).sum::<u32>();
-                let options = FundingOptions { pool, groups: groups.clone(), max_x, x_discount };
+                let options = FundingOptions {
+                    pool, groups: groups.clone(), max_x, x_discount, pool_order: pool_order.clone(),
+                };
                 let allocations: Vec<serde_json::Value> = (0..=options.max_announceable_x())
                     .map(|x| {
                         let (response, shortfall) = funding::allocate_for_x(&options, x);
@@ -236,11 +241,12 @@ fn the_page_is_given_the_engines_x_funding_answers() {
                     })
                     .collect();
                 cases.push(serde_json::json!({
-                    "board": format!("{name}/pool{pool_red}-{pool_white}/discount{x_discount}"),
+                    "board": format!("{name}/pool{pool_red}-{pool_white}/discount{x_discount}{order_name}"),
                     "options": options,
                     "fundable": funding::fundable_x_values(&options),
                     "allocations": allocations,
                 }));
+            }
             }
         }
     }

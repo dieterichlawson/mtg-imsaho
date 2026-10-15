@@ -278,6 +278,8 @@ export interface FundingOptions {
   groups: FundingGroup[];
   max_x: number;
   x_discount?: number;
+  /** The order floating mana is spent on X in; absent: largest first. */
+  pool_order?: ManaType[];
 }
 
 /**

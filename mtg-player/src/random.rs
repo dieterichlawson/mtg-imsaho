@@ -812,6 +812,7 @@ mod rolls {
                 groups: vec![],
                 max_x: 0,
                 x_discount: 0,
+                pool_order: vec![],
             },
             source_id: ObjectId(99),
             is_ability,
@@ -832,6 +833,7 @@ mod rolls {
             groups: vec![],
             max_x: 0,
             x_discount,
+            pool_order: vec![],
         };
         if pool > 0 {
             options.pool.insert(ManaType::Red, pool);

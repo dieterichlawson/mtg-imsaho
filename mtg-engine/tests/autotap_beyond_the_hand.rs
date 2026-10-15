@@ -217,3 +217,34 @@ fn a_resolution_payment_from_the_pool_keeps_the_hand_castable() {
     assert_eq!((pool.get(ManaType::White), pool.get(ManaType::Green)), (1, 0),
         "paying {{1}} from {{W}}{{G}} spent the {{W}} Doomed Traveler needs");
 }
+
+/// X out of floating mana spends what nothing else needs first (from the
+/// second propagation review). Devil's Play `{X}{R}` with {R}{W}{W}{G}
+/// floating and two Doomed Travelers `{W}` in hand: X = 1 spent the
+/// largest bucket, a {W}, and left one Traveler unpayable; the {G} pays it.
+#[test]
+fn x_from_the_pool_spends_what_nothing_else_needs() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    spell_in_hand(&mut state, &reg, "Doomed Traveler", P0);
+    spell_in_hand(&mut state, &reg, "Doomed Traveler", P0);
+    let play = spell_in_hand(&mut state, &reg, "Devil's Play", P0);
+    add_mana(&mut state, P0, &[(ManaType::Red, 1), (ManaType::White, 2), (ManaType::Green, 1)]);
+
+    let cast = engine::legal_actions(&state, &reg).actions.into_iter()
+        .find(|a| matches!(a, Action::CastSpell { object_id, targets, .. }
+            if *object_id == play && targets.iter().any(|t| matches!(t, mtg_engine::actions::Target::Player(p) if *p == P1))))
+        .expect("Devil's Play at the opponent is offered");
+    let state = engine::submit_action(&state, &cast, &reg);
+    let legal = engine::legal_actions(&state, &reg);
+    let Some(mtg_engine::state::ResolutionChoiceKind::ChooseXFunding { options, .. }) =
+        legal.resolution_prompt.as_ref() else {
+        panic!("Devil's Play asks for X funding");
+    };
+    let (response, _) = mtg_engine::funding::allocate_for_x(options, 1);
+    let state = engine::submit_action(&state,
+        &Action::ResolveChoice { choice: ResolvedChoice::XFunding(response) }, &reg);
+    let pool = &state.get_player(P0).mana_pool;
+    assert_eq!((pool.get(ManaType::White), pool.get(ManaType::Green)), (2, 0),
+        "X = 1 was paid with a {{W}} a Doomed Traveler needs");
+}

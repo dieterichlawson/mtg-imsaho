@@ -98,6 +98,11 @@ pub struct FundingOptions {
     /// and a response funds `X - x_discount`.
     #[serde(default)]
     pub x_discount: u32,
+    /// The order floating mana is spent on X in: what the rest of what the
+    /// player could pay for needs least first (`order_around_demands`).
+    /// Empty — a board built without one — spends the largest bucket first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pool_order: Vec<ManaType>,
 }
 
 impl FundingOptions {
@@ -281,11 +286,16 @@ pub fn allocate_for_x(options: &FundingOptions, x: u32) -> (FundingResponse, u32
             .unwrap_or(0)
     });
 
-    // Pool: drain largest buckets first.
+    // Pool: in `pool_order` when the engine gave one, so mana another cost
+    // needs is spent last; otherwise largest buckets first.
     let mut remaining = target - tap_sum;
     let mut pool_sorted: Vec<(ManaType, u32)> =
         options.pool.iter().map(|(k, v)| (*k, *v)).collect();
     pool_sorted.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    if !options.pool_order.is_empty() {
+        let rank = |mt: &ManaType| options.pool_order.iter().position(|o| o == mt).unwrap_or(usize::MAX);
+        pool_sorted.sort_by_key(|(mt, _)| rank(mt));
+    }
     for (mt, avail) in pool_sorted {
         if remaining == 0 {
             break;
@@ -564,6 +574,7 @@ pub fn build_options(
         max_x,
         // Set by the caster, which is where the spell's cost is known.
         x_discount: 0,
+        pool_order: Vec::new(),
     }
 }
 
@@ -573,7 +584,8 @@ pub fn build_options(
 /// many of their coloured pips its colours could pay. The allocator — this
 /// crate's [`allocate_for_x`] and the page's copy — walks the groups in
 /// order, so X is funded from what nothing else needs first, as a cast's
-/// plan is (issue #837, #840). Stable, so ties keep the name order.
+/// plan is (issue #837, #840). Stable, so ties keep the name order. It
+/// also sets `pool_order`, the order the allocator spends floating mana in.
 /// `paying_for` (the spell being cast, or the permanent whose ability it
 /// is) is not "the rest".
 pub fn order_around_demands(
@@ -598,6 +610,10 @@ pub fn order_around_demands(
         (keeps, pips)
     };
     options.groups.sort_by_key(|g| (g.category as u8, rank(g)));
+    // Floating mana is spent on X around the same demands, as a payment
+    // out of the pool is (`auto_pay_reserving`, #678).
+    let reserve = crate::mana::hand_reserve(&demands.iter().map(|d| d.cost.clone()).collect::<Vec<_>>());
+    options.pool_order = crate::mana::generic_payment_order(&state.get_player(player).mana_pool, &reserve);
 }
 
 /// Apply a validated funding response to the game state: drain the player's
@@ -701,6 +717,7 @@ mod tests {
             groups: vec![group("Swamp", FundingCategory::Lands, 1, 3)],
             max_x: 3,
             x_discount: 0,
+            pool_order: Vec::new(),
         };
         let response = FundingResponse::default();
         assert_eq!(validate(&response, &options), Ok(()));
@@ -714,6 +731,7 @@ mod tests {
             groups: vec![group("Swamp", FundingCategory::Lands, 1, 2)],
             max_x: 2,
             x_discount: 0,
+            pool_order: Vec::new(),
         };
         let mut response = FundingResponse::default();
         response.taps.insert("Forest".into(), 1);
@@ -730,6 +748,7 @@ mod tests {
             groups: vec![group("Sol Ring", FundingCategory::Rocks, 2, 1)],
             max_x: 2,
             x_discount: 0,
+            pool_order: Vec::new(),
         };
         let mut response = FundingResponse::default();
         response.taps.insert("Sol Ring".into(), 1);
@@ -750,6 +769,7 @@ mod tests {
             groups: vec![group("Swamp", FundingCategory::Lands, 1, 2)],
             max_x: 2,
             x_discount: 0,
+            pool_order: Vec::new(),
         };
         let mut response = FundingResponse::default();
         response.taps.insert("Swamp".into(), 3);
@@ -772,6 +792,7 @@ mod tests {
             groups: vec![],
             max_x: 1,
             x_discount: 0,
+            pool_order: Vec::new(),
         };
         let mut response = FundingResponse::default();
         response.pool.insert(ManaType::Black, 2);
@@ -795,6 +816,7 @@ mod tests {
             groups: vec![],
             max_x: 1, // artificially low
             x_discount: 0,
+            pool_order: Vec::new(),
         };
         let mut response = FundingResponse::default();
         response.pool.insert(ManaType::Black, 2);
@@ -836,6 +858,7 @@ mod tests {
             ],
             max_x: 3,
             x_discount: 0,
+            pool_order: Vec::new(),
         };
         for x in 0..=3 {
             let (response, shortfall) = allocate_for_x(&options, x);
@@ -867,6 +890,7 @@ mod tests {
             ],
             max_x: 4,
             x_discount: 0,
+            pool_order: Vec::new(),
         };
         for x in 0..=4 {
             let (response, shortfall) = allocate_for_x(&options, x);
@@ -889,6 +913,7 @@ mod tests {
             groups: vec![group("Sol Ring", FundingCategory::Rocks, 2, 1)],
             max_x: 2,
             x_discount: 0,
+            pool_order: Vec::new(),
         };
         let (response, shortfall) = allocate_for_x(&options, 1);
         assert_eq!(shortfall, 1);
@@ -907,6 +932,7 @@ mod tests {
             groups: vec![group("Mountain", FundingCategory::Lands, 1, 2)],
             max_x: 4,
             x_discount: 0,
+            pool_order: Vec::new(),
         };
         let (response, shortfall) = allocate_for_x(&options, 2);
         assert_eq!(shortfall, 0);
@@ -924,6 +950,7 @@ mod tests {
             groups: vec![group("Sol Ring", FundingCategory::Rocks, 2, 1)],
             max_x: 3,
             x_discount: 0,
+            pool_order: Vec::new(),
         };
         let (response, shortfall) = allocate_for_x(&options, 2);
         assert_eq!(shortfall, 0);
@@ -964,6 +991,7 @@ mod tests {
                         groups: groups.clone(),
                         max_x,
                         x_discount: discount,
+                        pool_order: Vec::new(),
                     };
                     let fundable = fundable_x_values(&options);
                     for x in 0..=options.max_announceable_x() {
@@ -1057,6 +1085,7 @@ mod tests {
                         groups: groups.clone(),
                         max_x: pool_total + tappable,
                         x_discount: discount,
+                        pool_order: Vec::new(),
                     };
                     for x in 0..=options.max_announceable_x() {
                         let target = options.mana_for_x(x);

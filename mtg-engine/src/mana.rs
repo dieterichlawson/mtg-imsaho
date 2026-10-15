@@ -811,7 +811,8 @@ const GENERIC_ORDER: [ManaType; 6] = [
 /// needs from the same pool: the biggest surplus first, so mana another cost
 /// depends on is spent last. Ties keep [`GENERIC_ORDER`], so a plan stays
 /// deterministic.
-fn generic_payment_order(pool: &ManaPool, reserve: &ManaCost) -> Vec<ManaType> {
+#[must_use]
+pub fn generic_payment_order(pool: &ManaPool, reserve: &ManaCost) -> Vec<ManaType> {
     let mut needed: std::collections::BTreeMap<ManaType, u32> = std::collections::BTreeMap::new();
     for sym in &reserve.symbols {
         match sym {

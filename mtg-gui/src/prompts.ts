@@ -1012,9 +1012,16 @@ export function allocateForX(opts: FundingOptions, x: number): { response: Fundi
   }
 
   let remaining = target - tapSum;
+  // In the engine's `pool_order` when it sent one — mana another cost needs
+  // is spent last — otherwise largest buckets first, as funding.rs does.
   const poolSorted = (Object.entries(opts.pool || {}) as [ManaType, number][])
     .filter(([, n]) => (n || 0) > 0)
     .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  const order = opts.pool_order || [];
+  if (order.length > 0) {
+    const rank = (mt: ManaType) => { const i = order.indexOf(mt); return i < 0 ? order.length : i; };
+    poolSorted.sort((a, b) => rank(a[0]) - rank(b[0]));
+  }
   for (const [mt, avail] of poolSorted) {
     if (remaining === 0) break;
     const take = Math.min(avail, remaining);
