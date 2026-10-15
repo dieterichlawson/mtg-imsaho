@@ -110,7 +110,10 @@ pub fn pay_cost_with_sources(
     for (source_id, ability_index) in plan {
         activate_mana_source_reserving(state, source_id, ability_index, Some(cost), registry);
     }
-    mana::auto_pay(&mut state.get_player_mut(player).mana_pool, cost).is_ok()
+    // Around what everything else needs, as the plan assumed: a floating
+    // {R} the Geistflame in hand needs is spent last (issue #840, #678).
+    let reserve = super::demand_reserve(state, registry, player, None);
+    mana::auto_pay_reserving(&mut state.get_player_mut(player).mana_pool, cost, &reserve).is_ok()
 }
 /// Stony Silence and friends: no artifact ability may be activated, mana
 /// abilities included.
@@ -285,5 +288,6 @@ pub(crate) fn execute_tap_plan_and_pay(
     for &(src_id, ability_index) in tap_plan {
         activate_mana_source_reserving(state, src_id, ability_index, Some(cost), registry);
     }
-    mana::auto_pay(&mut state.get_player_mut(player).mana_pool, cost).is_ok()
+    let reserve = super::demand_reserve(state, registry, player, None);
+    mana::auto_pay_reserving(&mut state.get_player_mut(player).mana_pool, cost, &reserve).is_ok()
 }

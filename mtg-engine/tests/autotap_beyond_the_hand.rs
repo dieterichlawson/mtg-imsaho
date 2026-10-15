@@ -197,3 +197,23 @@ fn x_is_funded_from_what_nothing_else_needs() {
     assert!(ids.iter().any(|id| state.get_object(*id).unwrap().name == "Mountain"
         && !state.get_object(*id).unwrap().tapped), "a Mountain is left for Geistflame");
 }
+
+/// Issue #840, the pool half (from its propagation review): a payment the
+/// pool covers taps nothing, and the pool was then spent in the fixed
+/// "C, W, U, B, R, G" order — floating {W}{G} paid Mentor's {1} with the
+/// {W} the Doomed Traveler in hand needs. It is paid around what else could
+/// be paid for, as a cast is (#678).
+#[test]
+fn a_resolution_payment_from_the_pool_keeps_the_hand_castable() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    spell_in_hand(&mut state, &reg, "Doomed Traveler", P0);
+    add_mana(&mut state, P0, &[(ManaType::White, 1), (ManaType::Green, 1)]);
+    stock_library(&mut state, &reg, P0, 2);
+
+    let cost = ManaCost::new(vec![ManaSymbol::Generic(1)]);
+    assert!(engine::pay_cost_with_sources(&mut state, P0, &cost, &reg));
+    let pool = &state.get_player(P0).mana_pool;
+    assert_eq!((pool.get(ManaType::White), pool.get(ManaType::Green)), (1, 0),
+        "paying {{1}} from {{W}}{{G}} spent the {{W}} Doomed Traveler needs");
+}

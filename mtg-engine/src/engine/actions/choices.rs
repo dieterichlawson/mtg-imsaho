@@ -575,10 +575,14 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                                 Some(&pending.non_x_mana_cost), registry);
                         }
 
-                        // Step 2: pay the non-X mana portion.
-                        mana::auto_pay(
+                        // Step 2: pay the non-X mana portion, around what
+                        // everything else needs, as a cast without X does
+                        // (issue #678; from the review of #840).
+                        let reserve = demand_reserve(&*state, registry, player, Some(pending.object_id));
+                        mana::auto_pay_reserving(
                             &mut state.get_player_mut(player).mana_pool,
                             &pending.non_x_mana_cost,
+                            &reserve,
                         ).expect("non-X mana should be payable after tap_plan");
 
                         // Step 3: apply the funding response (pays X by
