@@ -1289,3 +1289,14 @@ illegal or dubious resolutions do.
   empties at the step's end (CR 500.4), and that no "activated" line is logged.
   Where there is none, check the costs are paid in CR 601.2h order and the log
   shows them in that order. #290 fixed this for X abilities only
+- L61 [proposed 2026-10-15, from L56 and #840] every planner that is not the
+  menu's. The menu's casts and abilities go through `legal_actions` with
+  `hand_costs`; other payments call `compute_autotap` themselves
+  (`payment_plan_with_sources`, `plan_autotap_for_cost`, X funding in
+  `funding.rs`, the flashback branch in `legal/casting.rs`). `grep -rn
+  compute_autotap mtg-engine/src` and, for each caller, stage a board where
+  two lands tie on Phase 3's key and only one of them is the sole source of a
+  colour a hand spell, a flashback card or an on-board ability needs. Answer
+  the payment, then check the menu still offers that cast; swap the two lands'
+  battlefield order and check the answer does not change. Then check each
+  such prompt names its tap plan on all four surfaces (#621, #841)
