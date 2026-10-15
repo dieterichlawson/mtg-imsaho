@@ -164,3 +164,36 @@ fn screeching_bats_upkeep_payment_keeps_the_hand_castable() {
     assert!(!state.get_object(mountain).unwrap().tapped,
         "the upkeep payment tapped the Mountain Geistflame needs");
 }
+
+/// X is funded around the same demands (the propagation review of #837 and
+/// #840). Devil's Play `{X}{R}` with two Mountains and a Swamp and a
+/// Geistflame `{R}` in hand: the cast's plan spends one Mountain on `{R}`,
+/// and X = 1 used to take the other — "Mountain" sorts before "Swamp" and
+/// the allocator walks the groups in order — stranding the Geistflame.
+#[test]
+fn x_is_funded_from_what_nothing_else_needs() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let ids = lands(&mut state, &reg, &["Mountain", "Mountain", "Swamp"]);
+    spell_in_hand(&mut state, &reg, "Geistflame", P0);
+    let play = spell_in_hand(&mut state, &reg, "Devil's Play", P0);
+
+    let cast = engine::legal_actions(&state, &reg).actions.into_iter()
+        .find(|a| matches!(a, Action::CastSpell { object_id, targets, .. }
+            if *object_id == play && targets.iter().any(|t| matches!(t, mtg_engine::actions::Target::Player(p) if *p == P1))))
+        .expect("Devil's Play at the opponent is offered");
+    let state = engine::submit_action(&state, &cast, &reg);
+    let legal = engine::legal_actions(&state, &reg);
+    let Some(mtg_engine::state::ResolutionChoiceKind::ChooseXFunding { options, .. }) =
+        legal.resolution_prompt.as_ref() else {
+        panic!("Devil's Play asks for X funding");
+    };
+    let (response, shortfall) = mtg_engine::funding::allocate_for_x(options, 1);
+    assert_eq!(shortfall, 0);
+    assert_eq!(response.taps.keys().cloned().collect::<Vec<_>>(), vec!["Swamp".to_string()],
+        "X = 1 taps the Mountain Geistflame needs: {response:?}");
+    let state = engine::submit_action(&state,
+        &Action::ResolveChoice { choice: ResolvedChoice::XFunding(response) }, &reg);
+    assert!(ids.iter().any(|id| state.get_object(*id).unwrap().name == "Mountain"
+        && !state.get_object(*id).unwrap().tapped), "a Mountain is left for Geistflame");
+}

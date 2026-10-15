@@ -385,7 +385,8 @@ pub(crate) fn finish_activation(
         // before tapping it counted that mana twice.
         let mut probe = state.clone();
         pay_activation_costs(&mut probe, player, object_id, ability_index, &cost, registry);
-        let options = crate::funding::build_options(&probe, player, registry);
+        let mut options = crate::funding::build_options(&probe, player, registry);
+        crate::funding::order_around_demands(&mut options, &probe, registry, player, Some(object_id));
         if options.max_announceable_x() > 0 {
             let name = card_name(state, registry, object_id);
             state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {

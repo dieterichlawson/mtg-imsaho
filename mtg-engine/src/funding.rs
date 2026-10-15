@@ -567,6 +567,39 @@ pub fn build_options(
     }
 }
 
+/// Reorder `options.groups` so that, within a category, the groups the rest
+/// of what `player` could pay for needs come last: first any group holding
+/// a permanent whose own `{T}` ability is one of those demands, then by how
+/// many of their coloured pips its colours could pay. The allocator — this
+/// crate's [`allocate_for_x`] and the page's copy — walks the groups in
+/// order, so X is funded from what nothing else needs first, as a cast's
+/// plan is (issue #837, #840). Stable, so ties keep the name order.
+/// `paying_for` (the spell being cast, or the permanent whose ability it
+/// is) is not "the rest".
+pub fn order_around_demands(
+    options: &mut FundingOptions,
+    state: &GameState,
+    registry: &CardRegistry,
+    player: PlayerId,
+    paying_for: Option<ObjectId>,
+) {
+    let demands: Vec<crate::mana::Demand> = crate::engine::mana_demands(state, registry, player)
+        .into_iter()
+        .filter(|(id, _)| Some(*id) != paying_for)
+        .map(|(_, d)| d)
+        .collect();
+    let rank = |g: &FundingGroup| -> (bool, u32) {
+        let keeps = demands.iter().any(|d| d.keep.is_some_and(|k| g.source_ids.contains(&k)));
+        let pips = demands.iter()
+            .flat_map(|d| d.cost.colored_requirements())
+            .filter(|(c, _)| g.colors_produced.contains(c))
+            .map(|(_, n)| n)
+            .sum();
+        (keeps, pips)
+    };
+    options.groups.sort_by_key(|g| (g.category as u8, rank(g)));
+}
+
 /// Apply a validated funding response to the game state: drain the player's
 /// specified pool mana, tap the specified sources (which pushes their mana
 /// into the pool), and then drain the tapped mana back out so it goes toward

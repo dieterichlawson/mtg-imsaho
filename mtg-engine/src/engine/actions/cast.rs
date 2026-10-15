@@ -165,6 +165,7 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
                 }
                 let _ = mana::auto_pay(&mut probe.get_player_mut(player).mana_pool, &non_x_cost);
                 let mut options = crate::funding::build_options(&probe, player, registry);
+                crate::funding::order_around_demands(&mut options, &probe, registry, player, Some(object_id));
                 options.x_discount = x_discount;
                 options
             };
