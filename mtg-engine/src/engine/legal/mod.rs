@@ -12,7 +12,6 @@
 use crate::cards::CardRegistry;
 use crate::ids::PlayerId;
 use crate::state::GameState;
-use crate::types::ManaCost;
 
 pub(crate) mod abilities;
 pub(crate) mod awaiting;
@@ -33,14 +32,13 @@ pub(crate) struct Ctx<'a> {
     /// cost. Gathered once because the ability loop and the casting loop have
     /// to agree on it — they are planning against the same lands.
     pub mana_sources: Vec<crate::mana::ManaSource>,
-    /// Effective costs of the player's castable spells, which the auto-tap
-    /// planner uses to avoid spending mana another spell needs for its colour.
-    /// (object id, effective cost) of each spell in the player's hand.
-    /// Carrying the id keeps "exclude the spell being cast" honest — an
-    /// index into a cost-filtered list drifted off the unfiltered hand as
-    /// soon as a land sat in it, excluding the wrong spell from the
+    /// Everything else the player could pay for (`mana_demands`), which the
+    /// auto-tap planner keeps payable. Each carries the id of the object
+    /// that pays it, which keeps "exclude the spell being cast" honest —
+    /// an index into a cost-filtered list drifted off the unfiltered hand
+    /// as soon as a land sat in it, excluding the wrong spell from the
     /// auto-tap's color-demand map (issue #114).
-    pub hand_costs: Vec<(crate::ids::ObjectId, ManaCost)>,
+    pub demands: Vec<(crate::ids::ObjectId, crate::mana::Demand)>,
     /// Card names that may not be cast at all (Nevermore).
     pub casting_banned: Vec<String>,
 }

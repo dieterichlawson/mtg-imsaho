@@ -1,0 +1,117 @@
+//! The auto-tapper keeps payable more than the spells in hand.
+//!
+//! A plan for one cost should not leave something else the player could pay
+//! for unpayable when another plan for the same cost would not. That promise
+//! used to be computed from the hand alone, so three kinds of "something
+//! else" were spent freely:
+//!
+//! - an activated ability of a permanent, including one that taps its own
+//!   source — a utility land's `{T}: Add {C}` was the first thing spent on
+//!   generic, and its own ability went with it (issue #837);
+//! - and a card castable from the graveyard by flashback (issue #838).
+
+mod common;
+use common::*;
+
+use mtg_engine::actions::Action;
+use mtg_engine::cards::CardRegistry;
+use mtg_engine::engine;
+use mtg_engine::types::*;
+
+fn names(state: &GameState, plan: &[(ObjectId, usize)]) -> Vec<String> {
+    plan.iter().map(|(id, _)| state.get_object(*id).unwrap().name.clone()).collect()
+}
+
+fn lands(state: &mut GameState, reg: &CardRegistry, names: &[&str]) -> Vec<ObjectId> {
+    names.iter().map(|n| named_permanent(state, reg, n, P0)).collect()
+}
+
+/// The offered `CastSpell` for `spell` (its first one, with the plan the
+/// menu shows).
+fn offered_cast(state: &GameState, reg: &CardRegistry, spell: ObjectId) -> Action {
+    engine::legal_actions(state, reg).actions.into_iter()
+        .find(|a| matches!(a, Action::CastSpell { object_id, alternative_cost: None, .. } if *object_id == spell))
+        .unwrap_or_else(|| panic!("no cast of {spell:?} offered"))
+}
+
+fn plan_of(action: &Action) -> Vec<(ObjectId, usize)> {
+    match action {
+        Action::CastSpell { tap_plan, .. } => tap_plan.clone(),
+        other => panic!("not a cast: {other:?}"),
+    }
+}
+
+/// Issue #837: Nephalia Drownyard, Island, two Swamps, two Forests. Ambush
+/// Viper's `{1}{G}` used to tap Forest and the Drownyard — and with it the
+/// Drownyard's `{1}{U}{B}, {T}` mill — while Forest and a second Swamp pay
+/// the same and keep the mill.
+#[test]
+fn a_cast_does_not_tap_a_utility_land_whose_own_ability_another_plan_keeps() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let ids = lands(&mut state, &reg,
+        &["Nephalia Drownyard", "Island", "Swamp", "Swamp", "Forest", "Forest"]);
+    let drownyard = ids[0];
+    let viper = spell_in_hand(&mut state, &reg, "Ambush Viper", P0);
+    assert!(offers_ability_of(&state, &reg, drownyard), "the mill is payable before the cast");
+
+    let cast = offered_cast(&state, &reg, viper);
+    let plan = plan_of(&cast);
+    assert!(!plan.iter().any(|(id, _)| *id == drownyard),
+        "Ambush Viper's plan spends the Drownyard's own ability: {:?}", names(&state, &plan));
+
+    let state = engine::submit_action(&state, &cast, &reg);
+    assert!(offers_ability_of(&state, &reg, drownyard),
+        "after the cast the Drownyard's mill is still payable");
+}
+
+/// Issue #837, the other board: Gavony Township's `{2}{G}{W}, {T}` over a
+/// Brimstone Volley `{2}{R}`: eight lands, and plans that pay the Volley
+/// from the basics leave the Township its four.
+/// (The issue's board had one Island, and there no plan keeps both: the
+/// six other lands cannot make seven mana.)
+#[test]
+fn gavony_township_is_not_spent_on_a_generic_pip_it_needs_kept() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let ids = lands(&mut state, &reg,
+        &["Gavony Township", "Plains", "Forest", "Forest", "Mountain", "Mountain", "Island", "Island"]);
+    let township = ids[0];
+    named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let volley = spell_in_hand(&mut state, &reg, "Brimstone Volley", P0);
+
+    let cast = offered_cast(&state, &reg, volley);
+    let plan = plan_of(&cast);
+    let tapped = names(&state, &plan);
+    assert!(!plan.iter().any(|(id, _)| *id == township),
+        "Brimstone Volley's plan spends Gavony Township: {tapped:?}");
+    let state = engine::submit_action(&state, &cast, &reg);
+    assert!(offers_ability_of(&state, &reg, township),
+        "after the cast Gavony Township's ability is still payable");
+}
+
+/// Issue #838: nine lands, Think Twice `{1}{U}` in hand, Moan of the
+/// Unhallowed in the graveyard with flashback `{5}{B}{B}`. Island and a
+/// Swamp left one black source; Island and a Plains keep the flashback.
+#[test]
+fn a_cast_keeps_a_flashback_in_the_graveyard_payable() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    lands(&mut state, &reg, &["Swamp", "Swamp", "Island", "Island",
+        "Plains", "Plains", "Plains", "Plains", "Mountain"]);
+    let think = spell_in_hand(&mut state, &reg, "Think Twice", P0);
+    let moan = named_card_in_graveyard(&mut state, &reg, "Moan of the Unhallowed", P0);
+    stock_library(&mut state, &reg, P0, 5);
+    let flashback_offered = |s: &GameState| engine::legal_actions(s, &reg).actions.iter()
+        .any(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == moan));
+    assert!(flashback_offered(&state), "Moan's flashback is payable before Think Twice");
+
+    let cast = offered_cast(&state, &reg, think);
+    let plan = plan_of(&cast);
+    assert!(!names(&state, &plan).iter().any(|n| n == "Swamp"),
+        "Think Twice's plan spends a Swamp Moan's {{B}}{{B}} needs: {:?}", names(&state, &plan));
+
+    let mut state = engine::submit_action(&state, &cast, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert!(flashback_offered(&state), "after Think Twice, Moan's flashback is still payable");
+}

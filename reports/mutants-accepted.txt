@@ -162,7 +162,7 @@ mtg-engine/src/funding.rs: replace > with >= in apply
 # break, so it is kept rather than deleted; `apply` would divide by zero.
 mtg-engine/src/funding.rs: replace > with == in validate
 
-# `other_hand_costs`, which excludes the spell being cast from the demand map
+# `others` in `from_hand`, which excludes the spell being cast from the demand map
 # the autotap planner reads. Getting it wrong changes WHICH lands are tapped
 # and nothing else — `compute_autotap`'s contract (a plan it offers pays the
 # cost) is property-tested and holds either way. Issue #114's exclusion bug

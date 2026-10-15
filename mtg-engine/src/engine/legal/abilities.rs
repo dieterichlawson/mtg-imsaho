@@ -4,7 +4,7 @@ use super::Ctx;
 use super::super::*;
 use crate::actions::Action;
 use crate::ids::{CardId, ObjectId};
-use crate::types::{Zone, CardType, CounterType, ManaCost};
+use crate::types::{Zone, CardType, CounterType};
 
 /// Activated abilities of permanents the player controls, including ones
 /// granted by attached auras and equipment.
@@ -12,12 +12,6 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
     let Ctx { state, registry, player, prevent_artifact_abilities, is_sorcery_speed, .. } = *ctx;
     let early_mana_sources = &ctx.mana_sources;
     let mana_pool = &state.get_player(player).mana_pool;
-    // Every spell in hand is "another spell" to an ability, so the whole hand
-    // is the colour demand its tap plan protects — the same map a cast plans
-    // against. Planning abilities against an empty hand let Darkthicket
-    // Wolf's `{2}{G}` tap the only Mountain while a second Forest could pay,
-    // stranding the Geistflame in hand (issue #616).
-    let hand_costs: Vec<ManaCost> = ctx.hand_costs.iter().map(|(_, c)| c.clone()).collect();
     // Non-mana activated abilities: can activate anytime you have priority (if you can pay).
     // Check attached permanents too (auras granting abilities to creatures).
     for obj in state.objects_in_zone(Zone::Battlefield, player) {
@@ -31,68 +25,18 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
             if state.has_card_type(obj_id, CardType::Artifact, registry) { continue; }
         }
 
-        // Collect abilities from this permanent's card and attached auras.
-        let mut abilities: Vec<(crate::ids::CardId, crate::cards::ActivatedAbilityDef)> = Vec::new();
-        if let Some(behavior) = registry.get(obj_card_id) {
-            for ab in behavior.activated_abilities(state, obj_id, registry) {
-                abilities.push((obj_card_id, ab));
-            }
-        }
-        // CR 706.2: a copy effect may say "except it has <ability>". The copy's
-        // `card_id` is the copied card, so the granting card's abilities have to
-        // be collected from the grantor — see `ability_granting_grantor` for
-        // why `copy_grantor` alone is not that question.
-        if let Some(grantor_id) = crate::cards::ability_granting_grantor(state, obj_id, registry) {
-            if let Some(behavior) = registry.get(grantor_id) {
-                for ab in behavior.activated_abilities(state, obj_id, registry) {
-                    abilities.push((grantor_id, ab));
-                }
-            }
-        }
-        for attached in state.objects_in_id_order() {
-            // Only offer abilities granted by attachments the acting player
-            // controls. Every granted activated ability in the set includes
-            // sacrificing the attached source as a cost (paid in
-            // `pay_activation_cost`, e.g. Blazing Torch), and a player can
-            // only sacrifice permanents they control (CR 601.2g/701.13) — so
-            // an opponent-controlled attachment's granted ability is
-            // unpayable.
-            if attached.zone == Zone::Battlefield
-                && attached.attached_to == Some(obj_id)
-                && attached.controller == player {
-                if let Some(behavior) = registry.get(attached.card_id) {
-                    for ab in behavior.activated_abilities(state, obj_id, registry) {
-                        abilities.push((attached.card_id, ab));
-                    }
-                }
-            }
-        }
-
-        // Two Skeletal Grimaces on one Walking Corpse really do grant two
-        // separate "{B}: Regenerate this creature" abilities (CR 113.8) — but
-        // they are one *offer*. An `ActivateAbility` names the permanent, the
-        // ability index and the granting card, and nothing else, so both
-        // grants build the byte-identical action and the menu carried it
-        // twice. `legal.actions` is a menu, not a multiset
-        // (`invariants/legal.rs`, `distinct_offers`), and
-        // `legal.activatable_abilities` already collapses the pair on
-        // `(object_id, source_card_id, ability_index)` — so the two halves of
-        // `LegalActions` disagreed about how many abilities were on offer,
-        // and the duplicate row made a random seat twice as likely to
-        // regenerate as to do anything else (issue #533).
-        //
-        // Deduping here rather than over the finished action list is the same
-        // rule the mana-ability loop above and the land-play loop below
-        // already apply: the offer is keyed by what the action carries.
-        let mut seen_grants: Vec<(CardId, usize)> = Vec::new();
-        abilities.retain(|(source_card_id, ab)| {
-            let key = (*source_card_id, ab.ability_index);
-            if seen_grants.contains(&key) {
-                return false;
-            }
-            seen_grants.push(key);
-            true
-        });
+        let abilities = activated_abilities_of(state, registry, player, obj_id);
+        // Every spell in hand is "another spell" to an ability, so the whole
+        // hand is the colour demand its tap plan protects — the same map a
+        // cast plans against. Planning abilities against an empty hand let
+        // Darkthicket Wolf's `{2}{G}` tap the only Mountain while a second
+        // Forest could pay, stranding the Geistflame in hand (issue #616).
+        // This permanent's own abilities are left out, as a cast leaves out
+        // the spell being cast.
+        let others: Vec<mana::Demand> = ctx.demands.iter()
+            .filter(|(id, _)| *id != obj_id)
+            .map(|(_, d)| d.clone())
+            .collect();
 
         for (source_card_id, ab) in abilities {
             // Check mana cost. For X-cost abilities, check that non-X portion is affordable.
@@ -144,7 +88,7 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
                 if mana::can_pay(mana_pool, &non_x_cost) {
                     Vec::new()
                 } else {
-                    match mana::compute_autotap(&non_x_cost, mana_pool, &ability_sources, &hand_costs) {
+                    match mana::compute_autotap_around(&non_x_cost, mana_pool, &ability_sources, &others) {
                         Some(plan) => plan,
                         None => continue,
                     }
@@ -154,7 +98,7 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
                 // returns no taps itself then, unless spending the pool would
                 // strand a spell an untapped source could have kept castable
                 // (issue #678).
-                match mana::compute_autotap(&ab.cost, mana_pool, &ability_sources, &hand_costs) {
+                match mana::compute_autotap_around(&ab.cost, mana_pool, &ability_sources, &others) {
                     Some(plan) => plan,
                     None => continue,
                 }
@@ -336,4 +280,80 @@ pub(crate) fn loyalty(ctx: &Ctx, actions: &mut Vec<Action>) {
             }
         }
     }
+}
+
+/// Every activated ability `obj_id` has for `player` to activate: its own,
+/// one a copy effect grants, and one an attachment the player controls
+/// grants — each grant once (issue #533). What the menu offers, and what
+/// the auto-tapper keeps payable while it plans another cost (issue #837).
+pub(crate) fn activated_abilities_of(
+    state: &crate::state::GameState,
+    registry: &crate::cards::CardRegistry,
+    player: crate::ids::PlayerId,
+    obj_id: ObjectId,
+) -> Vec<(CardId, crate::cards::ActivatedAbilityDef)> {
+    // Collect abilities from this permanent's card and attached auras.
+    let mut abilities: Vec<(crate::ids::CardId, crate::cards::ActivatedAbilityDef)> = Vec::new();
+    let Some(obj_card_id) = state.get_object(obj_id).map(|o| o.card_id) else { return Vec::new() };
+    if let Some(behavior) = registry.get(obj_card_id) {
+        for ab in behavior.activated_abilities(state, obj_id, registry) {
+            abilities.push((obj_card_id, ab));
+        }
+    }
+    // CR 706.2: a copy effect may say "except it has <ability>". The copy's
+    // `card_id` is the copied card, so the granting card's abilities have to
+    // be collected from the grantor — see `ability_granting_grantor` for
+    // why `copy_grantor` alone is not that question.
+    if let Some(grantor_id) = crate::cards::ability_granting_grantor(state, obj_id, registry) {
+        if let Some(behavior) = registry.get(grantor_id) {
+            for ab in behavior.activated_abilities(state, obj_id, registry) {
+                abilities.push((grantor_id, ab));
+            }
+        }
+    }
+    for attached in state.objects_in_id_order() {
+        // Only offer abilities granted by attachments the acting player
+        // controls. Every granted activated ability in the set includes
+        // sacrificing the attached source as a cost (paid in
+        // `pay_activation_cost`, e.g. Blazing Torch), and a player can
+        // only sacrifice permanents they control (CR 601.2g/701.13) — so
+        // an opponent-controlled attachment's granted ability is
+        // unpayable.
+        if attached.zone == Zone::Battlefield
+            && attached.attached_to == Some(obj_id)
+            && attached.controller == player {
+            if let Some(behavior) = registry.get(attached.card_id) {
+                for ab in behavior.activated_abilities(state, obj_id, registry) {
+                    abilities.push((attached.card_id, ab));
+                }
+            }
+        }
+    }
+
+    // Two Skeletal Grimaces on one Walking Corpse really do grant two
+    // separate "{B}: Regenerate this creature" abilities (CR 113.8) — but
+    // they are one *offer*. An `ActivateAbility` names the permanent, the
+    // ability index and the granting card, and nothing else, so both
+    // grants build the byte-identical action and the menu carried it
+    // twice. `legal.actions` is a menu, not a multiset
+    // (`invariants/legal.rs`, `distinct_offers`), and
+    // `legal.activatable_abilities` already collapses the pair on
+    // `(object_id, source_card_id, ability_index)` — so the two halves of
+    // `LegalActions` disagreed about how many abilities were on offer,
+    // and the duplicate row made a random seat twice as likely to
+    // regenerate as to do anything else (issue #533).
+    //
+    // Deduping here rather than over the finished action list is the same
+    // rule the mana-ability loop above and the land-play loop below
+    // already apply: the offer is keyed by what the action carries.
+    let mut seen_grants: Vec<(CardId, usize)> = Vec::new();
+    abilities.retain(|(source_card_id, ab)| {
+        let key = (*source_card_id, ab.ability_index);
+        if seen_grants.contains(&key) {
+            return false;
+        }
+        seen_grants.push(key);
+        true
+    });
+    abilities
 }

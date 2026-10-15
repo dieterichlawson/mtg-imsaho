@@ -211,32 +211,70 @@ impl LegalActions {
 
 
 
-/// The mana cost of every spell in `player`'s hand, as it would be cast now
-/// (cost changes applied). What the auto-tapper protects when it plans a
-/// payment, and what paying from the pool spends around when it executes
-/// one — the two have to agree, or a plan that keeps a spell castable is
-/// paid in a way that does not (issue #678).
-pub(crate) fn hand_costs(state: &GameState, registry: &CardRegistry, player: PlayerId)
-    -> Vec<(ObjectId, crate::types::ManaCost)>
+/// Everything else `player` could pay mana for now, each keyed by the
+/// object that would pay it: every spell in hand as it would be cast now
+/// (cost changes applied), every way to cast a card from the graveyard
+/// (flashback, CR 702.34a), and every activated ability of a permanent they
+/// control whose other costs can be paid. What the auto-tapper protects
+/// when it plans a payment, and what paying from the pool spends around
+/// when it executes one — the two have to agree, or a plan that keeps a
+/// spell castable is paid in a way that does not (issue #678).
+///
+/// It was the hand alone, so a plan spent the second Swamp Moan of the
+/// Unhallowed's flashback needed (#838), tapped Nephalia Drownyard for {C}
+/// and spent its own mill with it (#837), and paid during resolution, which
+/// planned against nothing at all, with the only Mountain in hand's way
+/// (#840).
+pub(crate) fn mana_demands(state: &GameState, registry: &CardRegistry, player: PlayerId)
+    -> Vec<(ObjectId, mana::Demand)>
 {
-    state.objects_in_zone(Zone::Hand, player).iter()
+    let mut demands: Vec<(ObjectId, mana::Demand)> = state.objects_in_zone(Zone::Hand, player).iter()
         .filter_map(|obj| {
             let data = registry.get(obj.card_id)?.card_data();
             data.cost.as_ref()
-                .map(|c| (obj.id, effective_spell_cost(state, registry, obj.card_id, c, player)))
+                .map(|c| (obj.id, mana::Demand {
+                    cost: effective_spell_cost(state, registry, obj.card_id, c, player),
+                    keep: None,
+                }))
         })
-        .collect()
+        .collect();
+    for obj in state.objects_in_zone(Zone::Graveyard, player) {
+        for cost in legal::casting::graveyard_cast_costs(state, registry, obj.id, player) {
+            demands.push((obj.id, mana::Demand { cost, keep: None }));
+        }
+    }
+    let prevent_artifact_abilities = prevents_artifact_abilities(state, registry);
+    for obj in state.objects_in_zone(Zone::Battlefield, player) {
+        if prevent_artifact_abilities && state.has_card_type(obj.id, CardType::Artifact, registry) {
+            continue;
+        }
+        for (_, ab) in legal::abilities::activated_abilities_of(state, registry, player, obj.id) {
+            if ab.cost.symbols.is_empty()
+                || (ab.requires_tap && (obj.tapped || state.has_summoning_sickness(obj.id, registry)))
+                || (ab.once_per_turn && obj.abilities_activated_this_turn.contains(&ab.ability_index))
+                || ab.counter_cost.is_some_and(|(kind, n)| state.get_counter_count(obj.id, kind) < n)
+            {
+                continue;
+            }
+            demands.push((obj.id, mana::Demand {
+                cost: ab.cost.clone(),
+                keep: ab.requires_tap.then_some(obj.id),
+            }));
+        }
+    }
+    demands
 }
 
 /// What paying from `player`'s pool should spend last: the pips the rest of
-/// the hand needs, leaving out `casting` (the spell being paid for, which is
-/// no longer "the rest of the hand").
-pub(crate) fn hand_reserve(state: &GameState, registry: &CardRegistry, player: PlayerId,
-    casting: Option<ObjectId>) -> crate::types::ManaCost
+/// what they could pay for needs, leaving out what `paying_for` (the spell
+/// being cast, or the permanent whose ability is being activated) needs,
+/// which is no longer "the rest".
+pub(crate) fn demand_reserve(state: &GameState, registry: &CardRegistry, player: PlayerId,
+    paying_for: Option<ObjectId>) -> crate::types::ManaCost
 {
-    let costs: Vec<crate::types::ManaCost> = hand_costs(state, registry, player).into_iter()
-        .filter(|(id, _)| Some(*id) != casting)
-        .map(|(_, c)| c)
+    let costs: Vec<crate::types::ManaCost> = mana_demands(state, registry, player).into_iter()
+        .filter(|(id, _)| Some(*id) != paying_for)
+        .map(|(_, d)| d.cost)
         .collect();
     crate::mana::hand_reserve(&costs)
 }
@@ -293,7 +331,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             && state.stack.is_empty()
             && state.active_player == player,
         mana_sources: gather_mana_sources(state, player, registry, prevent_artifact_abilities),
-        hand_costs: hand_costs(state, registry, player),
+        demands: mana_demands(state, registry, player),
         // Nevermore stores its chosen name as an instance effect, but reading
         // only instance effects meant a card that declared the ban on its face
         // would have been ignored.

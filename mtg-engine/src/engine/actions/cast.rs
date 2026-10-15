@@ -356,7 +356,7 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
         // choice to the player). The fixed "C, W, U, B, R, G" order paid
         // Grizzly Bears' {1} with the floating {R} and left {G} spare,
         // taking Geistflame off the menu (issue #678).
-        let reserve = hand_reserve(state, registry, player, Some(object_id));
+        let reserve = demand_reserve(state, registry, player, Some(object_id));
         mana::auto_pay_reserving(&mut state.get_player_mut(player).mana_pool, &pay, &reserve)
             .expect("legal_actions should have verified mana availability");
 

@@ -111,8 +111,8 @@ pub(crate) fn pay_activation_costs(
         activate_mana_source_reserving(
             &mut *state, source_id, ma_idx, Some(&cost.non_x_mana_cost), registry);
     }
-    // Around what the hand needs, as the plan assumed (issue #678).
-    let reserve = hand_reserve(state, registry, player, None);
+    // Around what everything else needs, as the plan assumed (issue #678).
+    let reserve = demand_reserve(state, registry, player, Some(object_id));
     let _ = mana::auto_pay_reserving(
         &mut state.get_player_mut(player).mana_pool, &cost.non_x_mana_cost, &reserve);
     if cost.requires_tap {
