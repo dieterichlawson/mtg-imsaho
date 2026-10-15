@@ -86,7 +86,16 @@ pub fn payment_plan_with_sources(
         return Some(Vec::new());
     }
     let sources = gather_mana_sources(state, player, registry, prevents_artifact_abilities(state, registry));
-    mana::compute_autotap(cost, pool, &sources, &[])
+    mana::compute_autotap_around(cost, pool, &sources, &resolution_demands(state, registry, player))
+}
+
+/// What a payment made while something resolves keeps payable: everything
+/// the player could pay for ([`super::mana_demands`]). These planned against
+/// nothing, so Mentor of the Meek's {1} tapped the only Mountain while an
+/// Island could pay, and took the Geistflame in hand off the menu for the
+/// turn (issue #840).
+fn resolution_demands(state: &GameState, registry: &CardRegistry, player: PlayerId) -> Vec<mana::Demand> {
+    super::mana_demands(state, registry, player).into_iter().map(|(_, d)| d).collect()
 }
 /// Pay `cost`, tapping sources if the pool alone can't cover it. Returns false
 /// and leaves the game state untouched when it cannot be paid — the tap plan
@@ -261,7 +270,7 @@ pub(crate) fn plan_autotap_for_cost(
 ) -> Option<Vec<(ObjectId, usize)>> {
     let sources = gather_mana_sources(state, player, registry, false);
     let pool = &state.get_player(player).mana_pool;
-    mana::compute_autotap(cost, pool, &sources, &[])
+    mana::compute_autotap_around(cost, pool, &sources, &resolution_demands(state, registry, player))
 }
 /// Execute a tap plan and deduct `cost` from the resulting pool.
 /// Returns `true` on success, `false` if `auto_pay` fails (which shouldn't

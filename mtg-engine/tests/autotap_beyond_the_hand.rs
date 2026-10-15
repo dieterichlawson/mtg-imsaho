@@ -8,12 +8,14 @@
 //! - an activated ability of a permanent, including one that taps its own
 //!   source — a utility land's `{T}: Add {C}` was the first thing spent on
 //!   generic, and its own ability went with it (issue #837);
-//! - and a card castable from the graveyard by flashback (issue #838).
+//! - a card castable from the graveyard by flashback (issue #838);
+//! - and everything at all while something resolves: Mentor of the Meek's
+//!   `{1}` and Screeching Bat's upkeep planned against nothing (issue #840).
 
 mod common;
 use common::*;
 
-use mtg_engine::actions::Action;
+use mtg_engine::actions::{Action, ResolvedChoice};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::types::*;
@@ -114,4 +116,51 @@ fn a_cast_keeps_a_flashback_in_the_graveyard_payable() {
     let mut state = engine::submit_action(&state, &cast, &reg);
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
     assert!(flashback_offered(&state), "after Think Twice, Moan's flashback is still payable");
+}
+
+/// Issue #840: a payment asked for while something resolves keeps the hand
+/// castable. Mountain, Island, Plains, Geistflame `{R}` in hand: Mentor of
+/// the Meek's `{1}` is paid by anything but the Mountain — whichever order
+/// the lands sit in, which is what decided it before.
+#[test]
+fn a_resolution_payment_keeps_the_hand_castable() {
+    for order in [["Mountain", "Island", "Plains"], ["Island", "Plains", "Mountain"]] {
+        let reg = registry();
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let ids = lands(&mut state, &reg, &order);
+        let mountain = ids[order.iter().position(|n| *n == "Mountain").unwrap()];
+        spell_in_hand(&mut state, &reg, "Geistflame", P0);
+
+        let cost = ManaCost::new(vec![ManaSymbol::Generic(1)]);
+        let plan = engine::payment_plan_with_sources(&state, P0, &cost, &reg)
+            .expect("{1} is payable");
+        assert!(!plan.iter().any(|(id, _)| *id == mountain),
+            "board {order:?}: paying {{1}} taps the Mountain Geistflame needs: {:?}",
+            names(&state, &plan));
+    }
+}
+
+/// Issue #840, Screeching Bat's upkeep `{2}{B}{B}` (its own planner):
+/// two Swamps, Mountain, Forest, Island and a Geistflame in hand. The
+/// payment used to tap the Mountain; Forest and Island pay the generic.
+#[test]
+fn screeching_bats_upkeep_payment_keeps_the_hand_castable() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+    let bat = named_permanent(&mut state, &reg, "Screeching Bat", P0);
+    let ids = lands(&mut state, &reg, &["Swamp", "Swamp", "Mountain", "Forest", "Island"]);
+    let mountain = ids[2];
+    spell_in_hand(&mut state, &reg, "Geistflame", P0);
+
+    let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
+    behavior.on_upkeep(&mut state, bat, &[], &reg);
+    assert!(state.awaiting_action.is_some(), "the Bat asks whether to pay");
+    let state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
+        &reg,
+    );
+    assert!(state.get_object(bat).unwrap().is_transformed, "the Bat paid and transformed");
+    assert!(!state.get_object(mountain).unwrap().tapped,
+        "the upkeep payment tapped the Mountain Geistflame needs");
 }
