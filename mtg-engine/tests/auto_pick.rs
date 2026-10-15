@@ -936,6 +936,35 @@ fn mentor_of_the_meek_asks_before_paying() {
         "and spends the {{1}}");
 }
 
+/// Mentor of the Meek's question says what Yes will tap, as a cast row and
+/// Screeching Bat's question do: "pay {1}" with only lands to pay it used
+/// to tap one the player was never shown (issue #841, #621). From a pool,
+/// it says so.
+#[test]
+fn mentor_of_the_meek_says_what_paying_taps() {
+    let registry = CardRegistry::with_all_cards();
+    let ask = |state: &mut GameState| -> String {
+        let mentor = named_permanent(state, &registry, "Mentor of the Meek", P0);
+        let small = ready_creature(state, P0, 1, 1);
+        let behavior = registry.get(state.get_object(mentor).unwrap().card_id).unwrap();
+        behavior.on_any_creature_enters(state, mentor, small, P0, &registry);
+        match &state.awaiting_action {
+            Some(AwaitingAction::ResolutionChoice {
+                choice: ResolutionChoiceKind::YesNo { description, .. }, ..
+            }) => description.clone(),
+            other => panic!("Mentor should ask, got {other:?}"),
+        }
+    };
+
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    named_permanent(&mut state, &registry, "Island", P0);
+    assert_eq!(ask(&mut state), "Mentor of the Meek: pay {1} (tap Island) to draw a card?");
+
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+    assert_eq!(ask(&mut state), "Mentor of the Meek: pay {1} (from your mana pool) to draw a card?");
+}
+
 /// Bug: Skirsdag High Priest's ability costs "tap two untapped creatures
 /// you control" but the engine auto-selected which creatures to tap.
 ///

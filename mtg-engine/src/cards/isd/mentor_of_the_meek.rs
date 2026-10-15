@@ -45,7 +45,7 @@ impl CardBehavior for MentorOfTheMeek {
         state.effective_power(entered_id, registry).is_some_and(|p| p <= 2)
     }
 
-    fn on_any_creature_enters(&self, state: &mut GameState, self_id: ObjectId, _entered_id: ObjectId, _entered_controller: PlayerId, _registry: &CardRegistry) {
+    fn on_any_creature_enters(&self, state: &mut GameState, self_id: ObjectId, _entered_id: ObjectId, _entered_controller: PlayerId, registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, self_id);
         // The whole condition — another creature you control, power 2 or less —
         // was already checked at dispatch time in `should_trigger_on_creature_
@@ -53,12 +53,22 @@ impl CardBehavior for MentorOfTheMeek {
         // a creature that entered with power 2 and was pumped in response
         // still triggered, and one that entered with power 3 and shrank did
         // not (CR 603.2).
-        // "You may pay {1}" — present choice to the player.
+        // "You may pay {1}" — present choice to the player, saying what Yes
+        // taps: the plan `on_yes_no_choice` runs, as a cast row names its
+        // own and Screeching Bat's question names its (issue #841, #621).
+        let cost = ManaCost::new(vec![ManaSymbol::Generic(1)]);
+        let description = match crate::engine::payment_plan_with_sources(state, controller, &cost, registry) {
+            Some(plan) if plan.is_empty() =>
+                "Mentor of the Meek: pay {1} (from your mana pool) to draw a card?".to_string(),
+            Some(plan) => format!("Mentor of the Meek: pay {{1}} ({}) to draw a card?",
+                crate::cards::helpers::format_tap_plan_names(state, &plan)),
+            None => "Mentor of the Meek: pay {1} to draw a card?".to_string(),
+        };
         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
             player: controller,
             source: self_id,
             choice: ResolutionChoiceKind::YesNo {
-                description: "Mentor of the Meek: pay {1} to draw a card?".into(),
+                description,
                 source_card: self_id,
             },
         });
