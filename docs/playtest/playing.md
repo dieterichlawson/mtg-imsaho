@@ -1290,11 +1290,13 @@ illegal or dubious resolutions do.
   Where there is none, check the costs are paid in CR 601.2h order and the log
   shows them in that order. #290 fixed this for X abilities only
 - L61 [proposed 2026-10-15, from L56 and #840] every planner that is not the
-  menu's. The menu's casts and abilities go through `legal_actions` with
-  `hand_costs`; other payments call `compute_autotap` themselves
-  (`payment_plan_with_sources`, `plan_autotap_for_cost`, X funding in
-  `funding.rs`, the flashback branch in `legal/casting.rs`). `grep -rn
-  compute_autotap mtg-engine/src` and, for each caller, stage a board where
+  menu's. The menu's casts, flashbacks and abilities go through
+  `legal_actions` with `mana_demands` (hand, graveyard casts, on-board
+  abilities, since #837/#838); other payments plan around the same set
+  themselves (`payment_plan_with_sources`, `plan_autotap_for_cost` since
+  #840, X funding's group order via `order_around_demands`). `grep -rn
+  'compute_autotap\|order_around_demands' mtg-engine/src` and, for each
+  caller, stage a board where
   two lands tie on Phase 3's key and only one of them is the sole source of a
   colour a hand spell, a flashback card or an on-board ability needs. Answer
   the payment, then check the menu still offers that cast; swap the two lands'
