@@ -218,7 +218,7 @@ pub struct Demand {
 impl Demand {
     /// Whether this could be paid from `pool` and `sources` with `tapped`
     /// already spent.
-    fn payable(&self, pool: &ManaPool, sources: &[ManaSource], tapped: &[(ObjectId, usize)]) -> bool {
+    pub(crate) fn payable(&self, pool: &ManaPool, sources: &[ManaSource], tapped: &[(ObjectId, usize)]) -> bool {
         if self.keep.is_some_and(|k| tapped.iter().any(|(id, _)| *id == k)) {
             return false;
         }

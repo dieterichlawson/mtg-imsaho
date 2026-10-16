@@ -248,3 +248,39 @@ fn x_from_the_pool_spends_what_nothing_else_needs() {
     assert_eq!((pool.get(ManaType::White), pool.get(ManaType::Green)), (2, 0),
         "X = 1 was paid with a {{W}} a Doomed Traveler needs");
 }
+
+/// Issue #843: Island x2, Swamp x2, Mountain, Nephalia Drownyard, Stensia
+/// Bloodhall; Devil's Play in hand, Think Twice in the graveyard. X = 3
+/// tapped Island, Island, Swamp: basics went before the colourless lands,
+/// and Bloodhall's `{3}{B}{R}` — unpayable once the Mountain pays Devil's
+/// Play's `{R}` — still voted for keeping the Swamps and itself. The
+/// flashback `{2}{U}` went with the Islands.
+#[test]
+fn x_funding_keeps_a_flashback_payable_over_demands_nobody_can_pay() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    lands(&mut state, &reg, &["Island", "Island", "Swamp", "Swamp", "Mountain",
+        "Nephalia Drownyard", "Stensia Bloodhall"]);
+    let think = named_card_in_graveyard(&mut state, &reg, "Think Twice", P0);
+    let play = spell_in_hand(&mut state, &reg, "Devil's Play", P0);
+    stock_library(&mut state, &reg, P0, 5);
+    let flashback_offered = |s: &GameState| engine::legal_actions(s, &reg).actions.iter()
+        .any(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == think));
+
+    let cast = engine::legal_actions(&state, &reg).actions.into_iter()
+        .find(|a| matches!(a, Action::CastSpell { object_id, targets, .. }
+            if *object_id == play && targets.iter().any(|t| matches!(t, mtg_engine::actions::Target::Player(p) if *p == P1))))
+        .expect("Devil's Play at the opponent is offered");
+    let state = engine::submit_action(&state, &cast, &reg);
+    let legal = engine::legal_actions(&state, &reg);
+    let Some(mtg_engine::state::ResolutionChoiceKind::ChooseXFunding { options, .. }) =
+        legal.resolution_prompt.as_ref() else {
+        panic!("Devil's Play asks for X funding");
+    };
+    let (response, shortfall) = mtg_engine::funding::allocate_for_x(options, 3);
+    assert_eq!(shortfall, 0);
+    let state = engine::submit_action(&state,
+        &Action::ResolveChoice { choice: ResolvedChoice::XFunding(response.clone()) }, &reg);
+    assert!(flashback_offered(&state),
+        "X = 3 stranded Think Twice's flashback: {:?}", response.taps);
+}

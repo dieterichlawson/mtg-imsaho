@@ -578,16 +578,22 @@ pub fn build_options(
     }
 }
 
-/// Reorder `options.groups` so that, within a category, the groups the rest
-/// of what `player` could pay for needs come last: first any group holding
-/// a permanent whose own `{T}` ability is one of those demands, then by how
-/// many of their coloured pips its colours could pay. The allocator — this
-/// crate's [`allocate_for_x`] and the page's copy — walks the groups in
-/// order, so X is funded from what nothing else needs first, as a cast's
-/// plan is (issue #837, #840). Stable, so ties keep the name order. It
-/// also sets `pool_order`, the order the allocator spends floating mana in.
-/// `paying_for` (the spell being cast, or the permanent whose ability it
-/// is) is not "the rest".
+/// Reorder `options.groups` so that the groups the rest of what `player`
+/// could pay for needs come last: first any group holding a permanent whose
+/// own `{T}` ability is one of those demands, then by how many of their
+/// coloured pips its colours could pay, then a source of `{C}` alone before
+/// one that makes a colour, as a cast's plan spends it (#114). Only a
+/// demand the board can pay now has a say: Stensia Bloodhall's `{3}{B}{R}`
+/// with the only red source already spent on the spell kept the Swamps and
+/// itself back and sent the Islands a flashback needed into X (#843).
+/// Creatures still come last whatever they make: tapping one costs an
+/// attacker or a blocker.
+/// The allocator — this crate's [`allocate_for_x`] and the page's copy —
+/// walks the groups in order, so X is funded from what nothing else needs
+/// first, as a cast's plan is (issue #837, #840). Stable, so ties keep the
+/// category and name order. It also sets `pool_order`, the order the
+/// allocator spends floating mana in. `paying_for` (the spell being cast,
+/// or the permanent whose ability it is) is not "the rest".
 pub fn order_around_demands(
     options: &mut FundingOptions,
     state: &GameState,
@@ -600,16 +606,23 @@ pub fn order_around_demands(
         .filter(|(id, _)| Some(*id) != paying_for)
         .map(|(_, d)| d)
         .collect();
-    let rank = |g: &FundingGroup| -> (bool, u32) {
-        let keeps = demands.iter().any(|d| d.keep.is_some_and(|k| g.source_ids.contains(&k)));
-        let pips = demands.iter()
+    let pool = &state.get_player(player).mana_pool;
+    let sources = crate::engine::gather_mana_sources(
+        state, player, registry,
+        crate::engine::prevents_artifact_abilities(state, registry));
+    let payable: Vec<&crate::mana::Demand> = demands.iter()
+        .filter(|d| d.payable(pool, &sources, &[]))
+        .collect();
+    let rank = |g: &FundingGroup| -> (bool, u32, bool) {
+        let keeps = payable.iter().any(|d| d.keep.is_some_and(|k| g.source_ids.contains(&k)));
+        let pips = payable.iter()
             .flat_map(|d| d.cost.colored_requirements())
             .filter(|(c, _)| g.colors_produced.contains(c))
             .map(|(_, n)| n)
             .sum();
-        (keeps, pips)
+        (keeps, pips, !g.colors_produced.is_empty())
     };
-    options.groups.sort_by_key(|g| (g.category as u8, rank(g)));
+    options.groups.sort_by_key(|g| (g.category == FundingCategory::Dorks, rank(g)));
     // Floating mana is spent on X around the same demands, as a payment
     // out of the pool is (`auto_pay_reserving`, #678).
     let reserve = crate::mana::hand_reserve(&demands.iter().map(|d| d.cost.clone()).collect::<Vec<_>>());
