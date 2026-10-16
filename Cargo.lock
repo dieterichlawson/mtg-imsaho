@@ -846,6 +846,7 @@ dependencies = [
  "libc",
  "mtg-engine",
  "rand 0.8.5",
+ "rand_chacha",
  "reqwest",
  "serde",
  "serde_json",

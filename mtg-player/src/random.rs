@@ -1,5 +1,5 @@
 use rand::{Rng, SeedableRng};
-use rand::rngs::StdRng;
+use rand_chacha::ChaCha12Rng;
 use mtg_engine::actions::{Action, CombatPrompt};
 use mtg_engine::view::GameView;
 
@@ -8,7 +8,12 @@ use crate::Player;
 /// A player that picks randomly from legal actions.
 pub struct RandomPlayer {
     name: String,
-    rng: StdRng,
+    /// `rand`'s `StdRng` is this generator, and seeds it the same way, so
+    /// a seed plays the game it always played. Named here because it can
+    /// say where it is in its stream, which `StdRng` hides: a save carries
+    /// that, so a resumed seat continues the saved game's draws instead of
+    /// starting its stream again (#844).
+    rng: ChaCha12Rng,
 }
 
 /// How often this seat backs out of a cast-time prompt instead of
@@ -68,14 +73,46 @@ const MAX_MULLIGANS: u32 = 3;
 impl RandomPlayer {
     #[must_use]
     pub fn new(name: &str) -> Self {
-        Self { name: name.to_string(), rng: StdRng::from_entropy() }
+        Self { name: name.to_string(), rng: ChaCha12Rng::from_entropy() }
     }
 
     /// A player whose choices replay identically for the same seed. Pair with
     /// `GameConfig::rng_seed` to make a whole game deterministic.
     #[must_use]
     pub fn with_seed(name: &str, seed: u64) -> Self {
-        Self { name: name.to_string(), rng: StdRng::seed_from_u64(seed) }
+        Self { name: name.to_string(), rng: ChaCha12Rng::seed_from_u64(seed) }
+    }
+
+    /// Where this seat's draws are: its key and its position in the stream,
+    /// as `<64 hex digits>:<word position>`. [`restore_rng`] puts a seat
+    /// back there, so a resumed game is the saved one (#844).
+    ///
+    /// [`restore_rng`]: Self::restore_rng
+    #[must_use]
+    pub fn rng_state(&self) -> String {
+        let key: String = self.rng.get_seed().iter().map(|b| format!("{b:02x}")).collect();
+        format!("{key}:{}", self.rng.get_word_pos())
+    }
+
+    /// Put the seat back at a position [`rng_state`](Self::rng_state)
+    /// wrote. `Err` says what is wrong with the text, and leaves the seat
+    /// as it was.
+    pub fn restore_rng(&mut self, state: &str) -> Result<(), String> {
+        let (key, pos) = state.split_once(':')
+            .ok_or_else(|| format!("'{state}' is not <key>:<position>"))?;
+        if key.len() != 64 || !key.is_ascii() {
+            return Err(format!("the key '{key}' is not 64 hex digits"));
+        }
+        let mut seed = [0u8; 32];
+        for (i, b) in seed.iter_mut().enumerate() {
+            *b = u8::from_str_radix(&key[2 * i..2 * i + 2], 16)
+                .map_err(|_| format!("the key '{key}' is not 64 hex digits"))?;
+        }
+        let pos: u128 = pos.parse().map_err(|_| format!("the position '{pos}' is not a number"))?;
+        let mut rng = ChaCha12Rng::from_seed(seed);
+        rng.set_word_pos(pos);
+        self.rng = rng;
+        Ok(())
     }
 }
 

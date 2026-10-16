@@ -304,8 +304,9 @@ a substitute for `--save`.)
 
 On `--resume`, the save's decks, RNG and seats win over the flags: `--deck1`
 and `--deck2` are ignored and the runner says so. `--seed` does not change the
-saved shuffle, but it still seeds the random and AI seats, so keep it to
-replay a resume deterministically. The seats are stored in the save, so a
+saved game: a random seat continues from where the save says its draws had
+got to, so a resume plays on the game it was saved from (#844); `--seed`
+seeds only a random seat a save written before that holds no position for. The seats are stored in the save, so a
 bare `--resume` brings back the same players; an explicit `--p1`/`--p2`
 overrides the saved seat and says so, and a metered API seat the file asks
 for needs that flag to confirm it. A resumed LLM seat is handed a recap of the

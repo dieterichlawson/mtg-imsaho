@@ -297,3 +297,31 @@ fn random_seats_equip_a_flail_onto_an_alchemist_and_reach_the_damage_effect_choi
     assert!(asked >= 5, "the choice is reached under random play: {asked} of 300 games");
     assert_eq!(answers.len(), 2, "and answered both ways: {answers:?}");
 }
+
+/// Issue #844: a seat put back where `rng_state` said it was draws what
+/// the original draws next — the save carries this, so a resumed random
+/// seat continues the saved game instead of restarting its stream. And a
+/// seat seeded with N still draws what `StdRng` seeded with N drew, so a
+/// seed plays the game it always played.
+#[test]
+fn a_restored_seat_draws_what_the_original_draws_next() {
+    let (mut state, reg) = main_phase();
+    for _ in 0..4 { named_permanent(&mut state, &reg, "Grizzly Bears", P1); }
+    named_permanent(&mut state, &reg, "Garruk Relentless", P0);
+    let legal = legal_actions(&state, &reg);
+    let view = GameView::for_player(&state, P0, &reg);
+    let mut seat = RandomPlayer::with_seed("r", 7);
+    for _ in 0..37 { seat.choose_action(&view, &legal); }
+    let mut resumed = RandomPlayer::with_seed("r", 999);
+    resumed.restore_rng(&seat.rng_state()).expect("a state the seat wrote reads back");
+    let next = |p: &mut RandomPlayer| (0..50).map(|_| format!("{:?}", p.choose_action(&view, &legal))).collect::<Vec<_>>();
+    assert_eq!(next(&mut resumed), next(&mut seat), "the restored seat went elsewhere");
+    assert!(resumed.restore_rng("not a state").is_err());
+
+    use rand::{RngCore, SeedableRng};
+    let mut std = rand::rngs::StdRng::seed_from_u64(7);
+    let mut chacha = rand_chacha::ChaCha12Rng::seed_from_u64(7);
+    assert_eq!((0..8).map(|_| std.next_u64()).collect::<Vec<_>>(),
+               (0..8).map(|_| chacha.next_u64()).collect::<Vec<_>>(),
+               "the seat's generator is StdRng's, seeded alike");
+}

@@ -349,9 +349,9 @@ fn resume_ignores_a_bad_deck_path_it_just_called_ignored() {
 }
 
 /// The `--seed` note under `--resume` says what actually happens. It used to
-/// claim the seed was ignored; only the engine RNG comes from the save, so
-/// `--seed` still seeds the seats — and dropping it, as the old note
-/// advised, is exactly what makes a resumed replay non-reproducible.
+/// claim the seed was ignored; it seeds a random seat a save holds no
+/// position for (#196), and since #844 a save holds one for every random
+/// seat, so it says that too.
 #[test]
 fn resume_does_not_call_the_seed_ignored_when_it_is_not() {
     let save = a_save_file("seednote");
@@ -364,11 +364,10 @@ fn resume_does_not_call_the_seed_ignored_when_it_is_not() {
 
     assert!(!stderr.contains("--seed is ignored"),
         "the seed is not ignored, so the note must not say it is.\nstderr: {stderr}");
-    assert!(stderr.contains("--seed") && stderr.contains("seeds the random/AI seats"),
+    assert!(stderr.contains("--seed") && stderr.contains("seeds only a random seat"),
         "the note says what --seed really does.\nstderr: {stderr}");
 
-    // And it demonstrably still determines the resumed game: same seed twice
-    // is the same game, a different seed is a different one.
+    // And the resumed game is reproducible: same seed twice is the same game.
     let actions_with = |seed: &str| {
         let out = runner_at_root()
             .args(["--p1", "random", "--p2", "random",
@@ -386,12 +385,41 @@ fn resume_does_not_call_the_seed_ignored_when_it_is_not() {
     let _ = std::fs::remove_file(&save);
 }
 
+/// A resumed game is the game it was saved from (#844). The save carried the
+/// engine's RNG and not the random seats', which `--seed` seeded afresh, so
+/// from the resume point on each seat replayed the start of its stream and
+/// the game went elsewhere: 713 actions uninterrupted, 716 resumed.
+#[test]
+fn a_resumed_random_game_finishes_as_the_uninterrupted_one_did() {
+    let summary = |out: &std::process::Output| -> Vec<String> {
+        String::from_utf8_lossy(&out.stdout).lines()
+            .filter(|l| l.starts_with("Total actions:") || l.starts_with("Final turn"))
+            // The resumed run adds "(N before this resume)".
+            .map(|l| l.split(" (").next().unwrap_or(l).to_string())
+            .collect()
+    };
+    let whole = runner_at_root()
+        .args(["--p1", "random", "--p2", "random",
+               "--deck1", "decks/rb-vampires.txt", "--deck2", "decks/gw-humans.txt",
+               "--seed", "2301", "--on-the-play", "1", "--quiet"])
+        .output()
+        .expect("failed to run");
+    let save = a_save_file("continue");
+    let resumed = runner_at_root()
+        .args(["--resume", &save.to_string_lossy(), "--seed", "2301", "--quiet"])
+        .output()
+        .expect("failed to run");
+    let _ = std::fs::remove_file(&save);
+    let (whole, resumed) = (summary(&whole), summary(&resumed));
+    assert_eq!(whole.len(), 2, "the uninterrupted run reports its length: {whole:?}");
+    assert_eq!(resumed, whole, "the resumed game is not the one it was saved from");
+}
+
 /// `--help` must not tell an operator that `--seed` is ignored on a resume.
 ///
-/// Only the *engine* RNG comes from the save (`GameState.rng_state`); the
-/// seats' RNG does not, so `--seed` still seeds the random/AI seats and
-/// dropping it is exactly what makes a resumed replay non-reproducible.
-/// #196 corrected the stderr note that said otherwise and left the same claim
+/// It seeds a random seat the save holds no position for, and dropping it
+/// then is exactly what makes a resumed replay non-reproducible (#196;
+/// since #844 the save holds every random seat's position). #196 corrected the stderr note that said otherwise and left the same claim
 /// standing in `USAGE`, so an operator who read `--help` and dropped `--seed`
 /// walked straight back into #196 (issue #232).
 #[test]
@@ -408,7 +436,7 @@ fn help_does_not_claim_the_saved_seed_beats_the_seed_flag() {
         "the retracted claim is gone: {resume_text}");
     assert!(resume_text.contains("decks and seats\n                         win over the flags"),
         "the true half — the saved decks AND seats do win (issue #248) — is kept: {resume_text}");
-    assert!(resume_text.contains("--seed") && resume_text.contains("seats"),
+    assert!(resume_text.contains("--seed seeds only a seat"),
         "and --help says what --seed actually still does, matching the note the \
          program prints on stderr for the same combination: {resume_text}");
     // Issue #248: the two flags whose absence changes who is playing are

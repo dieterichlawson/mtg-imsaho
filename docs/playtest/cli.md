@@ -112,8 +112,10 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   discard all came back to 0. The method that found the gap is cheaper and
   wider: run random vs random with a loop copying the save every 20 ms,
   resume a mid-game snapshot, and diff the GAME lines from the RESUMED
-  line's entry count. A random seat's RNG is not saved, so the game forks
-  within a few lines (#844). Re-run that half after a change to save
+  line's entry count. A random seat's RNG was not saved, so the game forked
+  within a few lines (#844); the save now carries each random seat's
+  position and a resume should follow the uninterrupted game line for
+  line. Re-run that half after a change to save
   contents or `make_player`.
 - V4 degenerate decks: all-curses, zero-creature, 4x same legend,
   token-flood (Army of the Damned + doublers), one-of-everything piles

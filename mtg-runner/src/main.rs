@@ -40,6 +40,15 @@ struct SaveData {
     /// keeps none. Each seat is given back only its own.
     #[serde(default)]
     seat_notes: Vec<Option<String>>,
+    /// Where each random seat's draws had got to (`RandomPlayer::rng_state`).
+    /// The save carried the engine's RNG and not the seats', so a resumed
+    /// random seat started its stream again from `--seed` and played a
+    /// different game from the resume point on (#844). Indexed like
+    /// `seats`; `None` for a seat that draws nothing. A save written before
+    /// this has none, and its random seats are seeded from `--seed` as
+    /// they were.
+    #[serde(default)]
+    seat_rng: Vec<Option<String>>,
 }
 
 enum PlayerKind {
@@ -76,9 +85,10 @@ Options:
                          win over the flags; an explicit --p1/--p2 overrides
                          the saved seat and says so, and a metered API seat
                          the file asks for needs that flag to confirm it.
-                         --seed does not change the saved shuffle but still
-                         seeds the random/AI seats — keep it to replay a
-                         resume. Pass --save to keep writing the file
+                         --seed does not change the saved game: a random
+                         seat continues the draws the save recorded, and
+                         --seed seeds only a seat a save from before that
+                         holds none of. Pass --save to keep writing the file
   --check-invariants     Check structural invariants at every decision point
   --decision-stats <path> Write a JSON count of every kind of question the seats
                          were asked (priority menus, combat, set and resolution
@@ -393,6 +403,7 @@ fn main() {
 
     let banner: String;
     let mut resumed_notes: Vec<Option<String>> = Vec::new();
+    let mut resumed_rng: Vec<Option<String>> = Vec::new();
     let (player_names, mut state) = if let Some(ref path) = resume_file {
         // The saved game carries its own decks and RNG: flags that only
         // shape a NEW game are ignored, and silently ignored flags corrupt
@@ -403,13 +414,14 @@ fn main() {
             }
         }
         // --seed is NOT ignored, and calling it ignored was worse than
-        // saying nothing: only the *engine* RNG comes from the save
-        // (`GameState.rng_state`). The seats' RNG does not, so --seed still
-        // seeds them, and dropping it — as the old note advised — is what
-        // makes a resumed replay non-reproducible (issue #196).
+        // saying nothing: the engine RNG comes from the save
+        // (`GameState.rng_state`), and so does a random seat's position in
+        // its own stream (#844) — but a save written before that has none,
+        // and --seed still seeds such a seat; dropping it, as an old note
+        // advised, made a resumed replay non-reproducible (issue #196).
         if args.iter().any(|a| a == "--seed") {
-            mtg_player::stderr_line!("note: --seed does not change the saved game's shuffle (the save's RNG wins), \
-but it still seeds the random/AI seats — keep it to replay a resume deterministically");
+            mtg_player::stderr_line!("note: --seed does not change the saved game (the save's RNGs win); \
+it seeds only a random seat the save holds no RNG for");
         }
         // Every failure here is a user-supplied file being wrong (a typo'd
         // path, a truncated or edited save) — report and exit(1), never
@@ -533,6 +545,7 @@ stops here — pass --save {path} to keep writing it");
             path, save.state.turn_number, save.player_names[0], save.player_names[1],
             p1_spec, p2_spec);
         resumed_notes = std::mem::take(&mut save.seat_notes);
+        resumed_rng = std::mem::take(&mut save.seat_rng);
         (save.player_names, save.state)
     } else {
         let deck1 = load_deck(deck1_spec, &registry);
@@ -572,6 +585,16 @@ stops here — pass --save {path} to keep writing it");
     let p2_origin = origin("--p2", p2_flag.is_some());
     let mut p1 = make_player(&p1_spec, "P1", &p1_origin, "--p1", seed.map(|s| s.wrapping_add(1)));
     let mut p2 = make_player(&p2_spec, "P2", &p2_origin, "--p2", seed.map(|s| s.wrapping_add(2)));
+    // A random seat the save says where it was picks up there, so the
+    // resumed game is the saved one and not a new one from that point
+    // (#844). A seat the save holds no position for keeps its --seed.
+    for (i, p) in [&mut p1, &mut p2].into_iter().enumerate() {
+        if let (PlayerKind::Random(r), Some(Some(at))) = (p, resumed_rng.get(i)) {
+            if let Err(e) = r.restore_rng(at) {
+                die(&format!("save file seat p{i}'s random state is damaged: {e}"));
+            }
+        }
+    }
     // The match is announced once both seats exist: a `gui:PORT` seat binds
     // in `make_player`, and a banner printed before a taken port described
     // a game that never started (#745).
@@ -663,6 +686,12 @@ stops here — pass --save {path} to keep writing it");
     let seat_notes = || -> Vec<Option<String>> {
         notes_cells.iter().map(|c| c.lock().ok().and_then(|n| n.clone())).collect()
     };
+    // Where each random seat's draws are, for the save (#844): written as
+    // the seat answers, read by the save before the next decision.
+    let rng_of = |p: &PlayerKind| match p { PlayerKind::Random(r) => Some(r.rng_state()), _ => None };
+    let rng_cells: [std::cell::RefCell<Option<String>>; 2] =
+        [std::cell::RefCell::new(rng_of(&p1)), std::cell::RefCell::new(rng_of(&p2))];
+    let seat_rng = || -> Vec<Option<String>> { rng_cells.iter().map(|c| c.borrow().clone()).collect() };
 
     let has_human = matches!(p1, PlayerKind::Cli(_)) || matches!(p2, PlayerKind::Cli(_));
     let has_gui = matches!(p1, PlayerKind::Gui(_)) || matches!(p2, PlayerKind::Gui(_));
@@ -808,6 +837,11 @@ stops here — pass --save {path} to keep writing it");
                 return mtg_player::watchdog::forfeit_move();
             }
         }
+        if write_saves {
+            if let PlayerKind::Random(r) = player {
+                rng_cells[acting_player.0 as usize].replace(Some(r.rng_state()));
+            }
+        }
         answer
     };
 
@@ -933,6 +967,7 @@ stops here — pass --save {path} to keep writing it");
                 player_names: player_names_ref.clone(),
                 seats: seats_ref.clone(),
                 seat_notes: seat_notes(),
+                seat_rng: seat_rng(),
             };
             let json = serde_json::to_string(&save).expect("Failed to serialize game state");
             // The hot-reload snapshot, so `rr` works without --save. Nobody
@@ -1056,6 +1091,7 @@ use --save if you need a resumable file.");
             player_names: player_names.clone(),
             seats: vec![p1_spec.clone(), p2_spec.clone()],
             seat_notes: seat_notes(),
+            seat_rng: seat_rng(),
         };
         match serde_json::to_string(&save) {
             Ok(json) => {
