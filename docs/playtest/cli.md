@@ -1337,3 +1337,29 @@ whether it told the truth.
   compares each entry to a greedy re-wrap, which is sharper than "single
   word"; a single-word continuation is often correct. Re-run only after a
   change to `word_wrap` or the LOG pane.
+- V58 [tried 2026-10-16 → #843; from #837-#841 and e5bced3] the tap a row
+  or a prompt promises. Since #837/#838/#840 the planner keeps payable a
+  flashback in the graveyard and a permanent's own `{T}:` ability, and the
+  CLI row says what it will tap. Stage by save edit a board with two basics
+  of one colour, one of another, a red source, two utility lands with
+  `{cost}, {T}:` abilities (Nephalia Drownyard, Stensia Bloodhall, Gavony
+  Township) and a flashback card in the graveyard; then for every Cast,
+  Flashback and Activate row, choose it and diff the row's "(tap …)"
+  against `--log`'s "tapped X" lines, and check the next menu still offers
+  every demand that was payable both ways. Do it again with one mana
+  floating (tap a land first), at Mentor of the Meek's "pay {1} (tap …)?"
+  heading, and at an X prompt, where the prompt takes only a number and the
+  allocator, not the row, picks the lands.
+
+  **Answered 2026-10-16: the rows tell the truth; X funding does not
+  protect anything.** Every row's plan was the tap the log recorded
+  (Volley, Ravings with a floating {U} kept for Think Twice, Drownyard's
+  mill, Mentor's "(tap Gavony Township)", Doomed Traveler), and Mentor's
+  heading fits at 80 and 100 columns. But Devil's Play's X = 3 funded from
+  Island, Island, Swamp and took Think Twice's flashback off the menu while
+  Bloodhall, Drownyard and a Swamp would have paid (#843):
+  `order_around_demands` sorts by category before anything else, so basics
+  go before `{C}`, and it ranks by pips of demands that cannot be paid at
+  all. The page never shows a cast's plan (#842, found in the R1 sweep). 30
+  random games on the two decks (seeds 5810-5839, 27 fundings) were clean.
+  Re-run after a change to `funding.rs` or `mana_demands`.
