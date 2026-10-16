@@ -102,6 +102,19 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   applies to it. `N>pwM` was only exercised on the `walkers_len == 0` branch.
 - V3 save/reload abuse: `--save` then `--resume` mid-combat, mid-choice,
   mid-mulligan; resume the same save twice; `rr` hot-reload at odd times
+
+  **Re-run 2026-10-16 (→ #844): every pending decision resumes identically;
+  the game after it does not.** Copy the live `--save` at a prompt, resume
+  the copy with the same `--seed`, and compare screen diff, then logs and a
+  JSON deep-diff after the same keys: mulligan, bottom, attackers,
+  blockers, a yes/no pay, both library-search widgets, the X prompt (and
+  `c` after resume), cleanup discard, damage order and a held two-seat
+  discard all came back to 0. The method that found the gap is cheaper and
+  wider: run random vs random with a loop copying the save every 20 ms,
+  resume a mid-game snapshot, and diff the GAME lines from the RESUMED
+  line's entry count. A random seat's RNG is not saved, so the game forks
+  within a few lines (#844). Re-run that half after a change to save
+  contents or `make_player`.
 - V4 degenerate decks: all-curses, zero-creature, 4x same legend,
   token-flood (Army of the Damned + doublers), one-of-everything piles
 
