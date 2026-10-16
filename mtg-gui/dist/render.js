@@ -1224,7 +1224,7 @@ function promptArea(ctx, hits, state, x, y, w, h) {
     for (const r of drawn) {
         const marked = !!(ui && r.key && ui.marked.includes(r.key));
         panel(ctx, x + 4, ry, w - 8, 10, marked ? "#3a5a3a" : "#2a2430", marked ? "#60e060" : "#4a4a5a");
-        text(ctx, clip(ctx, r.label, w - 14, "7px Silkscreen"), x + 7, ry + 1, { font: "7px Silkscreen" });
+        text(ctx, clipKeepingTail(ctx, r.label, w - 14, "7px Silkscreen"), x + 7, ry + 1, { font: "7px Silkscreen" });
         hits.push({ x: x + 4, y: ry, w: w - 8, h: 10, kind: "row", onClick: r.run, cardName: r.cardName });
         ry += 11;
     }
@@ -1357,7 +1357,7 @@ function modal(ctx, hits, state) {
             button(ctx, hits, x + w - 20, ry + 1, 12, rowH - 3, "▼", () => ui.move(r.pos, 1));
         }
         else {
-            text(ctx, clip(ctx, r.label, w - 18, "8px Silkscreen"), x + 9, ry + 2);
+            text(ctx, clipKeepingTail(ctx, r.label, w - 18, "8px Silkscreen"), x + 9, ry + 2);
             hits.push({ x: x + 6, y: ry, w: w - 12, h: rowH - 1, kind: "row", onClick: r.run, cardName: r.cardName });
         }
     });

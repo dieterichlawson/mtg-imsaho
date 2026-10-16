@@ -43,6 +43,14 @@ const row = P.describeAction(state, legal.actions[1]);
 if (!row.includes("(tap Forest, Swamp)")) fail(`a cast row names the plan: ${row}`);
 const ab = P.describeAction(state, legal.actions[3]);
 if (!ab.includes("(tap Nephalia Drownyard)")) fail(`an ability row names the plan: ${ab}`);
+// A flashback's cost note and the plan sit in separate parentheses, so the
+// popover's clip keeps the plan (#842's review).
+const fb = { ...cast(21, [[15, 0], [16, 0]]), is_flashback: true,
+  alternative_cost: { symbols: [{ Generic: 1 }, { Colored: "Black" }] } };
+const s2 = { ...state, decision: { legal: { ...legal, castable_spells: [fb] }, combat: null } };
+P.beginDecision(s2, () => {});
+const fbVerb = (s2.ui.verbs.get(21) || [])[0]?.label || "";
+if (!/^Flashback \(flashback cost [^)]*\) \(tap 2x Swamp\)$/.test(fbVerb)) fail(`a flashback's plan has its own parentheses: ${fbVerb}`);
 // An empty plan adds nothing.
 if (P.tapNote(state, []) !== "") fail("an empty plan is silent");
 

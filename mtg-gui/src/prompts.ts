@@ -638,8 +638,10 @@ function beginMenu(state: LiveState, ui: Ui, actions: Action[], legal: LegalActi
   }
   for (const cs of legal.castable_spells || []) {
     const verb = cs.is_flashback ? "Flashback" : cs.from_graveyard ? "Cast from graveyard" : "Cast";
-    const notes = [costNote(cs), cs.additional_cost_label || "", tapNote(state, cs.tap_plan)].filter(n => n);
-    const extra = notes.length ? ` (${notes.join(", ")})` : "";
+    const notes = [costNote(cs), cs.additional_cost_label || ""].filter(n => n);
+    // The plan in its own parentheses, which `clipKeepingTail` keeps whole.
+    const tap = tapNote(state, cs.tap_plan);
+    const extra = (notes.length ? ` (${notes.join(", ")})` : "") + (tap ? ` (${tap})` : "");
     const forced = forcedTargets(cs.target_spec);
     const named = forced.length ? ` → ${forced.map(t => forcedTargetLabel(state, t)).join(", ")}` : "";
     const sac = cs.sacrifice_options.length === 1 ? `, sacrificing ${nameOf(state, cs.sacrifice_options[0])}` : "";
