@@ -284,3 +284,35 @@ fn x_funding_keeps_a_flashback_payable_over_demands_nobody_can_pay() {
     assert!(flashback_offered(&state),
         "X = 3 stranded Think Twice's flashback: {:?}", response.taps);
 }
+
+/// #843's review: floating mana is spent on X around the demands the board
+/// can pay, as the taps are. Devil's Play `{X}{R}` with {R}{U}{B}{B}
+/// floating, Think Twice `{1}{U}` and Army of the Damned `{5}{B}{B}{B}` in
+/// hand: the Army cannot be paid, and its three {B} pips must not make the
+/// {U} Think Twice needs look like the spare mana.
+#[test]
+fn x_from_the_pool_ignores_demands_nobody_can_pay() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    spell_in_hand(&mut state, &reg, "Think Twice", P0);
+    spell_in_hand(&mut state, &reg, "Army of the Damned", P0);
+    let play = spell_in_hand(&mut state, &reg, "Devil's Play", P0);
+    add_mana(&mut state, P0, &[(ManaType::Red, 1), (ManaType::Blue, 1), (ManaType::Black, 2)]);
+
+    let cast = engine::legal_actions(&state, &reg).actions.into_iter()
+        .find(|a| matches!(a, Action::CastSpell { object_id, targets, .. }
+            if *object_id == play && targets.iter().any(|t| matches!(t, mtg_engine::actions::Target::Player(p) if *p == P1))))
+        .expect("Devil's Play at the opponent is offered");
+    let state = engine::submit_action(&state, &cast, &reg);
+    let legal = engine::legal_actions(&state, &reg);
+    let Some(mtg_engine::state::ResolutionChoiceKind::ChooseXFunding { options, .. }) =
+        legal.resolution_prompt.as_ref() else {
+        panic!("Devil's Play asks for X funding");
+    };
+    let (response, _) = mtg_engine::funding::allocate_for_x(options, 1);
+    let state = engine::submit_action(&state,
+        &Action::ResolveChoice { choice: ResolvedChoice::XFunding(response) }, &reg);
+    let pool = &state.get_player(P0).mana_pool;
+    assert_eq!((pool.get(ManaType::Blue), pool.get(ManaType::Black)), (1, 1),
+        "X = 1 was paid with the {{U}} Think Twice needs");
+}

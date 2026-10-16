@@ -87,7 +87,8 @@ impl FundingGroup {
 pub struct FundingOptions {
     /// Floating mana per type at the moment of prompting.
     pub pool: BTreeMap<ManaType, u32>,
-    /// Groups of eligible tap sources, sorted by (category, name).
+    /// Groups of eligible tap sources, sorted by (category, name), then
+    /// around what else the player could pay for (`order_around_demands`).
     pub groups: Vec<FundingGroup>,
     /// Ceiling on the mana this response may fund = pool total + sum of
     /// group contributions.
@@ -307,10 +308,10 @@ pub fn allocate_for_x(options: &FundingOptions, x: u32) -> (FundingResponse, u32
         }
     }
 
-    // Taps: walk the groups in their given order (category-sorted), taking
-    // the most each can contribute that still leaves `left` reachable by
-    // the groups behind it. That spends lands before rocks before dorks
-    // among the allocations summing to `tap_sum`.
+    // Taps: walk the groups in their given order (`order_around_demands`:
+    // what nothing else needs first, creatures last), taking the most each
+    // can contribute that still leaves `left` reachable by the groups
+    // behind it, among the allocations summing to `tap_sum`.
     let mut left = tap_sum;
     for (i, g) in options.groups.iter().enumerate() {
         if left == 0 {
@@ -625,7 +626,9 @@ pub fn order_around_demands(
     options.groups.sort_by_key(|g| (g.category == FundingCategory::Dorks, rank(g)));
     // Floating mana is spent on X around the same demands, as a payment
     // out of the pool is (`auto_pay_reserving`, #678).
-    let reserve = crate::mana::hand_reserve(&demands.iter().map(|d| d.cost.clone()).collect::<Vec<_>>());
+    // Around the payable ones only: Army of the Damned's three {B} with
+    // four mana floating made the {U} Think Twice needs look spare (#843).
+    let reserve = crate::mana::hand_reserve(&payable.iter().map(|d| d.cost.clone()).collect::<Vec<_>>());
     options.pool_order = crate::mana::generic_payment_order(&state.get_player(player).mana_pool, &reserve);
 }
 
