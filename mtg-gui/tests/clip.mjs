@@ -47,6 +47,13 @@ for (const len of [0, 1, 5, 50, 101, 500, 17183]) {
   for (const t of [you, opp]) if ([...t].length * 4 > 246) fail(`over width: ${t}`);
   if (clipKeepingTail(fakeCtx(), "Pass", 246) !== "Pass") fail("a short label was changed");
 }
+// #842: what auto-tap will spend survives with the target.
+{
+  const long = "{2}{B}, {T}: Target creature gets -2/-2 until end of turn. Activate only as a sorcery and only if you control three Zombies";
+  const v = clipKeepingTail(fakeCtx(), long + " (tap 2x Swamp) → Opponent", 246);
+  if (!v.endsWith(" (tap 2x Swamp) → Opponent")) fail(`the tap plan was cut: ${v}`);
+  if ([...v].length * 4 > 246) fail(`over width: ${v}`);
+}
 // #693: a number widget's summary never drops lines silently, and never
 // drops "Payable X".
 {

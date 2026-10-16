@@ -125,12 +125,17 @@ export function clip(ctx, s, maxW, font = "8px Silkscreen") {
  * from the end, both rows read "-6: Separate all permanents target player
  * co…", and the one that divides your own board was a coin flip (#689,
  * the page's half of #633 and #681).
+ *
+ * A verb's " (tap …)" is kept with the tail too: what auto-tap will spend
+ * is why the verb names it (#842), and a long ability description would
+ * otherwise push it off the end.
  */
 export function clipKeepingTail(ctx, s, maxW, font = "8px Silkscreen") {
     ctx.font = font;
     if (ctx.measureText(s).width <= maxW)
         return s;
-    const at = s.lastIndexOf(" → ");
+    const tapAt = s.indexOf(" (tap ");
+    const at = tapAt >= 0 ? tapAt : s.lastIndexOf(" → ");
     if (at < 0)
         return clip(ctx, s, maxW, font);
     const tail = s.slice(at);

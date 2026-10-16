@@ -303,6 +303,24 @@ export function costNote(cs: CastableSpell): string {
   return `alternative cost ${amount}`;
 }
 
+/**
+ * What auto-tap will spend, as the CLI's and the LLM seat's rows say it:
+ * "tap 2x Swamp, Forest", or "" when the plan taps nothing. The page sent
+ * the plan back with every cast and activation but never showed it, so a
+ * person could not see that a click would tap the land whose ability they
+ * were saving (#842).
+ */
+export function tapNote(state: State, plan: [ObjectId, number][] | undefined): string {
+  if (!plan || plan.length === 0) return "";
+  const counts: [string, number][] = [];
+  for (const [id] of plan) {
+    const name = nameOf(state, id);
+    const e = counts.find(([n]) => n === name);
+    if (e) e[1]++; else counts.push([name, 1]);
+  }
+  return "tap " + counts.map(([n, c]) => c > 1 ? `${c}x ${n}` : n).join(", ");
+}
+
 function isObj(a: Action): a is Exclude<Action, string> { return typeof a === "object"; }
 
 /** What one legal action does, for a row or a popover item. */
@@ -320,7 +338,8 @@ export function describeAction(state: LiveState, a: Action): string {
     // card are two different casts (#611).
     const alt = v.alternative_cost ? ` (cost ${costText(v.alternative_cost) || "{0}"})` : "";
     const t = v.targets.length ? ` → ${v.targets.map(x => forcedTargetLabel(state, x)).join(", ")}` : "";
-    return `Cast ${nameOf(state, v.object_id)}${alt}${t}`;
+    const tap = tapNote(state, v.tap_plan);
+    return `Cast ${nameOf(state, v.object_id)}${alt}${tap ? ` (${tap})` : ""}${t}`;
   }
   if ("ActivateManaAbility" in a) {
     const v = a.ActivateManaAbility;
@@ -331,7 +350,8 @@ export function describeAction(state: LiveState, a: Action): string {
   if ("ActivateAbility" in a) {
     const v = a.ActivateAbility;
     const t = v.targets.length ? ` → ${v.targets.map(x => forcedTargetLabel(state, x)).join(", ")}` : "";
-    return `${nameOf(state, v.object_id)}: ability ${v.ability_index}${t}`;
+    const tap = tapNote(state, v.tap_plan);
+    return `${nameOf(state, v.object_id)}: ability ${v.ability_index}${tap ? ` (${tap})` : ""}${t}`;
   }
   if ("ActivateLoyaltyAbility" in a) {
     const v = a.ActivateLoyaltyAbility;
@@ -618,7 +638,7 @@ function beginMenu(state: LiveState, ui: Ui, actions: Action[], legal: LegalActi
   }
   for (const cs of legal.castable_spells || []) {
     const verb = cs.is_flashback ? "Flashback" : cs.from_graveyard ? "Cast from graveyard" : "Cast";
-    const notes = [costNote(cs), cs.additional_cost_label || ""].filter(n => n);
+    const notes = [costNote(cs), cs.additional_cost_label || "", tapNote(state, cs.tap_plan)].filter(n => n);
     const extra = notes.length ? ` (${notes.join(", ")})` : "";
     const forced = forcedTargets(cs.target_spec);
     const named = forced.length ? ` → ${forced.map(t => forcedTargetLabel(state, t)).join(", ")}` : "";
@@ -630,7 +650,8 @@ function beginMenu(state: LiveState, ui: Ui, actions: Action[], legal: LegalActi
     const named = targets.length === 1 && targets[0].length ? ` → ${targets[0].map(t => forcedTargetLabel(state, t)).join(", ")}` : "";
     const sac = sacrifices.length === 1 && sacrifices[0] !== null && sacrifices[0] !== ab.object_id
       ? `, sacrificing ${nameOf(state, sacrifices[0])}` : "";
-    add(ab.object_id, `${ab.description || ab.name || "Activate"}${named}${sac}`, () => abilityFlow(state, ab, send));
+    const tap = tapNote(state, ab.tap_plan);
+    add(ab.object_id, `${ab.description || ab.name || "Activate"}${tap ? ` (${tap})` : ""}${named}${sac}`, () => abilityFlow(state, ab, send));
   }
   // Rows that hang off nothing (a stray ResolveChoice) get the panel.
   ui.looseRows = verbs.get(-1) || [];
