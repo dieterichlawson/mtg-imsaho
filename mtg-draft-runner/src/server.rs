@@ -109,9 +109,10 @@ impl Shared {
         if !self.lobby().is_auto(seat) {
             return;
         }
+        let who = self.lobby().who(seat);
         let in_game = self.in_game.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
         for (_, handle) in in_game.iter().filter(|(s, _)| *s == seat) {
-            handle.withdraw(&format!("the host kicked seat {seat}"));
+            handle.withdraw(&format!("the host kicked {who}"));
         }
     }
 
@@ -515,7 +516,7 @@ fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usiz
                     shared.say(&format!("WARN round {round}: no game page for {who}: {e}; \
 {who} forfeits the match"));
                     let result = shared.lobby().forfeit_by(a, b, seat,
-                        &format!("no game page for seat {seat}: {e}"));
+                        &format!("no game page for {who}: {e}"));
                     return finish(shared, round, a, b, result);
                 }
             },
@@ -530,9 +531,10 @@ fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usiz
     let mut seats = seats.into_iter();
     let (player_a, player_b) = (seats.next().expect("seat a"), seats.next().expect("seat b"));
     let mut games = 0usize;
+    let (label_a, label_b) = { let l = shared.lobby(); (l.who(a), l.who(b)) };
     let result = play_match(
-        MatchSeat { seat: a, deck: &deck_a, player: player_a },
-        MatchSeat { seat: b, deck: &deck_b, player: player_b },
+        MatchSeat { seat: a, label: label_a, deck: &deck_a, player: player_a },
+        MatchSeat { seat: b, label: label_b, deck: &deck_b, player: player_b },
         &shared.registry,
         best_of,
         seed,

@@ -95,6 +95,9 @@ impl GameSeat {
 /// One side of a match.
 pub struct MatchSeat<'a> {
     pub seat: usize,
+    /// How the host's terminal names the seat: `Seat N` for the runner,
+    /// the hosted table's "Ann (seat 3)" (#816). The log keeps `Seat N`.
+    pub label: String,
     pub deck: &'a Decklist,
     pub player: GameSeat,
 }
@@ -239,6 +242,8 @@ fn play_game(
 ) -> GameOutcome {
     let seat_a = a.seat;
     let seat_b = b.seat;
+    let (label_a, label_b) = (a.label.clone(), b.label.clone());
+    let label_of = |seat: usize| if seat == seat_a { label_a.clone() } else { label_b.clone() };
     let (deck_a, deck_b) = (a.deck, b.deck);
     let (p1, p2) = (&mut a.player, &mut b.player);
     let config = GameConfig {
@@ -286,8 +291,8 @@ fn play_game(
                 let report = mtg_player::watchdog::stall_report(
                     game_state, acting_player, legal, &seat.to_string(),
                 );
-                mtg_player::stderr_line!("\nWARN: {report} The game is forfeit to seat {}.",
-                    if acting_player == PlayerId(0) { seat_b } else { seat_a });
+                mtg_player::stderr_line!("\nWARN: {report} The game is forfeit to {}.",
+                    label_of(if acting_player == PlayerId(0) { seat_b } else { seat_a }));
                 draft_log::DraftLogger::stalled_game(
                     false, seat_a, seat_b, seat,
                     game_state.turn_number,
@@ -300,7 +305,7 @@ fn play_game(
             if let Some(stop) = harness_move(stalled, action_count, max_actions) {
                 if matches!(stop, mtg_engine::actions::Action::AbandonGame) && !abandoned {
                     abandoned = true;
-                    mtg_player::stderr_line!("\nWARN: Seat {seat_a} vs Seat {seat_b}: the game reached \
+                    mtg_player::stderr_line!("\nWARN: {label_a} vs {label_b}: the game reached \
 {max_actions} actions without a result at turn {} {:?}; the runner abandoned it — no winner.",
                         game_state.turn_number, game_state.step);
                     draft_log::DraftLogger::abandoned_game(
@@ -343,7 +348,11 @@ budget ({why}), so the seat forfeits its match"),
                         GameSeat::Gui(_) => format!("Seat {seat} was withdrawn from the game ({why}), \
 so the seat forfeits its match"),
                     };
-                    mtg_player::stderr_line!("\nWARN: {report}.");
+                    // The terminal names the seat as the table does; the
+                    // log's report keeps `Seat N`.
+                    let label = label_of(seat);
+                    let said = report.replacen(&format!("Seat {seat}"), &label, 1);
+                    mtg_player::stderr_line!("\nWARN: {said}.");
                     draft_log::DraftLogger::stalled_game(
                         matches!(player, GameSeat::Gui(_)),
                         seat_a, seat_b, seat,

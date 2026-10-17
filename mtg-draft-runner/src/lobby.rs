@@ -1365,7 +1365,7 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
         if clean.is_empty() {
             return;
         }
-        self.event(format!("seat {seat} is now called {clean}"));
+        self.event(format!("{} is now called {clean}", self.who(seat)));
         self.seats[seat].name = clean;
     }
 

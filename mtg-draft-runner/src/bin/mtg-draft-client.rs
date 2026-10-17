@@ -342,12 +342,18 @@ fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Option<Du
     }
 }
 
-/// Everybody's state on one line: `seat 1 (seat 1) waiting 4 picks; ...`.
+/// Everybody's state on one line: `[seat 0 picking 4p; Bo (seat 1) waiting 4p]`.
 fn table_line(v: &Value) -> String {
     let parts: Vec<String> = v["seats"].as_array().into_iter().flatten().map(|x| {
         let joined = if x["joined"].as_bool().unwrap_or(false) { "" } else { ", not here yet" };
         let auto = if x["auto"].as_bool().unwrap_or(false) { ", table picks" } else { "" };
-        format!("seat {} {} {}p{joined}{auto}", x["seat"], x["status"].as_str().unwrap_or("?"), x["picks"])
+        // Named as the page names a seat (#816).
+        let n = x["seat"].as_u64().unwrap_or(0);
+        let who = match x["name"].as_str() {
+            Some(name) if name != format!("seat {n}") => format!("{name} (seat {n})"),
+            _ => format!("seat {n}"),
+        };
+        format!("{who} {} {}p{joined}{auto}", x["status"].as_str().unwrap_or("?"), x["picks"])
     }).collect();
     format!("[{}]", parts.join("; "))
 }
@@ -531,6 +537,15 @@ mod tests {
         // The table's lines name a seat as the page does (#816).
         assert!(mine.contains("  round 2: Bea (seat 1) has a bye\n"), "{mine}");
         assert!(mine.contains("  round 2: Ann (seat 0) vs Cy (seat 2) (playing)\n"), "{mine}");
+    }
+
+    /// #816: the one-line table summary names a seat as the page does.
+    #[test]
+    fn the_table_line_names_a_named_seat() {
+        let v = serde_json::json!({"seats": [
+            {"seat": 0, "name": "seat 0", "status": "picking", "picks": 4, "joined": true},
+            {"seat": 1, "name": "Bo", "status": "waiting", "picks": 4, "joined": true}]});
+        assert_eq!(table_line(&v), "[seat 0 picking 4p; Bo (seat 1) waiting 4p]");
     }
 
     /// #792: a pool card's rules text can be read while building, and a

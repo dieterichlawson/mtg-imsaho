@@ -1518,9 +1518,9 @@ and the FINAL STANDINGS below record none",
                         // The game seats are named `Seat{n}`, which is the
                         // name the per-seat tallies are read under.
                         let outcome = play_match(
-                            MatchSeat { seat: a, deck: deck_a, player: GameSeat::Llm(
+                            MatchSeat { seat: a, label: format!("Seat {a}"), deck: deck_a, player: GameSeat::Llm(
                                 make_game_player(model_a, &format!("Seat{a}"), guide_a)) },
-                            MatchSeat { seat: b, deck: deck_b, player: GameSeat::Llm(
+                            MatchSeat { seat: b, label: format!("Seat {b}"), deck: deck_b, player: GameSeat::Llm(
                                 make_game_player(model_b, &format!("Seat{b}"), guide_b)) },
                             reg,
                             best_of,
