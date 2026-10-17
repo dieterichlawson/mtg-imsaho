@@ -57,6 +57,15 @@ random game happened to reach.
 - G2 what just happened: the opponent cast something and it resolved
   while you had nothing to respond with. Does the board tell you what
   changed? (The band shows the last two log lines; is that enough?)
+  [2026-10-17] Re-run after #523's fix. **The band now says how much was
+  missed, but the line it shows first is the one you already know**:
+  `logSeen` is taken when a frame is drawn, so your own answer's tap or land
+  opens the next interval. 23 of 36 overflowing frames opened that way, and
+  five hid Swords/Doom Blade/Pacifism on your creature behind "+N" (#847).
+  Method: at every shown frame, recompute `bandLogLines` from
+  `window.mtg.view.display_log.slice(window.mtg.logSince)` and keep the
+  fresh slice. A seat that never attacks or blocks against white-black
+  (seed 3011) gives the opponent's removal room to happen.
 - G3 the prompt with no board: a search, a looked-at pile, a card name.
   Is the row list readable at 30 entries? Does the filter box take
   focus, and give it back?
