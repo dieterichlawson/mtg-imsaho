@@ -43,6 +43,10 @@ export interface PageState {
   deadlineAt: number | null;
   /** A line about the last key that could not do anything. */
   hint: string | null;
+  /** The server's last one-off notice, kept until dismissed: the server
+   *  sends a notice in one view only, and the view after it can follow
+   *  within a millisecond (#817). */
+  notice: string | null;
 }
 
 /** What the renderer asks the page to do. */
@@ -55,6 +59,7 @@ export interface Actions {
   setLand(name: string, n: number): void;
   ready(): void;
   dismiss(): void;
+  dismissNotice(): void;
 }
 
 export function initialState(): PageState {
@@ -63,7 +68,7 @@ export function initialState(): PageState {
     seat: null, key: null, view: null,
     selected: null, hover: null, pendingPick: null,
     deck: null, cursor: null, readySent: false,
-    refusal: null, deadlineAt: null, hint: null,
+    refusal: null, deadlineAt: null, hint: null, notice: null,
   };
 }
 

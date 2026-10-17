@@ -387,7 +387,11 @@ export function render(root: HTMLElement, state: PageState, actions: Actions): v
       h("span", { text: `Refused: ${state.refusal.reason}` }),
       h("button", { type: "button", class: "dismiss", onclick: () => actions.dismiss(), text: "×", title: "Dismiss" })));
   }
-  if (view && view.notice) parts.push(h("div", { class: "banner notice", text: view.notice }));
+  if (state.notice) {
+    parts.push(h("div", { class: "banner notice", role: "status" },
+      h("span", { text: state.notice }),
+      h("button", { type: "button", class: "dismiss", onclick: () => actions.dismissNotice(), text: "×", title: "Dismiss" })));
+  }
   if (state.hint) parts.push(h("div", { class: "banner hint", text: state.hint }));
   if (!view) {
     parts.push(h("section", { class: "phase" }, h("p", { class: "muted", text: state.connected ? "Connected; waiting for the first view." : "Connecting to the draft…" })));

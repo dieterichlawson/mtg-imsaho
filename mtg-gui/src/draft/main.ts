@@ -133,6 +133,10 @@ function onView(view: DraftView): void {
   state.view = view;
   exposed.view = view;
   state.hint = null;
+  // Kept until dismissed or replaced: "The table built your deck" went out
+  // in the last building view and the playing view replaced it a
+  // millisecond later, so nobody could read it (#817).
+  if (view.notice) state.notice = view.notice;
 
   // Drafting: the selection belongs to one pack; a new pack starts clean.
   // The pending pick is answered when the pack it named is gone or moved
@@ -273,6 +277,7 @@ const actions: Actions = {
     draw();
   },
   dismiss() { state.refusal = null; draw(); },
+  dismissNotice() { state.notice = null; draw(); },
 };
 
 // ------------------------------------------------------------------ keys

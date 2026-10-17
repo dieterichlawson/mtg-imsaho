@@ -366,6 +366,19 @@ async function main() {
         check(await page.evaluate(() => document.activeElement && document.activeElement.classList.contains("inc")), `${tag}: the "+" keeps the focus across the rebuild`);
       }
 
+      // A notice outlives the view that carried it: the table's "built your
+      // deck" came in the last building view and the playing view replaced
+      // it a millisecond later (#817). It stays until dismissed.
+      {
+        await stage({ ...byName.building, notice: "The table built your deck (the build timer ran out)." });
+        await stage(byName.playing_waiting);
+        await page.waitForTimeout(50);
+        check((await text(".banner.notice") || "").includes("The table built your deck"), `${tag}: the notice survives the next view`);
+        await page.click(".banner.notice .dismiss");
+        await page.waitForTimeout(50);
+        check(await page.$(".banner.notice") === null, `${tag}: the notice can be dismissed`);
+      }
+
       // Playing: the game link is a link; waiting is said; done shows the standings.
       {
         await stage(byName.playing);

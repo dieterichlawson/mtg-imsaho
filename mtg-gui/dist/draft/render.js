@@ -315,8 +315,9 @@ export function render(root, state, actions) {
     if (state.refusal) {
         parts.push(h("div", { class: "banner refusal", role: "alert" }, h("span", { text: `Refused: ${state.refusal.reason}` }), h("button", { type: "button", class: "dismiss", onclick: () => actions.dismiss(), text: "×", title: "Dismiss" })));
     }
-    if (view && view.notice)
-        parts.push(h("div", { class: "banner notice", text: view.notice }));
+    if (state.notice) {
+        parts.push(h("div", { class: "banner notice", role: "status" }, h("span", { text: state.notice }), h("button", { type: "button", class: "dismiss", onclick: () => actions.dismissNotice(), text: "×", title: "Dismiss" })));
+    }
     if (state.hint)
         parts.push(h("div", { class: "banner hint", text: state.hint }));
     if (!view) {

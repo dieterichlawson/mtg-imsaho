@@ -6,6 +6,6 @@ export function initialState() {
         seat: null, key: null, view: null,
         selected: null, hover: null, pendingPick: null,
         deck: null, cursor: null, readySent: false,
-        refusal: null, deadlineAt: null, hint: null,
+        refusal: null, deadlineAt: null, hint: null, notice: null,
     };
 }
