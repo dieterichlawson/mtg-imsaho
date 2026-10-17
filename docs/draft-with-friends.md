@@ -104,7 +104,9 @@ Open your join link. `mtg-gui/draft.html` is the page (served from the
 same `mtg-gui` directory as the game page, with `dist/` and `assets/`); it
 shows the lobby, the pack with the pool beside it while drafting, a
 checklist and land counts while building, and your match link, results
-and standings while playing. If the page is not in the checkout yet the
+and standings while playing. On a phone, a tap on a pool card while
+building opens its text under it and a second tap moves it between main
+and side. If the page is not in the checkout yet the
 server says so at start-up and the client below still works.
 
 ### In a terminal
@@ -119,7 +121,8 @@ one line for the table when only other seats moved. Type a card's number
 to pick it; a number typed before a new pack has been up for 300 ms (a
 pick typed twice) is not taken from it, and the client says so. While building: `add <n>` and `drop <n>` by the pool numbers
 shown, `lands plains=7 island=10`, `show`, and `ready` when the deck is
-final; the server's refusal (`Deck has 39 cards (need at least 40)`) is
+final; `text <n>` prints a card's rules text (the pack's card while
+drafting, the pool's while building); the server's refusal (`Deck has 39 cards (need at least 40)`) is
 printed as it comes. When a match is paired it prints `Round 1 vs seat 3:
 playing — open http://192.168.1.20:8803/`; a round you sit out is
 `Round 2: a bye — counted as a match won`, and the seats show you as

@@ -360,7 +360,7 @@ fn render(v: &Value, build: &Build) -> (String, String) {
                 for c in pack["cards"].as_array().into_iter().flatten() {
                     s.push_str(&format!("  {:>2}: {}\n", c["index"], c["line"].as_str().unwrap_or("?")));
                 }
-                s.push_str("type a number to pick\n");
+                s.push_str("type a number to pick, or text <n> to read the card\n");
             } else {
                 s.push_str("\nno pack in front of you; waiting on the seat upstream\n");
             }
@@ -512,6 +512,10 @@ mod tests {
             "cards": [{"index": 3, "name": "Brain Weevil", "line": "Brain Weevil {3}{B}", "text": "Intimidate"}]});
         let Command::Print(t) = command("text 3", Some(&v), &mut Build::default(), None) else { panic!() };
         assert!(t.ends_with("\nIntimidate"), "{t}");
+        // With no pack in front of the seat there is no number on screen to read by.
+        v["pack"] = Value::Null;
+        let Command::Print(t) = command("text 0", Some(&v), &mut Build::default(), None) else { panic!() };
+        assert!(t.contains("there is none now"), "{t}");
     }
 
     /// #815: when the table builds the deck, or tops a short one up, the
@@ -618,7 +622,12 @@ fn pool_listing(v: &Value) -> String {
 /// While drafting `n` is the pack's number for the card; otherwise the
 /// pool's.
 fn card_text(v: &Value, arg: Option<&str>) -> String {
-    let drafting = v["phase"].as_str() == Some("drafting") && v["pack"].is_object();
+    // While drafting the pool is listed by counts, not numbers, so the only
+    // numbers on screen are the pack's.
+    if v["phase"].as_str() == Some("drafting") && !v["pack"].is_object() {
+        return "text reads a card of the pack in front of you; there is none now".to_string();
+    }
+    let drafting = v["phase"].as_str() == Some("drafting");
     let cards: Vec<&Value> = if drafting {
         v["pack"]["cards"].as_array().into_iter().flatten().collect()
     } else {
