@@ -371,7 +371,21 @@ fn render(v: &Value, build: &Build) -> (String, String) {
             s.push_str(&build_listing(v, build));
         }
         "playing" | "done" => {
-            for m in v["matches"].as_array().into_iter().flatten() {
+            // This seat's own byes beside its matches, in round order: the
+            // view's `matches` holds played matches only, so a seat given a
+            // bye had no line of its own for it (#814).
+            let me = v["seat"].as_u64();
+            let mut own: Vec<(u64, Option<&Value>)> = v["matches"].as_array().into_iter().flatten()
+                .map(|m| (m["round"].as_u64().unwrap_or(0), Some(m))).collect();
+            own.extend(v["pairings"].as_array().into_iter().flatten()
+                .filter(|p| p["b"].is_null() && p["a"].as_u64() == me)
+                .map(|p| (p["round"].as_u64().unwrap_or(0), None)));
+            own.sort_by_key(|(round, _)| *round);
+            for (round, m) in own {
+                let Some(m) = m else {
+                    s.push_str(&format!("Round {round}: a bye — counted as a match won\n"));
+                    continue;
+                };
                 let opp = m["opponent"].as_u64().unwrap_or(0) as usize;
                 let name = names.get(opp).cloned().unwrap_or_else(|| format!("seat {opp}"));
                 let status = m["status"].as_str().unwrap_or("?");
@@ -445,6 +459,30 @@ mod tests {
         assert!(!mine.contains("8801"), "a finished match's page is not offered:\n{mine}");
         assert!(mine.contains("Round 2 vs Lawson: playing — open http://h:8803/\n"), "{mine}");
         assert!(mine.contains("Round 3 vs Lawson: waiting\n"), "{mine}");
+    }
+
+    /// #814: a seat given a bye is told so in its own section, in round
+    /// order among its matches, not only in the table's pairings list.
+    #[test]
+    fn a_seats_own_bye_is_in_its_own_matches() {
+        let v = serde_json::json!({
+            "type": "view", "phase": "playing", "seat": 1, "set": "isd",
+            "seats": [{"seat": 0, "name": "Ann", "kind": "human", "status": "playing", "picks": 42, "joined": true},
+                      {"seat": 1, "name": "Bea", "kind": "human", "status": "waiting", "picks": 42, "joined": true},
+                      {"seat": 2, "name": "Cy", "kind": "ai", "status": "playing", "picks": 42, "joined": true}],
+            "matches": [{"round": 1, "opponent": 0, "url": null, "status": "done", "games": [], "result": "2-0"},
+                        {"round": 3, "opponent": 2, "url": null, "status": "waiting", "games": [], "result": null}],
+            "pairings": [{"round": 2, "a": 1, "b": null, "status": "done", "result": "bye"},
+                         {"round": 2, "a": 0, "b": 2, "status": "playing", "result": null},
+                         {"round": 1, "a": 2, "b": null, "status": "done", "result": "bye"}],
+            "standings": [], "pool": [], "picks": [], "deck": null, "notice": null,
+        });
+        let (_, mine) = render(&v, &Build::default());
+        let r1 = mine.find("Round 1 vs Ann").expect(&mine);
+        let bye = mine.find("Round 2: a bye — counted as a match won\n").expect(&mine);
+        let r3 = mine.find("Round 3 vs Cy").expect(&mine);
+        assert!(r1 < bye && bye < r3, "{mine}");
+        assert!(!mine.contains("Round 1: a bye"), "another seat's bye is not this seat's:\n{mine}");
     }
 
     /// #815: when the table builds the deck, or tops a short one up, the

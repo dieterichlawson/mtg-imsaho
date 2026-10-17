@@ -341,6 +341,20 @@ async function main() {
         await stage(byName.playing_waiting);
         await page.waitForTimeout(50);
         check((await text(".waiting") || "").includes("Waiting for the others"), `${tag}: a seat with no match waits for the others`);
+        // A seat given the bye is told so, in its own matches and in the
+        // waiting line, not only in the table's list (#814).
+        {
+          const v = JSON.parse(JSON.stringify(byName.playing_waiting));
+          v.pairings = v.pairings || [];
+          const round = Math.max(1, ...v.pairings.map(p => p.round), ...v.matches.map(m => m.round));
+          v.pairings = v.pairings.filter(p => p.b !== null || p.round !== round).concat([{ round, a: v.seat, b: null, status: "done", result: "bye" }]);
+          v.matches = v.matches.filter(m => m.round !== round);
+          await stage(v);
+          await page.waitForTimeout(50);
+          const own = (await text(".matches")) || "";
+          check(own.includes(`Round ${round}: a bye`), `${tag}: the seat's own bye is in its matches (${JSON.stringify(own)})`);
+          check((await text(".waiting") || "").includes(`You have a bye in round ${round}`), `${tag}: the waiting line says why`);
+        }
         // What the server really sends and the plan's sketch did not: a
         // match whose page is not open yet has no link, a drawn game has
         // no winner, the whole round is listed with its bye, a seat can be

@@ -465,6 +465,39 @@ fn a_timer_too_long_for_the_clock_is_no_deadline_not_a_panic() {
     assert!(v["build_deadline_ms"].is_null());
 }
 
+/// #814: at an odd table the seat given the bye is told so by its own
+/// view: the round's pairings name it with no opponent, in the round its
+/// matches are numbered in, and its status is "bye", not "waiting".
+#[test]
+fn an_odd_tables_bye_is_in_the_seats_own_view() {
+    let (mut lobby, _) = lobby(vec![SeatKind::Human, SeatKind::Ai("cc".into()), SeatKind::Ai("cc".into())]);
+    lobby.connected(0);
+    lobby.start();
+    draft_to_the_end(&mut lobby, None);
+    let registry = CardRegistry::with_all_cards();
+    lobby.kick(0).unwrap();
+    for seat in 1..3 {
+        let pool: Vec<String> = jv(&lobby, seat)["pool"].as_array().unwrap().iter()
+            .map(|c| c["name"].as_str().unwrap().to_string()).collect();
+        let deck = fallback_deck(&pool, &registry);
+        lobby.ai_deck(seat, &mtg_draft_runner::deck::DeckBuildResult {
+            deck, attempts: vec![], retries: 0, fallback: false,
+        });
+    }
+    let to_play = lobby.begin_tournament();
+    assert_eq!(to_play.len(), 1, "three seats play one match: {to_play:?}");
+    let (round, a, b) = to_play[0];
+    let bye = (0..3).find(|s| *s != a && *s != b).unwrap();
+    let v = jv(&lobby, bye);
+    let own: Vec<&Value> = v["pairings"].as_array().unwrap().iter()
+        .filter(|p| p["a"] == bye && p["b"].is_null()).collect();
+    assert_eq!(own.len(), 1, "{}", v["pairings"]);
+    assert_eq!(own[0]["round"], round, "the bye's round is the matches' round");
+    assert!(v["matches"].as_array().unwrap().is_empty());
+    assert_eq!(v["seats"][bye]["status"], "bye");
+    assert_eq!(jv(&lobby, a)["seats"][bye]["status"], "bye", "every seat sees it");
+}
+
 /// A seat's view as JSON.
 fn jv(lobby: &Lobby, seat: usize) -> Value {
     serde_json::to_value(lobby.view(seat)).unwrap()

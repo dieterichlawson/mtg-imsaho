@@ -1360,7 +1360,11 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
             Phase::Drafting | Phase::Building => "waiting",
             Phase::Playing => {
                 let playing = self.matches.iter().any(|m| m.status == MatchStatus::Playing && (m.a == seat || m.b == seat));
-                if playing { "playing" } else { "waiting" }
+                // A seat with this round's bye is not waiting for anybody:
+                // "waiting" beside its name read as a match yet to start,
+                // under the page's own "You have a bye" (#814).
+                let bye = self.round_pairings.iter().any(|&(a, b)| a == seat && b == BYE);
+                if playing { "playing" } else if bye { "bye" } else { "waiting" }
             }
         }
     }

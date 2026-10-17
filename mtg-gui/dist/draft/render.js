@@ -266,15 +266,29 @@ function building(view, state, actions) {
         panel.append(h("p", { class: "muted", text: `Click a card to move it between main and side; at least ${MIN_DECK} cards with lands. Arrows and Enter work too.` }));
     return h("section", { class: "phase phase-building" }, h("div", { class: "build-layout" }, list, panel));
 }
+/** This seat's byes, from the table's pairings: `matches` holds played
+ *  matches only, so a seat given a bye read "No pairings yet" (#814). */
+export function ownByes(view) {
+    return (view.pairings || []).filter(p => p.a === view.seat && p.b === null).map(p => p.round);
+}
 function playing(view, done) {
     const mine = view.matches.filter(m => m.status !== "done");
     const me = view.seats.find(s => s.seat === view.seat);
+    const byes = ownByes(view);
     const sections = [h("h2", { text: done ? "Draft over" : "Playing" })];
     if (!done) {
-        sections.push(h("div", { class: "waiting" }, mine.length === 0 ? "Waiting for the others to finish their matches."
+        // The round in progress is the latest one paired; a bye in it is why
+        // this seat has nothing to play.
+        const latest = Math.max(0, ...(view.pairings || []).map(p => p.round));
+        sections.push(h("div", { class: "waiting" }, mine.length === 0
+            ? (byes.includes(latest) ? `You have a bye in round ${latest}. Waiting for the others to finish their matches.` : "Waiting for the others to finish their matches.")
             : me && me.status === "waiting" ? "Waiting for your opponent." : "Your match is on."));
     }
-    sections.push(h("h3", { text: "Your matches" }), view.matches.length ? h("ul", { class: "matches" }, ...view.matches.map(m => matchRow(view, m))) : h("p", { class: "muted", text: "No pairings yet." }));
+    const rows = [
+        ...view.matches.map(m => ({ round: m.round, el: matchRow(view, m) })),
+        ...byes.map(round => ({ round, el: h("li", { class: "match match-bye" }, h("div", { class: "match-head", text: `Round ${round}: a bye — counted as a match won` })) })),
+    ].sort((a, b) => a.round - b.round);
+    sections.push(h("h3", { text: "Your matches" }), rows.length ? h("ul", { class: "matches" }, ...rows.map(r => r.el)) : h("p", { class: "muted", text: "No pairings yet." }));
     sections.push(h("h3", { text: done ? "Final standings" : "Standings" }), standingsTable(view));
     const all = pairingsList(view);
     if (all)

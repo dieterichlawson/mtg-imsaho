@@ -9,7 +9,7 @@
 
 export type Phase = "lobby" | "drafting" | "building" | "playing" | "done";
 export type SeatKind = "human" | "ai" | "cli";
-export type SeatStatus = "picking" | "waiting" | "building" | "ready" | "playing" | "idle";
+export type SeatStatus = "picking" | "waiting" | "building" | "ready" | "playing" | "bye" | "idle";
 export type PassDirection = "left" | "right";
 export type MatchStatus = "waiting" | "playing" | "done";
 
