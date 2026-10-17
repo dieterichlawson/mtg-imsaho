@@ -985,11 +985,16 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
             };
             mtg_player::game_log::write(file!(), line!(),
                 &format!("[Seat {seat}] WARN {why}: {kept}"), "");
-            self.seats[seat].notice = Some(match &added {
-                None => format!("Your deck is final as you last sent it ({why})."),
-                Some((n, land)) => format!(
-                    "Your deck is final as you last sent it, with {n} {land} added to reach 40 ({why})."),
-            });
+            // A kicked seat keeps the line saying it was handed to the
+            // table, as `auto_pick` does; this wrote over it before any
+            // view went out (#817's review).
+            if !self.seats[seat].kicked {
+                self.seats[seat].notice = Some(match &added {
+                    None => format!("Your deck is final as you last sent it ({why})."),
+                    Some((n, land)) => format!(
+                        "Your deck is final as you last sent it, with {n} {land} added to reach 40 ({why})."),
+                });
+            }
             self.event(format!("{}: {why}; {kept}", self.who(seat)));
             self.finish_deck(seat, &deck, &[], 0, false);
             return;
@@ -1001,8 +1006,10 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
             .unwrap_or_default();
         mtg_player::game_log::write(file!(), line!(),
             &format!("[Seat {seat}] WARN the table built this seat's deck: {why}{unusable}"), "");
-        self.seats[seat].notice = Some(format!("The table built your deck ({why}){}.",
-            unusable.replace("; the deck it sent", "; the deck you sent")));
+        if !self.seats[seat].kicked {
+            self.seats[seat].notice = Some(format!("The table built your deck ({why}){}.",
+                unusable.replace("; the deck it sent", "; the deck you sent")));
+        }
         self.event(format!("{}: the table built its deck ({why}){unusable}", self.who(seat)));
         self.finish_deck(seat, &deck, &[], 0, true);
     }

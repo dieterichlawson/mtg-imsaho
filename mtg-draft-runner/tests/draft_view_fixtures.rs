@@ -542,6 +542,22 @@ fn the_hosts_lines_name_a_seat_as_the_page_does() {
     assert!(!events.contains("Seat "), "one spelling of a seat:\n{events}");
 }
 
+/// A seat kicked while building is told it was handed to the table: the
+/// table's building of its deck wrote over that line before any view went
+/// out, so the page's banner said only "The table built your deck" (#817's
+/// review).
+#[test]
+fn a_seat_kicked_while_building_is_told_so() {
+    let (mut lobby, _) = lobby(vec![SeatKind::Human, SeatKind::Ai("cc".into())]);
+    lobby.connected(0);
+    lobby.start();
+    draft_to_the_end(&mut lobby, None);
+    assert_eq!(jv(&lobby, 0)["phase"], "building");
+    lobby.kick(0).unwrap();
+    let notice = jv(&lobby, 0)["notice"].as_str().unwrap_or("").to_string();
+    assert!(notice.contains("handed your seat to the table"), "{notice:?}");
+}
+
 /// A seat's view as JSON.
 fn jv(lobby: &Lobby, seat: usize) -> Value {
     serde_json::to_value(lobby.view(seat)).unwrap()

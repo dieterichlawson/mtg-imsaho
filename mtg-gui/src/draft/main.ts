@@ -211,7 +211,9 @@ const actions: Actions = {
     const pack = state.view && state.view.pack;
     if (!pack || state.pendingPick) return;
     if (!pack.cards.some(c => c.index === index)) return;
-    state.refusal = null; state.hint = null;
+    // A notice is about something the table did; the person acting is past
+    // it ("The table picked X for you" under every later pick, #817's review).
+    state.refusal = null; state.hint = null; state.notice = null;
     send({ type: "pick", pack_id: pack.id, index });
     state.pendingPick = { packId: pack.id, pick: pack.pick, index, sentAt: Date.now() };
     state.selected = index;
@@ -270,7 +272,7 @@ const actions: Actions = {
     if (!view || !state.deck || state.readySent) return;
     const why = problem(state.deck, view.pool);
     if (why) { state.hint = why; draw(); return; }
-    state.refusal = null; state.hint = null;
+    state.refusal = null; state.hint = null; state.notice = null;
     send(toMessage(state.deck, view.pool));
     send({ type: "ready" });
     state.readySent = true;
@@ -298,6 +300,7 @@ window.addEventListener("keydown", (ev) => {
   if (view.phase === "drafting") draftingKey(ev, view);
   else if (view.phase === "building") buildingKey(ev, view);
   else if (ev.key === "Escape" && state.refusal) { state.refusal = null; ev.preventDefault(); draw(); }
+  else if (ev.key === "Escape" && state.notice) { state.notice = null; ev.preventDefault(); draw(); }
 });
 
 function draftingKey(ev: KeyboardEvent, view: DraftView): void {
@@ -320,6 +323,7 @@ function draftingKey(ev: KeyboardEvent, view: DraftView): void {
       return;
     case "Escape":
       if (state.refusal) state.refusal = null;
+      else if (state.notice) state.notice = null;
       else state.selected = null;
       state.hint = null;
       break;
@@ -368,6 +372,7 @@ function buildingKey(ev: KeyboardEvent, view: DraftView): void {
       return;
     case "Escape":
       if (state.refusal) state.refusal = null;
+      else if (state.notice) state.notice = null;
       else state.cursor = null;
       state.hint = null;
       break;

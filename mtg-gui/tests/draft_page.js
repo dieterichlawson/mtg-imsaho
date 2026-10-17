@@ -377,6 +377,18 @@ async function main() {
         await page.click(".banner.notice .dismiss");
         await page.waitForTimeout(50);
         check(await page.$(".banner.notice") === null, `${tag}: the notice can be dismissed`);
+        // Escape dismisses it too, as it does a refusal.
+        await stage({ ...byName.playing_waiting, notice: "The host has handed your seat to the table." });
+        await page.keyboard.press("Escape");
+        await page.waitForTimeout(50);
+        check(await page.$(".banner.notice") === null, `${tag}: Escape dismisses the notice`);
+        // A pick puts an old "the table picked for you" away: it is about
+        // a pick the person is past.
+        await stage({ ...byName.drafting, notice: "The table picked Moonmist for you (the pick timer ran out)." });
+        await page.click(`.tile[data-card-index="0"]`);
+        await page.click(`.tile[data-card-index="0"]`);
+        await page.waitForTimeout(50);
+        check(await page.$(".banner.notice") === null, `${tag}: a pick clears the table's old notice`);
       }
 
       // Playing: the game link is a link; waiting is said; done shows the standings.
