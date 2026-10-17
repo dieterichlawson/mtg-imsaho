@@ -103,12 +103,16 @@ export function summary(edit: DeckEdit, pool: CardInfo[]): Summary {
 /** A deck as a `deck` message carries it. */
 export type SentDeck = { main: string[]; lands: Record<string, number>; sideboard: string[] };
 
-/** The same main deck and sideboard (in any order) and the same nonzero lands. */
+/** The same main deck (in any order) and the same nonzero lands. Not the
+ *  sideboard: the server records a legal deck's sideboard from the pool
+ *  under a double-faced card's full name, where the page sends its front
+ *  face, so a sideboard compared would never match and a deck in flight
+ *  would never settle. The sideboard is the rest of the pool either way. */
 export function sameDeck(a: Deck, b: SentDeck | null): boolean {
   if (!b) return false;
   const sorted = (xs: string[]) => [...xs].sort().join("\n");
   const lands = (l: Record<string, number>) => Object.entries(l).filter(([, n]) => n > 0).sort().map(([k, n]) => `${k}=${n}`).join(",");
-  return sorted(a.main) === sorted(b.main) && sorted(a.sideboard) === sorted(b.sideboard) && lands(a.lands) === lands(b.lands);
+  return sorted(a.main) === sorted(b.main) && lands(a.lands) === lands(b.lands);
 }
 
 /**

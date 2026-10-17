@@ -39,5 +39,12 @@ const T = deck(["Village Ironsmith"], { Plains: 9, Mountain: 8 });
 r = D.settle(rec(T, true), A, [A], false);
 if (!r.reset || r.inFlight.length !== 0) fail(`a final record wins: ${JSON.stringify(r)}`);
 
+// A legal deck's recorded sideboard names a double-faced card in full,
+// where the page sent its front face: the echo still settles it.
+const sent = { ...A, sideboard: ["Village Ironsmith"] };
+const recorded = rec({ ...A, sideboard: ["Village Ironsmith // Ironfang"] });
+r = D.settle(recorded, sent, [sent], false);
+if (r.reset || r.inFlight.length !== 0) fail(`a double-faced card in the sideboard kept the deck in flight: ${JSON.stringify(r)}`);
+
 if (failures) { console.error(`${failures} failure(s)`); process.exit(1); }
 console.log("deck_settle: the edit follows the record without undoing clicks in flight");
