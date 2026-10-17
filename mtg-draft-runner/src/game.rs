@@ -291,7 +291,10 @@ fn play_game(
                 let report = mtg_player::watchdog::stall_report(
                     game_state, acting_player, legal, &seat.to_string(),
                 );
-                mtg_player::stderr_line!("\nWARN: {report} The game is forfeit to {}.",
+                // The report names the seat `Seat N` for the log; the
+                // terminal names it as the table does.
+                mtg_player::stderr_line!("\nWARN: {} The game is forfeit to {}.",
+                    report.replacen(&format!("Seat {seat}"), &label_of(seat), 1),
                     label_of(if acting_player == PlayerId(0) { seat_b } else { seat_a }));
                 draft_log::DraftLogger::stalled_game(
                     false, seat_a, seat_b, seat,
