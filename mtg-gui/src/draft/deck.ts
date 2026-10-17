@@ -99,3 +99,33 @@ export function summary(edit: DeckEdit, pool: CardInfo[]): Summary {
   }
   return { colors, curve, creatures };
 }
+
+/** A deck as a `deck` message carries it. */
+export type SentDeck = { main: string[]; lands: Record<string, number>; sideboard: string[] };
+
+/** The same main deck and sideboard (in any order) and the same nonzero lands. */
+export function sameDeck(a: Deck, b: SentDeck | null): boolean {
+  if (!b) return false;
+  const sorted = (xs: string[]) => [...xs].sort().join("\n");
+  const lands = (l: Record<string, number>) => Object.entries(l).filter(([, n]) => n > 0).sort().map(([k, n]) => `${k}=${n}`).join(",");
+  return sorted(a.main) === sorted(b.main) && sorted(a.sideboard) === sorted(b.sideboard) && lands(a.lands) === lands(b.lands);
+}
+
+/**
+ * Whether a view's recorded deck replaces the page's edit, and what is left
+ * in flight. The record is the deck that will be played, so it replaces the
+ * edit when it differs from it with nothing of the page's in flight, when it
+ * is final (the table built or topped up the deck, #815), and on a fresh
+ * start. While decks are in flight a record is matched against the oldest
+ * only, which the server answers first: a view built before the server read
+ * the latest clicks carries an older record, and taking it undid them, so
+ * the next click or Ready sent the undone deck (#815's review).
+ */
+export function settle(record: Deck | null, edit: SentDeck | null, inFlight: SentDeck[], fresh: boolean): { reset: boolean; inFlight: SentDeck[] } {
+  let left = inFlight;
+  if (record && left.length > 0 && sameDeck(record, left[0])) left = left.slice(1);
+  const final = !!(record && record.ready);
+  const differs = !!(record && !sameDeck(record, edit));
+  const reset = fresh || (differs && (final || left.length === 0));
+  return { reset, inFlight: reset && (fresh || final) ? [] : left };
+}

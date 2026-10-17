@@ -9,7 +9,7 @@
 // selected but not picked, and the deck they are building.
 
 import { loadManifest, fontsReady } from "../assets.js";
-import { fromView, problem, toMessage } from "./deck.js";
+import { fromView, problem, sameDeck, settle, toMessage, type SentDeck } from "./deck.js";
 import { packColumns, render } from "./render.js";
 import type { ClientMessage, Deck, DraftView, Refused, ServerMessage } from "./protocol.js";
 import { initialState, type Actions, type PageState, type Sent } from "./state.js";
@@ -111,9 +111,9 @@ function scheduleReconnect(): void {
 
 function send(message: ClientMessage): boolean {
   exposed.sent.push({ at: Date.now(), message });
-  if (message.type === "deck") lastDeckSent = { main: message.main, lands: message.lands, sideboard: message.sideboard };
   if (state.ws && state.ws.readyState === WebSocket.OPEN) {
     state.ws.send(JSON.stringify(message));
+    if (message.type === "deck") deckInFlight.push({ main: message.main, lands: message.lands, sideboard: message.sideboard });
     return true;
   }
   return false;
@@ -159,32 +159,34 @@ function onView(view: DraftView): void {
   // Building: the edit is the person's and survives the views that arrive
   // while they work (another seat's status, a pick elsewhere). It starts
   // from the deck the server records, and goes back to that whenever the
-  // server's record is not the deck this page last sent — the server
-  // normalised it, another tab changed it, or a test staged it — because
-  // the server's record is the one that will be played.
+  // server's record differs from it with nothing of this page's in flight
+  // — another tab changed it, or a test staged it — or the record is final
+  // (the table built or topped up the deck, #815), because the server's
+  // record is the one that will be played.
+  //
+  // A view built before the server read this page's latest clicks carries
+  // an older record (every seat is sent a view on every change at the
+  // table). Taking it undid those clicks, and the next click or Ready sent
+  // the undone deck (#815's review): so while decks are in flight a record
+  // is only matched against the oldest of them, which the server answers
+  // first.
   if (view.phase === "building") {
     const me = view.seats.find(s => s.seat === view.seat);
     if (me && me.status === "ready") state.readySent = false;
     const fresh = !state.deck || state.deck.main.length !== view.pool.length || !prev || prev.phase !== "building";
-    if (fresh || (view.deck && !sameDeck(view.deck, lastDeckSent))) {
-      state.deck = fromView(view.deck, view.pool);
-    }
+    const edit = state.deck ? toMessage(state.deck, view.pool) as SentDeck : null;
+    const settled = settle(view.deck, edit, deckInFlight, fresh);
+    deckInFlight = settled.inFlight;
+    if (settled.reset) state.deck = fromView(view.deck, view.pool);
     if (state.cursor !== null && state.cursor >= view.pool.length) state.cursor = null;
   } else {
-    state.deck = null; state.cursor = null; state.readySent = false; lastDeckSent = null;
+    state.deck = null; state.cursor = null; state.readySent = false; deckInFlight = [];
   }
 }
 
-/** The last `deck` message this page sent, to tell the server echoing it
- *  back from the server recording something else. */
-let lastDeckSent: { main: string[]; lands: Record<string, number>; sideboard: string[] } | null = null;
-
-function sameDeck(a: Deck, b: typeof lastDeckSent): boolean {
-  if (!b) return false;
-  const sorted = (xs: string[]) => [...xs].sort().join("\n");
-  const lands = (l: Record<string, number>) => Object.entries(l).filter(([, n]) => n > 0).sort().map(([k, n]) => `${k}=${n}`).join(",");
-  return sorted(a.main) === sorted(b.main) && sorted(a.sideboard) === sorted(b.sideboard) && lands(a.lands) === lands(b.lands);
-}
+/** The `deck` messages this page sent that no view has recorded yet,
+ *  oldest first. */
+let deckInFlight: SentDeck[] = [];
 
 function onRefused(msg: Refused): void {
   state.refusal = { reason: msg.reason, echo: msg.echo };
@@ -196,7 +198,16 @@ function onRefused(msg: Refused): void {
   state.pendingPick = null;
   state.selected = null;
   state.readySent = false;
-  if (state.view && state.view.phase === "building") state.deck = fromView(state.view.deck, state.view.pool);
+  // A refused deck is out of flight. The server records one it refuses on
+  // its contents, and the view after this says so; one it did not record
+  // leaves the record as it was, and with nothing else in flight that view
+  // puts the page back on it. Resetting here, from the view before the
+  // refusal, could put the page on a deck older than the record.
+  const echo = msg.echo as SentDeck & { type?: string } | null;
+  if (echo && echo.type === "deck") {
+    const i = deckInFlight.findIndex(d => sameDeck(echo as unknown as Deck, d));
+    if (i >= 0) deckInFlight.splice(i, 1);
+  }
 }
 
 // --------------------------------------------------------------- actions
@@ -452,7 +463,7 @@ window.mtgDraftDebug = {
     const msg: ServerMessage = typed.type ? (message as ServerMessage) : { ...(message as DraftView), type: "view" };
     // A staged view is a fresh start, not a change to the one before it:
     // nothing selected, nothing on its way, nothing refused.
-    if (msg.type === "view") { state.pendingPick = null; state.selected = null; state.hover = null; state.refusal = null; state.hint = null; }
+    if (msg.type === "view") { state.pendingPick = null; state.selected = null; state.hover = null; state.refusal = null; state.hint = null; deckInFlight = []; }
     onMessage(msg);
   },
   refuse(reason, echo = null) { onMessage({ type: "refused", reason, echo }); },

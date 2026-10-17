@@ -166,12 +166,6 @@ fn main() {
                         view = Some(msg);
                     }
                     Some("refused") => {
-                        // The server reads in order, so the refused deck is
-                        // the oldest one in flight; the next view's record
-                        // is then the deck to show.
-                        if msg["echo"]["type"] == "deck" && !build.in_flight.is_empty() {
-                            build.in_flight.remove(0);
-                        }
                         out(&format!("refused: {}", msg["reason"].as_str().unwrap_or("?")));
                         if msg["reason"].as_str().is_some_and(|r| r.contains("key") || r.contains("seat")) {
                             std::process::exit(1);
@@ -223,10 +217,13 @@ fn refresh_build(view: &Value, build: &mut Build, built_for_phase: &mut String) 
         if new_phase { build.in_flight.clear(); }
         return;
     };
-    // The record has caught up with a message sent: it and the ones before
-    // it have been read.
-    if let Some(i) = build.in_flight.iter().position(|m| same_deck(deck, m)) {
-        build.in_flight.drain(..=i);
+    // The record has caught up with the oldest message sent. Only the
+    // oldest: the server answers every message it reads with a view, in
+    // order, and a refused deck is recorded too, so each one is seen; a
+    // stale record equal to a later message (an add, then its undo) must
+    // not clear the ones before it.
+    if build.in_flight.first().is_some_and(|m| same_deck(deck, m)) {
+        build.in_flight.remove(0);
     }
     let final_deck = deck["ready"].as_bool().unwrap_or(false);
     let differs = !same_deck(deck, &deck_message(view, build));
@@ -607,12 +604,32 @@ mod tests {
         v["deck"]["main"] = serde_json::json!(["Selfless Cathar", "Village Ironsmith", "Rotting Fensnake"]);
         refresh_build(&v, &mut build, &mut phase);
         assert!(build.in_flight.is_empty(), "the echo settles it");
-        // A refused deck leaves the record as it was: the next view shows it.
+        // An add and its undo, and a stale view equal to the undo: it does
+        // not settle the add before it, and the screen does not jump.
+        let before = v.clone();
+        build.main.remove(&1);
+        let without = deck_message(&v, &build);
+        build.in_flight.push(without.clone());
+        build.main.insert(1);
+        build.in_flight.push(deck_message(&v, &build));
+        v["deck"]["main"] = without["main"].clone();
+        refresh_build(&v, &mut build, &mut phase); // the drop's echo
+        assert_eq!(build.main, BTreeSet::from([0, 1, 2]), "the undo's echo moved the screen");
+        refresh_build(&before, &mut build, &mut phase); // the add-back's echo
+        assert!(build.in_flight.is_empty());
+        assert_eq!(build.main, BTreeSet::from([0, 1, 2]));
+        // Stale first: a record equal to the later message only.
         build.main.remove(&1);
         build.in_flight.push(deck_message(&v, &build));
-        build.in_flight.remove(0); // what the "refused" arm does
+        build.main.insert(1);
+        build.in_flight.push(deck_message(&before, &build));
+        refresh_build(&before, &mut build, &mut phase);
+        assert_eq!(build.in_flight.len(), 2, "a record equal to a later message clears nothing");
         refresh_build(&v, &mut build, &mut phase);
+        refresh_build(&before, &mut build, &mut phase);
+        assert!(build.in_flight.is_empty());
         assert_eq!(build.main, BTreeSet::from([0, 1, 2]));
+        v = before;
         // The clock ran out and the table built its own, in the same phase,
         // with a change of the person's still in flight: the final deck wins.
         build.main.remove(&0);
