@@ -43,6 +43,10 @@ struct Build {
     /// Pool indices in the main deck.
     main: BTreeSet<usize>,
     lands: BTreeMap<String, u32>,
+    /// Deck messages sent and not yet seen recorded, oldest first. A view
+    /// built before the server read them carries an older record, which
+    /// must not undo them (#815's review).
+    in_flight: Vec<Value>,
 }
 
 fn main() {
@@ -122,6 +126,9 @@ fn main() {
             match command(&line, view.as_ref(), &mut build, early) {
                 Command::Send(msgs) => {
                     for m in msgs {
+                        if m["type"] == "deck" {
+                            build.in_flight.push(m.clone());
+                        }
                         if ws.send(tungstenite::Message::Text(m.to_string().into())).is_err() {
                             out("the server went away");
                             return;
@@ -159,6 +166,12 @@ fn main() {
                         view = Some(msg);
                     }
                     Some("refused") => {
+                        // The server reads in order, so the refused deck is
+                        // the oldest one in flight; the next view's record
+                        // is then the deck to show.
+                        if msg["echo"]["type"] == "deck" && !build.in_flight.is_empty() {
+                            build.in_flight.remove(0);
+                        }
                         out(&format!("refused: {}", msg["reason"].as_str().unwrap_or("?")));
                         if msg["reason"].as_str().is_some_and(|r| r.contains("key") || r.contains("seat")) {
                             std::process::exit(1);
@@ -195,18 +208,32 @@ enum Command {
 /// deck that is played: when the build clock ran out and the table built
 /// the deck, or topped a short one up, the client kept printing the
 /// person's own MAIN marks and lands over "your deck is final" (#815).
-/// A view sent before the server read the client's latest change is
-/// followed by the one after it, so the screen settles on the record.
+///
+/// A view built before the server read the client's latest changes (every
+/// seat is sent a view on every change at the table) carries an older
+/// record, and taking it would undo those changes and send the undone deck
+/// with the next command — with `ready`, for good. So while deck messages
+/// are in flight a record that is none of them is not taken, unless it is
+/// final: a deck the table finished is the one played whatever was sent.
 fn refresh_build(view: &Value, build: &mut Build, built_for_phase: &mut String) {
     let phase = view["phase"].as_str().unwrap_or("");
+    let new_phase = phase != built_for_phase.as_str();
+    *built_for_phase = phase.to_string();
     let Some(deck) = view["deck"].as_object() else {
-        if phase != built_for_phase.as_str() { *built_for_phase = phase.to_string(); }
+        if new_phase { build.in_flight.clear(); }
         return;
     };
-    let new_phase = phase != built_for_phase.as_str();
-    if new_phase || !same_deck(deck, &deck_message(view, build)) {
-        *built_for_phase = phase.to_string();
+    // The record has caught up with a message sent: it and the ones before
+    // it have been read.
+    if let Some(i) = build.in_flight.iter().position(|m| same_deck(deck, m)) {
+        build.in_flight.drain(..=i);
+    }
+    let final_deck = deck["ready"].as_bool().unwrap_or(false);
+    let differs = !same_deck(deck, &deck_message(view, build));
+    if new_phase || (differs && (final_deck || build.in_flight.is_empty())) {
+        let in_flight = if new_phase || final_deck { Vec::new() } else { std::mem::take(&mut build.in_flight) };
         *build = build_from_view(view, deck);
+        build.in_flight = in_flight;
     }
 }
 
@@ -539,11 +566,32 @@ mod tests {
         v["deck"]["main"] = serde_json::json!(["Selfless Cathar", "Rotting Fensnake"]);
         refresh_build(&v, &mut build, &mut phase);
         assert_eq!(build.main, BTreeSet::from([0, 2]));
-        // The clock ran out and the table built its own, in the same phase.
+        // A view built before the server read the next change carries the
+        // older record: it does not undo the change, and the next command
+        // carries it.
+        build.main.insert(1);
+        build.in_flight.push(deck_message(&v, &build));
+        let before = v.clone();
+        refresh_build(&before, &mut build, &mut phase);
+        assert_eq!(build.main, BTreeSet::from([0, 1, 2]), "a stale view undid an add");
+        v["deck"]["main"] = serde_json::json!(["Selfless Cathar", "Village Ironsmith", "Rotting Fensnake"]);
+        refresh_build(&v, &mut build, &mut phase);
+        assert!(build.in_flight.is_empty(), "the echo settles it");
+        // A refused deck leaves the record as it was: the next view shows it.
+        build.main.remove(&1);
+        build.in_flight.push(deck_message(&v, &build));
+        build.in_flight.remove(0); // what the "refused" arm does
+        refresh_build(&v, &mut build, &mut phase);
+        assert_eq!(build.main, BTreeSet::from([0, 1, 2]));
+        // The clock ran out and the table built its own, in the same phase,
+        // with a change of the person's still in flight: the final deck wins.
+        build.main.remove(&0);
+        build.in_flight.push(deck_message(&v, &build));
         v["deck"] = serde_json::json!({"main": ["Village Ironsmith"], "lands": {"Plains": 9, "Mountain": 8},
             "sideboard": [], "valid": true, "problem": null, "ready": true});
         refresh_build(&v, &mut build, &mut phase);
         assert_eq!(build.main, BTreeSet::from([1]));
+        assert!(build.in_flight.is_empty());
         assert_eq!(build.lands.get("Island"), None);
         assert_eq!(build.lands.get("Plains"), Some(&9));
         // A short deck topped up with an Island: the count is the record's.
