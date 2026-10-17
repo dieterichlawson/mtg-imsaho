@@ -202,6 +202,18 @@ async function main() {
       const options = { pool: { Red: 1 }, groups: [{ name: "Forest", category: "BasicLand", source_ids: [ids.mine[0], ids.mine[1]], mana_per_tap: 1, mana_type: "Green" }], max_x: 3, x_discount: 0 };
       if (await stage("choose-x", legal({ resolution_prompt: { ChooseXFunding: { description: "Choose X for Devil's Play", options, source_id: ids.hand[0], is_ability: false } } }), null, "number")) {
         await page.keyboard.type("2");
+        // What X = 2 spends is on screen before Enter commits it (#845).
+        const drawn = await page.evaluate(() => {
+          const orig = CanvasRenderingContext2D.prototype.fillText;
+          const out = [];
+          try {
+            CanvasRenderingContext2D.prototype.fillText = function (s) { out.push(String(s)); return orig.apply(this, arguments); };
+            window.mtgDebug.render();
+          } finally { CanvasRenderingContext2D.prototype.fillText = orig; }
+          return out;
+        });
+        if (!drawn.includes("X = 2: 1 Red from the pool, tap Forest")) fail(`choose-x: the typed X's plan is not drawn: ${JSON.stringify(drawn.filter(s => s.startsWith("X")))}`);
+        else ok("choose-x → plan drawn before Enter");
         await page.keyboard.press("Enter");
         await expectSent("choose-x", a => { const f = a.ResolveChoice && a.ResolveChoice.choice.XFunding; return f && f.pool.Red === 1 && f.taps.Forest === 1; });
       }

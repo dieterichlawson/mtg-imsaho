@@ -1067,6 +1067,33 @@ export function allocateForX(opts: FundingOptions, x: number): { response: Fundi
   return { response, shortfall: remaining };
 }
 
+/** What announcing `x` spends, the engine's `funding::describe_x_plan`:
+ *  "X = 3: tap Nephalia Drownyard, 2x Island", or null when `x` is not
+ *  payable. The X box took a number and tapped lands it never named, so a
+ *  person learned which from the log after the cast (#845); the modal shows
+ *  this for the value being typed. `x-funding-cases.jsonl` holds it to the
+ *  engine's words. */
+export function describeXPlan(opts: FundingOptions, x: number): string | null {
+  if (!Number.isInteger(x) || x < 0 || x > (opts.max_x || 0) + (opts.x_discount || 0)) return null;
+  const { response, shortfall } = allocateForX(opts, x);
+  if (shortfall > 0) return null;
+  const parts: string[] = [];
+  // In the engine's map order, which is the enum's.
+  const manaOrder: ManaType[] = ["White", "Blue", "Black", "Red", "Green", "Colorless"];
+  const pool = manaOrder.filter(mt => (response.pool[mt] || 0) > 0).map(mt => `${response.pool[mt]} ${mt}`);
+  if (pool.length > 0) parts.push(`${pool.join(", ")} from the pool`);
+  // In the order the groups are spent.
+  const taps: string[] = [];
+  for (const g of opts.groups || []) {
+    const amount = response.taps[g.name] || 0;
+    if (amount === 0 || !g.mana_per_tap) continue;
+    const count = Math.floor(amount / g.mana_per_tap);
+    taps.push(count > 1 ? `${count}x ${g.name}` : g.name);
+  }
+  if (taps.length > 0) parts.push(`tap ${taps.join(", ")}`);
+  return parts.length === 0 ? `X = ${x}: nothing is spent` : `X = ${x}: ${parts.join(", ")}`;
+}
+
 /** The payable set as one line, runs collapsed, capped, both ends kept —
  *  the terminal's `describe_fundable_x` (#595). */
 export function describeFundableX(values: number[]): string {
@@ -1114,6 +1141,13 @@ function beginNumber(state: LiveState, ui: Ui, opts: FundingOptions, title: stri
   const payable = new Set(fundable);
   if (fundable.length !== maxX + 1) summary.push(`Payable X: ${describeFundableX(fundable)}`);
   ui.hint = `Type X (0-${maxX}) and press Enter.`;
+  // What the typed X would tap, before Enter commits it (#845) — the line
+  // a cast's verb carries as "(tap Forest, Swamp)". The terminal's reader
+  // paints the same words under its input row.
+  ui.preview = (typed: string) => {
+    const t = typed.trim();
+    return /^\+?[0-9]+$/.test(t) ? describeXPlan(opts, Number(t)) : null;
+  };
   ui.submit = () => {
     // The terminal's reader, not JavaScript's. `Number("")` is 0 and
     // `Number.isInteger(0)` is true, so Enter at an empty box announced

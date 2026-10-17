@@ -237,6 +237,8 @@ fn the_page_is_given_the_engines_x_funding_answers() {
                             "pool": response.pool,
                             "taps": response.taps,
                             "shortfall": shortfall,
+                            // What the prompt says this X spends (#845).
+                            "plan": funding::describe_x_plan(&options, x),
                         })
                     })
                     .collect();

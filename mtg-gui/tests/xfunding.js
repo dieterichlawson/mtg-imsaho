@@ -63,6 +63,9 @@ const fixture = path.join(__dirname, "x-funding-cases.jsonl");
       if (fundable.includes(want.x) && funded !== target) {
         fail(board, `X = ${want.x} is payable but the page funded ${funded}`, funded, target);
       }
+      // The words the X box shows under the typed value (#845).
+      const plan = prompts.describeXPlan(options, want.x);
+      if (plan !== want.plan) fail(board, `the plan for X = ${want.x} differs`, plan, want.plan);
       checks++;
     }
   }

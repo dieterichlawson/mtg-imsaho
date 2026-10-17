@@ -4882,8 +4882,17 @@ impl CliPlayer {
     }
 
     fn read_line_redrawing(prompt: &str, redraw: &dyn Fn()) -> String {
+        Self::read_line_live(prompt, redraw, None)
+    }
+
+    /// `read_line_redrawing`, calling `on_edit` with the line as typed after
+    /// every change to it (and once before the first key), so a prompt can
+    /// say what the value being typed would do before Enter commits it — the
+    /// X prompt's plan (#845). `on_edit` paints elsewhere in the panel; the
+    /// reader puts the cursor back on its own row after it.
+    fn read_line_live(prompt: &str, redraw: &dyn Fn(), on_edit: Option<&dyn Fn(&str)>) -> String {
         loop {
-            let line = Self::read_line_redrawing_raw(prompt, redraw);
+            let line = Self::read_line_redrawing_raw(prompt, redraw, on_edit);
             if !is_concede_word(&line) {
                 return line;
             }
@@ -4911,7 +4920,7 @@ impl CliPlayer {
         }
     }
 
-    fn read_line_redrawing_raw(prompt: &str, redraw: &dyn Fn()) -> String {
+    fn read_line_redrawing_raw(prompt: &str, redraw: &dyn Fn(), on_edit: Option<&dyn Fn(&str)>) -> String {
         // ONE reader for the terminal, always. This used to be a cooked-mode
         // io::stdin() read while every menu prompt reads crossterm events in
         // raw mode; two buffered readers over one fd desynchronize, and a
@@ -4950,6 +4959,11 @@ impl CliPlayer {
         let (mut start_col, mut start_row) = cursor::position().unwrap_or((0, 0));
         let mut echo_cap = Self::echo_cap_at(Self::term_width(), start_col);
         let mut buf = String::new();
+        if let Some(f) = on_edit {
+            f(&buf);
+            let _ = execute!(out, cursor::MoveTo(start_col, start_row));
+            let _ = out.flush();
+        }
         loop {
             let Some(ev) = read_event_guarded() else { continue };
             if let Event::Resize(w, _) = ev {
@@ -4963,12 +4977,14 @@ impl CliPlayer {
                 let _ = out.flush();
                 (start_col, start_row) = cursor::position().unwrap_or((start_col, start_row));
                 echo_cap = Self::echo_cap_at(w as usize, start_col);
+                if let Some(f) = on_edit { f(&buf); }
                 repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
                 continue;
             }
             if let Event::Paste(pasted) = &ev {
                 let first = pasted.split(['\r', '\n']).next().unwrap_or("");
                 buf.push_str(first);
+                if let Some(f) = on_edit { f(&buf); }
                 repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
                 continue;
             }
@@ -4983,6 +4999,7 @@ impl CliPlayer {
                 // — one definition, shared with the menu reader.
                 _ => {
                     if edit_line(&mut buf, code, modifiers) {
+                        if let Some(f) = on_edit { f(&buf); }
                         repaint_input_line(&mut out, start_col, start_row, &buf, echo_cap);
                     }
                 }
@@ -7040,6 +7057,16 @@ impl CliPlayer {
         format!("  X (0-{max_x}, c = cancel the {what}, or concede) = ")
     }
 
+    /// The X prompt's plan row for what has been typed so far: what that X
+    /// spends (`funding::describe_x_plan`), or nothing while the line is
+    /// not a payable X — Enter's refusal says why (#845).
+    fn x_plan_row(options: &mtg_engine::funding::FundingOptions, typed: &str) -> String {
+        typed.trim().parse::<u32>().ok()
+            .and_then(|x| mtg_engine::funding::describe_x_plan(options, x))
+            .map(|p| format!("  {p}"))
+            .unwrap_or_default()
+    }
+
     fn prompt_x_funding(
         view: &GameView,
         options: &mtg_engine::funding::FundingOptions,
@@ -7072,12 +7099,12 @@ impl CliPlayer {
             // pressed Enter "to retry" and silently funded X = 0 (#56).
             // The rows drawn under the rule are reserved against the board:
             // the Max X line, the pool, one per source group, the payable
-            // line, and the input and refusal rows. Drawn under a plain
+            // line, and the input, plan and refusal rows. Drawn under a plain
             // render they ran past the foot of the pane whenever the board
             // was tall (#774).
             let pool_rows = usize::from(options.pool.values().any(|n| *n > 0));
             Self::render_reserving(view, Some(description), &view.display_log,
-                1 + pool_rows + options.groups.len() + usize::from(!contiguous) + 2);
+                1 + pool_rows + options.groups.len() + usize::from(!contiguous) + 3);
             let (term_w, _) = terminal::size().unwrap_or((100, 30));
             let side = term_w as usize / 5;
             let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
@@ -7127,24 +7154,44 @@ impl CliPlayer {
         // so the message and the prompt were never on screen together —
         // first the message and no prompt, then the prompt and no message
         // (issue #291).
+        // Where the reader's row is, as last painted: the plan row under it
+        // follows the frame through a resize.
+        let at = std::cell::Cell::new((0u16, 0u16, 0usize));
         let paint = |notice: Option<&str>| {
             let (col, r, mid_w) = draw();
+            at.set((col, r, mid_w));
             // Clear the input row before each attempt (same as the combat
             // prompts), so a rejected entry doesn't merge with the next.
             Self::clear_panel_row(&mut stdout(), col, r);
             Self::clear_panel_row(&mut stdout(), col, r + 1);
+            Self::clear_panel_row(&mut stdout(), col, r + 2);
             if let Some(msg) = notice {
                 let msg: String = msg.chars().take(mid_w).collect();
-                let _ = execute!(stdout(), cursor::MoveTo(col, r + 1),
+                let _ = execute!(stdout(), cursor::MoveTo(col, r + 2),
                     SetForegroundColor(Color::Red), Print(msg), ResetColor);
             }
             let _ = execute!(stdout(), cursor::MoveTo(col, r));
             let _ = stdout().flush();
         };
+        // What the X being typed would tap, under the reader, before Enter
+        // commits it. The prompt listed the sources and the engine chose
+        // among them unseen, so a person learned which lands an X tapped
+        // from the log afterwards (#845) — where a cast's row says it up
+        // front: "Cast Ambush Viper (tap Forest, Swamp)".
+        let plan = |typed: &str| {
+            let (col, r, mid_w) = at.get();
+            Self::clear_panel_row(&mut stdout(), col, r + 1);
+            let line = Self::x_plan_row(options, typed);
+            if !line.is_empty() {
+                let _ = execute!(stdout(), cursor::MoveTo(col, r + 1),
+                    SetForegroundColor(Color::Cyan),
+                    Print(Self::clip_closed_or_cut(&line, mid_w)), ResetColor);
+            }
+        };
         let mut notice: Option<String> = None;
         let x: u32 = loop {
             paint(notice.as_deref());
-            let input = Self::read_line_redrawing(&hint, &|| paint(notice.as_deref()));
+            let input = Self::read_line_live(&hint, &|| paint(notice.as_deref()), Some(&plan));
             let input = input.trim();
             // Cancelling a spell's X prompt backs out of the whole cast —
             // the engine un-stashes it with nothing spent (issue #123).
@@ -9212,6 +9259,29 @@ pub(crate) mod tests {
     fn the_x_prompt_names_what_cancelling_abandons() {
         assert_eq!(CliPlayer::x_funding_hint(2, false), "  X (0-2, c = cancel the cast, or concede) = ");
         assert_eq!(CliPlayer::x_funding_hint(3, true), "  X (0-3, c = cancel the activation, or concede) = ");
+    }
+
+    /// Issue #845: the X prompt took a number and tapped lands it never
+    /// named. The row under the reader says what the typed X spends, and
+    /// says nothing for a line that is not a payable X.
+    #[test]
+    fn the_x_prompt_says_what_the_typed_x_taps() {
+        use mtg_engine::funding::{FundingCategory, FundingGroup, FundingOptions};
+        let group = |name: &str, ids: &[u64]| FundingGroup {
+            name: name.into(), category: FundingCategory::Lands, mana_per_tap: 1,
+            source_ids: ids.iter().map(|&i| ObjectId(i)).collect(), colors_produced: vec![],
+        };
+        let options = FundingOptions {
+            pool: std::collections::BTreeMap::new(),
+            groups: vec![group("Nephalia Drownyard", &[16]), group("Island", &[1, 5, 6])],
+            max_x: 4, x_discount: 0, pool_order: vec![],
+        };
+        assert_eq!(CliPlayer::x_plan_row(&options, "1"), "  X = 1: tap Nephalia Drownyard");
+        assert_eq!(CliPlayer::x_plan_row(&options, "3 "), "  X = 3: tap Nephalia Drownyard, 2x Island");
+        assert_eq!(CliPlayer::x_plan_row(&options, "0"), "  X = 0: nothing is spent");
+        for nothing in ["", "5", "x", "-1"] {
+            assert_eq!(CliPlayer::x_plan_row(&options, nothing), "", "{nothing:?}");
+        }
     }
 
     /// One equip label per Champion, differing only in whom it targets and

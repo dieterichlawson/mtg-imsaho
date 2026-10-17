@@ -90,6 +90,8 @@ export interface Ui {
   /** The input box's placeholder; X funding's `X (0-max)` when unset. */
   placeholder?: string;
   summary?: string[];
+  /** What the value typed so far would do, under the box; null for none (#845). */
+  preview?: (typed: string) => string | null;
   submit?: () => void;
 }
 

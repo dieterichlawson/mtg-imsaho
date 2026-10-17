@@ -335,6 +335,57 @@ pub fn allocate_for_x(options: &FundingOptions, x: u32) -> (FundingResponse, u32
     (response, remaining)
 }
 
+/// What announcing `x` spends, in the words a cast's row uses for its tap
+/// plan: `"X = 3: tap Nephalia Drownyard, 2x Island"`, `"X = 4: 1 Red from
+/// the pool, tap 3x Island"`, `"X = 0: nothing is spent"`. None when `x` is
+/// not payable, which the prompt refuses on its own terms.
+///
+/// The X prompt listed the sources and took a number, and
+/// [`allocate_for_x`] chose among them unseen: the person learned which
+/// lands it tapped from the log, after the cast (#845). Every surface that
+/// asks for X shows this for the value being typed, before it is committed;
+/// the page carries a copy, held to this one by `x-funding-cases.jsonl`.
+#[must_use]
+pub fn describe_x_plan(options: &FundingOptions, x: u32) -> Option<String> {
+    if x > options.max_announceable_x() {
+        return None;
+    }
+    let (response, shortfall) = allocate_for_x(options, x);
+    if shortfall > 0 {
+        return None;
+    }
+    let mut parts = Vec::new();
+    let pool: Vec<String> = response
+        .pool
+        .iter()
+        .filter(|(_, n)| **n > 0)
+        .map(|(mt, n)| format!("{n} {mt:?}"))
+        .collect();
+    if !pool.is_empty() {
+        parts.push(format!("{} from the pool", pool.join(", ")));
+    }
+    // In the order the groups are spent, not the response map's.
+    let taps: Vec<String> = options
+        .groups
+        .iter()
+        .filter_map(|g| {
+            let amount = response.taps.get(&g.name).copied().unwrap_or(0);
+            if amount == 0 || g.mana_per_tap == 0 {
+                return None;
+            }
+            let count = amount / g.mana_per_tap;
+            Some(if count > 1 { format!("{count}x {}", g.name) } else { g.name.clone() })
+        })
+        .collect();
+    if !taps.is_empty() {
+        parts.push(format!("tap {}", taps.join(", ")));
+    }
+    if parts.is_empty() {
+        return Some(format!("X = {x}: nothing is spent"));
+    }
+    Some(format!("X = {x}: {}", parts.join(", ")))
+}
+
 /// Error returned when a [`FundingResponse`] is inconsistent with its
 /// [`FundingOptions`].
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1134,5 +1185,41 @@ mod tests {
         assert_eq!(FundingCategory::Lands.key(), "lands");
         assert_eq!(FundingCategory::Rocks.key(), "rocks");
         assert_eq!(FundingCategory::Dorks.key(), "dorks");
+    }
+
+    /// The X prompt says what the typed X will tap before it is committed,
+    /// in the spend order (#845): the Drownyard before the Islands.
+    #[test]
+    fn the_plan_names_what_x_spends() {
+        let mut pool = BTreeMap::new();
+        pool.insert(ManaType::Red, 1);
+        let options = FundingOptions {
+            pool,
+            groups: vec![
+                group("Nephalia Drownyard", FundingCategory::Lands, 1, 1),
+                group("Island", FundingCategory::Lands, 1, 3),
+                group("Sol Ring", FundingCategory::Rocks, 2, 1),
+            ],
+            max_x: 7,
+            x_discount: 0,
+            pool_order: Vec::new(),
+        };
+        assert_eq!(describe_x_plan(&options, 0).as_deref(), Some("X = 0: nothing is spent"));
+        assert_eq!(describe_x_plan(&options, 1).as_deref(), Some("X = 1: 1 Red from the pool"));
+        assert_eq!(describe_x_plan(&options, 4).as_deref(),
+            Some("X = 4: 1 Red from the pool, tap Nephalia Drownyard, 2x Island"));
+        assert_eq!(describe_x_plan(&options, 7).as_deref(),
+            Some("X = 7: 1 Red from the pool, tap Nephalia Drownyard, 3x Island, Sol Ring"));
+        assert_eq!(describe_x_plan(&options, 8), None);
+        // A value the sources cannot sum to has no plan.
+        let rock = FundingOptions {
+            pool: BTreeMap::new(),
+            groups: vec![group("Sol Ring", FundingCategory::Rocks, 2, 1)],
+            max_x: 2,
+            x_discount: 0,
+            pool_order: Vec::new(),
+        };
+        assert_eq!(describe_x_plan(&rock, 1), None);
+        assert_eq!(describe_x_plan(&rock, 2).as_deref(), Some("X = 2: tap Sol Ring"));
     }
 }

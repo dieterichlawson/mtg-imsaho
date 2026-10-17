@@ -1307,7 +1307,10 @@ function modal(ctx, hits, state) {
     // The number widget's field and its summary lines, budgeted line by line:
     // a flat 30px let a fourth line sit on the modal's border (#693).
     const summary = ui.mode === "number" ? fitSummary(ui.summary || [], NUMBER_SUMMARY_LINES) : [];
-    const h = 30 + shown.length * rowH + (ui.mode === "number" ? 22 + summary.length * 8 : 0) + (ui.filter ? 14 : 0) + 18;
+    // The preview's line is reserved whether or not the box holds a value
+    // yet, so the modal does not jump on the first keystroke.
+    const previewRows = ui.mode === "number" && ui.preview ? 1 : 0;
+    const h = 30 + shown.length * rowH + (ui.mode === "number" ? 22 + (summary.length + previewRows) * 8 : 0) + (ui.filter ? 14 : 0) + 18;
     const y = Math.max(8, (H - h) / 2);
     // The background hit goes in first, so the rows drawn on it are on top.
     hits.push({ x, y, w, h, kind: "modal" });
@@ -1336,6 +1339,12 @@ function modal(ctx, hits, state) {
         // (a combat damage division starts at lethal, #637).
         text(ctx, `${ui.min ?? 0} – ${ui.max}`, x + 92, ty + 3, { color: "#b0b0c0" });
         ty += 18;
+        if (previewRows) {
+            const p = ui.preview(ui.value ?? "");
+            if (p)
+                text(ctx, clip(ctx, p, w - 12, "7px Silkscreen"), x + 6, ty, { font: "7px Silkscreen", color: "#80e0ff" });
+            ty += 8;
+        }
         for (const l of summary) {
             text(ctx, clip(ctx, l, w - 12, "7px Silkscreen"), x + 6, ty, { font: "7px Silkscreen", color: "#c0c8d0" });
             ty += 8;
