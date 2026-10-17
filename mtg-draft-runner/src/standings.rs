@@ -16,14 +16,22 @@ use mtg_draft::tournament::{GameOutcome, MatchResult, Standing};
 /// #200).
 #[must_use]
 pub fn standings_row(rank: usize, s: &Standing, tags: &RowTags) -> String {
+    standings_row_with(rank, s, tags, &|seat| format!("Seat {seat}"))
+}
+
+/// `standings_row` with the seat named by `who`: the hosted table's
+/// terminal names a person as the page does, "Ann (seat 3)", where the log
+/// and the runner keep `Seat N`, which their readers parse (#816).
+#[must_use]
+pub fn standings_row_with(rank: usize, s: &Standing, tags: &RowTags, who: &dyn Fn(usize) -> String) -> String {
     let draws = if s.match_draws > 0 {
         format!("-{}", s.match_draws)
     } else {
         String::new()
     };
     format!(
-        "{}. Seat {} — {}-{}{draws} ({} game wins){}",
-        rank, s.seat, s.match_wins, s.match_losses, s.game_wins, row_notes(s, tags),
+        "{}. {} — {}-{}{draws} ({} game wins){}",
+        rank, who(s.seat), s.match_wins, s.match_losses, s.game_wins, row_notes(s, tags),
     )
 }
 
@@ -124,14 +132,20 @@ pub fn unplayed_games_note(games: &[GameOutcome]) -> String {
 /// (#488). A level match has no winner to name (#650).
 #[must_use]
 pub fn match_score_line(result: &MatchResult) -> String {
+    match_score_line_with(result, &|seat| format!("Seat {seat}"))
+}
+
+/// `match_score_line` with the seats named by `who` (#816).
+#[must_use]
+pub fn match_score_line_with(result: &MatchResult, who: &dyn Fn(usize) -> String) -> String {
     let outcome = match result.winner() {
-        Some(w) => format!("winner: Seat {w}"),
+        Some(w) => format!("winner: {}", who(w)),
         None => "drawn".to_string(),
     };
     format!(
-        "  Seat {} vs Seat {}: {}-{} ({outcome}){}",
-        result.player_a,
-        result.player_b,
+        "  {} vs {}: {}-{} ({outcome}){}",
+        who(result.player_a),
+        who(result.player_b),
         result.wins_a,
         result.wins_b,
         unplayed_games_note(&result.games),

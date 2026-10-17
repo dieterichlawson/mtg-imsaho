@@ -612,6 +612,17 @@ the order they happened, not in seat order", "");
         self.events.push(line);
     }
 
+    /// A seat as the host's terminal names it, the way the page does: "seat
+    /// 3", or "Ann (seat 3)" once the person has named it. The draft's lines
+    /// used the name and the tournament's the number, with "seat" and
+    /// "Seat" alternating, so a host had to work out that "seat 4 has a bye"
+    /// was Bea (#816, #826).
+    #[must_use]
+    pub fn who(&self, seat: usize) -> String {
+        let name = &self.seats[seat].name;
+        if *name == format!("seat {seat}") { name.clone() } else { format!("{name} (seat {seat})") }
+    }
+
     /// A seat has read its one-off notice.
     pub fn clear_notice(&mut self, seat: usize) {
         self.seats[seat].notice = None;
@@ -631,12 +642,12 @@ the order they happened, not in seat order", "");
         self.seats[seat].joined = true;
         self.seats[seat].connected += 1;
         if first {
-            self.event(format!("seat {seat} joined"));
+            self.event(format!("{} joined", self.who(seat)));
         }
         if self.seats[seat].auto && !self.seats[seat].kicked {
             // Back: the table stops picking for it from here.
             self.seats[seat].auto = false;
-            self.event(format!("seat {seat} is here; it picks for itself from now on"));
+            self.event(format!("{} is here; it picks for itself from now on", self.who(seat)));
             self.arm_deadlines();
         }
         if self.phase == Phase::Lobby && self.seats.iter().all(|s| s.joined) {
@@ -668,7 +679,7 @@ the order they happened, not in seat order", "");
             .filter(|(_, s)| !s.joined).map(|(i, _)| i).collect();
         for seat in &absent {
             self.seats[*seat].auto = true;
-            self.event(format!("seat {seat} has not joined; the table picks for it until it does"));
+            self.event(format!("{} has not joined; the table picks for it until it does", self.who(*seat)));
         }
         self.event(format!("the draft has started: {} seats, pack 1 passes left", self.seats.len()));
         self.arm_deadlines();
@@ -767,7 +778,7 @@ the order they happened, not in seat order", "");
             .clone();
         let (round, pick) = (front.round, front.pick);
         self.apply_pick(seat, pack_id, index, false, "human", "human")?;
-        let name = self.seats[seat].name.clone();
+        let name = self.who(seat);
         self.event(format!("{name} picked {} ({round}.{pick})", mtg_draft::front_face(&card)));
         // The pack may have gone to a seat the table picks for.
         self.run_auto_seats();
@@ -791,13 +802,13 @@ the order they happened, not in seat order", "");
             let card = self.table.in_front(seat)
                 .and_then(|f| f.cards.get(index).cloned()).unwrap_or_default();
             log_draft_warning!(self.log, seat, round, pick, &card, response);
-            self.event(format!("WARN seat {seat} pack {round} pick {pick}: unusable answer, \
-substituted {} (the first card)", mtg_draft::front_face(&card)));
+            self.event(format!("WARN {} pack {round} pick {pick}: unusable answer, \
+substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)));
         }
         let card = self.table.in_front(seat).and_then(|f| f.cards.get(index).cloned())
             .ok_or("card index past the pack")?;
         self.apply_pick(seat, pack_id, index, false, prompt, response)?;
-        let name = self.seats[seat].name.clone();
+        let name = self.who(seat);
         self.event(format!("{name} picked {} ({round}.{pick})", mtg_draft::front_face(&card)));
         self.run_auto_seats();
         Ok(())
@@ -823,7 +834,7 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
             self.seats[seat].notice = Some(format!(
                 "The table picked {} for you ({why}).", mtg_draft::front_face(&card)));
         }
-        self.event(format!("seat {seat}: the table picked {} ({why})", mtg_draft::front_face(&card)));
+        self.event(format!("{}: the table picked {} ({why})", self.who(seat), mtg_draft::front_face(&card)));
         Ok(())
     }
 
@@ -866,7 +877,7 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
                 "NOTE each seat's pool and deck are written as that seat finishes drafting, so they come in the order the seats finished, interleaved with the last picks of the others", "");
         }
         log_pool_summary!(self.log, seat, self.table.pool(seat));
-        let name = self.seats[seat].name.clone();
+        let name = self.who(seat);
         self.event(format!("{name} has drafted all {} cards and is building", self.table.pool(seat).len()));
         if self.seats[seat].is_human() {
             if self.builds_at_once(seat) {
@@ -951,8 +962,8 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
             .map(|a| (a.prompt.as_str(), a.response.as_str(), a.error.as_deref()))
             .collect();
         if result.fallback {
-            self.event(format!("WARN seat {seat}: no valid deck after {} attempts; the table built one",
-                result.retries));
+            self.event(format!("WARN {}: no valid deck after {} attempts; the table built one",
+                self.who(seat), result.retries));
         }
         self.finish_deck(seat, &result.deck.clone(), &attempts, result.retries, result.fallback);
     }
@@ -979,7 +990,7 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
                 Some((n, land)) => format!(
                     "Your deck is final as you last sent it, with {n} {land} added to reach 40 ({why})."),
             });
-            self.event(format!("seat {seat}: {why}; {kept}"));
+            self.event(format!("{}: {why}; {kept}", self.who(seat)));
             self.finish_deck(seat, &deck, &[], 0, false);
             return;
         }
@@ -992,7 +1003,7 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
             &format!("[Seat {seat}] WARN the table built this seat's deck: {why}{unusable}"), "");
         self.seats[seat].notice = Some(format!("The table built your deck ({why}){}.",
             unusable.replace("; the deck it sent", "; the deck you sent")));
-        self.event(format!("seat {seat}: the table built its deck ({why}){unusable}"));
+        self.event(format!("{}: the table built its deck ({why}){unusable}", self.who(seat)));
         self.finish_deck(seat, &deck, &[], 0, true);
     }
 
@@ -1045,7 +1056,7 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
         s.ready = true;
         s.deck_fallback = fallback;
         s.build_deadline = None;
-        let name = s.name.clone();
+        let name = self.who(seat);
         self.event(format!("{name} is ready: {} cards ({} spells, {} lands)",
             deck.total_cards(), deck.maindeck.len(), deck.lands.values().sum::<u32>()));
         if let Some(dir) = &self.config.out_dir {
@@ -1094,7 +1105,7 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
         s.kicked = true;
         s.joined = true;
         s.notice = Some("The host has handed your seat to the table.".to_string());
-        self.event(format!("seat {seat} kicked: the table picks and builds for it, and its games are forfeit"));
+        self.event(format!("{} kicked: the table picks and builds for it, and its games are forfeit", self.who(seat)));
         if self.phase == Phase::Lobby && self.seats.iter().all(|s| s.joined) {
             self.start();
         }
@@ -1109,7 +1120,7 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
         self.seats[seat].auto = true;
         mtg_player::game_log::write(file!(), line!(),
             &format!("[Seat {seat}] WARN the seat stopped answering; the table picks and builds for it: {why}"), "");
-        self.event(format!("WARN seat {seat} stopped answering ({why}); the table picks and builds for it, and its games are forfeit"));
+        self.event(format!("WARN {} stopped answering ({why}); the table picks and builds for it, and its games are forfeit", self.who(seat)));
         self.run_auto_seats();
     }
 
@@ -1176,8 +1187,9 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
         self.tournament = Some(Tournament::new(self.seats.len(), config));
         self.phase = Phase::Playing;
         log_section!(self.log, "TOURNAMENT");
-        self.event(format!("every deck is in; the tournament starts: {} rounds, best-of-{}",
-            self.tournament.as_ref().map_or(0, Tournament::total_rounds), self.config.best_of));
+        let rounds = self.tournament.as_ref().map_or(0, Tournament::total_rounds);
+        self.event(format!("every deck is in; the tournament starts: {rounds} round{}, best-of-{}",
+            if rounds == 1 { "" } else { "s" }, self.config.best_of));
         self.next_round()
     }
 
@@ -1195,13 +1207,13 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
         for &(a, b) in &pairings {
             if b == BYE {
                 log_bye!(self.log, round, a);
-                self.event(format!("round {round}: seat {a} has a bye"));
+                self.event(format!("round {round}: {} has a bye", self.who(a)));
             } else {
                 self.matches.push(MatchState {
                     round, a, b, urls: [None, None], status: MatchStatus::Waiting,
                     games: Vec::new(), result: None,
                 });
-                self.event(format!("round {round}: seat {a} vs seat {b}"));
+                self.event(format!("round {round}: {} vs {}", self.who(a), self.who(b)));
                 to_play.push((round, a, b));
             }
         }
@@ -1220,7 +1232,7 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
         }
         for (seat, url) in [a, b].into_iter().zip(urls) {
             if let Some(url) = url {
-                self.event(format!("round {round}: seat {seat} plays at {url}"));
+                self.event(format!("round {round}: {} plays at {url}", self.who(seat)));
             }
         }
     }
@@ -1232,18 +1244,19 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
             m.games.push(GameView::of(outcome));
             game_number = m.games.len();
         }
+        let (wa, wb) = (self.who(a), self.who(b));
         self.event(match outcome.winner {
             // A stalled seat's game is a forfeit, not a game won (#744).
             Some(w) => match outcome.stalled_seat {
-                Some(s) => format!("round {round}: seat {a} vs seat {b}, game {game_number}: seat {w} wins, seat {s} forfeited ({})",
+                Some(s) => format!("round {round}: {wa} vs {wb}, game {game_number}: {} wins, {} forfeited ({})", self.who(w), self.who(s),
                     // The reason a forfeit carries, as the standings read it (#821).
                     outcome.game_log.first().and_then(|l| l.strip_prefix("forfeit: ")).unwrap_or("stalled")),
-                None => format!("round {round}: seat {a} vs seat {b}, game {game_number}: seat {w} wins"),
+                None => format!("round {round}: {wa} vs {wb}, game {game_number}: {} wins", self.who(w)),
             },
             // A game stopped without a result is not a draw (#743): the page
             // says "Game abandoned" for it, and so does the table.
-            None if outcome.abandoned => format!("round {round}: seat {a} vs seat {b}, game {game_number}: abandoned, no winner"),
-            None => format!("round {round}: seat {a} vs seat {b}, game {game_number}: drawn"),
+            None if outcome.abandoned => format!("round {round}: {wa} vs {wb}, game {game_number}: abandoned, no winner"),
+            None => format!("round {round}: {wa} vs {wb}, game {game_number}: drawn"),
         });
     }
 
@@ -1254,7 +1267,8 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
         for (n, game) in result.games.iter().enumerate() {
             log_game_log!(self.log, round, n + 1, a, b, &game.game_log);
         }
-        self.event(format!("round {round}: {}", crate::standings::match_score_line(&result).trim_start()));
+        self.event(format!("round {round}: {}",
+            crate::standings::match_score_line_with(&result, &|s| self.who(s)).trim_start()));
         if let Some(m) = self.match_mut(round, a, b) {
             m.games = result.games.iter().map(GameView::of).collect();
             m.result = Some(result);
@@ -1331,7 +1345,7 @@ substituted {} (the first card)", mtg_draft::front_face(&card)));
         log_standings!(self.log, &sorted, &tags);
         self.event("the tournament is over. Final standings:".to_string());
         for (rank, s) in sorted.iter().enumerate() {
-            self.event(format!("  {}", crate::standings::standings_row(rank + 1, s, &tags[s.seat])));
+            self.event(format!("  {}", crate::standings::standings_row_with(rank + 1, s, &tags[s.seat], &|x| self.who(x))));
         }
     }
 

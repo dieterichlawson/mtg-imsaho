@@ -422,7 +422,8 @@ fn ai_worker(shared: &Arc<Shared>, seat: usize, model: &str) {
                 let index = job.cards.iter().position(|c| c == pick.card()).unwrap_or(0);
                 let applied = shared.lobby().ai_pick(seat, job.pack_id, index, &prompt, &response, substituted);
                 if let Err(e) = applied {
-                    shared.say(&format!("WARN seat {seat}: a pick could not be applied: {e}"));
+                    let who = shared.lobby().who(seat);
+                    shared.say(&format!("WARN {who}: a pick could not be applied: {e}"));
                 }
                 shared.notify();
             }
@@ -491,7 +492,8 @@ fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usiz
         return finish(shared, round, a, b, result);
     }
     let (Some(deck_a), Some(deck_b)) = (deck_a, deck_b) else {
-        shared.say(&format!("WARN round {round}: seat {a} vs seat {b} has no decks to play with"));
+        let (wa, wb) = { let l = shared.lobby(); (l.who(a), l.who(b)) };
+        shared.say(&format!("WARN round {round}: {wa} vs {wb} has no decks to play with"));
         return Vec::new();
     };
 
@@ -509,8 +511,9 @@ fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usiz
                     seats.push(GameSeat::Gui(gui));
                 }
                 Err(e) => {
-                    shared.say(&format!("WARN round {round}: no game page for seat {seat}: {e}; \
-seat {seat} forfeits the match"));
+                    let who = shared.lobby().who(seat);
+                    shared.say(&format!("WARN round {round}: no game page for {who}: {e}; \
+{who} forfeits the match"));
                     let result = shared.lobby().forfeit_by(a, b, seat,
                         &format!("no game page for seat {seat}: {e}"));
                     return finish(shared, round, a, b, result);

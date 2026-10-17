@@ -359,8 +359,18 @@ fn render(v: &Value, build: &Build) -> (String, String) {
     let mut s = String::new();
     let seat = v["seat"].as_u64().unwrap_or(0);
     let phase = v["phase"].as_str().unwrap_or("?");
-    let names: Vec<String> = v["seats"].as_array().map(|a| a.iter()
-        .map(|x| x["name"].as_str().unwrap_or("?").to_string()).collect()).unwrap_or_default();
+    // A seat as the page names it: "seat 3", or "Ann (seat 3)" once named.
+    // The client's own match lines used the bare name and its pairings and
+    // standings the bare number, beside a page that says "Bo (seat 1)"
+    // (#816, #826).
+    let who = |n: u64| -> String {
+        let name = v["seats"].as_array().into_iter().flatten()
+            .find(|x| x["seat"].as_u64() == Some(n)).and_then(|x| x["name"].as_str());
+        match name {
+            Some(name) if name != format!("seat {n}") => format!("{name} (seat {n})"),
+            _ => format!("seat {n}"),
+        }
+    };
     table.push_str(&format!("== {} draft, seat {seat}: {phase} ==\n", v["set"].as_str().unwrap_or("?")));
     for x in v["seats"].as_array().into_iter().flatten() {
         let joined = if x["joined"].as_bool().unwrap_or(false) { "" } else { " (not here yet)" };
@@ -419,8 +429,7 @@ fn render(v: &Value, build: &Build) -> (String, String) {
                     s.push_str(&format!("Round {round}: a bye — counted as a match won\n"));
                     continue;
                 };
-                let opp = m["opponent"].as_u64().unwrap_or(0) as usize;
-                let name = names.get(opp).cloned().unwrap_or_else(|| format!("seat {opp}"));
+                let name = who(m["opponent"].as_u64().unwrap_or(0));
                 let status = m["status"].as_str().unwrap_or("?");
                 s.push_str(&format!("Round {} vs {name}: {status}", m["round"]));
                 // The link is for a match still to be played; a finished
@@ -445,10 +454,13 @@ fn render(v: &Value, build: &Build) -> (String, String) {
                 s.push('\n');
             }
             for p in v["pairings"].as_array().into_iter().flatten() {
-                let b = p["b"].as_u64().map_or("bye".to_string(), |b| format!("seat {b}"));
-                s.push_str(&format!("  round {}: seat {} vs {b} ({}{})\n", p["round"], p["a"],
-                    p["status"].as_str().unwrap_or("?"),
-                    p["result"].as_str().map(|r| format!(", {r}")).unwrap_or_default()));
+                let a = who(p["a"].as_u64().unwrap_or(0));
+                match p["b"].as_u64() {
+                    None => s.push_str(&format!("  round {}: {a} has a bye\n", p["round"])),
+                    Some(b) => s.push_str(&format!("  round {}: {a} vs {} ({}{})\n", p["round"], who(b),
+                        p["status"].as_str().unwrap_or("?"),
+                        p["result"].as_str().map(|r| format!(", {r}")).unwrap_or_default())),
+                }
             }
             if let Some(st) = v["standings"].as_array() {
                 s.push_str("Standings:\n");
@@ -457,8 +469,8 @@ fn render(v: &Value, build: &Build) -> (String, String) {
                     // tags: a drawn match vanished from "0-0" (#744).
                     let draws = x["draws"].as_u64().filter(|d| *d > 0).map(|d| format!("-{d}")).unwrap_or_default();
                     let tags = x["tags"].as_str().filter(|t| !t.is_empty()).map(|t| format!(" {t}")).unwrap_or_default();
-                    s.push_str(&format!("  {}. seat {} {}-{}{draws} ({} points){tags}\n", rank + 1, x["seat"],
-                        x["wins"], x["losses"], x["points"]));
+                    s.push_str(&format!("  {}. {} {}-{}{draws} ({} points){tags}\n", rank + 1,
+                        who(x["seat"].as_u64().unwrap_or(0)), x["wins"], x["losses"], x["points"]));
                 }
             }
             if phase == "done" {
@@ -488,10 +500,10 @@ mod tests {
             "pairings": [], "standings": [], "pool": [], "picks": [], "deck": null, "notice": null,
         });
         let (_, mine) = render(&v, &Build::default());
-        assert!(mine.contains("Round 1 vs Lawson: done — 0-2\n"), "{mine}");
+        assert!(mine.contains("Round 1 vs Lawson (seat 1): done — 0-2\n"), "{mine}");
         assert!(!mine.contains("8801"), "a finished match's page is not offered:\n{mine}");
-        assert!(mine.contains("Round 2 vs Lawson: playing — open http://h:8803/\n"), "{mine}");
-        assert!(mine.contains("Round 3 vs Lawson: waiting\n"), "{mine}");
+        assert!(mine.contains("Round 2 vs Lawson (seat 1): playing — open http://h:8803/\n"), "{mine}");
+        assert!(mine.contains("Round 3 vs Lawson (seat 1): waiting\n"), "{mine}");
     }
 
     /// #814: a seat given a bye is told so in its own section, in round
@@ -516,6 +528,9 @@ mod tests {
         let r3 = mine.find("Round 3 vs Cy").expect(&mine);
         assert!(r1 < bye && bye < r3, "{mine}");
         assert!(!mine.contains("Round 1: a bye"), "another seat's bye is not this seat's:\n{mine}");
+        // The table's lines name a seat as the page does (#816).
+        assert!(mine.contains("  round 2: Bea (seat 1) has a bye\n"), "{mine}");
+        assert!(mine.contains("  round 2: Ann (seat 0) vs Cy (seat 2) (playing)\n"), "{mine}");
     }
 
     /// #792: a pool card's rules text can be read while building, and a
@@ -637,9 +652,9 @@ mod tests {
                           {"seat": 0, "wins": 0, "losses": 1, "draws": 1, "points": 1, "tags": "[substitute deck] [1 game forfeited]"}],
         });
         let (_, mine) = render(&v, &Build::default());
-        assert!(mine.contains("Round 1 vs Lawson: done — 0-1 [1 game forfeited]\n"), "{mine}");
-        assert!(mine.contains("Round 2 vs Lawson: done — 0-0 [1 game abandoned, no winner]\n"), "{mine}");
-        assert!(mine.contains("  1. seat 1 1-0-1 (4 points)\n"), "{mine}");
+        assert!(mine.contains("Round 1 vs Lawson (seat 1): done — 0-1 [1 game forfeited]\n"), "{mine}");
+        assert!(mine.contains("Round 2 vs Lawson (seat 1): done — 0-0 [1 game abandoned, no winner]\n"), "{mine}");
+        assert!(mine.contains("  1. Lawson (seat 1) 1-0-1 (4 points)\n"), "{mine}");
         assert!(mine.contains("  2. seat 0 0-1-1 (1 points) [substitute deck] [1 game forfeited]\n"), "{mine}");
     }
 }

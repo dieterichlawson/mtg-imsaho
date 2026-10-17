@@ -233,9 +233,12 @@ fn two_humans_and_two_ai_seats_draft_build_and_the_ai_match_plays() {
     assert!(body.contains("wrong key"));
 
     let terminal = server.stderr();
-    for line in ["seat 0 joined", "the draft has started", "Lawson picked", "seat 2 picked",
-                 "Lawson is ready", "round 1: seat 0 vs seat 1", "round 1: seat 2 vs seat 3",
-                 "seat 0 plays at http://", "round 1: Seat 2 vs Seat 3:"] {
+    // Seat 0 is named Lawson, and every line from then on says so, the
+    // tournament's as well as the draft's, in the page's form (#816).
+    for line in ["seat 0 joined", "the draft has started", "Lawson (seat 0) picked", "seat 2 picked",
+                 "Lawson (seat 0) is ready", "round 1: Lawson (seat 0) vs seat 1", "round 1: seat 2 vs seat 3",
+                 "Lawson (seat 0) plays at http://", "round 1: seat 2 vs seat 3:"] {
         assert!(terminal.contains(line), "the host's terminal says {line:?}:\n{terminal}");
     }
+    assert!(!terminal.contains("Seat 2 vs Seat 3"), "one spelling of a seat on the host's terminal:\n{terminal}");
 }

@@ -509,6 +509,39 @@ fn odd_table_round_one() -> (Lobby, usize, usize, usize) {
     (lobby, round, a, bye)
 }
 
+/// #816, #826: the host's terminal names a person the way the page does,
+/// "Lea (seat 0)", in the tournament's lines as in the draft's, with one
+/// spelling of "seat", and one round is "1 round".
+#[test]
+fn the_hosts_lines_name_a_seat_as_the_page_does() {
+    let (mut lobby, _) = lobby(vec![SeatKind::Human, SeatKind::Ai("cc".into())]);
+    lobby.connected(0);
+    lobby.set_name(0, "Lea");
+    lobby.start();
+    draft_to_the_end(&mut lobby, None);
+    let registry = CardRegistry::with_all_cards();
+    lobby.kick(0).unwrap();
+    let pool: Vec<String> = jv(&lobby, 1)["pool"].as_array().unwrap().iter()
+        .map(|c| c["name"].as_str().unwrap().to_string()).collect();
+    lobby.ai_deck(1, &mtg_draft_runner::deck::DeckBuildResult {
+        deck: fallback_deck(&pool, &registry), attempts: vec![], retries: 0, fallback: false,
+    });
+    assert_eq!(lobby.begin_tournament(), vec![(1, 0, 1)]);
+    let game = GameOutcome { winner: Some(1), turns: 9, game_log: vec!["log".into()], stalled_seat: None, abandoned: false };
+    lobby.game_finished(1, 0, 1, &game);
+    lobby.match_finished(1, 0, 1, MatchResult {
+        player_a: 0, player_b: 1, wins_a: 0, wins_b: 2, games: vec![game.clone(), game],
+    });
+    let events = lobby.take_events().join("\n");
+    for line in ["Lea (seat 0) picked", "Lea (seat 0) kicked", "Lea (seat 0): the table built its deck",
+                 "the tournament starts: 1 round, best-of-3", "round 1: Lea (seat 0) vs seat 1\n",
+                 "round 1: Lea (seat 0) vs seat 1, game 1: seat 1 wins",
+                 "round 1: Lea (seat 0) vs seat 1: 0-2 (winner: seat 1)", ". Lea (seat 0) — 0-1"] {
+        assert!(events.contains(line), "{line:?} in:\n{events}");
+    }
+    assert!(!events.contains("Seat "), "one spelling of a seat:\n{events}");
+}
+
 /// A seat's view as JSON.
 fn jv(lobby: &Lobby, seat: usize) -> Value {
     serde_json::to_value(lobby.view(seat)).unwrap()
