@@ -224,11 +224,30 @@ const actions: Actions = {
     state.hover = index;
     draw();
   },
-  toggle(poolIndex) {
+  toggle(poolIndex, keyboard = false) {
     const view = state.view;
     if (!view || !state.deck || state.readySent) return;
     if (poolIndex < 0 || poolIndex >= state.deck.main.length) return;
     state.refusal = null; state.hint = null;
+    // On a phone the rules text is a tooltip nobody can raise and the
+    // detail panel is below the whole pool, so the only way to read a card
+    // was to move it and scroll two screens down (#792). There a first tap
+    // reads the card, under its own row, and a second moves it — the pick
+    // phase's "tap to read, tap again to pick".
+    // A key is not a tap: Enter on a focused row moves it at any width.
+    if (ONE_COLUMN.matches && !keyboard && state.cursor !== poolIndex) {
+      // The row tapped stays under the finger: another row's open text
+      // above it closes on this draw, and the rows below move up by its
+      // height, so "tap it again" would land on a different row (#791's
+      // jump, on this list).
+      const sel = `.row[data-pool-index="${poolIndex}"]`;
+      const before = root.querySelector<HTMLElement>(sel)?.getBoundingClientRect().top;
+      state.cursor = poolIndex;
+      draw();
+      const after = root.querySelector<HTMLElement>(sel)?.getBoundingClientRect().top;
+      if (before !== undefined && after !== undefined && after !== before) window.scrollBy(0, after - before);
+      return;
+    }
     state.deck.main[poolIndex] = !state.deck.main[poolIndex];
     state.cursor = poolIndex;
     send(toMessage(state.deck, view.pool));
@@ -339,7 +358,7 @@ function buildingKey(ev: KeyboardEvent, view: DraftView): void {
     case "ArrowUp": case "ArrowLeft": move(at < 0 ? 0 : at - 1); break;
     case "Enter":
       if (state.cursor === null) { state.hint = "Enter moves the card under the cursor; arrows move the cursor, or click a card."; break; }
-      actions.toggle(state.cursor);
+      actions.toggle(state.cursor, true);
       ev.preventDefault();
       return;
     case "Escape":

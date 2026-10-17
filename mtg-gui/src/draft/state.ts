@@ -50,7 +50,8 @@ export interface Actions {
   select(index: number): void;
   pick(index: number): void;
   hover(index: number | null): void;
-  toggle(poolIndex: number): void;
+  /** `keyboard`: Enter on the row, not a tap — on a phone a tap first reads the card (#792). */
+  toggle(poolIndex: number, keyboard?: boolean): void;
   setLand(name: string, n: number): void;
   ready(): void;
   dismiss(): void;

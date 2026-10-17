@@ -234,7 +234,64 @@ async function main() {
         const start = (await sent()).length;
         const pick = view.pool.map((c, i) => ({ c, i })).filter(({ c }) => c.colors.includes("W") || c.colors.includes("G")).slice(0, 23);
         check(pick.length === 23, `${tag}: the fixture pool has 23 white or green cards to main-deck (${pick.length})`);
-        for (const { i } of pick) await page.click(`.row[data-pool-index="${i}"]`);
+        // On a phone a first tap reads the card under its row and sends
+        // nothing; the second moves it (#792). Beside the deck one click moves it.
+        {
+          const i = pick[0].i;
+          const before = (await sent()).length;
+          await page.click(`.row[data-pool-index="${i}"]`);
+          await page.waitForTimeout(50);
+          const read = await page.evaluate((i) => {
+            const d = document.querySelector("#row-detail");
+            const row = document.querySelector(`.row[data-pool-index="${i}"]`);
+            const shown = d && getComputedStyle(d).display !== "none";
+            const pc = document.querySelector("#phone-count");
+            return { shown, text: d ? d.textContent : "", gap: shown ? d.getBoundingClientRect().top - row.getBoundingClientRect().bottom : null,
+              count: pc && getComputedStyle(pc).display !== "none" ? pc.getBoundingClientRect().top : null };
+          }, i);
+          const moved = (await sent()).length - before;
+          if (viewport.width < 760) {
+            check(moved === 0, `${tag}: a first tap on a pool row sends nothing (${moved})`);
+            check(read.shown && read.text.includes(view.pool[i].name) && read.gap >= 0 && read.gap < 20,
+              `${tag}: a first tap reads the card under its row (${JSON.stringify({ shown: read.shown, gap: read.gap })})`);
+            check(read.count !== null && read.count < viewport.height, `${tag}: the count is on screen beside the rows (${read.count})`);
+            await page.click(`.row[data-pool-index="${i}"]`);
+            await page.waitForTimeout(50);
+            check((await sent()).length - before === 1, `${tag}: a second tap moves the card`);
+            // A tap on a row below an open one keeps it under the finger:
+            // the open text above closes on the same draw (#792's review).
+            // A row a few below the one whose text is open.
+            const j = await page.evaluate(() => {
+              const rows = [...document.querySelectorAll(".row")];
+              const d = document.querySelector("#row-detail");
+              const below = rows.filter(r => d.compareDocumentPosition(r) & Node.DOCUMENT_POSITION_FOLLOWING);
+              return Number(below[2].dataset.poolIndex);
+            });
+            const topOf = (k) => page.$eval(`.row[data-pool-index="${k}"]`, el => el.getBoundingClientRect().top);
+            await page.$eval(`.row[data-pool-index="${j}"]`, el => el.scrollIntoView({ block: "center" }));
+            const t0 = await topOf(j);
+            await page.click(`.row[data-pool-index="${j}"]`);
+            await page.waitForTimeout(50);
+            const t1 = await topOf(j);
+            check(Math.abs(t1 - t0) <= 2, `${tag}: the tapped row stays where it was tapped (${Math.round(t0)} -> ${Math.round(t1)})`);
+            // Enter on a focused row moves it, as at any width: a key is not a tap.
+            await page.keyboard.press("Escape");
+            await page.focus(`.row[data-pool-index="${j}"]`);
+            const n0 = (await sent()).length;
+            await page.keyboard.press("Enter");
+            await page.waitForTimeout(50);
+            check((await sent()).length === n0 + 1, `${tag}: Escape, then Enter on the focused row moves the card`);
+            // Put it back where the rest of this test expects it.
+            await page.keyboard.press("Enter");
+            await page.waitForTimeout(50);
+          } else {
+            check(moved === 1 && !read.shown && read.count === null, `${tag}: beside the deck one click moves the card and nothing reads inline`);
+          }
+        }
+        for (const { i } of pick.slice(1)) {
+          await page.click(`.row[data-pool-index="${i}"]`);
+          if (viewport.width < 760) await page.click(`.row[data-pool-index="${i}"]`);
+        }
         for (let k = 0; k < 8; k++) await page.click(`.land[data-land="Plains"] .inc`);
         for (let k = 0; k < 9; k++) await page.click(`.land[data-land="Forest"] .inc`);
         await page.waitForTimeout(50);
@@ -247,7 +304,8 @@ async function main() {
           && JSON.stringify(deckMsg.lands) === JSON.stringify({ Plains: 8, Forest: 9 })
           && JSON.stringify(deckMsg.sideboard) === JSON.stringify(wantSide),
           `${tag}: every change re-sent the deck; the last is the whole deck (${deckMsg && deckMsg.main.length} main, ${deckMsg && deckMsg.sideboard.length} side)`);
-        check((await sent()).length - start === 23 + 17, `${tag}: one deck message per change`);
+        // On a phone the Enter-moves check above moves a card out and back: two more.
+        check((await sent()).length - start === 23 + 17 + (viewport.width < 760 ? 2 : 0), `${tag}: one deck message per change`);
         check(await page.$eval("#ready", b => !b.disabled), `${tag}: Ready is enabled at 40 cards`);
         await shot("building-filled");
         // Take one out: disabled again, with the count.

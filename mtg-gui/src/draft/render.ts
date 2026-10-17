@@ -262,6 +262,10 @@ function building(view: DraftView, state: PageState, actions: Actions): HTMLElem
     list.append(h("p", { class: "muted", text: "Waiting for the pool." }));
     return h("section", { class: "phase phase-building" }, h("div", { class: "build-layout" }, list, panel));
   }
+  const c = counts(edit);
+  // The count where the rows are, on a phone: the deck panel's own count
+  // line is under the whole pool there, 1,500px from the first row (#792).
+  list.append(h("div", { class: "phone-count", id: "phone-count", text: `${c.spells} spells + ${c.lands} lands = ${c.total}` }));
   const groups = groupByColor(view.pool.map((c, i) => ({ ...c, poolIndex: i })));
   for (const g of groups) {
     list.append(h("h4", { class: `group-head color-${g.key}` }, `${g.label} (${g.cards.length})`));
@@ -272,16 +276,22 @@ function building(view: DraftView, state: PageState, actions: Actions): HTMLElem
         type: "button", title: c.text,
         class: `row${inMain ? " in-main" : ""}${state.cursor === c.poolIndex ? " cursor" : ""}`,
         "data-pool-index": String(c.poolIndex), disabled: ready,
-        onclick: () => actions.toggle(c.poolIndex),
+        // A click with no pointer behind it (`detail` 0) is Enter on the focused row.
+        onclick: (e: MouseEvent) => actions.toggle(c.poolIndex, e.detail === 0),
       },
         h("span", { class: "box", text: inMain ? "MAIN" : "side" }),
         pips(p.cost),
         h("span", { class: "row-name", text: c.name }),
         h("span", { class: "row-type muted", text: p.typeLine + (p.pt ? ` ${p.pt}` : "") }),
       ));
+      // The card under the cursor, read in place: shown on a phone only,
+      // where a tap puts the cursor here and a second tap moves it (#792).
+      if (state.cursor === c.poolIndex) {
+        list.append(h("div", { class: "detail row-detail", id: "row-detail" }, cardDetail(c),
+          ready ? null : h("p", { class: "muted", text: inMain ? "Tap it again to move it to the sideboard." : "Tap it again to move it to the main deck." })));
+      }
     }
   }
-  const c = counts(edit);
   const why = problem(edit, view.pool);
   const s = summary(edit, view.pool);
   panel.append(h("h3", { text: ready ? "Deck — ready" : "Deck" }));
@@ -324,8 +334,8 @@ function building(view: DraftView, state: PageState, actions: Actions): HTMLElem
     panel.append(h("div", { class: "ready-reason", id: "ready-reason", text: why ?? `${c.total} cards; the server checks it again.` }));
   }
   const shown = state.cursor !== null ? view.pool[state.cursor] : undefined;
-  if (shown) panel.append(h("div", { class: "detail" }, cardDetail(shown)));
-  else panel.append(h("p", { class: "muted", text: `Click a card to move it between main and side; at least ${MIN_DECK} cards with lands. Arrows and Enter work too.` }));
+  if (shown) panel.append(h("div", { class: "detail panel-detail" }, cardDetail(shown)));
+  else panel.append(h("p", { class: "muted panel-help", text: `Click a card to move it between main and side (on a phone, tap to read it and tap again to move it); at least ${MIN_DECK} cards with lands. Arrows and Enter work too.` }));
   return h("section", { class: "phase phase-building" }, h("div", { class: "build-layout" }, list, panel));
 }
 

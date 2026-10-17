@@ -20,6 +20,8 @@ While drafting, type a card's number to pick it (a number typed before a
 new pack has been up 300 ms is not taken: type it again). While building:
 add <n>, drop <n> (by the pool numbers shown), lands plains=7 island=10,
 show, ready.
+text <n> prints a card's rules text: the pack's card <n> while drafting,
+the pool's card <n> while building.
 Any time: name <name>, help, quit.";
 
 fn out(line: &str) {
@@ -279,6 +281,10 @@ fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Option<Du
             if *first == "add" { build.main.insert(n); } else { build.main.remove(&n); }
             Command::Send(vec![deck_message(v, build)])
         }
+        "text" => {
+            let Some(v) = view else { return Command::Print("no view yet".into()) };
+            Command::Print(card_text(v, words.get(1).copied()))
+        }
         "lands" => {
             let Some(v) = view else { return Command::Print("no view yet".into()) };
             for word in &words[1..] {
@@ -485,6 +491,29 @@ mod tests {
         assert!(!mine.contains("Round 1: a bye"), "another seat's bye is not this seat's:\n{mine}");
     }
 
+    /// #792: a pool card's rules text can be read while building, and a
+    /// pack card's while drafting, by the number the listing shows.
+    #[test]
+    fn text_reads_a_card() {
+        let mut v = serde_json::json!({
+            "type": "view", "phase": "building", "seat": 0, "set": "isd",
+            "pool": [{"name": "Bonds of Faith", "line": "Bonds of Faith {1}{W} | Enchantment — Aura",
+                      "text": "Enchant creature. Enchanted creature gets +2/+2 as long as it's a Human."}],
+            "pack": null,
+        });
+        let build = Build::default();
+        let Command::Print(t) = command("text 0", Some(&v), &mut Build::default(), None) else { panic!("printed nothing") };
+        assert!(t.starts_with("Bonds of Faith {1}{W}") && t.contains("+2/+2 as long as it's a Human"), "{t}");
+        let Command::Print(t) = command("text 4", Some(&v), &mut Build::default(), None) else { panic!() };
+        assert!(t.contains("no card 4"), "{t}");
+        assert!(build_listing(&v, &build).contains("text <n> to read it"));
+        v["phase"] = "drafting".into();
+        v["pack"] = serde_json::json!({"id": 1, "round": 1, "pick": 1, "size": 14, "waiting": 0, "deadline_ms": null,
+            "cards": [{"index": 3, "name": "Brain Weevil", "line": "Brain Weevil {3}{B}", "text": "Intimidate"}]});
+        let Command::Print(t) = command("text 3", Some(&v), &mut Build::default(), None) else { panic!() };
+        assert!(t.ends_with("\nIntimidate"), "{t}");
+    }
+
     /// #815: when the table builds the deck, or tops a short one up, the
     /// screen is rebuilt from the server's record, not left on the
     /// person's own marks under "your deck is final".
@@ -583,8 +612,36 @@ fn pool_listing(v: &Value) -> String {
     s
 }
 
+/// `text <n>`: a card's headline and its rules text. The listings print
+/// the headline only, and the client had no way to read a card at all,
+/// where the page shows the text of the card under the cursor (#792).
+/// While drafting `n` is the pack's number for the card; otherwise the
+/// pool's.
+fn card_text(v: &Value, arg: Option<&str>) -> String {
+    let drafting = v["phase"].as_str() == Some("drafting") && v["pack"].is_object();
+    let cards: Vec<&Value> = if drafting {
+        v["pack"]["cards"].as_array().into_iter().flatten().collect()
+    } else {
+        v["pool"].as_array().into_iter().flatten().collect()
+    };
+    let what = if drafting { "a card number from the pack" } else { "a pool number" };
+    let Some(n) = arg.and_then(|a| a.parse::<usize>().ok()) else {
+        return format!("text takes {what}");
+    };
+    let card = if drafting {
+        cards.iter().find(|c| c["index"].as_u64() == Some(n as u64)).copied()
+    } else {
+        cards.get(n).copied()
+    };
+    let Some(card) = card else {
+        return format!("no card {n}: text takes {what}");
+    };
+    let body = card["text"].as_str().filter(|t| !t.is_empty()).unwrap_or("(no rules text)");
+    format!("{}\n{body}", card["line"].as_str().unwrap_or("?"))
+}
+
 fn build_listing(v: &Value, build: &Build) -> String {
-    let mut s = String::from("\nyour pool — add <n> / drop <n> to move a card, lands plains=7 island=10, ready:\n");
+    let mut s = String::from("\nyour pool — add <n> / drop <n> to move a card, text <n> to read it, lands plains=7 island=10, ready:\n");
     for (i, c) in v["pool"].as_array().into_iter().flatten().enumerate() {
         let tag = if build.main.contains(&i) { "MAIN" } else { "side" };
         s.push_str(&format!("  {i:>2} [{tag}] {}\n", c["line"].as_str().unwrap_or("?")));

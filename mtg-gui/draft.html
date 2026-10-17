@@ -164,6 +164,8 @@
   .ready-reason { font-size: 12px; color: var(--muted); margin-top: 4px; }
   .ready-line { margin-top: 10px; color: #8fd18f; }
   .deckpanel .detail { margin-top: 10px; border-width: 1px; }
+  /* A phone's own: the card read in place and the count beside the rows (#792). */
+  .row-detail, .phone-count { display: none; }
 
   /* --- playing, done --- */
   .matches { list-style: none; padding: 0; margin: 0; }
@@ -185,6 +187,9 @@
     .side .pool { order: 2; }
     .pack { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
     .row .row-type { display: none; }
+    .row-detail { display: block; border-width: 1px; margin: 2px 0 6px; }
+    .phone-count { display: block; position: sticky; top: 0; z-index: 1; padding: 4px 6px; background: var(--bg); color: var(--accent); border-bottom: 1px solid var(--border); }
+    .deckpanel .panel-detail { display: none; }
     th, td { padding-right: 6px; }
     /* The seat's kind is the one column a phone can do without. */
     .seats th:nth-child(3), .seats td:nth-child(3) { display: none; }
