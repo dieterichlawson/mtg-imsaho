@@ -2678,6 +2678,777 @@
     ],
     "type": "view"
   },
+  "playing_bye": {
+    "build_deadline_ms": null,
+    "build_seconds": null,
+    "deck": {
+      "lands": {
+        "Island": 7,
+        "Mountain": 10
+      },
+      "main": [
+        "Galvanic Juggernaut",
+        "Crossway Vampire",
+        "Curse of Stalked Prey",
+        "Geistcatcher's Rig",
+        "Curse of the Nightly Hunt",
+        "Armored Skaab",
+        "Ghost Quarter",
+        "Grasp of Phantoms",
+        "Battleground Geist",
+        "Deranged Assistant",
+        "Graveyard Shovel",
+        "Blasphemous Act",
+        "Devil's Play",
+        "Grimoire of the Dead",
+        "Bloodcrazed Neonate",
+        "Cackling Counterpart",
+        "Infernal Plunge",
+        "Cellar Door",
+        "Instigator Gang",
+        "Feral Ridgewolf",
+        "Into the Maw of Hell",
+        "Civilized Scholar",
+        "Isolated Chapel"
+      ],
+      "problem": null,
+      "ready": true,
+      "sideboard": [
+        "Abbey Griffin",
+        "Gatstaf Shepherd",
+        "Curse of Death's Hold",
+        "Ambush Viper",
+        "Geist of Saint Traft",
+        "Angel of Flight Alabaster",
+        "Darkthicket Wolf",
+        "Disciple of Griselbrand",
+        "Gruesome Deformity",
+        "Bloodline Keeper",
+        "Divine Reckoning",
+        "Hamlet Captain",
+        "Boneyard Wurm",
+        "Hollowhenge Scavenger",
+        "Evil Twin",
+        "Falkenrath Noble",
+        "Chapel Geist",
+        "Fiend Hunter",
+        "Fortress Crab"
+      ],
+      "valid": true
+    },
+    "matches": [],
+    "notice": null,
+    "pack": null,
+    "pairings": [
+      {
+        "a": 0,
+        "b": 1,
+        "result": null,
+        "round": 1,
+        "status": "waiting"
+      },
+      {
+        "a": 2,
+        "b": null,
+        "result": "bye",
+        "round": 1,
+        "status": "done"
+      }
+    ],
+    "pass_direction": null,
+    "phase": "playing",
+    "pick_seconds": null,
+    "picks": [
+      {
+        "auto": false,
+        "card": "Galvanic Juggernaut",
+        "pick": 1,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Crossway Vampire",
+        "pick": 2,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Abbey Griffin",
+        "pick": 3,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Gatstaf Shepherd",
+        "pick": 4,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Curse of Death's Hold",
+        "pick": 5,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Ambush Viper",
+        "pick": 6,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Geist of Saint Traft",
+        "pick": 7,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Curse of Stalked Prey",
+        "pick": 8,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Angel of Flight Alabaster",
+        "pick": 9,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Geistcatcher's Rig",
+        "pick": 10,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Curse of the Nightly Hunt",
+        "pick": 11,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Armored Skaab",
+        "pick": 12,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Ghost Quarter",
+        "pick": 13,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Darkthicket Wolf",
+        "pick": 14,
+        "round": 1
+      },
+      {
+        "auto": false,
+        "card": "Grasp of Phantoms",
+        "pick": 1,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Battleground Geist",
+        "pick": 2,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Deranged Assistant",
+        "pick": 3,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Graveyard Shovel",
+        "pick": 4,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Blasphemous Act",
+        "pick": 5,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Devil's Play",
+        "pick": 6,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Grimoire of the Dead",
+        "pick": 7,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Bloodcrazed Neonate",
+        "pick": 8,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Disciple of Griselbrand",
+        "pick": 9,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Gruesome Deformity",
+        "pick": 10,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Bloodline Keeper",
+        "pick": 11,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Divine Reckoning",
+        "pick": 12,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Hamlet Captain",
+        "pick": 13,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Boneyard Wurm",
+        "pick": 14,
+        "round": 2
+      },
+      {
+        "auto": false,
+        "card": "Hollowhenge Scavenger",
+        "pick": 1,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Evil Twin",
+        "pick": 2,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Cackling Counterpart",
+        "pick": 3,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Infernal Plunge",
+        "pick": 4,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Falkenrath Noble",
+        "pick": 5,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Cellar Door",
+        "pick": 6,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Instigator Gang",
+        "pick": 7,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Feral Ridgewolf",
+        "pick": 8,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Chapel Geist",
+        "pick": 9,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Into the Maw of Hell",
+        "pick": 10,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Fiend Hunter",
+        "pick": 11,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Civilized Scholar",
+        "pick": 12,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Isolated Chapel",
+        "pick": 13,
+        "round": 3
+      },
+      {
+        "auto": false,
+        "card": "Fortress Crab",
+        "pick": 14,
+        "round": 3
+      }
+    ],
+    "pod_size": 3,
+    "pool": [
+      {
+        "colors": [],
+        "line": "Galvanic Juggernaut {4} | Artifact Creature — Juggernaut 5/5 [uncommon]",
+        "name": "Galvanic Juggernaut",
+        "rarity": "uncommon",
+        "text": "This creature attacks each combat if able.\nThis creature doesn't untap during your untap step.\nWhenever another creature dies, untap this creature."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Crossway Vampire {1}{R}{R} | Creature — Vampire 3/2 [common]",
+        "name": "Crossway Vampire",
+        "rarity": "common",
+        "text": "When this creature enters, target creature can't block this turn."
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Abbey Griffin {3}{W} | Creature — Griffin 2/2 [common]",
+        "name": "Abbey Griffin",
+        "rarity": "common",
+        "text": "Flying, vigilance"
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Gatstaf Shepherd {1}{G} | Creature — Human Werewolf 2/2 // Gatstaf Howler 3/3 [uncommon]",
+        "name": "Gatstaf Shepherd",
+        "rarity": "uncommon",
+        "text": "At the beginning of each upkeep, if no spells were cast last turn, transform this creature.\n// Gatstaf Howler: Intimidate\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature."
+      },
+      {
+        "colors": [
+          "B"
+        ],
+        "line": "Curse of Death's Hold {3}{B}{B} | Enchantment — Aura Curse [rare]",
+        "name": "Curse of Death's Hold",
+        "rarity": "rare",
+        "text": "Enchant player\nCreatures enchanted player controls get -1/-1."
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Ambush Viper {1}{G} | Creature — Snake 2/1 [common]",
+        "name": "Ambush Viper",
+        "rarity": "common",
+        "text": "Flash\nDeathtouch"
+      },
+      {
+        "colors": [
+          "W",
+          "U"
+        ],
+        "line": "Geist of Saint Traft {1}{W}{U} | Legendary Creature — Spirit Cleric 2/2 [mythic]",
+        "name": "Geist of Saint Traft",
+        "rarity": "mythic",
+        "text": "Hexproof (This creature can't be the target of spells or abilities your opponents control.)\nWhenever Geist of Saint Traft attacks, create a 4/4 white Angel creature token with flying that's tapped and attacking. Exile that token at end of combat."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Curse of Stalked Prey {1}{R} | Enchantment — Aura Curse [rare]",
+        "name": "Curse of Stalked Prey",
+        "rarity": "rare",
+        "text": "Enchant player\nWhenever a creature deals combat damage to enchanted player, put a +1/+1 counter on that creature."
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Angel of Flight Alabaster {4}{W} | Creature — Angel 4/4 [rare]",
+        "name": "Angel of Flight Alabaster",
+        "rarity": "rare",
+        "text": "Flying\nAt the beginning of your upkeep, return target Spirit card from your graveyard to your hand."
+      },
+      {
+        "colors": [],
+        "line": "Geistcatcher's Rig {6} | Artifact Creature — Construct 4/5 [uncommon]",
+        "name": "Geistcatcher's Rig",
+        "rarity": "uncommon",
+        "text": "When this creature enters, you may have it deal 4 damage to target creature with flying."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Curse of the Nightly Hunt {2}{R} | Enchantment — Aura Curse [uncommon]",
+        "name": "Curse of the Nightly Hunt",
+        "rarity": "uncommon",
+        "text": "Enchant player\nCreatures enchanted player controls attack each combat if able."
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Armored Skaab {2}{U} | Creature — Zombie Warrior 1/4 [common]",
+        "name": "Armored Skaab",
+        "rarity": "common",
+        "text": "When this creature enters, mill four cards."
+      },
+      {
+        "colors": [],
+        "line": "Ghost Quarter | Land [uncommon]",
+        "name": "Ghost Quarter",
+        "rarity": "uncommon",
+        "text": "{T}: Add {C}.\n{T}, Sacrifice this land: Destroy target land. Its controller may search their library for a basic land card, put it onto the battlefield, then shuffle."
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Darkthicket Wolf {1}{G} | Creature — Wolf 2/2 [common]",
+        "name": "Darkthicket Wolf",
+        "rarity": "common",
+        "text": "{2}{G}: This creature gets +2/+2 until end of turn. Activate only once each turn."
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Grasp of Phantoms {3}{U} | Sorcery [uncommon]",
+        "name": "Grasp of Phantoms",
+        "rarity": "uncommon",
+        "text": "Put target creature on top of its owner's library.\nFlashback {7}{U} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Battleground Geist {4}{U} | Creature — Spirit 3/3 [uncommon]",
+        "name": "Battleground Geist",
+        "rarity": "uncommon",
+        "text": "Flying\nOther Spirit creatures you control get +1/+0."
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Deranged Assistant {1}{U} | Creature — Human Wizard 1/1 [common]",
+        "name": "Deranged Assistant",
+        "rarity": "common",
+        "text": "{T}, Mill a card: Add {C}. (To mill a card, put the top card of your library into your graveyard.)"
+      },
+      {
+        "colors": [],
+        "line": "Graveyard Shovel {2} | Artifact [uncommon]",
+        "name": "Graveyard Shovel",
+        "rarity": "uncommon",
+        "text": "{2}, {T}: Target player exiles a card from their graveyard. If it's a creature card, you gain 2 life."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Blasphemous Act {8}{R} | Sorcery [rare]",
+        "name": "Blasphemous Act",
+        "rarity": "rare",
+        "text": "This spell costs {1} less to cast for each creature on the battlefield.\nBlasphemous Act deals 13 damage to each creature."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Devil's Play {X}{R} | Sorcery [rare]",
+        "name": "Devil's Play",
+        "rarity": "rare",
+        "text": "Devil's Play deals X damage to any target.\nFlashback {X}{R}{R}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+      },
+      {
+        "colors": [],
+        "line": "Grimoire of the Dead {4} | Legendary Artifact [mythic]",
+        "name": "Grimoire of the Dead",
+        "rarity": "mythic",
+        "text": "{1}, {T}, Discard a card: Put a study counter on Grimoire of the Dead.\n{T}, Remove three study counters from Grimoire of the Dead and sacrifice it: Put all creature cards from all graveyards onto the battlefield under your control. They're black Zombies in addition to their other colors and types."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Bloodcrazed Neonate {1}{R} | Creature — Vampire 2/1 [common]",
+        "name": "Bloodcrazed Neonate",
+        "rarity": "common",
+        "text": "This creature attacks each combat if able.\nWhenever this creature deals combat damage to a player, put a +1/+1 counter on it."
+      },
+      {
+        "colors": [
+          "B"
+        ],
+        "line": "Disciple of Griselbrand {1}{B} | Creature — Human Cleric 1/1 [uncommon]",
+        "name": "Disciple of Griselbrand",
+        "rarity": "uncommon",
+        "text": "{1}, Sacrifice a creature: You gain life equal to the sacrificed creature's toughness."
+      },
+      {
+        "colors": [
+          "B"
+        ],
+        "line": "Gruesome Deformity {B} | Enchantment — Aura [common]",
+        "name": "Gruesome Deformity",
+        "rarity": "common",
+        "text": "Enchant creature\nEnchanted creature has intimidate. (It can't be blocked except by artifact creatures and/or creatures that share a color with it.)"
+      },
+      {
+        "colors": [
+          "B"
+        ],
+        "line": "Bloodline Keeper {2}{B}{B} | Creature — Vampire 3/3 // Lord of Lineage 5/5 [rare]",
+        "name": "Bloodline Keeper",
+        "rarity": "rare",
+        "text": "Flying\n{T}: Create a 2/2 black Vampire creature token with flying.\n{B}: Transform this creature. Activate only if you control five or more Vampires.\n// Lord of Lineage: Flying\nOther Vampire creatures you control get +2/+2.\n{T}: Create a 2/2 black Vampire creature token with flying."
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Divine Reckoning {2}{W}{W} | Sorcery [rare]",
+        "name": "Divine Reckoning",
+        "rarity": "rare",
+        "text": "Each player chooses a creature they control. Destroy the rest.\nFlashback {5}{W}{W} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Hamlet Captain {1}{G} | Creature — Human Warrior 2/2 [uncommon]",
+        "name": "Hamlet Captain",
+        "rarity": "uncommon",
+        "text": "Whenever this creature attacks or blocks, other Humans you control get +1/+1 until end of turn."
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Boneyard Wurm {1}{G} | Creature — Wurm 0/0 [uncommon]",
+        "name": "Boneyard Wurm",
+        "rarity": "uncommon",
+        "text": "Boneyard Wurm's power and toughness are each equal to the number of creature cards in your graveyard."
+      },
+      {
+        "colors": [
+          "G"
+        ],
+        "line": "Hollowhenge Scavenger {3}{G}{G} | Creature — Elemental 4/5 [uncommon]",
+        "name": "Hollowhenge Scavenger",
+        "rarity": "uncommon",
+        "text": "Morbid — When this creature enters, if a creature died this turn, you gain 5 life."
+      },
+      {
+        "colors": [
+          "U",
+          "B"
+        ],
+        "line": "Evil Twin {2}{U}{B} | Creature — Shapeshifter 0/0 [rare]",
+        "name": "Evil Twin",
+        "rarity": "rare",
+        "text": "You may have this creature enter as a copy of any creature on the battlefield, except it has \"{U}{B}, {T}: Destroy target creature with the same name as this creature.\""
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Cackling Counterpart {1}{U}{U} | Instant [rare]",
+        "name": "Cackling Counterpart",
+        "rarity": "rare",
+        "text": "Create a token that's a copy of target creature you control.\nFlashback {5}{U}{U} (You may cast this card from your graveyard for its flashback cost. Then exile it.)"
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Infernal Plunge {R} | Sorcery [common]",
+        "name": "Infernal Plunge",
+        "rarity": "common",
+        "text": "As an additional cost to cast this spell, sacrifice a creature.\nAdd {R}{R}{R}."
+      },
+      {
+        "colors": [
+          "B"
+        ],
+        "line": "Falkenrath Noble {3}{B} | Creature — Vampire Noble 2/2 [uncommon]",
+        "name": "Falkenrath Noble",
+        "rarity": "uncommon",
+        "text": "Flying\nWhenever this creature or another creature dies, target player loses 1 life and you gain 1 life."
+      },
+      {
+        "colors": [],
+        "line": "Cellar Door {2} | Artifact [uncommon]",
+        "name": "Cellar Door",
+        "rarity": "uncommon",
+        "text": "{3}, {T}: Target player puts the bottom card of their library into their graveyard. If it's a creature card, you create a 2/2 black Zombie creature token."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Instigator Gang {3}{R} | Creature — Human Werewolf 2/3 // Wildblood Pack 5/5 [rare]",
+        "name": "Instigator Gang",
+        "rarity": "rare",
+        "text": "Attacking creatures you control get +1/+0.\nAt the beginning of each upkeep, if no spells were cast last turn, transform this creature.\n// Wildblood Pack: Trample\nAttacking creatures you control get +3/+0.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature."
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Feral Ridgewolf {2}{R} | Creature — Wolf 1/2 [common]",
+        "name": "Feral Ridgewolf",
+        "rarity": "common",
+        "text": "Trample\n{1}{R}: This creature gets +2/+0 until end of turn."
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Chapel Geist {1}{W}{W} | Creature — Spirit 2/3 [common]",
+        "name": "Chapel Geist",
+        "rarity": "common",
+        "text": "Flying"
+      },
+      {
+        "colors": [
+          "R"
+        ],
+        "line": "Into the Maw of Hell {4}{R}{R} | Sorcery [uncommon]",
+        "name": "Into the Maw of Hell",
+        "rarity": "uncommon",
+        "text": "Destroy target land. Into the Maw of Hell deals 13 damage to target creature."
+      },
+      {
+        "colors": [
+          "W"
+        ],
+        "line": "Fiend Hunter {1}{W}{W} | Creature — Human Cleric 1/3 [uncommon]",
+        "name": "Fiend Hunter",
+        "rarity": "uncommon",
+        "text": "When this creature enters, you may exile another target creature.\nWhen this creature leaves the battlefield, return the exiled card to the battlefield under its owner's control."
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Civilized Scholar {2}{U} | Creature — Human Advisor 0/1 // Homicidal Brute 5/1 [uncommon]",
+        "name": "Civilized Scholar",
+        "rarity": "uncommon",
+        "text": "{T}: Draw a card, then discard a card. If a creature card is discarded this way, untap this creature, then transform it.\n// Homicidal Brute: At the beginning of your end step, if this creature didn't attack this turn, tap this creature, then transform it."
+      },
+      {
+        "colors": [],
+        "line": "Isolated Chapel | Land [rare]",
+        "name": "Isolated Chapel",
+        "rarity": "rare",
+        "text": "This land enters tapped unless you control a Plains or a Swamp.\n{T}: Add {W} or {B}."
+      },
+      {
+        "colors": [
+          "U"
+        ],
+        "line": "Fortress Crab {3}{U} | Creature — Crab 1/6 [common]",
+        "name": "Fortress Crab",
+        "rarity": "common",
+        "text": ""
+      }
+    ],
+    "seat": 2,
+    "seats": [
+      {
+        "auto": true,
+        "connected": 1,
+        "joined": true,
+        "kind": "human",
+        "name": "seat 0",
+        "picks": 42,
+        "seat": 0,
+        "status": "waiting"
+      },
+      {
+        "auto": false,
+        "connected": 0,
+        "joined": true,
+        "kind": "ai",
+        "name": "seat 1",
+        "picks": 42,
+        "seat": 1,
+        "status": "waiting"
+      },
+      {
+        "auto": false,
+        "connected": 0,
+        "joined": true,
+        "kind": "ai",
+        "name": "seat 2",
+        "picks": 42,
+        "seat": 2,
+        "status": "bye"
+      }
+    ],
+    "set": "isd",
+    "standings": [
+      {
+        "byes": 0,
+        "draws": 0,
+        "game_wins": 0,
+        "losses": 0,
+        "points": 0,
+        "seat": 0,
+        "tags": "[substitute deck]",
+        "wins": 0
+      },
+      {
+        "byes": 0,
+        "draws": 0,
+        "game_wins": 0,
+        "losses": 0,
+        "points": 0,
+        "seat": 1,
+        "tags": "",
+        "wins": 0
+      },
+      {
+        "byes": 0,
+        "draws": 0,
+        "game_wins": 0,
+        "losses": 0,
+        "points": 0,
+        "seat": 2,
+        "tags": "",
+        "wins": 0
+      }
+    ],
+    "type": "view"
+  },
   "refused": {
     "echo": {
       "lands": {},

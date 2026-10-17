@@ -121,7 +121,9 @@ pick typed twice) is not taken from it, and the client says so. While building: 
 shown, `lands plains=7 island=10`, `show`, and `ready` when the deck is
 final; the server's refusal (`Deck has 39 cards (need at least 40)`) is
 printed as it comes. When a match is paired it prints `Round 1 vs seat 3:
-playing — open http://192.168.1.20:8803/`. `name <x>`, `help`, `quit`.
+playing — open http://192.168.1.20:8803/`; a round you sit out is
+`Round 2: a bye — counted as a match won`, and the seats show you as
+`bye` (on the page too). `name <x>`, `help`, `quit`.
 
 ## Draft, build, play
 

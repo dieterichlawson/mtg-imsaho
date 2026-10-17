@@ -299,6 +299,10 @@ draft_view_fixtures` and commit the result.".into()));
     for phase in ["lobby", "drafting", "building", "playing", "done"] {
         doc.insert(phase.into(), fixtures.remove(phase).unwrap());
     }
+    // A seat on a bye, from an odd table: the page must read its status
+    // word and its pairing with no opponent (#814).
+    let (odd, _, _, bye) = odd_table_round_one();
+    doc.insert("playing_bye".into(), jv(&odd, bye));
     doc.insert("refused".into(), serde_json::to_value(mtg_draft_runner::lobby::Refused {
         kind: "refused",
         reason: "'Griselbrand' is not in your drafted pool.".into(),
@@ -470,6 +474,20 @@ fn a_timer_too_long_for_the_clock_is_no_deadline_not_a_panic() {
 /// matches are numbered in, and its status is "bye", not "waiting".
 #[test]
 fn an_odd_tables_bye_is_in_the_seats_own_view() {
+    let (lobby, round, a, bye) = odd_table_round_one();
+    let v = jv(&lobby, bye);
+    let own: Vec<&Value> = v["pairings"].as_array().unwrap().iter()
+        .filter(|p| p["a"] == bye && p["b"].is_null()).collect();
+    assert_eq!(own.len(), 1, "{}", v["pairings"]);
+    assert_eq!(own[0]["round"], round, "the bye's round is the matches' round");
+    assert!(v["matches"].as_array().unwrap().is_empty());
+    assert_eq!(v["seats"][bye]["status"], "bye");
+    assert_eq!(jv(&lobby, a)["seats"][bye]["status"], "bye", "every seat sees it");
+}
+
+/// A three-seat table drafted, built and paired for round one: the lobby,
+/// the round, one seat of the match and the seat with the bye.
+fn odd_table_round_one() -> (Lobby, usize, usize, usize) {
     let (mut lobby, _) = lobby(vec![SeatKind::Human, SeatKind::Ai("cc".into()), SeatKind::Ai("cc".into())]);
     lobby.connected(0);
     lobby.start();
@@ -488,14 +506,7 @@ fn an_odd_tables_bye_is_in_the_seats_own_view() {
     assert_eq!(to_play.len(), 1, "three seats play one match: {to_play:?}");
     let (round, a, b) = to_play[0];
     let bye = (0..3).find(|s| *s != a && *s != b).unwrap();
-    let v = jv(&lobby, bye);
-    let own: Vec<&Value> = v["pairings"].as_array().unwrap().iter()
-        .filter(|p| p["a"] == bye && p["b"].is_null()).collect();
-    assert_eq!(own.len(), 1, "{}", v["pairings"]);
-    assert_eq!(own[0]["round"], round, "the bye's round is the matches' round");
-    assert!(v["matches"].as_array().unwrap().is_empty());
-    assert_eq!(v["seats"][bye]["status"], "bye");
-    assert_eq!(jv(&lobby, a)["seats"][bye]["status"], "bye", "every seat sees it");
+    (lobby, round, a, bye)
 }
 
 /// A seat's view as JSON.

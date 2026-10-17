@@ -33,7 +33,7 @@ export const SHAPES = {
         kind: "enum:human|ai|cli",
         name: "string",
         joined: "boolean",
-        status: "enum:picking|waiting|building|ready|playing|idle",
+        status: "enum:picking|waiting|building|ready|playing|bye|idle",
         picks: "number",
         connected: "number?",
         auto: "boolean?",
