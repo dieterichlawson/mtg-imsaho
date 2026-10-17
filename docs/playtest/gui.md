@@ -574,6 +574,22 @@ random game happened to reach.
   page can show it at all — a `fillText` hook over a staged prompt answers
   it in a minute. #786 was the #362 tag living only in `context` while
   `prompts.ts:449` reads `rp.description` first.
+  [2026-10-17] **Every registry site has a page equivalent except one**:
+  Nevermore's card-name browser, where the CLI shows the highlighted name's
+  cost, type line and oracle text and the page shows 253 bare names that a
+  hover does not inspect (#846). The other face, the ordering sources' text,
+  the deck browser and every description-less kind's `context` all reach the
+  page. Reach the prompt live with `20 Plains / 20 Nevermore` vs `40 Forest`
+  (seed 3001); don't re-sweep the list without a new `with_all_cards` site.
+- G31 [proposed 2026-10-17, from #845 in the R1 sweep] the tap after the
+  number. #842 made the cast verb say what it taps, and the X prompt that
+  follows it still lists sources and taps whatever the allocator picks after
+  Enter. Find every prompt that commits a tap *after* the person answers
+  (X funding, Mentor of the Meek's pay, Screeching Bat's upkeep, a PayOrNot
+  "unless pays", a flashback's cost inside a resolution), stage each on the
+  page and the CLI, and check that the plan for the answer being typed or
+  clicked is on screen before it is sent. Measure it with the `fillText` hook
+  rather than by eye, then read the `--log` taps against what was shown.
 
 
 ## Filing
