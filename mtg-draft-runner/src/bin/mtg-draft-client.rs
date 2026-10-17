@@ -136,13 +136,7 @@ fn main() {
                 let Ok(msg) = serde_json::from_str::<Value>(&text) else { continue };
                 match msg["type"].as_str() {
                     Some("view") => {
-                        let phase = msg["phase"].as_str().unwrap_or("").to_string();
-                        if phase != built_for_phase {
-                            built_for_phase = phase;
-                            if let Some(deck) = msg["deck"].as_object() {
-                                build = build_from_view(&msg, deck);
-                            }
-                        }
+                        refresh_build(&msg, &mut build, &mut built_for_phase);
                         // Reprinted when something of this seat's own
                         // changed, not on every other seat's pick; the
                         // table's state is one line when only that moved.
@@ -193,8 +187,44 @@ enum Command {
     Nothing,
 }
 
-/// The deck the server holds, as pool indices, when a view arrives in a
-/// new phase (a reconnect mid-build picks the deck back up).
+/// Bring the client's deck back to the server's record when a view arrives
+/// in a new phase (a reconnect mid-build picks the deck back up) or with a
+/// recorded deck that is not the one on screen. The server's record is the
+/// deck that is played: when the build clock ran out and the table built
+/// the deck, or topped a short one up, the client kept printing the
+/// person's own MAIN marks and lands over "your deck is final" (#815).
+/// A view sent before the server read the client's latest change is
+/// followed by the one after it, so the screen settles on the record.
+fn refresh_build(view: &Value, build: &mut Build, built_for_phase: &mut String) {
+    let phase = view["phase"].as_str().unwrap_or("");
+    let Some(deck) = view["deck"].as_object() else {
+        if phase != built_for_phase.as_str() { *built_for_phase = phase.to_string(); }
+        return;
+    };
+    let new_phase = phase != built_for_phase.as_str();
+    if new_phase || !same_deck(deck, &deck_message(view, build)) {
+        *built_for_phase = phase.to_string();
+        *build = build_from_view(view, deck);
+    }
+}
+
+/// The same main deck (as names, in any order) and the same nonzero lands.
+fn same_deck(recorded: &serde_json::Map<String, Value>, sent: &Value) -> bool {
+    let names = |v: &Value| {
+        let mut n: Vec<String> = v.as_array().into_iter().flatten()
+            .filter_map(Value::as_str).map(str::to_string).collect();
+        n.sort();
+        n
+    };
+    let lands = |v: &Value| -> BTreeMap<String, u64> {
+        v.as_object().into_iter().flatten()
+            .filter_map(|(k, n)| n.as_u64().filter(|n| *n > 0).map(|n| (k.clone(), n)))
+            .collect()
+    };
+    names(&recorded["main"]) == names(&sent["main"]) && lands(&recorded["lands"]) == lands(&sent["lands"])
+}
+
+/// The deck the server holds, as pool indices.
 fn build_from_view(view: &Value, deck: &serde_json::Map<String, Value>) -> Build {
     let pool: Vec<&str> = view["pool"].as_array().map(|p| p.iter()
         .filter_map(|c| c["name"].as_str()).collect()).unwrap_or_default();
@@ -415,6 +445,40 @@ mod tests {
         assert!(!mine.contains("8801"), "a finished match's page is not offered:\n{mine}");
         assert!(mine.contains("Round 2 vs Lawson: playing — open http://h:8803/\n"), "{mine}");
         assert!(mine.contains("Round 3 vs Lawson: waiting\n"), "{mine}");
+    }
+
+    /// #815: when the table builds the deck, or tops a short one up, the
+    /// screen is rebuilt from the server's record, not left on the
+    /// person's own marks under "your deck is final".
+    #[test]
+    fn the_screen_follows_the_deck_the_table_recorded() {
+        let card = |n: &str| serde_json::json!({"name": n, "line": n});
+        let mut v = serde_json::json!({
+            "type": "view", "phase": "building", "seat": 0, "set": "isd",
+            "pool": [card("Selfless Cathar"), card("Village Ironsmith"), card("Rotting Fensnake")],
+            "deck": {"main": ["Rotting Fensnake"], "lands": {"Island": 9, "Swamp": 8}, "sideboard": [],
+                     "valid": true, "problem": null, "ready": false},
+        });
+        let mut build = Build::default();
+        let mut phase = String::new();
+        refresh_build(&v, &mut build, &mut phase);
+        assert_eq!(build.main, BTreeSet::from([2]));
+        // The person's own change, echoed back: nothing moves.
+        build.main.insert(0);
+        v["deck"]["main"] = serde_json::json!(["Selfless Cathar", "Rotting Fensnake"]);
+        refresh_build(&v, &mut build, &mut phase);
+        assert_eq!(build.main, BTreeSet::from([0, 2]));
+        // The clock ran out and the table built its own, in the same phase.
+        v["deck"] = serde_json::json!({"main": ["Village Ironsmith"], "lands": {"Plains": 9, "Mountain": 8},
+            "sideboard": [], "valid": true, "problem": null, "ready": true});
+        refresh_build(&v, &mut build, &mut phase);
+        assert_eq!(build.main, BTreeSet::from([1]));
+        assert_eq!(build.lands.get("Island"), None);
+        assert_eq!(build.lands.get("Plains"), Some(&9));
+        // A short deck topped up with an Island: the count is the record's.
+        v["deck"]["lands"] = serde_json::json!({"Plains": 9, "Mountain": 8, "Island": 1});
+        refresh_build(&v, &mut build, &mut phase);
+        assert_eq!(build.lands.get("Island"), Some(&1));
     }
 
     /// #813: a seat building under --build-seconds is shown its clock, and
