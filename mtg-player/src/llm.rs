@@ -2251,6 +2251,14 @@ pub struct LlmPlayer {
     attack_plan: Option<AttackPlan>,
 }
 
+/// The model a metered `claude` seat runs when its spec names none, in the
+/// games and in the draft. The cheapest current model: replayed over the
+/// kept positions of real games, it chose the reference's action more often
+/// than the previous default (87.5% of settled positions against 79.8%,
+/// at about a twelfth of the price a decision), and refused none of them
+/// (reports/llm-cost.md, phase 3). Name a model to run another.
+pub const DEFAULT_ANTHROPIC_MODEL: &str = "claude-haiku-5-5";
+
 impl LlmPlayer {
     #[must_use]
     pub fn new(name: &str) -> Self {
@@ -2259,7 +2267,7 @@ impl LlmPlayer {
             last_log_index: 0,
             own_card_names: std::collections::HashSet::new(),
             card_texts: HashMap::new(),
-            backend: Box::new(AnthropicBackend::new("claude-sonnet-4-6")),
+            backend: Box::new(AnthropicBackend::new(DEFAULT_ANTHROPIC_MODEL)),
             provider: Provider::Anthropic,
             guide: None,
             session_logged: None,

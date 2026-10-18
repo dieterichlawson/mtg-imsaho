@@ -318,7 +318,7 @@ fn main() {
     // Spec formats:
     //   cli                          — human CLI player
     //   random                       — random AI
-    //   claude                       — Claude with default model (sonnet)
+    //   claude                       — Claude with the default model (`DEFAULT_ANTHROPIC_MODEL`)
     //   claude:claude-haiku-4-5-20251001  — Claude with specific model
     //   gemini                       — Gemini with default model (2.0-flash)
     //   gemini:gemini-2.5-flash      — Gemini with specific model

@@ -57,9 +57,13 @@ second model for a session title, in no usage line the seat reads, and
 carried the session's reminders into every prompt.
 `MTG_CLAUDE_CODE_INHERIT_SESSION_ENV=1` keeps them.
 
-Default models when the spec names none: `claude` → `claude-sonnet-4-6`,
+Default models when the spec names none: `claude` → `claude-haiku-5-5`
+(`DEFAULT_ANTHROPIC_MODEL`: replayed over real positions it chose the
+reference's action more often than `claude-sonnet-4-6`, the default before
+it, at about a twelfth of the price; `reports/llm-cost.md`, phase 3),
 `gemini` → `gemini-2.5-flash`, `claude-code` → whatever the CLI defaults to
-(no `--model` is passed).
+(no `--model` is passed). The CLI's default model has refused the game
+prompt before; `cc:claude-haiku-5-5` is the same choice on plan quota.
 
 ## What one decision sends
 

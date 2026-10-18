@@ -1321,7 +1321,7 @@ impl DraftLlmClient {
                 model_override, set_name, guide, card_reference, table,
             )),
             "claude" => {
-                let model = model_override.unwrap_or("claude-sonnet-4-6");
+                let model = model_override.unwrap_or(mtg_player::llm::DEFAULT_ANTHROPIC_MODEL);
                 Box::new(AnthropicDraftBackend::new(model, set_name, guide, card_reference, table))
             }
             // An unrecognized provider used to default to Anthropic, which
