@@ -650,7 +650,7 @@ the order they happened, not in seat order", "");
             self.seats[seat].auto = false;
             self.event(format!("{} is here; it picks for itself from now on", self.who(seat)));
             self.arm_deadlines();
-        } else if was_away {
+        } else if was_away && !self.seats[seat].kicked {
             // The host's one sign a seat that went away is here again; a
             // client's reconnect used to show only as a rename to the
             // name it already had (#856).

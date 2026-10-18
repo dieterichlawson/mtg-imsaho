@@ -560,6 +560,15 @@ fn a_reconnect_says_the_seat_is_back_and_its_own_name_is_no_rename() {
     // A second tab while the first is open is not a return.
     lobby.connected(0);
     assert!(lobby.take_events().is_empty());
+    // Nor is a kicked seat's page connecting again: the table still plays
+    // for it.
+    lobby.kick(0).unwrap();
+    lobby.disconnected(0);
+    lobby.disconnected(0);
+    lobby.take_events();
+    lobby.connected(0);
+    let events = lobby.take_events().join("\n");
+    assert!(!events.contains("is back"), "{events}");
 }
 
 /// A seat kicked while building is told it was handed to the table: the
