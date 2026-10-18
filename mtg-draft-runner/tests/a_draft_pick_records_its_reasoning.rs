@@ -36,7 +36,9 @@ def flag(n):
 message = sys.stdin.read()
 raw = flag("--json-schema") or "{}"
 schema = json.loads(raw)
-props = schema.get("properties") or {}
+# The sent schema has no enums (cache_stable_schema); the seat sets the
+# full one beside it for a stand-in like this one.
+props = json.loads(os.environ.get("MTG_LLM_ANSWER_SCHEMA") or raw).get("properties") or {}
 d = os.environ["STUB_SCHEMAS"]
 # One file per call, named so that two calls cannot land on one name. The
 # draft's pick workers run a seat per thread, so several of these processes

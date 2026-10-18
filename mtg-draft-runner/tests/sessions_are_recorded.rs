@@ -32,7 +32,9 @@ def flag(n):
         if a == n and i + 1 < len(argv): return argv[i + 1]
     return None
 message = sys.stdin.read()
-schema = json.loads(flag("--json-schema") or "{}")
+# The sent schema has no enums (cache_stable_schema); the seat sets the
+# full one beside it for a stand-in like this one.
+schema = json.loads(os.environ.get("MTG_LLM_ANSWER_SCHEMA") or flag("--json-schema") or "{}")
 props = schema.get("properties") or {}
 sid = flag("--session-id") or flag("--resume")
 if sid:

@@ -45,7 +45,9 @@ if n > int(os.environ["MTG_TEST_FAIL_AFTER"]):
 def argval(f):
     return argv[argv.index(f) + 1] if f in argv else None
 
-schema = json.loads(argval("--json-schema") or "{}")
+# The sent schema has no enums (cache_stable_schema); the seat sets the
+# full one beside it for a stand-in like this one.
+schema = json.loads(os.environ.get("MTG_LLM_ANSWER_SCHEMA") or argval("--json-schema") or "{}")
 props = schema.get("properties", {})
 if "pick" in props:
     enum = props["pick"].get("enum", [0])

@@ -312,8 +312,14 @@ trait DraftBackend: Send {
 }
 
 /// Build a pick schema with the `pick` field constrained to the valid
-/// `0..num_cards` range via an enum. This means the model cannot emit an
-/// out-of-range index under constrained decoding.
+/// `0..num_cards` range via an enum.
+///
+/// The two Anthropic backends send it without the enum
+/// ([`mtg_player::llm::cache_stable_schema`]): the schema is part of the
+/// cached prefix, the pack shrinks by a card every pick, and a new schema
+/// every pick wrote the whole system prompt — the set's card reference —
+/// again on every one of a seat's 42 picks. [`DraftLlmClient::send_pick_message`]
+/// holds the answer to the enum instead.
 fn pick_schema_for(num_cards: usize) -> serde_json::Value {
     let valid_indices: Vec<serde_json::Value> = (0..num_cards)
         .map(|i| serde_json::json!(i))
@@ -711,7 +717,7 @@ impl AnthropicDraftBackend {
 
 impl DraftBackend for AnthropicDraftBackend {
     fn send_pick(&mut self, message: &str, num_cards: usize) -> String {
-        let schema = pick_schema_for(num_cards);
+        let schema = mtg_player::llm::cache_stable_schema(&pick_schema_for(num_cards));
         self.send_conv_structured(message, &schema)
     }
 
@@ -793,6 +799,9 @@ struct ClaudeCodeDraftBackend {
     /// `CLAUDE.md`, settings, or hooks from the caller's cwd leak into the
     /// draft prompt.
     workdir: PathBuf,
+    /// A pick's full schema while its call is out, for a stand-in CLI
+    /// (`mtg_player::llm::CLAUDE_CODE_ANSWER_SCHEMA_ENV`).
+    answer_schema: Option<String>,
 }
 
 impl ClaudeCodeDraftBackend {
@@ -825,6 +834,7 @@ impl ClaudeCodeDraftBackend {
             window: mtg_player::llm::history_exchanges(),
             turns: 0,
             workdir,
+            answer_schema: None,
         }
     }
 
@@ -1006,6 +1016,9 @@ impl ClaudeCodeDraftBackend {
             // its history, and restating the prompt is harmless.
             .args(["--system-prompt", &self.system_prompt])
             .args(["--json-schema", &schema.to_string()]);
+        if let Some(full) = &self.answer_schema {
+            cmd.env(mtg_player::llm::CLAUDE_CODE_ANSWER_SCHEMA_ENV, full);
+        }
         match &self.session_id {
             Some(id) => {
                 cmd.args(["--resume", id]);
@@ -1057,8 +1070,11 @@ impl Drop for ClaudeCodeDraftBackend {
 
 impl DraftBackend for ClaudeCodeDraftBackend {
     fn send_pick(&mut self, message: &str, num_cards: usize) -> String {
-        let schema = pick_schema_for(num_cards);
-        self.decide(message, &schema)
+        let full = pick_schema_for(num_cards);
+        self.answer_schema = Some(full.to_string());
+        let response = self.decide(message, &mtg_player::llm::cache_stable_schema(&full));
+        self.answer_schema = None;
+        response
     }
 
     // Deckbuilding is the next decision of the same (bounded) session; the
@@ -1412,9 +1428,23 @@ back to you on your next pick"
     }
 
     /// Send a pick message with the pack size, so the backend can build
-    /// an enum-constrained pick schema for structured decoding.
+    /// the pick schema for it.
+    ///
+    /// The Anthropic backends send that schema without its enum, so the
+    /// answer is held to it here: a pick outside the pack is asked once
+    /// more, with the reason, rather than substituted with the first card.
     pub fn send_pick_message(&mut self, user_message: &str, num_cards: usize) -> String {
-        let response = self.backend.send_pick(user_message, num_cards);
+        let mut response = self.backend.send_pick(user_message, num_cards);
+        let why = serde_json::from_str::<serde_json::Value>(&response).ok()
+            .and_then(|answer| mtg_player::llm::schema_violation(&pick_schema_for(num_cards), &answer));
+        if let Some(why) = why {
+            mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(),
+                "REASK", &format!("{why}: {}", response.trim()));
+            let again = format!(
+                "{user_message}\n\nYour answer {} is not one this pick allows: {why}. Answer again.",
+                response.trim());
+            response = self.backend.send_pick(&again, num_cards);
+        }
         self.keep_notes(&response);
         response
     }
@@ -1794,17 +1824,29 @@ printf '{"type":"result","subtype":"success","is_error":false,"session_id":"%s",
         assert!(calls[0].contains("--- stdin\nPack 1, Pick 1"), "the prompt goes on stdin:\n{}", calls[0]);
     }
 
+    /// The pick goes out as one schema whatever the pack's size — the
+    /// schema is part of the cached prefix, and a pack shrinks every pick —
+    /// and the pack's indices go to a stand-in CLI beside it, as the game
+    /// seat's do (`cache_stable_schema`).
     #[test]
-    fn a_pick_is_schema_constrained_to_the_cards_in_the_pack() {
+    fn a_pick_sends_one_schema_and_the_pack_beside_it() {
         use super::DraftBackend;
-        let fake = Fake::new("schema", OK_BODY);
+        let body = format!("echo \"ENV: ${}\" >> \"$LOG\"\n{OK_BODY}",
+            mtg_player::llm::CLAUDE_CODE_ANSWER_SCHEMA_ENV);
+        let fake = Fake::new("schema", &body);
         let mut b = backend(&fake, None);
         let response = b.send_pick("Pack 1, Pick 1", 3);
+        b.send_pick("Pack 1, Pick 2", 2);
 
-        let call = &fake.calls()[0];
+        let calls = fake.calls();
+        let call = &calls[0];
+        assert_eq!(arg_after(call, "--json-schema"), arg_after(&calls[1], "--json-schema"));
         let schema: serde_json::Value =
             serde_json::from_str(arg_after(call, "--json-schema").expect("schema passed")).unwrap();
-        assert_eq!(schema["properties"]["pick"]["enum"], serde_json::json!([0, 1, 2]));
+        assert!(schema["properties"]["pick"].get("enum").is_none(), "{schema}");
+        let full: serde_json::Value = serde_json::from_str(
+            call.lines().find_map(|l| l.strip_prefix("ENV: ")).expect("the full schema is set")).unwrap();
+        assert_eq!(full["properties"]["pick"]["enum"], serde_json::json!([0, 1, 2]));
         // `thoughts` is KEPT on this path, as on every other: this seat has
         // no thinking channel for the harness to read, so the payload is the
         // only place its reasoning can go (#213, #607).

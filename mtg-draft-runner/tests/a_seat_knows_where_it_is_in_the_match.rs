@@ -24,7 +24,7 @@ fn stub_seat(dir: &Path) -> PathBuf {
     std::fs::write(
         &bin,
         r##"#!/usr/bin/env python3
-import hashlib, json, sys
+import hashlib, json, os, sys
 argv = sys.argv[1:]
 if argv and argv[0] == "--version":
     print("1.0.0 (stub)"); sys.exit(0)
@@ -33,7 +33,9 @@ def flag(n):
         if a == n and i + 1 < len(argv): return argv[i + 1]
     return None
 message = sys.stdin.read()
-props = (json.loads(flag("--json-schema") or "{}").get("properties") or {})
+# The sent schema has no enums (cache_stable_schema); the seat sets the
+# full one beside it for a stand-in like this one.
+props = (json.loads(os.environ.get("MTG_LLM_ANSWER_SCHEMA") or flag("--json-schema") or "{}").get("properties") or {})
 def h(*p): return int(hashlib.sha256("\x00".join(map(str, p)).encode()).hexdigest(), 16)
 def fill(name, spec):
     t = spec.get("type")
