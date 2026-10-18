@@ -786,7 +786,7 @@ const PASS_UNTIL_RULES: &str = r#"
 
 ## Pass until something happens
 
-Every priority offer has one more row, right after `Pass`: `1: Pass until something happens`, with the engine's rows after it numbered from 2. It is the way a person says "go": it passes now and keeps passing later priority offers for you, unasked, until something of the opponent's is put on the stack; a blocker is declared against your attacker; the opponent attacks you and blocks are in (your window after blocks); your next first main phase; a later main phase of yours with a land drop or a sorcery-speed cast or activation on offer; or any prompt that is not a plain priority pass (combat declarations, targets and choices are always asked). After you declare attackers you pass this way too, until a block or your second main phase. You are never asked to respond to your own spell or ability while only yours are on the stack. When it stops, the next prompt says why in one line, e.g. `After 6 priority offers passed for you unasked, the pass stopped: Grizzly Bears (the opponent's) is on the stack.`"#;
+Every priority offer has one more row, right after `Pass`: `1: Pass until something happens`, with the engine's rows after it numbered from 2. It is the way a person says "go": it passes now and keeps passing later priority offers for you, unasked, until something of the opponent's is put on the stack; a blocker is declared against your attacker; the opponent attacks you and blocks are in (your window after blocks); your next first main phase; a later main phase of yours with a land drop or a sorcery-speed cast or activation on offer; or any prompt that is not a plain priority pass (combat declarations, targets and choices are always asked, except an attack you named in your first main phase). After you declare attackers you pass this way too, until a block or your second main phase. You are never asked to respond to your own spell or ability while only yours are on the stack. When it stops, the next prompt says why in one line, e.g. `After 6 priority offers passed for you unasked, the pass stopped: Grizzly Bears (the opponent's) is on the stack.`"#;
 
 /// The seat said "go": it is passing every plain priority offer without a
 /// model call until something it would want to see happens. What it was
@@ -847,6 +847,24 @@ struct Plan {
     ask_again: bool,
 }
 
+/// The attack a seat named in its first main phase: declared at its
+/// declare-attackers step without asking it again, if nothing has happened
+/// in between and each creature can still attack. A person says "Bears,
+/// then attack with the Tusker" once; the declaration was a call of its own
+/// on most of a seat's turns — a quarter of a game's calls (reports/llm-cost.md,
+/// phase 3).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct AttackPlan {
+    turn: u32,
+    attackers: Vec<ObjectId>,
+}
+
+/// What the `attack` field asks for.
+pub const ATTACK_DESCRIPTION: &str =
+    "The # numbers of your creatures to attack the opponent with this turn, once this main \
+     phase is done. They are declared without asking you if nothing happens first and each \
+     can still attack; otherwise you are asked at combat. [] to be asked at combat.";
+
 /// What a plan does at an offer: take its next card, finish, or stop.
 enum PlanMove {
     Act(Action),
@@ -896,6 +914,8 @@ pub struct SeatMemory {
     plan: Option<Plan>,
     #[serde(default)]
     plan_stopped: Option<String>,
+    #[serde(default)]
+    attack_plan: Option<AttackPlan>,
 }
 
 impl SeatMemory {
@@ -2172,6 +2192,8 @@ pub struct LlmPlayer {
     /// The plan's last card was just taken: pass until something happens
     /// from this offer on (engaged where the view is to hand).
     plan_done_pending: bool,
+    /// The attack the seat named in its first main phase ([`AttackPlan`]).
+    attack_plan: Option<AttackPlan>,
 }
 
 impl LlmPlayer {
@@ -2194,6 +2216,7 @@ impl LlmPlayer {
             pass_until_stopped: None,
             plan: None,
             plan_stopped: None,
+            attack_plan: None,
             plan_done_pending: false,
             offer_pass_until: pass_until_enabled(),
         }
@@ -2223,6 +2246,7 @@ impl LlmPlayer {
             pass_until_stopped: None,
             plan: None,
             plan_stopped: None,
+            attack_plan: None,
             plan_done_pending: false,
             offer_pass_until: pass_until_enabled(),
         }
@@ -2247,6 +2271,7 @@ impl LlmPlayer {
             pass_until_stopped: None,
             plan: None,
             plan_stopped: None,
+            attack_plan: None,
             plan_done_pending: false,
             offer_pass_until: pass_until_enabled(),
         }
@@ -2275,6 +2300,7 @@ impl LlmPlayer {
             pass_until_stopped: None,
             plan: None,
             plan_stopped: None,
+            attack_plan: None,
             plan_done_pending: false,
             offer_pass_until: pass_until_enabled(),
         }
@@ -2301,6 +2327,7 @@ impl LlmPlayer {
             pass_until_stopped: None,
             plan: None,
             plan_stopped: None,
+            attack_plan: None,
             plan_done_pending: false,
             offer_pass_until: pass_until_enabled(),
         }
@@ -2599,6 +2626,7 @@ impl LlmPlayer {
             pass_until_stopped: self.pass_until_stopped.clone(),
             plan: self.plan.clone(),
             plan_stopped: self.plan_stopped.clone(),
+            attack_plan: self.attack_plan.clone(),
         }
     }
 
@@ -2613,6 +2641,7 @@ impl LlmPlayer {
         self.pass_until_stopped = memory.pass_until_stopped;
         self.plan = memory.plan;
         self.plan_stopped = memory.plan_stopped;
+        self.attack_plan = memory.attack_plan;
         self.pending_recap = None;
         self.sync_memory_mirror();
     }
@@ -5194,6 +5223,7 @@ impl LlmPlayer {
         // names itself, and the system prompt says what ends it.
         let description = "Index of the chosen action";
         let plannable = self.plannable(view, legal);
+        let ready = self.ready_attackers(view, legal);
         let mut schema = Self::enum_action_schema(menu.len(), "action", description);
         if !plannable.is_empty() {
             schema["properties"]["then"] = serde_json::json!({
@@ -5207,6 +5237,16 @@ impl LlmPlayer {
             });
             schema["required"] = serde_json::json!(["thoughts", "action", "then", "ask_again"]);
         }
+        if !ready.is_empty() {
+            schema["properties"]["attack"] = serde_json::json!({
+                "type": "array",
+                "items": {"type": "integer", "enum": ready.iter().map(|o| o.0).collect::<Vec<_>>()},
+                "description": ATTACK_DESCRIPTION,
+            });
+            if let Some(required) = schema["required"].as_array_mut() {
+                required.push(serde_json::json!("attack"));
+            }
+        }
         let (idx, response) = self.pick_action_index_with_schema(view, &action_prompt, menu.len(), &schema);
         let then: Vec<String> = response["then"].as_array()
             .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
@@ -5214,6 +5254,17 @@ impl LlmPlayer {
         // Where no plan was offered there is no field, and the seat is asked
         // at the next offer as it always was.
         let ask_again = response["ask_again"].as_bool().unwrap_or(true);
+        if !ready.is_empty() {
+            let attackers: Vec<ObjectId> = response["attack"].as_array().into_iter().flatten()
+                .filter_map(serde_json::Value::as_u64)
+                .map(ObjectId)
+                .filter(|o| ready.contains(o))
+                .collect();
+            self.attack_plan = (!attackers.is_empty()).then(|| {
+                self.log("ATTACK_PLAN", &format!("attack with {}", Self::creature_names(view, &attackers)));
+                AttackPlan { turn: view.turn_number, attackers }
+            });
+        }
 
         if idx >= menu.len() {
             return Action::PassPriority;
@@ -5311,6 +5362,36 @@ impl LlmPlayer {
         names
     }
 
+    /// The creatures a first-main-phase answer may name to attack with, or
+    /// none where no attack can be planned: where a plan could be made at
+    /// all (`plannable`'s conditions, a hand not needed), in the first main
+    /// phase, untapped, not summoning-sick and under no "can't attack" now.
+    /// What the view cannot see — a cost to attack, an attack the
+    /// opponent's board forbids — is the declaration's to refuse, and the
+    /// seat is then asked.
+    fn ready_attackers(&self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Vec<ObjectId> {
+        if !self.offer_pass_until || view.active_player != view.you || !view.stack.is_empty()
+            || view.step != Step::PrecombatMain || !Self::is_plain_priority_offer(legal)
+        {
+            return Vec::new();
+        }
+        view.battlefield.iter()
+            .filter(|p| p.controller == view.you && p.card_types.contains(&CardType::Creature)
+                && !p.tapped && !p.affected_by_summoning_sickness
+                && !p.restrictions.iter().any(|r| r.contains("can't attack")))
+            .map(|p| p.object_id)
+            .collect()
+    }
+
+    /// `Kalonian Tusker (#30), Grizzly Bears (#31)`: the seat's own
+    /// creatures as its board names them.
+    fn creature_names(view: &GameView, ids: &[ObjectId]) -> String {
+        ids.iter().map(|&id| {
+            let name = view.battlefield.iter().find(|p| p.object_id == id).map_or("a creature", |p| p.name.as_str());
+            format!("{name} (#{})", id.0)
+        }).collect::<Vec<_>>().join(", ")
+    }
+
     /// The plan's move at this offer. Called only at a plain priority
     /// offer once the seat's own stack has been passed, so anything still
     /// on the stack is the opponent's.
@@ -5369,6 +5450,7 @@ impl LlmPlayer {
 
     /// A plan ends short: say why in the log now and in the next prompt.
     fn stop_plan(&mut self, why: &str) {
+        self.drop_attack_plan(why);
         if let Some(plan) = self.plan.take() {
             self.log("PLAN_STOP", &format!("{why} (after {} of {} planned)", plan.taken, plan.taken as usize + plan.steps.len()));
             self.plan_stopped = Some(format!(
@@ -5645,10 +5727,21 @@ impl LlmPlayer {
 
     /// A pass-until ends: say why in the log now and in the next prompt.
     fn stop_pass_until(&mut self, why: &str) {
+        // Something happened that the seat is to be asked about: the attack
+        // it named before is its to make again.
+        self.drop_attack_plan(why);
         if let Some(mode) = self.pass_until.take() {
             self.log("AUTO_PASS_STOP", &format!("{why} ({} offer{} passed unasked since {})",
                 mode.passes, if mode.passes == 1 { "" } else { "s" }, mode.since()));
             self.pass_until_stopped = Some((mode.passes, why.to_string()));
+        }
+    }
+
+    /// An attack plan that will not be used, said in the log.
+    fn drop_attack_plan(&mut self, why: &str) {
+        if let Some(plan) = self.attack_plan.take() {
+            self.log("ATTACK_PLAN_DROPPED", &format!("{why} (turn {} attack with {} creature{})",
+                plan.turn, plan.attackers.len(), if plan.attackers.len() == 1 { "" } else { "s" }));
         }
     }
 
@@ -6204,6 +6297,47 @@ from your hand to put on the bottom of your library.\n\
         })
     }
 
+    /// The attack the seat named in its first main phase, declared without
+    /// a call — if it is this turn's, nothing has happened since (a stop
+    /// drops it), no planeswalker is there to be attacked instead, and every
+    /// creature it names can attack. Otherwise the seat is asked, told why
+    /// its plan was not used.
+    fn planned_attack(&mut self, view: &GameView, prompt: &CombatPrompt) -> Option<Action> {
+        let CombatPrompt::ChooseAttackers { eligible, must_attack, defending_player, defending_planeswalkers } = prompt else {
+            return None;
+        };
+        let plan = self.attack_plan.take()?;
+        if plan.turn != view.turn_number {
+            return None;
+        }
+        let names = |ids: &[ObjectId]| Self::creature_names(view, ids);
+        let unable: Vec<ObjectId> = plan.attackers.iter().copied().filter(|a| !eligible.contains(a)).collect();
+        let why = if !defending_planeswalkers.is_empty() {
+            Some("the opponent has a planeswalker you could attack instead".to_string())
+        } else if !unable.is_empty() {
+            Some(format!("{} cannot attack now", names(&unable)))
+        } else {
+            None
+        };
+        if let Some(why) = why {
+            self.log("ATTACK_PLAN_DROPPED", &why);
+            self.plan_stopped = Some(format!("Your planned attack with {} was not declared: {why}.", names(&plan.attackers)));
+            return None;
+        }
+        let mut attackers = plan.attackers;
+        for &id in must_attack {
+            if !attackers.contains(&id) {
+                attackers.push(id);
+            }
+        }
+        self.log("ATTACK_PLAN", &format!("declared as planned: {}", names(&attackers)));
+        self.log("CHOSE", &format!("attack with {} (planned)", attackers.len()));
+        Some(Action::DeclareAttackers {
+            attackers: attackers.into_iter().map(|a| (a, *defending_player)).collect(),
+            planeswalker_attacks: Vec::new(),
+        })
+    }
+
     pub fn choose_combat(&mut self, view: &GameView, prompt: &CombatPrompt) -> Action {
         let action = self.decide_combat(view, prompt);
         self.sync_memory_mirror();
@@ -6217,7 +6351,8 @@ from your hand to put on the bottom of your library.\n\
             return forced;
         }
         // A combat declaration is always asked, whatever the seat said
-        // earlier; a pass-until in progress carries on past it, to the stops
+        // earlier — but for the attack it named in its first main phase
+        // (`planned_attack`); a pass-until in progress carries on past it, to the stops
         // the declaration sets up (a block against the attacker, blocks in
         // against the seat). Ending it here, as this did, made the very next
         // priority offer — in the step the seat had just declared in — a
@@ -6235,6 +6370,9 @@ from your hand to put on the bottom of your library.\n\
     }
 
     fn decide_combat_prompt(&mut self, view: &GameView, prompt: &CombatPrompt) -> Action {
+        if let Some(planned) = self.planned_attack(view, prompt) {
+            return planned;
+        }
         match prompt {
             CombatPrompt::ChooseAttackers { eligible, must_attack, defending_player,
                                             defending_planeswalkers } => {
@@ -7091,6 +7229,7 @@ pub(crate) mod tests {
             pass_until_stopped: None,
             plan: None,
             plan_stopped: None,
+            attack_plan: None,
             plan_done_pending: false,
             // These tests read the engine's rows and their indices; the
             // seat's own pass-until row is tested on its own, below.
@@ -10146,6 +10285,7 @@ mod stateless_decisions {
             pass_until_stopped: None,
             plan: None,
             plan_stopped: None,
+            attack_plan: None,
             plan_done_pending: false,
             offer_pass_until: pass_until_enabled(),
         }

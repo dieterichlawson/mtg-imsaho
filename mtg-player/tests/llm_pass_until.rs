@@ -43,20 +43,23 @@ impl Fake {
             "#!/bin/sh\n\
              if [ \"$1\" = \"--version\" ]; then echo 9.9.9; exit 0; fi\n\
              CALL=$(( $(cat \"{count}\" 2>/dev/null || echo 0) + 1 )); echo $CALL > \"{count}\"\n\
-             {{ echo \"=== call $CALL\"; cat; echo; case \"$*\" in *'\"then\"'*) echo 'SCHEMA OFFERS THEN';; esac; echo '--- end'; }} >> \"{log}\"\n\
+             {{ echo \"=== call $CALL\"; cat; echo; case \"$*\" in *'\"then\"'*) echo 'SCHEMA OFFERS THEN';; esac; \
+             case \"$*\" in *'\"attack\"'*) echo 'SCHEMA OFFERS ATTACK';; esac; echo '--- end'; }} >> \"{log}\"\n\
              A=$(cat \"{answer}\" 2>/dev/null || echo 0)\n\
              T=$(cat \"{then}\" 2>/dev/null || echo '[]')\n\
              G=$(cat \"{ask_again}\" 2>/dev/null || echo false)\n\
+             K=$(cat \"{attack}\" 2>/dev/null || echo '[]')\n\
              printf '{{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"session_id\":\"s\",\
              \"result\":\"{{}}\",\"structured_output\":{{\"action\":%s,\"thoughts\":\"t\",\
-             \"attacker_indices\":[],\"blocks\":[],\"confirm\":false,\"card_indices\":[0],\"amount\":1,\"then\":%s,\"ask_again\":%s}},\
+             \"attacker_indices\":[],\"blocks\":[],\"confirm\":false,\"card_indices\":[0],\"amount\":1,\"then\":%s,\"ask_again\":%s,\"attack\":%s}},\
              \"usage\":{{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":0,\
-             \"cache_creation_input_tokens\":0}}}}\\n' \"$A\" \"$T\" \"$G\"\n",
+             \"cache_creation_input_tokens\":0}}}}\\n' \"$A\" \"$T\" \"$G\" \"$K\"\n",
             count = dir.join("count").display(),
             log = dir.join("log.txt").display(),
             answer = dir.join("answer").display(),
             then = dir.join("then").display(),
             ask_again = dir.join("ask_again").display(),
+            attack = dir.join("attack").display(),
         );
         let bin = dir.join("claude");
         std::fs::write(&bin, script).unwrap();
@@ -74,6 +77,11 @@ impl Fake {
     /// The plan (`then`) the next calls answer with.
     fn then(&self, names: &[&str]) {
         std::fs::write(self.dir.join("then"), serde_json::to_string(names).unwrap()).unwrap();
+    }
+
+    /// The `attack` (creatures' `#` numbers) the next calls answer with.
+    fn attack(&self, ids: &[u64]) {
+        std::fs::write(self.dir.join("attack"), serde_json::to_string(ids).unwrap()).unwrap();
     }
 
     /// The `ask_again` the next calls answer with (false until set).
@@ -941,4 +949,83 @@ fn a_play_with_nothing_after_it_ends_the_main_phase_in_one_call() {
     legal.castable_spells.retain(|c| c.name != "Grizzly Bears");
     seat.choose_action(&v, &legal);
     assert_eq!(fake.calls().len(), 6, "asked again once the plan was done");
+}
+
+/// The attack a seat names in its first main phase is declared without a
+/// call when its turn's combat comes and nothing has happened since; the
+/// declaration was a call of its own on most of a seat's turns, a quarter
+/// of a game's calls (reports/llm-cost.md, phase 3). Something happening in
+/// between — the opponent's spell — or a named creature that can no longer
+/// attack means the seat is asked, and told why.
+#[test]
+fn an_attack_named_in_the_main_phase_is_declared_without_a_call() {
+    let fake = Fake::new("attack-plan");
+    let attackers = |eligible: Vec<u64>| CombatPrompt::ChooseAttackers {
+        eligible: eligible.into_iter().map(ObjectId).collect(), must_attack: vec![],
+        defending_player: OPP, defending_planeswalkers: vec![],
+    };
+    let with_board = |v: &mut GameView| {
+        v.battlefield.push(perm(30, "Kalonian Tusker", YOU));
+        v.battlefield.push(perm(31, "Grizzly Bears", YOU));
+    };
+    let main = || {
+        let (mut v, legal) = main_phase(vec![], false, true);
+        with_board(&mut v);
+        (v, legal)
+    };
+    let combat_view = || {
+        let mut v = view(3, Step::DeclareAttackers, YOU);
+        with_board(&mut v);
+        v
+    };
+
+    // Forest, nothing else, attack with the Tusker: one call for the turn.
+    let mut seat = fake.seat();
+    let (v, legal) = main();
+    fake.answer(3);
+    fake.attack(&[30]);
+    seat.choose_action(&v, &legal);
+    assert!(fake.calls()[0].contains("SCHEMA OFFERS ATTACK"), "the main phase offers an attack");
+    fake.attack(&[]);
+    let chosen = seat.choose_combat(&combat_view(), &attackers(vec![30, 31]));
+    assert!(matches!(&chosen, Action::DeclareAttackers { attackers, .. }
+        if attackers == &vec![(ObjectId(30), OPP)]), "{chosen:?}");
+    assert_eq!(fake.calls().len(), 1, "the attack was not a call");
+
+    // The opponent casts something first: the plan is dropped, and the
+    // attack is asked.
+    let mut seat = fake.seat();
+    let (v, legal) = main();
+    fake.attack(&[30]);
+    seat.choose_action(&v, &legal);
+    fake.attack(&[]);
+    fake.answer(0);
+    let (mut v, legal) = main_phase(vec![stack_item(40, "Lightning Bolt", OPP)], true, false);
+    with_board(&mut v);
+    seat.choose_action(&v, &legal);
+    assert_eq!(fake.calls().len(), 3, "the opponent's spell is asked");
+    seat.choose_combat(&combat_view(), &attackers(vec![30, 31]));
+    assert_eq!(fake.calls().len(), 4, "and so is the attack");
+
+    // A named creature that can no longer attack: asked, and told why.
+    let mut seat = fake.seat();
+    let (v, legal) = main();
+    fake.answer(3);
+    fake.attack(&[30, 31]);
+    seat.choose_action(&v, &legal);
+    fake.attack(&[]);
+    seat.choose_combat(&combat_view(), &attackers(vec![31]));
+    assert_eq!(fake.calls().len(), 6);
+    let prompt = fake.calls().pop().unwrap();
+    assert!(prompt.contains("Your planned attack with Kalonian Tusker (#30), Grizzly Bears (#31) was not declared: \
+        Kalonian Tusker (#30) cannot attack now."), "{prompt}");
+
+    // Only an untapped creature that is not summoning-sick is offered.
+    let mut seat = fake.seat();
+    let (mut v, legal) = main_phase(vec![], false, true);
+    let mut sick = perm(32, "Savannah Lions", YOU);
+    sick.affected_by_summoning_sickness = true;
+    v.battlefield.push(sick);
+    seat.choose_action(&v, &legal);
+    assert!(!fake.calls().pop().unwrap().contains("SCHEMA OFFERS ATTACK"));
 }
