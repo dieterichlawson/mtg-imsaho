@@ -212,8 +212,10 @@ fn two_humans_and_two_ai_seats_draft_build_and_the_ai_match_plays() {
     s.read_to_string(&mut page).unwrap();
     assert!(page.starts_with("HTTP/1.1 200"), "{}", page.lines().next().unwrap_or(""));
 
-    let log = server.wait_for_log("MATCH Round 1 — Seat 2 vs Seat 3", Duration::from_secs(120));
-    assert!(log.contains("GAME 1 (Seat 2 vs Seat 3)"));
+    // The game's line is written after the match's header: waiting for the
+    // header and then reading for the game raced it on a loaded machine.
+    let log = server.wait_for_log("GAME 1 (Seat 2 vs Seat 3)", Duration::from_secs(120));
+    assert!(log.contains("MATCH Round 1 — Seat 2 vs Seat 3"));
     let v = c0.view_until("the AI match is done in the pairings", T, |v| v["pairings"].as_array().unwrap().iter()
         .any(|p| p["a"] == 2 && p["b"] == 3 && p["status"] == "done"));
     let ai_match = v["pairings"].as_array().unwrap().iter().find(|p| p["a"] == 2).unwrap();
