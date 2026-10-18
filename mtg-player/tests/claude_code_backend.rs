@@ -574,3 +574,33 @@ exit 1"#,
     assert!(err.contains("Invalid API key"), "the refusal on stdout is the reason: {err:?}");
     assert!(err.contains("connectors are disabled"), "and the warning still shows: {err:?}");
 }
+
+/// A seat's child is a fresh CLI answering one question, not a part of the
+/// Claude Code session that started the game. Inheriting that session's
+/// variables made every decision's child name itself the session — a second
+/// model call per decision for its title, and the session's reminders in
+/// every prompt (reports/llm-cost.md, phase 3). The CLI's own provider and
+/// login settings are the caller's, and stay.
+#[test]
+fn a_claude_code_seat_is_not_a_part_of_the_session_that_started_it() {
+    std::env::set_var("CLAUDE_CODE_REMOTE", "true");
+    std::env::set_var("CLAUDE_CODE_SESSION_ID", "parent-session");
+    std::env::set_var("CCR_SESSION_PROFILE", "parent-profile");
+    std::env::set_var("CLAUDE_CODE_USE_BEDROCK", "1");
+    std::env::set_var("CLAUDE_CONFIG_DIR", "/elsewhere");
+    let fake = Fake::new(
+        "no-session-env",
+        &format!(
+            "echo \"REMOTE=${{CLAUDE_CODE_REMOTE-unset}} SID=${{CLAUDE_CODE_SESSION_ID-unset}} \
+             CCR=${{CCR_SESSION_PROFILE-unset}} BEDROCK=${{CLAUDE_CODE_USE_BEDROCK-unset}} \
+             CONFIG=${{CLAUDE_CONFIG_DIR-unset}} MAXOUT=${{CLAUDE_CODE_MAX_OUTPUT_TOKENS-unset}}\" >> \"$LOG\"\n{OK_BODY}"
+        ),
+    );
+    let mut cmd = std::process::Command::new(fake.bin());
+    cmd.arg("-p").args(["--output-format", "json"]);
+    mtg_player::llm::claude_code_run(&mut cmd, "claude", "pick").expect("the call succeeds");
+    let log = fake.log();
+    assert!(log.contains("REMOTE=unset SID=unset CCR=unset"), "the child inherited the session:\n{log}");
+    assert!(log.contains("BEDROCK=1 CONFIG=/elsewhere"), "the CLI's own settings are the caller's:\n{log}");
+    assert!(!log.contains("MAXOUT=unset"), "the seat's own settings are set after the strip:\n{log}");
+}

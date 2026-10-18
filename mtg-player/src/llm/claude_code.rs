@@ -78,6 +78,50 @@ fn inherit_auth() -> bool {
     std::env::var(INHERIT_AUTH_ENV).is_ok_and(|v| v == "1")
 }
 
+/// The prefixes of the variables a Claude Code session sets for itself and
+/// its own tools, which a seat's `claude -p` child does not inherit: the
+/// child is a fresh CLI answering one question, not a part of the session
+/// that happens to have started the game.
+///
+/// Inherited, they made it one. Run from a cloud session, every decision's
+/// child called itself the session (`CLAUDE_CODE_REMOTE`,
+/// `CLAUDE_CODE_ENTRYPOINT=remote_mobile`, its ids) and so, besides the
+/// decision, asked a second model for a session title — about 1,200 input
+/// and 200 output tokens a decision, in no usage line the seat reads — and
+/// carried the session's reminders (its scratchpad, its commit attribution)
+/// into a prompt written fresh on every call: 1,388 tokens of cache write a
+/// call where a clean child writes 798 (reports/llm-cost.md, phase 3).
+pub const SESSION_ENV_PREFIXES: &[&str] = &["CLAUDE_", "CCR_"];
+
+/// The CLI's own settings under those prefixes, which say how to reach and
+/// pay for the model and so are the caller's to choose for the seat:
+/// provider, login, config directory, client certificate.
+pub const KEPT_CLI_SETTINGS: &[&str] = &[
+    "CLAUDE_CONFIG_DIR",
+    "CLAUDE_CODE_OAUTH_TOKEN",
+    "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY",
+    "CLAUDE_CODE_SKIP_BEDROCK_AUTH", "CLAUDE_CODE_SKIP_VERTEX_AUTH", "CLAUDE_CODE_SKIP_FOUNDRY_AUTH",
+    "CLAUDE_CODE_API_KEY_HELPER_TTL_MS",
+    "CLAUDE_CODE_CLIENT_CERT", "CLAUDE_CODE_CLIENT_KEY", "CLAUDE_CODE_CLIENT_KEY_PASSPHRASE",
+];
+
+/// Set to `1` to let a `claude -p` seat inherit the calling session's
+/// variables ([`SESSION_ENV_PREFIXES`]) after all.
+pub const INHERIT_SESSION_ENV: &str = "MTG_CLAUDE_CODE_INHERIT_SESSION_ENV";
+
+/// The calling session's variables, by name, that a seat's child is run
+/// without.
+fn session_vars() -> Vec<String> {
+    if std::env::var(INHERIT_SESSION_ENV).is_ok_and(|v| v == "1") {
+        return Vec::new();
+    }
+    std::env::vars_os()
+        .filter_map(|(k, _)| k.into_string().ok())
+        .filter(|k| SESSION_ENV_PREFIXES.iter().any(|p| k.starts_with(p)))
+        .filter(|k| !KEPT_CLI_SETTINGS.contains(&k.as_str()))
+        .collect()
+}
+
 /// The binary this process would run for a Claude Code seat.
 ///
 /// A path with a separator in it is resolved against *this* process's
@@ -769,6 +813,12 @@ pub fn run_print_mode(
         for var in API_AUTH_VARS {
             cmd.env_remove(var);
         }
+    }
+    // Nor the variables of the session that started the game: they make
+    // the child a part of it, at a cost (`SESSION_ENV_PREFIXES`). Removed
+    // before the seat's own settings below are set.
+    for var in session_vars() {
+        cmd.env_remove(var);
     }
     // The one thinking knob the CLI exposes. Thinking is billed as output
     // and is the largest term a decision has once the history is bounded,
