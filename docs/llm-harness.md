@@ -114,10 +114,11 @@ record each), and the draft seats do the same per pick. `reports/llm-cost.md`
 has the measured before/after, and `scripts/measure-llm-prompts.sh` counts
 decisions and prompt bytes per game for free with a stub CLI.
 
-`max_tokens` is a cap on a runaway answer, not a budget: the answer's own
-room (2,048 tokens; the largest structured answer, the draft runner's 40-card
-deck, is ≈ 600) at `off`, 4,096 at the default `low`, 8,192 and 16,384 above,
-a budget plus the answer on the older models. A `claude -p` seat gets the
+`max_tokens` is a cap on a runaway answer, not a budget: 4,096 at `off` and
+`low` (the largest structured answer, the draft runner's 40-card deck, is
+≈ 600, but the newest models think at `off` anyway, up to ≈ 1,400 tokens a
+decision), 8,192 and 16,384 above, a budget plus the answer on the older
+models. A `claude -p` seat gets the
 same number as `CLAUDE_CODE_MAX_OUTPUT_TOKENS`. Every schema's `thoughts`
 field asks for at most two sentences.
 

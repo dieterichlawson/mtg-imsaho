@@ -736,14 +736,17 @@ pub const ANSWER_TOKENS: u64 = 2048;
 /// asks for. The default `low` was measured at 728 thinking tokens per
 /// decision on average and under 2,000 at most over two games
 /// (`reports/llm-cost.md`, phase 2), so 4,096 is twice the largest
-/// decision seen and half the 8,192 it replaced; `off` is the answer's
-/// own room. A truncated answer is a wasted call — the harness reads no
-/// JSON and falls back — which is why the cap is not tighter.
+/// decision seen and half the 8,192 it replaced. `off` has the same room:
+/// the newest models think when thinking is not asked for, and some cannot
+/// turn it off at all — the current Haiku at effort `low` was measured at
+/// up to 1,425 output tokens a decision, within reach of the answer's own
+/// 2,048 (reports/llm-cost.md, phase 3). A truncated answer is a wasted
+/// call — the harness reads no JSON and falls back — which is why the cap
+/// is not tighter.
 #[must_use]
 pub fn max_output_tokens(level: ThinkingLevel) -> u64 {
     match level {
-        ThinkingLevel::Off => ANSWER_TOKENS,
-        ThinkingLevel::Low => 4096,
+        ThinkingLevel::Off | ThinkingLevel::Low => 4096,
         ThinkingLevel::Medium => 8192,
         ThinkingLevel::High => 16384,
         ThinkingLevel::Budget(n) => u64::from(n) + ANSWER_TOKENS,

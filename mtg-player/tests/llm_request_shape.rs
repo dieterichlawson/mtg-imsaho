@@ -323,8 +323,9 @@ fn the_output_cap_fits_the_largest_answer_and_grows_with_the_thinking() {
     let low = max_output_tokens(ThinkingLevel::Low);
     let medium = max_output_tokens(ThinkingLevel::Medium);
     let high = max_output_tokens(ThinkingLevel::High);
-    assert_eq!(off, ANSWER_TOKENS, "off is the answer's own room");
-    assert!(off < low && low <= medium && medium <= high, "{off} {low} {medium} {high}");
+    assert!(off >= ANSWER_TOKENS, "off has at least the answer's own room");
+    assert_eq!(off, low, "a model that thinks at off anyway gets low's room");
+    assert!(low <= medium && medium <= high, "{off} {low} {medium} {high}");
     assert!(low <= 4096, "the default level is capped at half of what it was: {low}");
     assert!(max_output_tokens(ThinkingLevel::Budget(1024)) > 1024, "a budget fits under its cap");
 }
