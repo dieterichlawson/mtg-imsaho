@@ -40,6 +40,9 @@ fn a_kick_mid_match_forfeits_the_match_and_the_table_finishes() {
         "the kicked seat forfeits its match:\n{log}");
     let terminal = server.stderr();
     assert!(terminal.contains("withdrawn from the game (the host kicked seat 0)"), "{terminal}");
+    // Where the game waits is said with the table's name for the seat, not
+    // the game's `Seat0` (#850).
+    assert!(terminal.contains("seat 0: no browser at http://") && !terminal.contains("Seat0:"), "{terminal}");
     // Named as a kick everywhere the forfeit is told, not as a stall.
     assert!(terminal.contains("seat 0 forfeited (the host kicked seat 0)"), "{terminal}");
     assert!(log.contains("Seat 0 was withdrawn: the host kicked seat 0."), "the result says why:\n{log}");

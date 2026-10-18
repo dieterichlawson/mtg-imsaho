@@ -532,12 +532,15 @@ fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usiz
 
     let mut urls: [Option<String>; 2] = [None, None];
     let mut seats: Vec<GameSeat> = Vec::new();
+    // Bound, not inline: a guard in a `match` scrutinee is held through
+    // its arms, which take the lobby again.
+    let label_of = |seat: usize| shared.lobby().who(seat);
     for (i, (seat, kind)) in [(a, kind_a), (b, kind_b)].into_iter().enumerate() {
         let name = format!("Seat{seat}");
         match kind {
             SeatKind::Ai(model) => seats.push(GameSeat::Llm(
                 make_game_player(&model, &name, shared.config.guide.as_deref()))),
-            SeatKind::Human | SeatKind::Cli => match game_page(shared, &name) {
+            SeatKind::Human | SeatKind::Cli => match game_page(shared, &name, &label_of(seat)) {
                 Ok(gui) => {
                     urls[i] = Some(gui.url.clone());
                     shared.set_in_game(seat, Some(InGame {
@@ -599,7 +602,9 @@ fn finish(shared: &Arc<Shared>, round: usize, a: usize, b: usize, result: mtg_dr
 }
 
 /// A browser page for one human's game, on the next free game port.
-fn game_page(shared: &Shared, name: &str) -> Result<GuiPlayer, String> {
+/// `name` is the game's (`Seat{n}`, as the runner names seats); `label` is
+/// how the host's terminal names the person (#816, #850).
+fn game_page(shared: &Shared, name: &str, label: &str) -> Result<GuiPlayer, String> {
     let (lo, hi) = shared.config.game_ports;
     let mut next = shared.next_game_port.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut last = String::from("no ports to try");
@@ -607,6 +612,7 @@ fn game_page(shared: &Shared, name: &str) -> Result<GuiPlayer, String> {
         match GuiPlayer::new_at(name, &shared.config.bind, Some(port)) {
             Ok(mut gui) => {
                 gui.url = format!("http://{}:{port}/", shared.config.advertise);
+                gui.notice_name = label.to_string();
                 *next = port.checked_add(1);
                 return Ok(gui);
             }

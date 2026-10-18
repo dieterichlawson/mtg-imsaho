@@ -228,6 +228,10 @@ pub struct GuiPlayer {
     seq: u64,
     /// The address the page is served at.
     pub url: String,
+    /// How the operator's terminal names the seat in "no browser at ...":
+    /// the seat's name unless the caller says otherwise, as a hosted table
+    /// does with "Lawson (seat 0)" (#850).
+    pub notice_name: String,
     said_waiting: bool,
     withdrawn: Withdraw,
     /// Set when the game is being ended for the OTHER seat's reason (its
@@ -310,6 +314,7 @@ impl GuiPlayer {
             answers: answer_rx,
             seq: 0,
             url: format!("http://{bound}/"),
+            notice_name: name.to_string(),
             said_waiting: false,
             withdrawn: Withdraw::default(),
             woken: Withdraw::default(),
@@ -365,7 +370,7 @@ impl GuiPlayer {
         }).expect("a decision serializes");
         *self.shared.latest.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(msg.clone());
         self.shared.broadcast(&msg);
-        if let Some(line) = browser_notice(&self.name, &self.url, self.shared.connected(), &mut self.said_waiting) {
+        if let Some(line) = browser_notice(&self.notice_name, &self.url, self.shared.connected(), &mut self.said_waiting) {
             crate::stderr_line!("{line}");
         }
         loop {
@@ -391,7 +396,7 @@ impl GuiPlayer {
                 Ok(answer) => answer,
                 Err(_) => {
                     if let Some(line) = browser_notice(
-                        &self.name, &self.url, self.shared.connected(), &mut self.said_waiting)
+                        &self.notice_name, &self.url, self.shared.connected(), &mut self.said_waiting)
                     {
                         crate::stderr_line!("{line}");
                     }
@@ -728,6 +733,7 @@ mod tests {
             answers: answers_rx,
             seq: 1,
             url: String::new(),
+            notice_name: "P1".into(),
             said_waiting: false,
             withdrawn: Withdraw::default(),
             woken: Withdraw::default(),
