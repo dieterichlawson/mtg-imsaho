@@ -1323,7 +1323,7 @@ impl LlmBackend for InertBackend {
         // response-format preamble come from the backend, so a stand-in that
         // only stored what it was handed would drop most of the prompt the
         // tests are there to inspect.
-        self.system_prompt = format!("{ANTHROPIC_RESPONSE_FORMAT}{GAME_RULES}{deck_info}");
+        self.system_prompt = format!("{THOUGHTS_IN_JSON_FORMAT}{GAME_RULES}{deck_info}");
         self.turns = 0;
     }
     fn conversation_len(&self) -> usize { self.turns }
@@ -1412,27 +1412,6 @@ it lists; a keyword a creature has is printed after its P/T, and one that is not
 printed there it does not have.
 "#;
 
-/// Anthropic-flavoured response intro: reasoning is delivered through the
-/// model's extended-thinking channel, NOT inside the JSON payload. Every
-/// schema shown to the model intentionally omits the "thoughts" field —
-/// including it would be rejected by the schema validator.
-const ANTHROPIC_RESPONSE_FORMAT: &str = r#"You are playing Magic: The Gathering, a one-on-one Limited (draft) match: 40-card
-decks, 20 life, reduce the opponent to 0.
-
-Every decision the game needs comes as one prompt describing the whole current
-position — events since the last prompt, turn and step, both players' life and
-counts, both battlefields, the stack, your mana pool, your hand, and the legal
-options. The "Prompt format" section documents every field.
-
-You answer with structured JSON; the schema for each decision is enforced by the
-API, so you need not memorise response shapes. Reason in the extended-thinking
-channel, concisely — the position, the alternatives, the choice — and put ONLY
-the schema's fields in the JSON; a "thoughts" key would be rejected.
-
-Ground every claim in the prompt text. Only reference creatures, cards and zones
-it lists; a keyword a creature has is printed after its P/T, and one that is not
-printed there it does not have.
-"#;
 
 /// Anthropic Claude backend using the Messages API with prompt caching.
 struct AnthropicBackend {
@@ -1468,7 +1447,7 @@ impl AnthropicBackend {
             client: Client::new(),
             api_key,
             model: model.to_string(),
-            system_prompt: format!("{ANTHROPIC_RESPONSE_FORMAT}{GAME_RULES}"),
+            system_prompt: format!("{THOUGHTS_IN_JSON_FORMAT}{GAME_RULES}"),
             conversation: Vec::new(),
             last_thinking: None,
             last_call_failure: None,
@@ -1638,7 +1617,14 @@ impl AnthropicBackend {
 
     fn call_with_messages_structured(&mut self, messages: &[serde_json::Value], schema: &serde_json::Value) -> serde_json::Value {
         let (system, msgs) = self.prepare_request(messages);
-        let sanitized = sanitize_schema_for_anthropic(schema, false);
+        // `thoughts` is kept: it is where the seat's notes come from (two
+        // sentences, carried into its next prompt), and the reasoning a
+        // seat with thinking off does at all. The thinking channel cannot
+        // be the notes' source — at `off` there is none, and the 5.x models
+        // return their thinking empty unless asked otherwise — so every
+        // backend asks for it in the JSON, as the `claude -p` and Gemini
+        // seats always have (reports/llm-cost.md, phase 3).
+        let sanitized = sanitize_schema_for_anthropic(schema, true);
         let mut body = serde_json::json!({
             "model": self.model,
             "system": system,
@@ -1652,7 +1638,15 @@ impl AnthropicBackend {
         });
         apply_thinking(&mut body, &self.model, self.thinking);
         let text = self.call_api(&body);
-        serde_json::from_str(&text).unwrap_or_else(|_| serde_json::json!({}))
+        let mut parsed: serde_json::Value = serde_json::from_str(&text).unwrap_or_else(|_| serde_json::json!({}));
+        // The thoughts are the seat's notes and its THOUGHT line, taken out
+        // of the answer as the other backends take them out.
+        if let Some(thoughts) = parsed.as_object_mut().and_then(|o| o.remove("thoughts")) {
+            if let Some(t) = thoughts.as_str().filter(|t| !t.trim().is_empty()) {
+                self.last_thinking = Some(t.to_string());
+            }
+        }
+        parsed
     }
 }
 
@@ -1693,7 +1687,7 @@ impl LlmBackend for AnthropicBackend {
     }
 
     fn init(&mut self, deck_info: &str) {
-        self.system_prompt = format!("{ANTHROPIC_RESPONSE_FORMAT}{GAME_RULES}{deck_info}");
+        self.system_prompt = format!("{THOUGHTS_IN_JSON_FORMAT}{GAME_RULES}{deck_info}");
         self.conversation.clear();
     }
 
@@ -9667,6 +9661,62 @@ mod metered_seat_failures {
             thinking: ThinkingLevel::Low,
             window: 0,
         }
+    }
+
+    /// A Messages API on a loopback port that keeps the last request body
+    /// and answers every request with `answer` as the model's text.
+    fn answering_server(answer: &'static str) -> (String, std::sync::Arc<std::sync::Mutex<String>>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+        let kept = seen.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut len = 0usize;
+                loop {
+                    let mut line = String::new();
+                    if reader.read_line(&mut line).unwrap_or(0) == 0 { break; }
+                    if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                        len = v.trim().parse().unwrap_or(0);
+                    }
+                    if line == "\r\n" { break; }
+                }
+                let mut body = vec![0; len];
+                let _ = reader.read_exact(&mut body);
+                *kept.lock().unwrap() = String::from_utf8_lossy(&body).into_owned();
+                let reply = serde_json::json!({
+                    "content": [{"type": "text", "text": answer}],
+                    "usage": {"input_tokens": 1, "output_tokens": 1},
+                }).to_string();
+                let _ = write!(stream,
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                    reply.len());
+            }
+        });
+        (format!("http://{addr}"), seen)
+    }
+
+    /// The Messages API seat asks for `thoughts` in the JSON, as every
+    /// other backend does, and the thoughts it is sent back become its
+    /// notes and leave the answer. It used to strip the field and take its
+    /// notes from the thinking channel, which at `off` does not exist and
+    /// on the 5.x models comes back empty — a seat with no notes at all
+    /// (reports/llm-cost.md, phase 3).
+    #[test]
+    fn the_api_seat_reasons_in_the_json_and_keeps_its_thoughts_as_notes() {
+        let (url, seen) = answering_server(r#"{"thoughts":"Hold the Bolt for the flier.","action":2}"#);
+        let mut backend = anthropic(url);
+        let schema = LlmPlayer::enum_action_schema(3, "action", "Index of the chosen action");
+        let got = backend.send_with_schema("prompt", &schema);
+        assert_eq!(got["action"], 2, "{got}");
+        assert!(got.get("thoughts").is_none(), "the thoughts are taken out of the answer: {got}");
+        assert_eq!(backend.take_thinking().as_deref(), Some("Hold the Bolt for the flier."));
+        let request: serde_json::Value = serde_json::from_str(&seen.lock().unwrap()).unwrap();
+        let sent = &request["output_config"]["format"]["schema"];
+        assert!(sent["properties"].get("thoughts").is_some(), "the schema asks for thoughts: {sent}");
+        assert!(sent["required"].as_array().unwrap().iter().any(|v| v == "thoughts"), "{sent}");
     }
 
     fn gemini(base_url: String) -> GeminiBackend {
