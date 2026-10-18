@@ -45,7 +45,7 @@ address (or say to replace `0.0.0.0` with it when that cannot be found).
   through `claude -p`; never a metered seat by default). `--ai <spec>`
   changes the default; `ai:<spec>` names one seat's, in the runner's
   `provider:model[:draft_thinking[:game_thinking]]` form, e.g.
-  `ai:cc:claude-sonnet-4-6`. A `cc` seat needs the `claude` CLI on the
+  `ai:cc:claude-haiku-5-5`. A `cc` seat needs the `claude` CLI on the
   path (or `CLAUDE_CODE_BIN`), and its default model may refuse the game
   prompt — name one.
 - `cli` — the host's own seat at the terminal. Not implemented in this

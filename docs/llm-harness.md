@@ -400,7 +400,7 @@ CLAUDE_CODE_BIN=$PWD/scripts/decision-eval/capture-claude.py \
     --save logs/eval/g1.save --log logs/eval/g1.log
 # ... replay them under two configurations, and score one against the other.
 scripts/decision-eval/replay.py --positions logs/eval/positions --out logs/eval/res \
-  --name ref --p1 cc:claude-sonnet-4-6 --env MTG_LLM_THINKING=high --samples 2
+  --name ref --p1 cc:claude-opus-5-5 --env MTG_LLM_THINKING=high --samples 2
 scripts/decision-eval/replay.py --positions logs/eval/positions --out logs/eval/res \
   --name off --p1 cc:claude-sonnet-4-6 --env MTG_LLM_THINKING=off
 scripts/decision-eval/compare.py --out logs/eval/res --ref ref ref off
