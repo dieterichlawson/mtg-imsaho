@@ -128,9 +128,12 @@ game prompt outright; name one (`cc:claude-sonnet-4-6`) when it does.
 
 What a `cc` seat is sent is bounded on purpose (`reports/llm-cost.md`):
 one decision is the system prompt plus one prompt, never the game's
-earlier exchanges. A probe that makes a seat's calls grow with the
-decision count, or finds one that does, has found a bug of the same
-rank as a clipped row — H26 in `harness.md` is the check.
+earlier exchanges, and the system prompt and the answer schema are the
+same bytes every time a kind of question is asked, so the prompt cache
+serves them. A probe that makes a seat's calls grow with the decision
+count, or a call that reads nothing from the cache after the first of
+its kind (`cache_read 0` on a `USAGE` line), has found a bug of the same
+rank as a clipped row — H26 and H32 in `harness.md` are the checks.
 
 Most nights want two `cli` seats. Only the harness and draft subjects
 need `cc`, where it is the thing under test.
