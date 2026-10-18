@@ -196,6 +196,26 @@ fn structured_calls_pass_the_schema_and_return_the_object() {
     assert!(p.backend_take_thinking_for_test().is_none(), "taken once");
 }
 
+/// The seat asks the CLI for the effort the Messages API seat sends at the
+/// same level. It used to pass none, so the CLI ran its own default and
+/// spent 476 to 5,212 thinking tokens a decision where `--effort low`
+/// spent 25 to 71 for the same answer (reports/llm-cost.md, phase 3). A
+/// model steered by a thinking budget (the 4.5 family) is passed none.
+#[test]
+fn the_seat_asks_for_the_effort_its_level_names() {
+    let fake = Fake::new("effort", OK_BODY);
+    let mut p = mtg_player::llm::LlmPlayer::new_claude_code_with_binary("t", &fake.bin())
+        .with_model("claude-sonnet-4-6");
+    p.backend_send_for_test("choose");
+    let expected = mtg_player::llm::effort_for(mtg_player::llm::thinking_level());
+    assert_eq!(arg_after(&fake.calls()[0], "--effort"), Some(expected), "{}", fake.calls()[0]);
+
+    let mut old = mtg_player::llm::LlmPlayer::new_claude_code_with_binary("t", &fake.bin())
+        .with_model("claude-haiku-4-5");
+    old.backend_send_for_test("choose");
+    assert!(arg_after(&fake.calls()[1], "--effort").is_none(), "{}", fake.calls()[1]);
+}
+
 /// A resume used to spend a whole call on the recap, to be told "ready".
 /// The recap now rides along with the first decision prompt after it
 /// (`LlmPlayer::resume_from_log`), so a resume makes no call of its own.

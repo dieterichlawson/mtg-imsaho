@@ -700,6 +700,16 @@ impl ClaudeCodeBackend {
         if let Some(m) = &self.model {
             cmd.args(["--model", m]);
         }
+        // The effort the Messages API seat sends at this level
+        // (`output_config.effort`), so this seat asks the model for the same
+        // thing. Without it the CLI ran its own default effort: at `low`,
+        // 476 to 5,212 thinking tokens a decision on positions where
+        // `--effort low` spent 25 to 71 for the same answer — and every
+        // measurement this seat made overstated what an API seat thinks
+        // (reports/llm-cost.md, phase 3).
+        if super::model_takes_effort(self.model.as_deref()) {
+            cmd.args(["--effort", super::effort_for(super::thinking_level())]);
+        }
         if let Some(s) = schema {
             cmd.args(["--json-schema", &s.to_string()]);
         }
@@ -916,6 +926,13 @@ impl Drop for ClaudeCodeBackend {
 }
 
 impl LlmBackend for ClaudeCodeBackend {
+    fn retarget_model(&mut self, model: &str) -> bool {
+        self.model = Some(model.to_string());
+        self.label = format!("claude-code:{model}");
+        self.session_id = None;
+        true
+    }
+
     fn set_seat(&mut self, seat: &str) {
         seat.clone_into(&mut self.seat);
     }

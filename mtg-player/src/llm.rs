@@ -528,17 +528,34 @@ pub fn apply_thinking(body: &mut serde_json::Value, model: &str, level: Thinking
         if level != ThinkingLevel::Off {
             obj.insert("thinking".into(), serde_json::json!({"type": "adaptive"}));
         }
-        let effort = match level {
-            ThinkingLevel::Off | ThinkingLevel::Low => "low",
-            ThinkingLevel::Medium => "medium",
-            ThinkingLevel::Budget(n) if n <= 2048 => "low",
-            ThinkingLevel::Budget(n) if n <= 8192 => "medium",
-            ThinkingLevel::High | ThinkingLevel::Budget(_) => "high",
-        };
+        let effort = effort_for(level);
         let output_config = obj.entry("output_config").or_insert_with(|| serde_json::json!({}));
         output_config["effort"] = serde_json::json!(effort);
     }
     obj.insert("max_tokens".into(), serde_json::json!(max_tokens));
+}
+
+/// The `effort` a level is sent at, on a model steered by effort rather
+/// than a thinking budget — on the Messages API (`output_config.effort`)
+/// and on a `claude -p` seat (`--effort`) alike.
+#[must_use]
+pub fn effort_for(level: ThinkingLevel) -> &'static str {
+    match level {
+        ThinkingLevel::Off | ThinkingLevel::Low => "low",
+        ThinkingLevel::Medium => "medium",
+        ThinkingLevel::Budget(n) if n <= 2048 => "low",
+        ThinkingLevel::Budget(n) if n <= 8192 => "medium",
+        ThinkingLevel::High | ThinkingLevel::Budget(_) => "high",
+    }
+}
+
+/// Whether a seat on this model is steered by `effort` — every current
+/// model but the 4.5 and 3.x families, which take a thinking budget. A
+/// `claude -p` seat with no model named runs the CLI's default, a current
+/// model.
+#[must_use]
+pub fn model_takes_effort(model: Option<&str>) -> bool {
+    model.is_none_or(|m| !model_takes_a_thinking_budget(m))
 }
 
 /// Output tokens the largest structured answer needs, with room to spare:
@@ -1347,6 +1364,9 @@ trait LlmBackend {
     fn set_history_window(&mut self, _exchanges: usize) {}
     /// Set thinking level (Gemini only, no-op for others).
     fn set_thinking_level(&mut self, _level: &str) {}
+    /// Point a `claude -p` backend at another model, keeping the binary it
+    /// runs; `false` from a backend that has to be built anew instead.
+    fn retarget_model(&mut self, _model: &str) -> bool { false }
     /// Why the last call produced no answer at all, if it produced none.
     ///
     /// A backend that gives up hands the caller an empty value, which is
@@ -2216,7 +2236,11 @@ impl LlmPlayer {
         // provider family: a Claude Code seat stays a Claude Code seat
         // (`claude-code:opus` must never quietly become an API-key seat).
         if self.provider == Provider::ClaudeCode {
-            self.backend = Box::new(claude_code::ClaudeCodeBackend::new(Some(model)));
+            // In place, so a seat built on a stand-in binary
+            // (`new_claude_code_with_binary`) keeps running it.
+            if !self.backend.retarget_model(model) {
+                self.backend = Box::new(claude_code::ClaudeCodeBackend::new(Some(model)));
+            }
         } else if model.contains("gemini") {
             self.backend = Box::new(GeminiBackend::new(model));
             self.provider = Provider::Gemini;
