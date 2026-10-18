@@ -665,7 +665,7 @@ When it stops, the next prompt opens (after your notes) with one line saying how
 /// The seat said "go": it is passing every plain priority offer without a
 /// model call until something it would want to see happens. What it was
 /// looking at when it said so, so a later offer can be told apart from it.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct PassUntil {
     turn: u32,
     step: Step,
@@ -683,6 +683,36 @@ struct PassUntil {
     stack_puts: u64,
     /// How many priority offers have been passed unasked since.
     passes: u32,
+}
+
+/// What an LLM seat carries from one decision to the next, and so what a
+/// save has to hold for a resumed seat to be asked exactly what it would
+/// have been asked live.
+///
+/// A decision is sent no history (see [`HISTORY_ENV`]): the seat's whole
+/// memory is its notes, how far into the game log it has been shown, and
+/// whether it is passing until something happens. A save that held only
+/// the notes (#836) resumed a seat that had to be handed the complete game
+/// log as a recap — thousands of tokens on one prompt, and a prompt no live
+/// decision ever looks like. With this in the save, a resumed seat's next
+/// prompt is byte-for-byte the one it would have had, which is also what
+/// lets a saved position be replayed as one decision
+/// (`mtg-runner --stop-after`, `scripts/decision-eval/`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SeatMemory {
+    notes: Option<String>,
+    /// How many entries of the seat's `display_log` it has been shown.
+    log_cursor: usize,
+    pass_until: Option<PassUntil>,
+    pass_until_stopped: Option<(u32, String)>,
+}
+
+impl SeatMemory {
+    /// The notes this memory carries, for a reader of the save.
+    #[must_use]
+    pub fn notes(&self) -> Option<&str> {
+        self.notes.as_deref()
+    }
 }
 
 impl PassUntil {
@@ -1987,10 +2017,12 @@ pub struct LlmPlayer {
     /// seat's own words, not the thousands of tokens of prompts they came
     /// from.
     notes: Option<String>,
-    /// Where the runner keeps a copy of `notes` for its save file, when it
-    /// asked for one (`mirror_notes_to`): a save that held the game but not
-    /// the plan lost the plan on every `--resume` (#836).
-    notes_mirror: Option<std::sync::Arc<std::sync::Mutex<Option<String>>>>,
+    /// Where the runner keeps a copy of this seat's [`SeatMemory`] for its
+    /// save file, when it asked for one (`mirror_memory_to`): a save that
+    /// held the game but not the plan lost the plan on every `--resume`
+    /// (#836), and one that held the plan but not the rest could only
+    /// resume the seat with a recap of the whole game.
+    memory_mirror: Option<std::sync::Arc<std::sync::Mutex<Option<SeatMemory>>>>,
     /// `Some` while the seat is passing every plain priority offer unasked
     /// (see [`PassUntil`]); cleared, with a reason, by the first stop.
     pass_until: Option<PassUntil>,
@@ -2017,7 +2049,7 @@ impl LlmPlayer {
             last_call_failure: None,
             pending_recap: None,
             notes: None,
-            notes_mirror: None,
+            memory_mirror: None,
             pass_until: None,
             pass_until_stopped: None,
             offer_pass_until: pass_until_enabled(),
@@ -2043,7 +2075,7 @@ impl LlmPlayer {
             last_call_failure: None,
             pending_recap: None,
             notes: None,
-            notes_mirror: None,
+            memory_mirror: None,
             pass_until: None,
             pass_until_stopped: None,
             offer_pass_until: pass_until_enabled(),
@@ -2064,7 +2096,7 @@ impl LlmPlayer {
             last_call_failure: None,
             pending_recap: None,
             notes: None,
-            notes_mirror: None,
+            memory_mirror: None,
             pass_until: None,
             pass_until_stopped: None,
             offer_pass_until: pass_until_enabled(),
@@ -2089,7 +2121,7 @@ impl LlmPlayer {
             last_call_failure: None,
             pending_recap: None,
             notes: None,
-            notes_mirror: None,
+            memory_mirror: None,
             pass_until: None,
             pass_until_stopped: None,
             offer_pass_until: pass_until_enabled(),
@@ -2112,7 +2144,7 @@ impl LlmPlayer {
             last_call_failure: None,
             pending_recap: None,
             notes: None,
-            notes_mirror: None,
+            memory_mirror: None,
             pass_until: None,
             pass_until_stopped: None,
             offer_pass_until: pass_until_enabled(),
@@ -2371,26 +2403,57 @@ impl LlmPlayer {
         self.pending_recap.as_deref()
     }
 
-    /// Keep a copy of the seat's notes in `cell` from now on, for a save
-    /// file to carry across `--resume` (#836).
-    pub fn mirror_notes_to(&mut self, cell: std::sync::Arc<std::sync::Mutex<Option<String>>>) {
-        if let Ok(mut c) = cell.lock() { c.clone_from(&self.notes); }
-        self.notes_mirror = Some(cell);
+    /// Keep a copy of the seat's [`SeatMemory`] in `cell` from now on, for
+    /// a save file to carry across `--resume` (#836). The copy is brought
+    /// up to date whenever the seat finishes answering a decision, which is
+    /// before the runner writes its next save.
+    pub fn mirror_memory_to(&mut self, cell: std::sync::Arc<std::sync::Mutex<Option<SeatMemory>>>) {
+        self.memory_mirror = Some(cell);
+        self.sync_memory_mirror();
+    }
+
+    /// What this seat carries to its next decision.
+    #[must_use]
+    pub fn memory(&self) -> SeatMemory {
+        SeatMemory {
+            notes: self.notes.clone(),
+            log_cursor: self.last_log_index,
+            pass_until: self.pass_until.clone(),
+            pass_until_stopped: self.pass_until_stopped.clone(),
+        }
+    }
+
+    /// Put back what a save carried, after `init_conversation`: the next
+    /// prompt is the one the seat would have been sent had the game never
+    /// stopped — the same notes, the events since the same point, the same
+    /// pass-until — and no recap.
+    pub fn restore_memory(&mut self, memory: SeatMemory) {
+        self.notes = memory.notes;
+        self.last_log_index = memory.log_cursor;
+        self.pass_until = memory.pass_until;
+        self.pass_until_stopped = memory.pass_until_stopped;
+        self.pending_recap = None;
+        self.sync_memory_mirror();
     }
 
     /// Put back the notes a save carried, after `resume_from_log`: the
     /// first prompt after a resume carries the plan made before the save.
+    /// For a save written before [`SeatMemory`] was; a newer one is given
+    /// back whole with [`restore_memory`](Self::restore_memory).
     pub fn restore_notes(&mut self, notes: Option<String>) {
         self.set_notes(notes);
     }
 
-    /// Every change to the notes goes through here, so the mirror a save
-    /// reads never goes stale.
     fn set_notes(&mut self, notes: Option<String>) {
-        if let Some(cell) = &self.notes_mirror {
-            if let Ok(mut c) = cell.lock() { c.clone_from(&notes); }
-        }
         self.notes = notes;
+        self.sync_memory_mirror();
+    }
+
+    /// Bring the save's copy of this seat's memory up to date.
+    fn sync_memory_mirror(&self) {
+        if let Some(cell) = &self.memory_mirror {
+            if let Ok(mut c) = cell.lock() { *c = Some(self.memory()); }
+        }
     }
 
     /// The notes the next decision prompt will carry, for tests.
@@ -4662,6 +4725,17 @@ impl Player for LlmPlayer {
     }
 
     fn choose_action(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
+        let action = self.decide(view, legal);
+        // The save written before the next decision reads this.
+        self.sync_memory_mirror();
+        action
+    }
+}
+
+impl LlmPlayer {
+    /// [`Player::choose_action`]'s body: one decision, by whichever prompt
+    /// fits it.
+    fn decide(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
         let legal_actions = &legal.actions;
         // A seat passing unasked stops at any prompt that is not a plain
         // priority pass — a target, a set, a sacrifice, the mulligan — and
@@ -5699,6 +5773,12 @@ from your hand to put on the bottom of your library.\n\
     }
 
     pub fn choose_combat(&mut self, view: &GameView, prompt: &CombatPrompt) -> Action {
+        let action = self.decide_combat(view, prompt);
+        self.sync_memory_mirror();
+        action
+    }
+
+    fn decide_combat(&mut self, view: &GameView, prompt: &CombatPrompt) -> Action {
         // A combat prompt with one legal answer is not worth a round trip to
         // the model. One rule, shared with the other three seats (#517).
         if let Some(forced) = crate::forced_combat_answer(prompt) {
@@ -6563,7 +6643,7 @@ pub(crate) mod tests {
             last_call_failure: None,
             pending_recap: None,
             notes: None,
-            notes_mirror: None,
+            memory_mirror: None,
             pass_until: None,
             pass_until_stopped: None,
             // These tests read the engine's rows and their indices; the
@@ -9489,7 +9569,7 @@ mod stateless_decisions {
             last_call_failure: None,
             pending_recap: None,
             notes: None,
-            notes_mirror: None,
+            memory_mirror: None,
             pass_until: None,
             pass_until_stopped: None,
             offer_pass_until: pass_until_enabled(),

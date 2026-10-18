@@ -49,6 +49,15 @@ struct SaveData {
     /// they were.
     #[serde(default)]
     seat_rng: Vec<Option<String>>,
+    /// Everything each LLM seat carries from one decision to the next —
+    /// its notes, how far into the log it has been shown, a pass-until in
+    /// progress (`mtg_player::llm::SeatMemory`). With it a resumed seat is
+    /// asked exactly what it would have been asked live; without it (a
+    /// save written before this) the seat is resumed the old way, with a
+    /// recap of the whole game log and the notes above. Indexed like
+    /// `seats`.
+    #[serde(default)]
+    seat_memory: Vec<Option<mtg_player::llm::SeatMemory>>,
 }
 
 enum PlayerKind {
@@ -404,6 +413,7 @@ fn main() {
     let banner: String;
     let mut resumed_notes: Vec<Option<String>> = Vec::new();
     let mut resumed_rng: Vec<Option<String>> = Vec::new();
+    let mut resumed_memory: Vec<Option<mtg_player::llm::SeatMemory>> = Vec::new();
     let (player_names, mut state) = if let Some(ref path) = resume_file {
         // The saved game carries its own decks and RNG: flags that only
         // shape a NEW game are ignored, and silently ignored flags corrupt
@@ -546,6 +556,7 @@ stops here — pass --save {path} to keep writing it");
             p1_spec, p2_spec);
         resumed_notes = std::mem::take(&mut save.seat_notes);
         resumed_rng = std::mem::take(&mut save.seat_rng);
+        resumed_memory = std::mem::take(&mut save.seat_memory);
         (save.player_names, save.state)
     } else {
         let deck1 = load_deck(deck1_spec, &registry);
@@ -663,28 +674,34 @@ stops here — pass --save {path} to keep writing it");
         llm.init_conversation(&deck2_entries, "", &registry, MatchFormat::SingleGame);
     }
 
-    // If resuming, feed the existing game log to LLM players so they
-    // have context about what happened before the reload.
+    // If resuming, give each LLM seat back what it carried. A save that
+    // holds the seat's memory resumes it exactly; an older one can only
+    // hand it a recap of the game log and its notes.
     if resume_file.is_some() {
         let full_log: Vec<String> = state.game_log.iter()
             .filter(|e| e.level >= mtg_engine::state::LogLevel::Info)
             .map(|e| e.message.clone())
             .collect();
-        if let PlayerKind::Llm(ref mut llm) = p1 {
-            llm.resume_from_log(&full_log, mtg_engine::ids::PlayerId(0));
-            llm.restore_notes(resumed_notes.first().cloned().flatten());
-        }
-        if let PlayerKind::Llm(ref mut llm) = p2 {
-            llm.resume_from_log(&full_log, mtg_engine::ids::PlayerId(1));
-            llm.restore_notes(resumed_notes.get(1).cloned().flatten());
+        for (i, p) in [&mut p1, &mut p2].into_iter().enumerate() {
+            let PlayerKind::Llm(llm) = p else { continue };
+            if let Some(Some(memory)) = resumed_memory.get(i) {
+                llm.restore_memory(memory.clone());
+            } else {
+                llm.resume_from_log(&full_log, mtg_engine::ids::PlayerId(u8::try_from(i).unwrap_or(0)));
+                llm.restore_notes(resumed_notes.get(i).cloned().flatten());
+            }
         }
     }
-    // Where each LLM seat keeps a copy of its notes for the save (#836).
-    let notes_cells: [std::sync::Arc<std::sync::Mutex<Option<String>>>; 2] = Default::default();
-    if let PlayerKind::Llm(ref mut llm) = p1 { llm.mirror_notes_to(notes_cells[0].clone()); }
-    if let PlayerKind::Llm(ref mut llm) = p2 { llm.mirror_notes_to(notes_cells[1].clone()); }
+    // Where each LLM seat keeps a copy of its memory for the save (#836).
+    let memory_cells: [std::sync::Arc<std::sync::Mutex<Option<mtg_player::llm::SeatMemory>>>; 2] = Default::default();
+    if let PlayerKind::Llm(ref mut llm) = p1 { llm.mirror_memory_to(memory_cells[0].clone()); }
+    if let PlayerKind::Llm(ref mut llm) = p2 { llm.mirror_memory_to(memory_cells[1].clone()); }
+    let seat_memory = || -> Vec<Option<mtg_player::llm::SeatMemory>> {
+        memory_cells.iter().map(|c| c.lock().ok().and_then(|m| m.clone())).collect()
+    };
+    // The notes alone too, for a reader of the save that wants only them.
     let seat_notes = || -> Vec<Option<String>> {
-        notes_cells.iter().map(|c| c.lock().ok().and_then(|n| n.clone())).collect()
+        seat_memory().iter().map(|m| m.as_ref().and_then(|m| m.notes().map(str::to_string))).collect()
     };
     // Where each random seat's draws are, for the save (#844): written as
     // the seat answers, read by the save before the next decision.
@@ -968,6 +985,7 @@ stops here — pass --save {path} to keep writing it");
                 seats: seats_ref.clone(),
                 seat_notes: seat_notes(),
                 seat_rng: seat_rng(),
+                seat_memory: seat_memory(),
             };
             let json = serde_json::to_string(&save).expect("Failed to serialize game state");
             // The hot-reload snapshot, so `rr` works without --save. Nobody
@@ -1092,6 +1110,7 @@ use --save if you need a resumable file.");
             seats: vec![p1_spec.clone(), p2_spec.clone()],
             seat_notes: seat_notes(),
             seat_rng: seat_rng(),
+            seat_memory: seat_memory(),
         };
         match serde_json::to_string(&save) {
             Ok(json) => {
