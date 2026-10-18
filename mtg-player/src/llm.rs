@@ -1356,7 +1356,7 @@ Before turn 1: `[MULLIGAN DECISION]` shows your seven cards; answer `true` to mu
 /// internal thoughts" came back at ≈ 300 characters per decision, and
 /// output is the largest term a decision has (`reports/llm-cost.md`).
 pub const THOUGHTS_DESCRIPTION: &str =
-    "At most two sentences: what decided it, and what you plan to do next.";
+    "One or two short sentences: the deciding reason, and your plan.";
 
 /// Backend trait for LLM API communication.
 /// Separates provider-specific API mechanics from shared game logic.
@@ -3853,8 +3853,11 @@ impl LlmPlayer {
         }
     }
 
-    /// The most characters of reasoning carried into the next prompt.
-    const NOTES_MAX_CHARS: usize = 600;
+    /// The most characters of reasoning carried into the next prompt: two
+    /// sentences, which is what `thoughts` asks for. At 600 the notes were a
+    /// sixth of every prompt and as long again in the output that wrote
+    /// them (reports/llm-cost.md, phase 3).
+    const NOTES_MAX_CHARS: usize = 300;
 
     /// The tail of a decision's reasoning, for the next prompt's notes.
     ///
@@ -3918,6 +3921,12 @@ impl LlmPlayer {
     /// length (issue #464). The oldest are dropped, with a marker saying so.
     const MAX_RECENT_EVENTS: usize = 80;
 
+    /// `p1 tapped Plains (#45) for mana (pool: White:1)`, the engine's line
+    /// for a mana ability.
+    fn is_mana_tap_entry(entry: &str) -> bool {
+        entry.contains(" tapped ") && entry.contains(" for mana")
+    }
+
     /// The turn number a `── Turn N (...) ──` log banner announces.
     fn turn_banner_number(entry: &str) -> Option<&str> {
         entry.strip_prefix("── Turn ")?.split_once(' ').map(|(n, _)| n)
@@ -3958,10 +3967,17 @@ impl LlmPlayer {
         // "passes priority" and "Step: Draw" entries that add no information.
         // Rewrite each new entry so player references read "you"/"opp"
         // instead of the engine-global `p0`/`p1` labels.
-        let pending: &[String] = view.display_log
+        let unread: &[String] = view.display_log
             .get(self.last_log_index..)
             .unwrap_or_default();
         self.last_log_index = view.display_log.len();
+        // A land tapped for mana is not news: the cast it paid for is its
+        // own line, and the board says what is tapped. It was one line in
+        // ten of the events a seat was sent (reports/llm-cost.md, phase 3).
+        let pending: Vec<String> = unread.iter()
+            .filter(|e| !Self::is_mana_tap_entry(e))
+            .cloned()
+            .collect();
         let omitted = pending.len().saturating_sub(Self::MAX_RECENT_EVENTS);
         let (elided, shown) = pending.split_at(omitted);
         let new_logs: Vec<String> = shown.iter()
@@ -8187,6 +8203,24 @@ pub(crate) mod tests {
             "GAME_RULES states the cap the harness applies");
         assert!(GAME_RULES.contains(&LlmPlayer::omitted_events_marker(227, Some("94"))),
             "GAME_RULES quotes the marker shape the harness sends");
+    }
+
+    /// A land tapped for mana is not sent as an event — the cast it paid
+    /// for is, and the board shows what is tapped (reports/llm-cost.md,
+    /// phase 3).
+    #[test]
+    fn a_mana_tap_is_not_an_event_but_the_cast_it_paid_for_is() {
+        let (state, registry) = view_for_contract_test();
+        let mut view = GameView::for_player(&state, mtg_engine::ids::PlayerId(0), &registry);
+        view.display_log = vec![
+            "p1 tapped Plains (#45) for mana (pool: White:1)".to_string(),
+            "p1 cast Swords to Plowshares (#72) targeting Savannah Lions (#63)".to_string(),
+        ];
+        let mut player = LlmPlayer::for_prompt_tests("t");
+        let prompt = player.build_prompt(&view, "[MAIN PHASE 1]\nAvailable actions:\n0: Pass\n");
+        assert!(!prompt.contains("for mana"), "{prompt}");
+        assert!(prompt.contains("Recent events:\nOpp cast Swords to Plowshares (#72)"), "{prompt}");
+        assert_eq!(player.last_log_index, 2, "both count as shown");
     }
 
     /// A recap that fits carries no marker and every entry.
