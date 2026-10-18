@@ -46,15 +46,17 @@ impl Fake {
              {{ echo \"=== call $CALL\"; cat; echo; case \"$*\" in *'\"then\"'*) echo 'SCHEMA OFFERS THEN';; esac; echo '--- end'; }} >> \"{log}\"\n\
              A=$(cat \"{answer}\" 2>/dev/null || echo 0)\n\
              T=$(cat \"{then}\" 2>/dev/null || echo '[]')\n\
+             G=$(cat \"{ask_again}\" 2>/dev/null || echo false)\n\
              printf '{{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"session_id\":\"s\",\
              \"result\":\"{{}}\",\"structured_output\":{{\"action\":%s,\"thoughts\":\"t\",\
-             \"attacker_indices\":[],\"blocks\":[],\"confirm\":false,\"card_indices\":[0],\"amount\":1,\"then\":%s}},\
+             \"attacker_indices\":[],\"blocks\":[],\"confirm\":false,\"card_indices\":[0],\"amount\":1,\"then\":%s,\"ask_again\":%s}},\
              \"usage\":{{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":0,\
-             \"cache_creation_input_tokens\":0}}}}\\n' \"$A\" \"$T\"\n",
+             \"cache_creation_input_tokens\":0}}}}\\n' \"$A\" \"$T\" \"$G\"\n",
             count = dir.join("count").display(),
             log = dir.join("log.txt").display(),
             answer = dir.join("answer").display(),
             then = dir.join("then").display(),
+            ask_again = dir.join("ask_again").display(),
         );
         let bin = dir.join("claude");
         std::fs::write(&bin, script).unwrap();
@@ -72,6 +74,11 @@ impl Fake {
     /// The plan (`then`) the next calls answer with.
     fn then(&self, names: &[&str]) {
         std::fs::write(self.dir.join("then"), serde_json::to_string(names).unwrap()).unwrap();
+    }
+
+    /// The `ask_again` the next calls answer with (false until set).
+    fn ask_again(&self, again: bool) {
+        std::fs::write(self.dir.join("ask_again"), again.to_string()).unwrap();
     }
 
     fn calls(&self) -> Vec<String> {
@@ -882,4 +889,56 @@ fn a_pass_answered_with_a_plan_starts_the_plan_now() {
     fake.then(&["Forest"]);
     assert!(matches!(seat.choose_action(&v, &legal), Action::PlayLand { object_id: ObjectId(11) }));
     fake.then(&[]);
+}
+
+/// A land with nothing after it is one answer, not two: `ask_again: false`
+/// ends the main phase as the end of a plan does, and the seat is not
+/// asked it again for the creature it chose not to cast — its next
+/// question is the next thing that happens. An empty plan used to mean
+/// "ask me again", which was one call in six of a game spent saying
+/// "nothing else" (reports/llm-cost.md, phase 3). `ask_again: true` asks.
+#[test]
+fn a_play_with_nothing_after_it_ends_the_main_phase_in_one_call() {
+    let fake = Fake::new("done-here");
+    let mut seat = fake.seat();
+    let (v, legal) = main_phase(vec![], false, true);
+    // Rows: 0 Pass, 1 pass-until, 2 Cast Grizzly Bears, 3 Play Forest, ...
+    fake.answer(3);
+    fake.then(&[]);
+    fake.ask_again(false);
+    assert!(matches!(seat.choose_action(&v, &legal), Action::PlayLand { object_id: ObjectId(11) }));
+    assert!(fake.calls()[0].contains("SCHEMA OFFERS THEN"));
+    // The Forest is down and the Lions castable: passed, unasked.
+    let (v, legal) = main_phase(vec![], true, false);
+    assert!(matches!(seat.choose_action(&v, &legal), Action::PassPriority));
+    assert_eq!(fake.calls().len(), 1, "the main phase was one call");
+    // The next main phase of its own is asked.
+    let (mut v, legal) = main_phase(vec![], true, false);
+    v.turn_number = 5;
+    seat.choose_action(&v, &legal);
+    assert_eq!(fake.calls().len(), 2);
+
+    // Asked again, where the seat asked to be.
+    let mut seat = fake.seat();
+    let (v, legal) = main_phase(vec![], false, true);
+    fake.ask_again(true);
+    seat.choose_action(&v, &legal);
+    let (v, legal) = main_phase(vec![], true, false);
+    seat.choose_action(&v, &legal);
+    assert_eq!(fake.calls().len(), 4, "asked again in the same main phase");
+
+    // And at the end of a plan.
+    let mut seat = fake.seat();
+    let (v, legal) = main_phase(vec![], false, true);
+    fake.then(&["Grizzly Bears"]);
+    seat.choose_action(&v, &legal);
+    fake.then(&[]);
+    let (v, legal) = main_phase(vec![], true, false);
+    assert!(matches!(seat.choose_action(&v, &legal), Action::CastSpell { object_id: ObjectId(12), .. }));
+    assert_eq!(fake.calls().len(), 5, "the plan's card was not a call");
+    let (mut v, mut legal) = main_phase(vec![], true, false);
+    v.your_hand.retain(|c| c.name != "Grizzly Bears");
+    legal.castable_spells.retain(|c| c.name != "Grizzly Bears");
+    seat.choose_action(&v, &legal);
+    assert_eq!(fake.calls().len(), 6, "asked again once the plan was done");
 }

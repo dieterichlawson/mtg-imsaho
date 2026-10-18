@@ -809,6 +809,11 @@ struct PassUntil {
     stack_puts: u64,
     /// How many priority offers have been passed unasked since.
     passes: u32,
+    /// The seat said it was done with the main phase this was engaged in
+    /// (its plan ran out, or `ask_again` was false): the land-drop and
+    /// sorcery-speed stops do not ask it that main phase again.
+    #[serde(default)]
+    done_here: bool,
 }
 
 /// What the CR 616.1 prompt is asking, sent with it: the options are a
@@ -836,6 +841,10 @@ struct Plan {
     steps: Vec<String>,
     /// How many have been taken, for the log and the stop line.
     taken: u32,
+    /// The seat asked to be asked again once the plan is done, rather than
+    /// to pass until something happens (`ask_again`).
+    #[serde(default)]
+    ask_again: bool,
 }
 
 /// What a plan does at an offer: take its next card, finish, or stop.
@@ -852,8 +861,16 @@ pub const PLAN_DESCRIPTION: &str =
      without being asked again once the stack is empty (targets are still asked). Put your \
      first play in `action` and the rest here; if `action` is a pass, these start now instead. \
      The plan stops and you are asked if the opponent puts anything on the stack or a card \
-     cannot be played when its turn comes; after the last one you pass until something \
-     happens. [] to be asked again after `action`.";
+     cannot be played when its turn comes. [] for nothing after `action`.";
+
+/// What the `ask_again` field asks for, beside [`PLAN_DESCRIPTION`]. An
+/// empty plan used to mean "ask me again", so a seat that played its land
+/// and had nothing else to do was asked the main phase a second time to
+/// say so — one call in six of a game (reports/llm-cost.md, phase 3).
+pub const ASK_AGAIN_DESCRIPTION: &str =
+    "false (the usual answer) when `action` and `then` are all you will do this main phase: \
+     you then pass until something happens, and your attack is still asked. true to be asked \
+     again here once they are done, e.g. to play off what a spell drew.";
 
 /// What an LLM seat carries from one decision to the next, and so what a
 /// save has to hold for a resumed seat to be asked exactly what it would
@@ -898,7 +915,13 @@ impl PassUntil {
             stack: Self::stack_identity(view),
             stack_puts: view.stack_puts,
             passes: 0,
+            done_here: false,
         }
+    }
+
+    /// Engaged by a seat that said it was done with this main phase.
+    fn done_at(view: &GameView) -> Self {
+        PassUntil { done_here: true, ..Self::engaged_at(view) }
     }
 
     fn stack_identity(view: &GameView) -> Vec<(ObjectId, mtg_engine::ids::CardId, String)> {
@@ -4942,7 +4965,7 @@ impl Player for LlmPlayer {
     fn choose_action(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
         let action = self.decide(view, legal);
         if std::mem::take(&mut self.plan_done_pending) && self.pass_until.is_none() {
-            self.pass_until = Some(PassUntil::engaged_at(view));
+            self.pass_until = Some(PassUntil::done_at(view));
         }
         // The save written before the next decision reads this.
         self.sync_memory_mirror();
@@ -5178,12 +5201,19 @@ impl LlmPlayer {
                 "items": {"type": "string", "enum": plannable},
                 "description": PLAN_DESCRIPTION,
             });
-            schema["required"] = serde_json::json!(["thoughts", "action", "then"]);
+            schema["properties"]["ask_again"] = serde_json::json!({
+                "type": "boolean",
+                "description": ASK_AGAIN_DESCRIPTION,
+            });
+            schema["required"] = serde_json::json!(["thoughts", "action", "then", "ask_again"]);
         }
         let (idx, response) = self.pick_action_index_with_schema(view, &action_prompt, menu.len(), &schema);
         let then: Vec<String> = response["then"].as_array()
             .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
             .unwrap_or_default();
+        // Where no plan was offered there is no field, and the seat is asked
+        // at the next offer as it always was.
+        let ask_again = response["ask_again"].as_bool().unwrap_or(true);
 
         if idx >= menu.len() {
             return Action::PassPriority;
@@ -5202,7 +5232,7 @@ impl LlmPlayer {
         };
         if passes && !plannable.is_empty() && !then.is_empty() {
             self.log("PLAN", &format!("then: {} (answered with a pass: the plan starts now)", then.join(", ")));
-            let plan = Plan { turn: view.turn_number, step: view.step, steps: then.clone(), taken: 0 };
+            let plan = Plan { turn: view.turn_number, step: view.step, steps: then.clone(), taken: 0, ask_again };
             self.plan = Some(plan.clone());
             match self.plan_next(view, legal, &plan) {
                 PlanMove::Act(action) => return action,
@@ -5236,7 +5266,12 @@ impl LlmPlayer {
         };
         if !plannable.is_empty() && plays && !then.is_empty() {
             self.log("PLAN", &format!("then: {}", then.join(", ")));
-            self.plan = Some(Plan { turn: view.turn_number, step: view.step, steps: then, taken: 0 });
+            self.plan = Some(Plan { turn: view.turn_number, step: view.step, steps: then, taken: 0, ask_again });
+        } else if !plannable.is_empty() && plays && !ask_again {
+            // Nothing after this play: the main phase is done, as it is at
+            // the end of a plan.
+            self.log("PLAN", "nothing after this; passing until something happens");
+            self.plan_done_pending = true;
         }
 
         match &entry {
@@ -5323,11 +5358,12 @@ impl LlmPlayer {
         plan.steps.remove(0);
         plan.taken += 1;
         if plan.steps.is_empty() {
-            let taken = plan.taken;
+            let (taken, ask_again) = (plan.taken, plan.ask_again);
             self.plan = None;
-            self.log("PLAN_DONE", &format!("{taken} planned play{} made; passing until something happens",
-                if taken == 1 { "" } else { "s" }));
-            self.plan_done_pending = true;
+            self.log("PLAN_DONE", &format!("{taken} planned play{} made; {}",
+                if taken == 1 { "" } else { "s" },
+                if ask_again { "asking again" } else { "passing until something happens" }));
+            self.plan_done_pending = !ask_again;
         }
     }
 
@@ -5635,8 +5671,9 @@ impl LlmPlayer {
     /// - the opponent attacking the seat, once blocks are in: the window a
     ///   trick or a removal spell is cast in;
     /// - the seat's own first main phase, and a later main phase of its own
-    ///   — or the one it said "go" in — when a land drop or a sorcery-speed
-    ///   cast or activation is on offer. A second main phase with nothing
+    ///   — or the one it said "go" in, unless it said it was done with it
+    ///   (`done_here`) — when a land drop or a sorcery-speed cast or
+    ///   activation is on offer. A second main phase with nothing
     ///   to do at sorcery speed is not a decision: an instant can be cast
     ///   at the next stop as well;
     /// - no Pass on the menu, which is not a priority offer at all.
@@ -5691,7 +5728,9 @@ impl LlmPlayer {
             }
         }
 
-        if our_turn && matches!(view.step, Step::PrecombatMain | Step::PostcombatMain) {
+        if our_turn && matches!(view.step, Step::PrecombatMain | Step::PostcombatMain)
+            && !(same_point && mode.done_here)
+        {
             if !same_point && view.step == Step::PrecombatMain {
                 return Some(format!("your {}", Self::step_name(view.step, false)));
             }
