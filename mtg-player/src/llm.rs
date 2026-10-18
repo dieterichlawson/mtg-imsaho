@@ -675,9 +675,7 @@ const PASS_UNTIL_RULES: &str = r#"
 
 ## Pass until something happens
 
-Every priority offer has one more row, right after `Pass`: `1: Pass until something happens`, with the engine's rows after it numbered from 2. It is the way a person says "go": it passes priority now and keeps passing later priority offers for you, unasked, until something of the opponent's is put on the stack; a blocker is declared against your attacker; the opponent attacks you and blocks are in (your window after blocks); your next first main phase; a later main phase of yours with a land drop or a sorcery-speed cast or activation on offer; or any prompt that is not a plain priority pass (combat declarations, targets and choices are always asked). After you declare attackers you pass this way too, until a block or your second main phase. You are never asked to respond to your own spell or ability while only yours are on the stack.
-
-When it stops, the next prompt says so in one line after your notes, e.g. `After 6 priority offers passed for you unasked, the pass stopped: Grizzly Bears (the opponent's) is on the stack.` Everything that happened meanwhile is in Recent events below it."#;
+Every priority offer has one more row, right after `Pass`: `1: Pass until something happens`, with the engine's rows after it numbered from 2. It is the way a person says "go": it passes now and keeps passing later priority offers for you, unasked, until something of the opponent's is put on the stack; a blocker is declared against your attacker; the opponent attacks you and blocks are in (your window after blocks); your next first main phase; a later main phase of yours with a land drop or a sorcery-speed cast or activation on offer; or any prompt that is not a plain priority pass (combat declarations, targets and choices are always asked). After you declare attackers you pass this way too, until a block or your second main phase. You are never asked to respond to your own spell or ability while only yours are on the stack. When it stops, the next prompt says why in one line, e.g. `After 6 priority offers passed for you unasked, the pass stopped: Grizzly Bears (the opponent's) is on the stack.`"#;
 
 /// The seat said "go": it is passing every plain priority offer without a
 /// model call until something it would want to see happens. What it was
@@ -701,6 +699,18 @@ struct PassUntil {
     /// How many priority offers have been passed unasked since.
     passes: u32,
 }
+
+/// What the CR 616.1 prompt is asking, sent with it: the options are a
+/// numbered list like any other, and what "first" means is not.
+pub const DAMAGE_EFFECT_RULE: &str = "Two or more replacement or prevention effects apply to this damage \
+and their order changes the result, so the affected player — the one dealt the damage, or the \
+controller of the creature dealt it — chooses (CR 616.1). Pick the effect to apply FIRST; the others \
+apply after only if they still can: a prevention or a mill ends the damage, doubling leaves more for \
+the rest.";
+
+/// The mulligan advice the mulligan prompt carries.
+pub const MULLIGAN_ADVICE: &str = "Mulligan a 0- or 7-lander or a hand with no play in its first three \
+turns; keep 2-4 lands and a curve. More than two mulligans is rarely right.";
 
 /// The rest of a main phase the seat laid out in one answer: cards from its
 /// hand to play or cast after the action it chose, in order, each taken
@@ -1231,123 +1241,30 @@ more card.\n",
 /// Shared game rules and strategy — used by all backends.
 const GAME_RULES: &str = r#"## Prompt format
 
-Each prompt has these sections, in this order:
+Every prompt restates the whole position, in this order:
+- `Turn N - <step> (your turn|opp's turn)`. Steps: Untap, Upkeep, Draw, Main Phase 1, Begin Combat, Declare Attackers, Declare Blockers, First-Strike Combat Damage, Combat Damage, End Combat, Main Phase 2, End Step, Cleanup.
+- `Your notes from your last decision:` your own thoughts from the last prompt. No earlier prompt is kept, so this is how a plan carries over; trust the board over them.
+- `Recent events:` what happened since your last prompt, at most the most recent 80 entries (a marker such as `… 227 earlier entries omitted, through turn 94 …` says when older ones were dropped).
+- `You:`/`Opp:` life (hp), hand, library, graveyard and exile counts; `This turn:` spells each side cast (werewolves transform on these) and `a creature died` (morbid).
+- Your mana pool; `Your board:` and `Opp board:`; `Stack:` (top last, with controller and targets); `Hand:` (cost, and base P/T for creatures); graveyards; exile; `Flashback available`.
+- `Opp's cards in view:` the rules text of every card in view that is not in your decklist. You learn the opponent's cards as they come into view, never before.
+- A context line (`[MAIN PHASE 1]`, `[RESPOND TO opp's <spell>]`, `[AFTER BLOCKERS DECLARED]`, ...) and the question.
 
-**Header line** (top): `Turn N - <step> (your turn|opp's turn)`. The step is one of: Untap, Upkeep, Draw, Main Phase 1, Begin Combat, Declare Attackers, Declare Blockers, First-Strike Combat Damage, Combat Damage, End Combat, Main Phase 2, End Step, Cleanup.
+Boards group lands (`2x Forest (1 tapped)`); any other permanent is `Name (#id) P/T keywords [flags]`. The `#id` tells apart permanents of one name. P/T is current, bonuses included, and a creature has exactly the keywords printed after it. Status flags after a permanent, in one bracket: `T` tapped; `S` summoning sick (no attacking or {T} abilities until its controller's next turn; it can block); `attacking you`/`attacking Opp`/`attacking <planeswalker> (#id)`; `blocking <attacker> (#id)`; `blocked by <blocker> (#id)`; `blocked (no blockers left)` (deals no combat damage unless it has trample); `Ndmg` damage marked; `regen shield`/`N regen shields`; `token`; `copy`; `+1+1xN`, `-1-1xN`, `LOYxN` or another counter by kind (`Slimex2`); `names: <card>`; `enchanting you`/`enchanting opponent` (a Curse's player); `legendary` (CR 704.5j: of two with one name under your control, you keep one). Elsewhere an object carries its id and whose it is: `(your)`, `(opponent's)`, `(in your graveyard)`, `(in opponent's exile)`.
 
-**Your notes from your last decision** (after your first decision): the tail of your own reasoning from the previous prompt. Earlier prompts are not kept in the conversation — every prompt restates the whole position — so this is where your plan carries over. Trust the board below over the notes when they disagree.
+## Answering
 
-**Recent events** (only if anything happened since the last prompt): a delta log of game events, yours and your opponent's. It carries at most the most recent 80 entries; when older ones are dropped it opens with a marker line, e.g. `… 227 earlier entries omitted, through turn 94 …`. The board below is always current.
-```
-Recent events:
-You drew a card
-```
-
-**Player status**: `You: 20hp, 7cards, 33lib, 0gy, 0exile` and the same for `Opp:` — life, hand size, library, graveyard and exile counts. Then `This turn: spells cast — you 0, opp 1; a creature died`: the spells each side has cast this turn (a werewolf transforms at the next upkeep on these), and `; a creature died` only once one has (morbid).
-
-**Mana pool** (only if non-empty): `Mana pool: Green:1, Red:2`
-
-**Boards** (only if non-empty): one indented entry per permanent, lands grouped by name with `(tapped)` / `(N tapped)`:
-```
-Your board:
-  2x Forest
-  1x Mountain (tapped)
-  Grizzly Bears (#30) 2/2
-Opp board:
-  1x Plains
-  Savannah Lions (#45) 2/1 [S]
-```
-`(#30)` is the permanent's id, stable for its lifetime; it tells apart permanents that share a name. Creatures show their CURRENT P/T, bonuses included, and their keywords after the P/T (`Abbey Griffin 2/2 flying, vigilance`). A creature has exactly the keywords printed there — none from its name, flavour or a spell that has worn off. Status flags after a permanent appear in one bracket, comma-separated (`[T,1dmg]`):
-- `T` = tapped
-- `S` = summoning sick: can't attack or use `{T}` abilities until it has been under its controller's control since their most recent turn began (CR 302.6); it can still block
-- `attacking you`, `attacking Opp`, `attacking <planeswalker> (#id)`; `blocking <attacker> (#id)`; `blocked by <blocker> (#id)`; `blocked (no blockers left)` = blocked, every blocker gone, deals no combat damage unless it has trample
-- `Ndmg` = N damage marked; `regen shield` / `N regen shields`
-- `token`; `copy` = a copy of another permanent
-- `+1+1xN`, `-1-1xN`, `LOYxN` = counters (loyalty N); any other counter is its kind and count, e.g. `Slimex2`
-- `names: <card>` = the card name this permanent named as it entered
-- `enchanting you`, `enchanting opponent` = the player a Curse is attached to
-- `legendary` after the P/T or in the flags. The legend rule (CR 704.5j): two legendary permanents of one name under your control, you keep one
-
-**Stack** (only if non-empty), with each object's id, controller and targets:
-```
-Stack:
-  Lightning Bolt (#41) (opponent's) targeting Goblin Piker (#45) (your)
-```
-Wherever an object is named — on the stack, in the action list — it carries its id and whose it is: `(your)` / `(opponent's)` by controller, `(in your graveyard)` / `(in opponent's graveyard)`, `(in your exile)` / `(in opponent's exile)`.
-
-**Hand**: one indented card per line, with mana cost and (for creatures) base P/T:
-```
-Hand:
-  Forest
-  Grizzly Bears {1}{G} 2/2
-  Lightning Bolt {R}
-```
-
-**Graveyards** and **exile** (only if non-empty): `Your graveyard:` / `Opp graveyard:`, then `Your exile:` / `Opp exile:`, one indented card per line.
-
-**Flashback available** (only if relevant): cards in your graveyard you can cast for a flashback cost, each cost named; the action list says which cost a row charges.
-
-**Opp's cards in view** (only if any): the rules text of every card in view that is not in your decklist — on the battlefield, on the stack, in a graveyard, in exile, or revealed — one entry per name (basic lands excepted). This is how you learn what your opponent's cards do: when they come into view, never before.
-```
-Opp's cards in view:
-Delver of Secrets {U} | Creature — Human Wizard 1/1
-  At the beginning of your upkeep, look at the top card of your library. You may reveal that card. If an instant or sorcery card is revealed this way, transform this creature.
-```
-
-**Context line**: `[MAIN PHASE 1]` / `[MAIN PHASE 2]` (your main phases: sorceries, creatures, lands), `[BEGIN COMBAT]`, `[AFTER ATTACKERS DECLARED]`, `[AFTER BLOCKERS DECLARED]` (instant windows), `[UPKEEP]` / `[DRAW]` / `[END STEP]` (utility steps — usually pass), `[OPPONENT'S TURN: <step>]` (you have priority on their turn), `[RESPOND TO <controller>'s <spell>]` (something is on the stack: pass to let it resolve, or respond).
-
-**Action list** (last): the numbered options, one per line. Pick one by its index.
-```
-[MAIN PHASE 1]
-Available actions:
-0: Pass
-1: Tap Forest: Add {G}
-2: Play Forest
-3: Cast Kalonian Tusker (tap 2x Forest)
-4: Concede
-```
-A cast option names the spell and its tap plan; pick it and a follow-up prompt (`<card name>: select a target:`) lists the legal targets. With only one legal target there is no prompt: the row names it (`Cast Brimstone Volley (tap 3x Mountain) targeting you`), as `Activate` rows do. Copies of one permanent that offer the same ability with the same tap plan share one line, one index per copy — pick the index of the copy you mean:
-```
-5-7: Activate Ludevic's Test Subject ({1}{U}: Put a hatchling counter. At 5, transform.) (tap 2x Island) — one per copy: 5=#43, 6=#45, 7=#46
-```
-
-
-Combat prompts replace the action list: `Choose attackers:` lists your creatures by index and asks for the indices attacking (empty for none; forced attackers are added for you); `Declare blocks` asks for `{"blocker", "attacker"}` index pairs, at most one per blocker.
-
-## How the engine works
-
-- **Auto-tap**: `Cast [spell]` and `Activate [ability]` tap the right sources for you, shown in the row (`Cast Doom Blade (tap 2x Swamp)`), spending a source that makes only {C} (a utility land's) on generic first, then basics and mana-only sources, then mana creatures, then sources with side effects, and never a choice that leaves something else unpayable when a different one keeps it payable: a spell in your hand, a flashback in your graveyard, or a permanent's ability (a utility land's own `{T}:` ability included). A "pay" question asked mid-resolution plans the same way and says what it taps. `Tap <source>` rows are for floating mana deliberately, for a mana ability's side effect, or to preserve a specific land; otherwise just cast.
-- **Mana pools empty between steps**, so tap only what you will spend in the same step.
-- **X costs**: `Cast`/`Activate` pays the non-X part; a follow-up prompt asks how to fund X in buckets (`floating`, `lands`, `rocks`, `dorks`), each value a mana amount. X is the total. Sources with variable output or a cost of their own are not offered — tap them first so the mana floats.
-- **Sacrifice costs**: a spell or ability that sacrifices a creature asks `<source>: choose a creature to sacrifice` after its targets; with one candidate it is chosen for you, and the row names it when no target choice comes first. The sacrifice is paid at cast time, so the creature is gone even if the spell is countered.
-- **Exile-from-graveyard costs** (Harvest Pyre, Stitched Drake, Skaab Ruinator, Makeshift Mauler, Corpse Lunge, Skaab Goliath): pick `Cast`, then a prompt numbers the eligible cards and asks for the positions to exile as an index array under `indices`. A fixed count must be met exactly or the cast is cancelled:
-```
-Harvest Pyre: choose 0-1 cards to exile from your graveyard (each exiled card adds to the spell's X)
-
-Pick anywhere from 0 to 1 cards. Name the cards to exile.
-
-Options:
-0: Reckless Waif (#44)
-```
-- **Backing out**: the X-funding, exile-from-graveyard, "up to N" target and tap-creatures-for-a-cost prompts carry `cancel`; `true` cancels the cast or activation instead of answering — it is undone and nothing is paid. Use it rather than casting an X spell for 0 you did not mean to.
-- **Sets of cards** (bottoming after a mulligan, cleanup discard, "choose N") are asked the same way: an index array, exactly as many as the prompt says.
-- **Equip** and **flashback** are rows in the action list (`Activate <equipment> (Equip {N})`, `Flashback <card>`), auto-tapped like anything else. Idle equipment is a wasted resource.
-- **Timing**: sorceries, creatures, enchantments, artifacts and lands only in YOUR main phase with an empty stack; instants and abilities whenever you have priority. Spells use the stack; the opponent can respond before yours resolves.
-- **Damage assignment** (CR 510.1c-d): when one of your attackers is blocked by two or more creatures you are asked for its damage assignment order once, after blocks — `order`: every blocker index exactly once, the one you most want dead first. Lethal must go to each blocker in that order before any spills to the next; a trampler sends the rest to the player. When there is more damage than the blockers' lethal total you are then asked, blocker by blocker, how much of what is left goes to it (`amount`, from lethal to all of it); lethal is the ordinary answer.
-- **Ordering your triggers** (CR 603.3b): simultaneous triggers of yours are one `order` prompt. The first index you list goes on the stack first and resolves LAST; put the trigger you want to resolve first at the END.
-- **Choosing between replacement and prevention effects on damage.** When two or more apply to one damage event and the order changes the result — Inquisitor's Flail (double it) and Undead Alchemist (mill instead), or Ghostly Possession (prevent it) and the Alchemist — the AFFECTED player chooses: the player being damaged, or the controller of the creature being damaged (CR 616.1). The context line names the event (`Walking Corpse (#30) would deal 2 combat damage to you`) and the options say what each effect would do (`double it to 4`, `instead You mill 2 cards`, `prevent all of it`). Pick the effect to apply FIRST; the others apply after only if they still can — a prevention or a mill ends the damage, doubling leaves more for the rest. You are asked only when the choice matters.
-- **Concede** is always offered; picking it asks you to confirm (`[CONFIRM CONCEDE]`); cancelling passes priority.
-
-## London mulligan
-
-Before turn 1: `[MULLIGAN DECISION]` shows your seven cards; answer `true` to mulligan, `false` to keep. Each mulligan costs one card: you draw seven again and, when you keep, `[BOTTOM N CARD(S) AFTER MULLIGAN]` asks for exactly N distinct indices to put on the bottom. Mulligan a 0- or 7-lander or a hand with no play in the first three turns; keep 2–4 lands and a curve. More than two mulligans is rarely right.
+- An action list has one numbered row per option; answer with the index. `Cast`/`Activate` rows show what they tap for you (`Cast Doom Blade (tap 2x Swamp)`), chosen so as not to strand another spell or ability you could pay for. `Tap <source>` rows only float mana, and a mana pool empties between steps. A spell with targets asks `<card name>: select a target:` next, unless the row names its one legal target (`Cast Brimstone Volley (tap 3x Mountain) targeting you`). Copies of one permanent offering one ability share a row, one index per copy: `5-7: Activate Ludevic's Test Subject ({1}{U}: Put a hatchling counter. At 5, transform.) (tap 2x Island) — one per copy: 5=#43, 6=#45, 7=#46`. `Concede` asks you to confirm.
+- `Choose attackers:` asks for the indices that attack (forced attackers are added); `Declare blocks` for `{"blocker", "attacker"}` index pairs, at most one per blocker.
+- Every other prompt — a target, a cost, X, an order, damage, a mulligan — says what it asks.
+- Creatures, sorceries, enchantments, artifacts and lands only in your main phase with an empty stack; instants and abilities whenever you have priority.
 
 ## Playing
 
-- Reason only from what the prompt lists. If a keyword is not printed after the P/T, the creature does not have it; if a card is not in view, you do not know it.
-- Blocked creatures trade by current P/T; first strike lands before normal damage; combined blocker toughness is not a pool (an attacker assigns lethal to one blocker before the next). Chump the highest-power attacker, not the smallest.
+- Reason only from what the prompt lists: a keyword not printed after the P/T is not there; a card not in view is unknown.
+- Blocked creatures trade by current P/T; first strike deals its damage first; an attacker assigns lethal to one blocker before the next. Chump the highest-power attacker, not the smallest.
 - Let combat damage resolve before casting a "creature died this turn" effect.
-- Behind on board and life, look for a line that changes the situation — an equip, an aura, a race — rather than passing to topdeck.
+- Behind on board and life, look for a line that changes the race — an equip, an aura, a trick — rather than passing to topdeck.
 "#;
 
 /// What every schema's `thoughts` field asks for. The reasoning is private
@@ -1454,21 +1371,10 @@ pub(crate) fn seat_tag(seat: &str) -> String {
 /// whose result object carries no thinking block the harness can read
 /// (issue #213).
 const THOUGHTS_IN_JSON_FORMAT: &str = r#"You are playing Magic: The Gathering, a one-on-one Limited (draft) match: 40-card
-decks, 20 life, reduce the opponent to 0.
-
-Every decision the game needs comes as one prompt describing the whole current
-position — events since the last prompt, turn and step, both players' life and
-counts, both battlefields, the stack, your mana pool, your hand, and the legal
-options. The "Prompt format" section documents every field.
-
-You answer with structured JSON; the schema for each decision is enforced by the
-API, so you need not memorise response shapes. Every schema has a "thoughts"
-field: reason there, concisely — the position, the alternatives, the choice.
-Thoughts are private.
-
-Ground every claim in the prompt text. Only reference creatures, cards and zones
-it lists; a keyword a creature has is printed after its P/T, and one that is not
-printed there it does not have.
+decks, 20 life, reduce the opponent to 0. Each decision is one prompt with the
+whole position and the legal options; answer with the JSON its schema asks for.
+`thoughts` is private: the deciding reason and your plan, which come back to you
+as notes in your next prompt. Ground every claim in the prompt text.
 "#;
 
 
@@ -5106,7 +5012,12 @@ impl LlmPlayer {
 
         let (menu, rows) = Self::priority_menu(view, legal, self.offer_pass_until);
 
-        let action_prompt = Self::format_action_prompt(context.as_deref(), &rows, view.you);
+        let mut action_prompt = Self::format_action_prompt(context.as_deref(), &rows, view.you);
+        // The one prompt whose rule the board does not make plain is told it
+        // here, where it is asked, rather than in every system prompt.
+        if matches!(legal.resolution_prompt, Some(mtg_engine::state::ResolutionChoiceKind::ChooseDamageEffect { .. })) {
+            action_prompt = format!("{DAMAGE_EFFECT_RULE}\n{action_prompt}");
+        }
 
         let engine_entries = menu.iter().filter(|e| matches!(e, MenuEntry::Engine(_))).count();
         if engine_entries != legal_actions.len() {
@@ -5755,7 +5666,8 @@ impl LlmPlayer {
              London mulligan decision — keep or mulligan?\n\
              \n\
              {play_draw}. You have taken {mulls_taken} mulligan{plural} so far. \
-If you keep now you will bottom {mulls_taken} card{plural} and play with {keep_size} in hand.\n\
+If you keep now you will bottom {mulls_taken} card{plural} and play with {keep_size} in hand. \
+A mulligan draws seven again and costs one card more. {MULLIGAN_ADVICE}\n\
              {opp_mulls_text}\n\
              \n\
              Your opening hand:\n\
@@ -6690,11 +6602,8 @@ pub(crate) mod tests {
         .iter()
         .map(|s| ActionRow::One((*s).to_string()))
         .collect();
-        let actual = LlmPlayer::format_action_prompt(Some("MAIN PHASE 1"), &labels, mtg_engine::ids::PlayerId(0));
-        assert!(
-            GAME_RULES.contains(actual.trim_end()),
-            "GAME_RULES must quote the action list the harness sends. It sends:\n{actual}"
-        );
+        // The rules quote one row of the list, the shared one; the list's
+        // other rows are read off the prompt itself.
 
         // And the row copies of one permanent share (issue #461): six
         // single rows first, so the copies' indices start at 5 as documented.
@@ -6828,11 +6737,11 @@ pub(crate) mod tests {
             .find_map(|l| l.strip_prefix("0: "))
             .expect("the row is printed");
         let effect = option.split_once(": ").expect("`Name (#id): what it does`").1;
-        assert!(GAME_RULES.contains(effect),
-            "GAME_RULES must quote the option the harness sends, {effect:?}");
-        assert!(raw_player_tokens(GAME_RULES).is_empty(),
-            "and must not teach a token it never defines: {:?}",
-            raw_player_tokens(GAME_RULES));
+        assert_eq!(effect, "instead You mill 2 cards", "the option is rewritten for the seat");
+        for text in [GAME_RULES, DAMAGE_EFFECT_RULE] {
+            assert!(raw_player_tokens(text).is_empty(),
+                "the rules must not teach a token they never define: {:?}", raw_player_tokens(text));
+        }
     }
 
     /// The header comes first and "Recent events" follows it, which is the
@@ -6848,8 +6757,8 @@ pub(crate) mod tests {
         if let Some(events) = prompt.find("Recent events:") {
             assert!(header < events, "header comes first:\n{prompt}");
         }
-        let doc_header = GAME_RULES.find("**Header line**").expect("documented");
-        let doc_events = GAME_RULES.find("**Recent events**").expect("documented");
+        let doc_header = GAME_RULES.find("`Turn N").expect("documented");
+        let doc_events = GAME_RULES.find("`Recent events:`").expect("documented");
         assert!(
             doc_header < doc_events,
             "GAME_RULES lists the sections in the order they are sent"
@@ -6869,10 +6778,10 @@ pub(crate) mod tests {
             !body.contains("Hand: Forest"),
             "the hand is not a single inline list:\n{body}"
         );
-        for section in ["Your board:\n  ", "Hand:\n  ", "Stack:\n  "] {
+        for section in ["`Your board:`", "`Hand:`", "`Stack:`"] {
             assert!(
                 GAME_RULES.contains(section),
-                "GAME_RULES must show {section:?}, the shape the harness sends"
+                "GAME_RULES must name {section:?}, the heading the harness sends"
             );
         }
     }
@@ -6882,11 +6791,9 @@ pub(crate) mod tests {
     /// (issue #323).
     #[test]
     fn the_damage_effect_choice_is_documented() {
-        let para = GAME_RULES.find("**Choosing between replacement and prevention effects on damage.**")
-            .expect("documented");
-        let rest = &GAME_RULES[para..];
-        for phrase in ["CR 616.1", "AFFECTED player", "apply FIRST", "double it to 4", "prevent all of it"] {
-            assert!(rest.contains(phrase), "the paragraph explains {phrase:?}");
+        for phrase in ["CR 616.1", "the affected player", "apply FIRST", "a prevention or a mill ends the damage",
+                       "doubling leaves more"] {
+            assert!(DAMAGE_EFFECT_RULE.contains(phrase), "the rule sent with the prompt explains {phrase:?}");
         }
     }
 
@@ -6899,7 +6806,7 @@ pub(crate) mod tests {
             keep.starts_with("[MULLIGAN DECISION]"),
             "the keep-or-mulligan prompt leads with its context marker:\n{keep}"
         );
-        assert!(GAME_RULES.contains("[MULLIGAN DECISION]"));
+        assert!(keep.contains(MULLIGAN_ADVICE), "the advice comes with the question:\n{keep}");
 
         let bottom = LlmPlayer::mulligan_bottom_prompt("You are on the draw", 2, "", hand);
         assert!(
@@ -6911,7 +6818,6 @@ pub(crate) mod tests {
             one.starts_with("[BOTTOM 1 CARD AFTER MULLIGAN]"),
             "a single card drops the (S):\n{one}"
         );
-        assert!(GAME_RULES.contains("[BOTTOM N CARD(S) AFTER MULLIGAN]"));
     }
 
     // ── The concede confirmation (issue #209) ────────────────────────────
@@ -8078,11 +7984,8 @@ pub(crate) mod tests {
         assert!(prompt.find("Opp board:").unwrap() < section && section < prompt.find("[MAIN PHASE 1]").unwrap(),
             "the section sits between the board and the question:\n{prompt}");
 
-        // GAME_RULES documents the section in the shape the harness sends.
-        let delver = card_reference_entry("Delver of Secrets", &registry);
-        let front = delver.lines().take(2).collect::<Vec<_>>().join("\n");
-        assert!(GAME_RULES.contains(&format!("Opp's cards in view:\n{front}")),
-            "the documented example is built by the same formatter:\n{front}");
+        // GAME_RULES names the section by the heading the harness sends.
+        assert!(GAME_RULES.contains("`Opp's cards in view:`"), "the section is documented");
 
         // Nothing in view from outside the deck: no section at all.
         let mut view = empty_view();
@@ -8241,11 +8144,7 @@ pub(crate) mod tests {
     fn game_rules_recap_example_is_rewritten_like_the_recap() {
         let entry = LlmPlayer::rewrite_log_entry("p0 drew a card", mtg_engine::ids::PlayerId(0));
         assert_eq!(entry, "You drew a card");
-        assert!(
-            GAME_RULES.contains("Recent events:\nYou drew a card"),
-            "the documented recap example is what the seat is sent"
-        );
-        assert!(!GAME_RULES.contains("p0 drew a card"), "no stale seat label in the example");
+        assert!(raw_player_tokens(GAME_RULES).is_empty(), "no stale seat label in the rules");
     }
 
     /// A cast option with several legal targets names none — they come from
@@ -9123,7 +9022,7 @@ this Aura deals 1 damage to that player.";
         assert!(board.contains("blocked (no blockers left)"), "{board}");
         assert!(board.contains("enchanting you") && board.contains("enchanting opponent"), "{board}");
         let legend_start = GAME_RULES.find("Status flags after a permanent").expect("the legend");
-        let legend = &GAME_RULES[legend_start..legend_start + 2500];
+        let legend = &GAME_RULES[legend_start..(legend_start + 2500).min(GAME_RULES.len())];
         for line in board.lines() {
             // One bracket per line: a second one is a flag outside the
             // bracket the legend describes (#736).
@@ -9288,8 +9187,9 @@ this Aura deals 1 damage to that player.";
     fn game_rules_describes_the_sacrifice_prompt_the_seat_is_sent() {
         assert!(!GAME_RULES.contains("listed once per creature you could sacrifice"),
             "the one-row-per-sacrifice listing is gone");
-        assert!(GAME_RULES.contains("choose a creature to sacrifice"),
-            "and the follow-up prompt is named the way choose_ability_targets words it");
+        // The follow-up prompt says what it asks; the system prompt promises
+        // that of every prompt but the action list and combat.
+        assert!(GAME_RULES.contains("Every other prompt — a target, a cost, X, an order, damage, a mulligan — says what it asks."));
     }
 
     /// Two objects that share a name in a public zone are never the same
@@ -9704,7 +9604,9 @@ this Aura deals 1 damage to that player.";
         // The worked examples went when the system prompt was cut to what
         // decides a game (it is re-read, cached, on every decision); the
         // spec block stays, and any example added back is checked too.
-        assert!(blocks >= 1, "the spec section's action list: {blocks}");
+        // The rules no longer quote a whole list (they are re-read, cached,
+        // on every decision); any list added back is checked above.
+        let _ = blocks;
     }
 
     /// #492: GAME_RULES told every seat, on every call, that the
@@ -9724,11 +9626,10 @@ this Aura deals 1 damage to that player.";
             &LlmPlayer::marked_count_note(0, 1, "card"),
             "Name the cards to exile.",
         );
-        assert!(
-            GAME_RULES.contains(body.trim_end()),
-            "GAME_RULES must quote the marked-subset prompt the harness sends. \
-             It sends:\n{body}"
-        );
+        // The prompt carries its own instructions; the rules no longer quote
+        // it, and must not quote an older shape of it either.
+        assert!(body.contains("Name the cards to exile."), "{body}");
+        assert!(!GAME_RULES.contains("Harvest Pyre: choose"), "no stale example");
 
         // And it must not promise the shape that prompt stopped using. The
         // pile division is the one place a boolean per permanent is still
@@ -10094,9 +9995,9 @@ mod stateless_decisions {
         let board = second.find("You: ").expect("player status");
         assert!(notes < board, "before the board:\n{second}");
         // Documented where the seat reads the prompt format.
-        let doc_header = GAME_RULES.find("**Header line**").unwrap();
-        let doc_notes = GAME_RULES.find("**Your notes from your last decision**").expect("documented");
-        let doc_events = GAME_RULES.find("**Recent events**").unwrap();
+        let doc_header = GAME_RULES.find("`Turn N").unwrap();
+        let doc_notes = GAME_RULES.find("`Your notes from your last decision:`").expect("documented");
+        let doc_events = GAME_RULES.find("`Recent events:`").unwrap();
         assert!(doc_header < doc_notes && doc_notes < doc_events, "in the order they are sent");
     }
 
