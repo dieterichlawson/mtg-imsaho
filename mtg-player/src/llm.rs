@@ -601,10 +601,10 @@ fn model_takes_a_thinking_budget(model: &str) -> bool {
 /// that reasons at length over "pass or Bolt the 2/1" spends more on the
 /// reasoning than on reading the board. The default is off: the seat
 /// reasons in its two sentences of `thoughts`, before its answer. Replayed
-/// over 78 real positions against an Opus 5.5 reference, a Sonnet 4.6 seat
-/// at `off` agreed with the reference as often as at `low` (80.8% against
-/// 79.5%), and `low` spent 84-130 thinking tokens a decision on top
-/// (reports/llm-cost.md, phase 3). [`THINKING_ENV`] raises it for a run.
+/// over real positions against a stronger model's reference, the default
+/// seat at `off` agreed with the reference as often as at `low`, and `low`
+/// spent 84-130 thinking tokens a decision on top (reports/llm-cost.md,
+/// phase 3). [`THINKING_ENV`] raises it for a run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThinkingLevel {
     /// No thinking at all, where the model allows that.
@@ -1788,8 +1788,8 @@ impl AnthropicBackend {
         // `thoughts` is kept: it is where the seat's notes come from (two
         // sentences, carried into its next prompt), and the reasoning a
         // seat with thinking off does at all. The thinking channel cannot
-        // be the notes' source — at `off` there is none, and the 5.x models
-        // return their thinking empty unless asked otherwise — so every
+        // be the notes' source — at `off` there is none, and the newest
+        // models return their thinking empty unless asked otherwise — so every
         // backend asks for it in the JSON, as the `claude -p` and Gemini
         // seats always have (reports/llm-cost.md, phase 3). And the schema
         // goes without its per-call constraints, since a changed
@@ -10227,7 +10227,7 @@ mod metered_seat_failures {
     /// other backend does, and the thoughts it is sent back become its
     /// notes and leave the answer. It used to strip the field and take its
     /// notes from the thinking channel, which at `off` does not exist and
-    /// on the 5.x models comes back empty — a seat with no notes at all
+    /// on the newest models comes back empty — a seat with no notes at all
     /// (reports/llm-cost.md, phase 3).
     #[test]
     fn the_api_seat_reasons_in_the_json_and_keeps_its_thoughts_as_notes() {
