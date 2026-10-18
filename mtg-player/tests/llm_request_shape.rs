@@ -255,7 +255,7 @@ fn the_damage_amount_schema_offers_exactly_the_legal_amounts() {
 fn the_thinking_level_is_sent_the_way_the_model_accepts_it() {
     use mtg_player::llm::{apply_thinking, max_output_tokens, parse_thinking_level, ThinkingLevel};
 
-    assert_eq!(parse_thinking_level(""), Some(ThinkingLevel::Low), "unset is low");
+    assert_eq!(parse_thinking_level(""), Some(ThinkingLevel::Off), "unset is off");
     assert_eq!(parse_thinking_level("OFF"), Some(ThinkingLevel::Off));
     assert_eq!(parse_thinking_level("medium"), Some(ThinkingLevel::Medium));
     assert_eq!(parse_thinking_level("high"), Some(ThinkingLevel::High));

@@ -444,8 +444,12 @@ fn model_takes_a_thinking_budget(model: &str) -> bool {
 /// Thinking output is billed at output rates and, once the conversation
 /// history is bounded, it is the largest term a decision has left — a seat
 /// that reasons at length over "pass or Bolt the 2/1" spends more on the
-/// reasoning than on reading the board. The default is the low setting;
-/// [`THINKING_ENV`] raises or lowers it for a run.
+/// reasoning than on reading the board. The default is off: the seat
+/// reasons in its two sentences of `thoughts`, before its answer. Replayed
+/// over 78 real positions against an Opus 5.5 reference, a Sonnet 4.6 seat
+/// at `off` agreed with the reference as often as at `low` (80.8% against
+/// 79.5%), and `low` spent 84-130 thinking tokens a decision on top
+/// (reports/llm-cost.md, phase 3). [`THINKING_ENV`] raises it for a run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThinkingLevel {
     /// No thinking at all, where the model allows that.
@@ -458,7 +462,7 @@ pub enum ThinkingLevel {
     Budget(u32),
 }
 
-/// `MTG_LLM_THINKING`: `off`, `low` (the default), `medium`, `high`, or a
+/// `MTG_LLM_THINKING`: `off` (the default), `low`, `medium`, `high`, or a
 /// token budget such as `2048`.
 pub const THINKING_ENV: &str = "MTG_LLM_THINKING";
 
@@ -470,24 +474,24 @@ pub const THINKING_ENV: &str = "MTG_LLM_THINKING";
 #[must_use]
 pub fn thinking_level() -> ThinkingLevel {
     static WARNED: std::sync::Once = std::sync::Once::new();
-    let Ok(raw) = std::env::var(THINKING_ENV) else { return ThinkingLevel::Low };
+    let Ok(raw) = std::env::var(THINKING_ENV) else { return ThinkingLevel::Off };
     if let Some(level) = parse_thinking_level(&raw) {
         return level;
     }
     WARNED.call_once(|| {
         crate::stderr_line!(
             "Warning: {THINKING_ENV}={raw:?} is not off, low, medium, high or a token \
-             count; thinking stays at low.");
+             count; thinking stays off.");
     });
-    ThinkingLevel::Low
+    ThinkingLevel::Off
 }
 
 /// [`thinking_level`]'s parser, `None` for a value it does not know.
 #[must_use]
 pub fn parse_thinking_level(raw: &str) -> Option<ThinkingLevel> {
     match raw.trim().to_ascii_lowercase().as_str() {
-        "" | "low" => Some(ThinkingLevel::Low),
-        "off" | "none" => Some(ThinkingLevel::Off),
+        "low" => Some(ThinkingLevel::Low),
+        "" | "off" | "none" => Some(ThinkingLevel::Off),
         "medium" => Some(ThinkingLevel::Medium),
         "high" => Some(ThinkingLevel::High),
         n => n.parse::<u32>().ok().map(|n| if n == 0 { ThinkingLevel::Off } else { ThinkingLevel::Budget(n) }),
