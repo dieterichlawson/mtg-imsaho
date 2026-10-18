@@ -13,7 +13,21 @@ column is if anything understated).
 
 ## Headline
 
-Two phases so far. Phase 1 (below) made a decision stateless and the
+**Phase 3 (2026-10-18, its own section below)**: five real games each,
+per turn, against phase 2's end on the same seat —
+
+| | tokens / turn | $ / turn | games won |
+| --- | ---: | ---: | ---: |
+| phase 2's end, `claude-sonnet-4-6` | 23,183 | 0.1109 | 5 / 5 |
+| phase 3, `claude-sonnet-4-6` | 7,614 (3.0x fewer) | 0.0243 (4.6x less) | 5 / 5 |
+| phase 3, `claude-haiku-5-5`, now the default | 10,614 (2.2x fewer) | 0.0012 (92x less) | 5 / 5 |
+
+On a replay of 104 real positions scored against a stronger model, the
+phase-3 Sonnet chose as phase 2's did (79.8% against 80.8%) and the Haiku
+chose better (87.5%). Most of the tokens left are the cached system
+prompt, the cheapest a call sends; the bill moved more than the count.
+
+Phases 1 and 2. Phase 1 (below) made a decision stateless and the
 prompt around it smaller; phase 2 (the last section) lets the seat say
 "go" so that fewer decisions are model calls at all, caps the output, and
 asks for two sentences of thoughts. Same seeds, same decks, same seat
@@ -360,6 +374,183 @@ ran together with the test suite (wall time per call 15 s, as in phase
 did not list and the implementation added on the "when in doubt, ask"
 side; it fired four times in the two games.
 
+## Phase 3: a turn in one answer, a cache that holds, and the model
+
+Measured 2026-10-18. Asked for "the next 10x": the bill is now about 4.6x
+lower per turn on the same model (about 3x on the Messages API, whose
+baseline thought less), and about 92x lower on the model the harness now
+defaults to (about 46x on the API), which played better on a
+decision-quality replay. Raw tokens per turn fell about 3x on the same
+model; most of what is left is the cached system prompt, the cheapest
+token a call sends, so the count moved less than the bill.
+
+### What was measured
+
+- **Real games**, five per configuration, the same five each time:
+  `--p1 cc:<model> --p2 random`, seeds 1 and 2 with the default decks
+  (`red-green` against `white-black`), and three drafted-deck pairs
+  (`gw-humans`/`rb-vampires` seed 11, `ub-zombies`/`ug-spider-spawning`
+  seed 12, `rb-vampires`/`gw-humans` seed 13). The token figures are the
+  `claude -p` seat's own `USAGE` lines; the dollars are those tokens at
+  each model's API rates, cache writes at the CLI's 1-hour rate (2x
+  input). The baseline is master at 4b6f3b7, phase 2's end.
+- **Decision quality**: `scripts/decision-eval/`, its data kept in
+  `reports/decision-eval/2026-10-18/`. Every model call of the
+  three drafted-deck baseline games was kept as a save (113 positions);
+  each configuration replays every position as one decision
+  (`--resume --stop-after 1`) and is scored by how often its engine action
+  matches a reference — a stronger model (`cc:claude-opus-5-5`) at
+  `MTG_LLM_THINKING=high`, two samples, kept where both samples agree (104
+  "settled" positions). One sample per configuration.
+- **The Messages API path** could not be run (no key). Its figures below
+  are modelled from the same measurements: the bytes each build sends for
+  the same positions, 3.1 bytes a token (fitted from the cache-read sizes
+  of games whose system prompts differ in length), the measured output,
+  and the measured share of calls that miss the cache.
+
+### Results
+
+Real games, per turn (a game's turns, both players'):
+
+| | calls / turn | tokens / turn | $ / turn | cold cache writes | thinking | games won |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| baseline, `claude-sonnet-4-6` (4b6f3b7) | 2.61 | 23,183 | 0.1109 | 58 of 217 calls | 223,787 | 5 / 5 |
+| final, `claude-sonnet-4-6` (ff4ed99) | 1.56 | 7,614 | 0.0243 | 18 of 150 | 0 | 5 / 5 |
+| final, `claude-haiku-5-5` (ff4ed99) | 1.66 | 10,614 | 0.0012 | 17 of 146 | 43,933 | 5 / 5 |
+| factor, Sonnet | 1.7x | **3.0x** | **4.6x** | | | |
+| factor, Haiku | 1.6x | 2.2x | **92x** | | | |
+
+The baseline thought at the CLI's own default effort (see "The baseline
+overstated thinking" below). A cold write is a call that read no system
+prompt from the cache: the first use of each kind of question in a game
+— a mulligan, a main phase, a block — one each. Two earlier rounds on
+near-final builds read the same way: the Sonnet at d1f4ba1, 1.35 calls, 6,241 tokens and $0.0186 a turn (its cold
+writes, 7, were fewer because the decision replay ran beside it on the
+same build and warmed the same cache), with one game lost by concession
+(caveats); the Haiku at d465581, before the rules said which pass to
+prefer, 2.11 calls, 13,190 tokens and $0.0015 a turn.
+
+Decision quality, the 104 settled positions:
+
+| configuration | agrees with the reference | output / decision | system prompt | prompt |
+| --- | ---: | ---: | ---: | ---: |
+| baseline, Sonnet, `low` (at the API seat's effort) | 80.8% (80/99) | 216 (84 thinking) | 17,920 B | 2,411 B |
+| baseline, Sonnet, `off` | 78.8% (78/99) | 181 | 17,920 B | 2,411 B |
+| final, Sonnet, `off` | 79.8% (83/104) | 190 | 9,096 B | 1,841 B |
+| final, Haiku, `off` (effort `low`) | **87.5% (91/104)** | 546 (332 thinking) | 9,096 B | 1,841 B |
+| final, Haiku, CLI default effort | 89.4% (93/104) | 757 (533 thinking) | 9,096 B | 1,841 B |
+
+The final Sonnet chooses as the baseline did, within a position. The
+Haiku chooses the reference's action more often than either Sonnet: 11
+positions only it got and 3 only the final Sonnet got (exact McNemar
+p = 0.06; 13 against 3, p = 0.02, at the CLI's default effort). The
+reference is the Haiku's own generation, which may share its habits, so
+read "agrees more often" as "is not worse", not as proof of the opposite.
+
+The Messages API path, per decision and per turn, modelled as above:
+
+| | system (cached) | prompt | output | cold writes | $ / decision | $ / turn | raw tokens / turn |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| baseline, Sonnet, `low` | 5,780 | 780 | 216 | 27% of calls | 0.0126 | 0.033 | 17,700 |
+| final, Sonnet, `off` | 2,930 | 590 | 207 | 12% | 0.0070 | 0.0109 | 5,800 |
+| final, Haiku, `off` | 3,810 | 770 | 523 | 12% | 0.0004 | 0.0007 | 8,500 |
+
+(Token counts per decision; output as the final real games measured it,
+and the baseline's as the replay measured it at the effort the API seat
+sends, its games having thought at the CLI's default; calls per turn as
+the real games made them; Haiku's tokenizer counts the same
+text as about 30% more tokens.) On the API path the same-model factor is
+about 3x per turn, in dollars and in raw tokens, and the Haiku's about
+46x in dollars; the CLI path's larger same-model factor is the thinking
+its baseline did at the CLI's default effort.
+
+### What changed, and what each moved
+
+1. **The cache holds** (the largest single term). The answer schema is
+   part of the cached prefix on both paths — a changed
+   `output_config.format` invalidates the Messages API's prompt cache, and
+   `claude -p` sends the schema as a tool ahead of the system prompt — and
+   every menu's `enum: [0..n]`, the plan's card names and the counts in
+   descriptions made nearly every schema new. Measured on the first build
+   of this phase: 60 to 95% of a game's calls read nothing from the cache
+   and wrote the whole prefix again at 1.25-2x where a read is 0.1x. Now
+   the schema goes without its per-call values (`cache_stable_schema`),
+   every index question is one schema, the answer is checked against the
+   full schema (one `REASK` with the reason when it breaks it, and a menu
+   row copied into a plan read as its card), and
+   `mtg-runner/tests/schema_cache.rs` holds every kind of question to one
+   sent schema. Cold writes: 58 of 217 calls at the baseline, 18 of 150 —
+   one per kind of question a game asks.
+   The draft's pick schema got the same treatment; there every pick's
+   schema was new, and the system prompt it rewrote was the set's card
+   reference.
+2. **Fewer calls.** The seat is not asked to respond to its own spell
+   while only its own are on the stack; the pass-until row no longer
+   stops at the seat's own upkeep, and stops for the opponent's attack
+   once blocks are in. A main-phase answer carries `then` (cards to play
+   after `action`), `ask_again` (false, the usual answer, ends the main
+   phase: an empty plan used to mean "ask me again", and a seat with
+   nothing more to do was asked again to say so) and `attack` (declared
+   at combat without a call if nothing happened in between). Calls per
+   turn: 2.61 to 1.56.
+3. **No thinking by default.** The reasoning goes in the answer's
+   `thoughts` on every backend (the Messages API seat used to strip it and
+   read a thinking block that is empty at `off` and on the newest models).
+   On the replay `off` chose as well as `low`. The `claude -p` seat now
+   passes `--effort` for its level; without it the CLI ran its own default
+   effort and thought 476-5,212 tokens a decision where `--effort low`
+   thought 25-71.
+4. **A smaller system prompt**: 17,920 to 9,096 bytes for a drafted deck
+   (12,647 to 6,409 for a preset one). The rules restate only what the
+   prompt does not show; a decklist entry says each thing once, without
+   reminder text.
+5. **A smaller prompt**: 2,411 to 1,841 bytes on the same positions. Mana
+   taps and pools emptying are not events; an opponent's card in a
+   graveyard is described only where its text works from there (the text
+   of every dead creature had been a third of a late-game prompt);
+   repeated events and stack entries are one line with `(×N)`; graveyards
+   are grouped by name.
+6. **The `claude -p` child is not part of the session that started it.**
+   Run from a cloud session, it inherited that session's variables, so
+   every decision also asked a second model for a session title (≈ 1,200
+   input and 200 output tokens, in no usage line the seat reads) and wrote
+   the session's reminders into every prompt (1,388 tokens of cache write
+   a call, 798 without them).
+7. **The model.** `claude` with no model now runs `claude-haiku-5-5`
+   (`DEFAULT_ANTHROPIC_MODEL`); the evidence is the two tables above. Name
+   a model to run another. The current Haiku is asked for adaptive thinking
+   (it was being sent a `budget_tokens`, a 400 on that model), `off`
+   leaves it the output room `low` has, and its price and the current
+   Opus's are in `cost.rs`.
+
+### The baseline overstated thinking
+
+Phases 1 and 2 measured the `claude -p` seat, which then passed no
+`--effort`: at `MTG_LLM_THINKING=low` the CLI ran its own default effort,
+and on the same positions it thought 476-5,212 tokens a decision where
+`--effort low` — what the Messages API seat sends at `low` — thought
+25-71. The CLI-path tables of those phases are what the CLI seat cost;
+the API seat at `low` always thought far less. The API-path table above
+models the baseline at `low` as the API seat would have run it.
+
+### Caveats
+
+- One game per seed and configuration, against `random`. The games are
+  not the same game; per turn is the comparison that holds.
+- Two of the Sonnet's games on earlier builds this phase ended in a
+  concession the board did not call for (36 "trample" damage where one
+  attacker had trample; a life total its own mill land could have
+  outrun). The baseline never chose Concede. The rules now say when to
+  concede and the confirmation asks the seat to count it out first; the
+  final round conceded nothing, and whether that holds is a playtest
+  question (H31's kind). The Haiku conceded none of its ten.
+- The Haiku answered plain `Pass` on the opponent's turn where the
+  Sonnet said "go", and made 2.11 calls a turn to the Sonnet's 1.35; with
+  the rules saying the row is the usual way to pass, 1.66 to 1.56.
+- The draft runner's picks were not re-measured in real drafts; the
+  pick-schema change is pinned by its tests.
+- The Messages API figures are a model of measurements, not a bill.
+
 ## How to re-measure
 
 ```bash
@@ -381,4 +572,15 @@ STUB_PASS_UNTIL=0.8 scripts/measure-llm-prompts.sh 1 2 3 4 5      # the stub tak
 
 # What shapes of prompt a run asked:
 scripts/llm-prompt-shapes.py logs/cost/after-seed1.log
+
+# Phase 3's games: the five, per model; read `USAGE` (cache_read 0 is a cold write).
+for s in 1 2; do ./target/release/mtg-runner --p1 cc:claude-haiku-5-5 --p2 random --seed $s --quiet \
+  --log logs/cost3/haiku/seed$s.log; done
+./target/release/mtg-runner --p1 cc:claude-haiku-5-5 --p2 random --deck1 decks/gw-humans.txt \
+  --deck2 decks/rb-vampires.txt --seed 11 --quiet --log logs/cost3/haiku/g1.log   # and 12, 13
+
+# Phase 3's decision-quality replay (docs/llm-harness.md, "Saving and resuming"):
+scripts/decision-eval/replay.py --positions logs/eval/positions --out logs/eval/res \
+  --name haiku --p1 cc:claude-haiku-5-5
+scripts/decision-eval/compare.py --out logs/eval/res --ref ref-opus-high haiku
 ```
