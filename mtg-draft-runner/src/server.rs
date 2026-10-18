@@ -61,6 +61,11 @@ pub struct Shared {
     /// The game pages of the people in a match now, by seat: what a kick
     /// reaches into a running match with (#821).
     in_game: Mutex<Vec<(usize, Withdraw)>>,
+    /// Where the next game page's port search starts: past the last one
+    /// handed out, so a finished match's port, let go when its seat is
+    /// dropped (#853), is not the next match's while the range has others.
+    /// A page left open from that match reconnects to its own port.
+    next_game_port: Mutex<Option<u16>>,
 }
 
 struct Client {
@@ -87,6 +92,7 @@ impl Shared {
             set_name,
             quit: AtomicBool::new(false),
             in_game: Mutex::new(Vec::new()),
+            next_game_port: Mutex::new(None),
         })
     }
 
@@ -566,17 +572,26 @@ fn finish(shared: &Arc<Shared>, round: usize, a: usize, b: usize, result: mtg_dr
 /// A browser page for one human's game, on the next free game port.
 fn game_page(shared: &Shared, name: &str) -> Result<GuiPlayer, String> {
     let (lo, hi) = shared.config.game_ports;
+    let mut next = shared.next_game_port.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut last = String::from("no ports to try");
-    for port in lo..=hi {
+    for port in game_port_order(lo, hi, *next) {
         match GuiPlayer::new_at(name, &shared.config.bind, Some(port)) {
             Ok(mut gui) => {
                 gui.url = format!("http://{}:{port}/", shared.config.advertise);
+                *next = port.checked_add(1);
                 return Ok(gui);
             }
             Err(e) => last = e,
         }
     }
     Err(format!("no free port in {lo}-{hi} ({last})"))
+}
+
+/// Every port in `lo..=hi` once, from `from` (when it is in the range)
+/// round to the one before it.
+fn game_port_order(lo: u16, hi: u16, from: Option<u16>) -> impl Iterator<Item = u16> {
+    let start = from.filter(|p| (lo..=hi).contains(p)).unwrap_or(lo);
+    (start..=hi).chain(lo..start)
 }
 
 fn write_game_log(out_dir: Option<&Path>, round: usize, a: usize, b: usize, game: usize, outcome: &GameOutcome) {
@@ -797,6 +812,18 @@ mod tests {
             assert_ne!(host, "0.0.0.0");
             assert_ne!(host, "127.0.0.1");
         }
+    }
+
+    #[test]
+    fn game_ports_are_tried_from_past_the_last_one_round_the_range() {
+        // #853: a finished match's port is let go; the next match starts
+        // past it, so a page still open on it does not reconnect into
+        // somebody else's game while the range has another port.
+        let order = |from| game_port_order(8801, 8804, from).collect::<Vec<_>>();
+        assert_eq!(order(None), [8801, 8802, 8803, 8804]);
+        assert_eq!(order(Some(8803)), [8803, 8804, 8801, 8802]);
+        assert_eq!(order(Some(8805)), [8801, 8802, 8803, 8804], "past the top it wraps");
+        assert_eq!(game_port_order(8801, 8801, Some(8802)).collect::<Vec<_>>(), [8801]);
     }
 
     #[test]

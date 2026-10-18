@@ -156,8 +156,9 @@ the log and the standings, as the runner marks it).
 
 When every deck is in, a Swiss tournament pairs the rounds as the runner
 does. For each match a person is in, a game page is bound on the next
-free port in `--game-ports` and the link is shown on your page and in the
-client; a match between two people is two pages on two ports; an
+free port in `--game-ports` (counting on from the last one used, round to
+the start; a finished match's port is let go) and the link is shown on
+your page and in the client; a match between two people is two pages on two ports; an
 AI-vs-AI match plays on its own. Results and standings appear as they
 come; the next round is paired when the round is over.
 
