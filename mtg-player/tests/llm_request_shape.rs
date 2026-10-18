@@ -327,3 +327,42 @@ fn the_output_cap_fits_the_largest_answer_and_grows_with_the_thinking() {
     assert!(low <= 4096, "the default level is capped at half of what it was: {low}");
     assert!(max_output_tokens(ThinkingLevel::Budget(1024)) > 1024, "a budget fits under its cap");
 }
+
+/// The schema is part of the cached prefix on both Anthropic request paths,
+/// so what a request carries is the schema without its per-call values: an
+/// ordering of three and an ordering of five go out as the same bytes, and
+/// only the checks the answer is held to differ.
+#[test]
+fn a_stable_schema_drops_the_values_that_change_and_nothing_else() {
+    use mtg_player::llm::{cache_stable_schema, ordering_schema, schema_violation};
+    let three = cache_stable_schema(&ordering_schema(3));
+    assert_eq!(three, cache_stable_schema(&ordering_schema(5)));
+    let text = three.to_string();
+    for gone in ["\"enum\"", "\"minItems\"", "\"maxItems\""] {
+        assert!(!text.contains(gone), "{gone} is a per-call value: {text}");
+    }
+    assert_eq!(three["properties"]["order"]["items"]["type"], "integer", "the types stay: {text}");
+    assert!(three["properties"]["order"]["description"].is_string(), "descriptions stay: {text}");
+
+    // A field that happens to be named like a keyword is a field.
+    let named = serde_json::json!({"type": "object", "properties": {
+        "enum": {"type": "integer", "enum": [0, 1]}, "minimum": {"type": "boolean"}}});
+    let kept = cache_stable_schema(&named);
+    assert!(kept["properties"].get("enum").is_some() && kept["properties"].get("minimum").is_some(), "{kept}");
+    assert!(kept["properties"]["enum"].get("enum").is_none(), "{kept}");
+
+    // And the answer is held to what was left out.
+    let full = ordering_schema(3);
+    assert_eq!(schema_violation(&full, &serde_json::json!({"order": [2, 0, 1]})), None);
+    assert_eq!(schema_violation(&full, &serde_json::json!({"thoughts": "t", "order": [2, 0, 1]})), None);
+    assert_eq!(schema_violation(&full, &serde_json::json!({"order": [2, 0, 3]})).as_deref(),
+        Some("`order[2]` is 3; it must be 0 to 2"));
+    assert_eq!(schema_violation(&full, &serde_json::json!({"order": [2, 0]})).as_deref(),
+        Some("`order` has 2 entries; it needs at least 3"));
+    assert_eq!(schema_violation(&full, &serde_json::json!({})).as_deref(), Some("`order` is missing"));
+    let plan = serde_json::json!({"type": "object", "properties": {
+        "then": {"type": "array", "items": {"type": "string", "enum": ["Mountain", "Lightning Bolt"]}}},
+        "required": ["then"]});
+    assert_eq!(schema_violation(&plan, &serde_json::json!({"then": ["Lightning Blot"]})).as_deref(),
+        Some(r#"`then[0]` is "Lightning Blot"; it must be one of "Mountain", "Lightning Bolt""#));
+}

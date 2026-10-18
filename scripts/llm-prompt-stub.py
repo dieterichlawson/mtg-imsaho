@@ -24,6 +24,12 @@ never picks it (#754: the schema fill used to land on it as well).
 `cancel` (backing out of a cast at an X-funding, target-set or cost
 prompt, #749) is always false: a stub that cancelled half its casts would
 measure a game nobody plays.
+
+The `--json-schema` a seat sends has no enums or counts in it, so that the
+prompt cache holds from one call to the next (`cache_stable_schema` in
+mtg-player/src/llm.rs). The seat sets the full schema on the child as
+`MTG_LLM_ANSWER_SCHEMA`, and the stub answers from that; the record keeps
+the schema that was sent, which is the one the cache sees.
 """
 import hashlib
 import json
@@ -48,7 +54,8 @@ def flag(name):
 message = sys.stdin.read()
 schema_text = flag("--json-schema") or "{}"
 schema = json.loads(schema_text)
-props = schema.get("properties") or {}
+answer_schema = json.loads(os.environ.get("MTG_LLM_ANSWER_SCHEMA") or schema_text)
+props = answer_schema.get("properties") or {}
 system = flag("--system-prompt") or ""
 opened = flag("--session-id")
 resumed = flag("--resume")
@@ -139,6 +146,8 @@ if record:
             "system_bytes": len(system.encode()),
             "prompt_bytes": len(message.encode()),
             "schema_bytes": len(schema_text.encode()),
+            "schema_sha": hashlib.sha256(schema_text.encode()).hexdigest()[:16],
+            "schema": schema,
             "session": "opened" if opened else ("resumed" if resumed else "none"),
             "sid": sid,
         }) + "\n")

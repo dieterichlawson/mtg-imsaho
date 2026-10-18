@@ -18,6 +18,7 @@ pub use claude_code::{available as claude_code_available, binary as claude_code_
 // The one `claude -p` subprocess driver, for both seats in the workspace
 // (#404).
 pub use claude_code::{prepare_seat as claude_code_prepare_seat, run_print_mode as claude_code_run};
+pub use claude_code::ANSWER_SCHEMA_ENV as CLAUDE_CODE_ANSWER_SCHEMA_ENV;
 pub use cost::{api_equivalent, cost, is_plan_quota, model_prices, total_cost, Cost, ModelPrices};
 
 
@@ -217,6 +218,108 @@ pub fn sanitize_schema_for_gemini(value: &serde_json::Value) -> serde_json::Valu
     serde_json::Value::Object(out)
 }
 
+/// The constraints [`cache_stable_schema`] leaves out of a request.
+const PER_CALL_CONSTRAINTS: [&str; 5] = ["enum", "minItems", "maxItems", "minimum", "maximum"];
+
+/// The schema a request to Anthropic carries: `schema` without the
+/// constraints that change from one call to the next — every `enum` (a
+/// menu's indices, a plan's card names) and an array's `minItems` /
+/// `maxItems`.
+///
+/// The schema is part of the cached prefix. On the Messages API, changing
+/// `output_config.format` invalidates the prompt cache; through `claude -p`
+/// the schema is a tool definition, which renders ahead of the system
+/// prompt. With an `enum: [0..n]` on every menu and the hand's card names on
+/// every main-phase plan, nearly every call's schema was new, and a seat
+/// wrote its whole system prompt again at 1.25x the input price where a
+/// read costs 0.1x — 60 to 95% of a game's calls read nothing from the
+/// cache (reports/llm-cost.md, phase 3). Without them a prompt kind sends
+/// the same bytes every time, and the answer is checked against the full
+/// schema instead ([`schema_violation`]). Descriptions stay, so they must
+/// not carry a runtime value either: the count, range or name a question
+/// depends on goes in the prompt.
+#[must_use]
+pub fn cache_stable_schema(schema: &serde_json::Value) -> serde_json::Value {
+    fn strip(value: &serde_json::Value, property_names: bool) -> serde_json::Value {
+        match value {
+            serde_json::Value::Object(map) => serde_json::Value::Object(map.iter()
+                // The keys of `properties` are field names, not keywords.
+                .filter(|(k, _)| property_names || !PER_CALL_CONSTRAINTS.contains(&k.as_str()))
+                .map(|(k, v)| (k.clone(), strip(v, !property_names && k == "properties")))
+                .collect()),
+            serde_json::Value::Array(items) =>
+                serde_json::Value::Array(items.iter().map(|v| strip(v, false)).collect()),
+            other => other.clone(),
+        }
+    }
+    strip(schema, false)
+}
+
+/// Why `answer` is not one `schema` allows, if it is not: the check a
+/// request without the per-call constraints ([`cache_stable_schema`]) no
+/// longer asks the API to make. A missing `thoughts` is not a reason.
+#[must_use]
+pub fn schema_violation(schema: &serde_json::Value, answer: &serde_json::Value) -> Option<String> {
+    fn listed(values: &[serde_json::Value]) -> String {
+        let ints: Option<Vec<i64>> = values.iter().map(serde_json::Value::as_i64).collect();
+        if let Some(ints) = ints.filter(|v| v.len() > 2) {
+            let (lo, hi) = (ints.iter().min().copied().unwrap_or(0), ints.iter().max().copied().unwrap_or(0));
+            if usize::try_from(hi - lo + 1).ok() == Some(ints.len()) {
+                return format!("{lo} to {hi}");
+            }
+        }
+        let shown: Vec<String> = values.iter().take(12).map(ToString::to_string).collect();
+        let more = if values.len() > 12 { ", …" } else { "" };
+        format!("one of {}{more}", shown.join(", "))
+    }
+    fn at(schema: &serde_json::Value, value: &serde_json::Value, path: &str) -> Option<String> {
+        if let Some(allowed) = schema.get("enum").and_then(serde_json::Value::as_array) {
+            if !allowed.contains(value) {
+                return Some(format!("`{path}` is {value}; it must be {}", listed(allowed)));
+            }
+        }
+        let count = |key: &str| schema.get(key).and_then(serde_json::Value::as_u64)
+            .and_then(|n| usize::try_from(n).ok());
+        match schema.get("type").and_then(serde_json::Value::as_str) {
+            Some("object") => {
+                let Some(object) = value.as_object() else {
+                    return Some(format!("`{path}` is {value}, not an object"));
+                };
+                let required = schema.get("required").and_then(serde_json::Value::as_array);
+                for key in required.into_iter().flatten().filter_map(serde_json::Value::as_str) {
+                    if key != "thoughts" && !object.contains_key(key) {
+                        return Some(format!("`{key}` is missing"));
+                    }
+                }
+                let properties = schema.get("properties").and_then(serde_json::Value::as_object);
+                properties.into_iter().flatten().find_map(|(key, sub)| {
+                    let inner = if path.is_empty() { key.clone() } else { format!("{path}.{key}") };
+                    object.get(key).and_then(|v| at(sub, v, &inner))
+                })
+            }
+            Some("array") => {
+                let Some(items) = value.as_array() else {
+                    return Some(format!("`{path}` is {value}, not a list"));
+                };
+                if let Some(min) = count("minItems").filter(|min| items.len() < *min) {
+                    return Some(format!("`{path}` has {} entries; it needs at least {min}", items.len()));
+                }
+                if let Some(max) = count("maxItems").filter(|max| items.len() > *max) {
+                    return Some(format!("`{path}` has {} entries; it takes at most {max}", items.len()));
+                }
+                let item = schema.get("items")?;
+                items.iter().enumerate().find_map(|(i, v)| at(item, v, &format!("{path}[{i}]")))
+            }
+            Some("integer") if !(value.is_i64() || value.is_u64()) =>
+                Some(format!("`{path}` is {value}, not a whole number")),
+            Some("string") if !value.is_string() => Some(format!("`{path}` is {value}, not a string")),
+            Some("boolean") if !value.is_boolean() => Some(format!("`{path}` is {value}, not true or false")),
+            _ => None,
+        }
+    }
+    at(schema, answer, "")
+}
+
 /// The schema an ordering prompt is answered through: `order`, a
 /// permutation of `0..n`.
 ///
@@ -248,7 +351,9 @@ pub fn ordering_schema(n: usize) -> serde_json::Value {
                 "items": {"type": "integer", "enum": valid_indices},
                 "minItems": n,
                 "maxItems": n,
-                "description": format!("Every index 0..{} exactly once, first to last", n.saturating_sub(1))
+                // The prompt says how many: a count here would make each
+                // length its own schema (`cache_stable_schema`).
+                "description": "Every listed index exactly once, first to last"
             }
         },
         "required": ["thoughts", "order"]
@@ -270,7 +375,8 @@ pub fn damage_amount_schema(min: u32, max: u32) -> serde_json::Value {
             "amount": {
                 "type": "integer",
                 "enum": amounts,
-                "description": format!("Damage assigned to this blocker, {min} (lethal) to {max} (all that is left)")
+                // The prompt names the range, for the same reason.
+                "description": "Damage assigned to this blocker, from lethal to all that is left"
             }
         },
         "required": ["thoughts", "amount"]
@@ -1593,8 +1699,11 @@ impl AnthropicBackend {
         // be the notes' source — at `off` there is none, and the 5.x models
         // return their thinking empty unless asked otherwise — so every
         // backend asks for it in the JSON, as the `claude -p` and Gemini
-        // seats always have (reports/llm-cost.md, phase 3).
-        let sanitized = sanitize_schema_for_anthropic(schema, true);
+        // seats always have (reports/llm-cost.md, phase 3). And the schema
+        // goes without its per-call constraints, since a changed
+        // `output_config.format` invalidates the prompt cache
+        // (`cache_stable_schema`).
+        let sanitized = sanitize_schema_for_anthropic(&cache_stable_schema(schema), true);
         let mut body = serde_json::json!({
             "model": self.model,
             "system": system,
@@ -3809,6 +3918,30 @@ impl LlmPlayer {
                     .cloned().collect::<Vec<_>>()));
         self.log("PROMPT", user_message);
         self.backend.set_seat(&self.name);
+        let result = self.ask_structured(user_message, schema);
+        // The request carried no enums or counts (`cache_stable_schema`), so
+        // the answer is held to them here, and one that breaks them is asked
+        // once more with the reason rather than read as whatever its
+        // caller's fallback makes of it. A call that got no answer at all is
+        // not asked again: its retries are behind it (#587).
+        if self.last_call_failure.is_some() {
+            return result;
+        }
+        let Some(why) = schema_violation(schema, &result) else {
+            return result;
+        };
+        // Not a rejection: nothing is substituted, the seat is asked. A
+        // malformed answer is an `Error` record, and this is one.
+        crate::stderr_line!("[{}] REASK: {why}", self.name);
+        self.log_at(crate::game_log::LogLevel::Error, "REASK", &format!("{why}: {result}"));
+        let again = format!(
+            "{user_message}\n\nYour answer {result} is not one this question allows: {why}. Answer again.");
+        self.log("PROMPT", &again);
+        self.ask_structured(&again, schema)
+    }
+
+    /// One structured call and the logging every call gets.
+    fn ask_structured(&mut self, user_message: &str, schema: &serde_json::Value) -> serde_json::Value {
         let result = self.backend.send_with_schema(user_message, schema);
         // Whether this decision got an answer at all, before anything
         // downstream reads the value it was handed (#587).
@@ -4229,16 +4362,17 @@ impl LlmPlayer {
                     "items": {"type": "integer", "enum": valid},
                     "minItems": min,
                     "maxItems": max,
-                    "description": format!(
-                        "The 0-indexed positions to pick, from the numbered list. \
-                         {count_note}"),
+                    // The count is in the prompt (`count_note`), not here:
+                    // the schema is part of the cached prefix.
+                    "description": "The 0-indexed positions to pick, from the numbered list, \
+                                    as many as the prompt says.",
                 },
             },
             "required": ["thoughts", "indices"],
             "additionalProperties": false,
         });
-        if let Some(what) = cancel {
-            Self::offer_cancel(&mut schema, what);
+        if cancel.is_some() {
+            Self::offer_cancel(&mut schema);
         }
 
         let response = self.send_message_structured(&prompt, &schema);
@@ -4274,10 +4408,14 @@ impl LlmPlayer {
     /// the cast", the page's Cancel button and the random seat's
     /// `CANCEL_CHANCE`, which this seat alone did not have — an X spell it
     /// could no longer afford was cast for X = 0 (#749).
-    fn offer_cancel(schema: &mut serde_json::Value, what: &str) {
+    ///
+    /// One description for a cast and an activation alike: the prompt says
+    /// which it is, and the schema is part of the cached prefix
+    /// (`cache_stable_schema`).
+    fn offer_cancel(schema: &mut serde_json::Value) {
         schema["properties"]["cancel"] = serde_json::json!({
             "type": "boolean",
-            "description": format!("true to cancel {what} instead of answering: it is undone and nothing is paid. false to answer."),
+            "description": "true to cancel the cast or activation this question belongs to: it is undone and nothing is paid. false to answer.",
         });
         if let Some(required) = schema["required"].as_array_mut() {
             required.push(serde_json::json!("cancel"));
@@ -4452,7 +4590,6 @@ impl LlmPlayer {
         view: &GameView,
         options: &mtg_engine::funding::FundingOptions,
         _source_id: mtg_engine::ids::ObjectId,
-        is_ability: bool,
         description: &str,
     ) -> Action {
         use mtg_engine::actions::ResolvedChoice;
@@ -4599,7 +4736,7 @@ impl LlmPlayer {
              Sources with variable output or cost-bearing activation (e.g. pain lands) aren't listed — tap those manually first to float the mana.",
             options.max_announceable_x(),
         );
-        Self::offer_cancel(&mut schema, if is_ability { "the activation" } else { "the cast" });
+        Self::offer_cancel(&mut schema);
         let full_prompt = self.build_prompt(view, &prompt_text);
         let response = self.send_message_structured(&full_prompt, &schema);
         if self.chose_cancel(&response, description) {
@@ -4843,10 +4980,10 @@ impl LlmPlayer {
         // The engine surfaces the `FundingOptions` via `resolution_prompt`; we
         // build a dynamic JSON schema + explanation and parse the response.
         if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseXFunding {
-            options, source_id, is_ability, description,
+            options, source_id, description, ..
         }) = legal.resolution_prompt.as_ref()
         {
-            return self.choose_x_funding(view, options, *source_id, *is_ability, description);
+            return self.choose_x_funding(view, options, *source_id, description);
         }
 
         // An "up to N" target slot: an index array, the same shape as
@@ -5028,14 +5165,13 @@ impl LlmPlayer {
         if engine_entries != legal_actions.len() {
             self.log_debug("COLLAPSED", &format!("{} actions → {} options", legal_actions.len(), engine_entries));
         }
-        let description = match menu.iter().position(|e| *e == MenuEntry::PassUntil) {
-            Some(i) => format!(
-                "Index of the chosen action. {i} is 'Pass until something happens' (the system \
-                 prompt lists what ends it)."),
-            None => "Index of the chosen action".to_string(),
-        };
+        // The one description every index question has: the schema is part
+        // of the cached prefix (`cache_stable_schema`), so a menu that
+        // described its own rows would be a schema of its own. The row
+        // names itself, and the system prompt says what ends it.
+        let description = "Index of the chosen action";
         let plannable = self.plannable(view, legal);
-        let mut schema = Self::enum_action_schema(menu.len(), "action", &description);
+        let mut schema = Self::enum_action_schema(menu.len(), "action", description);
         if !plannable.is_empty() {
             schema["properties"]["then"] = serde_json::json!({
                 "type": "array",
@@ -5817,10 +5953,6 @@ from your hand to put on the bottom of your library.\n\
             }
         };
 
-        let what = match prompt.kind {
-            SetPromptKind::BottomAfterMulligan => "to put on the bottom of your library",
-            SetPromptKind::DiscardToHandSize => "to discard",
-        };
         let valid_indices: Vec<serde_json::Value> = (0..prompt.options.len())
             .map(|i| serde_json::json!(i))
             .collect();
@@ -5833,7 +5965,10 @@ from your hand to put on the bottom of your library.\n\
                     "items": {"type": "integer", "enum": valid_indices},
                     "minItems": prompt.min,
                     "maxItems": prompt.max,
-                    "description": format!("Exactly {n} distinct 0-indexed positions in your hand {what}")
+                    // The count and the purpose are the prompt's to say: the
+                    // schema is part of the cached prefix
+                    // (`cache_stable_schema`), and one schema serves both.
+                    "description": "Distinct 0-indexed positions in your hand, as many as the prompt says"
                 }
             },
             "required": ["thoughts", "card_indices"]
@@ -9758,6 +9893,63 @@ mod metered_seat_failures {
         let sent = &request["output_config"]["format"]["schema"];
         assert!(sent["properties"].get("thoughts").is_some(), "the schema asks for thoughts: {sent}");
         assert!(sent["required"].as_array().unwrap().iter().any(|v| v == "thoughts"), "{sent}");
+    }
+
+    /// A changed `output_config.format` invalidates the prompt cache, so a
+    /// menu of three and a menu of seven send the same format: the indices
+    /// they allow are checked on the answer, not sent.
+    #[test]
+    fn the_api_seat_sends_one_format_for_menus_of_any_length() {
+        let format_for = |n: usize| {
+            let (url, seen) = answering_server(r#"{"thoughts":"t","action":0}"#);
+            let mut backend = anthropic(url);
+            backend.send_with_schema("prompt", &LlmPlayer::enum_action_schema(n, "action", "Index of the chosen action"));
+            let request: serde_json::Value = serde_json::from_str(&seen.lock().unwrap()).unwrap();
+            request["output_config"]["format"].to_string()
+        };
+        let three = format_for(3);
+        assert_eq!(three, format_for(7));
+        assert!(!three.contains("enum"), "{three}");
+    }
+
+    /// The other side of sending no enums: an index the menu does not have
+    /// is asked once more, with the reason, rather than read as the
+    /// fallback's pass.
+    #[test]
+    fn an_answer_the_schema_no_longer_prevents_is_asked_again_with_the_reason() {
+        struct Replies {
+            replies: std::collections::VecDeque<serde_json::Value>,
+            prompts: std::rc::Rc<std::cell::RefCell<Vec<String>>>,
+        }
+        impl LlmBackend for Replies {
+            fn send(&mut self, message: &str) -> String {
+                self.send_with_schema(message, &serde_json::Value::Null).to_string()
+            }
+            fn send_with_schema(&mut self, m: &str, _s: &serde_json::Value) -> serde_json::Value {
+                self.prompts.borrow_mut().push(m.to_string());
+                self.replies.pop_front().unwrap_or_else(|| serde_json::json!({}))
+            }
+            fn init(&mut self, _deck_info: &str) {}
+            fn system_prompt(&self) -> &str { "" }
+            fn model_name(&self) -> &str { "model-reask" }
+        }
+        let menu = "[MAIN PHASE 1]\nAvailable actions:\n0: Pass\n1: Play Mountain\n2: Concede\n";
+        for (first, expected_calls, chosen) in [(7, 2, 1), (1, 1, 1)] {
+            let prompts = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+            let mut p = LlmPlayer::for_prompt_tests("Seat-reask");
+            p.backend = Box::new(Replies {
+                replies: [serde_json::json!({"action": first}), serde_json::json!({"action": 1})].into(),
+                prompts: prompts.clone(),
+            });
+            assert_eq!(p.pick_action_index(&tests::empty_view(), menu, 3), chosen);
+            let prompts = prompts.borrow();
+            assert_eq!(prompts.len(), expected_calls, "first answer {first}");
+            if expected_calls == 2 {
+                assert!(prompts[1].starts_with(&prompts[0]), "the same question, asked again");
+                assert!(prompts[1].contains("is not one this question allows: `action` is 7; it must be 0 to 2."),
+                    "the reason is given: {}", prompts[1]);
+            }
+        }
     }
 
     fn gemini(base_url: String) -> GeminiBackend {

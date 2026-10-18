@@ -37,6 +37,13 @@ pub const BINARY_ENV: &str = "CLAUDE_CODE_BIN";
 /// run's [`super::thinking_level`].
 pub const THINKING_TOKENS_ENV: &str = "MAX_THINKING_TOKENS";
 
+/// The full schema of the question a call asks, with the per-call
+/// constraints the `--json-schema` it is sent without
+/// ([`super::cache_stable_schema`]), set on every child. The CLI ignores
+/// it; a stand-in CLI that has to answer legally reads its enums and
+/// counts here (`scripts/llm-prompt-stub.py`).
+pub const ANSWER_SCHEMA_ENV: &str = "MTG_LLM_ANSWER_SCHEMA";
+
 /// The CLI's `max_tokens` for the request, as an environment variable.
 pub const MAX_OUTPUT_TOKENS_ENV: &str = "CLAUDE_CODE_MAX_OUTPUT_TOKENS";
 
@@ -532,6 +539,8 @@ pub(super) struct ClaudeCodeBackend {
     /// fresh one; see [`super::HISTORY_ENV`]. A `--resume`d session re-reads
     /// its whole history on every call, so the session is the window.
     window: usize,
+    /// The question's full schema while a call is out; see [`ANSWER_SCHEMA_ENV`].
+    answer_schema: Option<String>,
 }
 
 impl ClaudeCodeBackend {
@@ -558,6 +567,7 @@ impl ClaudeCodeBackend {
             gave_up: None,
             seat: String::new(),
             window: super::history_exchanges(),
+            answer_schema: None,
         }
     }
 
@@ -712,6 +722,9 @@ impl ClaudeCodeBackend {
         }
         if let Some(s) = schema {
             cmd.args(["--json-schema", &s.to_string()]);
+        }
+        if let Some(full) = &self.answer_schema {
+            cmd.env(ANSWER_SCHEMA_ENV, full);
         }
         cmd.current_dir(&self.workdir);
         run_print_mode(&mut cmd, &self.binary, message)
@@ -959,8 +972,16 @@ impl LlmBackend for ClaudeCodeBackend {
         // field left the seat's reasoning recorded nowhere at all — 101
         // decisions, zero THOUGHT lines (issue #213). This is the seat the
         // project actually runs.
-        let sanitized = super::sanitize_schema_for_anthropic(schema, true);
-        let mut structured = match self.call(message, Some(&sanitized)) {
+        //
+        // The schema goes out without its per-call constraints: here it is
+        // a tool definition, ahead of the system prompt in the cached
+        // prefix, so a new one is a cache write of everything
+        // (`cache_stable_schema`).
+        let sanitized = super::sanitize_schema_for_anthropic(&super::cache_stable_schema(schema), true);
+        self.answer_schema = Some(schema.to_string());
+        let answer = self.call(message, Some(&sanitized));
+        self.answer_schema = None;
+        let mut structured = match answer {
             Some(json) => Self::structured(&json).unwrap_or_else(|| serde_json::json!({})),
             None => serde_json::json!({}),
         };

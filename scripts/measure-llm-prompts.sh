@@ -20,7 +20,11 @@
 # priority offers it then passed without a call, `stops` how often a
 # pass-until ended. (`AUTO_PASS` labels both the engagement and each
 # unasked pass; counting the label summed the two, #754.) `schema B` is
-# the mean schema size per call.
+# the mean schema size per call, and `schemas` how many different schemas
+# a game sent: the schema is part of the cached prefix, so each new one is
+# a write of the whole system prompt where a repeat is a read
+# (`cache_stable_schema`). It should be a handful per game, one per kind of
+# question asked, however long the game.
 #
 # Output goes under logs/llm-prompts/<timestamp>/.
 set -eu
@@ -41,7 +45,7 @@ done
 python3 -I - "$out" $seeds <<'EOF'
 import json, re, sys, statistics
 out, seeds = sys.argv[1], sys.argv[2:]
-print(f"{'seed':>5} {'calls':>6} {'opened':>7} {'resumed':>8} {'system B':>9} {'prompt B/call':>14} {'min':>5} {'max':>6} {'prompt B/game':>14} {'schema B':>9} {'engaged':>8} {'unasked':>8} {'stops':>5} {'turns':>5}")
+print(f"{'seed':>5} {'calls':>6} {'opened':>7} {'resumed':>8} {'system B':>9} {'prompt B/call':>14} {'min':>5} {'max':>6} {'prompt B/game':>14} {'schema B':>9} {'engaged':>8} {'unasked':>8} {'stops':>5} {'turns':>5} {'schemas':>8}")
 totals = []
 for seed in seeds:
     rows = [json.loads(l) for l in open(f"{out}/seed-{seed}.calls")]
@@ -56,13 +60,14 @@ for seed in seeds:
     opened = sum(r["session"] == "opened" for r in rows)
     resumed = sum(r["session"] == "resumed" for r in rows)
     schema = statistics.mean(r["schema_bytes"] for r in rows)
+    kinds = len({r.get("schema_sha") for r in rows})
     print(f"{seed:>5} {len(rows):>6} {opened:>7} {resumed:>8} {rows[0]['system_bytes']:>9} "
-          f"{statistics.mean(prompts):>14.0f} {min(prompts):>5} {max(prompts):>6} {sum(prompts):>14} {schema:>9.0f} {engaged:>8} {until:>8} {stops:>5} {turns:>5}")
-    totals.append((len(rows), rows[0]["system_bytes"], sum(prompts), schema, engaged, until, stops, turns))
+          f"{statistics.mean(prompts):>14.0f} {min(prompts):>5} {max(prompts):>6} {sum(prompts):>14} {schema:>9.0f} {engaged:>8} {until:>8} {stops:>5} {turns:>5} {kinds:>8}")
+    totals.append((len(rows), rows[0]["system_bytes"], sum(prompts), schema, engaged, until, stops, turns, kinds))
 if totals:
     n = len(totals)
     print(f"{'mean':>5} {sum(t[0] for t in totals)/n:>6.0f} {'':>7} {'':>8} {sum(t[1] for t in totals)/n:>9.0f} "
           f"{'':>14} {'':>5} {'':>6} {sum(t[2] for t in totals)/n:>14.0f} {sum(t[3] for t in totals)/n:>9.0f} "
-          f"{sum(t[4] for t in totals)/n:>8.0f} {sum(t[5] for t in totals)/n:>8.0f} {sum(t[6] for t in totals)/n:>5.0f} {sum(t[7] for t in totals)/n:>5.0f}")
+          f"{sum(t[4] for t in totals)/n:>8.0f} {sum(t[5] for t in totals)/n:>8.0f} {sum(t[6] for t in totals)/n:>5.0f} {sum(t[7] for t in totals)/n:>5.0f} {sum(t[8] for t in totals)/n:>8.0f}")
 EOF
 echo "records under $out"
