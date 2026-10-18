@@ -91,7 +91,8 @@ every pairing, every game and match result, the standings — and reads:
   log and the standings) rather than waited on — a match it is playing
   too: within a couple of seconds its page stops being asked, the game in
   progress and the rest of the match go to the opponent, and the round
-  carries on.
+  carries on — whichever of the two is deciding (against an AI seat, once
+  the AI's answer is in).
 - `status`: where everybody is.
 - `quit`: stop the server. It stays up after the tournament so the pages
   can be read until you do.

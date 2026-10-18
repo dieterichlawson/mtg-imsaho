@@ -129,8 +129,15 @@ impl Shared {
         let who = self.lobby().who(seat);
         let why = format!("the host kicked {who}");
         let in_game = self.in_game.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut withdrawn = false;
         for page in in_game.iter().filter(|p| p.seat == seat) {
             page.withdraw.withdraw(&why);
+            withdrawn = true;
+        }
+        // An AI seat the table now plays for has no page to withdraw, and
+        // waking its opponent then would end the game with nobody's loss.
+        if !withdrawn {
+            return;
         }
         // The opponent may be the one holding the decision, and the kicked
         // seat is not asked again until it answers: it is woken so the game
