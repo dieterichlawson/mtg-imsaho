@@ -100,10 +100,14 @@ fn a_tournament_game_that_stops_moving_is_forfeited_and_said_so() {
     // first one that stalls. About a quarter of seeds do. Losing ALL of
     // them is still a failure, because then the fixture no longer
     // exercises what it is for and a human has to find a seed that does.
-    // 106, 108 and 101 stall since the concede confirmation began carrying
+    // 106, 108 and 101 stalled once the concede confirmation began carrying
     // the board (#831) and the seat was told never to confirm one — a
-    // hashed yes/no ended every game early by concession.
-    const SEEDS: [&str; 6] = ["106", "108", "101", "105", "107", "102"];
+    // hashed yes/no ended every game early by concession. None did once a
+    // main-phase answer could end the phase (`ask_again`) and the index
+    // questions became one schema: the seat is asked less, so it reaches
+    // the min-1 slot on other seeds. 11 of seeds 100-139 stall now; these
+    // are the first six.
+    const SEEDS: [&str; 6] = ["100", "119", "121", "123", "125", "127"];
     let mut played_out: Vec<&str> = Vec::new();
 
     for seed in SEEDS {
