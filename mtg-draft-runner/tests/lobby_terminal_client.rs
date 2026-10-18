@@ -74,7 +74,12 @@ fn the_terminal_client_drafts_builds_and_names_the_game_link() {
     for i in 0..23 {
         writeln!(stdin, "add {i}").unwrap();
     }
-    writeln!(stdin, "lands island=9 swamp=8").unwrap();
+    // A refusal of something typed is printed and the client stays: it
+    // used to quit on any reason containing "key" or "seat", and
+    // "'Turkey' is not a basic land" contains "key" (#851).
+    writeln!(stdin, "lands turkey=1").unwrap();
+    wait_for(&out, "refused: 'Turkey' is not a basic land", Duration::from_secs(30));
+    writeln!(stdin, "lands turkey=0 island=9 swamp=8").unwrap();
     // The count is the client's own arithmetic; the verdict is the
     // server's and arrives a beat later, so that is what is waited for.
     let text = wait_for(&out, "legal — type ready when it is final", Duration::from_secs(30));

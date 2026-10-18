@@ -167,7 +167,11 @@ fn main() {
                     }
                     Some("refused") => {
                         out(&format!("refused: {}", msg["reason"].as_str().unwrap_or("?")));
-                        if msg["reason"].as_str().is_some_and(|r| r.contains("key") || r.contains("seat")) {
+                        // A refusal with nothing echoed, before any view, is
+                        // the join itself (a wrong key, no such seat), as the
+                        // page reads it; any other is an answer to something
+                        // typed, whatever its text says (#851).
+                        if msg["echo"].is_null() && view.is_none() {
                             std::process::exit(1);
                         }
                     }
