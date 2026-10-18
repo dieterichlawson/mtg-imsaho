@@ -110,6 +110,9 @@ struct Shared {
     web_dir: PathBuf,
     /// The seat's settings, shared by every page attached to it.
     settings: Mutex<(bool, Option<u32>)>,
+    /// Set when the seat is dropped: the accept loop stops and the port
+    /// is let go (#853).
+    closed: std::sync::atomic::AtomicBool,
 }
 
 impl Shared {
@@ -191,6 +194,32 @@ impl Withdraw {
     }
 }
 
+/// Dropping the seat stops serving its page and lets the port go, so a
+/// hosted table's next match can bind it: the accept loop ran for the life
+/// of the process and every finished match kept its port (#853). A page
+/// still attached stays attached, showing how the game ended; it is not
+/// sent anything more.
+impl Drop for GuiPlayer {
+    fn drop(&mut self) {
+        self.shared.closed.store(true, std::sync::atomic::Ordering::SeqCst);
+        // `incoming()` blocks until a connection arrives: make one. Bound
+        // on every address, the loopback reaches it.
+        let mut wake = self.bound;
+        if wake.ip().is_unspecified() {
+            wake.set_ip(match wake {
+                std::net::SocketAddr::V4(_) => std::net::Ipv4Addr::LOCALHOST.into(),
+                std::net::SocketAddr::V6(_) => std::net::Ipv6Addr::LOCALHOST.into(),
+            });
+        }
+        let woke = TcpStream::connect_timeout(&wake, Duration::from_secs(1)).is_ok();
+        // Joined only when the wake landed, so a drop never hangs; the
+        // listener is closed when the thread returns.
+        if let Some(accept) = self.accept.take().filter(|_| woke) {
+            let _ = accept.join();
+        }
+    }
+}
+
 /// A seat played through a browser page.
 pub struct GuiPlayer {
     name: String,
@@ -201,6 +230,10 @@ pub struct GuiPlayer {
     pub url: String,
     said_waiting: bool,
     withdrawn: Withdraw,
+    /// The listening address, and the thread accepting on it, so that
+    /// dropping the seat can stop it.
+    bound: std::net::SocketAddr,
+    accept: Option<thread::JoinHandle<()>>,
 }
 
 impl GuiPlayer {
@@ -249,10 +282,14 @@ impl GuiPlayer {
             answers: answer_tx,
             web_dir,
             settings: Mutex::new((false, None)),
+            closed: std::sync::atomic::AtomicBool::new(false),
         });
         let accept_shared = Arc::clone(&shared);
-        thread::Builder::new().name("gui-accept".into()).spawn(move || {
+        let accept = thread::Builder::new().name("gui-accept".into()).spawn(move || {
             for stream in listener.incoming().flatten() {
+                if accept_shared.closed.load(std::sync::atomic::Ordering::SeqCst) {
+                    break;
+                }
                 let shared = Arc::clone(&accept_shared);
                 let _ = thread::Builder::new().name("gui-conn".into())
                     .spawn(move || serve_connection(stream, &shared));
@@ -266,6 +303,8 @@ impl GuiPlayer {
             url: format!("http://{bound}/"),
             said_waiting: false,
             withdrawn: Withdraw::default(),
+            bound,
+            accept: Some(accept),
         })
     }
 
@@ -631,6 +670,7 @@ mod tests {
             answers,
             web_dir: PathBuf::from("."),
             settings: Mutex::new((false, None)),
+            closed: std::sync::atomic::AtomicBool::new(false),
         };
         let (a_tx, a_rx) = mpsc::channel();
         let (b_tx, b_rx) = mpsc::channel();
@@ -658,12 +698,15 @@ mod tests {
                 answers,
                 web_dir: PathBuf::from("."),
                 settings: Mutex::new((false, None)),
+                closed: std::sync::atomic::AtomicBool::new(false),
             }),
             answers: answers_rx,
             seq: 1,
             url: String::new(),
             said_waiting: false,
             withdrawn: Withdraw::default(),
+            bound: ([127, 0, 0, 1], 0).into(),
+            accept: None,
         }
     }
 
