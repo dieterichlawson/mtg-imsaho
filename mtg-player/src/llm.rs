@@ -992,6 +992,43 @@ pub fn card_faces(
     faces
 }
 
+/// Rules text without its reminder text: a parenthetical that explains a
+/// keyword or a mechanic — `Lifelink (Damage dealt by this creature also
+/// causes you to gain that much life.)` — is dropped, the keyword kept.
+/// The seat knows what lifelink and flashback mean, and the reminders were
+/// a tenth of a drafted deck's reference, re-read on every decision
+/// (reports/llm-cost.md, phase 3). A parenthetical that is not a sentence
+/// (`{2}{G}{W}, {T}: ...` has none; a name in brackets would) is kept.
+#[must_use]
+pub fn without_reminder_text(oracle: &str) -> String {
+    let mut out = String::with_capacity(oracle.len());
+    for (k, line) in oracle.lines().enumerate() {
+        let mut kept = String::with_capacity(line.len());
+        let mut rest = line;
+        while let Some(open) = rest.find('(') {
+            let Some(close) = rest[open..].find(')').map(|i| open + i) else { break };
+            let inner = &rest[open + 1..close];
+            if inner.ends_with('.') || inner.ends_with(".\"") {
+                kept.push_str(rest[..open].trim_end());
+                rest = &rest[close + 1..];
+            } else {
+                kept.push_str(&rest[..=close]);
+                rest = &rest[close + 1..];
+            }
+        }
+        kept.push_str(rest);
+        let kept = kept.trim();
+        if kept.is_empty() {
+            continue;
+        }
+        if k > 0 && !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(kept);
+    }
+    out
+}
+
 /// One card face on one line: name, cost, type line and size.
 ///
 /// The heading of its card reference entry, and the whole of its line
@@ -1018,8 +1055,9 @@ pub fn card_reference_entry(name: &str, registry: &mtg_engine::cards::CardRegist
     let mut s = String::new();
     for (face_name, data) in card_faces(name, registry) {
         writeln!(s, "{}", card_headline(&face_name, &data)).unwrap();
-        if !data.oracle_text.is_empty() {
-            writeln!(s, "  {}", data.oracle_text.replace('\n', "\n  ")).unwrap();
+        let text = without_reminder_text(&data.oracle_text);
+        if !text.is_empty() {
+            writeln!(s, "  {}", text.replace('\n', "\n  ")).unwrap();
         }
     }
     s
@@ -2410,29 +2448,45 @@ impl LlmPlayer {
     fn format_decklist(entries: &[(String, u32)], registry: &mtg_engine::cards::CardRegistry) -> String {
         let mut s = String::new();
         let mut seen = std::collections::HashSet::new();
+        // One entry per name: `4x Name {cost} Type — Sub P/T`, its rules
+        // text under it. The name used to be printed twice (the count line,
+        // then the face line), a basic land had its type line and its mana
+        // ability spelled out, and keywords carried their reminder text —
+        // a third of a drafted deck's entries, re-read on every decision
+        // (reports/llm-cost.md, phase 3).
         for (name, count) in entries {
-            writeln!(s, "{count}x {name}").unwrap();
-            if !seen.contains(name) {
-                seen.insert(name.clone());
-                // Both faces of a double-faced card: a seat that is going to
-                // be asked whether to transform has to be told what it
-                // becomes (issue #205).
-                for (face_name, data) in card_faces(name, registry) {
-                    let cost = data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
-                    // The type line as printed, supertypes first (CR 205.4a):
-                    // "Legendary" is what arms the legend rule, and the seat
-                    // never saw the word (issue #333).
-                    let type_line = mtg_engine::types::type_line(
-                        &data.supertypes, &data.card_types, &data.subtypes);
-                    let pt = match (data.power, data.toughness) {
-                        (Some(p), Some(t)) => format!(" {p}/{t}"),
-                        _ => String::new(),
-                    };
-                    writeln!(s, "  {}{} {}{}", face_name, cost, type_line, pt).unwrap();
-
-                    if !data.oracle_text.is_empty() {
-                        writeln!(s, "  {}", data.oracle_text.replace('\n', "\n  ")).unwrap();
-                    }
+            if !seen.insert(name.clone()) {
+                writeln!(s, "{count}x {name}").unwrap();
+                continue;
+            }
+            let faces = card_faces(name, registry);
+            let basic = faces.first().is_some_and(|(_, d)| d.supertypes.contains(&mtg_engine::types::Supertype::Basic));
+            if faces.is_empty() || basic {
+                writeln!(s, "{count}x {name}").unwrap();
+                continue;
+            }
+            // Both faces of a double-faced card: a seat that is going to be
+            // asked whether to transform has to be told what it becomes
+            // (issue #205). The back face is its own line under the front.
+            for (k, (face_name, data)) in faces.iter().enumerate() {
+                let cost = data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
+                // The type line as printed, supertypes first (CR 205.4a):
+                // "Legendary" is what arms the legend rule, and the seat
+                // never saw the word (issue #333).
+                let type_line = mtg_engine::types::type_line(
+                    &data.supertypes, &data.card_types, &data.subtypes);
+                let pt = match (data.power, data.toughness) {
+                    (Some(p), Some(t)) => format!(" {p}/{t}"),
+                    _ => String::new(),
+                };
+                if k == 0 {
+                    writeln!(s, "{count}x {face_name}{cost} {type_line}{pt}").unwrap();
+                } else {
+                    writeln!(s, "  back face: {face_name}{cost} {type_line}{pt}").unwrap();
+                }
+                let text = without_reminder_text(&data.oracle_text);
+                if !text.is_empty() {
+                    writeln!(s, "  {}", text.replace('\n', "\n  ")).unwrap();
                 }
             }
         }

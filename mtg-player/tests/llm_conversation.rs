@@ -610,3 +610,42 @@ fn resume_logs_the_recap_body_not_just_a_count() {
         "the log carries the rewritten recap, not the raw engine entries: {logged}");
 }
 
+
+// ── What a decklist and a card entry cost (reports/llm-cost.md, phase 3) ──
+
+/// The decklist is re-read, cached, on every decision, so it says each
+/// thing once: the name on the count line only, a basic land as its count,
+/// a keyword without its reminder text. The rules text a seat plays by is
+/// all still there.
+#[test]
+fn a_decklist_entry_says_each_thing_once() {
+    let registry = CardRegistry::with_all_cards();
+    let entries = vec![
+        ("Markov Patrician".to_string(), 2),
+        ("Swamp".to_string(), 10),
+        ("Delver of Secrets".to_string(), 1),
+    ];
+    let result = mtg_player::llm::LlmPlayer::format_decklist_for_test(&entries, &registry);
+    assert_eq!(result.matches("Markov Patrician").count(), 1, "the name once: {result}");
+    assert!(result.contains("2x Markov Patrician {2}{B} Creature — Vampire 3/1\n  Lifelink\n"), "{result}");
+    assert!(!result.contains("Damage dealt by this creature"), "no reminder text: {result}");
+    assert!(result.contains("10x Swamp\n"), "{result}");
+    assert!(!result.contains("Basic Land"), "a basic land is its count alone: {result}");
+    assert!(result.contains("  back face: Insectile Aberration"), "the back face is under the front: {result}");
+}
+
+/// Reminder text goes; rules text, including a parenthetical that is not
+/// a sentence, stays.
+#[test]
+fn reminder_text_is_dropped_and_rules_text_kept() {
+    use mtg_player::llm::without_reminder_text;
+    assert_eq!(without_reminder_text(
+        "Lifelink (Damage dealt by this creature also causes you to gain that much life.)"), "Lifelink");
+    assert_eq!(without_reminder_text(
+        "Flashback {1}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)\nDeal 2."),
+        "Flashback {1}{R}\nDeal 2.");
+    assert_eq!(without_reminder_text("{2}{G}{W}, {T}: Put a +1/+1 counter on each creature you control."),
+        "{2}{G}{W}, {T}: Put a +1/+1 counter on each creature you control.");
+    assert_eq!(without_reminder_text("Choose a card name (the card)"), "Choose a card name (the card)");
+    assert_eq!(without_reminder_text("(This is all reminder.)\nFlying"), "Flying");
+}
