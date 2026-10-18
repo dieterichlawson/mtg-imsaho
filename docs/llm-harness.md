@@ -71,8 +71,9 @@ Every decision is sent on its own. A call carries:
 - the **decision prompt**, which opens with `Your notes from your last
   decision:` — the tail of the seat's own reasoning from the previous call
   (up to 600 characters), which is how a plan carries across decisions
-  without the history. A resumed seat's recap of the game so far rides in
-  its first prompt after the resume the same way.
+  without the history. A save carries the notes with the rest of what a seat
+  remembers (below), so a resumed seat's next prompt is the one it would have
+  had.
 
 Thinking is billed as output and is the largest term a decision has once the
 history is bounded. `MTG_LLM_THINKING` sets it for every seat: `off`, `low`
@@ -309,9 +310,41 @@ got to, so a resume plays on the game it was saved from (#844); `--seed`
 seeds only a random seat a save written before that holds no position for. The seats are stored in the save, so a
 bare `--resume` brings back the same players; an explicit `--p1`/`--p2`
 overrides the saved seat and says so, and a metered API seat the file asks
-for needs that flag to confirm it. A resumed LLM seat is handed a recap of the
-game log so far in its first decision prompt after the resume (logged as
-`RESUME`), not the original conversation.
+for needs that flag to confirm it.
+
+A save also holds each LLM seat's memory — its notes, how far into the game
+log it has been shown, and a pass-until in progress — so a resumed seat is
+asked exactly what it would have been asked had the game never stopped: the
+same prompt, byte for byte, with the events since its last decision and no
+recap (`mtg-runner/tests/save_files.rs` pins it). A save written before the
+memory was kept resumes the seat the old way: a recap of the whole game log
+in its first prompt (logged as `RESUME`) and the notes the save holds.
+
+`--stop-after <N>` ends the run after the Nth decision either seat makes and
+prints `DECISION <n> p<seat> <action as JSON>`. With `--resume` it replays one
+saved position as one decision, which is what `scripts/decision-eval/` is
+built on:
+
+```bash
+# Keep the position of every model call of a live game ...
+EVAL_SAVE=$PWD/logs/eval/g1.save EVAL_POSITIONS=$PWD/logs/eval/positions \
+EVAL_REAL_BIN=$(command -v claude) \
+CLAUDE_CODE_BIN=$PWD/scripts/decision-eval/capture-claude.py \
+  ./target/release/mtg-runner --p1 cc:claude-sonnet-4-6 --p2 random \
+    --save logs/eval/g1.save --log logs/eval/g1.log
+# ... replay them under two configurations, and score one against the other.
+scripts/decision-eval/replay.py --positions logs/eval/positions --out logs/eval/res \
+  --name ref --p1 cc:claude-sonnet-4-6 --env MTG_LLM_THINKING=high --samples 2
+scripts/decision-eval/replay.py --positions logs/eval/positions --out logs/eval/res \
+  --name off --p1 cc:claude-sonnet-4-6 --env MTG_LLM_THINKING=off
+scripts/decision-eval/compare.py --out logs/eval/res --ref ref ref off
+```
+
+`compare.py` prints, per configuration, how often its action matches the
+reference's (on the positions where every reference sample agreed, and on all
+of them) and what a decision cost it in calls, output and thinking tokens and
+prompt bytes. Every replayed decision is a real model call: on a `cc` seat
+that is plan quota; `replay.py` refuses a metered seat.
 
 ## Drafting
 

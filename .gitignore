@@ -31,5 +31,7 @@ __pycache__/
 # `npm install --no-save typescript@5` and never commits it either.
 mtg-gui/node_modules/
 # Cost-measurement runs (stdout beside the gitignored .log); transient, never committed.
-/logs/cost-baseline/
-/logs/cost/
+/logs/cost*/
+/logs/eval*/
+/logs/verify/
+/logs/llm-prompts/
