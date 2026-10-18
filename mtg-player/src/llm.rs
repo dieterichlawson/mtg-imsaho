@@ -1470,6 +1470,7 @@ Boards group lands (`2x Forest (1 tapped)`); any other permanent is `Name (#id) 
 - Blocked creatures trade by current P/T; first strike deals its damage first; an attacker assigns lethal to one blocker before the next. Chump the highest-power attacker, not the smallest.
 - Let combat damage resolve before casting a "creature died this turn" effect.
 - Behind on board and life, look for a line that changes the race — an equip, an aura, a trick — rather than passing to topdeck.
+- Concede only when no play of yours survives the opponent's next turn: count its damage through your best blocks (a chump stops a creature without trample), and the turns until a library runs out. An opponent may not find its best line.
 "#;
 
 /// What every schema's `thoughts` field asks for. The reasoning is private
@@ -4990,7 +4991,10 @@ impl LlmPlayer {
         });
 
         let prompt = self.build_prompt(view,
-            "[CONFIRM CONCEDE]\nYou chose to CONCEDE the game. Are you sure? Confirm true to concede, false to cancel.");
+            "[CONFIRM CONCEDE]\nYou chose to CONCEDE the game. Are you sure? Before you confirm, count it out: the \
+             opponent's damage next turn through your best blocks (a chump stops a creature without trample), your \
+             life, and the turns until either library runs out. If any line keeps you alive, cancel. Confirm true to \
+             concede, false to cancel.");
         let response = self.send_message_structured(&prompt, &schema);
         let confirmed = match response["confirm"].as_bool() {
             Some(c) => c,
