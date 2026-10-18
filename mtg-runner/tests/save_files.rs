@@ -329,3 +329,90 @@ sys.stdout.write(r.stdout)
     assert!(first_prompt.contains(&format!("Your notes from your last decision:\n{notes}")),
         "the first prompt after the resume carries the saved notes {notes:?}:\n{first_prompt}");
 }
+
+/// The prompt bodies of a log, in order.
+fn prompt_bodies(log: &str) -> Vec<String> {
+    let mut bodies = Vec::new();
+    let mut current: Option<Vec<&str>> = None;
+    for line in log.lines() {
+        let is_header = line.len() > 4 && line.as_bytes()[..4].iter().all(u8::is_ascii_digit);
+        if is_header {
+            if let Some(body) = current.take() {
+                bodies.push(body.join("\n"));
+            }
+            if line.contains("\tPROMPT [") {
+                current = Some(Vec::new());
+            }
+        } else if let Some(body) = current.as_mut() {
+            body.push(line);
+        }
+    }
+    if let Some(body) = current {
+        bodies.push(body.join("\n"));
+    }
+    bodies
+}
+
+/// A save holds the LLM seat's whole memory — notes, how far into the log
+/// it has been shown, a pass-until in progress — so a resumed seat's next
+/// prompt is the one it was sent live, byte for byte, with no recap of the
+/// game in front of it. That is what lets `--resume <save> --stop-after 1`
+/// replay a saved position as one decision (`scripts/decision-eval/`).
+///
+/// `capture-claude.py` keeps the save at every model call of a stub game;
+/// each kept position is then resumed for one decision, and its prompt
+/// must be one the live game sent.
+#[test]
+fn every_saved_position_resumes_as_the_prompt_it_was_live() {
+    let scratch = Scratch::new("exact");
+    let save = scratch.path("live.json");
+    let positions = scratch.path("positions");
+    let live_log = scratch.path("live.log");
+    let live = runner()
+        .current_dir(repo_root())
+        .env("TMPDIR", &scratch.dir)
+        .env("CLAUDE_CODE_BIN", repo_root().join("scripts/decision-eval/capture-claude.py"))
+        .env("EVAL_REAL_BIN", repo_root().join("scripts/llm-prompt-stub.py"))
+        .env("EVAL_SAVE", &save)
+        .env("EVAL_POSITIONS", &positions)
+        .env("STUB_CALLS", "/dev/null")
+        .args(["--p1", "cc", "--p2", "random", "--seed", "3", "--quiet", "--save", &save, "--log", &live_log])
+        .output()
+        .expect("the runner runs");
+    assert!(live.status.success(), "the live game plays out: {}", String::from_utf8_lossy(&live.stderr));
+    let live_prompts = prompt_bodies(&std::fs::read_to_string(&live_log).unwrap());
+    let mut kept: Vec<PathBuf> = std::fs::read_dir(&positions).expect("positions were kept")
+        .map(|e| e.unwrap().path())
+        .filter(|p| p.extension().is_some_and(|x| x == "save"))
+        .collect();
+    kept.sort();
+    assert!(kept.len() >= 20, "a game's worth of positions was kept: {}", kept.len());
+
+    // Every fourth position, and the last: enough to cross a pass-until,
+    // a combat prompt and a turn boundary without replaying all of them.
+    let mut chosen: Vec<&PathBuf> = kept.iter().step_by(4).collect();
+    chosen.push(kept.last().unwrap());
+    for position in chosen {
+        let log = scratch.path("replay.log");
+        let _ = std::fs::remove_file(&log);
+        let out = runner()
+            .current_dir(repo_root())
+            .env("TMPDIR", &scratch.dir)
+            .env("CLAUDE_CODE_BIN", repo_root().join("scripts/llm-prompt-stub.py"))
+            .env("STUB_CALLS", "/dev/null")
+            .args(["--resume", position.to_str().unwrap(), "--p1", "cc", "--p2", "random", "--quiet"])
+            .args(["--stop-after", "1", "--log", &log])
+            .output()
+            .expect("the resumed runner runs");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(out.status.success() && stdout.lines().any(|l| l.starts_with("DECISION 1 p0 ")),
+            "{} replays as one decision of the LLM seat:\n{stdout}\n{}", position.display(),
+            String::from_utf8_lossy(&out.stderr));
+        let replayed = std::fs::read_to_string(&log).unwrap();
+        assert!(!replayed.contains("\tRESUME ("), "no recap is sent to a seat whose memory was saved:\n{replayed}");
+        let first = prompt_bodies(&replayed).into_iter().next()
+            .unwrap_or_else(|| panic!("{} asked the model something:\n{replayed}", position.display()));
+        assert!(live_prompts.contains(&first),
+            "{} resumed with a prompt the live game never sent:\n{first}", position.display());
+    }
+}
