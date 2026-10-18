@@ -43,8 +43,7 @@ impl Fake {
             "#!/bin/sh\n\
              if [ \"$1\" = \"--version\" ]; then echo 9.9.9; exit 0; fi\n\
              CALL=$(( $(cat \"{count}\" 2>/dev/null || echo 0) + 1 )); echo $CALL > \"{count}\"\n\
-             {{ echo \"=== call $CALL\"; cat; echo; case \"$*\" in *'\"then\"'*) echo 'SCHEMA OFFERS THEN';; esac; \
-             case \"$*\" in *'\"attack\"'*) echo 'SCHEMA OFFERS ATTACK';; esac; echo '--- end'; }} >> \"{log}\"\n\
+             {{ echo \"=== call $CALL\"; cat; echo; echo \"ANSWER SCHEMA $MTG_LLM_ANSWER_SCHEMA\"; echo '--- end'; }} >> \"{log}\"\n\
              A=$(cat \"{answer}\" 2>/dev/null || echo 0)\n\
              T=$(cat \"{then}\" 2>/dev/null || echo '[]')\n\
              G=$(cat \"{ask_again}\" 2>/dev/null || echo false)\n\
@@ -99,6 +98,16 @@ impl Fake {
             .with_history(0)
             .with_pass_until(true)
     }
+}
+
+/// Whether the question a call asked reads `field` of the answer: the full
+/// schema the seat set beside the call has it, and not marked unread. The
+/// schema sent is the same for every index question
+/// (`cache_stable_schema`), so it cannot say.
+fn reads(call: &str, field: &str) -> bool {
+    let full = call.lines().find_map(|l| l.strip_prefix("ANSWER SCHEMA ")).expect("the full schema is set");
+    let schema: serde_json::Value = serde_json::from_str(full).unwrap();
+    schema["properties"].get(field).is_some_and(|f| f.get("x-unread").is_none())
 }
 
 impl Drop for Fake {
@@ -779,7 +788,7 @@ fn a_main_phase_plan_is_played_out_without_further_calls() {
     let chosen = seat.choose_action(&v, &legal);
     assert!(matches!(chosen, Action::PlayLand { object_id: ObjectId(11) }), "{chosen:?}");
     assert_eq!(fake.calls().len(), 1);
-    assert!(fake.calls()[0].contains("SCHEMA OFFERS THEN"), "the main phase offers a plan");
+    assert!(reads(&fake.calls()[0], "then"), "the main phase offers a plan");
     fake.then(&[]);
 
     // The Forest is down: the Bears are cast without a call.
@@ -849,11 +858,11 @@ fn a_plan_is_offered_only_where_one_can_be_made_and_kept_only_with_a_play() {
     let fake = Fake::new("plan-where");
     let mut seat = fake.seat();
     seat.choose_action(&view(2, Step::PrecombatMain, OPP), &offer("OPPONENT'S TURN: Main Phase 1"));
-    assert!(!fake.calls()[0].contains("SCHEMA OFFERS THEN"), "not on the opponent's turn");
+    assert!(!reads(&fake.calls()[0], "then"), "not on the opponent's turn");
     let mut plain = fake.seat().with_pass_until(false);
     let (v, legal) = main_phase(vec![], false, true);
     plain.choose_action(&v, &legal);
-    assert!(!fake.calls()[1].contains("SCHEMA OFFERS THEN"), "not with the knob off");
+    assert!(!reads(&fake.calls()[1], "then"), "not with the knob off");
 
     // Pass with a plan whose first card cannot be played: the pass
     // stands, and the next prompt says why the plan did not run.
@@ -915,7 +924,7 @@ fn a_play_with_nothing_after_it_ends_the_main_phase_in_one_call() {
     fake.then(&[]);
     fake.ask_again(false);
     assert!(matches!(seat.choose_action(&v, &legal), Action::PlayLand { object_id: ObjectId(11) }));
-    assert!(fake.calls()[0].contains("SCHEMA OFFERS THEN"));
+    assert!(reads(&fake.calls()[0], "then"));
     // The Forest is down and the Lions castable: passed, unasked.
     let (v, legal) = main_phase(vec![], true, false);
     assert!(matches!(seat.choose_action(&v, &legal), Action::PassPriority));
@@ -985,7 +994,7 @@ fn an_attack_named_in_the_main_phase_is_declared_without_a_call() {
     fake.answer(3);
     fake.attack(&[30]);
     seat.choose_action(&v, &legal);
-    assert!(fake.calls()[0].contains("SCHEMA OFFERS ATTACK"), "the main phase offers an attack");
+    assert!(reads(&fake.calls()[0], "attack"), "the main phase offers an attack");
     fake.attack(&[]);
     let chosen = seat.choose_combat(&combat_view(), &attackers(vec![30, 31]));
     assert!(matches!(&chosen, Action::DeclareAttackers { attackers, .. }
@@ -1027,5 +1036,5 @@ fn an_attack_named_in_the_main_phase_is_declared_without_a_call() {
     sick.affected_by_summoning_sickness = true;
     v.battlefield.push(sick);
     seat.choose_action(&v, &legal);
-    assert!(!fake.calls().pop().unwrap().contains("SCHEMA OFFERS ATTACK"));
+    assert!(!reads(&fake.calls().pop().unwrap(), "attack"));
 }

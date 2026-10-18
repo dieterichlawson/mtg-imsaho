@@ -206,7 +206,7 @@ pub fn sanitize_schema_for_gemini(value: &serde_json::Value) -> serde_json::Valu
 
     let mut out = serde_json::Map::new();
     for (key, val) in map {
-        if bounds.is_some() && key == "enum" {
+        if (bounds.is_some() && key == "enum") || key == UNREAD {
             continue;
         }
         out.insert(key.clone(), sanitize_schema_for_gemini(val));
@@ -218,8 +218,15 @@ pub fn sanitize_schema_for_gemini(value: &serde_json::Value) -> serde_json::Valu
     serde_json::Value::Object(out)
 }
 
-/// The constraints [`cache_stable_schema`] leaves out of a request.
-const PER_CALL_CONSTRAINTS: [&str; 5] = ["enum", "minItems", "maxItems", "minimum", "maximum"];
+/// The constraints [`cache_stable_schema`] leaves out of a request, and
+/// [`UNREAD`].
+const PER_CALL_CONSTRAINTS: [&str; 6] = ["enum", "minItems", "maxItems", "minimum", "maximum", UNREAD];
+
+/// A field this question asks for only so that its schema is the same as
+/// its kind's, and whose answer is not read: the plan fields on an
+/// opponent's turn. The answer is not held to it, and no request carries
+/// the marker.
+pub const UNREAD: &str = "x-unread";
 
 /// The schema a request to Anthropic carries: `schema` without the
 /// constraints that change from one call to the next — every `enum` (a
@@ -324,14 +331,16 @@ pub fn schema_violation(schema: &serde_json::Value, answer: &serde_json::Value) 
                 let Some(object) = value.as_object() else {
                     return Some(format!("`{path}` is {value}, not an object"));
                 };
+                let properties = schema.get("properties").and_then(serde_json::Value::as_object);
+                let unread = |key: &str| properties.and_then(|p| p.get(key))
+                    .is_some_and(|sub| sub.get(UNREAD).is_some());
                 let required = schema.get("required").and_then(serde_json::Value::as_array);
                 for key in required.into_iter().flatten().filter_map(serde_json::Value::as_str) {
-                    if key != "thoughts" && !object.contains_key(key) {
+                    if key != "thoughts" && !unread(key) && !object.contains_key(key) {
                         return Some(format!("`{key}` is missing"));
                     }
                 }
-                let properties = schema.get("properties").and_then(serde_json::Value::as_object);
-                properties.into_iter().flatten().find_map(|(key, sub)| {
+                properties.into_iter().flatten().filter(|(key, _)| !unread(key)).find_map(|(key, sub)| {
                     let inner = if path.is_empty() { key.clone() } else { format!("{path}.{key}") };
                     object.get(key).and_then(|v| at(sub, v, &inner))
                 })
@@ -900,7 +909,7 @@ struct AttackPlan {
 
 /// What the `attack` field asks for.
 pub const ATTACK_DESCRIPTION: &str =
-    "The # numbers of your creatures to attack the opponent with this turn, once this main \
+    "In your first main phase (else []): the # numbers of your creatures to attack the opponent with this turn, once this main \
      phase is done. They are declared without asking you if nothing happens first and each \
      can still attack; otherwise you are asked at combat. [] to be asked at combat.";
 
@@ -914,7 +923,8 @@ enum PlanMove {
 /// What the `then` field asks for. Its own description, not a system
 /// prompt section: the field is offered only where a plan can be made.
 pub const PLAN_DESCRIPTION: &str =
-    "Cards from your hand, by name alone, to play or cast this main phase AFTER `action`, in order, each \
+    "In your own main phase with an empty stack (else []): cards from your hand, by name alone, \
+     to play or cast this main phase AFTER `action`, in order, each \
      without being asked again once the stack is empty (targets are still asked). Put your \
      first play in `action` and the rest here; if `action` is a pass, these start now instead. \
      The plan stops and you are asked if the opponent puts anything on the stack or a card \
@@ -925,7 +935,7 @@ pub const PLAN_DESCRIPTION: &str =
 /// and had nothing else to do was asked the main phase a second time to
 /// say so — one call in six of a game (reports/llm-cost.md, phase 3).
 pub const ASK_AGAIN_DESCRIPTION: &str =
-    "false (the usual answer) when `action` and `then` are all you will do this main phase: \
+    "In your own main phase (else false): false, the usual answer, when `action` and `then` are all you will do this main phase: \
      you then pass until something happens, and your attack is still asked. true to be asked \
      again here once they are done, e.g. to play off what a spell drew.";
 
@@ -5045,7 +5055,8 @@ impl LlmPlayer {
     fn pick_action_index_described(
         &mut self, view: &GameView, action_text: &str, max: usize, description: &str,
     ) -> usize {
-        let schema = Self::enum_action_schema(max, "action", description);
+        let mut schema = Self::enum_action_schema(max, "action", description);
+        self.add_turn_fields(&mut schema, &[], &[]);
         self.pick_action_index_with_schema(view, action_text, max, &schema).0
     }
 
@@ -5320,28 +5331,7 @@ impl LlmPlayer {
         let plannable = self.plannable(view, legal);
         let ready = self.ready_attackers(view, legal);
         let mut schema = Self::enum_action_schema(menu.len(), "action", description);
-        if !plannable.is_empty() {
-            schema["properties"]["then"] = serde_json::json!({
-                "type": "array",
-                "items": {"type": "string", "enum": plannable},
-                "description": PLAN_DESCRIPTION,
-            });
-            schema["properties"]["ask_again"] = serde_json::json!({
-                "type": "boolean",
-                "description": ASK_AGAIN_DESCRIPTION,
-            });
-            schema["required"] = serde_json::json!(["thoughts", "action", "then", "ask_again"]);
-        }
-        if !ready.is_empty() {
-            schema["properties"]["attack"] = serde_json::json!({
-                "type": "array",
-                "items": {"type": "integer", "enum": ready.iter().map(|o| o.0).collect::<Vec<_>>()},
-                "description": ATTACK_DESCRIPTION,
-            });
-            if let Some(required) = schema["required"].as_array_mut() {
-                required.push(serde_json::json!("attack"));
-            }
-        }
+        self.add_turn_fields(&mut schema, &plannable, &ready);
         let (idx, response) = self.pick_action_index_with_schema(view, &action_prompt, menu.len(), &schema);
         let then: Vec<String> = response["then"].as_array()
             .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
@@ -5455,6 +5445,43 @@ impl LlmPlayer {
             }
         }
         names
+    }
+
+    /// The plan fields (`then`, `ask_again`, `attack`) on an index question,
+    /// read where `plannable` and `ready` are not empty and [`UNREAD`]
+    /// elsewhere. Every index question carries them, so that a priority
+    /// menu in the main phase, a response on the opponent's turn and a
+    /// target are one schema and one cached prefix: each kind of question
+    /// is a write of the whole prefix the first time a game asks it, and
+    /// these three were three (reports/llm-cost.md, phase 3). A seat with
+    /// the plan turned off (`MTG_LLM_PASS_UNTIL=off`) gets none.
+    fn add_turn_fields(&self, schema: &mut serde_json::Value, plannable: &[String], ready: &[ObjectId]) {
+        if !self.offer_pass_until {
+            return;
+        }
+        let mut field = |key: &str, mut spec: serde_json::Value, read: bool| {
+            if !read {
+                spec[UNREAD] = serde_json::json!(true);
+            }
+            schema["properties"][key] = spec;
+            if let Some(required) = schema["required"].as_array_mut() {
+                required.push(serde_json::json!(key));
+            }
+        };
+        let mut then_items = serde_json::json!({"type": "string"});
+        if !plannable.is_empty() {
+            then_items["enum"] = serde_json::json!(plannable);
+        }
+        field("then", serde_json::json!({"type": "array", "items": then_items, "description": PLAN_DESCRIPTION}),
+            !plannable.is_empty());
+        field("ask_again", serde_json::json!({"type": "boolean", "description": ASK_AGAIN_DESCRIPTION}),
+            !plannable.is_empty());
+        let mut attack_items = serde_json::json!({"type": "integer"});
+        if !ready.is_empty() {
+            attack_items["enum"] = serde_json::json!(ready.iter().map(|o| o.0).collect::<Vec<_>>());
+        }
+        field("attack", serde_json::json!({"type": "array", "items": attack_items, "description": ATTACK_DESCRIPTION}),
+            !ready.is_empty());
     }
 
     /// The creatures a first-main-phase answer may name to attack with, or
