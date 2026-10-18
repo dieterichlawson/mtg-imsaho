@@ -75,8 +75,13 @@ fn a_seat_learns_the_other_deck_s_cards_as_they_come_into_view_not_before() {
     // Once the opponent's creature is on the battlefield, the decision
     // prompt describes it.
     let entry = "Walking Corpse {1}{B} | Creature — Zombie 2/2\n";
+    // On the opponent's board, not merely named: a Corpse it discarded is in
+    // its graveyard, where a vanilla creature's text is not repeated.
+    let opp_board = |p: &str| p.split_once("Opp board:\n")
+        .map(|(_, rest)| rest.lines().take_while(|l| l.starts_with("  ")).collect::<Vec<_>>().join("\n"))
+        .unwrap_or_default();
     let described = prompts.split("\n=====\n")
-        .find(|p| p.contains("Opp board:\n") && p.contains("Walking Corpse (#"))
+        .find(|p| opp_board(p).contains("Walking Corpse (#"))
         .unwrap_or_else(|| panic!("the random seat cast a Walking Corpse at some point:\n{prompts}"));
     assert!(
         described.contains("Opp's cards in view:\n") && described.contains(entry),
