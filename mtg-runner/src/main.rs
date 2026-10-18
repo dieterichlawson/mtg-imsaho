@@ -102,6 +102,10 @@ Options:
   --decision-stats <path> Write a JSON count of every kind of question the seats
                          were asked (priority menus, combat, set and resolution
                          prompts) — the fuzz campaign's reach report reads it
+  --stop-after <N>       Stop after the Nth decision either seat makes, printing
+                         `DECISION <n> <seat> <action as JSON>` for it on stdout.
+                         With --resume this replays one saved position as one
+                         decision (scripts/decision-eval/ does that)
   --quiet, -q            Suppress the pre-game banner
   --help, -h             Print this help and exit
   --version              Print the version and exit
@@ -276,7 +280,8 @@ fn sweep_stale_hot_reload_saves() {
 /// a typo'd --deck1 quietly played the wrong deck (issue #55).
 fn validate_args(args: &[String]) {
     const VALUE_FLAGS: &[&str] = &["--p1", "--p2", "--deck1", "--deck2",
-        "--seed", "--log", "--save", "--resume", "--on-the-play", "--decision-stats"];
+        "--seed", "--log", "--save", "--resume", "--on-the-play", "--decision-stats",
+        "--stop-after"];
     const BOOL_FLAGS: &[&str] = &["--check-invariants", "--quiet", "-q"];
     let mut i = 1;
     while i < args.len() {
@@ -330,6 +335,12 @@ fn main() {
     let decision_stats_file = args.iter().position(|a| a == "--decision-stats")
         .and_then(|i| args.get(i + 1))
         .cloned();
+    let stop_after: Option<u64> = args.iter().position(|a| a == "--stop-after")
+        .and_then(|i| args.get(i + 1))
+        .map(|v| match v.parse::<u64>() {
+            Ok(n) if n > 0 => n,
+            _ => die(&format!("--stop-after takes a positive number of decisions, not '{v}'")),
+        });
 
     // Deck specs: --deck1 <name-or-file> --deck2 <name-or-file>
     // Built-in deck names: red-green, white-black, blue-white,
@@ -706,6 +717,8 @@ stops here — pass --save {path} to keep writing it");
     // Where each random seat's draws are, for the save (#844): written as
     // the seat answers, read by the save before the next decision.
     let rng_of = |p: &PlayerKind| match p { PlayerKind::Random(r) => Some(r.rng_state()), _ => None };
+    // How many decisions either seat has made, for --stop-after.
+    let decisions_made = std::cell::Cell::new(0u64);
     let rng_cells: [std::cell::RefCell<Option<String>>; 2] =
         [std::cell::RefCell::new(rng_of(&p1)), std::cell::RefCell::new(rng_of(&p2))];
     let seat_rng = || -> Vec<Option<String>> { rng_cells.iter().map(|c| c.borrow().clone()).collect() };
@@ -840,6 +853,15 @@ stops here — pass --save {path} to keep writing it");
         } else {
             choose_action(player, &view, legal)
         };
+        decisions_made.set(decisions_made.get() + 1);
+        if stop_after == Some(decisions_made.get()) {
+            let json = serde_json::to_string(&answer).unwrap_or_else(|e| format!("\"unserializable: {e}\""));
+            mtg_player::stdout_line!("DECISION {} p{} {json}", decisions_made.get(), acting_player.0);
+            mtg_player::game_log::write(file!(), line!(), "STOPPED",
+                &format!("--stop-after {}: p{} chose {json}", decisions_made.get(), acting_player.0));
+            mtg_player::game_log::flush_all();
+            std::process::exit(0);
+        }
         // A seat whose backend spent its whole retry budget without an answer
         // has stopped playing; the fallback it was just handed is not its
         // move. It forfeits, as the tournament forfeits it (#587), rather
