@@ -6,7 +6,8 @@
 #[test]
 fn the_thinking_parameter_matches_what_the_model_accepts() {
     use mtg_player::llm::thinking_param;
-    for current in ["claude-opus-5", "claude-opus-4-8", "claude-opus-4-7", "claude-sonnet-5", "claude-fable-5-1", "claude-sonnet-4-6"] {
+    for current in ["claude-opus-5", "claude-opus-4-8", "claude-opus-4-7", "claude-sonnet-5", "claude-fable-5-1", "claude-sonnet-4-6",
+                    "claude-haiku-5-5", "claude-opus-5-5", "claude-sonnet-5-5"] {
         assert_eq!(thinking_param(current)["type"], "adaptive", "{current} takes adaptive thinking");
         assert!(thinking_param(current).get("budget_tokens").is_none(),
             "{current} rejects a fixed budget");

@@ -589,9 +589,11 @@ pub fn thinking_param(model: &str) -> serde_json::Value {
 
 /// Whether this model family still steers thinking with `budget_tokens`
 /// (Haiku 4.5, the 4.5 Sonnet, the 3.x models) rather than adaptive
-/// thinking plus `output_config.effort`.
+/// thinking plus `output_config.effort`. Not every Haiku: the current one
+/// takes adaptive thinking and refuses a budget with a 400, which matching
+/// on "haiku" sent it.
 fn model_takes_a_thinking_budget(model: &str) -> bool {
-    model.contains("-4-5") || model.contains("haiku") || model.contains("-3-")
+    model.contains("-4-5") || model.contains("-3-")
 }
 
 /// How hard a seat thinks per decision.

@@ -93,3 +93,15 @@ fn a_plan_quota_seat_naming_its_model_has_an_api_rate_equivalent() {
     assert_eq!(api_equivalent("claude-code:opus", &u), None, "a CLI alias is not a priced model id");
     assert_eq!(api_equivalent("claude-sonnet-4-6", &u), None, "a metered seat is priced by `cost`");
 }
+
+/// The current Opus and Haiku are priced at their own rates, not at the
+/// family arm before them: the 5.5 Opus is cheaper than the 5, and the 5.5
+/// Haiku had no rate on file at all, so a run of it summed to "unknown".
+#[test]
+fn the_current_opus_and_haiku_have_their_own_rates() {
+    let opus = model_prices("claude-opus-5-5").expect("priced");
+    assert_eq!((opus.input, opus.output, opus.cache_read), (4.00, 20.00, 0.20));
+    let haiku = model_prices("claude-haiku-5-5").expect("priced");
+    assert_eq!((haiku.input, haiku.output, haiku.cache_read), (0.10, 0.50, 0.01));
+    assert_eq!(model_prices("claude-opus-5").expect("priced").input, 5.00, "the 5 keeps its rate");
+}

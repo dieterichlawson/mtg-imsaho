@@ -57,7 +57,8 @@ pub fn is_plan_quota(model: &str) -> bool {
 /// Published rates ($/MTok) for the models the seats can request, or `None`
 /// when this build has no rate on file for the name.
 ///
-/// Anthropic: platform.claude.com/docs/en/about-claude/pricing (verified 2026-04-08)
+/// Anthropic: platform.claude.com/docs/en/about-claude/pricing (verified 2026-04-08;
+/// the 5.1 Fable, 5.5 Opus and 5.5 Haiku rows 2026-10-18)
 /// Gemini: ai.google.dev/pricing (verified 2026-04-08)
 #[must_use]
 pub fn model_prices(model: &str) -> Option<ModelPrices> {
@@ -66,8 +67,13 @@ pub fn model_prices(model: &str) -> Option<ModelPrices> {
     };
     match model {
         // Anthropic (cache read is 0.1x input, cache write 1.25x input at the 5-minute TTL).
+        // The 5.1 Fable and 5.5 Opus read their cache at 0.025x and 0.05x.
+        m if m.contains("fable-5-1") || m.contains("mythos-5-1") => p(10.00, 50.00, 0.25, 12.50),
         m if m.contains("fable-5") || m.contains("mythos-5") => p(10.00, 50.00, 1.00, 12.50),
+        m if m.contains("opus-5-5") => p(4.00, 20.00, 0.20, 5.00),
         m if m.contains("opus-5") || m.contains("opus-4-8") || m.contains("opus-4-7") => p(5.00, 25.00, 0.50, 6.25),
+        // Up to a 100K-token prompt, which no game prompt approaches.
+        m if m.contains("haiku-5") => p(0.10, 0.50, 0.01, 0.125),
         m if m.contains("sonnet-5") => p(2.00, 10.00, 0.20, 2.50),
         m if m.contains("opus-4-6") || m.contains("opus-4-5") => p(5.00, 25.00, 0.50, 6.25),
         m if m.contains("opus-4-1") => p(15.00, 75.00, 1.50, 18.75),
