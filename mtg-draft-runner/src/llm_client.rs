@@ -398,29 +398,20 @@ fn deck_schema_for(pool: &[String]) -> serde_json::Value {
     })
 }
 
-/// Response-format instructions for a backend whose schema is sanitized with
-/// `keep_thoughts` false: the sanitizer strips `thoughts` out of the schema,
-/// so the prompt tells the model to reason in the thinking channel the
-/// harness reads instead, and not to emit the key.
-///
-/// Only the Anthropic Messages API backend gets this. It used to go to the
-/// `claude -p` seat as well, where both halves of it were false — there is no
-/// extended-thinking channel in `claude -p --output-format json` for the
-/// harness to read, and the one place the reasoning could have gone had just
-/// been deleted from the schema (issue #607).
-const EXTENDED_THINKING_RESPONSE_FORMAT: &str = "\n\n## Response format\nYour responses are constrained by a JSON schema provided via the API's structured output mode. Always reply with exactly the JSON object matching the schema — no surrounding prose, no markdown fences.\n\nYour private reasoning happens in the model's extended-thinking channel — think through the situation there before producing the JSON. The JSON payload itself should contain ONLY the response fields in the schema; do NOT add a \"thoughts\" key, it will be rejected by the schema validator.";
 
-/// Response-format instructions for a backend that keeps `thoughts` in the
-/// schema, which is the `claude -p` seat — its result object carries no
-/// thinking block, so the JSON payload is the only place its reasoning can
-/// go — and the Gemini seat, whose sanitizer never stripped the field.
+/// Response-format instructions for every backend: each keeps `thoughts` in
+/// the schema. The `claude -p` seat's result object carries no thinking
+/// block, the Gemini seat's sanitizer never stripped the field, and the
+/// Messages API seat runs with thinking off by default, or gets its thinking
+/// block back empty where the model omits it — so the JSON payload is the
+/// one place a pick's reasoning reliably lands.
 ///
 /// The draft log's `RESPONSE` record is the whole durable account of why a
 /// seat took a card (D5's reconstruction question), and the fallback paths in
 /// this crate substitute picks quietly (#195, #536): with the reasoning
 /// erased, a seat that drafted and a seat whose answers were all substituted
 /// differ only in a `WARN` (issue #607).
-const THOUGHTS_IN_JSON_RESPONSE_FORMAT: &str = "\n\n## Response format\nYour responses are constrained by a JSON schema provided via the API's structured output mode. Always reply with exactly the JSON object matching the schema — no surrounding prose, no markdown fences.\n\nEvery schema includes a \"thoughts\" field — use it for a concise but complete summary of your reasoning, and fill it in on every response. It is the only record the draft keeps of why you picked what you picked; nothing else reads a private reasoning channel, so thoughts you leave out are reasoning nobody can recover.";
+const THOUGHTS_IN_JSON_RESPONSE_FORMAT: &str = "\n\n## Response format\nAnswer with exactly the JSON object the schema asks for. Its `thoughts` field is one or two short sentences: the deciding reason and your plan. It is the draft's only record of why you picked what you did, and it comes back to you as notes with your next pick.";
 
 /// What a drafting seat is and is not told about the table it is at.
 ///
@@ -580,7 +571,7 @@ impl AnthropicDraftBackend {
     fn new(model: &str, set_name: &str, guide: Option<&str>, card_reference: &str, table: Table) -> Self {
         let api_key = env::var("ANTHROPIC_API_KEY").expect("ANTHROPIC_API_KEY must be set");
         let system_prompt = format!(
-            "{}{EXTENDED_THINKING_RESPONSE_FORMAT}",
+            "{}{THOUGHTS_IN_JSON_RESPONSE_FORMAT}",
             build_draft_rules(set_name, guide, card_reference, table)
         );
         Self {
@@ -620,7 +611,12 @@ impl AnthropicDraftBackend {
             }
         }
 
-        let sanitized = mtg_player::llm::sanitize_schema_for_anthropic(schema, false);
+        // `thoughts` is kept, as on the game seat and this crate's
+        // `claude -p` seat: at MTG_LLM_THINKING=off there is no thinking
+        // block, and a model that omits its thinking returns the block
+        // empty, so the field is where the pick's reasoning and the next
+        // pick's notes come from.
+        let sanitized = mtg_player::llm::sanitize_schema_for_anthropic(schema, true);
         let mut body = serde_json::json!({
             "model": &self.model,
             "system": system,
@@ -1021,6 +1017,13 @@ impl ClaudeCodeDraftBackend {
         if let Some(m) = &self.model {
             cmd.args(["--model", m]);
         }
+        // The effort the API seat sends at this level, as the game's
+        // `claude -p` seat passes it: without it the CLI runs its own
+        // default effort, which thought ten to a hundred times as much
+        // (reports/llm-cost.md, phase 3).
+        if mtg_player::llm::model_takes_effort(self.model.as_deref()) {
+            cmd.args(["--effort", mtg_player::llm::effort_for(mtg_player::llm::thinking_level())]);
+        }
         cmd.current_dir(&self.workdir);
         // One subprocess driver for both `claude -p` seats in this
         // workspace. This was a copy of it, taken on 2026-09-04, and the
@@ -1316,17 +1319,21 @@ impl DraftLlmClient {
         Self { backend, notes: None }
     }
 
-    /// The most characters of reasoning carried into the next prompt.
-    const NOTES_MAX_CHARS: usize = 600;
+    /// The most characters of reasoning carried into the next prompt: the
+    /// two sentences `thoughts` asks for, as on the game seat.
+    const NOTES_MAX_CHARS: usize = 300;
 
     /// Keep the tail of this answer's reasoning as the notes for the next
-    /// prompt: the thinking block where the backend reads one, else the
-    /// response's own `thoughts`.
+    /// prompt: the response's own `thoughts`, else the thinking block where
+    /// the backend reads one.
     fn keep_notes(&mut self, response: &str) {
-        let thoughts = self.backend.take_thinking().or_else(|| {
-            serde_json::from_str::<serde_json::Value>(response).ok()
-                .and_then(|v| v["thoughts"].as_str().map(str::to_string))
-        });
+        // The answer's own `thoughts` first: every backend asks for them,
+        // and a thinking block can come back empty.
+        let thinking = self.backend.take_thinking();
+        let thoughts = serde_json::from_str::<serde_json::Value>(response).ok()
+            .and_then(|v| v["thoughts"].as_str().map(str::to_string))
+            .filter(|t| !t.trim().is_empty())
+            .or(thinking);
         let Some(text) = thoughts.map(|t| t.trim().to_string()).filter(|t| !t.is_empty()) else {
             return;
         };
@@ -1798,9 +1805,9 @@ printf '{"type":"result","subtype":"success","is_error":false,"session_id":"%s",
         let schema: serde_json::Value =
             serde_json::from_str(arg_after(call, "--json-schema").expect("schema passed")).unwrap();
         assert_eq!(schema["properties"]["pick"]["enum"], serde_json::json!([0, 1, 2]));
-        // `thoughts` is KEPT on this path, unlike the Messages API one: this
-        // seat has no thinking channel for the harness to read, so the
-        // payload is the only place its reasoning can go (#213, #607).
+        // `thoughts` is KEPT on this path, as on every other: this seat has
+        // no thinking channel for the harness to read, so the payload is the
+        // only place its reasoning can go (#213, #607).
         assert!(schema["properties"].get("thoughts").is_some());
         assert!(schema["required"].as_array().unwrap().iter().any(|v| v == "thoughts"));
         assert_eq!(schema["additionalProperties"], false);

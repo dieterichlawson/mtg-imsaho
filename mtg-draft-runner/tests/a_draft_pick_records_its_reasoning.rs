@@ -173,7 +173,7 @@ fn the_draft_seat_is_asked_for_its_reasoning_and_the_log_keeps_it() {
             "the draft prompt still tells the seat not to send the field its schema requires"
         );
         assert!(
-            system.contains("\"thoughts\" field"),
+            system.contains("`thoughts` field"),
             "the draft prompt says where the reasoning goes"
         );
     }
