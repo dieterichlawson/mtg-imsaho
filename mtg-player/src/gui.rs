@@ -230,6 +230,11 @@ pub struct GuiPlayer {
     pub url: String,
     said_waiting: bool,
     withdrawn: Withdraw,
+    /// Set when the game is being ended for the OTHER seat's reason (its
+    /// kick, #854): this seat stops waiting on its page and answers with
+    /// the harness's stop, which the game loop replaces with the other
+    /// seat's forfeit. Not a loss of this seat's.
+    woken: Withdraw,
     /// The listening address, and the thread accepting on it, so that
     /// dropping the seat can stop it.
     bound: std::net::SocketAddr,
@@ -303,6 +308,7 @@ impl GuiPlayer {
             url: format!("http://{bound}/"),
             said_waiting: false,
             withdrawn: Withdraw::default(),
+            woken: Withdraw::default(),
             bound,
             accept: Some(accept),
         })
@@ -312,6 +318,15 @@ impl GuiPlayer {
     #[must_use]
     pub fn withdraw_handle(&self) -> Withdraw {
         self.withdrawn.clone()
+    }
+
+    /// A handle that stops this seat waiting on its page because the
+    /// OTHER seat was withdrawn: a pending decision, and any later one, is
+    /// answered with [`crate::watchdog::ceiling_move`] for the game loop to
+    /// replace with that seat's forfeit (#854). This seat does not give up.
+    #[must_use]
+    pub fn wake_handle(&self) -> Withdraw {
+        self.woken.clone()
     }
 
     /// Show the page the board while another seat decides.
@@ -335,6 +350,9 @@ impl GuiPlayer {
     fn ask(&mut self, view: &GameView, legal: &LegalActions, combat: Option<&CombatPrompt>) -> Action {
         if self.withdrawn.why().is_some() {
             return crate::watchdog::forfeit_move();
+        }
+        if self.woken.why().is_some() {
+            return crate::watchdog::ceiling_move();
         }
         self.seq += 1;
         let seq = self.seq;
@@ -361,6 +379,9 @@ impl GuiPlayer {
             // longer the person's, and an answer from the page is not taken.
             if self.withdrawn.why().is_some() {
                 return crate::watchdog::forfeit_move();
+            }
+            if self.woken.why().is_some() {
+                return crate::watchdog::ceiling_move();
             }
             let answer = match answer {
                 Ok(answer) => answer,
@@ -705,6 +726,7 @@ mod tests {
             url: String::new(),
             said_waiting: false,
             withdrawn: Withdraw::default(),
+            woken: Withdraw::default(),
             bound: ([127, 0, 0, 1], 0).into(),
             accept: None,
         }
@@ -746,6 +768,40 @@ mod tests {
         assert_eq!(Player::gave_up(&seat).as_deref(), Some("the host kicked seat 0"));
         // Every later decision is the same, without asking the page.
         assert!(matches!(seat.choose_action(&view, &legal), Action::Forfeit));
+    }
+
+    /// #854: a seat woken because its OPPONENT was kicked stops waiting on
+    /// its page within a beat, with the harness's stop for the game loop
+    /// to replace — and has not given up itself.
+    #[test]
+    fn a_woken_seat_stops_waiting_without_giving_up() {
+        use mtg_engine::cards::CardRegistry;
+        use mtg_engine::engine::{legal_actions, setup_game, Decklist, GameConfig};
+        use mtg_engine::ids::PlayerId;
+        let registry = CardRegistry::with_all_cards();
+        let deck = Decklist { entries: vec![("Forest".to_string(), 20), ("Grizzly Bears".to_string(), 20)] };
+        let state = setup_game(&GameConfig {
+            player_names: vec!["you".into(), "opp".into()],
+            decklists: vec![deck.clone(), deck],
+            starting_life: 20,
+            starting_player: Some(PlayerId(0)),
+            rng_seed: Some(7),
+        }, &registry);
+        let view = GameView::for_player(&state, PlayerId(0), &registry);
+        let legal = legal_actions(&state, &registry);
+
+        let mut seat = test_seat();
+        let handle = seat.wake_handle();
+        let kicker = thread::spawn(move || {
+            thread::sleep(Duration::from_millis(200));
+            handle.withdraw("the host kicked seat 1");
+        });
+        let began = std::time::Instant::now();
+        let answer = seat.choose_action(&view, &legal);
+        kicker.join().unwrap();
+        assert!(matches!(answer, Action::AbandonGame), "{answer:?}");
+        assert!(began.elapsed() < BROWSER_CHECK * 2, "it stopped waiting within a beat");
+        assert!(Player::gave_up(&seat).is_none(), "the opponent's kick is no loss of this seat's");
     }
 
     /// #647: a refused answer is told to the page that sent it, and to no

@@ -276,6 +276,7 @@ fn play_game(
     let mut watchdog = mtg_player::watchdog::ProgressWatchdog::new();
     let mut stalled_seat: Option<usize> = None;
     let mut abandoned = false;
+    let mut forfeit_after_loop: Option<PlayerId> = None;
 
     let mut game_callback =
         |game_state: &GameState,
@@ -323,13 +324,27 @@ fn play_game(
 
             // A page on the other side of the table is shown the board
             // while this seat decides, as `mtg-runner` shows it.
+            let other_id = PlayerId(1 - acting_player.0);
             let (player, other) = if acting_player == PlayerId(0) {
                 (&mut *p1, &mut *p2)
             } else {
                 (&mut *p2, &mut *p1)
             };
+            let seat_of = |id: PlayerId| if id == PlayerId(0) { seat_a } else { seat_b };
+            // The seat NOT being asked was taken out (a kick while its
+            // opponent held the decision, #854): it is not asked again until
+            // its opponent passes it something, which may be never, and the
+            // opponent could concede the game to it meanwhile. The game is
+            // stopped here and forfeit against it once the loop returns.
+            if let Some(why) = other.gave_up() {
+                if stalled_seat.is_none() {
+                    stalled_seat = Some(seat_of(other_id));
+                    report_gave_up(other, seat_of(other_id), &why, seat_a, seat_b, &label_of, game_state);
+                }
+                forfeit_after_loop = Some(other_id);
+                return mtg_player::watchdog::ceiling_move();
+            }
             if matches!(other, GameSeat::Gui(_)) {
-                let other_id = PlayerId(1 - acting_player.0);
                 other.observe(&GameView::for_player(game_state, other_id, registry));
             }
 
@@ -342,35 +357,34 @@ fn play_game(
             // every other match in the process (#587).
             if let Some(why) = player.gave_up() {
                 if stalled_seat.is_none() {
-                    let seat = if acting_player == PlayerId(0) { seat_a } else { seat_b };
-                    stalled_seat = Some(seat);
-                    let report = match player {
-                        GameSeat::Llm(_) => format!("Seat {seat}'s backend never answered within its retry \
-budget ({why}), so the seat forfeits its match"),
-                        // A page's seat taken out of the game: a kick (#821).
-                        GameSeat::Gui(_) => format!("Seat {seat} was withdrawn from the game ({why}), \
-so the seat forfeits its match"),
-                    };
-                    // The terminal names the seat as the table does; the
-                    // log's report keeps `Seat N`.
-                    let label = label_of(seat);
-                    let said = report.replacen(&format!("Seat {seat}"), &label, 1);
-                    mtg_player::stderr_line!("\nWARN: {said}.");
-                    draft_log::DraftLogger::stalled_game(
-                        matches!(player, GameSeat::Gui(_)),
-                        seat_a, seat_b, seat,
-                        game_state.turn_number,
-                        &format!("{:?}", game_state.step),
-                        &report,
-                        file!(), line!(),
-                    );
+                    stalled_seat = Some(seat_of(acting_player));
+                    report_gave_up(player, seat_of(acting_player), &why, seat_a, seat_b, &label_of, game_state);
                 }
                 return mtg_player::watchdog::forfeit_move();
+            }
+            // Taken out while this seat was deciding: its answer (a concede
+            // among them) does not count; the game is the withdrawn seat's
+            // loss (#854).
+            if let Some(why) = other.gave_up() {
+                if stalled_seat.is_none() {
+                    stalled_seat = Some(seat_of(other_id));
+                    report_gave_up(other, seat_of(other_id), &why, seat_a, seat_b, &label_of, game_state);
+                }
+                forfeit_after_loop = Some(other_id);
+                return mtg_player::watchdog::ceiling_move();
             }
             answer
         };
 
     engine::run_game_loop(&mut state, registry, &mut game_callback);
+    // The seat withdrawn while the other held the decision loses the game
+    // as a seat forfeiting at its own decision does.
+    if let Some(pid) = forfeit_after_loop {
+        if state.result.is_none() {
+            state.player_loses(pid, mtg_engine::events::LossReason::Forfeited);
+            state.end_game_if_decided();
+        }
+    }
 
     let winner = state.result.as_ref().and_then(|r| {
         match r {
@@ -427,6 +441,33 @@ so the seat forfeits its match"),
         stalled_seat,
         abandoned,
     }
+}
+
+/// Say on the terminal and in the log that a seat stopped playing: its
+/// backend gave up, or its page was withdrawn (a kick, #821).
+fn report_gave_up(
+    player: &GameSeat, seat: usize, why: &str, seat_a: usize, seat_b: usize,
+    label_of: &dyn Fn(usize) -> String, game_state: &GameState,
+) {
+    let report = match player {
+        GameSeat::Llm(_) => format!("Seat {seat}'s backend never answered within its retry \
+budget ({why}), so the seat forfeits its match"),
+        // A page's seat taken out of the game: a kick (#821).
+        GameSeat::Gui(_) => format!("Seat {seat} was withdrawn from the game ({why}), \
+so the seat forfeits its match"),
+    };
+    // The terminal names the seat as the table does; the log's report
+    // keeps `Seat N`.
+    let said = report.replacen(&format!("Seat {seat}"), &label_of(seat), 1);
+    mtg_player::stderr_line!("\nWARN: {said}.");
+    draft_log::DraftLogger::stalled_game(
+        matches!(player, GameSeat::Gui(_)),
+        seat_a, seat_b, seat,
+        game_state.turn_number,
+        &format!("{:?}", game_state.step),
+        &report,
+        file!(), line!(),
+    );
 }
 
 /// The move the runner itself makes, when it makes one, before the acting

@@ -60,12 +60,23 @@ pub struct Shared {
     quit: AtomicBool,
     /// The game pages of the people in a match now, by seat: what a kick
     /// reaches into a running match with (#821).
-    in_game: Mutex<Vec<(usize, Withdraw)>>,
+    in_game: Mutex<Vec<InGame>>,
     /// Where the next game page's port search starts: past the last one
     /// handed out, so a finished match's port, let go when its seat is
     /// dropped (#853), is not the next match's while the range has others.
     /// A page left open from that match reconnects to its own port.
     next_game_port: Mutex<Option<u16>>,
+}
+
+/// A person's game page in a running match.
+struct InGame {
+    seat: usize,
+    opponent: usize,
+    /// Takes this seat out of the game.
+    withdraw: Withdraw,
+    /// Stops this seat waiting on its page when the opponent is taken
+    /// out (#854).
+    wake: Withdraw,
 }
 
 struct Client {
@@ -116,17 +127,25 @@ impl Shared {
             return;
         }
         let who = self.lobby().who(seat);
+        let why = format!("the host kicked {who}");
         let in_game = self.in_game.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        for (_, handle) in in_game.iter().filter(|(s, _)| *s == seat) {
-            handle.withdraw(&format!("the host kicked {who}"));
+        for page in in_game.iter().filter(|p| p.seat == seat) {
+            page.withdraw.withdraw(&why);
+        }
+        // The opponent may be the one holding the decision, and the kicked
+        // seat is not asked again until it answers: it is woken so the game
+        // ends now, as the kick says (#854). Only after the withdrawal, so
+        // the woken seat's loop finds the kicked seat already out.
+        for page in in_game.iter().filter(|p| p.opponent == seat) {
+            page.wake.withdraw(&why);
         }
     }
 
-    fn set_in_game(&self, seat: usize, handle: Option<Withdraw>) {
+    fn set_in_game(&self, seat: usize, page: Option<InGame>) {
         let mut in_game = self.in_game.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        in_game.retain(|(s, _)| *s != seat);
-        if let Some(handle) = handle {
-            in_game.push((seat, handle));
+        in_game.retain(|p| p.seat != seat);
+        if let Some(page) = page {
+            in_game.push(page);
         }
     }
 
@@ -514,7 +533,10 @@ fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usiz
             SeatKind::Human | SeatKind::Cli => match game_page(shared, &name) {
                 Ok(gui) => {
                     urls[i] = Some(gui.url.clone());
-                    shared.set_in_game(seat, Some(gui.withdraw_handle()));
+                    shared.set_in_game(seat, Some(InGame {
+                        seat, opponent: if seat == a { b } else { a },
+                        withdraw: gui.withdraw_handle(), wake: gui.wake_handle(),
+                    }));
                     seats.push(GameSeat::Gui(gui));
                 }
                 Err(e) => {
