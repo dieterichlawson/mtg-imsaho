@@ -49,6 +49,14 @@ disabled because ANTHROPIC_API_KEY or another auth source is set`. A CLI that
 has no login and can only run on a key gets it back with
 `MTG_CLAUDE_CODE_INHERIT_AUTH=1`; that seat is then billed to the key.
 
+Nor does it inherit the variables of a Claude Code session that started the
+run (`CLAUDE_*` and `CCR_*`, but for the CLI's own provider, login, config
+directory and client-certificate settings). Run from a cloud session, the
+child otherwise called itself that session: each decision also asked a
+second model for a session title, in no usage line the seat reads, and
+carried the session's reminders into every prompt.
+`MTG_CLAUDE_CODE_INHERIT_SESSION_ENV=1` keeps them.
+
 Default models when the spec names none: `claude` → `claude-sonnet-4-6`,
 `gemini` → `gemini-2.5-flash`, `claude-code` → whatever the CLI defaults to
 (no `--model` is passed).
@@ -69,19 +77,37 @@ Every decision is sent on its own. A call carries:
   Messages API seat; a conversation restarted every K decisions on the Gemini
   and `claude -p` seats, which cannot slide a server-held one;
 - the **decision prompt**, which opens with `Your notes from your last
-  decision:` — the tail of the seat's own reasoning from the previous call
-  (up to 600 characters), which is how a plan carries across decisions
-  without the history. A save carries the notes with the rest of what a seat
-  remembers (below), so a resumed seat's next prompt is the one it would have
-  had.
+  decision:` — the seat's own `thoughts` from the previous call (two
+  sentences, at most 300 characters), which is how a plan carries across
+  decisions without the history. A save carries the notes with the rest of
+  what a seat remembers (below), so a resumed seat's next prompt is the one
+  it would have had. Late in a game the prompt says each thing once: an
+  opponent's card in a graveyard is described only where its text works from
+  there (flashback; cast or returned from a graveyard), identical events and
+  stack entries in a row are one line ending `(×N)`, a graveyard's cards are
+  grouped by name, and mana taps and pools emptying are not events;
+- the **answer schema**, which is part of the cached prefix too: on the
+  Messages API a changed `output_config.format` invalidates the prompt cache,
+  and through `claude -p` the schema is a tool definition ahead of the system
+  prompt. So it goes without its per-call values (`cache_stable_schema`: no
+  enums, no item counts, no count or index in a description) and is the same
+  bytes every time a kind of question is asked; the answer is checked against
+  the full schema instead, and one that breaks it is asked once more with the
+  reason (`REASK` in the log). `mtg-runner/tests/schema_cache.rs` plays stub
+  games and holds every kind of question to one schema.
 
-Thinking is billed as output and is the largest term a decision has once the
-history is bounded. `MTG_LLM_THINKING` sets it for every seat: `off`, `low`
-(the default), `medium`, `high`, or a token budget such as `2048`. On the
-current Anthropic models that is adaptive thinking plus `output_config.effort`;
-on the older ones a `budget_tokens`; on a `claude -p` seat the CLI's own
-`MAX_THINKING_TOKENS` (left at the CLI default for `low`, which a probe found
-cheaper than naming a 1024 budget). Gemini keeps its own `thinking_level`.
+Every backend asks for the reasoning in the answer's `thoughts` field, one
+or two sentences; it is the notes the next prompt opens with. Thinking is
+billed as output, and `MTG_LLM_THINKING` sets it for every seat: `off` (the
+default), `low`, `medium`, `high`, or a token budget such as `2048`. On the
+current Anthropic models that is adaptive thinking plus `output_config.effort`
+(the models that cannot turn thinking off get effort `low` at `off`); on the
+older ones a `budget_tokens`; on a `claude -p` seat the CLI's own
+`MAX_THINKING_TOKENS` and `--effort`, which the seat always passes — without
+it the CLI ran its own default effort and thought ten to a hundred times as
+much as the API seat it stands in for. A replay of real positions found
+`off` choosing as well as `low` (`reports/llm-cost.md`, phase 3). Gemini
+keeps its own `thinking_level`.
 
 A `claude -p` seat therefore opens a session per decision (one `SESSION`
 record each), and the draft seats do the same per pick. `reports/llm-cost.md`
@@ -111,20 +137,53 @@ LLM seat has it as one row on every priority menu, right after `Pass`:
 
 Picking it passes now and keeps passing every later *plain* priority offer
 without a model call, until something the seat would want to see happens.
-The stops are conservative — when in doubt, the seat is asked:
+The stops are where a decision may be owed, and not where none is:
 
 - anything on the stack that was not there when it said "go" (an entry
   that was there resolving off the top is expected), or anything put on
   it since, however like an entry that was there it looks — a second
   activation of the same ability is new (the view's `stack_puts`, #750);
-- its own turn beginning;
-- attackers declared against it, before blocks;
+- the opponent attacking it, once blocks are in — the window a trick or a
+  removal spell is cast in (the block itself is a combat prompt, asked);
 - a blocker declared against its attacker;
-- its own main phase — the next one, and the same one again when a land
-  drop or a sorcery-speed cast or activation is on offer (what a seat that
-  cast a spell and said "go" to let it resolve is then owed);
-- a combat prompt, a target or set or resolution prompt, the mulligan: any
-  prompt that is not a plain priority pass.
+- its own first main phase, and a later main phase of its own when a land
+  drop or a sorcery-speed cast or activation is on offer — not the main
+  phase it said it was done with;
+- a target or set or resolution prompt, the mulligan: any prompt that is
+  not a plain priority pass. A combat declaration is asked too, but the
+  pass carries on past it, and declaring attackers starts one.
+
+Its own turn beginning used to stop it, and was a call every turn that came
+back "pass". The seat is never asked to respond to its own spell or ability
+while only its own are on the stack.
+
+## A turn in one answer: `then`, `ask_again`, `attack`
+
+In its own main phase, with the stack empty, the priority answer carries
+three more fields, each offered only where it can mean something:
+
+- `then` — cards from the hand to play or cast after `action`, in order,
+  each taken without asking again once the stack is empty (targets are
+  still asked). A pass with a plan starts the plan now: a model answering
+  `{"action": 0, "then": ["Swamp"]}` meant "play the Swamp". The plan
+  stops, and the seat is asked and told why, if the opponent puts anything
+  on the stack or a card cannot be played when its turn comes.
+- `ask_again` — false, the usual answer, ends the main phase after `action`
+  and `then`: the seat passes until something happens, and the main-phase
+  stops do not ask it that phase again. True asks again once they are done,
+  for a draw spell to be played off. An empty plan used to mean "ask me
+  again", and a seat that played its land and had nothing else to do was
+  asked again only to pass.
+- `attack` (first main phase, where a creature could attack now) — the `#`
+  numbers of the creatures to attack the opponent with. At the declare
+  attackers step the plan is declared without a call if nothing has happened
+  since (any stop drops it), no planeswalker could be attacked instead, and
+  every creature it names can attack; otherwise the seat is asked, told why.
+  `[]` means "ask me at combat".
+
+The log says `PLAN`, `PLAN_STEP`, `PLAN_DONE`, `PLAN_STOP`, `ATTACK_PLAN`
+and `ATTACK_PLAN_DROPPED`. `reports/llm-cost.md` (phase 3) has what each
+took out of a game's calls.
 
 The row's text is its name alone. The stops are listed once, in the
 system prompt's "Pass until something happens" section (`PASS_UNTIL_RULES`
@@ -146,13 +205,15 @@ In the `--log`:
   passing since <where>, (N offers passed unasked)` for every offer passed
   without a call. `INFO`, one line per pass, so a stretch is visible.
 - `AUTO_PASS_STOP [seat]` — `<what happened> (N offers passed unasked since
-  <where>)`, and the next `PROMPT` opens with `You chose to pass until
-  something happened; after N unasked passes it stopped: <what happened>.`
-  above a `Recent events` recap carrying everything that happened meanwhile
-  (the recap's 80-entry cap and its marker apply as always).
+  <where>)`, and the next `PROMPT` opens with `After N priority offers
+  passed for you unasked, the pass stopped: <what happened>.` above a
+  `Recent events` recap carrying everything that happened meanwhile (the
+  recap's 80-entry cap and its marker apply as always).
 - `USAGE [seat]` (`DEBUG`) — one line per `claude -p` call: input, output,
   thinking, cache tokens and wall time, so the largest answer of a game can
-  be read off the log.
+  be read off the log. A call whose `cache_read` is 0 wrote the whole
+  prefix again: after a game's first call of each kind of question, that is
+  a schema or a system prompt that changed, and a bug.
 
 `MTG_LLM_PASS_UNTIL=off` leaves the row out of every menu, for measuring a
 run against one without it; unset, it is offered. The draft runner's games
@@ -223,9 +284,9 @@ re-sent on every prompt while the card is in view and absent otherwise.
 
 ## `--log`: what is recorded and how to read it
 
-`--log <path>` writes the run log. Despite the word "Append" in the usage
-text, the file is truncated when it is opened — point each run at its own
-path, under `logs/<run-name>/`.
+`--log <path>` appends the run log to the file, as the usage text says, so
+a second run at the same path adds to the first — point each run at its own
+path, under `logs/<run-name>/`, or count by the run's own `GAME_START`.
 
 Every entry is one tab-delimited header line:
 
@@ -344,7 +405,15 @@ scripts/decision-eval/compare.py --out logs/eval/res --ref ref ref off
 reference's (on the positions where every reference sample agreed, and on all
 of them) and what a decision cost it in calls, output and thinking tokens and
 prompt bytes. Every replayed decision is a real model call: on a `cc` seat
-that is plan quota; `replay.py` refuses a metered seat.
+that is plan quota; `replay.py` refuses a metered seat — except under the
+prompt stub, which is free and makes the same positions a byte-for-byte
+measure of what two builds send:
+
+```bash
+scripts/decision-eval/replay.py --positions logs/eval/positions --out logs/eval/stub \
+  --name before --bin /elsewhere/mtg-runner --p1 cc \
+  --env CLAUDE_CODE_BIN=$PWD/scripts/llm-prompt-stub.py --env STUB_CALLS=/dev/null
+```
 
 ## Drafting
 

@@ -1004,3 +1004,37 @@ say what your stub says.
   banner and reports any event absent from every later prompt of the same
   turn. Do the same for the CLI and the page; `GameView` has to carry the
   fact first
+- H31 [proposed 2026-10-18, from reports/llm-cost.md phase 3] the turn
+  that is one answer. A main-phase answer now carries `then` (cards to
+  play after `action`), `ask_again` and `attack` (creatures to attack with,
+  declared at combat without a call). Play `cc` games with `--log` and, at
+  every `PLAN_STEP`, `PLAN_DONE` and `ATTACK_PLAN declared as planned`,
+  check that what was taken unasked is what the seat would have chosen
+  with the board in front of it: no attack declared into a blocker that
+  arrived after the plan, no planned creature cast into an opponent's
+  response the plan did not stop for, no land drop skipped because the
+  answer was a pass with `then`. Then the converse: an `ATTACK_PLAN_DROPPED`
+  or `PLAN_STOP` with nothing in between that happened is a call the plan
+  should have saved. A stub game reaches every arm in seconds
+  (`scripts/llm-prompt-stub.py` rolls all three fields); a real game shows
+  whether a model uses them. File a decision taken from the seat
+  `sev:game-affecting`
+- H32 [proposed 2026-10-18, same source] the cache, read off the log. Every
+  `USAGE` line says `cache_read`; after a game's first call of each kind of
+  question, a 0 there is a schema or a system prompt that changed, which
+  costs the whole prefix at 1.25-2x where a read is 0.1x. Run a `cc` game
+  and list the calls that read nothing, with the schema each sent (the stub's
+  `STUB_CALLS` records it); `mtg-runner/tests/schema_cache.rs` covers the
+  stub's prompts, so look for the kinds it never reaches (X funding, piles,
+  the damage division, a planeswalker attack). Then the same for the draft:
+  a pick's schema is one, but the deck build and the game's are not, and a
+  new kind in the middle of a run is a cold write every time
+- H33 [proposed 2026-10-18, same source] what the prompt no longer says. An
+  opponent's card in a graveyard is described only where its text works
+  from there; repeated events and stack entries are one line with `(×N)`; a
+  graveyard is grouped by name. Read a late-game prompt beside the board on
+  the page and ask whether any decision needed what was left out — a
+  graveyard creature whose text a card in your hand cares about, an
+  ordering a collapsed stack hid, a `REASK` a model fell into. The kept
+  positions in `logs/eval/positions` (or a fresh capture) replayed under the
+  stub show the prompts of two builds for the same position, byte for byte

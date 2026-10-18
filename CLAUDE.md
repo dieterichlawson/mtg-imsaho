@@ -74,7 +74,7 @@ An LLM seat is sent, per decision, the system prompt and one prompt —
 never the game's earlier exchanges (`MTG_LLM_HISTORY` is 0 by default,
 and tests in `mtg-player/tests/llm_conversation.rs` and
 `llm_request_shape.rs` pin the bound). `reports/llm-cost.md` is the
-measured bill and why. Two rules follow:
+measured bill and why. Three rules follow:
 
 1. **Nothing a seat needs may live only in the history.** The prompt
    restates the board, the hand, the recent events, the legal actions
@@ -84,7 +84,19 @@ measured bill and why. Two rules follow:
 2. **A prompt change is measured.** `scripts/measure-llm-prompts.sh`
    counts calls and bytes per game for free under a stub `claude`; run
    it before and after a change to `GAME_RULES`, `build_prompt`, the
-   system prompt or a backend, and say in the commit what moved.
+   system prompt or a backend, and say in the commit what moved. For the
+   same positions byte for byte, replay `logs/eval/positions` (or any
+   kept positions) under the stub with each build
+   (`docs/llm-harness.md`, "Saving and resuming").
+3. **Nothing that changes from call to call goes in a schema or the
+   system prompt.** Both are the cached prefix: on the Messages API a
+   changed `output_config.format` invalidates the prompt cache, and
+   through `claude -p` the schema is a tool ahead of the system prompt.
+   A new one is a write of everything at 1.25-2x where a read is 0.1x.
+   Counts, ranges, names and indices go in the prompt; enums are
+   stripped from what is sent (`cache_stable_schema`) and checked on the
+   answer. `mtg-runner/tests/schema_cache.rs` holds every kind of
+   question to one sent schema.
 
 ## Player-facing changes: fit, and the size of a question
 
