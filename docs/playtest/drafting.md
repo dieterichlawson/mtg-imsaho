@@ -863,6 +863,15 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   from the last pick, the deck sent in the gap is the one played, the
   timer starts when building is possible, and DECK BUILDING in the log
   stays readable with the last picks interleaved.
+
+  **Run 2026-10-18: the gap is handled.** Page and client switch to the
+  deck screen with a full clock at their own last pick. A deck made
+  Ready, sent but not Ready, or short (topped up) in the gap is the one
+  played. Found: a client reconnect prints "X is now called X" (#856); the
+  timer's auto-pick prints after "drafted all" (on #819). To open a real
+  gap, slow only the AIs' Pack 3 Pick 13/14 in the stub. 5-10 s on every
+  pick gives about 3 s, because a seat's last pick waits on its upstream
+  seat's 13th.
 - D37 [proposed 2026-10-13, from D34/#818] mid-round truth: on a 5- or
   7-seat table hold one human's game open while the AI matches and the
   bye finish. Snapshot the page, the client, `/api/view` and the host
@@ -877,6 +886,14 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   an empty page, what the opponent's game and draft pages say, whether
   `status` names the seat the table waits on, and that a reconnect partway
   through game 2 resumes at the right game number and score.
+
+  **Run 2026-10-18, with D35's kick re-run.** #821 holds only when the
+  kicked seat is the one being asked. A kick while the opponent holds
+  the decision leaves the game running, and the kicked seat can win it
+  (#854). Game-page ports are never freed, so `--game-ports 8821-8822`
+  forfeits round 2 (#853). The client never shows the score (#855). A
+  game dealt to a closed tab reads "here" everywhere (on #822).
+  Reconnects resume at the right game.
 - D39 [proposed 2026-10-13, from R1/#809 and #808] every answer sent
   twice: at a table with packs waiting, drive `mtg-draft-client` through a
   timestamping wrapper and send each answer twice 50-300 ms apart — a pick
@@ -886,3 +903,20 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   the CLI's #71). While there, feed one cost per colour (W/U/B/R/G/C)
   through the game page's `costText`, its pool strip and both pages' pips,
   and check every letter.
+
+  **Run 2026-10-18: picks are safe twice, on the client and the page.**
+  Two things are not. The client exits on any refusal containing "key"
+  or "seat" (`lands turkey=1`, #851). The page's build-row toggle has no
+  repeat guard (#852). Sort a surface's commands first into "sending it
+  again changes nothing" and "it toggles": only the second needs a guard.
+  Every colour letter is right; ISD has no hybrid mana.
+- D40 [proposed 2026-10-18, from #853 and #854] what a round leaves
+  behind: host `--seats human,human,human,human --best-of 3` with
+  `--game-ports` exactly as wide as one round needs, and play three
+  rounds. After each match, list the server's listening ports, its
+  threads (`ls /proc/<pid>/task` with their `comm`) and its stub
+  children. Open the finished match's game URL again. Then do every host
+  action (`kick`, `status`, `quit`) once while the target seat is being
+  asked and once while its opponent is. Verify every match frees what it
+  took, a finished URL says the match is over, and each action does the
+  same thing at both moments.
