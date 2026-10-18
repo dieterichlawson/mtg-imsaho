@@ -840,14 +840,46 @@ fn a_plan_is_offered_only_where_one_can_be_made_and_kept_only_with_a_play() {
     plain.choose_action(&v, &legal);
     assert!(!fake.calls()[1].contains("SCHEMA OFFERS THEN"), "not with the knob off");
 
-    // Pass with a plan: the plan is dropped, the next offer is asked.
+    // Pass with a plan whose first card cannot be played: the pass
+    // stands, and the next prompt says why the plan did not run.
     let mut seat2 = fake.seat();
     fake.answer(0);
-    fake.then(&["Grizzly Bears"]);
+    fake.then(&["Savannah Lions"]);
     let (v, legal) = main_phase(vec![], false, true);
     assert!(matches!(seat2.choose_action(&v, &legal), Action::PassPriority));
     fake.then(&[]);
     let (v, legal) = main_phase(vec![], false, true);
     seat2.choose_action(&v, &legal);
-    assert_eq!(fake.calls().len(), 4, "a pass makes no plan");
+    assert_eq!(fake.calls().len(), 4);
+    let prompt = fake.calls().pop().unwrap();
+    assert!(prompt.contains("Your plan stopped before Savannah Lions: Savannah Lions cannot be played or cast now."), "{prompt}");
+}
+
+/// `{"action": 0, "then": ["Forest"]}` — Pass, with the land planned —
+/// is a model meaning "play the Forest": a pass in a main phase with an
+/// empty stack ends the phase, so the plan has no "after" to wait for.
+/// Read as a pass it skipped the land drop, on one replayed real position
+/// in six (reports/llm-cost.md, phase 3). The plan starts now.
+#[test]
+fn a_pass_answered_with_a_plan_starts_the_plan_now() {
+    let fake = Fake::new("plan-pass");
+    let mut seat = fake.seat();
+    let (v, legal) = main_phase(vec![], false, true);
+    fake.answer(0);
+    fake.then(&["Forest", "Grizzly Bears"]);
+    let chosen = seat.choose_action(&v, &legal);
+    assert!(matches!(chosen, Action::PlayLand { object_id: ObjectId(11) }), "{chosen:?}");
+    fake.then(&[]);
+    let (v, legal) = main_phase(vec![], true, false);
+    let chosen = seat.choose_action(&v, &legal);
+    assert!(matches!(chosen, Action::CastSpell { object_id: ObjectId(12), .. }), "{chosen:?}");
+    assert_eq!(fake.calls().len(), 1, "the plan ran on the one answer");
+
+    // The pass-until row with a plan is read the same way.
+    let mut seat = fake.seat();
+    let (v, legal) = main_phase(vec![], false, true);
+    fake.answer(1);
+    fake.then(&["Forest"]);
+    assert!(matches!(seat.choose_action(&v, &legal), Action::PlayLand { object_id: ObjectId(11) }));
+    fake.then(&[]);
 }

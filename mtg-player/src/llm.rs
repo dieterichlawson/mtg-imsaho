@@ -727,11 +727,12 @@ enum PlanMove {
 /// What the `then` field asks for. Its own description, not a system
 /// prompt section: the field is offered only where a plan can be made.
 pub const PLAN_DESCRIPTION: &str =
-    "Your main phase only: cards from your hand to play or cast after this action, in order, \
-     each without being asked again as soon as the stack is empty. Targets are still asked. \
+    "Cards from your hand to play or cast this main phase AFTER `action`, in order, each \
+     without being asked again once the stack is empty (targets are still asked). Put your \
+     first play in `action` and the rest here; if `action` is a pass, these start now instead. \
      The plan stops and you are asked if the opponent puts anything on the stack or a card \
      cannot be played when its turn comes; after the last one you pass until something \
-     happens. [] to be asked again after this action.";
+     happens. [] to be asked again after `action`.";
 
 /// What an LLM seat carries from one decision to the next, and so what a
 /// save has to hold for a resumed seat to be asked exactly what it would
@@ -5064,6 +5065,28 @@ impl LlmPlayer {
 
         if idx >= menu.len() {
             return Action::PassPriority;
+        }
+        // A pass with cards planned is read as the plan starting now: in a
+        // main phase with an empty stack a pass ends the phase, so there is
+        // no "after" for the plan to wait for. A model answering
+        // `{"action": 0, "then": ["Swamp"]}` meant "play the Swamp" — read
+        // as a pass it skipped its land drop, which a replay of real
+        // positions caught on one decision in six (reports/llm-cost.md,
+        // phase 3).
+        let passes = match menu[idx] {
+            MenuEntry::PassUntil => true,
+            MenuEntry::Engine(DisplayEntry::Direct(i)) => matches!(legal_actions[i], Action::PassPriority),
+            MenuEntry::Engine(_) => false,
+        };
+        if passes && !plannable.is_empty() && !then.is_empty() {
+            self.log("PLAN", &format!("then: {} (answered with a pass: the plan starts now)", then.join(", ")));
+            let plan = Plan { turn: view.turn_number, step: view.step, steps: then.clone(), taken: 0 };
+            self.plan = Some(plan.clone());
+            match self.plan_next(view, legal, &plan) {
+                PlanMove::Act(action) => return action,
+                PlanMove::Done => self.plan = None,
+                PlanMove::Stop(why) => self.stop_plan(&why),
+            }
         }
         let entry = match menu[idx] {
             MenuEntry::PassUntil => {
