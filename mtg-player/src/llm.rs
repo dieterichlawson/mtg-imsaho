@@ -255,6 +255,45 @@ pub fn cache_stable_schema(schema: &serde_json::Value) -> serde_json::Value {
     strip(schema, false)
 }
 
+/// `answer` with each string that its schema's `enum` does not hold, but
+/// that holds exactly one longest allowed value, read as that value:
+/// `Cast Goblin Piker (tap Mountain, Forest)`, a menu row copied into a
+/// plan, is `Goblin Piker`. The request no longer carries the enum
+/// ([`cache_stable_schema`]), so decoding does not force the exact name,
+/// and an answer whose meaning is plain is not asked again for it.
+#[must_use]
+pub fn repair_enum_strings(schema: &serde_json::Value, answer: &serde_json::Value) -> serde_json::Value {
+    if let (Some(allowed), Some(text)) = (schema.get("enum").and_then(serde_json::Value::as_array), answer.as_str()) {
+        if allowed.contains(answer) {
+            return answer.clone();
+        }
+        let lower = text.to_lowercase();
+        let held: Vec<&str> = allowed.iter().filter_map(serde_json::Value::as_str)
+            .filter(|v| lower.contains(&v.to_lowercase()))
+            .collect();
+        let longest = held.iter().map(|v| v.len()).max().unwrap_or(0);
+        let mut best = held.into_iter().filter(|v| v.len() == longest);
+        return match (best.next(), best.next()) {
+            (Some(only), None) => serde_json::json!(only),
+            _ => answer.clone(),
+        };
+    }
+    match answer {
+        serde_json::Value::Object(map) => {
+            let props = schema.get("properties").and_then(serde_json::Value::as_object);
+            serde_json::Value::Object(map.iter().map(|(k, v)| {
+                let fixed = props.and_then(|p| p.get(k)).map_or_else(|| v.clone(), |sub| repair_enum_strings(sub, v));
+                (k.clone(), fixed)
+            }).collect())
+        }
+        serde_json::Value::Array(items) => match schema.get("items") {
+            Some(item) => serde_json::Value::Array(items.iter().map(|v| repair_enum_strings(item, v)).collect()),
+            None => answer.clone(),
+        },
+        _ => answer.clone(),
+    }
+}
+
 /// Why `answer` is not one `schema` allows, if it is not: the check a
 /// request without the per-call constraints ([`cache_stable_schema`]) no
 /// longer asks the API to make. A missing `thoughts` is not a reason.
@@ -875,7 +914,7 @@ enum PlanMove {
 /// What the `then` field asks for. Its own description, not a system
 /// prompt section: the field is offered only where a plan can be made.
 pub const PLAN_DESCRIPTION: &str =
-    "Cards from your hand to play or cast this main phase AFTER `action`, in order, each \
+    "Cards from your hand, by name alone, to play or cast this main phase AFTER `action`, in order, each \
      without being asked again once the stack is empty (targets are still asked). Put your \
      first play in `action` and the rest here; if `action` is a pass, these start now instead. \
      The plan stops and you are asked if the opponent puts anything on the stack or a card \
@@ -3998,6 +4037,11 @@ impl LlmPlayer {
         if self.last_call_failure.is_some() {
             return result;
         }
+        let repaired = repair_enum_strings(schema, &result);
+        if repaired != result {
+            self.log("REPAIRED", &format!("{result} read as {repaired}"));
+        }
+        let result = repaired;
         let Some(why) = schema_violation(schema, &result) else {
             return result;
         };

@@ -366,3 +366,21 @@ fn a_stable_schema_drops_the_values_that_change_and_nothing_else() {
     assert_eq!(schema_violation(&plan, &serde_json::json!({"then": ["Lightning Blot"]})).as_deref(),
         Some(r#"`then[0]` is "Lightning Blot"; it must be one of "Mountain", "Lightning Bolt""#));
 }
+
+/// A menu row copied into a plan names its card plainly enough: with the
+/// enum gone from the request, decoding does not force the exact name, and
+/// the answer is read as the one card it names rather than asked again.
+#[test]
+fn a_string_that_holds_one_allowed_value_is_read_as_it() {
+    use mtg_player::llm::{repair_enum_strings, schema_violation};
+    let plan = serde_json::json!({"type": "object", "properties": {
+        "then": {"type": "array", "items": {"type": "string",
+            "enum": ["Forest", "Goblin Piker", "Mikaeus, the Lunarch", "Kessig Forest Wolf"]}}}});
+    let answer = serde_json::json!({"then": ["Cast Goblin Piker (tap Mountain, Forest)", "Play Forest",
+        "Cast Mikaeus, the Lunarch", "Cast Kessig Forest Wolf", "Lightning Bolt"]});
+    let fixed = repair_enum_strings(&plan, &answer);
+    assert_eq!(fixed["then"], serde_json::json!(["Goblin Piker", "Forest", "Mikaeus, the Lunarch",
+        "Kessig Forest Wolf", "Lightning Bolt"]), "the longest name a string holds wins; none is none");
+    assert!(schema_violation(&plan, &fixed).is_some_and(|w| w.contains("Lightning Bolt")),
+        "a card not in hand is still not an answer");
+}
