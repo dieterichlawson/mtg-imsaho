@@ -342,10 +342,12 @@ this (2026-10-08, the first implementation):
 - **Every match thread writes the log directly**, in wall-clock order; a
   `NOTE` after the header says so. The runner's seat-ordered buffering
   is for seeded replays, which this table has not got.
-- **Game pages are not reused.** A `GuiPlayer`'s accept thread holds
-  its port for the process's life, so each human's match takes the next
-  free port in `--game-ports`; 99 ports covers an 8-seat draft's rounds
-  with room to spare, and the old pages stay readable.
+- **Game ports come round again.** A `GuiPlayer` lets its port go when
+  its match ends (#853; before that every match kept its port for the
+  process's life and a narrow `--game-ports` ran out). Ports are taken
+  counting on from the last one used, so a finished match's port is the
+  next match's only once the range has gone round; a page left open on
+  it keeps showing how its game ended until it is reloaded.
 - **The advertised host** for `--bind 0.0.0.0` is found by connecting a
   UDP socket to a documentation address (`192.0.2.1`, nothing is sent)
   and reading its local address; when that gives loopback or nothing the

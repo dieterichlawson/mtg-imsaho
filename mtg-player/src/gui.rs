@@ -291,10 +291,14 @@ impl GuiPlayer {
         });
         let accept_shared = Arc::clone(&shared);
         let accept = thread::Builder::new().name("gui-accept".into()).spawn(move || {
-            for stream in listener.incoming().flatten() {
+            for stream in listener.incoming() {
+                // Looked at on a failed accept too: one that keeps failing
+                // (out of file descriptors) never takes the wake-up
+                // connection off the backlog, and the drop would wait on it.
                 if accept_shared.closed.load(std::sync::atomic::Ordering::SeqCst) {
                     break;
                 }
+                let Ok(stream) = stream else { continue };
                 let shared = Arc::clone(&accept_shared);
                 let _ = thread::Builder::new().name("gui-conn".into())
                     .spawn(move || serve_connection(stream, &shared));
