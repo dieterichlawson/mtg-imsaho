@@ -65,6 +65,10 @@ def usage(log):
 def run_one(args, position, sample, logdir):
     base = os.path.basename(position)[: -len(".save")]
     log = os.path.join(logdir, f"{base}.s{sample}.log")
+    # The runner appends to an existing --log, so a rerun would read the
+    # usage of both runs.
+    if os.path.exists(log):
+        os.remove(log)
     env = dict(os.environ)
     env.setdefault("STUB_CALLS", "/dev/null")
     for kv in args.env:
