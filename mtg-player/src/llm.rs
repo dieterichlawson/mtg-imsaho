@@ -1401,7 +1401,7 @@ Every prompt restates the whole position, in this order:
 - `Recent events:` what happened since your last prompt, at most the most recent 80 entries (a marker such as `… 227 earlier entries omitted, through turn 94 …` says when older ones were dropped).
 - `You:`/`Opp:` life (hp), hand, library, graveyard and exile counts; `This turn:` spells each side cast (werewolves transform on these) and `a creature died` (morbid).
 - Your mana pool; `Your board:` and `Opp board:`; `Stack:` (top last, with controller and targets); `Hand:` (cost, and base P/T for creatures); graveyards; exile; `Flashback available`.
-- `Opp's cards in view:` the rules text of every card in view that is not in your decklist. You learn the opponent's cards as they come into view, never before.
+- `Opp's cards in view:` rules text for the opponent's cards on the battlefield, on the stack, in exile or revealed, and for a graveyard card that works from there (flashback; cast or returned from a graveyard). You learn them as they come into view, never before. `(×N)` ends a line repeated N times; `3x` is three of a card.
 - A context line (`[MAIN PHASE 1]`, `[RESPOND TO opp's <spell>]`, `[AFTER BLOCKERS DECLARED]`, ...) and the question.
 
 Boards group lands (`2x Forest (1 tapped)`); any other permanent is `Name (#id) P/T keywords [flags]`. The `#id` tells apart permanents of one name. P/T is current, bonuses included, and a creature has exactly the keywords printed after it. Status flags after a permanent, in one bracket: `T` tapped; `S` summoning sick (no attacking or {T} abilities until its controller's next turn; it can block); `attacking you`/`attacking Opp`/`attacking <planeswalker> (#id)`; `blocking <attacker> (#id)`; `blocked by <blocker> (#id)`; `blocked (no blockers left)` (deals no combat damage unless it has trample); `Ndmg` damage marked; `regen shield`/`N regen shields`; `token`; `copy`; `+1+1xN`, `-1-1xN`, `LOYxN` or another counter by kind (`Slimex2`); `names: <card>`; `enchanting you`/`enchanting opponent` (a Curse's player); `legendary` (CR 704.5j: of two with one name under your control, you keep one). Elsewhere an object carries its id and whose it is: `(your)`, `(opponent's)`, `(in your graveyard)`, `(in opponent's exile)`.
@@ -2454,13 +2454,26 @@ impl LlmPlayer {
     /// seat can read what its opponent's cards do without having been handed
     /// the opponent's decklist (issue #466). Empty when there is nothing to
     /// describe.
+    ///
+    /// A card in a graveyard and nowhere else is described only where its
+    /// text works from there — flashback and its kin, or text that names
+    /// the graveyard — and is otherwise its name in the graveyard's list.
+    /// The text of every dead creature and spent spell was a third of a
+    /// prompt's bytes late in a game, written fresh on every call, for
+    /// cards that could no longer do anything (reports/llm-cost.md,
+    /// phase 3).
     fn format_cards_in_view(&self, view: &GameView) -> String {
         let mut names: Vec<&str> = Vec::new();
         names.extend(view.battlefield.iter().map(|p| p.name.as_str()));
         names.extend(view.stack.iter().map(|s| s.name.as_str()));
-        names.extend(view.graveyards.iter().flat_map(|(_, cards)| cards.iter().map(|c| c.name.as_str())));
         names.extend(view.exile.iter().map(|c| c.name.as_str()));
         names.extend(view.revealed_names.values().map(String::as_str));
+        let live = names.len();
+        names.extend(view.graveyards.iter().flat_map(|(_, cards)| cards.iter().map(|c| c.name.as_str())));
+        let (live, graveyard_only): (Vec<&str>, Vec<&str>) = (names[..live].to_vec(), names[live..].to_vec());
+        let mut names: Vec<&str> = live.clone();
+        names.extend(graveyard_only.into_iter().filter(|n| !live.contains(n)
+            && self.card_texts.get(*n).is_some_and(|entry| Self::works_from_graveyard(entry))));
         names.sort_unstable();
         names.dedup();
 
@@ -2475,6 +2488,17 @@ impl LlmPlayer {
             }
         }
         s
+    }
+
+    /// Whether a card's text can act while it is in a graveyard: an
+    /// ability that works from there (flashback and its kin), or a card
+    /// cast or returned "from your graveyard". Text that only puts cards
+    /// there — Mulch's "into your graveyard" — does not.
+    fn works_from_graveyard(entry: &str) -> bool {
+        let text = entry.to_lowercase();
+        ["from your graveyard", "from a graveyard", "flashback", "unearth", "disturb", "escape",
+         "embalm", "eternalize", "retrace", "aftermath", "jump-start", "scavenge", "dredge", "encore"]
+            .iter().any(|k| text.contains(k))
     }
 
     /// Resume conversation from an existing game state.
@@ -3085,6 +3109,7 @@ impl LlmPlayer {
         // Stack
         if !view.stack.is_empty() {
             s.push_str("Stack:\n");
+            let mut entries: Vec<String> = Vec::new();
             for i in &view.stack {
                 let who = if i.controller == view.you { "your" } else { "opponent's" };
                 let targets_str = if i.targets.is_empty() {
@@ -3117,7 +3142,13 @@ impl LlmPlayer {
                 // The spell resolving now is on the stack too (#766): the
                 // seat answering its question saw no stack at all.
                 let resolving = if i.resolving { " — resolving" } else { "" };
-                writeln!(s, "  {}{id}{x} ({who}){}{resolving}", i.name, targets_str).unwrap();
+                entries.push(format!("  {}{id}{x} ({who}){}{resolving}", i.name, targets_str));
+            }
+            // Identical entries next to each other — one source's
+            // triggers — are one line with their count.
+            for entry in Self::collapse_repeats(entries) {
+                s.push_str(&entry);
+                s.push('\n');
             }
         }
 
@@ -3139,13 +3170,7 @@ impl LlmPlayer {
             if !cards.is_empty() {
                 let whose = if *pid == view.you { "Your" } else { "Opp" };
                 writeln!(s, "{whose} graveyard:").unwrap();
-                for c in cards {
-                    let pt = match (c.power, c.toughness) {
-                        (Some(p), Some(t)) => format!(" {p}/{t}"),
-                        _ => String::new(),
-                    };
-                    writeln!(s, "  {}{}", c.name, pt).unwrap();
-                }
+                s.push_str(&Self::grouped_cards(cards));
             }
         }
 
@@ -3161,13 +3186,7 @@ impl LlmPlayer {
                 .collect();
             if !cards.is_empty() {
                 writeln!(s, "{whose} exile:").unwrap();
-                for c in cards {
-                    let pt = match (c.power, c.toughness) {
-                        (Some(p), Some(t)) => format!(" {p}/{t}"),
-                        _ => String::new(),
-                    };
-                    writeln!(s, "  {}{}", c.name, pt).unwrap();
-                }
+                s.push_str(&Self::grouped_cards(cards));
             }
         }
 
@@ -4020,7 +4039,40 @@ impl LlmPlayer {
     /// `p1 tapped Plains (#45) for mana (pool: White:1)`, the engine's line
     /// for a mana ability.
     fn is_mana_tap_entry(entry: &str) -> bool {
-        entry.contains(" tapped ") && entry.contains(" for mana")
+        (entry.contains(" tapped ") && entry.contains(" for mana")) || entry.contains("'s mana pool empties (")
+    }
+
+    /// Consecutive identical lines as one, with how many: eight triggers
+    /// from one death, each the same line, said once with `(×8)`. Nothing
+    /// is lost but the repetition.
+    fn collapse_repeats(lines: impl IntoIterator<Item = String>) -> Vec<String> {
+        let mut out: Vec<(String, usize)> = Vec::new();
+        for line in lines {
+            match out.last_mut() {
+                Some((last, n)) if *last == line => *n += 1,
+                _ => out.push((line, 1)),
+            }
+        }
+        out.into_iter().map(|(line, n)| if n == 1 { line } else { format!("{line} (×{n})") }).collect()
+    }
+
+    /// A graveyard's or an exile's cards, one line per name with how many:
+    /// `4x Island`, `2x Walking Corpse 2/2`, in the order each name first
+    /// appears. No card in the pool cares about a graveyard's order.
+    fn grouped_cards<'a>(cards: impl IntoIterator<Item = &'a mtg_engine::view::CardView>) -> String {
+        let mut rows: Vec<(String, usize)> = Vec::new();
+        for c in cards {
+            let pt = match (c.power, c.toughness) {
+                (Some(p), Some(t)) => format!(" {p}/{t}"),
+                _ => String::new(),
+            };
+            let row = format!("{}{pt}", c.name);
+            match rows.iter_mut().find(|(r, _)| *r == row) {
+                Some((_, n)) => *n += 1,
+                None => rows.push((row, 1)),
+            }
+        }
+        rows.into_iter().map(|(row, n)| if n == 1 { format!("  {row}\n") } else { format!("  {n}x {row}\n") }).collect()
     }
 
     /// The turn number a `── Turn N (...) ──` log banner announces.
@@ -4076,9 +4128,8 @@ impl LlmPlayer {
             .collect();
         let omitted = pending.len().saturating_sub(Self::MAX_RECENT_EVENTS);
         let (elided, shown) = pending.split_at(omitted);
-        let new_logs: Vec<String> = shown.iter()
-            .map(|e| Self::rewrite_log_entry(e, view.you))
-            .collect();
+        let new_logs: Vec<String> = Self::collapse_repeats(shown.iter()
+            .map(|e| Self::rewrite_log_entry(e, view.you)));
 
         let mut prompt = String::new();
         // Turn/phase header comes first so the model immediately knows
@@ -8637,6 +8688,55 @@ pub(crate) mod tests {
         assert!(body.contains("Geistflame (flashback {R} or {3}{R})"),
             "both instances are payable and the seat is offered both, so the \
              section that names the cost names both:\n{body}");
+    }
+
+    /// Late in a game the prompt was mostly repetition: every dead
+    /// creature's and spent spell's rules text under "Opp's cards in view"
+    /// (a third of a prompt's bytes), a graveyard one card a line, and one
+    /// death's eight triggers eight times in the events and eight on the
+    /// stack (reports/llm-cost.md, phase 3). A graveyard card is described
+    /// where its text works from there; identical neighbours are one line
+    /// with a count; a zone's cards are grouped by name.
+    #[test]
+    fn a_late_game_prompt_says_each_thing_once() {
+        let registry = CardRegistry::with_all_cards();
+        let mut player = LlmPlayer::for_prompt_tests("t");
+        let own = vec![("Forest".to_string(), 20), ("Grizzly Bears".to_string(), 20)];
+        player.init_conversation(&own, "", &registry, MatchFormat::SingleGame);
+        let (you, opp) = (PlayerId(0), PlayerId(1));
+        let yard = |id: u64, name: &str, owner: PlayerId| mtg_engine::view::CardView {
+            object_id: ObjectId(id), card_id: mtg_engine::ids::CardId(0), name: name.to_string(),
+            cost: None, supertypes: vec![], card_types: vec![], power: None, toughness: None,
+            oracle_text: String::new(), owner, flashback_costs: vec![],
+        };
+        let mut view = empty_view();
+        view.battlefield.push(perm(7, "Selhoff Occultist", 2, 3, opp));
+        view.graveyards = vec![
+            (you, vec![yard(1, "Forest", you), yard(2, "Grizzly Bears", you), yard(3, "Forest", you)]),
+            (opp, vec![yard(4, "Mulch", opp), yard(5, "Gnaw to the Bone", opp), yard(6, "Mulch", opp)]),
+        ];
+        for _ in 0..3 {
+            view.stack.push(mtg_engine::view::StackItemView {
+                object_id: ObjectId(40), card_id: mtg_engine::ids::CardId(0),
+                name: "Selhoff Occultist's triggered ability".to_string(), source_id: Some(ObjectId(7)),
+                controller: opp, targets: vec![mtg_engine::actions::Target::Player(you)],
+                x_value: None, cost: None, supertypes: vec![], card_types: vec![], power: None,
+                toughness: None, oracle_text: String::new(), resolving: false,
+            });
+        }
+        let prompt = player.build_prompt(&view, "[MAIN PHASE 1]\nAvailable actions:\n0: Pass\n");
+        let section = &prompt[prompt.find("Opp's cards in view:\n").expect("the section")..];
+        assert!(section.contains("Selhoff Occultist {2}{U}"), "on the battlefield: described\n{section}");
+        assert!(section.contains("Gnaw to the Bone {2}{G}"), "flashback works from the graveyard\n{section}");
+        assert!(!section.contains("Mulch {1}{G}"), "a spent sorcery is its name in the list\n{section}");
+        assert!(prompt.contains("Your graveyard:\n  2x Forest\n  Grizzly Bears\n"), "{prompt}");
+        assert!(prompt.contains("Opp graveyard:\n  2x Mulch\n  Gnaw to the Bone\n"), "{prompt}");
+        assert!(prompt.contains("Stack:\n  Selhoff Occultist's triggered ability (#7) (opponent's) targeting you (×3)\n"),
+            "{prompt}");
+
+        assert_eq!(LlmPlayer::collapse_repeats(["a", "b", "b", "b", "a"].map(String::from)),
+            vec!["a".to_string(), "b (×3)".to_string(), "a".to_string()]);
+        assert!(LlmPlayer::is_mana_tap_entry("Opp's mana pool empties (Black:1)"), "not news");
     }
 
     /// #785's review: a transformed permanent is named by its back face, and
