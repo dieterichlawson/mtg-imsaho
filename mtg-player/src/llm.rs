@@ -99,9 +99,10 @@ pub fn schema_key_is_legal(key: &str) -> bool {
 /// - strip unsupported numeric constraints (`minimum`, `maximum`, `multipleOf`)
 /// - strip `thoughts` unless the caller keeps it
 ///
-/// `keep_thoughts` is false for the Messages API, where the reasoning comes
-/// back in a thinking block the harness reads. It is TRUE for the `claude -p`
-/// seat, whose result object carries no thinking block — so stripping the
+/// Every seat now passes `keep_thoughts` true. The Messages API seat used to
+/// pass false and read its reasoning from the thinking block, which is empty
+/// with thinking off (the default) or where the model omits it. The `claude
+/// -p` seat's result object carries no thinking block at all — so stripping the
 /// field there erased the reasoning entirely: the schema asked for it, this
 /// stripped it, and nothing read a thinking channel, which is why 101
 /// decisions produced zero THOUGHT lines (issue #213).
