@@ -82,6 +82,12 @@ def fill(name, spec):
         hi = spec.get("maxItems", lo)
         if "enum" in items:
             pool = list(items["enum"])
+            if name == "then":
+                # A main-phase plan (`then`) has no bound: roll none, one or
+                # two cards, so a stub game exercises plans being made,
+                # played out and stopped — a stub that always sent []
+                # would leave that code unrun.
+                return sorted(pool, key=lambda v: h(message, name, v))[: h(message, "plan") % 3]
             # Towards the top of the range, so set prompts do something.
             n = min(len(pool), hi if hi else lo)
             n = max(lo, n - h(message, name) % 2) if n > lo else lo

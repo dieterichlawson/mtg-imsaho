@@ -43,16 +43,18 @@ impl Fake {
             "#!/bin/sh\n\
              if [ \"$1\" = \"--version\" ]; then echo 9.9.9; exit 0; fi\n\
              CALL=$(( $(cat \"{count}\" 2>/dev/null || echo 0) + 1 )); echo $CALL > \"{count}\"\n\
-             {{ echo \"=== call $CALL\"; cat; echo; echo '--- end'; }} >> \"{log}\"\n\
+             {{ echo \"=== call $CALL\"; cat; echo; case \"$*\" in *'\"then\"'*) echo 'SCHEMA OFFERS THEN';; esac; echo '--- end'; }} >> \"{log}\"\n\
              A=$(cat \"{answer}\" 2>/dev/null || echo 0)\n\
+             T=$(cat \"{then}\" 2>/dev/null || echo '[]')\n\
              printf '{{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"session_id\":\"s\",\
              \"result\":\"{{}}\",\"structured_output\":{{\"action\":%s,\"thoughts\":\"t\",\
-             \"attacker_indices\":[],\"blocks\":[],\"confirm\":false,\"card_indices\":[0],\"amount\":1}},\
+             \"attacker_indices\":[],\"blocks\":[],\"confirm\":false,\"card_indices\":[0],\"amount\":1,\"then\":%s}},\
              \"usage\":{{\"input_tokens\":1,\"output_tokens\":1,\"cache_read_input_tokens\":0,\
-             \"cache_creation_input_tokens\":0}}}}\\n' \"$A\"\n",
+             \"cache_creation_input_tokens\":0}}}}\\n' \"$A\" \"$T\"\n",
             count = dir.join("count").display(),
             log = dir.join("log.txt").display(),
             answer = dir.join("answer").display(),
+            then = dir.join("then").display(),
         );
         let bin = dir.join("claude");
         std::fs::write(&bin, script).unwrap();
@@ -65,6 +67,11 @@ impl Fake {
     /// The index the next calls answer with.
     fn answer(&self, index: usize) {
         std::fs::write(self.dir.join("answer"), index.to_string()).unwrap();
+    }
+
+    /// The plan (`then`) the next calls answer with.
+    fn then(&self, names: &[&str]) {
+        std::fs::write(self.dir.join("then"), serde_json::to_string(names).unwrap()).unwrap();
     }
 
     fn calls(&self) -> Vec<String> {
@@ -260,7 +267,7 @@ fn engaged_on_own_turn(fake: &Fake) -> LlmPlayer {
 /// The stop line the first prompt after a stop opens with.
 fn stop_line(fake: &Fake) -> String {
     let last = fake.calls().pop().expect("a call was made");
-    last.lines().find(|l| l.starts_with("You chose to pass until something happened"))
+    last.lines().find(|l| l.starts_with("After ") && l.contains("passed for you unasked, the pass stopped: "))
         .unwrap_or_else(|| panic!("the prompt after a stop says why it stopped:\n{last}"))
         .to_string()
 }
@@ -368,32 +375,49 @@ fn a_second_activation_just_like_one_already_there_stops_it() {
     assert!(stop_line(&fake).contains("Olivia Voldaren ability (the opponent's) is on the stack"), "{}", stop_line(&fake));
 }
 
+/// The upkeep and draw step hold nothing the first main phase does not,
+/// and stopping at the turn's start was a call every turn that came back
+/// "pass" (reports/llm-cost.md, phase 3): the turn is passed into, and its
+/// first main phase is asked.
 #[test]
-fn the_seats_own_turn_beginning_stops_it() {
+fn the_seats_own_turn_is_passed_into_and_its_first_main_phase_asked() {
     let fake = Fake::new("own-turn");
     let mut seat = engaged_on_opponents_turn(&fake);
-    seat.choose_action(&view(3, Step::Upkeep, YOU), &offer("UPKEEP"));
+    for step in [Step::Upkeep, Step::Draw] {
+        assert!(matches!(seat.choose_action(&view(3, step, YOU), &offer("UPKEEP")), Action::PassPriority));
+    }
+    assert_eq!(fake.calls().len(), 1, "the upkeep and draw are passed unasked");
+    seat.choose_action(&view(3, Step::PrecombatMain, YOU), &offer("MAIN PHASE 1"));
     assert_eq!(fake.calls().len(), 2);
-    assert!(stop_line(&fake).contains("your turn 3 began"), "{}", stop_line(&fake));
+    assert!(stop_line(&fake).contains("your Main Phase 1"), "{}", stop_line(&fake));
 }
 
+/// An attack on the seat is asked once, after blocks: the window a trick
+/// or a removal spell is cast in. Before blocks it was asked too, and that
+/// was a second call per attack whose answer a person gives after blocks
+/// just as well (reports/llm-cost.md, phase 3).
 #[test]
-fn attackers_declared_against_the_seat_stop_it() {
+fn an_attack_on_the_seat_stops_it_once_blocks_are_in() {
     let fake = Fake::new("attacked");
     let mut seat = engaged_on_opponents_turn(&fake);
-    let mut v = view(2, Step::DeclareAttackers, OPP);
     let mut bears = perm(40, "Grizzly Bears", OPP);
     bears.attacking = Some(AttackTarget::Player(YOU));
+    let mut v = view(2, Step::DeclareAttackers, OPP);
+    v.battlefield.push(bears.clone());
+    assert!(matches!(seat.choose_action(&v, &offer("AFTER ATTACKERS DECLARED")), Action::PassPriority));
+    assert_eq!(fake.calls().len(), 1, "before blocks the attack is passed");
+    let mut v = view(2, Step::DeclareBlockers, OPP);
     v.battlefield.push(bears);
-    seat.choose_action(&v, &offer("AFTER ATTACKERS DECLARED"));
-    assert_eq!(fake.calls().len(), 2, "an attack is asked, before blocks");
-    assert!(stop_line(&fake).contains("attackers declared against you: Grizzly Bears"), "{}", stop_line(&fake));
+    seat.choose_action(&v, &offer("AFTER BLOCKERS DECLARED"));
+    assert_eq!(fake.calls().len(), 2, "after blocks it is asked");
+    let line = stop_line(&fake);
+    assert!(line.contains("the opponent is attacking you with Grizzly Bears") && line.contains("blocks are in"), "{line}");
 
     // The opponent's combat with nobody attacking is not an attack.
     let mut seat = engaged_on_opponents_turn(&fake);
-    let mut v = view(2, Step::DeclareAttackers, OPP);
+    let mut v = view(2, Step::DeclareBlockers, OPP);
     v.battlefield.push(perm(40, "Grizzly Bears", OPP));
-    let chosen = seat.choose_action(&v, &offer("OPPONENT'S TURN: Declare Attackers"));
+    let chosen = seat.choose_action(&v, &offer("OPPONENT'S TURN: Declare Blockers"));
     assert!(matches!(chosen, Action::PassPriority));
     assert_eq!(fake.calls().len(), 3);
 }
@@ -435,16 +459,23 @@ fn the_seats_next_main_phase_stops_it() {
         assert!(matches!(seat.choose_action(&view(3, step, YOU), &offer("BEGIN COMBAT")), Action::PassPriority));
     }
     assert_eq!(fake.calls().len(), 1);
-    seat.choose_action(&view(3, Step::PostcombatMain, YOU), &offer("MAIN PHASE 2"));
+    // Main phase 2 with only an instant on offer holds nothing an instant
+    // window does not: passed.
+    assert!(matches!(seat.choose_action(&view(3, Step::PostcombatMain, YOU), &offer("MAIN PHASE 2")), Action::PassPriority));
+    assert_eq!(fake.calls().len(), 1, "a second main phase with nothing at sorcery speed is passed");
+    // With a land to play, it is asked.
+    let mut with_land = offer("MAIN PHASE 2");
+    with_land.actions.insert(1, Action::PlayLand { object_id: ObjectId(11) });
+    seat.choose_action(&view(3, Step::PostcombatMain, YOU), &with_land);
     assert_eq!(fake.calls().len(), 2);
-    assert!(stop_line(&fake).contains("your Main Phase 2"), "{}", stop_line(&fake));
+    assert!(stop_line(&fake).contains("you can play a land"), "{}", stop_line(&fake));
 
     // Engaged on the opponent's turn: the seat's main phase 1 is asked
     // even when the offers before it were the engine's to pass.
     let mut seat = engaged_on_opponents_turn(&fake);
     seat.choose_action(&view(3, Step::PrecombatMain, YOU), &offer("MAIN PHASE 1"));
     assert_eq!(fake.calls().len(), 4);
-    assert!(stop_line(&fake).contains("your turn 3 began"), "{}", stop_line(&fake));
+    assert!(stop_line(&fake).contains("your Main Phase 1"), "{}", stop_line(&fake));
 }
 
 #[test]
@@ -522,8 +553,12 @@ fn a_sorcery_speed_activation_in_the_same_main_phase_stops_it_whatever_its_text(
     assert!(stop_line(&fake).contains("you could activate Brain Weevil"), "{}", stop_line(&fake));
 }
 
+/// A combat declaration is always asked; the pass-until carries on past
+/// it, and declaring attackers starts one when none was running. Ending it
+/// there made the very next offer, in the step just declared in, a call
+/// that came back "pass" (reports/llm-cost.md, phase 3).
 #[test]
-fn a_combat_prompt_stops_it_and_is_asked() {
+fn a_combat_prompt_is_asked_and_the_pass_carries_on_past_it() {
     let fake = Fake::new("combat");
     let mut seat = engaged_on_own_turn(&fake);
     let mut v = view(3, Step::DeclareAttackers, YOU);
@@ -535,10 +570,18 @@ fn a_combat_prompt_stops_it_and_is_asked() {
     };
     seat.choose_combat(&v, &prompt);
     assert_eq!(fake.calls().len(), 2, "the attack is asked");
-    assert!(stop_line(&fake).contains("you must declare attackers"), "{}", stop_line(&fake));
-    // And the pass-until is over: the next plain offer is asked too.
-    seat.choose_action(&view(3, Step::DeclareAttackers, YOU), &offer("AFTER ATTACKERS DECLARED"));
+    // The pass carries on: the next plain offer is passed.
+    let chosen = seat.choose_action(&view(3, Step::DeclareAttackers, YOU), &offer("AFTER ATTACKERS DECLARED"));
+    assert!(matches!(chosen, Action::PassPriority));
+    assert_eq!(fake.calls().len(), 2, "the offer after the declaration is passed");
+
+    // A seat that was not passing starts to once it has declared attackers.
+    let mut fresh = fake.seat();
+    fresh.choose_combat(&v, &prompt);
     assert_eq!(fake.calls().len(), 3);
+    let chosen = fresh.choose_action(&view(3, Step::DeclareAttackers, YOU), &offer("AFTER ATTACKERS DECLARED"));
+    assert!(matches!(chosen, Action::PassPriority));
+    assert_eq!(fake.calls().len(), 3, "declaring attackers is followed by passing");
 
     let mut seat = engaged_on_opponents_turn(&fake);
     let mut v = view(2, Step::DeclareBlockers, OPP);
@@ -553,8 +596,13 @@ fn a_combat_prompt_stops_it_and_is_asked() {
         min_blockers: HashMap::new(),
     };
     seat.choose_combat(&v, &prompt);
-    assert_eq!(fake.calls().len(), 5);
-    assert!(stop_line(&fake).contains("you must declare blockers"), "{}", stop_line(&fake));
+    assert_eq!(fake.calls().len(), 5, "the block is asked");
+    // After blocks, the trick window is asked.
+    let mut after = view(2, Step::DeclareBlockers, OPP);
+    after.battlefield.clone_from(&v.battlefield);
+    seat.choose_action(&after, &offer("AFTER BLOCKERS DECLARED"));
+    assert_eq!(fake.calls().len(), 6);
+    assert!(stop_line(&fake).contains("blocks are in"), "{}", stop_line(&fake));
 }
 
 #[test]
@@ -603,12 +651,13 @@ fn the_recap_after_a_stretch_of_unasked_passes_carries_every_event() {
         assert!(matches!(seat.choose_action(&v, &offer("OPPONENT'S TURN")), Action::PassPriority));
     }
     assert_eq!(fake.calls().len(), 1);
-    // The stop: the seat's turn. Its prompt carries the whole stretch.
-    let mut own = view(3, Step::Upkeep, YOU);
+    // The stop: the seat's first main phase. Its prompt carries the
+    // whole stretch.
+    let mut own = view(3, Step::PrecombatMain, YOU);
     own.display_log = v.display_log.clone();
     own.display_log.push(events[4].to_string());
     own.display_log.push(events[5].to_string());
-    seat.choose_action(&own, &offer("UPKEEP"));
+    seat.choose_action(&own, &offer("MAIN PHASE 1"));
     let prompt = fake.calls().pop().unwrap();
     let recap = prompt.split("Recent events:\n").nth(1).unwrap_or_else(|| panic!("a recap:\n{prompt}"));
     // (Each in the seat's you/opp vocabulary; the wording is the
@@ -618,8 +667,8 @@ fn the_recap_after_a_stretch_of_unasked_passes_carries_every_event() {
         assert!(recap.contains(expected), "the recap is missing {expected:?}:\n{prompt}");
     }
     assert!(!recap.contains("played Swamp"), "what the engaging prompt already carried is not repeated:\n{prompt}");
-    assert!(prompt.contains("after 4 unasked passes it stopped: your turn 3 began"), "{prompt}");
-    let stop = prompt.find("You chose to pass until").unwrap();
+    assert!(prompt.contains("After 4 priority offers passed for you unasked, the pass stopped: your Main Phase 1"), "{prompt}");
+    let stop = prompt.find("the pass stopped").unwrap();
     assert!(stop < prompt.find("Recent events:").unwrap(), "the stop line comes before the recap:\n{prompt}");
 }
 
@@ -632,7 +681,7 @@ fn a_new_game_forgets_it() {
     seat.choose_action(&view(1, Step::PrecombatMain, OPP), &offer("OPPONENT'S TURN: Main Phase 1"));
     assert_eq!(fake.calls().len(), 2, "game two's first offer is asked");
     let prompt = fake.calls().pop().unwrap();
-    assert!(!prompt.contains("You chose to pass until"), "{prompt}");
+    assert!(!prompt.contains("the pass stopped"), "{prompt}");
 }
 
 #[test]
@@ -647,4 +696,158 @@ fn the_knob_turns_the_row_off() {
     std::env::set_var(PASS_UNTIL_ENV, "on");
     assert!(pass_until_enabled());
     std::env::remove_var(PASS_UNTIL_ENV);
+}
+
+/// Nobody answers their own spell: while everything on the stack is the
+/// seat's, the offer is passed without a call, pass-until or not — it was
+/// about one call per spell the seat cast, and every one came back "pass"
+/// (reports/llm-cost.md, phase 3). Something of the opponent's on top of
+/// it is asked.
+#[test]
+fn the_seats_own_spell_on_the_stack_is_passed_without_a_call() {
+    let fake = Fake::new("own-stack");
+    let mut seat = fake.seat();
+    let mut v = view(3, Step::PrecombatMain, YOU);
+    v.stack.push(stack_item(50, "Kalonian Tusker", YOU));
+    let chosen = seat.choose_action(&v, &offer("RESPOND TO your Kalonian Tusker"));
+    assert!(matches!(chosen, Action::PassPriority), "{chosen:?}");
+    assert_eq!(fake.calls().len(), 0, "the seat is not asked to respond to itself");
+    v.stack.push(stack_item(51, "Lightning Bolt", OPP));
+    seat.choose_action(&v, &offer("RESPOND TO opp's Lightning Bolt"));
+    assert_eq!(fake.calls().len(), 1, "the opponent's response is asked");
+    // With the knob off the seat is asked everything, as before.
+    let mut plain = fake.seat().with_pass_until(false);
+    let mut v = view(3, Step::PrecombatMain, YOU);
+    v.stack.push(stack_item(50, "Kalonian Tusker", YOU));
+    plain.choose_action(&v, &offer("RESPOND TO your Kalonian Tusker"));
+    assert_eq!(fake.calls().len(), 2);
+}
+
+/// The seat's own main phase with a land and two creatures in hand: Pass,
+/// pass-until, Play Forest, cast Grizzly Bears, cast the Bolt, Concede —
+/// with the Savannah Lions not yet castable (it needs the Forest).
+fn main_phase(stack: Vec<StackItemView>, lions_castable: bool, land: bool) -> (GameView, LegalActions) {
+    let mut v = view(3, Step::PrecombatMain, YOU);
+    v.your_hand.push(card(11, "Forest", vec![CardType::Land], ""));
+    v.your_hand.push(card(12, "Grizzly Bears", vec![CardType::Creature], ""));
+    v.your_hand.push(card(13, "Savannah Lions", vec![CardType::Creature], ""));
+    if !land {
+        v.your_hand.retain(|c| c.name != "Forest");
+    }
+    v.stack = stack;
+    let mut legal = offer("MAIN PHASE 1");
+    if land {
+        legal.actions.insert(1, Action::PlayLand { object_id: ObjectId(11) });
+    }
+    legal.actions.insert(1, cast(12));
+    legal.castable_spells.push(castable(12, "Grizzly Bears"));
+    if lions_castable {
+        legal.actions.insert(1, cast(13));
+        legal.castable_spells.push(castable(13, "Savannah Lions"));
+    }
+    (v, legal)
+}
+
+/// "Forest, then the Bears, then the Lions" is one answer: the seat plays
+/// its land and each planned card is taken without a call as soon as the
+/// stack is empty, its own spells on the stack are passed, and the plan's
+/// end passes until something happens. It was a call per card
+/// (reports/llm-cost.md, phase 3).
+#[test]
+fn a_main_phase_plan_is_played_out_without_further_calls() {
+    let fake = Fake::new("plan");
+    let mut seat = fake.seat();
+    let (v, legal) = main_phase(vec![], false, true);
+    // Rows: 0 Pass, 1 pass-until, 2 Cast Grizzly Bears, 3 Play Forest, ...
+    fake.answer(3);
+    fake.then(&["Grizzly Bears", "Savannah Lions"]);
+    let chosen = seat.choose_action(&v, &legal);
+    assert!(matches!(chosen, Action::PlayLand { object_id: ObjectId(11) }), "{chosen:?}");
+    assert_eq!(fake.calls().len(), 1);
+    assert!(fake.calls()[0].contains("SCHEMA OFFERS THEN"), "the main phase offers a plan");
+    fake.then(&[]);
+
+    // The Forest is down: the Bears are cast without a call.
+    let (v, legal) = main_phase(vec![], true, false);
+    let chosen = seat.choose_action(&v, &legal);
+    assert!(matches!(chosen, Action::CastSpell { object_id: ObjectId(12), .. }), "{chosen:?}");
+    // Its own Bears on the stack: passed.
+    let (v, legal) = main_phase(vec![stack_item(12, "Grizzly Bears", YOU)], true, false);
+    assert!(matches!(seat.choose_action(&v, &legal), Action::PassPriority));
+    // Then the Lions.
+    let (mut v, mut legal) = main_phase(vec![], true, false);
+    v.your_hand.retain(|c| c.name != "Grizzly Bears");
+    legal.castable_spells.retain(|c| c.name != "Grizzly Bears");
+    legal.actions.retain(|a| !matches!(a, Action::CastSpell { object_id: ObjectId(12), .. }));
+    let chosen = seat.choose_action(&v, &legal);
+    assert!(matches!(chosen, Action::CastSpell { object_id: ObjectId(13), .. }), "{chosen:?}");
+    // The plan is done, and with only the Bolt left the seat passes on.
+    let mut v = view(3, Step::PrecombatMain, YOU);
+    v.your_hand.retain(|_| true);
+    assert!(matches!(seat.choose_action(&v, &offer("MAIN PHASE 1")), Action::PassPriority));
+    assert_eq!(fake.calls().len(), 1, "the whole plan was one call:\n{:?}", fake.calls());
+}
+
+/// The plan is the seat's own until something happens that it did not
+/// plan for: the opponent responding, or a card that cannot be cast when
+/// its turn comes. Then it is asked, told why the plan stopped.
+#[test]
+fn a_plan_stops_and_asks_when_the_opponent_responds_or_a_card_cannot_be_cast() {
+    let fake = Fake::new("plan-stop");
+    let mut seat = fake.seat();
+    let (v, legal) = main_phase(vec![], false, true);
+    fake.answer(3);
+    fake.then(&["Grizzly Bears", "Savannah Lions"]);
+    seat.choose_action(&v, &legal);
+    fake.then(&[]);
+    fake.answer(0);
+    let (v, legal) = main_phase(vec![], true, false);
+    assert!(matches!(seat.choose_action(&v, &legal), Action::CastSpell { object_id: ObjectId(12), .. }));
+    // The opponent answers the Bears with a Bolt of its own.
+    let (v, legal) = main_phase(vec![stack_item(12, "Grizzly Bears", YOU), stack_item(40, "Lightning Bolt", OPP)], true, false);
+    seat.choose_action(&v, &legal);
+    assert_eq!(fake.calls().len(), 2, "the response is asked");
+    let prompt = fake.calls().pop().unwrap();
+    assert!(prompt.contains("Your plan stopped before Savannah Lions: Lightning Bolt (the opponent's) is on the stack."),
+        "{prompt}");
+
+    // A planned card that cannot be cast when its turn comes.
+    let mut seat = fake.seat();
+    let (v, legal) = main_phase(vec![], false, true);
+    fake.answer(3);
+    fake.then(&["Savannah Lions"]);
+    seat.choose_action(&v, &legal);
+    fake.then(&[]);
+    fake.answer(0);
+    let (v, legal) = main_phase(vec![], false, false);
+    seat.choose_action(&v, &legal);
+    assert_eq!(fake.calls().len(), 4, "asked, the Lions being uncastable");
+    let prompt = fake.calls().pop().unwrap();
+    assert!(prompt.contains("Your plan stopped before Savannah Lions: Savannah Lions cannot be played or cast now."), "{prompt}");
+}
+
+/// A plan rides on a play. Where none can be made — the opponent's turn,
+/// a non-empty stack, the knob off — the schema does not offer one; and a
+/// plan sent with Pass is not kept.
+#[test]
+fn a_plan_is_offered_only_where_one_can_be_made_and_kept_only_with_a_play() {
+    let fake = Fake::new("plan-where");
+    let mut seat = fake.seat();
+    seat.choose_action(&view(2, Step::PrecombatMain, OPP), &offer("OPPONENT'S TURN: Main Phase 1"));
+    assert!(!fake.calls()[0].contains("SCHEMA OFFERS THEN"), "not on the opponent's turn");
+    let mut plain = fake.seat().with_pass_until(false);
+    let (v, legal) = main_phase(vec![], false, true);
+    plain.choose_action(&v, &legal);
+    assert!(!fake.calls()[1].contains("SCHEMA OFFERS THEN"), "not with the knob off");
+
+    // Pass with a plan: the plan is dropped, the next offer is asked.
+    let mut seat2 = fake.seat();
+    fake.answer(0);
+    fake.then(&["Grizzly Bears"]);
+    let (v, legal) = main_phase(vec![], false, true);
+    assert!(matches!(seat2.choose_action(&v, &legal), Action::PassPriority));
+    fake.then(&[]);
+    let (v, legal) = main_phase(vec![], false, true);
+    seat2.choose_action(&v, &legal);
+    assert_eq!(fake.calls().len(), 4, "a pass makes no plan");
 }

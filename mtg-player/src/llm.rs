@@ -658,9 +658,9 @@ const PASS_UNTIL_RULES: &str = r#"
 
 ## Pass until something happens
 
-Every priority offer has one more row, right after `Pass`: `1: Pass until something happens`, with the engine's rows after it numbered from 2. It is the way a person says "go". It passes priority now and keeps passing every later priority offer for you, unasked, until: anything new is put on the stack — the opponent's or yours, your own triggers included; your turn begins; attackers are declared against you; a blocker is declared against your attacker; you must declare attackers or blockers; your next main phase, and any main phase of yours with a land drop or a sorcery-speed cast or activation on offer; or any prompt that is not a plain priority pass. It never answers a decision for you, but it does pass the instant-speed windows in between — the opponent's end step, a combat damage step — so when you mean to act in one of those, answer `Pass` and you will be asked at the next one.
+Every priority offer has one more row, right after `Pass`: `1: Pass until something happens`, with the engine's rows after it numbered from 2. It is the way a person says "go": it passes priority now and keeps passing later priority offers for you, unasked, until something of the opponent's is put on the stack; a blocker is declared against your attacker; the opponent attacks you and blocks are in (your window after blocks); your next first main phase; a later main phase of yours with a land drop or a sorcery-speed cast or activation on offer; or any prompt that is not a plain priority pass (combat declarations, targets and choices are always asked). After you declare attackers you pass this way too, until a block or your second main phase. You are never asked to respond to your own spell or ability while only yours are on the stack.
 
-When it stops, the next prompt opens (after your notes) with one line saying how many priority offers were passed for you unasked and what stopped it, e.g. `You chose to pass until something happened; after 6 unasked passes it stopped: Grizzly Bears (the opponent's) is on the stack.` Everything that happened meanwhile is in Recent events below it."#;
+When it stops, the next prompt says so in one line after your notes, e.g. `After 6 priority offers passed for you unasked, the pass stopped: Grizzly Bears (the opponent's) is on the stack.` Everything that happened meanwhile is in Recent events below it."#;
 
 /// The seat said "go": it is passing every plain priority offer without a
 /// model call until something it would want to see happens. What it was
@@ -685,6 +685,37 @@ struct PassUntil {
     passes: u32,
 }
 
+/// The rest of a main phase the seat laid out in one answer: cards from its
+/// hand to play or cast after the action it chose, in order, each taken
+/// without asking it again while nothing else happens. A person says "land,
+/// then the Tusker" once; asking for each was a model call per card that
+/// restated the plan the seat had just made (reports/llm-cost.md, phase 3).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+struct Plan {
+    turn: u32,
+    step: Step,
+    /// Card names still to play or cast, next first.
+    steps: Vec<String>,
+    /// How many have been taken, for the log and the stop line.
+    taken: u32,
+}
+
+/// What a plan does at an offer: take its next card, finish, or stop.
+enum PlanMove {
+    Act(Action),
+    Done,
+    Stop(String),
+}
+
+/// What the `then` field asks for. Its own description, not a system
+/// prompt section: the field is offered only where a plan can be made.
+pub const PLAN_DESCRIPTION: &str =
+    "Your main phase only: cards from your hand to play or cast after this action, in order, \
+     each without being asked again as soon as the stack is empty. Targets are still asked. \
+     The plan stops and you are asked if the opponent puts anything on the stack or a card \
+     cannot be played when its turn comes; after the last one you pass until something \
+     happens. [] to be asked again after this action.";
+
 /// What an LLM seat carries from one decision to the next, and so what a
 /// save has to hold for a resumed seat to be asked exactly what it would
 /// have been asked live.
@@ -705,6 +736,10 @@ pub struct SeatMemory {
     log_cursor: usize,
     pass_until: Option<PassUntil>,
     pass_until_stopped: Option<(u32, String)>,
+    #[serde(default)]
+    plan: Option<Plan>,
+    #[serde(default)]
+    plan_stopped: Option<String>,
 }
 
 impl SeatMemory {
@@ -2030,8 +2065,17 @@ pub struct LlmPlayer {
     /// once in the next prompt so the seat knows why it is being asked.
     pass_until_stopped: Option<(u32, String)>,
     /// Whether the priority menu carries [`PASS_UNTIL_ROW`] at all
-    /// ([`PASS_UNTIL_ENV`]).
+    /// ([`PASS_UNTIL_ENV`]). The knob also turns off the other unasked
+    /// passes and the main-phase plan, so `off` is the seat asked
+    /// everything, for an A/B measurement.
     offer_pass_until: bool,
+    /// The rest of a main phase the seat laid out ([`Plan`]).
+    plan: Option<Plan>,
+    /// Why the last plan stopped short, said once in the next prompt.
+    plan_stopped: Option<String>,
+    /// The plan's last card was just taken: pass until something happens
+    /// from this offer on (engaged where the view is to hand).
+    plan_done_pending: bool,
 }
 
 impl LlmPlayer {
@@ -2052,6 +2096,9 @@ impl LlmPlayer {
             memory_mirror: None,
             pass_until: None,
             pass_until_stopped: None,
+            plan: None,
+            plan_stopped: None,
+            plan_done_pending: false,
             offer_pass_until: pass_until_enabled(),
         }
     }
@@ -2078,6 +2125,9 @@ impl LlmPlayer {
             memory_mirror: None,
             pass_until: None,
             pass_until_stopped: None,
+            plan: None,
+            plan_stopped: None,
+            plan_done_pending: false,
             offer_pass_until: pass_until_enabled(),
         }
     }
@@ -2099,6 +2149,9 @@ impl LlmPlayer {
             memory_mirror: None,
             pass_until: None,
             pass_until_stopped: None,
+            plan: None,
+            plan_stopped: None,
+            plan_done_pending: false,
             offer_pass_until: pass_until_enabled(),
         }
     }
@@ -2124,6 +2177,9 @@ impl LlmPlayer {
             memory_mirror: None,
             pass_until: None,
             pass_until_stopped: None,
+            plan: None,
+            plan_stopped: None,
+            plan_done_pending: false,
             offer_pass_until: pass_until_enabled(),
         }
     }
@@ -2147,6 +2203,9 @@ impl LlmPlayer {
             memory_mirror: None,
             pass_until: None,
             pass_until_stopped: None,
+            plan: None,
+            plan_stopped: None,
+            plan_done_pending: false,
             offer_pass_until: pass_until_enabled(),
         }
     }
@@ -2242,6 +2301,8 @@ impl LlmPlayer {
         // mulligan prompt carried game 1's last thought (#830).
         self.pass_until = None;
         self.pass_until_stopped = None;
+        self.plan = None;
+        self.plan_stopped = None;
         self.set_notes(None);
         self.own_card_names = your_deck.iter()
             .flat_map(|(name, _)| card_faces(name, registry))
@@ -2420,6 +2481,8 @@ impl LlmPlayer {
             log_cursor: self.last_log_index,
             pass_until: self.pass_until.clone(),
             pass_until_stopped: self.pass_until_stopped.clone(),
+            plan: self.plan.clone(),
+            plan_stopped: self.plan_stopped.clone(),
         }
     }
 
@@ -2432,6 +2495,8 @@ impl LlmPlayer {
         self.last_log_index = memory.log_cursor;
         self.pass_until = memory.pass_until;
         self.pass_until_stopped = memory.pass_until_stopped;
+        self.plan = memory.plan;
+        self.plan_stopped = memory.plan_stopped;
         self.pending_recap = None;
         self.sync_memory_mirror();
     }
@@ -3853,6 +3918,10 @@ impl LlmPlayer {
             prompt.push_str(&Self::pass_until_stopped_line(passes, &why));
             prompt.push_str("\n\n");
         }
+        if let Some(why) = self.plan_stopped.take() {
+            prompt.push_str(&why);
+            prompt.push_str("\n\n");
+        }
 
         if !new_logs.is_empty() {
             prompt.push_str("Recent events:\n");
@@ -4692,6 +4761,16 @@ impl LlmPlayer {
     fn pick_action_index_described(
         &mut self, view: &GameView, action_text: &str, max: usize, description: &str,
     ) -> usize {
+        let schema = Self::enum_action_schema(max, "action", description);
+        self.pick_action_index_with_schema(view, action_text, max, &schema).0
+    }
+
+    /// [`pick_action_index`](Self::pick_action_index) against a schema the
+    /// caller built (an `action` index and whatever else it asks), handing
+    /// back the whole response with the index.
+    fn pick_action_index_with_schema(
+        &mut self, view: &GameView, action_text: &str, max: usize, schema: &serde_json::Value,
+    ) -> (usize, serde_json::Value) {
         assert!(max > 0, "pick_action_index requires at least one option");
         // The state body is built HERE rather than by the caller, so that no
         // caller can ask for an index without it. Four of the five callers
@@ -4702,8 +4781,7 @@ impl LlmPlayer {
         // and the ability-target prompt. The CLI renders the whole board at
         // all four (`run_target_chooser`, #122).
         let prompt = self.build_prompt(view, action_text);
-        let schema = Self::enum_action_schema(max, "action", description);
-        let response = self.send_message_structured(&prompt, &schema);
+        let response = self.send_message_structured(&prompt, schema);
         let idx = response["action"].as_u64().map(|n| usize::try_from(n).unwrap_or(usize::MAX))
             .filter(|n| *n < max)
             .unwrap_or_else(|| {
@@ -4711,7 +4789,7 @@ impl LlmPlayer {
                 0
             });
         self.log("CHOSE", &format!("action {idx}"));
-        idx
+        (idx, response)
     }
 }
 
@@ -4726,6 +4804,9 @@ impl Player for LlmPlayer {
 
     fn choose_action(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
         let action = self.decide(view, legal);
+        if std::mem::take(&mut self.plan_done_pending) && self.pass_until.is_none() {
+            self.pass_until = Some(PassUntil::engaged_at(view));
+        }
         // The save written before the next decision reads this.
         self.sync_memory_mirror();
         action
@@ -4744,6 +4825,11 @@ impl LlmPlayer {
             let what = legal.context.clone()
                 .unwrap_or_else(|| "a prompt that is not a priority pass".to_string());
             self.stop_pass_until(&format!("you are asked something else: {what}"));
+        }
+        if self.plan.is_some() && !Self::is_plain_priority_offer(legal) {
+            let what = legal.context.clone()
+                .unwrap_or_else(|| "a prompt that is not a priority pass".to_string());
+            self.stop_plan(&format!("you are asked something else: {what}"));
         }
         // The engine labels the other seat `p1`, and the context line is the
         // one line of the prompt that used to pass that through: every log
@@ -4871,8 +4957,40 @@ impl LlmPlayer {
             return self.choose_damage_amount(view, &description, min, max, &options);
         }
 
+        // Nobody answers their own spell: while everything on the stack is
+        // the seat's, the offer is to respond to itself, and a person who
+        // just cast a creature does not deliberate over letting it resolve.
+        // Each of these was a model call — about one per spell the seat
+        // cast — that came back "pass" (reports/llm-cost.md, phase 3).
+        if self.offer_pass_until && Self::is_plain_priority_offer(legal)
+            && !view.stack.is_empty() && view.stack.iter().all(|s| s.controller == view.you)
+        {
+            let top = view.stack.last().map_or_else(String::new, |s| s.name.clone());
+            self.log("AUTO_PASS", &format!("only your own spells and abilities are on the stack ({top} on top): passing so they resolve"));
+            return Action::PassPriority;
+        }
+
+        // The rest of a main phase the seat laid out: its next card, or
+        // the end of the plan — which passes until something happens — or
+        // a stop that asks it.
+        if let Some(plan) = self.plan.clone() {
+            match self.plan_next(view, legal, &plan) {
+                PlanMove::Act(action) => return action,
+                PlanMove::Done => {
+                    self.plan = None;
+                    self.log("PLAN_DONE", &format!("{} planned play{} made; passing until something happens",
+                        plan.taken, if plan.taken == 1 { "" } else { "s" }));
+                    if self.pass_until.is_none() {
+                        self.pass_until = Some(PassUntil::engaged_at(view));
+                    }
+                }
+                PlanMove::Stop(why) => self.stop_plan(&why),
+            }
+        }
+
         // Auto-pass when there's nothing interesting to do. Logged at
-        // debug level — it can fire many steps in a row.
+        // debug level — it can fire many steps in a row. After the plan, so
+        // a plan whose next card cannot be cast says so and ends here.
         if Self::should_auto_pass(view, legal_actions) {
             self.log_debug("AUTO-PASS", &format!("Step: {:?}, active: p#{}", view.step, view.active_player.0));
             return Action::PassPriority;
@@ -4911,7 +5029,20 @@ impl LlmPlayer {
                  prompt lists what ends it)."),
             None => "Index of the chosen action".to_string(),
         };
-        let idx = self.pick_action_index_described(view, &action_prompt, menu.len(), &description);
+        let plannable = self.plannable(view, legal);
+        let mut schema = Self::enum_action_schema(menu.len(), "action", &description);
+        if !plannable.is_empty() {
+            schema["properties"]["then"] = serde_json::json!({
+                "type": "array",
+                "items": {"type": "string", "enum": plannable},
+                "description": PLAN_DESCRIPTION,
+            });
+            schema["required"] = serde_json::json!(["thoughts", "action", "then"]);
+        }
+        let (idx, response) = self.pick_action_index_with_schema(view, &action_prompt, menu.len(), &schema);
+        let then: Vec<String> = response["then"].as_array()
+            .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+            .unwrap_or_default();
 
         if idx >= menu.len() {
             return Action::PassPriority;
@@ -4934,6 +5065,17 @@ impl LlmPlayer {
             }
         }
 
+        // A plan rides on a play: after Pass or a mana tap there is no
+        // "then", there is the next offer.
+        let plays = match &entry {
+            DisplayEntry::Direct(i) => matches!(legal_actions[*i], Action::PlayLand { .. }),
+            DisplayEntry::Cast(_) | DisplayEntry::Ability(_) => true,
+        };
+        if !plannable.is_empty() && plays && !then.is_empty() {
+            self.log("PLAN", &format!("then: {}", then.join(", ")));
+            self.plan = Some(Plan { turn: view.turn_number, step: view.step, steps: then, taken: 0 });
+        }
+
         match &entry {
             DisplayEntry::Direct(action_idx) => {
                 legal_actions[*action_idx].clone()
@@ -4946,6 +5088,92 @@ impl LlmPlayer {
                 let ab = &legal.activatable_abilities[*ab_idx];
                 self.choose_ability_targets(view, ab, legal_actions)
             }
+        }
+    }
+
+    /// The names a main-phase answer may plan with, or none where no plan
+    /// can be made: the seat's own main phase, an empty stack, a plain
+    /// priority offer, the plan offered at all. Every card in hand, lands
+    /// and spells alike — a spell the seat cannot afford yet may be
+    /// castable once the land it plays first is down, which is the plan a
+    /// person makes most.
+    fn plannable(&self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Vec<String> {
+        if !self.offer_pass_until || view.active_player != view.you || !view.stack.is_empty()
+            || !matches!(view.step, Step::PrecombatMain | Step::PostcombatMain)
+            || !Self::is_plain_priority_offer(legal)
+        {
+            return Vec::new();
+        }
+        let mut names: Vec<String> = Vec::new();
+        for c in &view.your_hand {
+            if !names.contains(&c.name) {
+                names.push(c.name.clone());
+            }
+        }
+        names
+    }
+
+    /// The plan's move at this offer. Called only at a plain priority
+    /// offer once the seat's own stack has been passed, so anything still
+    /// on the stack is the opponent's.
+    fn plan_next(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions, plan: &Plan) -> PlanMove {
+        if view.active_player != view.you || view.turn_number != plan.turn || view.step != plan.step {
+            // The engine passes for a seat with nothing to do, so a plan
+            // whose next card could not be cast is not consulted again
+            // until a later step.
+            let next = plan.steps.first().map_or("it", String::as_str);
+            return PlanMove::Stop(format!("{next} could not be played before the main phase ended"));
+        }
+        if let Some(top) = view.stack.last() {
+            return PlanMove::Stop(format!("{} ({}) is on the stack", top.name,
+                if top.controller == view.you { "yours" } else { "the opponent's" }));
+        }
+        let Some(name) = plan.steps.first().cloned() else { return PlanMove::Done };
+        let in_hand: Vec<ObjectId> = view.your_hand.iter().filter(|c| c.name == name).map(|c| c.object_id).collect();
+        if in_hand.is_empty() {
+            return PlanMove::Stop(format!("{name} is not in your hand"));
+        }
+        let land = legal.actions.iter().find(|a| matches!(a, Action::PlayLand { object_id } if in_hand.contains(object_id)));
+        let cast = legal.castable_spells.iter().find(|cs| in_hand.contains(&cs.object_id)
+            && !cs.from_graveyard && !cs.is_flashback && cs.alternative_cost.is_none());
+        let action = if let Some(land) = land {
+            land.clone()
+        } else if let Some(cs) = cast {
+            let cs = cs.clone();
+            self.log("PLAN_STEP", &format!("cast {name} (planned, {} of {})", plan.taken + 1, plan.taken as usize + plan.steps.len()));
+            self.advance_plan();
+            return PlanMove::Act(self.choose_cast_targets(view, &cs, &legal.actions));
+        } else {
+            return PlanMove::Stop(format!("{name} cannot be played or cast now"));
+        };
+        self.log("PLAN_STEP", &format!("play {name} (planned, {} of {})", plan.taken + 1, plan.taken as usize + plan.steps.len()));
+        self.advance_plan();
+        PlanMove::Act(action)
+    }
+
+    /// The plan's next card is taken. After its last, the plan is done
+    /// there and then — the seat passes until something happens — rather
+    /// than at the next offer, which the engine skips when nothing is left
+    /// to do.
+    fn advance_plan(&mut self) {
+        let Some(plan) = self.plan.as_mut() else { return };
+        plan.steps.remove(0);
+        plan.taken += 1;
+        if plan.steps.is_empty() {
+            let taken = plan.taken;
+            self.plan = None;
+            self.log("PLAN_DONE", &format!("{taken} planned play{} made; passing until something happens",
+                if taken == 1 { "" } else { "s" }));
+            self.plan_done_pending = true;
+        }
+    }
+
+    /// A plan ends short: say why in the log now and in the next prompt.
+    fn stop_plan(&mut self, why: &str) {
+        if let Some(plan) = self.plan.take() {
+            self.log("PLAN_STOP", &format!("{why} (after {} of {} planned)", plan.taken, plan.taken as usize + plan.steps.len()));
+            self.plan_stopped = Some(format!(
+                "Your plan stopped before {}: {why}.", plan.steps.join(", ")));
         }
     }
 }
@@ -5228,27 +5456,33 @@ impl LlmPlayer {
     /// The line the first prompt after a pass-until opens with.
     /// `GAME_RULES` quotes its shape.
     fn pass_until_stopped_line(passes: u32, why: &str) -> String {
-        format!("You chose to pass until something happened; after {passes} unasked pass{} it stopped: {why}.",
-            if passes == 1 { "" } else { "es" })
+        format!("After {passes} priority offer{} passed for you unasked, the pass stopped: {why}.",
+            if passes == 1 { "" } else { "s" })
     }
 
     /// Why a plain priority offer ends a pass-until, or `None` to pass it
-    /// unasked. Conservative on purpose — when in doubt, ask:
+    /// unasked. Conservative where a decision may be owed, and not where
+    /// none is:
     ///
     /// - anything on the stack that was not there, below the top, when the
-    ///   seat said "go" (an entry resolving off the top is expected; the
-    ///   stack cannot have moved on without a new entry otherwise, and at
-    ///   any other step every entry is new), or anything put on it since,
-    ///   however like an entry that was there it looks;
-    /// - the seat's own turn beginning;
-    /// - attackers declared against the seat;
+    ///   seat said "go" (an entry resolving off the top is expected), or
+    ///   anything put on it since — which, the seat's own being passed
+    ///   before this is consulted, means something of the opponent's;
     /// - a blocker declared against the seat's attacker;
-    /// - the seat's own main phase, any main phase other than the one it
-    ///   said "go" in — and that one too when a land drop or a
-    ///   sorcery-speed cast or activation is on offer, which is what a
-    ///   seat that cast a spell and said "go" to let it resolve is then
-    ///   owed;
+    /// - the opponent attacking the seat, once blocks are in: the window a
+    ///   trick or a removal spell is cast in;
+    /// - the seat's own first main phase, and a later main phase of its own
+    ///   — or the one it said "go" in — when a land drop or a sorcery-speed
+    ///   cast or activation is on offer. A second main phase with nothing
+    ///   to do at sorcery speed is not a decision: an instant can be cast
+    ///   at the next stop as well;
     /// - no Pass on the menu, which is not a priority offer at all.
+    ///
+    /// The seat's own turn beginning used to stop it too, and was a model
+    /// call every turn that came back "pass" (reports/llm-cost.md, phase 3):
+    /// the upkeep and draw step hold nothing the first main phase does not.
+    /// Each stop at a combat step fires once, not again at the step the
+    /// seat said "go" in.
     fn pass_until_stop(
         view: &GameView, legal: &mtg_engine::engine::LegalActions, mode: &PassUntil,
     ) -> Option<String> {
@@ -5273,21 +5507,17 @@ impl LlmPlayer {
             }
         }
 
-        if our_turn && (!mode.our_turn || view.turn_number > mode.turn) {
-            return Some(format!("your turn {} began", view.turn_number));
-        }
-
-        if !our_turn && view.step == Step::DeclareAttackers {
+        if !our_turn && view.step == Step::DeclareBlockers && !same_point {
             let attackers: Vec<String> = view.battlefield.iter()
                 .filter(|p| p.controller != view.you && p.attacking.is_some())
                 .map(|p| Self::obj_label(view, p.object_id))
                 .collect();
             if !attackers.is_empty() {
-                return Some(format!("attackers declared against you: {}", attackers.join(", ")));
+                return Some(format!("the opponent is attacking you with {} and blocks are in", attackers.join(", ")));
             }
         }
 
-        if our_turn && view.step == Step::DeclareBlockers {
+        if our_turn && view.step == Step::DeclareBlockers && !same_point {
             let blocked: Vec<String> = view.battlefield.iter()
                 .filter(|p| p.controller == view.you && p.attacking.is_some() && p.blocked)
                 .map(|p| Self::obj_label(view, p.object_id))
@@ -5299,7 +5529,7 @@ impl LlmPlayer {
         }
 
         if our_turn && matches!(view.step, Step::PrecombatMain | Step::PostcombatMain) {
-            if !same_point {
+            if !same_point && view.step == Step::PrecombatMain {
                 return Some(format!("your {}", Self::step_name(view.step, false)));
             }
             if legal.actions.iter().any(|a| matches!(a, Action::PlayLand { .. })) {
@@ -5784,14 +6014,25 @@ from your hand to put on the bottom of your library.\n\
         if let Some(forced) = crate::forced_combat_answer(prompt) {
             return forced;
         }
-        // Past here the seat is deciding, so a pass-until ends whichever
-        // half of combat this is — as the CLI's pass mode does.
-        if self.pass_until.is_some() {
-            self.stop_pass_until(match prompt {
-                CombatPrompt::ChooseAttackers { .. } => "you must declare attackers",
-                CombatPrompt::ChooseBlockers { .. } => "you must declare blockers",
-            });
+        // A combat declaration is always asked, whatever the seat said
+        // earlier; a pass-until in progress carries on past it, to the stops
+        // the declaration sets up (a block against the attacker, blocks in
+        // against the seat). Ending it here, as this did, made the very next
+        // priority offer — in the step the seat had just declared in — a
+        // model call that came back "pass" (reports/llm-cost.md, phase 3).
+        let action = self.decide_combat_prompt(view, prompt);
+        // Attackers declared, the seat waits for blocks as a person does.
+        if self.offer_pass_until && matches!(prompt, CombatPrompt::ChooseAttackers { .. })
+            && self.pass_until.is_none()
+        {
+            let mode = PassUntil::engaged_at(view);
+            self.log("AUTO_PASS", &format!("engaged at {} after declaring attackers: passing until a block or your second main phase", mode.since()));
+            self.pass_until = Some(mode);
         }
+        action
+    }
+
+    fn decide_combat_prompt(&mut self, view: &GameView, prompt: &CombatPrompt) -> Action {
         match prompt {
             CombatPrompt::ChooseAttackers { eligible, must_attack, defending_player,
                                             defending_planeswalkers } => {
@@ -6388,15 +6629,21 @@ pub(crate) mod tests {
     #[test]
     fn the_pass_until_rules_name_every_stop_that_is_applied() {
         for clause in [
-            "anything new is put on the stack — the opponent's or yours, your own triggers included",
-            "your turn begins", "attackers are declared against you",
-            "a blocker is declared against your attacker", "you must declare attackers or blockers",
-            "your next main phase", "a land drop or a sorcery-speed cast or activation on offer",
+            "something of the opponent's is put on the stack",
+            "a blocker is declared against your attacker",
+            "the opponent attacks you and blocks are in",
+            "your next first main phase",
+            "a later main phase of yours with a land drop or a sorcery-speed cast or activation on offer",
             "any prompt that is not a plain priority pass",
+            "After you declare attackers you pass this way too",
+            "You are never asked to respond to your own spell or ability while only yours are on the stack",
         ] {
             assert!(PASS_UNTIL_RULES.contains(clause), "the rules do not say {clause:?}");
         }
-        assert!(!PASS_UNTIL_RULES.contains("the opponent puts"), "the stack stop is not the opponent's alone");
+        // Stops that were dropped are not claimed.
+        for gone in ["your turn begins", "attackers are declared against you"] {
+            assert!(!PASS_UNTIL_RULES.contains(gone), "the rules still claim {gone:?}");
+        }
         assert_eq!(PASS_UNTIL_ROW, "Pass until something happens",
             "the row names itself; the one list of stops is the system prompt's");
     }
@@ -6646,6 +6893,9 @@ pub(crate) mod tests {
             memory_mirror: None,
             pass_until: None,
             pass_until_stopped: None,
+            plan: None,
+            plan_stopped: None,
+            plan_done_pending: false,
             // These tests read the engine's rows and their indices; the
             // seat's own pass-until row is tested on its own, below.
             offer_pass_until: false,
@@ -9572,6 +9822,9 @@ mod stateless_decisions {
             memory_mirror: None,
             pass_until: None,
             pass_until_stopped: None,
+            plan: None,
+            plan_stopped: None,
+            plan_done_pending: false,
             offer_pass_until: pass_until_enabled(),
         }
     }
