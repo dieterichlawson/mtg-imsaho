@@ -639,6 +639,7 @@ the order they happened, not in seat order", "");
     /// A connection for `seat` opened.
     pub fn connected(&mut self, seat: usize) {
         let first = !self.seats[seat].joined;
+        let was_away = !first && self.seats[seat].connected == 0;
         self.seats[seat].joined = true;
         self.seats[seat].connected += 1;
         if first {
@@ -649,6 +650,11 @@ the order they happened, not in seat order", "");
             self.seats[seat].auto = false;
             self.event(format!("{} is here; it picks for itself from now on", self.who(seat)));
             self.arm_deadlines();
+        } else if was_away {
+            // The host's one sign a seat that went away is here again; a
+            // client's reconnect used to show only as a rename to the
+            // name it already had (#856).
+            self.event(format!("{} is back", self.who(seat)));
         }
         if self.phase == Phase::Lobby && self.seats.iter().all(|s| s.joined) {
             self.start();
@@ -1362,7 +1368,9 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
     pub fn set_name(&mut self, seat: usize, name: &str) {
         let clean: String = name.chars().filter(|c| !c.is_control()).take(24).collect();
         let clean = clean.trim().to_string();
-        if clean.is_empty() {
+        // A client sends its name on every connect: the same name again is
+        // no rename (#856).
+        if clean.is_empty() || clean == self.seats[seat].name {
             return;
         }
         self.event(format!("{} is now called {clean}", self.who(seat)));

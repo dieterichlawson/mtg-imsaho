@@ -542,6 +542,26 @@ fn the_hosts_lines_name_a_seat_as_the_page_does() {
     assert!(!events.contains("Seat "), "one spelling of a seat:\n{events}");
 }
 
+/// #856: a client re-sends its name on every connect, and the host saw
+/// "Cli (seat 0) is now called Cli" as the only sign the seat was back.
+#[test]
+fn a_reconnect_says_the_seat_is_back_and_its_own_name_is_no_rename() {
+    let (mut lobby, _) = lobby(vec![SeatKind::Human, SeatKind::Ai("cc".into())]);
+    lobby.connected(0);
+    lobby.set_name(0, "Cli");
+    lobby.start();
+    let events = lobby.take_events().join("\n");
+    assert!(events.contains("seat 0 is now called Cli"), "{events}");
+    lobby.disconnected(0);
+    lobby.connected(0);
+    lobby.set_name(0, "Cli");
+    let events = lobby.take_events().join("\n");
+    assert_eq!(events, "Cli (seat 0) is back");
+    // A second tab while the first is open is not a return.
+    lobby.connected(0);
+    assert!(lobby.take_events().is_empty());
+}
+
 /// A seat kicked while building is told it was handed to the table: the
 /// table's building of its deck wrote over that line before any view went
 /// out, so the page's banner said only "The table built your deck" (#817's
