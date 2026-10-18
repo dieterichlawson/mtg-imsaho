@@ -95,8 +95,11 @@ def fill(name, spec):
                 # played out and stopped — a stub that always sent []
                 # would leave that code unrun.
                 return sorted(pool, key=lambda v: h(message, name, v))[: h(message, "plan") % 3]
-            # Towards the top of the range, so set prompts do something.
-            n = min(len(pool), hi if hi else lo)
+            # Towards the top of the range, so set prompts do something. An
+            # array with no maxItems (an attack, a main-phase attack plan)
+            # is bounded by its pool: read as "at most minItems" it was
+            # always empty, and the stub never attacked at all.
+            n = min(len(pool), spec.get("maxItems", len(pool)))
             n = max(lo, n - h(message, name) % 2) if n > lo else lo
             chosen = sorted(pool, key=lambda v: h(message, name, v))[:n]
             return chosen
