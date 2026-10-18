@@ -1253,3 +1253,26 @@ generic, which never out-ranks its free {C}. The accepted entries are keyed
 by text, so they also cover the same operator elsewhere in each function,
 which the brute-force oracle kills today (`remaining.generic` at :555 was
 watched failing under the oracle while checking this).
+
+## 2026-10-17 run 39030913251 (issues #848, #849)
+
+Two new survivors, both accepted. Each was applied by hand and the whole
+`mtg-engine` suite run green under it.
+
+- `cards::helpers::exile_from_graveyard_for_ability`, `&& → ||` in the
+  guard "in a graveyard and a card" (#848). Equivalent for every caller:
+  Back from the Brink checks the zone itself before calling, and Moorland
+  Haunt's candidates come from `objects_in_zone(Graveyard)` filtered to
+  cards, its two-or-more choice offering only those; nothing happens
+  between the offer and the answer. A token never sits in a graveyard at
+  a decision (CR 704.5d is checked before any player is asked), so the
+  mutant's other half has no input either. Bucket 1; the guard stays as
+  defence for a future caller.
+- `engine::legal::casting::flashback`, `!= → ==` (#849). Not the
+  `from_graveyard: *kind != GyCast::Flashback` at :527 — that one is
+  killed three times over in `flashback.rs` — but :467, the
+  `others` filter that leaves the card's own demands out of the plan's
+  colour preferences. Under the mutant the flashback plan is chosen
+  around the wrong demands; `compute_autotap_around` still returns a plan
+  that pays, so it is a choice among correct plans, as the same filter's
+  survivor in `from_hand` already accepted is. Bucket 3.
