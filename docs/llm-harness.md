@@ -292,9 +292,13 @@ was playing against and, the list being exhaustive, what it was not
 
 Everything else a seat learns about cards, it learns as they come into
 view: each decision prompt carries an `Opp's cards in view:` section with
-the rules text of every card on the battlefield, on the stack, in a
-graveyard, in exile or revealed that is not in the seat's own deck. It is
-re-sent on every prompt while the card is in view and absent otherwise.
+the rules text of every card on the battlefield, on the stack, in exile or
+revealed that is not in the seat's own deck. A card that is only in a
+graveyard is described where its text works from there (flashback and its
+kin) or where the question or a stack object points at it (#864), and is
+otherwise a name in the graveyard's list. It is re-sent on every prompt
+while the card is in view and absent otherwise. The opponent's floating
+mana is its own line, `Opp mana pool:` (#865).
 
 ## `--log`: what is recorded and how to read it
 

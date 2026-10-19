@@ -285,9 +285,19 @@ pub fn repair_enum_strings(schema: &serde_json::Value, answer: &serde_json::Valu
         if allowed.contains(answer) {
             return answer.clone();
         }
+        // A copied menu row may keep its index or a bullet: `3: Cast X`,
+        // `3) Cast X`, `- Cast X`. Not a bare "2." or a "-1": those are
+        // the answer itself.
+        let lower = text.to_lowercase();
+        let lower = lower.trim();
+        let digits = lower.len() - lower.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+        let row = match lower[digits..].strip_prefix([':', '.', ')']) {
+            Some(rest) if digits > 0 && !rest.trim().is_empty() => rest,
+            _ => lower.strip_prefix("- ").or_else(|| lower.strip_prefix("* ")).unwrap_or(lower),
+        };
         let mut bare = String::new();
         let mut depth = 0usize;
-        for c in text.to_lowercase().chars() {
+        for c in row.chars() {
             match c {
                 '(' => depth += 1,
                 ')' => depth = depth.saturating_sub(1),
@@ -295,13 +305,7 @@ pub fn repair_enum_strings(schema: &serde_json::Value, answer: &serde_json::Valu
                 _ => {}
             }
         }
-        // A copied menu row may keep its index or a bullet: `3: Cast X`.
         let bare = bare.trim();
-        let digits = bare.len() - bare.trim_start_matches(|c: char| c.is_ascii_digit()).len();
-        let bare = match bare[digits..].strip_prefix([':', '.']) {
-            Some(rest) if digits > 0 => rest,
-            _ => bare.strip_prefix(['-', '*']).unwrap_or(bare),
-        }.trim_start();
         let subject = bare.strip_prefix("cast ").or_else(|| bare.strip_prefix("play ")).unwrap_or(bare);
         // The whole value, to a word's end: "10" is not "1", "all to B"
         // is not pile "A".

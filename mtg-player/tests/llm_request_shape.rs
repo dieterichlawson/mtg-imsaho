@@ -406,13 +406,16 @@ fn a_string_that_holds_one_allowed_value_is_read_as_it() {
         serde_json::json!({"then": ["Island"]}));
     // A copied row keeps its index or bullet; a value is read to a word's
     // end, so "10" is not "1" and "all to B" is not pile "A".
-    for (row, read) in [("3: Play Island", "Island"), ("1. Island", "Island"), ("- Forest", "Forest")] {
+    for (row, read) in [("3: Play Island", "Island"), ("1. Island", "Island"), ("- Forest", "Forest"),
+                        ("3) Play Island (land)", "Island")] {
         assert_eq!(repair_enum_strings(&island, &serde_json::json!({"then": [row]})),
             serde_json::json!({"then": [read]}), "{row}");
     }
     let amount = serde_json::json!({"type": "string", "enum": ["0", "1", "2"]});
     assert_eq!(repair_enum_strings(&amount, &serde_json::json!("2 mana")), serde_json::json!("2"));
     assert_eq!(repair_enum_strings(&amount, &serde_json::json!("10")), serde_json::json!("10"));
+    assert_eq!(repair_enum_strings(&amount, &serde_json::json!("-1")), serde_json::json!("-1"), "not a bullet");
+    assert_eq!(repair_enum_strings(&amount, &serde_json::json!("2.")), serde_json::json!("2"), "not an index");
     let pile = serde_json::json!({"type": "string", "enum": ["A", "B"]});
     assert_eq!(repair_enum_strings(&pile, &serde_json::json!("all to B")), serde_json::json!("all to B"));
     assert_eq!(repair_enum_strings(&pile, &serde_json::json!("A (sacrificed)")), serde_json::json!("A"));
