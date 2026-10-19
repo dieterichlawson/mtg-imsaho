@@ -884,7 +884,8 @@ fn a_plan_stops_and_asks_when_the_opponent_responds_or_a_card_cannot_be_cast() {
 
 /// A plan rides on a play. Where none can be made — the opponent's turn,
 /// a non-empty stack, the knob off — the schema does not offer one; and a
-/// plan sent with Pass is not kept.
+/// plan sent with Pass whose first card cannot be played asks the seat
+/// again (#860).
 #[test]
 fn a_plan_is_offered_only_where_one_can_be_made_and_kept_only_with_a_play() {
     let fake = Fake::new("plan-where");
