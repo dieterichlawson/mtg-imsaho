@@ -959,6 +959,12 @@ fn the_view_counts_what_is_put_on_the_stack() {
     let id = |s: &mtg_engine::view::StackItemView| (s.object_id, s.card_id, s.name.clone());
     assert_eq!(id(&v2.stack[0]), id(&v2.stack[1]), "the two pings look alike on the stack");
     assert_eq!((v1.stack_puts, v2.stack_puts), (before + 1, before + 2), "but each was counted");
+
+    // And by whose they were (#861): P0's pings are P1's opponent's, not
+    // P0's.
+    let opp = |s: &mtg_engine::state::GameState, p| mtg_engine::view::GameView::for_player(s, p, &reg).opponent_stack_puts;
+    assert_eq!(opp(&twice, P1), opp(&state, P1) + 2, "P1 sees its opponent put two on the stack");
+    assert_eq!(opp(&twice, P0), opp(&state, P0), "P0 sees its opponent put nothing");
 }
 
 /// #746: the engine's tap-plan text — the "(Pay: …)" every seat shows for a

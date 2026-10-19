@@ -157,6 +157,7 @@ export interface GameView {
   graveyards: [PlayerId, CardView[]][];
   stack: StackItemView[];
   stack_puts: number;
+  opponent_stack_puts: number;
   first_strike_damage_step: boolean;
   exile: CardView[];
   double_faces: Record<string, [FaceText, FaceText]>;

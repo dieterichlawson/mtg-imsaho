@@ -162,6 +162,12 @@ pub struct GameState {
     #[serde(default)]
     pub stack_puts: u64,
 
+    /// [`stack_puts`](Self::stack_puts) by the entry's controller, indexed
+    /// by `PlayerId`: what tells a seat the opponent did something while
+    /// the engine passed for it (#861).
+    #[serde(default)]
+    pub stack_puts_by: Vec<u64>,
+
     /// Combat state, present only during combat phase.
     pub combat: Option<CombatState>,
 
@@ -514,8 +520,20 @@ pub fn default_rng_seed() -> u64 {
 impl GameState {
     /// Put an entry on top of the stack (CR 405.1), counting it.
     pub fn put_on_stack(&mut self, entry: StackEntry) {
+        let controller = match &entry {
+            StackEntry::Spell(id) => self.get_object(*id).map(|o| o.controller),
+            StackEntry::Trigger(trigger) => Some(trigger.controller()),
+            StackEntry::Ability { activator, .. } => Some(*activator),
+        };
         self.stack.push(entry);
         self.stack_puts += 1;
+        if let Some(PlayerId(p)) = controller {
+            let p = usize::from(p);
+            if self.stack_puts_by.len() <= p {
+                self.stack_puts_by.resize(p + 1, 0);
+            }
+            self.stack_puts_by[p] += 1;
+        }
     }
 
     /// CR 400.7: an until-end-of-turn effect created for a permanent that is
@@ -598,6 +616,7 @@ impl GameState {
             step: Step::Untap,
             stack: Vec::new(),
             stack_puts: 0,
+            stack_puts_by: Vec::new(),
             combat: None,
             end_of_combat_exiles: Vec::new(),
             awaiting_action: None,

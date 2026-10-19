@@ -11057,6 +11057,7 @@ Mark 1 of the 1 cards below to exile.");
         let you = PlayerId(0);
         GameView {
             stack_puts: 0,
+            opponent_stack_puts: 0,
             you,
             your_hand: vec![],
             your_life: 20,

@@ -30,6 +30,11 @@ pub struct GameView {
     /// activations of one ability are identical stack rows; a count that
     /// moved says the second is a new one (#750).
     pub stack_puts: u64,
+    /// How many of those were the viewer's opponents' — spells, abilities
+    /// and triggers they control. The engine passes for a seat with nothing
+    /// to respond with, so this is the one way a seat can tell the opponent
+    /// cast or activated while it was not asked (#861).
+    pub opponent_stack_puts: u64,
     /// True while the current combat damage step is the FIRST-STRIKE one
     /// (CR 510.4): with first/double strikers there are two damage steps,
     /// and both rendered as "Combat Damage" (issue #140).
@@ -736,6 +741,9 @@ impl GameView {
             stack,
             exile,
             stack_puts: state.stack_puts,
+            opponent_stack_puts: state.stack_puts_by.iter().enumerate()
+                .filter(|(p, _)| *p != usize::from(player.0))
+                .map(|(_, n)| n).sum(),
             double_faces,
             creature_died_this_turn: state.creature_died_this_turn,
             spells_cast_this_turn: state.players.iter()
