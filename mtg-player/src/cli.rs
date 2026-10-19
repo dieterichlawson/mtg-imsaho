@@ -4789,9 +4789,10 @@ impl CliPlayer {
     /// without a terminal to measure, the way `middle_panel_width_at` is
     /// (#350).
     /// The spells your side (`mine`) or the other has cast this turn.
-    /// The opponent's status line: life, zones, spells cast this turn, and
-    /// the mana floating in its pool, which the board's tapped lands do not
-    /// say (#865). The caller clips it to the panel.
+    /// The opponent's status line: life, the mana floating in its pool,
+    /// which the board's tapped lands do not say (#865), zones and spells
+    /// cast this turn. The caller clips it to the panel, so the mana comes
+    /// right after life, where a narrow panel cuts the counts instead.
     fn opponent_stats(view: &GameView) -> String {
         let opp_gy: usize = view.graveyards.iter()
             .filter(|(pid, _)| *pid != view.you)
@@ -4805,7 +4806,7 @@ impl CliPlayer {
                 .map(|(t, v)| format!("{t:?}:{v}"))
                 .collect();
             let floating = if pool.is_empty() { String::new() } else { format!("  mana {}", pool.join(" ")) };
-            format!("{}Opp: {}hp  {}lib  {}gy  {}ex  {}hand  {}cast{floating}",
+            format!("{}Opp: {}hp{floating}  {}lib  {}gy  {}ex  {}hand  {}cast",
                 opp_caret, opp.life, opp.library_size, opp_gy, opp_exile, opp.hand_size,
                 Self::spells_cast_this_turn(view, false))
         }).unwrap_or_default()
@@ -11076,7 +11077,16 @@ Mark 1 of the 1 cards below to exile.");
         }];
         assert!(!CliPlayer::opponent_stats(&v).contains("mana"), "{}", CliPlayer::opponent_stats(&v));
         v.opponents[0].mana_pool.add(mtg_engine::types::ManaType::Black, 1);
-        assert!(CliPlayer::opponent_stats(&v).ends_with("  mana Black:1"), "{}", CliPlayer::opponent_stats(&v));
+        v.opponents[0].mana_pool.add(mtg_engine::types::ManaType::Blue, 2);
+        let stats = CliPlayer::opponent_stats(&v);
+        assert!(stats.starts_with("▸ Opp: 20hp  mana Blue:2 Black:1  53lib"), "{stats}");
+        // An 80-column terminal's panel cuts the counts, not the mana.
+        let narrow = CliPlayer::middle_panel_width_at(80);
+        v.opponents[0].mana_pool.add(mtg_engine::types::ManaType::Green, 1);
+        let stats = CliPlayer::opponent_stats(&v);
+        assert!(str_cols(&stats) > narrow, "test precondition: {stats:?} is wider than {narrow}");
+        let cut = clip_cols(&stats, narrow);
+        assert!(str_cols(&cut) <= narrow && cut.contains("Black:1"), "{cut:?} in {narrow} columns");
     }
 
     pub(crate) fn view(step: Step, turn_number: u32, our_turn: bool) -> GameView {
