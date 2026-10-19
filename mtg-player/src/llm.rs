@@ -295,10 +295,19 @@ pub fn repair_enum_strings(schema: &serde_json::Value, answer: &serde_json::Valu
                 _ => {}
             }
         }
+        // A copied menu row may keep its index or a bullet: `3: Cast X`.
         let bare = bare.trim();
+        let digits = bare.len() - bare.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+        let bare = match bare[digits..].strip_prefix([':', '.']) {
+            Some(rest) if digits > 0 => rest,
+            _ => bare.strip_prefix(['-', '*']).unwrap_or(bare),
+        }.trim_start();
         let subject = bare.strip_prefix("cast ").or_else(|| bare.strip_prefix("play ")).unwrap_or(bare);
+        // The whole value, to a word's end: "10" is not "1", "all to B"
+        // is not pile "A".
         let held: Vec<&str> = allowed.iter().filter_map(serde_json::Value::as_str)
-            .filter(|v| subject.starts_with(&v.to_lowercase()))
+            .filter(|v| subject.strip_prefix(v.to_lowercase().as_str())
+                .is_some_and(|rest| !rest.starts_with(|c: char| c.is_alphanumeric())))
             .collect();
         let longest = held.iter().map(|v| v.len()).max().unwrap_or(0);
         let mut best = held.into_iter().filter(|v| v.len() == longest);
