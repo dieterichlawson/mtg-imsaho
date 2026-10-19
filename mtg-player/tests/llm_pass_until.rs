@@ -864,19 +864,45 @@ fn a_plan_is_offered_only_where_one_can_be_made_and_kept_only_with_a_play() {
     plain.choose_action(&v, &legal);
     assert!(!reads(&fake.calls()[1], "then"), "not with the knob off");
 
-    // Pass with a plan whose first card cannot be played: the pass
-    // stands, and the next prompt says why the plan did not run.
+    // Pass with a plan whose first card cannot be played: the plan stops
+    // and the seat is asked, there and then, with why (#860) — as a plan
+    // that stops after a play asks it. Carrying out the pass ended the
+    // main phase with the Forest after the Lions never played.
     let mut seat2 = fake.seat();
     fake.answer(0);
-    fake.then(&["Savannah Lions"]);
+    fake.then(&["Savannah Lions", "Forest"]);
     let (v, legal) = main_phase(vec![], false, true);
-    assert!(matches!(seat2.choose_action(&v, &legal), Action::PassPriority));
-    fake.then(&[]);
-    let (v, legal) = main_phase(vec![], false, true);
-    seat2.choose_action(&v, &legal);
-    assert_eq!(fake.calls().len(), 4);
+    fake.answer(0);
+    let first = seat2.choose_action(&v, &legal);
+    assert_eq!(fake.calls().len(), 4, "asked again in the same decision");
     let prompt = fake.calls().pop().unwrap();
-    assert!(prompt.contains("Your plan stopped before Savannah Lions: Savannah Lions cannot be played or cast now."), "{prompt}");
+    assert!(prompt.contains("Your plan stopped before Savannah Lions, Forest: Savannah Lions cannot be played or cast now."), "{prompt}");
+    // The fake answered the same again: asked once, the second stop passes.
+    assert!(matches!(first, Action::PassPriority), "{first:?}");
+    fake.then(&[]);
+}
+
+/// #860, the land the issue lost: Pass with `then: [Lions, Forest]` where
+/// the Lions cannot be cast. The re-ask answers "play the Forest", and it
+/// is played.
+#[test]
+fn a_pass_whose_plan_stops_at_once_asks_again_and_takes_the_new_answer() {
+    let fake = Fake::new("plan-pass-stop");
+    let mut seat = fake.seat();
+    let (v, legal) = main_phase(vec![], false, true);
+    // Rows: 0 Pass, 1 pass-until, 2 Cast Grizzly Bears, 3 Play Forest, ...
+    let script = fake.dir.join("claude");
+    let text = std::fs::read_to_string(&script).unwrap();
+    // The second call answers row 3 with no plan.
+    let text = text.replace("A=$(cat", "if [ \"$CALL\" -ge 2 ]; then echo 3 > \"$(dirname \"$0\")/answer\"; echo '[]' > \"$(dirname \"$0\")/then\"; fi\nA=$(cat");
+    std::fs::write(&script, text).unwrap();
+    fake.answer(0);
+    fake.then(&["Savannah Lions", "Forest"]);
+    let chosen = seat.choose_action(&v, &legal);
+    assert!(matches!(chosen, Action::PlayLand { object_id: ObjectId(11) }), "{chosen:?}");
+    let calls = fake.calls();
+    assert_eq!(calls.len(), 2, "one answer, one re-ask");
+    assert!(calls[1].contains("Your plan stopped before Savannah Lions, Forest"), "{}", calls[1]);
 }
 
 /// `{"action": 0, "then": ["Forest"]}` — Pass, with the land planned —

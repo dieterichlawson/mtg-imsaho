@@ -5127,7 +5127,7 @@ impl Player for LlmPlayer {
     }
 
     fn choose_action(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
-        let action = self.decide(view, legal);
+        let action = self.decide(view, legal, true);
         if std::mem::take(&mut self.plan_done_pending) && self.pass_until.is_none() {
             self.pass_until = Some(PassUntil::done_at(view));
         }
@@ -5139,8 +5139,9 @@ impl Player for LlmPlayer {
 
 impl LlmPlayer {
     /// [`Player::choose_action`]'s body: one decision, by whichever prompt
-    /// fits it.
-    fn decide(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
+    /// fits it. `may_reask`: a plan started by a pass that stops at once
+    /// asks the seat again, once (#860).
+    fn decide(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions, may_reask: bool) -> Action {
         let legal_actions = &legal.actions;
         // A seat passing unasked stops at any prompt that is not a plain
         // priority pass — a target, a set, a sacrifice, the mulligan — and
@@ -5402,7 +5403,18 @@ impl LlmPlayer {
             match self.plan_next(view, legal, &plan) {
                 PlanMove::Act(action) => return action,
                 PlanMove::Done => self.plan = None,
-                PlanMove::Stop(why) => self.stop_plan(&why),
+                // The seat is asked, as a plan that stops after a play asks
+                // it at the next offer: carrying out the pass instead ended
+                // the main phase with the rest of the plan — a land after
+                // the spell it was to pay for — never played, and nobody
+                // asked (#860). Asked once: a second answer that stops the
+                // same way passes.
+                PlanMove::Stop(why) => {
+                    self.stop_plan(&why);
+                    if may_reask {
+                        return self.decide(view, legal, false);
+                    }
+                }
             }
         }
         let entry = match menu[idx] {
