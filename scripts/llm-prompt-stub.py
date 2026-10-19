@@ -87,6 +87,16 @@ def fill(name, spec):
         items = spec.get("items") or {}
         lo = spec.get("minItems", 0)
         hi = spec.get("maxItems", lo)
+        if "prefixItems" in spec:
+            # One answer per listed row, each from its own values (an X
+            # funding source's amounts).
+            return [fill(f"{name}[{i}]", s) for i, s in enumerate(spec["prefixItems"])]
+        if "enum" in items and (len(items["enum"]) < lo
+                                or ("maxItems" in spec and lo == hi
+                                    and all(isinstance(v, str) for v in items["enum"]))):
+            # A value per entry, not a subset of the values: a pile for
+            # each permanent being divided.
+            return [fill(f"{name}[{i}]", items) for i in range(lo)]
         if "enum" in items:
             pool = list(items["enum"])
             if name == "then":
