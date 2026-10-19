@@ -27,9 +27,9 @@ fn the_thinking_parameter_matches_what_the_model_accepts() {
 /// Issue #398: three "mark some of these" prompts keyed their booleans by
 /// the card's display name, so a `claude -p` seat could not cast Skaab
 /// Goliath at all — six attempts in one game, every one rejected before it
-/// was asked. The two top-level ones are index arrays now; the third
-/// (`choose_pile_division`) nests its per-card keys under `pile_a`, where
-/// the pattern does not apply.
+/// was asked. All three are index arrays now; the third
+/// (`choose_pile_division`) nested its per-card keys under `pile_a` until
+/// #857, which the pattern allows but the prompt cache does not.
 ///
 /// The failure is invisible from inside a normal run: only a real API
 /// rejects the schema, and the harness turns that rejection into an empty
@@ -161,8 +161,9 @@ fn a_gemini_schema_carries_no_integer_enum() {
     let funding = serde_json::json!({
         "type": "object",
         "properties": {
-            "lands": {"type": "string", "enum": ["0", "1", "2"]},
-            "rocks": {"type": "object", "properties": {}}
+            "floating": {"type": "object", "properties": {"black": {"type": "string", "enum": ["0", "1"]}}},
+            "sources": {"type": "array", "items": {"type": "string"},
+                        "prefixItems": [{"type": "string", "enum": ["0", "2", "4"]}]}
         }
     });
 
@@ -196,8 +197,13 @@ fn a_gemini_schema_carries_no_integer_enum() {
     assert_eq!(s["properties"]["order"]["minItems"], serde_json::json!(3));
 
     // String enums are the one form both providers accept and enforce, so
-    // the X-funding workaround is left exactly as it was written.
-    assert_eq!(sanitize_schema_for_gemini(&funding), funding);
+    // the X-funding workaround is left as it was written — but for
+    // `prefixItems`, which neither provider documents and the answer is held
+    // to client-side (#857); the floating pool's string enum stays.
+    let s = sanitize_schema_for_gemini(&funding);
+    assert_eq!(s["properties"]["floating"], funding["properties"]["floating"]);
+    assert!(s["properties"]["sources"].get("prefixItems").is_none(), "{s}");
+    assert_eq!(s["properties"]["sources"]["items"], funding["properties"]["sources"]["items"]);
 }
 
 /// There are two request paths, not one — `mtg-player` for the game and

@@ -86,8 +86,9 @@ fn mulligan_is_dominated(view: &GameView) -> bool {
 /// the seat gets no answer and the engine cancels whatever was waiting.
 /// A card's display name (`Spectral Rider (#62)`) fails on the space, the
 /// parentheses and the `#`; issue #398 is six casts lost to it in one
-/// game. Keys nested below the top level are not checked, which is why
-/// `choose_pile_division` survives doing the same thing one level down.
+/// game. Keys nested below the top level are not checked, but a card's
+/// name is a runtime string wherever it goes: it makes the schema a new one
+/// each call (`cache_stable_schema`, #857), so no prompt keys by one.
 #[must_use]
 pub fn schema_key_is_legal(key: &str) -> bool {
     !key.is_empty()
@@ -206,7 +207,9 @@ pub fn sanitize_schema_for_gemini(value: &serde_json::Value) -> serde_json::Valu
 
     let mut out = serde_json::Map::new();
     for (key, val) in map {
-        if (bounds.is_some() && key == "enum") || key == UNREAD {
+        // `prefixItems` is not in the subset either provider documents; the
+        // answer is held to it client-side (`schema_violation`).
+        if (bounds.is_some() && key == "enum") || key == UNREAD || key == "prefixItems" {
             continue;
         }
         out.insert(key.clone(), sanitize_schema_for_gemini(val));
@@ -220,7 +223,9 @@ pub fn sanitize_schema_for_gemini(value: &serde_json::Value) -> serde_json::Valu
 
 /// The constraints [`cache_stable_schema`] leaves out of a request, and
 /// [`UNREAD`].
-const PER_CALL_CONSTRAINTS: [&str; 6] = ["enum", "minItems", "maxItems", "minimum", "maximum", UNREAD];
+const PER_CALL_CONSTRAINTS: [&str; 7] = [
+    "enum", "minItems", "maxItems", "minimum", "maximum", "prefixItems", UNREAD,
+];
 
 /// A field this question asks for only so that its schema is the same as
 /// its kind's, and whose answer is not read: the plan fields on an
@@ -293,10 +298,14 @@ pub fn repair_enum_strings(schema: &serde_json::Value, answer: &serde_json::Valu
                 (k.clone(), fixed)
             }).collect())
         }
-        serde_json::Value::Array(items) => match schema.get("items") {
-            Some(item) => serde_json::Value::Array(items.iter().map(|v| repair_enum_strings(item, v)).collect()),
-            None => answer.clone(),
-        },
+        // `prefixItems` gives entry `i` its own values, as in `schema_violation`.
+        serde_json::Value::Array(items) => {
+            let prefix = schema.get("prefixItems").and_then(serde_json::Value::as_array);
+            serde_json::Value::Array(items.iter().enumerate().map(|(i, v)| {
+                prefix.and_then(|p| p.get(i)).or_else(|| schema.get("items"))
+                    .map_or_else(|| v.clone(), |item| repair_enum_strings(item, v))
+            }).collect())
+        }
         _ => answer.clone(),
     }
 }
@@ -355,8 +364,13 @@ pub fn schema_violation(schema: &serde_json::Value, answer: &serde_json::Value) 
                 if let Some(max) = count("maxItems").filter(|max| items.len() > *max) {
                     return Some(format!("`{path}` has {} entries; it takes at most {max}", items.len()));
                 }
-                let item = schema.get("items")?;
-                items.iter().enumerate().find_map(|(i, v)| at(item, v, &format!("{path}[{i}]")))
+                // `prefixItems` holds entry `i` to its own schema (an X
+                // funding source's amounts); `items` holds the rest.
+                let prefix = schema.get("prefixItems").and_then(serde_json::Value::as_array);
+                items.iter().enumerate().find_map(|(i, v)| {
+                    let item = prefix.and_then(|p| p.get(i)).or_else(|| schema.get("items"))?;
+                    at(item, v, &format!("{path}[{i}]"))
+                })
             }
             Some("integer") if !(value.is_i64() || value.is_u64()) =>
                 Some(format!("`{path}` is {value}, not a whole number")),
@@ -4260,7 +4274,7 @@ impl LlmPlayer {
         }
     }
 
-    /// Divide permanents into two piles via per-permanent boolean choices.
+    /// Divide permanents into two piles by asking for a pile, A or B, for each listed permanent.
     /// Used for effects like Liliana of the Veil -6 where a player divides
     /// permanents and the opponent chooses which pile to sacrifice.
     fn choose_pile_division(
@@ -4282,8 +4296,7 @@ impl LlmPlayer {
         let mut perm_list = String::new();
         let labels = Self::format_combat_creature_list(view, &all_ids);
         for (i, label) in labels.iter().enumerate() {
-            writeln!(perm_list, "- {label}").unwrap();
-            let _ = i; // labels are pre-disambiguated
+            writeln!(perm_list, "  {i}: {label}").unwrap();
         }
 
         // The one fact that decides the answer: who picks the pile that
@@ -4302,43 +4315,41 @@ impl LlmPlayer {
 
         let action_text = format!(
             "{context_desc}\n{who_sacrifices}\n\
-             For each permanent, set true to put it in pile A or false for pile B.\n\n\
-             Permanents:\n{perm_list}"
+             Answer `piles` with {} entries, \"A\" or \"B\" for each permanent in the order listed.\n\n\
+             Permanents:\n{perm_list}",
+            labels.len()
         );
         let prompt = self.build_prompt(view, &action_text);
 
-        let schema = Self::pile_division_schema(&labels);
+        let schema = Self::pile_division_schema(labels.len());
         let response = self.send_message_structured(&prompt, &schema);
 
-        // Parse response: collect IDs where the model chose true (pile A)
+        // Parse response: collect IDs the model put in pile A.
         let mut pile_1_ids: Vec<mtg_engine::ids::ObjectId> = Vec::new();
-        if !response["pile_a"].is_object() {
-            // Everything into pile B is a legal division, and it is also
-            // what an unanswered prompt produces (#399).
-            self.log_rejected(&format!(
-                "no usable 'pile_a' object ({}); putting all {} permanents in pile B",
-                response["pile_a"], all_ids.len()));
-        }
-        if let Some(pile_obj) = response["pile_a"].as_object() {
-            // Every permanent is named, and named with a boolean: the schema
-            // requires each key, and an answer that skips one anyway is
-            // counted. The default for a missing key (pile B) is a strategic
-            // decision made for the seat, and it used to be made in silence —
-            // `{"pile_a": {}}` read in the log exactly like a seat that chose
-            // to put the whole board in pile B (#662).
+        if let Some(piles) = response["piles"].as_array() {
+            // Every permanent is named, "A" or "B": the schema requires the
+            // length, and an answer that skips one anyway is counted. The
+            // default for a missing entry (pile B) is a strategic decision
+            // made for the seat, and it used to be made in silence (#662).
             let mut unnamed: Vec<&str> = Vec::new();
             for (i, label) in labels.iter().enumerate() {
-                match pile_obj.get(label).and_then(serde_json::Value::as_bool) {
-                    Some(true) => pile_1_ids.push(all_ids[i]),
-                    Some(false) => {}
-                    None => unnamed.push(label),
+                match piles.get(i).and_then(serde_json::Value::as_str) {
+                    Some("A") => pile_1_ids.push(all_ids[i]),
+                    Some("B") => {}
+                    _ => unnamed.push(label),
                 }
             }
             if !unnamed.is_empty() {
                 self.log_rejected(&format!(
-                    "'pile_a' gave no true/false for {} of {} permanents ({}); putting them in pile B",
+                    "'piles' gave no A or B for {} of {} permanents ({}); putting them in pile B",
                     unnamed.len(), labels.len(), unnamed.join(", ")));
             }
+        } else {
+            // Everything into pile B is a legal division, and it is also
+            // what an unanswered prompt produces (#399).
+            self.log_rejected(&format!(
+                "no usable 'piles' list ({}); putting all {} permanents in pile B",
+                response["piles"], all_ids.len()));
         }
 
         self.log("CHOSE", &format!("pile division: {} in pile A, {} in pile B",
@@ -4767,9 +4778,16 @@ impl LlmPlayer {
         use mtg_engine::funding::{FundingCategory, FundingResponse};
         use mtg_engine::types::ManaType;
 
-        // Build schema. Each bucket is an object with one integer field per
-        // group/color. 1-mana sources get min/max; multi-mana sources get an
-        // explicit enum so the response can't specify a fractional tap.
+        // The schema is the same for every X spell (#857): `floating` has one
+        // field per color whatever the pool holds, and `sources` is one
+        // amount per source group in the order the prompt lists them. What
+        // changes from call to call — which groups are untapped, how many,
+        // how much each makes, what is floating — is in the prompt and in
+        // the per-call constraints (`enum`, `prefixItems`, the length) that
+        // `cache_stable_schema` leaves out of the request and
+        // `schema_violation` holds the answer to. The groups used to be
+        // property names and their counts descriptions, so nearly every X
+        // spell sent a schema of its own and wrote the cached prefix again.
         let mt_key = |mt: ManaType| -> &'static str {
             match mt {
                 ManaType::White => "white",
@@ -4791,15 +4809,11 @@ impl LlmPlayer {
         // does not use this workaround is at worst bounded by a range on
         // Gemini rather than rejected. A set constraint is still tighter than
         // a range, which is why this one keeps it.
-        let int_enum_str = |legal_values: Vec<u32>, description: &str| -> serde_json::Value {
+        let int_enum_str = |legal_values: Vec<u32>| -> serde_json::Value {
             let enum_vals: Vec<serde_json::Value> = legal_values.into_iter()
                 .map(|n| serde_json::json!(n.to_string()))
                 .collect();
-            serde_json::json!({
-                "type": "string",
-                "enum": enum_vals,
-                "description": description,
-            })
+            serde_json::json!({"type": "string", "enum": enum_vals})
         };
 
         // Floating: per-color legal values are 0..=available.
@@ -4809,53 +4823,49 @@ impl LlmPlayer {
             ManaType::Red, ManaType::Green, ManaType::Colorless,
         ];
         let mut floating_required = Vec::new();
+        let mut pool_lines = Vec::new();
         for mt in colors {
             let available = options.pool.get(&mt).copied().unwrap_or(0);
-            let legal: Vec<u32> = (0..=available).collect();
-            let desc = format!("Drain up to {available} from your {mt:?} pool");
-            floating_props.insert(mt_key(mt).to_string(), int_enum_str(legal, &desc));
+            floating_props.insert(mt_key(mt).to_string(), int_enum_str((0..=available).collect()));
             floating_required.push(mt_key(mt).to_string());
+            if available > 0 {
+                pool_lines.push(format!("  {}: 0 to {available}", mt_key(mt)));
+            }
         }
 
-        let category_props = |cat: FundingCategory| -> (serde_json::Map<String, serde_json::Value>, Vec<String>) {
-            let mut props = serde_json::Map::new();
-            let mut required = Vec::new();
-            for g in options.groups.iter().filter(|g| g.category == cat) {
-                let colors_str: Vec<String> = g.colors_produced.iter().map(|c| format!("{c:?}")).collect();
-                let color_hint = if colors_str.is_empty() {
-                    String::new()
-                } else {
-                    format!(" (produces {{{}}})", colors_str.join(","))
-                };
-                // Legal allocations are 0, mana_per_tap, 2*mana_per_tap, ...,
-                // count*mana_per_tap. For 1-mana sources this degenerates to
-                // a simple 0..=count range; for multi-mana sources (Sol Ring)
-                // the enum excludes fractional activations.
-                let legal: Vec<u32> = (0..=g.source_ids.len())
-                    .map(|i| u32::try_from(i).unwrap_or(u32::MAX)
-                        .saturating_mul(g.mana_per_tap))
-                    .collect();
-                let desc = if g.mana_per_tap == 1 {
-                    format!(
-                        "Tap 0-{} of your {} untapped {}{}: each produces {} mana",
-                        g.source_ids.len(), g.source_ids.len(), g.name, color_hint, g.mana_per_tap
-                    )
-                } else {
-                    format!(
-                        "Tap 0-{} of your {} untapped {}{}: each produces {} mana (so allocate 0, {}, ..., or {})",
-                        g.source_ids.len(), g.source_ids.len(), g.name, color_hint,
-                        g.mana_per_tap, g.mana_per_tap, g.max_contribution()
-                    )
-                };
-                props.insert(g.name.clone(), int_enum_str(legal, &desc));
-                required.push(g.name.clone());
-            }
-            (props, required)
-        };
-
-        let (lands_props, lands_req) = category_props(FundingCategory::Lands);
-        let (rocks_props, rocks_req) = category_props(FundingCategory::Rocks);
-        let (dorks_props, dorks_req) = category_props(FundingCategory::Dorks);
+        // Legal allocations are 0, mana_per_tap, 2*mana_per_tap, ...,
+        // count*mana_per_tap. For 1-mana sources this degenerates to a simple
+        // 0..=count range; for multi-mana sources (Sol Ring) the enum excludes
+        // fractional activations.
+        let mut source_rows = Vec::new();
+        let mut source_slots = Vec::new();
+        for (i, g) in options.groups.iter().enumerate() {
+            let legal: Vec<u32> = (0..=g.source_ids.len())
+                .map(|n| u32::try_from(n).unwrap_or(u32::MAX).saturating_mul(g.mana_per_tap))
+                .collect();
+            let colors_str: Vec<String> = g.colors_produced.iter().map(|c| format!("{c:?}")).collect();
+            let color_hint = if colors_str.is_empty() {
+                String::new()
+            } else {
+                format!(" (produces {{{}}})", colors_str.join(","))
+            };
+            let amounts = if g.mana_per_tap == 1 {
+                format!("0 to {}", g.max_contribution())
+            } else {
+                let shown: Vec<String> = legal.iter().map(ToString::to_string).collect();
+                format!("one of {}", shown.join(", "))
+            };
+            let dork = if g.category == FundingCategory::Dorks {
+                "; a creature tapped for this can't attack or block this turn"
+            } else {
+                ""
+            };
+            source_rows.push(format!(
+                "  {i}: {}{color_hint}, {} untapped, {} mana each: {amounts}{dork}",
+                g.name, g.source_ids.len(), g.mana_per_tap));
+            source_slots.push(int_enum_str(legal));
+        }
+        let n_sources = source_slots.len();
 
         let mut schema = serde_json::json!({
             "type": "object",
@@ -4868,27 +4878,16 @@ impl LlmPlayer {
                     "additionalProperties": false,
                     "description": "Mana to drain from your pool, per color"
                 },
-                "lands": {
-                    "type": "object",
-                    "properties": lands_props,
-                    "required": lands_req,
-                    "additionalProperties": false,
-                },
-                "rocks": {
-                    "type": "object",
-                    "properties": rocks_props,
-                    "required": rocks_req,
-                    "additionalProperties": false,
-                },
-                "dorks": {
-                    "type": "object",
-                    "properties": dorks_props,
-                    "required": dorks_req,
-                    "additionalProperties": false,
-                    "description": "Tapping creature mana sources will tap them — they can't attack or block this turn"
+                "sources": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "prefixItems": source_slots,
+                    "minItems": n_sources,
+                    "maxItems": n_sources,
+                    "description": "Mana to take from each listed source, one entry per source in the order listed"
                 }
             },
-            "required": ["thoughts", "floating", "lands", "rocks", "dorks"],
+            "required": ["thoughts", "floating", "sources"],
             "additionalProperties": false,
         });
 
@@ -4901,9 +4900,22 @@ impl LlmPlayer {
         } else {
             String::new()
         };
+        let sources_text = if source_rows.is_empty() {
+            "Sources: none untapped (`sources` is [])".to_string()
+        } else {
+            let plural = if n_sources == 1 { "" } else { "s" };
+            format!("Sources (`sources` is {n_sources} amount{plural}, one per row, in this order):\n{}",
+                source_rows.join("\n"))
+        };
+        let pool_text = if pool_lines.is_empty() {
+            String::new()
+        } else {
+            format!("\nFloating in your pool (`floating`, per color):\n{}", pool_lines.join("\n"))
+        };
         let prompt_text = format!(
             "{description}\n\
              X = sum of all allocated amounts. Legal X values: 0 to {}.{discount_note}\n\
+             {sources_text}{pool_text}\n\
              Sources with variable output or cost-bearing activation (e.g. pain lands) aren't listed — tap those manually first to float the mana.",
             options.max_announceable_x(),
         );
@@ -4920,7 +4932,7 @@ impl LlmPlayer {
         //
         // A JSON *number* carrying the same value is the same allocation and
         // is taken as one: `as_str()` alone is `None` for it, so
-        // `{"rocks":{"Sol Ring":4}}` read as 0, every group read as 0, the
+        // `{"rocks":{"Sol Ring":4}}` (the shape then) read as 0, every group read as 0, the
         // response became `FundingResponse::default()` — which `validate`
         // accepts, because an empty response is a legal X = 0 — and the seat
         // logged `X funding sum = 0`, byte-identical to a model that chose
@@ -4953,18 +4965,18 @@ impl LlmPlayer {
                 None => unreadable.push(format!("floating.{} = {val}", mt_key(mt))),
             }
         }
-        for cat_key in ["lands", "rocks", "dorks"] {
-            if let Some(obj) = response.get(cat_key).and_then(|v| v.as_object()) {
-                for (name, val) in obj {
-                    match parse_int_str(val) {
-                        Some(amount) => {
-                            if amount > 0 {
-                                funding.taps.insert(name.clone(), amount);
-                            }
-                        }
-                        None => unreadable.push(format!("{cat_key}.{name} = {val}")),
+        let answered = response.get("sources").and_then(serde_json::Value::as_array);
+        for (i, g) in options.groups.iter().enumerate() {
+            let Some(val) = answered.and_then(|a| a.get(i)) else {
+                continue;
+            };
+            match parse_int_str(val) {
+                Some(amount) => {
+                    if amount > 0 {
+                        funding.taps.insert(g.name.clone(), amount);
                     }
                 }
+                None => unreadable.push(format!("sources[{i}] ({}) = {val}", g.name)),
             }
         }
         if !unreadable.is_empty() {
@@ -5221,7 +5233,7 @@ impl LlmPlayer {
 
         // Pile division (e.g. Liliana of the Veil -6): structured prompt —
         // the engine no longer enumerates the 2^N subsets (issue #142).
-        // Present per-permanent boolean choices and build the subset directly.
+        // Ask for a pile per permanent and build the subset directly.
         if let Some(mtg_engine::state::ResolutionChoiceKind::DividePermanentsIntoPiles {
             permanents, description, target_player, ..
         }) = legal.resolution_prompt.as_ref()
@@ -6341,19 +6353,14 @@ from your hand to put on the bottom of your library.\n\
         }
     }
 
-    /// The pile-division answer's schema: one boolean per permanent under
-    /// `pile_a`, keyed by its disambiguated label one level down (a top-level
-    /// key may not be a card name, #398). Every label is `required` — the
-    /// prompt asks for each permanent, and without the list `{}` was a
-    /// schema-valid answer (#662).
-    fn pile_division_schema(labels: &[String]) -> serde_json::Value {
-        let mut pile_props = serde_json::Map::new();
-        for label in labels {
-            pile_props.insert(label.clone(), serde_json::json!({
-                "type": "boolean",
-                "description": "true = pile A, false = pile B"
-            }));
-        }
+    /// The pile-division answer's schema: `piles`, one "A" or "B" per
+    /// permanent in the order the prompt lists them. Its length is required —
+    /// the prompt asks for each permanent, and when `{}` was a schema-valid
+    /// answer the whole board went to pile B unasked (#662). The permanents
+    /// are not property names (#857): keyed by `Name (#id)`, every division
+    /// sent a schema of its own and wrote the cached prefix again; the count
+    /// is a per-call constraint `cache_stable_schema` leaves out.
+    fn pile_division_schema(n: usize) -> serde_json::Value {
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -6361,13 +6368,15 @@ from your hand to put on the bottom of your library.\n\
                     "type": "string",
                     "description": THOUGHTS_DESCRIPTION
                 },
-                "pile_a": {
-                    "type": "object",
-                    "properties": pile_props,
-                    "required": labels
+                "piles": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ["A", "B"]},
+                    "minItems": n,
+                    "maxItems": n,
+                    "description": "The pile of each listed permanent, one entry per permanent in the order listed"
                 }
             },
-            "required": ["thoughts", "pile_a"]
+            "required": ["thoughts", "piles"]
         })
     }
 
@@ -8165,7 +8174,7 @@ pub(crate) mod tests {
         assert_eq!(rejected, Some(1));
     }
 
-    /// The pile-division schema requires a boolean for every permanent, and
+    /// The pile-division schema requires a pile for every permanent, and
     /// an answer that names only some of them anyway is a rejected answer,
     /// not a silent "everything else in pile B" (issue #662).
     #[test]
@@ -8173,33 +8182,92 @@ pub(crate) mod tests {
         use mtg_engine::actions::ResolvedChoice;
         let view = empty_view();
         let ids = [ObjectId(10), ObjectId(11), ObjectId(12)];
-        let labels = LlmPlayer::format_combat_creature_list(&view, &ids);
-        let schema = LlmPlayer::pile_division_schema(&labels);
-        let required: Vec<&str> = schema["properties"]["pile_a"]["required"].as_array()
-            .expect("pile_a lists its required keys")
-            .iter().map(|v| v.as_str().expect("a label")).collect();
-        assert_eq!(required, labels.iter().map(String::as_str).collect::<Vec<_>>(),
-            "every permanent must be named: {schema}");
+        let schema = LlmPlayer::pile_division_schema(ids.len());
+        assert_eq!(schema["properties"]["piles"]["minItems"], 3, "every permanent must be named: {schema}");
+        assert_eq!(schema["properties"]["piles"]["maxItems"], 3, "every permanent must be named: {schema}");
 
         // A complete answer is taken as given and counts nothing.
         let mut whole = fixed_player("Seat-662-whole", "model-662-whole", serde_json::json!({
-            "thoughts": "t", "pile_a": {&labels[0]: true, &labels[1]: false, &labels[2]: true}}));
+            "thoughts": "t", "piles": ["A", "B", "A"]}));
         let Action::ResolveChoice { choice: ResolvedChoice::ChosenSubset(a) } =
             whole.choose_pile_division(&view, &ids, "divide", PlayerId(1))
             else { panic!("a pile division") };
         assert_eq!(a, vec![ObjectId(10), ObjectId(12)]);
         assert_eq!(get_rejected_by_seat().get("Seat-662-whole"), None);
 
-        // An empty object, and one that names a single permanent.
-        for (seat, pile_a) in [
-            ("Seat-662-empty", serde_json::json!({})),
-            ("Seat-662-half", serde_json::json!({&labels[0]: true})),
+        // No list, an empty list, and one that names a single permanent.
+        for (seat, answer) in [
+            ("Seat-662-none", serde_json::json!({"thoughts": "t"})),
+            ("Seat-662-empty", serde_json::json!({"thoughts": "t", "piles": []})),
+            ("Seat-662-half", serde_json::json!({"thoughts": "t", "piles": ["A"]})),
         ] {
-            let mut p = fixed_player(seat, "model-662", serde_json::json!({"thoughts": "t", "pile_a": pile_a}));
+            let mut p = fixed_player(seat, "model-662", answer);
             let _ = p.choose_pile_division(&view, &ids, "divide", PlayerId(1));
             assert_eq!(get_rejected_by_seat().get(seat), Some(&1),
                 "{seat}: the unnamed permanents were put in pile B for the seat — one rejected answer");
         }
+    }
+
+    /// #857: what is being divided or funded changes the prompt, never the
+    /// schema the request carries. The pile division was keyed by
+    /// `Name (#id)` and X funding by the untapped groups' names, with their
+    /// counts in the descriptions, so nearly every such call was a cold write
+    /// of the cached prefix.
+    #[test]
+    fn pile_division_and_x_funding_send_one_schema_whatever_the_board() {
+        use mtg_engine::funding::{FundingCategory, FundingGroup, FundingOptions};
+        let sent = |s: &serde_json::Value| cache_stable_schema(s).to_string();
+        assert_eq!(sent(&LlmPlayer::pile_division_schema(2)), sent(&LlmPlayer::pile_division_schema(7)));
+
+        let group = |name: &str, n: u32, per: u32, category| FundingGroup {
+            name: name.to_string(), category, mana_per_tap: per,
+            source_ids: (0..n).map(|i| ObjectId(300 + u64::from(i))).collect(), colors_produced: vec![],
+        };
+        let offers = [
+            (std::collections::BTreeMap::new(), vec![group("Sol Ring", 2, 2, FundingCategory::Rocks)]),
+            (std::collections::BTreeMap::from([(mtg_engine::types::ManaType::Black, 1)]),
+             vec![group("Forest", 3, 1, FundingCategory::Lands), group("Mountain", 1, 1, FundingCategory::Lands),
+                  group("Avacyn's Pilgrim", 1, 1, FundingCategory::Dorks)]),
+        ];
+        let mut schemas = Vec::new();
+        for (pool, groups) in offers {
+            let mut legal = x_funding_offer();
+            if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseXFunding { options, .. }) =
+                legal.resolution_prompt.as_mut() {
+                *options = FundingOptions { pool, groups, max_x: 6, x_discount: 0, pool_order: vec![] };
+            }
+            let recorded = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+            let mut p = LlmPlayer::for_prompt_tests("Seat-857").with_pass_until(false);
+            p.backend = Box::new(SchemaRecorder { reply: serde_json::json!({}), schemas: recorded.clone() });
+            let _ = p.choose_action(&empty_view(), &legal);
+            schemas.push(sent(&recorded.borrow()[0]));
+        }
+        assert_eq!(schemas[0], schemas[1], "X funding sent a schema per board");
+    }
+
+    /// The X-funding answer is one amount per listed source, held to that
+    /// source's legal amounts: a Sol Ring makes 0, 2 or 4, never 3, and an
+    /// answer that says 3 is asked again with the reason.
+    #[test]
+    fn an_x_funding_source_is_held_to_its_own_amounts() {
+        let schema = {
+            let recorded = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+            let mut p = LlmPlayer::for_prompt_tests("Seat-857-amounts").with_pass_until(false);
+            p.backend = Box::new(SchemaRecorder { reply: serde_json::json!({}), schemas: recorded.clone() });
+            let _ = p.choose_action(&empty_view(), &x_funding_offer());
+            let s = recorded.borrow()[0].clone();
+            s
+        };
+        let floating = serde_json::json!({"white": "0", "blue": "0", "black": "0", "red": "0", "green": "0", "colorless": "0"});
+        let answer = |amount: &str| serde_json::json!({"thoughts": "t", "cancel": false,
+            "floating": floating, "sources": [amount]});
+        assert_eq!(schema_violation(&schema, &answer("4")), None);
+        assert!(schema_violation(&schema, &answer("3")).is_some_and(|w| w.contains("sources[0]")),
+            "{:?}", schema_violation(&schema, &answer("3")));
+        // A slot's own values repair a copied row, as an `items` enum does.
+        assert_eq!(repair_enum_strings(&schema, &answer("4 mana")), answer("4"));
+        assert!(schema_violation(&schema, &serde_json::json!({"thoughts": "t", "cancel": false,
+            "floating": floating, "sources": []})).is_some(), "every listed source is answered");
     }
 
     /// A backend that answers one fixed object, whatever it is asked.
@@ -8330,7 +8398,7 @@ pub(crate) mod tests {
                 let mut p = LlmPlayer::for_prompt_tests(&format!("Seat-749-{name}")).with_pass_until(false);
                 p.backend = Box::new(SchemaRecorder {
                     reply: serde_json::json!({"thoughts": "t", "cancel": cancel, "indices": [0, 1],
-                        "floating": {}, "lands": {}, "rocks": {"Sol Ring": "2"}, "dorks": {}}),
+                        "floating": {}, "sources": ["2"]}),
                     schemas: schemas.clone(),
                 });
                 let chosen = p.choose_action(&empty_view(), &legal);
@@ -8367,12 +8435,12 @@ pub(crate) mod tests {
 
         // The control: the schema's own shape.
         let mut strings = fixed_player("Seat-596-strings", "model-596-strings",
-            serde_json::json!({"rocks": {"Sol Ring": "4"}}));
+            serde_json::json!({"sources": ["4"]}));
         assert_eq!(funded_x(&mut strings, &legal), 4);
 
         // The defect: the same allocation as a JSON number.
         let mut numbers = fixed_player("Seat-596-numbers", "model-596-numbers",
-            serde_json::json!({"rocks": {"Sol Ring": 4}}));
+            serde_json::json!({"sources": [4]}));
         assert_eq!(funded_x(&mut numbers, &legal), 4,
             "a number is the same allocation as the string of that number");
 
@@ -8392,7 +8460,7 @@ pub(crate) mod tests {
             ("Seat-596-object", "model-596-object", serde_json::json!({"taps": 2})),
         ] {
             let mut player = fixed_player(seat, model,
-                serde_json::json!({"rocks": {"Sol Ring": value}}));
+                serde_json::json!({"sources": [value]}));
             assert_eq!(funded_x(&mut player, &legal), 0,
                 "{seat}: an unreadable allocation is substituted with nothing");
             let rejected = get_rejected_by_seat();
@@ -9090,8 +9158,8 @@ pub(crate) mod tests {
 
         // The land is not a 0/0; the creature still has its P/T.
         let rows: Vec<&str> = dividing_mine.lines()
-            .filter(|l| l.starts_with("- ")).collect();
-        assert_eq!(rows, vec!["- Swamp (#9)", "- Grizzly Bears (#10) 2/2"],
+            .filter(|l| l.starts_with("  0: ") || l.starts_with("  1: ")).collect();
+        assert_eq!(rows, vec!["  0: Swamp (#9)", "  1: Grizzly Bears (#10) 2/2"],
             "a permanent with no P/T does not print one:\n{dividing_mine}");
     }
 

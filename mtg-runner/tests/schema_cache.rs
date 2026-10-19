@@ -64,11 +64,22 @@ fn play(name: &str, args: &[&str]) -> Vec<(BTreeSet<String>, String, serde_json:
 
 #[test]
 fn every_kind_of_question_sends_one_schema_however_the_game_goes() {
-    let games: [(&str, &[&str]); 4] = [
+    // X spells on both sides, paid from lands, rocks and a dork, so X
+    // funding is asked on many different boards (#857: it was keyed by the
+    // untapped groups and sent a schema of its own nearly every time).
+    let decks = std::env::temp_dir().join(format!("mtg-schema-cache-decks-{}", std::process::id()));
+    std::fs::create_dir_all(&decks).unwrap();
+    let x_deck = decks.join("x.txt");
+    std::fs::write(&x_deck, "8 Mountain\n7 Forest\n1 Kessig Wolf Run\n4 Sol Ring\n4 Devil's Play\n\
+        2 Avacyn's Pilgrim\n4 Grizzly Bears\n4 Kalonian Tusker\n2 Lightning Bolt\n2 Brimstone Volley\n2 Garruk Relentless\n").unwrap();
+    let x_deck = x_deck.to_str().unwrap().to_string();
+    let x_args = ["--deck1", x_deck.as_str(), "--deck2", x_deck.as_str(), "--seed", "6"];
+    let games: [(&str, &[&str]); 5] = [
         ("seed1", &["--seed", "1"]),
         ("seed2", &["--seed", "2"]),
         ("seed4", &["--seed", "4"]),
         ("drafted", &["--deck1", "decks/ub-zombies.txt", "--deck2", "decks/ug-spider-spawning.txt", "--seed", "12"]),
+        ("x-spells", &x_args),
     ];
     let played: Vec<_> = std::thread::scope(|s| {
         let handles: Vec<_> = games.iter().map(|(name, args)| s.spawn(move || (*name, play(name, args)))).collect();
@@ -87,14 +98,12 @@ fn every_kind_of_question_sends_one_schema_however_the_game_goes() {
             by_kind.entry(k.clone()).or_default().insert(sha.clone(), schema.clone());
         }
     }
+    let _ = std::fs::remove_dir_all(&decks);
     assert!(calls >= 60, "the games asked enough to say anything: {calls} calls");
+    let funded = played.iter().flat_map(|(_, r)| r).filter(|(k, _, _)| k.contains("/floating")).count();
+    assert!(funded >= 3, "X funding was asked often enough to compare: {funded} calls");
 
     for (k, schemas) in &by_kind {
-        // Keyed by the mana sources or the cards being divided: the keys
-        // are the question, and its descriptions name the counts it needs.
-        if k.contains("/floating") || k.contains("/pile_a") {
-            continue;
-        }
         assert!(schemas.len() == 1,
             "the question {k:?} went out as {} different schemas; anything that changes \
              from call to call belongs in the prompt, not the schema:\n{}",
