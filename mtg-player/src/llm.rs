@@ -2580,8 +2580,12 @@ impl LlmPlayer {
     /// The text of every dead creature and spent spell was a third of a
     /// prompt's bytes late in a game, written fresh on every call, for
     /// cards that could no longer do anything (reports/llm-cost.md,
-    /// phase 3).
-    fn format_cards_in_view(&self, view: &GameView) -> String {
+    /// phase 3). A graveyard card the question points at is described
+    /// too: a target or option of `action_prompt` (by its `#` number, or
+    /// a row that is its name), or a target of something on the stack —
+    /// Memory's Journey's choice, Nevermore's names, the opponent's
+    /// Ghoulcaller's Chant on a creature card (#864).
+    fn format_cards_in_view(&self, view: &GameView, action_prompt: &str) -> String {
         let mut names: Vec<&str> = Vec::new();
         names.extend(view.battlefield.iter().map(|p| p.name.as_str()));
         names.extend(view.stack.iter().map(|s| s.name.as_str()));
@@ -2590,9 +2594,22 @@ impl LlmPlayer {
         let live = names.len();
         names.extend(view.graveyards.iter().flat_map(|(_, cards)| cards.iter().map(|c| c.name.as_str())));
         let (live, graveyard_only): (Vec<&str>, Vec<&str>) = (names[..live].to_vec(), names[live..].to_vec());
+        let targeted: Vec<ObjectId> = view.stack.iter().flat_map(|s| &s.targets)
+            .filter_map(|t| match t { mtg_engine::actions::Target::Object(o) => Some(*o), _ => None })
+            .collect();
+        let rows: std::collections::HashSet<&str> = action_prompt.lines()
+            .filter_map(|l| l.trim_start().split_once(": ").filter(|(i, _)| i.parse::<usize>().is_ok()))
+            .map(|(_, row)| row.trim())
+            .collect();
+        let asked: Vec<&str> = view.graveyards.iter().flat_map(|(_, cards)| cards)
+            .filter(|c| targeted.contains(&c.object_id)
+                || action_prompt.contains(&format!("(#{})", c.object_id.0))
+                || rows.contains(c.name.as_str()))
+            .map(|c| c.name.as_str())
+            .collect();
         let mut names: Vec<&str> = live.clone();
         names.extend(graveyard_only.into_iter().filter(|n| !live.contains(n)
-            && self.card_texts.get(*n).is_some_and(|entry| Self::works_from_graveyard(entry))));
+            && (asked.contains(n) || self.card_texts.get(*n).is_some_and(|entry| Self::works_from_graveyard(entry)))));
         names.sort_unstable();
         names.dedup();
 
@@ -4300,7 +4317,7 @@ impl LlmPlayer {
         }
 
         prompt.push_str(&Self::format_state_body(view));
-        prompt.push_str(&self.format_cards_in_view(view));
+        prompt.push_str(&self.format_cards_in_view(view, action_prompt));
         prompt.push('\n');
 
         prompt.push_str(action_prompt);
@@ -8973,6 +8990,55 @@ pub(crate) mod tests {
         assert_eq!(LlmPlayer::collapse_repeats(["a", "b", "b", "b", "a"].map(String::from)),
             vec!["a".to_string(), "b (×3)".to_string(), "a".to_string()]);
         assert!(LlmPlayer::is_mana_tap_entry("Opp's mana pool empties (Black:1)"), "not news");
+    }
+
+    /// #864: a graveyard card that does nothing from there is its name in
+    /// the list — unless the question or something on the stack points at
+    /// it, when its text is what the answer turns on: Memory's Journey's
+    /// targets, a name to choose, the opponent's reanimation spell.
+    #[test]
+    fn a_graveyard_card_the_question_points_at_is_described() {
+        let registry = CardRegistry::with_all_cards();
+        let mut player = LlmPlayer::for_prompt_tests("t");
+        let own = vec![("Forest".to_string(), 20), ("Grizzly Bears".to_string(), 20)];
+        player.init_conversation(&own, "", &registry, MatchFormat::SingleGame);
+        let opp = PlayerId(1);
+        let yard = |id: u64, name: &str| mtg_engine::view::CardView {
+            object_id: ObjectId(id), card_id: mtg_engine::ids::CardId(0), name: name.to_string(),
+            cost: None, supertypes: vec![], card_types: vec![], power: None, toughness: None,
+            oracle_text: String::new(), owner: opp, flashback_costs: vec![],
+        };
+        let mut view = empty_view();
+        view.graveyards = vec![(opp, vec![yard(114, "Unbreathing Horde"), yard(116, "Falkenrath Noble"), yard(5, "Mulch")])];
+        let cards = |player: &mut LlmPlayer, view: &GameView, ask: &str| {
+            let prompt = player.build_prompt(view, ask);
+            prompt.find("Opp's cards in view:\n").map_or_else(String::new, |i| prompt[i..].to_string())
+        };
+        // A plain menu: names only.
+        let plain = cards(&mut player, &view, "Available actions:\n0: Pass\n");
+        assert!(!plain.contains("Unbreathing Horde {2}{B}") && !plain.contains("Falkenrath Noble {3}{B}"), "{plain}");
+
+        // A target set naming them by number.
+        let journey = cards(&mut player, &view,
+            "Memory's Journey: choose up to 3 targets\n0: Unbreathing Horde (#114) (in opponent's graveyard)\n");
+        assert!(journey.contains("Unbreathing Horde {2}{B}"), "{journey}");
+        assert!(!journey.contains("Falkenrath Noble {3}{B}"), "only what is asked about:\n{journey}");
+
+        // A list of names to choose from.
+        let name = cards(&mut player, &view, "Choose a card name:\n0: Falkenrath Noble\n1: Griselbrand\n");
+        assert!(name.contains("Falkenrath Noble {3}{B}"), "{name}");
+
+        // The opponent's spell on the stack targeting one.
+        view.stack.push(mtg_engine::view::StackItemView {
+            object_id: ObjectId(94), card_id: mtg_engine::ids::CardId(0),
+            name: "Ghoulcaller's Chant".to_string(), source_id: Some(ObjectId(94)),
+            controller: opp, targets: vec![mtg_engine::actions::Target::Object(ObjectId(116))],
+            x_value: None, cost: None, supertypes: vec![], card_types: vec![], power: None,
+            toughness: None, oracle_text: String::new(), resolving: false,
+        });
+        let chant = cards(&mut player, &view, "Available actions:\n0: Pass\n");
+        assert!(chant.contains("Falkenrath Noble {3}{B}"), "{chant}");
+        assert!(!chant.contains("Mulch {1}{G}"), "{chant}");
     }
 
     /// #785's review: a transformed permanent is named by its back face, and
