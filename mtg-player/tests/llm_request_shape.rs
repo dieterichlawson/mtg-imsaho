@@ -391,4 +391,17 @@ fn a_string_that_holds_one_allowed_value_is_read_as_it() {
         "Kessig Forest Wolf", "Lightning Bolt"]), "the longest name a string holds wins; none is none");
     assert!(schema_violation(&plan, &fixed).is_some_and(|w| w.contains("Lightning Bolt")),
         "a card not in hand is still not an answer");
+
+    // #863: a row about something that is not a card in hand names lands
+    // in its tap list. It is not read as one of them.
+    let island = serde_json::json!({"type": "object", "properties": {
+        "then": {"type": "array", "items": {"type": "string", "enum": ["Island", "Forest"]}}}});
+    for row in ["Flashback Think Twice (tap Island, Island, Island)", "Activate Nephalia Drownyard (tap Island)",
+                "Equip Blazing Torch (tap Forest)"] {
+        let answer = serde_json::json!({"then": [row]});
+        assert_eq!(repair_enum_strings(&island, &answer), answer, "{row}");
+        assert!(schema_violation(&island, &answer).is_some(), "{row} is asked again");
+    }
+    assert_eq!(repair_enum_strings(&island, &serde_json::json!({"then": ["Play Island"]})),
+        serde_json::json!({"then": ["Island"]}));
 }

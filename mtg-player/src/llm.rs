@@ -268,20 +268,37 @@ pub fn cache_stable_schema(schema: &serde_json::Value) -> serde_json::Value {
 }
 
 /// `answer` with each string that its schema's `enum` does not hold, but
-/// that holds exactly one longest allowed value, read as that value:
+/// that is about exactly one longest allowed value, read as that value:
 /// `Cast Goblin Piker (tap Mountain, Forest)`, a menu row copied into a
 /// plan, is `Goblin Piker`. The request no longer carries the enum
 /// ([`cache_stable_schema`]), so decoding does not force the exact name,
 /// and an answer whose meaning is plain is not asked again for it.
+///
+/// "About" is the value the string starts with, past a `Cast` or `Play`
+/// and with its parenthesised parts left out — not any value it contains.
+/// `Flashback Think Twice (tap Island, Island, Island)`, a row for no card
+/// in hand, held one: an Island, and the plan played an Island nobody asked
+/// for (#863). It is asked again now, told what the plan can name.
 #[must_use]
 pub fn repair_enum_strings(schema: &serde_json::Value, answer: &serde_json::Value) -> serde_json::Value {
     if let (Some(allowed), Some(text)) = (schema.get("enum").and_then(serde_json::Value::as_array), answer.as_str()) {
         if allowed.contains(answer) {
             return answer.clone();
         }
-        let lower = text.to_lowercase();
+        let mut bare = String::new();
+        let mut depth = 0usize;
+        for c in text.to_lowercase().chars() {
+            match c {
+                '(' => depth += 1,
+                ')' => depth = depth.saturating_sub(1),
+                _ if depth == 0 => bare.push(c),
+                _ => {}
+            }
+        }
+        let bare = bare.trim();
+        let subject = bare.strip_prefix("cast ").or_else(|| bare.strip_prefix("play ")).unwrap_or(bare);
         let held: Vec<&str> = allowed.iter().filter_map(serde_json::Value::as_str)
-            .filter(|v| lower.contains(&v.to_lowercase()))
+            .filter(|v| subject.starts_with(&v.to_lowercase()))
             .collect();
         let longest = held.iter().map(|v| v.len()).max().unwrap_or(0);
         let mut best = held.into_iter().filter(|v| v.len() == longest);
