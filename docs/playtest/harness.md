@@ -1011,6 +1011,12 @@ say what your stub says.
   banner and reports any event absent from every later prompt of the same
   turn. Do the same for the CLI and the page; `GameView` has to carry the
   fact first
+  — **side-read 2026-10-19: #832's `This turn:` line covers every morbid
+  and werewolf condition in the pool.** The one fact left out is Abattoir
+  Ghoul's "dealt damage by this creature this turn" (`damaged_by` is not
+  in `GameView`); 16 stub games with Ghouls against Bears/Spiders never
+  reached it. Stage it by save edit next time rather than hoping combat
+  logs it
 - H31 [proposed 2026-10-18, from reports/llm-cost.md phase 3] the turn
   that is one answer. A main-phase answer now carries `then` (cards to
   play after `action`), `ask_again` and `attack` (creatures to attack with,
@@ -1026,6 +1032,18 @@ say what your stub says.
   (`scripts/llm-prompt-stub.py` rolls all three fields); a real game shows
   whether a model uses them. File a decision taken from the seat
   `sev:game-affecting`
+  — **played 2026-10-19: every step played the card it named; the stops
+  run only when the seat is called.** The engine's auto-pass skips a seat
+  with nothing to respond with, so an opponent's flash creature never
+  stops the plan and the attack goes into it (#861); a pass with a plan
+  whose first card fails passes anyway and loses the land after it (#860);
+  the seat's own X/target prompt drops the attack plan (#862); a flashback
+  row copied into `then` is repaired to the land in its tap list (#863).
+  The tool: a second stub `cc` seat that holds up Ambush Viper and Village
+  Bell-Ringer — a `random` opponent had mana open on the seat's turn in 0
+  of 40 games. The draft runner shares `LlmPlayer`, so its games plan too;
+  one lead not yet reproduced: the per-game reset clears `plan` but not
+  `attack_plan`, and one seat plays every game of a draft match
 - H32 [proposed 2026-10-18, same source] the cache, read off the log. Every
   `USAGE` line says `cache_read`; after a game's first call of each kind of
   question, a 0 there is a schema or a system prompt that changed, which
