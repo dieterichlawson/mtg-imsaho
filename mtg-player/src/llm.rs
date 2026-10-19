@@ -9030,6 +9030,20 @@ pub(crate) mod tests {
         assert!(LlmPlayer::is_mana_tap_entry("Opp's mana pool empties (Black:1)"), "not news");
     }
 
+    /// A new game of a match starts with no attack planned: game 2 repeats
+    /// game 1's turn numbers and object ids, so a leftover plan could be
+    /// declared on the new board unasked (#862 review).
+    #[test]
+    fn a_new_game_forgets_the_last_games_planned_attack() {
+        let registry = CardRegistry::with_all_cards();
+        let mut player = LlmPlayer::for_prompt_tests("t");
+        let own = vec![("Forest".to_string(), 20), ("Grizzly Bears".to_string(), 20)];
+        player.attack_plan = Some(AttackPlan { turn: 3, attackers: vec![ObjectId(30)], opp_puts: 0 });
+        player.plan_done_pending = true;
+        player.init_conversation(&own, "", &registry, MatchFormat::SingleGame);
+        assert!(player.attack_plan.is_none() && !player.plan_done_pending);
+    }
+
     /// #864: a graveyard card that does nothing from there is its name in
     /// the list — unless the question or something on the stack points at
     /// it, when its text is what the answer turns on: Memory's Journey's
