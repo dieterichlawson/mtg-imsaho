@@ -113,8 +113,9 @@ fn a_kick_while_the_opponent_holds_the_decision_forfeits_the_game_now() {
         else { "MATCH Round 1 — Seat 0 vs Seat 1: 2-0 (Seat 0 wins)" };
     assert!(log.contains(line), "the kicked seat forfeits every game, the one in progress too:\n{log}");
     assert!(log.contains(&format!("Seat {kicked} was withdrawn: the host kicked seat {kicked}.")), "{log}");
-    let terminal = server.stderr();
-    assert!(terminal.contains(&format!("[2 games forfeited: the host kicked seat {kicked}]")), "{terminal}");
+    // The terminal's summary is printed after the log's standings, so it is
+    // waited for, not read once (it lost that race under a loaded suite).
+    server.wait_for_stderr(&format!("[2 games forfeited: the host kicked seat {kicked}]"), Duration::from_secs(30));
     let v = clients[held].view_until("the view after the tournament", Duration::from_secs(30), |v| v["phase"] == "done");
     assert_eq!(v["matches"][0]["games"][0]["winner"], held, "{}", v["matches"]);
 }

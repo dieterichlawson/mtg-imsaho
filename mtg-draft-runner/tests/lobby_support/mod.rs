@@ -151,6 +151,20 @@ impl Server {
         self.stderr.lock().unwrap().clone()
     }
 
+    /// Wait until the server's terminal holds `needle`: a line the server
+    /// prints after it writes the log is not there yet when the log is.
+    pub fn wait_for_stderr(&self, needle: &str, timeout: Duration) -> String {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let text = self.stderr();
+            if text.contains(needle) {
+                return text;
+            }
+            assert!(Instant::now() < deadline, "the terminal never said {needle:?}:\n{text}");
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }
+
     pub fn key(&self, seat: usize) -> &str {
         &self.keys.iter().find(|(s, _)| *s == seat).expect("a key for the seat").1
     }
