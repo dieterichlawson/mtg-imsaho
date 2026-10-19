@@ -879,7 +879,7 @@ const PASS_UNTIL_RULES: &str = r#"
 
 ## Pass until something happens
 
-Every priority offer has one more row, right after `Pass`: `1: Pass until something happens`, with the engine's rows after it numbered from 2. It is the way a person says "go", and the usual way to pass: answer it whenever you would answer `Pass` again at the next offer, and keep plain `Pass` for a window you mean to use later this turn (an instant at the end step). It passes now and keeps passing later priority offers for you, unasked, until something of the opponent's is put on the stack; a blocker is declared against your attacker; the opponent attacks you and blocks are in (your window after blocks); your next first main phase; a later main phase of yours with a land drop or a sorcery-speed cast or activation on offer; or, once the opponent has put something on the stack, any prompt that is not a plain priority pass (combat declarations, targets and choices are always asked, except an attack you named in your first main phase). After you declare attackers you pass this way too, until a block or your second main phase. You are never asked to respond to your own spell or ability while only yours are on the stack. When it stops, the next prompt says why in one line, e.g. `After 6 priority offers passed for you unasked, the pass stopped: Grizzly Bears (the opponent's) is on the stack.`"#;
+Every priority offer has one more row, right after `Pass`: `1: Pass until something happens`, with the engine's rows after it numbered from 2. It is the way a person says "go", and the usual way to pass: answer it whenever you would answer `Pass` again at the next offer, and keep plain `Pass` for a window you mean to use later this turn (an instant at the end step). It passes now and keeps passing later priority offers for you, unasked, until something of the opponent's is put on the stack; a blocker is declared against your attacker; the opponent attacks you and blocks are in (your window after blocks); your next first main phase; a later main phase of yours with a land drop or a sorcery-speed cast or activation on offer; or, once the opponent has put something on the stack since you said go, any prompt that is not a plain priority pass (combat declarations, targets and choices are always asked, except an attack you named in your first main phase). After you declare attackers you pass this way too, until a block or your second main phase. You are never asked to respond to your own spell or ability while only yours are on the stack. When it stops, the next prompt says why in one line, e.g. `After 6 priority offers passed for you unasked, the pass stopped: Grizzly Bears (the opponent's) is on the stack.`"#;
 
 /// The seat said "go": it is passing every plain priority offer without a
 /// model call until something it would want to see happens. What it was
@@ -2558,6 +2558,10 @@ impl LlmPlayer {
         self.pass_until_stopped = None;
         self.plan = None;
         self.plan_stopped = None;
+        // Game 2's turn numbers and object ids repeat game 1's, so a
+        // leftover attack plan could be declared on the new board unasked.
+        self.attack_plan = None;
+        self.plan_done_pending = false;
         self.set_notes(None);
         self.own_card_names = your_deck.iter()
             .flat_map(|(name, _)| card_faces(name, registry))
@@ -5233,10 +5237,10 @@ impl LlmPlayer {
                 .unwrap_or_else(|| "a prompt that is not a priority pass".to_string());
             let opp_acted = |since: u64| view.opponent_stack_puts > since;
             if self.pass_until.as_ref().is_some_and(|m| opp_acted(m.opp_puts)) {
-                self.stop_pass_until(&format!("you are asked something else: {}", what()));
+                self.stop_pass_until(&format!("{OPPONENT_ACTED}, and you are asked something else: {}", what()));
             }
             if self.plan.as_ref().is_some_and(|p| opp_acted(p.opp_puts)) {
-                self.stop_plan(&format!("you are asked something else: {}", what()));
+                self.stop_plan(&format!("{OPPONENT_ACTED}, and you are asked something else: {}", what()));
             }
         }
         // The engine labels the other seat `p1`, and the context line is the
