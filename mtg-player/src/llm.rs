@@ -3225,6 +3225,16 @@ impl LlmPlayer {
                 .collect();
             writeln!(s, "Mana pool: {}", pool_parts.join(", ")).unwrap();
         }
+        // The opponent's floating mana is what it can still cast with this
+        // step. The "tapped … for mana" event used to be the only place it
+        // was said, and those events are not sent any more (#865).
+        for opp in view.opponents.iter().filter(|o| !o.mana_pool.is_empty()) {
+            let pool_parts: Vec<String> = opp.mana_pool.mana.iter()
+                .filter(|(_, &v)| v > 0)
+                .map(|(t, v)| format!("{t:?}:{v}"))
+                .collect();
+            writeln!(s, "Opp mana pool: {}", pool_parts.join(", ")).unwrap();
+        }
 
         // Battlefield — compact
         let your_perms: Vec<_> = view.battlefield.iter().filter(|p| p.controller == view.you).collect();
@@ -8878,6 +8888,21 @@ pub(crate) mod tests {
     use mtg_engine::ids::{CardId, ObjectId, PlayerId};
     use mtg_engine::types::{CardType, Step, ManaPool};
     use mtg_engine::view::{GameView, PermanentView};
+
+    /// #865: the opponent's floating mana was said only by the "tapped …
+    /// for mana" event, which a prompt no longer carries.
+    #[test]
+    fn the_opponents_floating_mana_is_in_the_prompt() {
+        let mut view = empty_view();
+        view.opponents = vec![mtg_engine::view::OpponentView {
+            id: PlayerId(1), life: 20, hand_size: 7, library_size: 53,
+            mana_pool: ManaPool::default(), mulligan_count: 0,
+        }];
+        assert!(!LlmPlayer::format_state_body(&view).contains("Opp mana pool"));
+        view.opponents[0].mana_pool.add(mtg_engine::types::ManaType::Black, 1);
+        let body = LlmPlayer::format_state_body(&view);
+        assert!(body.contains("Opp mana pool: Black:1\n"), "{body}");
+    }
 
     pub(crate) fn empty_view() -> GameView {
         GameView {

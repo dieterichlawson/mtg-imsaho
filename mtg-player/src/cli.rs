@@ -1961,26 +1961,16 @@ impl CliPlayer {
             .map(|(_, cards)| cards.len()).sum();
         let your_exile: usize = view.exile.iter()
             .filter(|c| c.owner == view.you).count();
-        let opp_gy: usize = view.graveyards.iter()
-            .filter(|(pid, _)| *pid != view.you)
-            .map(|(_, cards)| cards.len()).sum();
-        let opp_exile: usize = view.exile.iter()
-            .filter(|c| c.owner != view.you).count();
 
         let is_your_turn = view.active_player == view.you;
         let your_caret = if is_your_turn { "▸ " } else { "  " };
-        let opp_caret = if is_your_turn { "  " } else { "▸ " };
 
         // `Ncast`: the spells each side has cast this turn, which a werewolf
         // transforms on at the next upkeep and no zone shows (#832).
         let your_stats = format!("{}You: {}hp  {}lib  {}gy  {}ex  {}hand  {}cast",
             your_caret, view.your_life, view.your_library_size, your_gy, your_exile, view.your_hand.len(),
             Self::spells_cast_this_turn(view, true));
-        let opp_stats = view.opponents.first().map(|opp|
-            format!("{}Opp: {}hp  {}lib  {}gy  {}ex  {}hand  {}cast",
-                opp_caret, opp.life, opp.library_size, opp_gy, opp_exile, opp.hand_size,
-                Self::spells_cast_this_turn(view, false))
-        ).unwrap_or_default();
+        let opp_stats = Self::opponent_stats(view);
 
         // The prompt block's least height, measured before the board is
         // drawn: the block is anchored at `h - min_block` when the board
@@ -4799,6 +4789,28 @@ impl CliPlayer {
     /// without a terminal to measure, the way `middle_panel_width_at` is
     /// (#350).
     /// The spells your side (`mine`) or the other has cast this turn.
+    /// The opponent's status line: life, zones, spells cast this turn, and
+    /// the mana floating in its pool, which the board's tapped lands do not
+    /// say (#865). The caller clips it to the panel.
+    fn opponent_stats(view: &GameView) -> String {
+        let opp_gy: usize = view.graveyards.iter()
+            .filter(|(pid, _)| *pid != view.you)
+            .map(|(_, cards)| cards.len()).sum();
+        let opp_exile: usize = view.exile.iter()
+            .filter(|c| c.owner != view.you).count();
+        let opp_caret = if view.active_player == view.you { "  " } else { "▸ " };
+        view.opponents.first().map(|opp| {
+            let pool: Vec<String> = opp.mana_pool.mana.iter()
+                .filter(|(_, &v)| v > 0)
+                .map(|(t, v)| format!("{t:?}:{v}"))
+                .collect();
+            let floating = if pool.is_empty() { String::new() } else { format!("  mana {}", pool.join(" ")) };
+            format!("{}Opp: {}hp  {}lib  {}gy  {}ex  {}hand  {}cast{floating}",
+                opp_caret, opp.life, opp.library_size, opp_gy, opp_exile, opp.hand_size,
+                Self::spells_cast_this_turn(view, false))
+        }).unwrap_or_default()
+    }
+
     fn spells_cast_this_turn(view: &GameView, mine: bool) -> u32 {
         view.spells_cast_this_turn.iter()
             .filter(|(p, _)| (*p == view.you) == mine)
@@ -11051,6 +11063,20 @@ Mark 1 of the 1 cards below to exile.");
         let flashback_prose = "Whenever you cast a spell with flashback, draw a card.";
         assert_eq!(CliPlayer::card_panel_oracle_lines(flashback_prose, true), vec![flashback_prose],
             "a sentence mentioning flashback is not the flashback line");
+    }
+
+    /// #865: the opponent's floating mana is on its status line; nothing
+    /// else on the screen says it.
+    #[test]
+    fn the_opponents_floating_mana_is_on_its_status_line() {
+        let mut v = view(Step::Draw, 32, false);
+        v.opponents = vec![mtg_engine::view::OpponentView {
+            id: PlayerId(1), life: 20, hand_size: 7, library_size: 53,
+            mana_pool: ManaPool::new(), mulligan_count: 0,
+        }];
+        assert!(!CliPlayer::opponent_stats(&v).contains("mana"), "{}", CliPlayer::opponent_stats(&v));
+        v.opponents[0].mana_pool.add(mtg_engine::types::ManaType::Black, 1);
+        assert!(CliPlayer::opponent_stats(&v).ends_with("  mana Black:1"), "{}", CliPlayer::opponent_stats(&v));
     }
 
     pub(crate) fn view(step: Step, turn_number: u32, our_turn: bool) -> GameView {
