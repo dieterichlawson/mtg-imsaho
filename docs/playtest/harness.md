@@ -939,6 +939,13 @@ say what your stub says.
   row's bytes were never measured (#757). Next time, split the `AUTO_PASS`
   labels yourself rather than trusting the column, and diff the system prompt
   between every knob setting
+  — **re-run 2026-10-19 (with H32): the bound still holds** (10 seeds, 0
+  resumes, one system prompt a game, mean 53 calls and 56.5 KB). The knob
+  diff found `MTG_LLM_HISTORY` is the one knob the system prompt does not
+  follow: "No earlier prompt is kept" is sent to a seat resuming 24 of 36
+  calls, in the game and the draft copy (#858). The report's "final" sizes
+  were 430 B stale against two later rule commits that measured nothing
+  (#859): read the size off `measure-llm-prompts.sh`, never off the report
 - H27 [proposed 2026-10-08, same source] what the seat lost when the
   history went: play a `cc` game with `--log` and at every decision ask
   whether the prompt alone (board, hand, recent events, the `Your notes
@@ -1029,6 +1036,15 @@ say what your stub says.
   the damage division, a planeswalker attack). Then the same for the draft:
   a pick's schema is one, but the deck build and the game's are not, and a
   new kind in the middle of a run is a cold write every time
+  — **played 2026-10-19: every kind holds one schema but two** — X funding
+  and piles key their schemas by group names and `Name (#id)` with counts in
+  descriptions (26 X schemas in six games; a real Haiku game's second X
+  funding wrote 5,449 tokens cold), and `schema_cache.rs` exempts exactly
+  those two with a `continue` (#857). A cache test is only as strong as its
+  exemptions: grep it for `continue` and build a deck for each exempted kind.
+  A steering stub (the repo stub, with `action` overridden by the first row
+  matching `$PICK`) reaches Liliana's −6 in seconds. The deck build's
+  unstripped schema is one cold write per seat, not recurring
 - H33 [proposed 2026-10-18, same source] what the prompt no longer says. An
   opponent's card in a graveyard is described only where its text works
   from there; repeated events and stack entries are one line with `(×N)`; a
