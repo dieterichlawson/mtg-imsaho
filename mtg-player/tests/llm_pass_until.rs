@@ -1185,4 +1185,42 @@ fn the_seats_own_cast_time_prompt_keeps_its_plan_and_attack() {
     assert!(matches!(&chosen, Action::DeclareAttackers { attackers, .. } if attackers == &vec![(ObjectId(30), OPP)]),
         "{chosen:?}");
     assert_eq!(fake.calls().len(), 2, "the attack it named is declared as planned");
+
+    // A prompt asked through the menu — its own trigger's "may pay" —
+    // after the last planned card, with the pass that ends the plan on.
+    use mtg_engine::actions::ResolvedChoice;
+    let mut seat = fake.seat();
+    let (mut v, legal) = main_phase(vec![], true, true);
+    v.battlefield.push(perm(30, "Kalonian Tusker", YOU));
+    fake.answer(4);
+    fake.then(&["Grizzly Bears"]);
+    fake.attack(&[30]);
+    seat.choose_action(&v, &legal);
+    fake.then(&[]);
+    fake.attack(&[]);
+    let (mut v, legal) = main_phase(vec![], true, false);
+    v.battlefield.push(perm(30, "Kalonian Tusker", YOU));
+    assert!(matches!(seat.choose_action(&v, &legal), Action::CastSpell { object_id: ObjectId(12), .. }));
+    let calls = fake.calls().len();
+    let pay = LegalActions {
+        actions: vec![
+            Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+            Action::ResolveChoice { choice: ResolvedChoice::PayDecision(false) },
+        ],
+        combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![],
+        context: Some("Grizzly Bears: pay {1} to draw a card?".to_string()),
+        resolution_prompt: Some(mtg_engine::state::ResolutionChoiceKind::PayOrNot {
+            description: "pay {1} to draw a card?".to_string(), spell_id: ObjectId(12),
+            source_spell_id: ObjectId(12), cost: mtg_engine::types::ManaCost::free(),
+        }),
+        set_prompt: None,
+    };
+    fake.answer(1);
+    seat.choose_action(&v, &pay);
+    assert_eq!(fake.calls().len(), calls + 1, "the may-pay is asked");
+    let chosen = seat.choose_combat(&combat, &CombatPrompt::ChooseAttackers {
+        eligible: vec![ObjectId(30)], must_attack: vec![], defending_player: OPP, defending_planeswalkers: vec![],
+    });
+    assert!(matches!(&chosen, Action::DeclareAttackers { .. }), "{chosen:?}");
+    assert_eq!(fake.calls().len(), calls + 1, "and the attack it named is still declared as planned");
 }

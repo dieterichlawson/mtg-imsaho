@@ -5327,8 +5327,11 @@ impl LlmPlayer {
 
         // The rest of a main phase the seat laid out: its next card, or
         // the end of the plan — which passes until something happens — or
-        // a stop that asks it.
-        if let Some(plan) = self.plan.clone() {
+        // a stop that asks it. Only at a priority offer: any other prompt
+        // that reaches here (a "may pay", an ETB trigger's target, a yes or
+        // no) is asked, and the plan waits it out (#862).
+        let plain_offer = Self::is_plain_priority_offer(legal);
+        if let Some(plan) = self.plan.clone().filter(|_| plain_offer) {
             match self.plan_next(view, legal, &plan) {
                 PlanMove::Act(action) => return action,
                 PlanMove::Done => {
@@ -5353,7 +5356,7 @@ impl LlmPlayer {
 
         // The seat said "go" at an earlier offer: pass this one unasked
         // unless something it would want to see has happened since.
-        if let Some(mode) = self.pass_until.clone() {
+        if let Some(mode) = self.pass_until.clone().filter(|_| plain_offer) {
             if let Some(why) = Self::pass_until_stop(view, legal, &mode) {
                 self.stop_pass_until(&why);
             } else {
