@@ -1002,6 +1002,12 @@ say what your stub says.
   2026-10-14; #463 (the cleanup discard) was the last sweep of this kind,
   and it predates the notes. A prompt off that path is a decision the seat
   makes without its own plan in front of it
+  — **played 2026-10-19: clean.** Every caller goes through `build_prompt`
+  (mulligan and bottom carry the notes without a board, by design); a
+  checker over 50 stub games found each prompt's notes equal to the
+  previous THOUGHT for every kind reached, the new concede count-out
+  included. Piles, combat damage assignment, trigger order and damage
+  division were not reached in play; reach them by save edit next time
 - H30 [proposed 2026-10-14, from #832] a this-turn ledger: grep the card
   pool for every rules text that says "this turn" or "last turn" (morbid,
   the werewolves' transform, "if you cast", "attacked this turn") and, for
@@ -1072,3 +1078,19 @@ say what your stub says.
   ordering a collapsed stack hid, a `REASK` a model fell into. The kept
   positions in `logs/eval/positions` (or a fresh capture) replayed under the
   stub show the prompts of two builds for the same position, byte for byte
+  — **played 2026-10-19: two things lost** (against a 6c437b9 build on the
+  same saved position). The graveyard filter reads keywords on the card,
+  never whether the pending choice or a stack object targets it, so Memory's
+  Journey, Nevermore and a Ghoulcaller's Chant response show their targets
+  bare (#864); with tap events gone, the opponent's floating mana is in no
+  prompt (#865). `--save X --stop-after N` then `--resume X --stop-after 2`
+  on each build gives one position's two prompts
+- H34 [proposed 2026-10-19, from #865 and #864] every omission on the
+  other three surfaces. For each thing the 2026-10-18 compression stopped
+  sending, ask whether the CLI and the page ever showed it: the opponent's
+  floating mana (the page draws `opp.mana_pool`; `cli.rs` reads only
+  `your_mana_pool` — float {B} with one seat in a hotseat game and read the
+  other seat's screen), a targeted opponent graveyard card's text (the
+  CLI's browser and the page's inspector), Abattoir Ghoul's damaged
+  creatures. A fact `GameView` carries that one surface drops is the same
+  bug on that surface
