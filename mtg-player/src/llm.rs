@@ -853,7 +853,7 @@ const PASS_UNTIL_RULES: &str = r#"
 
 ## Pass until something happens
 
-Every priority offer has one more row, right after `Pass`: `1: Pass until something happens`, with the engine's rows after it numbered from 2. It is the way a person says "go", and the usual way to pass: answer it whenever you would answer `Pass` again at the next offer, and keep plain `Pass` for a window you mean to use later this turn (an instant at the end step). It passes now and keeps passing later priority offers for you, unasked, until something of the opponent's is put on the stack; a blocker is declared against your attacker; the opponent attacks you and blocks are in (your window after blocks); your next first main phase; a later main phase of yours with a land drop or a sorcery-speed cast or activation on offer; or any prompt that is not a plain priority pass (combat declarations, targets and choices are always asked, except an attack you named in your first main phase). After you declare attackers you pass this way too, until a block or your second main phase. You are never asked to respond to your own spell or ability while only yours are on the stack. When it stops, the next prompt says why in one line, e.g. `After 6 priority offers passed for you unasked, the pass stopped: Grizzly Bears (the opponent's) is on the stack.`"#;
+Every priority offer has one more row, right after `Pass`: `1: Pass until something happens`, with the engine's rows after it numbered from 2. It is the way a person says "go", and the usual way to pass: answer it whenever you would answer `Pass` again at the next offer, and keep plain `Pass` for a window you mean to use later this turn (an instant at the end step). It passes now and keeps passing later priority offers for you, unasked, until something of the opponent's is put on the stack; a blocker is declared against your attacker; the opponent attacks you and blocks are in (your window after blocks); your next first main phase; a later main phase of yours with a land drop or a sorcery-speed cast or activation on offer; or, once the opponent has put something on the stack, any prompt that is not a plain priority pass (combat declarations, targets and choices are always asked, except an attack you named in your first main phase). After you declare attackers you pass this way too, until a block or your second main phase. You are never asked to respond to your own spell or ability while only yours are on the stack. When it stops, the next prompt says why in one line, e.g. `After 6 priority offers passed for you unasked, the pass stopped: Grizzly Bears (the opponent's) is on the stack.`"#;
 
 /// The seat said "go": it is passing every plain priority offer without a
 /// model call until something it would want to see happens. What it was
@@ -874,6 +874,12 @@ struct PassUntil {
     /// has the same identity as the first; the count moving is what says
     /// it is new (#750).
     stack_puts: u64,
+    /// The engine's count of the opponent's entries put on the stack
+    /// (`GameView::opponent_stack_puts`). The engine passes for a seat with
+    /// nothing to respond with, so an instant or a flash creature can come
+    /// and go between two offers this seat sees (#861).
+    #[serde(default = "puts_unknown")]
+    opp_puts: u64,
     /// How many priority offers have been passed unasked since.
     passes: u32,
     /// The seat said it was done with the main phase this was engaged in
@@ -912,6 +918,9 @@ struct Plan {
     /// to pass until something happens (`ask_again`).
     #[serde(default)]
     ask_again: bool,
+    /// `GameView::opponent_stack_puts` when the plan was made (#861).
+    #[serde(default = "puts_unknown")]
+    opp_puts: u64,
 }
 
 /// The attack a seat named in its first main phase: declared at its
@@ -924,6 +933,11 @@ struct Plan {
 struct AttackPlan {
     turn: u32,
     attackers: Vec<ObjectId>,
+    /// `GameView::opponent_stack_puts` when the attack was named: anything
+    /// the opponent casts or activates after it — a flash blocker the
+    /// engine passed this seat through — is "something happening" (#861).
+    #[serde(default = "puts_unknown")]
+    opp_puts: u64,
 }
 
 /// What the `attack` field asks for.
@@ -931,6 +945,16 @@ pub const ATTACK_DESCRIPTION: &str =
     "In your first main phase (else []): the # numbers of your creatures to attack the opponent with this turn, once this main \
      phase is done. They are declared without asking you if nothing happens first and each \
      can still attack; otherwise you are asked at combat. [] to be asked at combat.";
+
+/// A save from before the count was kept: nothing is taken to have
+/// happened since.
+fn puts_unknown() -> u64 {
+    u64::MAX
+}
+
+/// Why a plan, an attack plan or a pass-until stops for something of the
+/// opponent's that is no longer on the stack to name.
+const OPPONENT_ACTED: &str = "the opponent cast or activated something since (it has resolved)";
 
 /// What a plan does at an offer: take its next card, finish, or stop.
 enum PlanMove {
@@ -1002,6 +1026,7 @@ impl PassUntil {
             our_turn: view.active_player == view.you,
             stack: Self::stack_identity(view),
             stack_puts: view.stack_puts,
+            opp_puts: view.opponent_stack_puts,
             passes: 0,
             done_here: false,
         }
@@ -5143,18 +5168,23 @@ impl LlmPlayer {
     /// asks the seat again, once (#860).
     fn decide(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions, may_reask: bool) -> Action {
         let legal_actions = &legal.actions;
-        // A seat passing unasked stops at any prompt that is not a plain
-        // priority pass — a target, a set, a sacrifice, the mulligan — and
-        // is asked it with the full prompt, as it would be anyway.
-        if self.pass_until.is_some() && !Self::is_plain_priority_offer(legal) {
-            let what = legal.context.clone()
+        // A prompt that is not a plain priority pass — a target, a set, X,
+        // a "may pay" — is asked with the full prompt, as it would be
+        // anyway. It ends a pass-until or a plan (and the attack named with
+        // it) only when the opponent has put something on the stack since
+        // they began: one the seat's own planned cast or its own trigger
+        // raises is part of the plan, and dropping the plan there asked the
+        // same attack again at combat (#862).
+        if !Self::is_plain_priority_offer(legal) {
+            let what = || legal.context.clone()
                 .unwrap_or_else(|| "a prompt that is not a priority pass".to_string());
-            self.stop_pass_until(&format!("you are asked something else: {what}"));
-        }
-        if self.plan.is_some() && !Self::is_plain_priority_offer(legal) {
-            let what = legal.context.clone()
-                .unwrap_or_else(|| "a prompt that is not a priority pass".to_string());
-            self.stop_plan(&format!("you are asked something else: {what}"));
+            let opp_acted = |since: u64| view.opponent_stack_puts > since;
+            if self.pass_until.as_ref().is_some_and(|m| opp_acted(m.opp_puts)) {
+                self.stop_pass_until(&format!("you are asked something else: {}", what()));
+            }
+            if self.plan.as_ref().is_some_and(|p| opp_acted(p.opp_puts)) {
+                self.stop_plan(&format!("you are asked something else: {}", what()));
+            }
         }
         // The engine labels the other seat `p1`, and the context line is the
         // one line of the prompt that used to pass that through: every log
@@ -5377,7 +5407,7 @@ impl LlmPlayer {
                 .collect();
             self.attack_plan = (!attackers.is_empty()).then(|| {
                 self.log("ATTACK_PLAN", &format!("attack with {}", Self::creature_names(view, &attackers)));
-                AttackPlan { turn: view.turn_number, attackers }
+                AttackPlan { turn: view.turn_number, attackers, opp_puts: view.opponent_stack_puts }
             });
         }
 
@@ -5398,7 +5428,8 @@ impl LlmPlayer {
         };
         if passes && !plannable.is_empty() && !then.is_empty() {
             self.log("PLAN", &format!("then: {} (answered with a pass: the plan starts now)", then.join(", ")));
-            let plan = Plan { turn: view.turn_number, step: view.step, steps: then.clone(), taken: 0, ask_again };
+            let plan = Plan { turn: view.turn_number, step: view.step, steps: then.clone(), taken: 0, ask_again,
+                opp_puts: view.opponent_stack_puts };
             self.plan = Some(plan.clone());
             match self.plan_next(view, legal, &plan) {
                 PlanMove::Act(action) => return action,
@@ -5443,7 +5474,8 @@ impl LlmPlayer {
         };
         if !plannable.is_empty() && plays && !then.is_empty() {
             self.log("PLAN", &format!("then: {}", then.join(", ")));
-            self.plan = Some(Plan { turn: view.turn_number, step: view.step, steps: then, taken: 0, ask_again });
+            self.plan = Some(Plan { turn: view.turn_number, step: view.step, steps: then, taken: 0, ask_again,
+                opp_puts: view.opponent_stack_puts });
         } else if !plannable.is_empty() && plays && !ask_again {
             // Nothing after this play: the main phase is done, as it is at
             // the end of a plan.
@@ -5569,6 +5601,11 @@ impl LlmPlayer {
         if let Some(top) = view.stack.last() {
             return PlanMove::Stop(format!("{} ({}) is on the stack", top.name,
                 if top.controller == view.you { "yours" } else { "the opponent's" }));
+        }
+        // Gone from the stack again by now: the engine passed for this seat
+        // while it had nothing to respond with (#861).
+        if view.opponent_stack_puts > plan.opp_puts {
+            return PlanMove::Stop(OPPONENT_ACTED.to_string());
         }
         let Some(name) = plan.steps.first().cloned() else { return PlanMove::Done };
         let in_hand: Vec<ObjectId> = view.your_hand.iter().filter(|c| c.name == name).map(|c| c.object_id).collect();
@@ -5962,6 +5999,12 @@ impl LlmPlayer {
                 return Some(format!("{newest} is on the stack"));
             }
         }
+        // What the opponent cast and resolved while the engine passed for
+        // the seat (#861) is not a stop: there is no window left to answer
+        // it in, and the board shows what it did. It does stop a plan and
+        // a planned attack, which were made before it (`plan_next`,
+        // `planned_attack`) — a stop here was a call in every third
+        // opponent's turn, measured.
 
         if !our_turn && view.step == Step::DeclareBlockers && !same_point {
             let attackers: Vec<String> = view.battlefield.iter()
@@ -6472,7 +6515,11 @@ from your hand to put on the bottom of your library.\n\
         }
         let names = |ids: &[ObjectId]| Self::creature_names(view, ids);
         let unable: Vec<ObjectId> = plan.attackers.iter().copied().filter(|a| !eligible.contains(a)).collect();
-        let why = if !defending_planeswalkers.is_empty() {
+        let why = if view.opponent_stack_puts > plan.opp_puts {
+            // A flash blocker or a trick cast while the engine passed for
+            // this seat: the attack was named before it (#861).
+            Some(OPPONENT_ACTED.to_string())
+        } else if !defending_planeswalkers.is_empty() {
             Some("the opponent has a planeswalker you could attack instead".to_string())
         } else if !unable.is_empty() {
             Some(format!("{} cannot attack now", names(&unable)))
@@ -8798,6 +8845,7 @@ pub(crate) mod tests {
     pub(crate) fn empty_view() -> GameView {
         GameView {
             stack_puts: 0,
+            opponent_stack_puts: 0,
             you: PlayerId(0),
             your_hand: vec![],
             your_life: 20,

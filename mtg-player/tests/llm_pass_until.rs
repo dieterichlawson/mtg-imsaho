@@ -198,6 +198,7 @@ fn stack_item(id: u64, name: &str, controller: PlayerId) -> StackItemView {
 fn view(turn: u32, step: Step, active: PlayerId) -> GameView {
     GameView {
         stack_puts: 0,
+        opponent_stack_puts: 0,
         you: YOU,
         your_hand: vec![card(10, "Lightning Bolt", vec![CardType::Instant],
             "Lightning Bolt deals 3 damage to any target.")],
@@ -629,12 +630,14 @@ fn a_combat_prompt_is_asked_and_the_pass_carries_on_past_it() {
     assert!(stop_line(&fake).contains("blocks are in"), "{}", stop_line(&fake));
 }
 
+/// A prompt that is not a priority pass is always asked. It ends the
+/// pass only when the opponent's spell or ability has gone on the stack
+/// since the pass began (#862): the seat's own discard to hand size, its
+/// own trigger, the X or the target of its own planned cast are part of
+/// what it said "go" to.
 #[test]
-fn a_prompt_of_another_kind_stops_it_and_is_asked() {
+fn a_prompt_of_another_kind_is_asked_and_stops_it_only_after_the_opponent_acted() {
     let fake = Fake::new("other");
-    let mut seat = engaged_on_own_turn(&fake);
-    let mut v = view(3, Step::Cleanup, YOU);
-    v.your_hand.push(card(12, "Grizzly Bears", vec![CardType::Creature], ""));
     let discard = LegalActions {
         actions: vec![],
         combat_prompt: None,
@@ -647,12 +650,41 @@ fn a_prompt_of_another_kind_stops_it_and_is_asked() {
             options: vec![ObjectId(10), ObjectId(12)], min: 1, max: 1,
         }),
     };
+    let mut v = view(3, Step::Cleanup, YOU);
+    v.your_hand.push(card(12, "Grizzly Bears", vec![CardType::Creature], ""));
+
+    // Its own discard: asked, and the pass goes on.
+    let mut seat = engaged_on_own_turn(&fake);
     seat.choose_action(&v, &discard);
     assert_eq!(fake.calls().len(), 2, "the discard is asked");
-    assert!(stop_line(&fake).contains("you are asked something else: DISCARD 1 CARD"), "{}", stop_line(&fake));
-    // Over: the next plain offer is asked.
     seat.choose_action(&view(4, Step::Upkeep, OPP), &offer("OPPONENT'S TURN: Upkeep"));
-    assert_eq!(fake.calls().len(), 3);
+    assert_eq!(fake.calls().len(), 2, "and the pass goes on");
+
+    // The same prompt after the opponent cast something: asked, and over.
+    let mut seat = engaged_on_own_turn(&fake);
+    v.opponent_stack_puts = 1;
+    seat.choose_action(&v, &discard);
+    assert_eq!(fake.calls().len(), 4, "the discard is asked");
+    assert!(stop_line(&fake).contains("you are asked something else: DISCARD 1 CARD"), "{}", stop_line(&fake));
+    let mut next = view(4, Step::Upkeep, OPP);
+    next.opponent_stack_puts = 1;
+    seat.choose_action(&next, &offer("OPPONENT'S TURN: Upkeep"));
+    assert_eq!(fake.calls().len(), 5, "over: the next plain offer is asked");
+}
+
+/// #861: an instant or flash creature the opponent cast while the engine
+/// passed for this seat (it had nothing to respond with) is gone from the
+/// stack by the seat's next offer. There is no window left to answer it,
+/// and the board shows it: the pass goes on (a planned attack and a plan
+/// stop, `what_the_opponent_cast_unseen_stops_the_attack_and_the_plan`).
+#[test]
+fn the_opponents_spell_that_resolved_unseen_does_not_stop_it() {
+    let fake = Fake::new("unseen");
+    let mut seat = engaged_on_opponents_turn(&fake);
+    let mut v = view(2, Step::EndStep, OPP);
+    v.opponent_stack_puts = 1;
+    seat.choose_action(&v, &offer("OPPONENT'S TURN: End Step"));
+    assert_eq!(fake.calls().len(), 1, "passed unasked");
 }
 
 #[test]
@@ -1063,4 +1095,94 @@ fn an_attack_named_in_the_main_phase_is_declared_without_a_call() {
     v.battlefield.push(sick);
     seat.choose_action(&v, &legal);
     assert!(!reads(&fake.calls().pop().unwrap(), "attack"));
+}
+
+/// #861: a flash blocker cast while the engine passed for the seat (it had
+/// nothing to respond with) is gone from the stack by combat, so nothing
+/// the seat is shown says it happened — but the opponent's count of stack
+/// entries moved. The planned attack is not declared into it; the seat is
+/// asked, and told why. The same for the plan's next card.
+#[test]
+fn what_the_opponent_cast_unseen_stops_the_attack_and_the_plan() {
+    let fake = Fake::new("unseen-attack");
+    let attackers = CombatPrompt::ChooseAttackers {
+        eligible: vec![ObjectId(30)], must_attack: vec![], defending_player: OPP, defending_planeswalkers: vec![],
+    };
+    let mut seat = fake.seat();
+    let (mut v, legal) = main_phase(vec![], false, true);
+    v.battlefield.push(perm(30, "Kalonian Tusker", YOU));
+    fake.answer(3);
+    fake.attack(&[30]);
+    seat.choose_action(&v, &legal);
+    fake.attack(&[]);
+    let mut combat = view(3, Step::DeclareAttackers, YOU);
+    combat.battlefield.push(perm(30, "Kalonian Tusker", YOU));
+    combat.battlefield.push(perm(59, "Ambush Viper", OPP));
+    combat.opponent_stack_puts = 1;
+    seat.choose_combat(&combat, &attackers);
+    assert_eq!(fake.calls().len(), 2, "the attack is asked");
+    let prompt = fake.calls().pop().unwrap();
+    assert!(prompt.contains("Your planned attack with Kalonian Tusker (#30) was not declared: \
+        the opponent cast or activated something since"), "{prompt}");
+
+    // The plan: Forest, then the Bears, then the Lions; the opponent
+    // answers the Bears, unseen.
+    let mut seat = fake.seat();
+    let (v, legal) = main_phase(vec![], true, true);
+    fake.answer(4);
+    fake.then(&["Grizzly Bears", "Savannah Lions"]);
+    seat.choose_action(&v, &legal);
+    fake.then(&[]);
+    let (v, legal) = main_phase(vec![], true, false);
+    assert!(matches!(seat.choose_action(&v, &legal), Action::CastSpell { object_id: ObjectId(12), .. }));
+    let calls = fake.calls().len();
+    let (mut v, mut legal) = main_phase(vec![], true, false);
+    v.your_hand.retain(|c| c.name != "Grizzly Bears");
+    legal.castable_spells.retain(|c| c.name != "Grizzly Bears");
+    v.opponent_stack_puts = 1;
+    fake.answer(0);
+    seat.choose_action(&v, &legal);
+    assert_eq!(fake.calls().len(), calls + 1, "the Lions are not cast unasked");
+    let prompt = fake.calls().pop().unwrap();
+    assert!(prompt.contains("Your plan stopped before Savannah Lions: the opponent cast or activated something since"),
+        "{prompt}");
+}
+
+/// #862: a prompt the seat's own planned cast raises — its X, its target,
+/// its own "may pay" trigger — is asked, and the plan and the attack named
+/// with it go on. Dropping them there asked the same attack again at combat.
+#[test]
+fn the_seats_own_cast_time_prompt_keeps_its_plan_and_attack() {
+    let fake = Fake::new("own-prompt");
+    let mut seat = fake.seat();
+    let (mut v, legal) = main_phase(vec![], true, true);
+    v.battlefield.push(perm(30, "Kalonian Tusker", YOU));
+    // Rows: 0 Pass, 1 pass-until, 2 Cast Savannah Lions, 3 Cast Grizzly Bears, 4 Play Forest
+    fake.answer(4);
+    fake.then(&["Grizzly Bears"]);
+    fake.attack(&[30]);
+    seat.choose_action(&v, &legal);
+    fake.then(&[]);
+    fake.attack(&[]);
+    // The Bears' own prompt — a set to choose, as a target or an X is.
+    let own = LegalActions {
+        actions: vec![], combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![],
+        context: Some("Grizzly Bears: choose a target".to_string()), resolution_prompt: None,
+        set_prompt: Some(SetPrompt {
+            kind: SetPromptKind::DiscardToHandSize, player: YOU,
+            options: vec![ObjectId(13)], min: 1, max: 1,
+        }),
+    };
+    let (mut v, _) = main_phase(vec![], true, false);
+    v.battlefield.push(perm(30, "Kalonian Tusker", YOU));
+    seat.choose_action(&v, &own);
+    assert_eq!(fake.calls().len(), 2, "the prompt is asked");
+    let mut combat = view(3, Step::DeclareAttackers, YOU);
+    combat.battlefield.push(perm(30, "Kalonian Tusker", YOU));
+    let chosen = seat.choose_combat(&combat, &CombatPrompt::ChooseAttackers {
+        eligible: vec![ObjectId(30)], must_attack: vec![], defending_player: OPP, defending_planeswalkers: vec![],
+    });
+    assert!(matches!(&chosen, Action::DeclareAttackers { attackers, .. } if attackers == &vec![(ObjectId(30), OPP)]),
+        "{chosen:?}");
+    assert_eq!(fake.calls().len(), 2, "the attack it named is declared as planned");
 }

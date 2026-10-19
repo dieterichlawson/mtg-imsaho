@@ -147,16 +147,23 @@ The stops are where a decision may be owed, and not where none is:
 - anything on the stack that was not there when it said "go" (an entry
   that was there resolving off the top is expected), or anything put on
   it since, however like an entry that was there it looks — a second
-  activation of the same ability is new (the view's `stack_puts`, #750);
+  activation of the same ability is new (the view's `stack_puts`, #750).
+  The engine passes for a seat that has nothing to respond with, so an
+  opponent's instant can come and go unseen; that is not a stop (no window
+  is left, and the board shows it), but it does stop a plan and a planned
+  attack — the view's `opponent_stack_puts` counts it (#861);
 - the opponent attacking it, once blocks are in — the window a trick or a
   removal spell is cast in (the block itself is a combat prompt, asked);
 - a blocker declared against its attacker;
 - its own first main phase, and a later main phase of its own when a land
   drop or a sorcery-speed cast or activation is on offer — not the main
   phase it said it was done with;
-- a target or set or resolution prompt, the mulligan: any prompt that is
-  not a plain priority pass. A combat declaration is asked too, but the
-  pass carries on past it, and declaring attackers starts one.
+- a target or set or resolution prompt, once the opponent has put
+  something on the stack since the pass began. The prompt is always
+  asked; one the seat's own cast or trigger raises (its X, its target, a
+  "may pay") does not end the pass, nor a plan or the attack named with it
+  (#862). A combat declaration is asked too, but the pass carries on past
+  it, and declaring attackers starts one.
 
 Its own turn beginning used to stop it, and was a call every turn that came
 back "pass". The seat is never asked to respond to its own spell or ability
@@ -172,7 +179,8 @@ three more fields, each offered only where it can mean something:
   still asked). A pass with a plan starts the plan now: a model answering
   `{"action": 0, "then": ["Swamp"]}` meant "play the Swamp". The plan
   stops, and the seat is asked and told why, if the opponent puts anything
-  on the stack or a card cannot be played when its turn comes.
+  on the stack (seen or not, #861) or a card cannot be played when its
+  turn comes — at once, where the plan was started by a pass (#860).
 - `ask_again` — false, the usual answer, ends the main phase after `action`
   and `then`: the seat passes until something happens, and the main-phase
   stops do not ask it that phase again. True asks again once they are done,
@@ -182,7 +190,8 @@ three more fields, each offered only where it can mean something:
 - `attack` (first main phase, where a creature could attack now) — the `#`
   numbers of the creatures to attack the opponent with. At the declare
   attackers step the plan is declared without a call if nothing has happened
-  since (any stop drops it), no planeswalker could be attacked instead, and
+  since (any stop drops it, and so does anything the opponent cast or
+  activated meanwhile, seen or not, #861), no planeswalker could be attacked instead, and
   every creature it names can attack; otherwise the seat is asked, told why.
   `[]` means "ask me at combat".
 
