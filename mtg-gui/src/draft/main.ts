@@ -377,6 +377,11 @@ function buildingKey(ev: KeyboardEvent, view: DraftView): void {
     case "ArrowDown": case "ArrowRight": move(at < 0 ? 0 : at + 1); break;
     case "ArrowUp": case "ArrowLeft": move(at < 0 ? 0 : at - 1); break;
     case "Enter":
+      // A held Enter repeats about every 30 ms, and each repeat moved the
+      // card back the other way: where it ended up was the parity of the
+      // repeat count, one deck message each (#852, the build screen's
+      // #806). A toggle is one press.
+      if (ev.repeat) { ev.preventDefault(); return; }
       if (state.cursor === null) { state.hint = "Enter moves the card under the cursor; arrows move the cursor, or click a card."; break; }
       actions.toggle(state.cursor, true);
       ev.preventDefault();

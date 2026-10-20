@@ -345,6 +345,16 @@ async function main() {
         await page.waitForTimeout(50);
         const toggled = await lastSent();
         check(toggled && toggled.type === "deck" && toggled.main.length + Object.values(toggled.lands).reduce((a, b) => a + b, 0) !== 35, `${tag}: ArrowDown then Enter moves a card (${toggled && toggled.main.length} main)`);
+        // A held Enter is one press: its repeats flipped the card back and
+        // forth, one deck message each, ending where the parity left it (#852).
+        {
+          const before = (await sent()).length;
+          for (let k = 0; k < 6; k++) await page.keyboard.down("Enter");
+          await page.keyboard.up("Enter");
+          await page.waitForTimeout(50);
+          const held = (await sent()).slice(before);
+          check(held.length === 1, `${tag}: a held Enter moves the card once (${held.length} deck messages)`);
+        }
         // Enter on a focused land "+" adds the land; it does not move the
         // card under the cursor (#787).
         await page.keyboard.press("ArrowDown");
