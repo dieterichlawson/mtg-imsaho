@@ -34,6 +34,22 @@ fn without_game_logs(mut result: MatchResult) -> MatchResult {
 /// of it, and the pool it has drafted so far.
 type PickInput = (usize, Vec<String>, Vec<String>);
 
+/// A file each pick of the run is appended to as one JSON line — the seat,
+/// the pick's place, the pack, the pool, the notes the seat carried in and
+/// what it chose — so the pick can be asked again under another build or
+/// model (`mtg-draft-replay`, `scripts/decision-eval/`). Unset, nothing is
+/// kept.
+const POSITIONS_ENV: &str = "MTG_DRAFT_POSITIONS";
+
+fn append_position(path: &str, position: &serde_json::Value) {
+    use std::io::Write as _;
+    let written = fs::OpenOptions::new().create(true).append(true).open(path)
+        .and_then(|mut f| writeln!(f, "{position}"));
+    if let Err(e) = written {
+        mtg_player::stderr_line!("WARN: could not keep the pick position in {path}: {e}");
+    }
+}
+
 // ─── CLI Argument Parsing ────────────────────────────────────────────
 
 const USAGE: &str = "\
@@ -1150,6 +1166,12 @@ resume with the --best-of its run was played at)", args.best_of) };
                 draw_progress(&format!("Pack {} Pick {}/{}", round + 1, pick_num + 1, initial_cards));
             }
 
+            // What each seat carries into this pick, for a kept position
+            // (`POSITIONS_ENV`): the worker replaces the notes with the
+            // pick's own.
+            let notes_before: Vec<Option<String>> =
+                clients.iter().map(|c| c.notes().map(str::to_string)).collect();
+
             // Gather inputs for each player before spawning threads
             let pick_inputs: Vec<PickInput> =
                 (0..args.players)
@@ -1246,6 +1268,16 @@ substituting {} (the first card). Response: {}",
                     log_draft_warning!(log, seat, round + 1, pick_num + 1, pick.card(), &response);
                 }
                 let chosen = pick.into_card();
+
+                if let Ok(path) = env::var(POSITIONS_ENV) {
+                    append_position(&path, &serde_json::json!({
+                        "set": args.set, "seed": args.seed, "seat": seat,
+                        "pod_size": args.players, "pack_size": pack_size,
+                        "pack_number": round + 1, "pick_index": pick_num + 1,
+                        "available": available, "pool": draft.players[seat].pool,
+                        "notes": notes_before[seat], "chosen": chosen, "substituted": substituted,
+                    }));
+                }
 
                 draft.make_pick(seat, &chosen).unwrap_or_else(|e| {
                     mtg_player::stderr_line!("\nDraft pick error for seat {seat}: {e}");
