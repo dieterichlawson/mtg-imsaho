@@ -1068,7 +1068,9 @@ say what your stub says.
   exemptions: grep it for `continue` and build a deck for each exempted kind.
   A steering stub (the repo stub, with `action` overridden by the first row
   matching `$PICK`) reaches Liliana's −6 in seconds. The deck build's
-  unstripped schema is one cold write per seat, not recurring
+  unstripped schema is one cold write per seat, not recurring — and still a
+  defect: seen here, filed only by the 2026-10-20 R1 sweep (#867), keyed by
+  the pool's card names on all three draft backends
 - H33 [proposed 2026-10-18, same source] what the prompt no longer says. An
   opponent's card in a graveyard is described only where its text works
   from there; repeated events and stack entries are one line with `(×N)`; a
