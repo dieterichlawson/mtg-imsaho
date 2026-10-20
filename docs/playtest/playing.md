@@ -1289,7 +1289,14 @@ illegal or dubious resolutions do.
   empties at the step's end (CR 500.4), and that no "activated" line is logged.
   Where there is none, check the costs are paid in CR 601.2h order and the log
   shows them in that order. #290 fixed this for X abilities only
-- L61 [proposed 2026-10-15, from L56 and #840] every planner that is not the
+- L61 [tried 2026-10-20 → #866: the planners' *inputs* differ, not only their
+  keys — `plan_autotap_for_cost` (Screeching Bat) passed a literal `false` for
+  Stony Silence where every other `gather_mana_sources` caller asks, so the
+  upkeep offered Sol Ring's mana, tapped two Swamps and failed, even with four
+  lands that could pay. Compare every caller's arguments before staging boards;
+  random games on a Stony Silence + Sol Ring + the card deck and a `grep -c
+  'Could not pay'` find it in seconds. Not yet tried: the Phase 3 tie and the
+  battlefield-order swap below] every planner that is not the
   menu's. The menu's casts, flashbacks and abilities go through
   `legal_actions` with `mana_demands` (hand, graveyard casts, on-board
   abilities, since #837/#838); other payments plan around the same set
