@@ -502,6 +502,10 @@ window.addEventListener("keydown", (ev) => {
       else state.notice = noAnswerHere(ui, "Enter");
       break;
     case "Escape":
+      // A held Escape's repeats backed out of each new question as it was
+      // drawn — a "Cancel cast" the person never saw (#852's review, #806's
+      // guard on Enter).
+      if (ev.repeat && performance.now() - (state.shownAt ?? 0) < 300) { ev.preventDefault(); return; }
       backOut("Escape");
       break;
     case "l": state.logOpen = !state.logOpen; state.logScroll = 0; break;

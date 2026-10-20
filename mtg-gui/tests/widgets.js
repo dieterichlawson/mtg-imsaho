@@ -618,6 +618,25 @@ async function main() {
         else if (res.afterPress !== 1) fail(`held-enter: a fresh Enter did not pass (${JSON.stringify(res)})`);
         else ok("held-enter: a repeat waits, a press passes");
       }
+      // Nor do a held Escape's: they cancelled the next question the moment
+      // it was drawn, a "Cancel cast" nobody saw (#852's review).
+      if (ids.hand.length) {
+        const esc = await page.evaluate((seq) => {
+          const m = window.mtg; m.autoPass = null;
+          const opts = m.view.your_hand.map(c => c.object_id);
+          window.mtgDebug.message({ type: "decision", seq, view: m.view, combat: null,
+            legal: { actions: [], combat_prompt: null, castable_spells: [], activatable_abilities: [], context: "T",
+              resolution_prompt: { ChooseExileFromGraveyard: { description: "Exile a card", options: opts, min: 1, max: 1, source_id: opts[0] } }, set_prompt: null } });
+          const n0 = window.mtgDebug.sent.length;
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", repeat: true, bubbles: true, cancelable: true }));
+          const afterRepeat = window.mtgDebug.sent.length - n0;
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+          return { afterRepeat, afterPress: window.mtgDebug.sent.length - n0 };
+        }, seq + 601);
+        if (esc.afterRepeat !== 0) fail(`held-escape: a repeat cancelled a question just drawn (${JSON.stringify(esc)})`);
+        else if (esc.afterPress !== 1) fail(`held-escape: a fresh Escape did not cancel (${JSON.stringify(esc)})`);
+        else ok("held-escape: a repeat waits, a press cancels");
+      }
     }
     // 14. Enter at a mark prompt: refuses out loud below the minimum, and
     // never commits an empty answer nobody chose. Enter is the idle key —
