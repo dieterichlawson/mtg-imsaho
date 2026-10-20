@@ -126,13 +126,17 @@ fn two_humans_and_two_ai_seats_draft_build_and_the_ai_match_plays() {
     assert_eq!(picked1.len(), 42);
 
     // What the view shows is what was picked, and what the log records.
-    let v0 = c0.last.clone().unwrap();
+    // The AI seats draft on workers of their own: their last picks and
+    // their decks land when they land, not before the person's last pick.
+    // Read once at that pick, seat 3 was at 41 picks on a loaded machine.
+    let v0 = c0.view_until("every AI seat has drafted and built", T,
+        |v| (2..4).all(|s| v["seats"][s]["picks"] == 42 && v["seats"][s]["status"] == "ready"));
     let shown: Vec<(u64, u64, String)> = v0["picks"].as_array().unwrap().iter()
         .map(|p| (p["round"].as_u64().unwrap(), p["pick"].as_u64().unwrap(), p["card"].as_str().unwrap().to_string()))
         .collect();
     assert_eq!(shown, picked0, "the view's picks are the picks made");
     assert!(v0["picks"].as_array().unwrap().iter().all(|p| p["auto"] == false));
-    let log = server.log_text();
+    let log = server.wait_for_log("[Seat 3] DECK (", T);
     for (round, pick, card) in &picked0 {
         let line = format!("[Seat 0] PICK Pack {round} Pick {pick} | Chose: {card} (");
         assert!(log.contains(&line), "the log records the pick: {line}");
