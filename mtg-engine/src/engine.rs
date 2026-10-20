@@ -329,7 +329,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         is_sorcery_speed: state.step.is_main_phase()
             && state.stack.is_empty()
             && state.active_player == player,
-        mana_sources: gather_mana_sources(state, player, registry, prevent_artifact_abilities),
+        mana_sources: gather_mana_sources(state, player, registry),
         demands: mana_demands(state, registry, player),
         // Nevermore stores its chosen name as an instance effect, but reading
         // only instance effects meant a card that declared the ban on its face

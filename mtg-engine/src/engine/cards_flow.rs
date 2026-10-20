@@ -286,8 +286,7 @@ pub(crate) fn has_castable_with_potential_mana(
     // planner would see. `mana::within_reach` counts each source once, for
     // one ability, net of a filter's own cost (issue #617).
     let pool = &state.get_player(player).mana_pool;
-    let sources = gather_mana_sources(state, player, registry,
-        prevents_artifact_abilities(state, registry));
+    let sources = gather_mana_sources(state, player, registry);
 
     // Check if any spell in hand could be cast with this potential mana.
     // For instant-speed spells, only count them as meaningful when something

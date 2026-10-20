@@ -659,9 +659,7 @@ pub fn order_around_demands(
         .map(|(_, d)| d)
         .collect();
     let pool = &state.get_player(player).mana_pool;
-    let sources = crate::engine::gather_mana_sources(
-        state, player, registry,
-        crate::engine::prevents_artifact_abilities(state, registry));
+    let sources = crate::engine::gather_mana_sources(state, player, registry);
     let payable: Vec<&crate::mana::Demand> = demands.iter()
         .filter(|d| d.payable(pool, &sources, &[]))
         .collect();

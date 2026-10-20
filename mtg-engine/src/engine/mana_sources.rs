@@ -14,6 +14,12 @@ use super::*;
 /// `can_pay_tap_cost` (untapped, and past summoning sickness unless hasty —
 /// CR 302.6). A card's own `mana_abilities` describes only what is particular
 /// to the ability, e.g. Deranged Assistant needing a card left to mill.
+///
+/// Stony Silence is part of the gate: an artifact's mana abilities can't be
+/// activated under it (CR 602.5). It used to be checked by each caller, and
+/// Screeching Bat's planner and X funding did not — both offered Sol Ring's
+/// mana, and X funding cast the spell with an X its taps never made
+/// (issue #866).
 pub fn available_mana_abilities(
     state: &GameState,
     object_id: ObjectId,
@@ -21,6 +27,10 @@ pub fn available_mana_abilities(
 ) -> Vec<crate::cards::ManaAbilityDef> {
     let Some(obj) = state.get_object(object_id) else { return Vec::new(); };
     if obj.zone != Zone::Battlefield {
+        return Vec::new();
+    }
+    if prevents_artifact_abilities(state, registry)
+        && state.has_card_type(object_id, CardType::Artifact, registry) {
         return Vec::new();
     }
     let Some(behavior) = registry.get(obj.card_id) else { return Vec::new(); };
@@ -85,7 +95,7 @@ pub fn payment_plan_with_sources(
     if mana::can_pay(pool, cost) {
         return Some(Vec::new());
     }
-    let sources = gather_mana_sources(state, player, registry, prevents_artifact_abilities(state, registry));
+    let sources = gather_mana_sources(state, player, registry);
     mana::compute_autotap_around(cost, pool, &sources, &resolution_demands(state, registry, player))
 }
 
@@ -122,21 +132,20 @@ pub(crate) fn prevents_artifact_abilities(state: &GameState, registry: &CardRegi
         .any(|e| matches!(e, ContinuousEffect::PreventArtifactAbilities))
 }
 /// Gather all available mana sources for a player, classified by opportunity cost.
+///
+/// Stony Silence is not a parameter: [`available_mana_abilities`] applies
+/// it. A planner that passed a literal `false` for it counted Sol Ring,
+/// offered a payment that could not be made and tapped lands for nothing
+/// (issue #866).
 pub(crate) fn gather_mana_sources(
     state: &GameState,
     player: PlayerId,
     registry: &CardRegistry,
-    prevent_artifact_abilities: bool,
 ) -> Vec<mana::ManaSource> {
     use mana::{ManaSource, ManaSourceKind};
 
     let mut sources = Vec::new();
     for obj in state.objects_in_zone(Zone::Battlefield, player) {
-        // Stony Silence: skip mana abilities from artifacts.
-        if prevent_artifact_abilities
-            && state.has_card_type(obj.id, CardType::Artifact, registry) {
-            continue;
-        }
         if let Some(behavior) = registry.get(obj.card_id) {
             let abilities = available_mana_abilities(state, obj.id, registry);
             if abilities.is_empty() { continue; }
@@ -208,17 +217,12 @@ pub fn activate_mana_source_reserving(
     let controller = obj.controller;
 
     // Stony Silence: "activated abilities of artifacts can't be activated",
-    // mana abilities included. The auto-tap planner already skips artifact
-    // sources, but a SUBMITTED action — a standalone ActivateManaAbility or a
-    // tap plan naming one — funnels through here too, so the gate holds where
-    // the tap actually happens (same reasoning as the cost-legality gate
-    // above). The refusal produces no mana, which the cast path's funding
-    // rehearsal then turns into a refused cast.
-    if prevents_artifact_abilities(state, registry)
-        && state.has_card_type(source_id, CardType::Artifact, registry) {
-        return;
-    }
-
+    // mana abilities included. A SUBMITTED action — a standalone
+    // ActivateManaAbility or a tap plan naming one — funnels through here,
+    // and `available_mana_abilities` returns nothing for an artifact under
+    // it, so the gate holds where the tap actually happens. The refusal
+    // produces no mana, which the cast path's funding rehearsal then turns
+    // into a refused cast.
     let abilities = available_mana_abilities(state, source_id, registry);
     let Some(ability) = abilities.iter().find(|a| a.ability_index == ability_index) else {
         return;

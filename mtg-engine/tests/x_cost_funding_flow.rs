@@ -669,6 +669,28 @@ fn a_two_mana_rock_pays_an_odd_x_the_lands_cannot() {
     assert_eq!(dp_obj.x_value, Some(2), "the announced X is the X that was cast");
 }
 
+/// Under Stony Silence Sol Ring's mana ability can't be activated (CR
+/// 602.5), so X funding has no Sol Ring group to offer. It used to: the
+/// group counted towards the X that could be announced, and funding X with
+/// it tapped nothing — the refusal is at the tap — yet the spell was cast
+/// with that X (the X-funding escape of issue #866).
+#[test]
+fn x_funding_offers_no_artifact_source_under_stony_silence() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let dp = spell_in_hand(&mut state, &registry, "Devil's Play", P0);
+    named_permanent(&mut state, &registry, "Mountain", P0);
+    named_permanent(&mut state, &registry, "Mountain", P0);
+    named_permanent(&mut state, &registry, "Sol Ring", P0);
+    named_permanent(&mut state, &registry, "Stony Silence", P0);
+
+    let post_cast = cast_devils_play(&state, &registry, dp);
+    let options = extract_funding(&post_cast).clone();
+    assert!(options.groups.iter().all(|g| !g.name.contains("Sol Ring")),
+        "Sol Ring can't be activated: {:?}", options.groups);
+    assert_eq!(options.max_announceable_x(), 1, "one Mountain goes to the {{R}} pip");
+}
+
 /// The description a funding prompt was raised with.
 fn funding_description(state: &GameState) -> String {
     match state.awaiting_action.as_ref() {
