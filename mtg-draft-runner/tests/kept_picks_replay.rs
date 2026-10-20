@@ -40,7 +40,7 @@ fn every_kept_pick_replays_as_the_pick_it_was_live() {
     assert!(draft.status.success(), "{}", String::from_utf8_lossy(&draft.stderr));
     let kept: Vec<serde_json::Value> = std::fs::read_to_string(&positions).expect("positions were kept")
         .lines().map(|l| serde_json::from_str(l).unwrap()).collect();
-    assert_eq!(kept.len(), 84, "two seats, three packs of fourteen");
+    assert_eq!(kept.len(), 78, "two seats, three packs of fourteen, each but its last card asked");
     assert!(kept.iter().all(|p| p["available"].as_array().is_some_and(|a| !a.is_empty())
         && p["notes"].is_null() == (p["pack_number"] == 1 && p["pick_index"] == 1)),
         "each position carries its pack and the notes the seat brought to it");

@@ -1209,6 +1209,13 @@ resume with the --best-of its run was played at)", args.best_of) };
                                 );
                                 in_seat(&context, move || {
                                     mtg_player::game_log::buffer_ranked(seat as u64);
+                                    // A pack's last card is no choice: it is
+                                    // taken without a call, which was three
+                                    // of a seat's 42 (`draft_pick` logs it).
+                                    if let [only] = available.as_slice() {
+                                        return (seat, Pick::Chosen(only.clone()), String::new(), String::new(),
+                                            mtg_player::game_log::take_buffered());
+                                    }
                                     // The seat's notes from its last pick
                                     // open the prompt: the conversation
                                     // does not carry the earlier picks.
@@ -1269,7 +1276,10 @@ substituting {} (the first card). Response: {}",
                 }
                 let chosen = pick.into_card();
 
-                if let Ok(path) = env::var(POSITIONS_ENV) {
+                // A pack's last card was taken without asking, and is no
+                // position: every seat would agree on it.
+                let asked = available.len() > 1;
+                if let (Ok(path), true) = (env::var(POSITIONS_ENV), asked) {
                     append_position(&path, &serde_json::json!({
                         "set": args.set, "seed": args.seed, "seat": seat,
                         "pod_size": args.players, "pack_size": pack_size,

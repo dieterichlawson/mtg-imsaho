@@ -468,12 +468,15 @@ fn a_draft_resumes_from_its_snapshot_without_re_asking() {
     assert_eq!(resumed["picks"], full["picks"],
         "the resumed draft is the same draft, pick for pick");
 
-    // The replayed picks cost nothing: the same draft, made with 40 fewer
-    // model calls than making it from scratch. (The counter also sees deck
-    // building and the tournament games, which both runs pay for alike.)
+    // The replayed picks cost nothing: the same draft, made with a call
+    // fewer than making it from scratch for every replayed pick that was
+    // asked — a pack's last card (pick 14) never is. (The counter also sees
+    // deck building and the tournament games, which both runs pay for alike.)
+    let asked = picks[..40].iter().filter(|p| p["pick"] != 14).count();
+    assert!(asked < 40, "the first 40 picks reach a pack's last card");
     let calls_after_resume = std::fs::read_to_string(&calls).unwrap_or_default().lines().count();
-    assert_eq!(calls_for_whole_draft - calls_after_resume, 40,
-        "40 replayed picks are 40 calls not made: {calls_for_whole_draft} from scratch, \
+    assert_eq!(calls_for_whole_draft - calls_after_resume, asked,
+        "{asked} replayed asked picks are {asked} calls not made: {calls_for_whole_draft} from scratch, \
          {calls_after_resume} resumed");
 
     let _ = std::fs::remove_file(&stub);

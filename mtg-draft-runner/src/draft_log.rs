@@ -167,6 +167,16 @@ impl DraftLogger {
         line: u32,
     ) {
         let chosen_name = mtg_draft::front_face(chosen);
+        // A pack's last card is taken without asking: no prompt, no answer.
+        if prompt.is_empty() {
+            mtg_player::game_log::write(
+                file, line,
+                &format!("[Seat {seat}] PICK Pack {pack} Pick {pick_index} | Chose: {chosen_name} \
+(the pack's last card, taken without asking)"),
+                "",
+            );
+            return;
+        }
         // Order: prompt → response → pick summary. The seat tag lives in
         // each entry's label field; body lines are raw content with no
         // per-line prefix.

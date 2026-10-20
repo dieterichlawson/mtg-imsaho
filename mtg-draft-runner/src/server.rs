@@ -433,6 +433,15 @@ fn ai_worker(shared: &Arc<Shared>, seat: usize, model: &str) {
             }
         };
         match work {
+            Work::Pick(job) if job.cards.len() == 1 => {
+                // A pack's last card is no choice: taken without a call,
+                // as in the runner.
+                if let Err(e) = shared.lobby().ai_pick(seat, job.pack_id, 0, "", "", false) {
+                    let who = shared.lobby().who(seat);
+                    shared.say(&format!("WARN {who}: a pick could not be applied: {e}"));
+                }
+                shared.notify();
+            }
             Work::Pick(job) => {
                 // The seat's notes from its last pick open the prompt, as
                 // in the runner: the conversation does not carry the

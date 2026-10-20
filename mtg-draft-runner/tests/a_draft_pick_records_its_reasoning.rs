@@ -135,8 +135,9 @@ fn the_draft_seat_is_asked_for_its_reasoning_and_the_log_keeps_it() {
     let draft: Vec<&serde_json::Value> = calls.iter().filter(|c| is_draft(c)).collect();
     let game: Vec<&serde_json::Value> = calls.iter().filter(|c| !is_draft(c)).collect();
     assert!(
-        draft.len() >= 2 * (42 + 1),
-        "two seats' 42 picks and a deck build each: saw {} draft calls of {} total",
+        draft.len() >= 2 * (39 + 1),
+        "two seats' 39 asked picks (a pack's last card is taken without asking) and a deck \
+         build each: saw {} draft calls of {} total",
         draft.len(),
         calls.len()
     );
@@ -203,7 +204,7 @@ fn the_draft_seat_is_asked_for_its_reasoning_and_the_log_keeps_it() {
         out
     };
     let picks = records("] RESPONSE Pack ");
-    assert_eq!(picks.len(), 84, "two seats, 42 picks each");
+    assert_eq!(picks.len(), 78, "two seats, 39 asked picks each");
     let silent = picks.iter().filter(|b| !b.contains("REASONING-")).count();
     assert_eq!(
         silent, 0,
