@@ -91,7 +91,10 @@ impl CardBehavior for ScreechingBat {
         // has enough untapped mana sources — the tap plan is executed in
         // `on_yes_no_choice` below.
         let cost = Self::transform_cost();
-        let Some(tap_plan) = crate::engine::plan_autotap_for_cost(state, controller, &cost, registry) else {
+        // The plan named here is the one `pay_cost_with_sources` runs on a
+        // Yes (issue #866: a second planner here counted Sol Ring under
+        // Stony Silence).
+        let Some(tap_plan) = crate::engine::payment_plan_with_sources(state, controller, &cost, registry) else {
             return;
         };
 
@@ -131,11 +134,7 @@ impl CardBehavior for ScreechingBat {
         // `on_upkeep` set up the prompt (no intervening triggers / priority),
         // so the plan is the same — recomputing is simpler than stashing.
         let cost = Self::transform_cost();
-        let Some(tap_plan) = crate::engine::plan_autotap_for_cost(state, controller, &cost, registry) else {
-            state.log(LogLevel::Event, "Could not pay {2}{B}{B} to transform".into());
-            return;
-        };
-        if !crate::engine::execute_tap_plan_and_pay(state, controller, &cost, &tap_plan, registry) {
+        if !crate::engine::pay_cost_with_sources(state, controller, &cost, registry) {
             state.log(LogLevel::Event, "Could not pay {2}{B}{B} to transform".into());
             return;
         }

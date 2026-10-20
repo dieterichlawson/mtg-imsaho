@@ -310,6 +310,68 @@ fn screeching_bat_no_choice_without_mana() {
     assert!(state.awaiting_action.is_none(), "No choice should be presented without mana");
 }
 
+/// Under Stony Silence Sol Ring's mana ability can't be activated (CR 602.5),
+/// so the Bat's may-pay sees only the lands. Its planner used to count Sol
+/// Ring: with Plains + 2 Swamps it offered "(tap 2x Swamp, Sol Ring)", and a
+/// Yes tapped both Swamps and logged "Could not pay" (issue #866).
+#[test]
+fn screeching_bat_does_not_offer_sol_ring_mana_under_stony_silence() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+    let bat = named_permanent(&mut state, &reg, "Screeching Bat", P0);
+    named_permanent(&mut state, &reg, "Plains", P0);
+    let swamps = [
+        named_permanent(&mut state, &reg, "Swamp", P0),
+        named_permanent(&mut state, &reg, "Swamp", P0),
+    ];
+    named_permanent(&mut state, &reg, "Sol Ring", P0);
+    named_permanent(&mut state, &reg, "Stony Silence", P0);
+
+    let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
+    behavior.on_upkeep(&mut state, bat, &[], &reg);
+
+    assert!(state.awaiting_action.is_none(),
+        "three lands can't pay {{2}}{{B}}{{B}} and Sol Ring can't be activated: {:?}",
+        state.awaiting_action);
+    assert!(swamps.iter().all(|&s| !state.get_object(s).unwrap().tapped));
+}
+
+/// The same board with a third Swamp: the lands alone pay, and a Yes pays
+/// with them. The planner used to pick Sol Ring for the generic and fail
+/// after tapping two Swamps (issue #866).
+#[test]
+fn screeching_bat_pays_with_lands_alone_under_stony_silence() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+    let bat = named_permanent(&mut state, &reg, "Screeching Bat", P0);
+    let mut lands = vec![named_permanent(&mut state, &reg, "Plains", P0)];
+    for _ in 0..3 {
+        lands.push(named_permanent(&mut state, &reg, "Swamp", P0));
+    }
+    let sol_ring = named_permanent(&mut state, &reg, "Sol Ring", P0);
+    named_permanent(&mut state, &reg, "Stony Silence", P0);
+
+    let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
+    behavior.on_upkeep(&mut state, bat, &[], &reg);
+    match &state.awaiting_action {
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            choice: mtg_engine::state::ResolutionChoiceKind::YesNo { description, .. }, ..
+        }) => assert!(!description.contains("Sol Ring"),
+            "the prompt names a source that can't be activated: {description}"),
+        other => panic!("expected the may-pay question, got {other:?}"),
+    }
+
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
+        &reg,
+    );
+
+    assert!(state.get_object(bat).unwrap().is_transformed, "the lands paid {{2}}{{B}}{{B}}");
+    assert!(lands.iter().all(|&l| state.get_object(l).unwrap().tapped));
+    assert!(!state.get_object(sol_ring).unwrap().tapped);
+}
+
 #[test]
 fn stalking_vampire_transforms_back_when_player_pays() {
     let reg = registry();

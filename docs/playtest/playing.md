@@ -1300,8 +1300,9 @@ illegal or dubious resolutions do.
   menu's. The menu's casts, flashbacks and abilities go through
   `legal_actions` with `mana_demands` (hand, graveyard casts, on-board
   abilities, since #837/#838); other payments plan around the same set
-  themselves (`payment_plan_with_sources`, `plan_autotap_for_cost` since
-  #840, X funding's group order via `order_around_demands`). `grep -rn
+  themselves (`payment_plan_with_sources` since #840 — Screeching Bat's
+  own `plan_autotap_for_cost` was deleted for #866 — X funding's group
+  order via `order_around_demands`). `grep -rn
   'compute_autotap\|order_around_demands' mtg-engine/src` and, for each
   caller, stage a board where
   two lands tie on Phase 3's key and only one of them is the sole source of a

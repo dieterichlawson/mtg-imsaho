@@ -1055,11 +1055,10 @@ fn no_equipment_attaches_itself_by_hand() {
         offenders.len(), offenders.join("\n  "));
 }
 
-/// Paying a mana cost is the engine's: `pay_cost_with_sources` (or
-/// `plan_autotap_for_cost` and `execute_tap_plan_and_pay`, which are the same
-/// thing in two steps). Both tap lands for the mana, which CR 601.2g requires
-/// and a player expects — "you may pay {1}" with an empty pool and four
-/// untapped Plains has to be payable.
+/// Paying a mana cost is the engine's: `pay_cost_with_sources`, with
+/// `payment_plan_with_sources` for the plan a prompt names. It taps lands
+/// for the mana, which CR 601.2g requires and a player expects — "you may
+/// pay {1}" with an empty pool and four untapped Plains has to be payable.
 ///
 /// Mentor of the Meek walked the mana pool by hand instead — colorless first,
 /// then WUBRG — spending a floating unit if it found one and quietly doing
