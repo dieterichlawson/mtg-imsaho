@@ -1,0 +1,458 @@
+diff --git a/mtg-draft-runner/src/bin/mtg-draft-replay.rs b/mtg-draft-runner/src/bin/mtg-draft-replay.rs
+index 9a04875..3539ffb 100644
+--- a/mtg-draft-runner/src/bin/mtg-draft-replay.rs
++++ b/mtg-draft-runner/src/bin/mtg-draft-replay.rs
+@@ -31,11 +31,10 @@ fn die(msg: &str) -> ! {
+     std::process::exit(2);
+ }
+ 
+-/// A set as the draft runner loads it: the cards it can deal, their
+-/// reference and the lines a seat is shown.
++/// A set as the draft runner loads it: its name and the lines a seat is
++/// shown.
+ struct LoadedSet {
+     name: String,
+-    reference: String,
+     lines: CardLines,
+ }
+ 
+@@ -45,7 +44,6 @@ fn load_set(key: &str, registry: &CardRegistry) -> LoadedSet {
+     set.filter_implemented(registry);
+     LoadedSet {
+         name: set.set_name.clone(),
+-        reference: llm_client::build_card_reference(&set.all_card_names(), registry),
+         lines: CardLines::new(&set.all_card_names(), &set.rarities(), registry),
+     }
+ }
+@@ -83,7 +81,7 @@ fn main() {
+             continue;
+         }
+ 
+-        let mut client = DraftLlmClient::new(&model, &set.name, guide.as_deref(), &set.reference, table);
++        let mut client = DraftLlmClient::new(&model, &set.name, guide.as_deref(), table);
+         client.restore_notes(p["notes"].as_str().map(str::to_string));
+         let prompt = DraftLlmClient::notes_section(client.notes())
+             + &DraftLlmClient::build_pick_prompt(table, count("pack_number"), count("pick_index"),
+diff --git a/mtg-draft-runner/src/bin/mtg-draft-server.rs b/mtg-draft-runner/src/bin/mtg-draft-server.rs
+index c9a2cac..90d2e8a 100644
+--- a/mtg-draft-runner/src/bin/mtg-draft-server.rs
++++ b/mtg-draft-runner/src/bin/mtg-draft-server.rs
+@@ -230,7 +230,6 @@ root or set {} to the mtg-gui directory", web_dir.display(), mtg_player::gui::WE
+     let packs = generate_draft_packs(&sheets, args.seats.len(), &mut rng);
+ 
+     let card_lines = CardLines::new(&set_data.all_card_names(), &set_data.rarities(), &registry);
+-    let card_reference = llm_client::build_card_reference(&set_data.all_card_names(), &registry);
+ 
+     let config = LobbyConfig {
+         set_code: args.set.clone(),
+@@ -269,7 +268,6 @@ root or set {} to the mtg-gui directory", web_dir.display(), mtg_player::gui::WE
+         },
+         registry,
+         card_lines,
+-        card_reference,
+         set_data.set_name.clone(),
+     );
+ 
+diff --git a/mtg-draft-runner/src/card_lines.rs b/mtg-draft-runner/src/card_lines.rs
+index 33ded97..7af5c81 100644
+--- a/mtg-draft-runner/src/card_lines.rs
++++ b/mtg-draft-runner/src/card_lines.rs
+@@ -8,6 +8,12 @@
+ //! lines that carry it, on the pack listing, in the pool and in the
+ //! deck-building prompt, all rendered through `mtg_player::llm::card_headline`
+ //! so a card reads the same wherever this workspace shows it.
++//!
++//! The reference itself is gone: it was 95% of every pick's tokens, sent
++//! 42 times a seat to answer for the fourteen cards in front of it. A pack
++//! card carries its own rules text under its line, and the deck build its
++//! pool's; the pool at a pick is its lines, which the seat read in full
++//! when it took them.
+ 
+ use std::collections::HashMap;
+ use std::fmt::Write;
+@@ -24,6 +30,10 @@ struct CardLine {
+     colors: Vec<Color>,
+     mana_value: u32,
+     is_land: bool,
++    /// The rules text under the headline — both faces', the back's under its
++    /// own headline — indented to sit under a listed line. Empty for a card
++    /// with none.
++    text: String,
+ }
+ 
+ /// Every card in the set, as a drafting seat sees it.
+@@ -63,7 +73,12 @@ impl CardLines {
+                 write!(headline, " // {back_name}{size}").unwrap();
+             }
+ 
++            // The reference entry less its first line, which is the headline
++            // this line already carries.
++            let entry = mtg_player::llm::card_reference_entry(name, registry);
++            let text: String = entry.lines().skip(1).map(|l| format!("   {l}\n")).collect();
+             let line = CardLine {
++                text,
+                 headline,
+                 rarity: rarities.get(name).copied(),
+                 colors: cost_colors(front),
+@@ -91,6 +106,15 @@ impl CardLines {
+         }
+     }
+ 
++    /// What a card does, to print under its line: the rules text a seat
++    /// reads the card by, where the card is in front of it — a pack, the
++    /// pool it builds from. Empty for a card with none, or one the set data
++    /// does not describe.
++    #[must_use]
++    pub fn text(&self, name: &str) -> &str {
++        self.lines.get(name).map_or("", |line| line.text.as_str())
++    }
++
+     /// A card's line in the seat's own pool, where its rarity no longer
+     /// matters but its colour and cost still do.
+     #[must_use]
+@@ -205,6 +229,7 @@ fn clone_line(line: &CardLine) -> CardLine {
+         colors: line.colors.clone(),
+         mana_value: line.mana_value,
+         is_land: line.is_land,
++        text: line.text.clone(),
+     }
+ }
+ 
+diff --git a/mtg-draft-runner/src/deck.rs b/mtg-draft-runner/src/deck.rs
+index 456749f..10d87a7 100644
+--- a/mtg-draft-runner/src/deck.rs
++++ b/mtg-draft-runner/src/deck.rs
+@@ -104,8 +104,11 @@ pub fn build_deck_prompt(pool: &[String], cards: &CardLines) -> String {
+     );
+     // Numbered, because the answer is one count per row: a schema keyed by
+     // these names was one nobody had sent before, every seat (issue #867).
++    // Each with its rules text: the system prompt carries no card
++    // reference, and the build is the one decision that reads the whole pool.
+     for (i, (name, copies)) in deckbuilding::deck_rows(pool).iter().enumerate() {
+         let _ = writeln!(prompt, "{i}: {copies}x {}", cards.pool_line(name));
++        prompt.push_str(cards.text(name));
+     }
+     let basics: Vec<&str> = pool.iter().map(|c| mtg_draft::front_face(c))
+         .filter(|n| deckbuilding::BASIC_LANDS.contains(n)).collect();
+@@ -171,6 +174,9 @@ mod deck_prompt_tests {
+         // answer's counts (#867); a drafted basic is no row.
+         assert!(prompt.contains("0: 1x Chapel Geist"), "{prompt}");
+         assert!(prompt.contains("1: 2x Moon Heron {3}{U} | Creature — Spirit Bird 3/2"), "{prompt}");
++        // And what each does: no card reference sits in the system prompt.
++        let heron = prompt.find("1: 2x Moon Heron").expect("the heron's row");
++        assert!(prompt[heron..].contains("   Flying"), "{prompt}");
+         assert!(prompt.contains("not rows (they go in `lands`): Plains"), "{prompt}");
+         assert!(prompt.contains("Colors"), "{prompt}");
+         assert!(prompt.contains("Curve"), "{prompt}");
+diff --git a/mtg-draft-runner/src/draft_log.rs b/mtg-draft-runner/src/draft_log.rs
+index 27888a0..bb3a7b1 100644
+--- a/mtg-draft-runner/src/draft_log.rs
++++ b/mtg-draft-runner/src/draft_log.rs
+@@ -124,9 +124,8 @@ impl DraftLogger {
+     /// (issue #207).
+     ///
+     /// Seats whose prompt is byte-identical to an earlier seat's are recorded
+-    /// as a reference to it rather than repeated — the shared draft rules and
+-    /// card reference dominate the text, and the common case is every seat
+-    /// alike — but any seat that differs is logged in full.
++    /// as a reference to it rather than repeated — the common case is every
++    /// seat alike — but any seat that differs is logged in full.
+     pub fn system_prompt(seat: usize, prompt: &str, same_as: Option<usize>, file: &str, line: u32) {
+         match same_as {
+             Some(other) => mtg_player::game_log::write(
+diff --git a/mtg-draft-runner/src/llm_client.rs b/mtg-draft-runner/src/llm_client.rs
+index 9dd07fd..88da12b 100644
+--- a/mtg-draft-runner/src/llm_client.rs
++++ b/mtg-draft-runner/src/llm_client.rs
+@@ -317,8 +317,8 @@ trait DraftBackend: Send {
+ /// The two Anthropic backends send it without the enum
+ /// ([`mtg_player::llm::cache_stable_schema`]): the schema is part of the
+ /// cached prefix, the pack shrinks by a card every pick, and a new schema
+-/// every pick wrote the whole system prompt — the set's card reference —
+-/// again on every one of a seat's 42 picks. [`DraftLlmClient::send_pick_message`]
++/// every pick wrote the whole system prompt — then the set's card
++/// reference — again on every one of a seat's 42 picks. [`DraftLlmClient::send_pick_message`]
+ /// holds the answer to the enum instead.
+ fn pick_schema_for(num_cards: usize) -> serde_json::Value {
+     let valid_indices: Vec<serde_json::Value> = (0..num_cards)
+@@ -512,7 +512,6 @@ afterwards is the whole exercise\n\
+ fn build_draft_rules(
+     set_name: &str,
+     guide: Option<&str>,
+-    card_reference: &str,
+     table: Table,
+ ) -> String {
+     let guide_section = guide
+@@ -524,30 +523,14 @@ fn build_draft_rules(
+ ## How to pick
+ - Build toward 2 colors (sometimes splashing a 3rd)
+ - Value bombs (powerful rares), removal, evasion (flying), then curve fillers
+-- Every card is listed as `name cost | type line size`, and a card in a pack ends with its rarity in brackets — `[common]`, `[uncommon]`, `[rare]`, `[mythic]`
++- Every card is listed as `name cost | type line size`; a card in a pack ends with its rarity in brackets — `[common]`, `[uncommon]`, `[rare]`, `[mythic]` — and has its rules text indented under it
+ - Cards with "//" are double-faced cards; both faces are on the line, and you evaluate the front face for casting
+-- Your pool is restated at every pick, with its colour counts and its curve, and so is the tail of your own reasoning from the pick before ("Your notes from your last pick"). Earlier picks are not kept in the conversation; the pool and the notes are what carries over
+-
+-## Card reference
+-
+-{card_reference}"#,
++- Your pool is restated at every pick by its lines, with its colour counts and its curve, and so is the tail of your own reasoning from the pick before ("Your notes from your last pick"). Earlier picks are not kept in the conversation; the pool and the notes are what carries over
++"#,
+         table_section = table.description(),
+     )
+ }
+ 
+-/// A card reference for the whole set: every card's name, cost, type line,
+-/// size and rules text, both faces of a double-faced card included.
+-///
+-/// This is `mtg_player`'s reference, not a second one — the draft used to
+-/// keep its own copy, which had already drifted (it dropped supertypes, so
+-/// a legendary creature's type line read "Creature").
+-pub fn build_card_reference(
+-    card_names: &[String],
+-    registry: &mtg_engine::cards::CardRegistry,
+-) -> String {
+-    mtg_player::llm::build_card_reference(card_names, registry)
+-}
+-
+ /// Anthropic draft backend.
+ struct AnthropicDraftBackend {
+     client: Client,
+@@ -566,11 +549,11 @@ struct AnthropicDraftBackend {
+ }
+ 
+ impl AnthropicDraftBackend {
+-    fn new(model: &str, set_name: &str, guide: Option<&str>, card_reference: &str, table: Table) -> Self {
++    fn new(model: &str, set_name: &str, guide: Option<&str>, table: Table) -> Self {
+         let api_key = env::var("ANTHROPIC_API_KEY").expect("ANTHROPIC_API_KEY must be set");
+         let system_prompt = format!(
+             "{}{THOUGHTS_IN_JSON_RESPONSE_FORMAT}",
+-            build_draft_rules(set_name, guide, card_reference, table)
++            build_draft_rules(set_name, guide, table)
+         );
+         Self {
+             client: Client::new(),
+@@ -797,8 +780,8 @@ struct ClaudeCodeDraftBackend {
+ }
+ 
+ impl ClaudeCodeDraftBackend {
+-    fn new(model: Option<&str>, set_name: &str, guide: Option<&str>, card_reference: &str, table: Table) -> Self {
+-        Self::with_binary(&mtg_player::llm::claude_code_binary(), model, set_name, guide, card_reference, table)
++    fn new(model: Option<&str>, set_name: &str, guide: Option<&str>, table: Table) -> Self {
++        Self::with_binary(&mtg_player::llm::claude_code_binary(), model, set_name, guide, table)
+     }
+ 
+     fn with_binary(
+@@ -806,7 +789,6 @@ impl ClaudeCodeDraftBackend {
+         model: Option<&str>,
+         set_name: &str,
+         guide: Option<&str>,
+-        card_reference: &str,
+         table: Table,
+     ) -> Self {
+         let workdir = mtg_player::llm::claude_code_prepare_seat(CLAUDE_CODE_WORKDIR_PREFIX);
+@@ -820,7 +802,7 @@ impl ClaudeCodeDraftBackend {
+             label,
+             system_prompt: format!(
+                 "{}{THOUGHTS_IN_JSON_RESPONSE_FORMAT}",
+-                build_draft_rules(set_name, guide, card_reference, table)
++                build_draft_rules(set_name, guide, table)
+             ),
+             session_id: None,
+             window: mtg_player::llm::history_exchanges(),
+@@ -1101,11 +1083,11 @@ struct GeminiDraftBackend {
+ }
+ 
+ impl GeminiDraftBackend {
+-    fn new(model: &str, set_name: &str, guide: Option<&str>, draft_thinking: Option<String>, card_reference: &str, table: Table) -> Self {
++    fn new(model: &str, set_name: &str, guide: Option<&str>, draft_thinking: Option<String>, table: Table) -> Self {
+         let api_key = env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY must be set");
+         let system_prompt = format!(
+             "{}{THOUGHTS_IN_JSON_RESPONSE_FORMAT}",
+-            build_draft_rules(set_name, guide, card_reference, table)
++            build_draft_rules(set_name, guide, table)
+         );
+         Self {
+             client: Client::new(),
+@@ -1293,7 +1275,6 @@ impl DraftLlmClient {
+         model_spec: &str,
+         set_name: &str,
+         guide: Option<&str>,
+-        card_reference: &str,
+         table: Table,
+     ) -> Self {
+         let parts: Vec<&str> = model_spec.split(':').collect();
+@@ -1306,7 +1287,7 @@ impl DraftLlmClient {
+             "gemini" => {
+                 let model = model_override.unwrap_or("gemini-2.5-flash");
+                 let draft_thinking = draft_thinking_override.unwrap_or_else(|| "high".to_string());
+-                Box::new(GeminiDraftBackend::new(model, set_name, guide, Some(draft_thinking), card_reference, table))
++                Box::new(GeminiDraftBackend::new(model, set_name, guide, Some(draft_thinking), table))
+             }
+             // The whole point of this seat is that the draft does not bill an
+             // API. Falling through to Anthropic here ran the picks and the
+@@ -1314,11 +1295,11 @@ impl DraftLlmClient {
+             // subscription, and passed a CLI alias like "opus" to the
+             // Messages API as if it were a model id.
+             "claude-code" | "cc" => Box::new(ClaudeCodeDraftBackend::new(
+-                model_override, set_name, guide, card_reference, table,
++                model_override, set_name, guide, table,
+             )),
+             "claude" => {
+                 let model = model_override.unwrap_or(mtg_player::llm::DEFAULT_ANTHROPIC_MODEL);
+-                Box::new(AnthropicDraftBackend::new(model, set_name, guide, card_reference, table))
++                Box::new(AnthropicDraftBackend::new(model, set_name, guide, table))
+             }
+             // An unrecognized provider used to default to Anthropic, which
+             // spent real money drafting with a model nobody asked for. Refuse
+@@ -1411,8 +1392,12 @@ back to you on your next pick"
+ {handoff}.\n\nAvailable ({} cards):\n",
+             table.pack_size, table.seat, table.pod_size, available.len(),
+         );
++        // Each card with what it does under it: the pick is made on the
++        // text in front of the seat, not on a reference to the whole set
++        // re-sent with every pick.
+         for (i, card) in available.iter().enumerate() {
+             writeln!(prompt, "{i}: {}", cards.pack_line(card)).unwrap();
++            prompt.push_str(cards.text(card));
+         }
+         if pool.is_empty() {
+             prompt.push_str("\nYour pool is empty — this is your first pick.\n");
+@@ -1572,6 +1557,28 @@ mod draft_prompt_tests {
+         assert!(prompt.contains("1: Snapcaster Mage {1}{U} | Creature — Human Wizard 2/1 [rare]"), "{prompt}");
+     }
+ 
++    /// The set's card reference was 95% of every pick's tokens, sent 42
++    /// times a seat for the fourteen cards in front of it: a pack card
++    /// carries its own rules text instead, under its line, and the system
++    /// prompt carries no card at all.
++    #[test]
++    fn a_pack_card_carries_its_rules_text_and_the_system_prompt_no_card() {
++        let cards = cards();
++        let available = vec!["Moon Heron".to_string(), "Snapcaster Mage".to_string()];
++        let prompt = DraftLlmClient::build_pick_prompt(
++            table(0, 8), 1, 1, &available, &[], &cards,
++        );
++        let heron = prompt.find("0: Moon Heron").expect("the heron's line");
++        let mage = prompt.find("1: Snapcaster Mage").expect("the mage's line");
++        assert!(prompt[heron..mage].contains("   Flying"), "the heron's text under its line: {prompt}");
++        assert!(prompt[mage..].contains("Flash"), "the mage's text under its line: {prompt}");
++
++        let rules = build_draft_rules("Innistrad", None, table(0, 8));
++        assert!(!rules.contains("Snapcaster") && !rules.contains("Flying"),
++            "no card in the system prompt: {rules}");
++        assert!(rules.len() < 4096, "the rules alone, {} bytes", rules.len());
++    }
++
+     /// #485: a seat was never told the pod size or which seat it was, and
+     /// the rules described an 8-pod at every pod size.
+     #[test]
+@@ -1624,7 +1631,7 @@ mod draft_prompt_tests {
+         let solo_p2 = DraftLlmClient::build_pick_prompt(table(0, 1), 2, 1, &available, &[], &cards);
+         assert!(!solo_p2.contains("to seat 0"), "{solo_p2}");
+ 
+-        let rules = build_draft_rules("Innistrad", None, "", table(0, 1));
++        let rules = build_draft_rules("Innistrad", None, table(0, 1));
+         let flat = rules.replace(" \n", " ").replace('\n', " ");
+         assert!(flat.contains("You are the only drafter"), "{rules}");
+         for claim in [
+@@ -1642,7 +1649,7 @@ mod draft_prompt_tests {
+         }
+         // And the pods that do have neighbours keep being told so.
+         for pod in [2usize, 3, 8] {
+-            let other = build_draft_rules("Innistrad", None, "", table(0, pod));
++            let other = build_draft_rules("Innistrad", None, table(0, pod));
+             assert!(other.contains(&format!("seat 0 of a {pod}-seat pod")), "{other}");
+             assert!(!other.contains("You are the only drafter"), "{other}");
+         }
+@@ -1652,8 +1659,8 @@ mod draft_prompt_tests {
+     /// used to produce byte-identical text.
+     #[test]
+     fn the_rules_differ_by_pod_size() {
+-        let two = build_draft_rules("Innistrad", None, "", table(0, 2));
+-        let eight = build_draft_rules("Innistrad", None, "", table(0, 8));
++        let two = build_draft_rules("Innistrad", None, table(0, 2));
++        let eight = build_draft_rules("Innistrad", None, table(0, 8));
+         assert_ne!(two, eight);
+ 
+         assert!(two.contains("seat 0 of a 2-seat pod"), "{two}");
+@@ -1786,7 +1793,6 @@ printf '{"type":"result","subtype":"success","is_error":false,"session_id":"%s",
+             model,
+             "Innistrad",
+             None,
+-            "Doomed Traveler {W} | Creature — Human Soldier 1/1",
+             super::Table { seat: 0, pod_size: 2, pack_size: 14 },
+         )
+     }
+diff --git a/mtg-draft-runner/src/main.rs b/mtg-draft-runner/src/main.rs
+index 009316e..0bd2a5d 100644
+--- a/mtg-draft-runner/src/main.rs
++++ b/mtg-draft-runner/src/main.rs
+@@ -1027,9 +1027,6 @@ resume with the --best-of its run was played at)", args.best_of) };
+         mtg_player::stderr_line!("Starting draft...");
+     }
+ 
+-    // Build card reference with oracle text for all cards in the set
+-    let card_reference = llm_client::build_card_reference(&set_data.all_card_names(), &registry);
+-
+     // Create LLM clients for each drafter (each may use a different model)
+     // What a seat has to know about the table it is at, which used to be an
+     // 8-pod description whatever the pod was (issue #485).
+@@ -1046,7 +1043,6 @@ resume with the --best-of its run was played at)", args.best_of) };
+                 &args.models[seat],
+                 &set_data.set_name,
+                 args.guides[seat].as_deref(),
+-                &card_reference,
+                 table_for(seat),
+             )
+         })
+diff --git a/mtg-draft-runner/src/server.rs b/mtg-draft-runner/src/server.rs
+index aa02363..6463755 100644
+--- a/mtg-draft-runner/src/server.rs
++++ b/mtg-draft-runner/src/server.rs
+@@ -54,7 +54,6 @@ pub struct Shared {
+     pub config: ServerConfig,
+     pub registry: Arc<CardRegistry>,
+     pub card_lines: CardLines,
+-    pub card_reference: String,
+     pub set_name: String,
+     /// The host asked to quit.
+     quit: AtomicBool,
+@@ -89,7 +88,7 @@ impl Shared {
+     #[must_use]
+     pub fn new(
+         lobby: Lobby, config: ServerConfig, registry: Arc<CardRegistry>, card_lines: CardLines,
+-        card_reference: String, set_name: String,
++        set_name: String,
+     ) -> Arc<Self> {
+         Arc::new(Self {
+             lobby: Mutex::new(lobby),
+@@ -99,7 +98,6 @@ impl Shared {
+             config,
+             registry,
+             card_lines,
+-            card_reference,
+             set_name,
+             quit: AtomicBool::new(false),
+             in_game: Mutex::new(Vec::new()),
+@@ -404,7 +402,7 @@ fn ai_worker(shared: &Arc<Shared>, seat: usize, model: &str) {
+     };
+     let table = Table { seat, pod_size, pack_size };
+     let client = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| DraftLlmClient::new(
+-        model, &shared.set_name, shared.config.guide.as_deref(), &shared.card_reference, table,
++        model, &shared.set_name, shared.config.guide.as_deref(), table,
+     )));
+     let mut client = match client {
+         Ok(c) => c,
+diff --git a/mtg-draft-runner/tests/cli_args.rs b/mtg-draft-runner/tests/cli_args.rs
+index 58a698c..678d88b 100644
+--- a/mtg-draft-runner/tests/cli_args.rs
++++ b/mtg-draft-runner/tests/cli_args.rs
+@@ -221,7 +221,7 @@ fn every_seat_s_draft_system_prompt_and_guide_reach_the_log() {
+     let guide1 = tmp.join(format!("mtg-draft-guide1-{pid}.txt"));
+     let log = tmp.join(format!("mtg-draft-guides-{pid}.log"));
+     let _ = std::fs::remove_file(&log);
+-    // Markers that cannot occur in the shared draft rules or card reference.
++    // Markers that cannot occur in the shared draft rules or a card's text.
+     std::fs::File::create(&guide0).unwrap()
+         .write_all(b"SEAT ZERO GUIDE MARKER: always take the vampire.\n").unwrap();
+     std::fs::File::create(&guide1).unwrap()

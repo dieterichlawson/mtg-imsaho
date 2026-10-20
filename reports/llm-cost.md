@@ -27,6 +27,17 @@ phase-3 Sonnet chose as phase 2's did (79.8% against 80.8%) and the Haiku
 chose better (87.5%). Most of the tokens left are the cached system
 prompt, the cheapest a call sends; the bill moved more than the count.
 
+**Phase 4 (2026-10-20, drafting)**: a draft pick, per seat and draft,
+against a Sonnet 4.6 seat that asked every pick —
+
+| | picks asked / seat | tokens / pick | $ / seat-draft | picks agreeing with the reference |
+| --- | ---: | ---: | ---: | ---: |
+| `claude-sonnet-4-6`, every pick asked | 42 | 15,473 | 0.66 | 58.3% |
+| `claude-haiku-5-5`, the default, last card taken | 39 | 20,027 | 0.028 (23x less) | 77.0% |
+
+The bill fell with the model; the token count did not, and the section
+says why the obvious cut to it was measured and not taken.
+
 Phases 1 and 2. Phase 1 (below) made a decision stateless and the
 prompt around it smaller; phase 2 (the last section) lets the seat say
 "go" so that fewer decisions are model calls at all, caps the output, and
@@ -560,8 +571,145 @@ models the baseline at `low` as the API seat would have run it.
   Sonnet said "go", and made 2.11 calls a turn to the Sonnet's 1.35; with
   the rules saying the row is the usual way to pass, 1.66 to 1.56.
 - The draft runner's picks were not re-measured in real drafts; the
-  pick-schema change is pinned by its tests.
+  pick-schema change is pinned by its tests. Phase 4 measures them.
 - The Messages API figures are a model of measurements, not a bill.
+
+## Phase 4: drafting
+
+Measured 2026-10-20. Asked for the draft's share of the work: the bill
+for a seat's draft is 23x lower than a Sonnet 4.6 seat's, almost all of
+it the model, and the model that is now the default picks closer to the
+reference, not further. The token count per pick did not fall. Nine
+tenths of a pick's tokens are the set's card reference, a cached prefix
+billed at a tenth of the input price; a variant without it sent a
+sixth of the tokens, saved at most a quarter of the bill, and picked
+worse, so it was measured and not taken.
+
+### What was measured
+
+- **Two real drafts**, `mtg-draft-runner --model cc:claude-sonnet-4-6
+  --players 2 --best-of 1`, seeds 21 and 22, on master at f898e3f, with
+  `MTG_DRAFT_POSITIONS` keeping every pick: 168 picks, 156 of them with
+  more than one card to choose from.
+- **Pick quality**: each of the 156 asked again by `mtg-draft-replay`
+  (`scripts/decision-eval/draft-replay.py`, one fresh `claude -p` call a
+  pick, the prompt the seat was live byte for byte on that build) under
+  each configuration, and scored by `compare.py` against
+  `cc:claude-opus-5-5` at `MTG_LLM_THINKING=high`, two samples a pick.
+  The reference agreed with itself on 139 (the settled picks). The data
+  is in `reports/decision-eval/2026-10-20-draft/`.
+- **Tokens and dollars** are those replays' own `claude -p` usage, priced
+  at `cost.rs` rates with cache writes at the CLI's 1-hour rate, as in
+  phase 3. A seat's draft is its asked picks; the deck build (one call) is
+  left out of both columns.
+- **Free**: `scripts/measure-draft-prompts.sh`, new this phase, the
+  draft's counterpart of `measure-llm-prompts.sh` (stub `claude`, seeds
+  1-3, two seats).
+
+### Where a pick's tokens go
+
+The system prompt is 41.3 KB: the draft rules (1.5 KB, the seat's place
+at the table among them) and the set's card reference (39.8 KB, every
+card's cost, type line and rules text). It is the same bytes on every
+pick a seat makes, so after the seat's first call it is read from the
+cache: 13,765 tokens a pick on Sonnet 4.6, 17,766 on Haiku 5.5, whose
+tokenizer counts the same text as about 30% more. The pick prompt (the
+seat's notes, the pack's lines, the pool with its colours and curve) is
+1.9 KB on average and is billed in full, as is about 780 tokens the CLI
+adds to every call of its own (below).
+
+### Pick quality and cost, 156 real picks
+
+| configuration | agrees, settled | agrees, all | tokens / pick | cache read | output | $ / pick | $ / seat (39 picks) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| reference: `opus-5-5`, `high` | — | — | 20,166 | 18,482 | 257 | 0.0202 | 0.79 |
+| `sonnet-4-6` | 58.3% (81) | 55.1% | 15,473 | 13,765 | 140 | 0.0156 | 0.61 |
+| `sonnet-5-5` | 79.1% (110) | 75.6% | 19,977 | 17,759 | 126 | 0.0132 | 0.51 |
+| **`haiku-5-5`** (the default) | **77.0% (107)** | 72.4% | 20,027 | 17,766 | 303 | **0.00072** | **0.028** |
+| without the reference: `sonnet-4-6` | 52.5% (73) | 50.0% | 2,750 | 0 | 146 | 0.0178 | 0.69 |
+| without the reference: `haiku-5-5` | 66.2% (92) | 64.7% | 3,393 | 1,157 | 313 | 0.00055 | 0.022 |
+| without the reference: `opus-5-5`, `high` | 82.0% (114) | 80.1% | 3,342 | 1,163 | 246 | 0.0206 | 0.80 |
+
+Paired on the settled picks (exact McNemar): the Haiku took the
+reference's card on 39 picks the Sonnet 4.6 missed and missed 13 it took
+(p < 0.001); the Sonnet 5.5 against the Haiku, 17 and 14 (p = 0.72, no
+difference shown). `claude` with no model has run the Haiku in the draft
+as in the games since phase 3, on the games' evidence; this is the
+draft's. The reference is the Haiku's own generation, which may share
+its habits, as phase 3 cautioned — the Sonnet 5.5, also of it, agrees as
+often.
+
+### What changed
+
+1. **A pack's last card is taken without a call.** The fourteenth pick
+   of each pack had one card to offer and was asked anyway: 3 of a seat's
+   42 calls. The runner and the hosted table's AI seats now take it, and
+   the log says so (`... | Chose: X (the pack's last card, taken without
+   asking)`); `MTG_DRAFT_POSITIONS` keeps no position for it. A
+   two-seat draft makes 80 calls, not 86.
+2. **The pick eval.** `MTG_DRAFT_POSITIONS` keeps every pick of a real
+   draft; `mtg-draft-replay` asks them again under any seat and build;
+   `scripts/decision-eval/draft-replay.py` shards and scores them with the
+   game eval's `compare.py`. `mtg-draft-runner/tests/kept_picks_replay.rs`
+   holds a kept pick to replaying as the prompt it was live.
+3. **`scripts/measure-draft-prompts.sh`**, in CI beside the game's:
+   seeds 1-3, two seats, 84 picks and 3,735 KB a draft before (1), 78 and
+   3,475 KB after.
+
+### What was measured and not taken: the pack's text instead of the set's
+
+The reference is sent 39 times a seat to answer for at most fourteen
+cards, so the variant dropped it: each pack card carried its own rules
+text under its line, the deck build its pool's, and the pool at a pick
+stayed its lines (the seat read each card in full when it took it). The
+patch is `reports/decision-eval/2026-10-20-draft/variant-pack-text.patch`.
+
+- **Tokens** fell sixfold to sevenfold (table above; 3,734 KB to 388 KB a
+  stub draft).
+- **The bill did not follow.** What it removed was a cache read at a
+  tenth of the input price; what it added — the pack's text, and on the
+  Sonnet the rules, which alone fall under its prompt cache's minimum —
+  is billed in full. On the Haiku a pick cost 23% less; on the Sonnet 4.6, 14% more.
+- **The picks got worse.** The Haiku agreed with the reference on 92
+  settled picks instead of 107 (22 lost, 7 gained, p = 0.008); the Sonnet
+  4.6 on 73 instead of 81 (p = 0.19). The reference itself, asked the
+  variant's prompt, changed its card on 25 of its 139 settled picks: what
+  the set holds beyond the pack is something even the strongest seat
+  drafts with — the archetypes a card belongs to, what else could come
+  back in the next pack.
+
+A quarter of a $0.028 seat-draft was not worth a sixth of the Haiku's
+picks. Nothing the variant removed was hidden information, and nothing a
+seat needs went with the decision; it was the cheapest token sent.
+
+### The CLI's own share of a `claude -p` call
+
+Measured with the seat's own child environment (`SESSION_ENV_PREFIXES`
+removed) and a one-word prompt: a call writes about 780 tokens to the
+cache that are not the caller's — about 450 of the CLI's context
+(working directory, platform, the model's name, the date;
+`CLAUDE_CODE_DISABLE_ATTACHMENTS=1` removes 27 of them, and no other flag
+or setting source any) and about 330 that come with `--json-schema` —
+and the structured-output tool call adds about 90 output tokens. Written
+at the 1-hour rate, that is about 38% of a Sonnet 4.6 pick's price and a
+like share of a game decision's. It is plan quota, not a bill: the
+Messages API seat sends none of it. Answering in plain JSON, held to the
+schema by the harness as the API seat's answers already are
+(`schema_violation`), would save the schema's part; that is left for a
+change measured on both the game and the draft eval.
+
+### Caveats
+
+- Two drafts, two seats each, one set (ISD), on one seat's packs: 156
+  picks. The reference is a model, not a judge of picks; where it split
+  (17 picks) nothing is scored.
+- The cost figures are `claude -p` usage priced at API rates, not a
+  bill. On the Messages API there is no CLI overhead and no 1-hour write,
+  so every row is cheaper there and the ratios between rows close
+  somewhat; the order does not change.
+- The replays ran each pick as its own call, several at once; a live
+  seat's calls are a few seconds apart, so a live draft's cache behaves as
+  the replays' did after their first calls.
 
 ## How to re-measure
 
@@ -595,4 +743,14 @@ for s in 1 2; do ./target/release/mtg-runner --p1 cc:claude-haiku-5-5 --p2 rando
 scripts/decision-eval/replay.py --positions logs/eval/positions --out logs/eval/res \
   --name haiku --p1 cc:claude-haiku-5-5
 scripts/decision-eval/compare.py --out logs/eval/res --ref ref-opus-high haiku
+
+# Phase 4's drafts: real, on plan quota, keeping every pick for the eval.
+MTG_DRAFT_POSITIONS=$PWD/logs/draft-cost/positions-21.jsonl ./target/release/mtg-draft-runner \
+  --model cc:claude-haiku-5-5 --players 2 --best-of 1 --seed 21 -q --log logs/draft-cost/draft-21.log
+# Free, across seeds, with a stub CLI:
+scripts/measure-draft-prompts.sh 1 2 3
+# Phase 4's pick eval, against the kept reference (reports/decision-eval/2026-10-20-draft/README.md):
+scripts/decision-eval/draft-replay.py --positions logs/draft-eval/positions-asked.jsonl \
+  --out logs/draft-eval/res --name mine --model cc:claude-haiku-5-5
+scripts/decision-eval/compare.py --out logs/draft-eval/res --ref ref-opus-high base-haiku55 mine
 ```
