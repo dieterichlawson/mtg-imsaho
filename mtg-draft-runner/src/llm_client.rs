@@ -526,13 +526,24 @@ fn build_draft_rules(
 - Value bombs (powerful rares), removal, evasion (flying), then curve fillers
 - Every card is listed as `name cost | type line size`, and a card in a pack ends with its rarity in brackets — `[common]`, `[uncommon]`, `[rare]`, `[mythic]`
 - Cards with "//" are double-faced cards; both faces are on the line, and you evaluate the front face for casting
-- Your pool is restated at every pick, with its colour counts and its curve, and so is the tail of your own reasoning from the pick before ("Your notes from your last pick"). Earlier picks are not kept in the conversation; the pool and the notes are what carries over
+- Your pool is restated at every pick, with its colour counts and its curve, and so is the tail of your own reasoning from the pick before ("Your notes from your last pick"). {kept}
 
 ## Card reference
 
 {card_reference}"#,
         table_section = table.description(),
+        kept = history_note(mtg_player::llm::history_exchanges()),
     )
+}
+
+/// What the conversation keeps, as the draft rules say it: nothing by
+/// default, the last N exchanges under `MTG_LLM_HISTORY=N`, which the rules
+/// used to deny (#858).
+fn history_note(history: usize) -> String {
+    match history {
+        0 => "Earlier picks are not kept in the conversation; the pool and the notes are what carries over".to_string(),
+        n => format!("Up to {n} of your earlier exchanges are kept in the conversation and older ones are not; the pool and the notes are what carries over"),
+    }
 }
 
 /// A card reference for the whole set: every card's name, cost, type line,
@@ -1662,6 +1673,17 @@ mod draft_prompt_tests {
         assert!(eight.contains("7 \ncards the other seats took") || eight.contains("7 cards the other seats took"), "{eight}");
         // Both state the pack size and the total number of picks.
         assert!(two.contains("3 packs of 14 cards each and make 42 picks"), "{two}");
+    }
+
+    /// #858: the rules said earlier picks are not kept even when a history
+    /// window kept them.
+    #[test]
+    fn the_draft_rules_say_what_the_history_window_keeps() {
+        assert_eq!(super::history_note(0),
+            "Earlier picks are not kept in the conversation; the pool and the notes are what carries over");
+        let kept = super::history_note(3);
+        assert!(kept.starts_with("Up to 3 of your earlier exchanges are kept"), "{kept}");
+        assert!(!kept.contains("not kept in the conversation"), "{kept}");
     }
 
     /// #487: a drafted basic land was a key in `maindeck` and in `lands`,

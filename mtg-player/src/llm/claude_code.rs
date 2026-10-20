@@ -27,7 +27,7 @@ use std::sync::atomic::{AtomicI32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use super::{api_label, seat_tag, LlmBackend, GAME_RULES, THOUGHTS_IN_JSON_FORMAT};
+use super::{api_label, game_rules, history_exchanges, seat_tag, LlmBackend, THOUGHTS_IN_JSON_FORMAT};
 
 /// Environment variable naming the Claude Code binary; defaults to `claude`
 /// on `PATH`.
@@ -602,7 +602,7 @@ impl ClaudeCodeBackend {
             binary: binary.to_string(),
             model: model.map(str::to_string),
             label,
-            system_prompt: format!("{THOUGHTS_IN_JSON_FORMAT}{GAME_RULES}"),
+            system_prompt: format!("{THOUGHTS_IN_JSON_FORMAT}{}", game_rules(history_exchanges())),
             session_id: None,
             turns: 0,
             workdir,
@@ -1062,7 +1062,7 @@ impl LlmBackend for ClaudeCodeBackend {
     }
 
     fn init(&mut self, deck_info: &str) {
-        self.system_prompt = format!("{THOUGHTS_IN_JSON_FORMAT}{GAME_RULES}{deck_info}");
+        self.system_prompt = format!("{THOUGHTS_IN_JSON_FORMAT}{}{deck_info}", game_rules(history_exchanges()));
         self.session_id = None;
         self.turns = 0;
     }

@@ -1517,6 +1517,23 @@ more card.\n",
 }
 
 /// Shared game rules and strategy — used by all backends.
+/// The notes line's claim about the conversation, true with the history
+/// window at 0 (the default).
+const NO_HISTORY_KEPT: &str = "No earlier prompt is kept, so this is how a plan carries over";
+
+/// [`GAME_RULES`] as this run's seats are sent them. The notes line says no
+/// earlier prompt is kept; under `MTG_LLM_HISTORY=N` the seat resumes its
+/// last exchanges, and the one knob whose system prompt did not follow it
+/// told the model something false about its own conversation (#858). The
+/// default run is sent the same bytes as before.
+fn game_rules(history: usize) -> std::borrow::Cow<'static, str> {
+    match history {
+        0 => std::borrow::Cow::Borrowed(GAME_RULES),
+        n => std::borrow::Cow::Owned(GAME_RULES.replacen(NO_HISTORY_KEPT, &format!(
+            "Up to {n} of your earlier decisions are also kept in this conversation and older ones are not, so this is how a plan carries over past them"), 1)),
+    }
+}
+
 const GAME_RULES: &str = r#"## Prompt format
 
 Every prompt restates the whole position, in this order:
@@ -1575,7 +1592,7 @@ impl LlmBackend for InertBackend {
         // response-format preamble come from the backend, so a stand-in that
         // only stored what it was handed would drop most of the prompt the
         // tests are there to inspect.
-        self.system_prompt = format!("{THOUGHTS_IN_JSON_FORMAT}{GAME_RULES}{deck_info}");
+        self.system_prompt = format!("{THOUGHTS_IN_JSON_FORMAT}{}{deck_info}", game_rules(history_exchanges()));
         self.turns = 0;
     }
     fn conversation_len(&self) -> usize { self.turns }
@@ -1691,7 +1708,7 @@ impl AnthropicBackend {
             client: Client::new(),
             api_key,
             model: model.to_string(),
-            system_prompt: format!("{THOUGHTS_IN_JSON_FORMAT}{GAME_RULES}"),
+            system_prompt: format!("{THOUGHTS_IN_JSON_FORMAT}{}", game_rules(history_exchanges())),
             conversation: Vec::new(),
             last_thinking: None,
             last_call_failure: None,
@@ -1934,7 +1951,7 @@ impl LlmBackend for AnthropicBackend {
     }
 
     fn init(&mut self, deck_info: &str) {
-        self.system_prompt = format!("{THOUGHTS_IN_JSON_FORMAT}{GAME_RULES}{deck_info}");
+        self.system_prompt = format!("{THOUGHTS_IN_JSON_FORMAT}{}{deck_info}", game_rules(history_exchanges()));
         self.conversation.clear();
     }
 
@@ -1994,7 +2011,7 @@ impl GeminiBackend {
             api_key,
             model: model.to_string(),
             thinking_level: None,
-            system_prompt: format!("{THOUGHTS_IN_JSON_FORMAT}{GAME_RULES}"),
+            system_prompt: format!("{THOUGHTS_IN_JSON_FORMAT}{}", game_rules(history_exchanges())),
             interaction_id: None,
             last_thinking: None,
             last_call_failure: None,
@@ -2183,7 +2200,7 @@ impl LlmBackend for GeminiBackend {
     }
 
     fn init(&mut self, deck_info: &str) {
-        self.system_prompt = format!("{THOUGHTS_IN_JSON_FORMAT}{GAME_RULES}{deck_info}");
+        self.system_prompt = format!("{THOUGHTS_IN_JSON_FORMAT}{}{deck_info}", game_rules(history_exchanges()));
         self.interaction_id = None;
         self.chain_len = 0;
     }
@@ -7338,6 +7355,18 @@ pub(crate) mod tests {
         }
         let mine = LlmPlayer::ordering_text("", &rows, "rule", mtg_engine::ids::PlayerId(0));
         assert!(mine.contains("dealt 2 combat damage to Opp"), "{mine}");
+    }
+
+    /// #858: with a history window the seat resumes its last exchanges, and
+    /// its system prompt still said no earlier prompt is kept. The default
+    /// is the same bytes; a window says what is kept.
+    #[test]
+    fn the_rules_say_what_the_history_window_keeps() {
+        assert!(GAME_RULES.contains(NO_HISTORY_KEPT), "the sentence the window replaces is in the rules");
+        assert_eq!(game_rules(0), GAME_RULES);
+        let kept = game_rules(2);
+        assert!(!kept.contains("No earlier prompt is kept"), "{kept}");
+        assert!(kept.contains("Up to 2 of your earlier decisions are also kept"), "{kept}");
     }
 
     /// The system prompt had been written around the leak rather than
