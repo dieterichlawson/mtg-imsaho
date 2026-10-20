@@ -470,7 +470,15 @@ fn render(v: &Value, build: &Build) -> (String, String) {
                 }
             }
             if let Some(st) = v["standings"].as_array() {
-                s.push_str("Standings:\n");
+                // What they count, as the page heads them: a round is
+                // recorded when its last match ends, so a bye or a match
+                // "done" above is not in them yet (#818).
+                s.push_str(&match v["standings_after"].as_u64() {
+                    _ if phase == "done" => "Final standings:\n".to_string(),
+                    Some(0) => "Standings (counted when round 1 ends):\n".to_string(),
+                    Some(n) => format!("Standings after round {n}:\n"),
+                    None => "Standings:\n".to_string(),
+                });
                 for (rank, x) in st.iter().enumerate() {
                     // W-L-D as the terminal standings print it, with their
                     // tags: a drawn match vanished from "0-0" (#744).
@@ -667,6 +675,29 @@ mod tests {
         v["deck"]["ready"] = true.into();
         let (table, _) = render(&v, &Build::default());
         assert!(!table.contains("left to build"), "{table}");
+    }
+
+    /// #818: a bye is "done" from the moment it is paired, and a match the
+    /// moment it ends, while the standings count only finished rounds: the
+    /// heading says which, as the page's does.
+    #[test]
+    fn the_standings_say_which_rounds_they_count() {
+        let mut v = serde_json::json!({
+            "type": "view", "phase": "playing", "seat": 0, "set": "isd",
+            "seats": [{"seat": 0, "name": "seat 0", "kind": "human", "status": "bye", "picks": 42, "joined": true}],
+            "matches": [], "pool": [], "picks": [], "deck": null, "notice": null,
+            "pairings": [{"round": 1, "a": 0, "b": null, "status": "done", "result": "bye"}],
+            "standings": [{"seat": 0, "wins": 0, "losses": 0, "draws": 0, "points": 0, "tags": ""}],
+            "standings_after": 0,
+        });
+        let (_, mine) = render(&v, &Build::default());
+        assert!(mine.contains("Standings (counted when round 1 ends):\n"), "{mine}");
+        v["standings_after"] = 1.into();
+        let (_, mine) = render(&v, &Build::default());
+        assert!(mine.contains("Standings after round 1:\n"), "{mine}");
+        v["phase"] = "done".into();
+        let (_, mine) = render(&v, &Build::default());
+        assert!(mine.contains("Final standings:\n"), "{mine}");
     }
 
     /// Issue #744: a forfeit, an abandoned game, a drawn match and the

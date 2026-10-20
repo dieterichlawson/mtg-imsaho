@@ -257,6 +257,8 @@ fn a_seat_never_sees_another_seats_pack_or_pool_and_each_phase_has_a_fixture() {
     assert_eq!(v["matches"][0]["games"][0]["winner"], 0);
     assert_eq!(v["pairings"].as_array().unwrap().len(), 2);
     assert_eq!(v["standings"][0]["points"], 0);
+    // ... because round 1 is not over: the view says what they count (#818).
+    assert_eq!(v["standings_after"], 0);
     assert_only(&v, &own_pool(&lobby, 0), &all, "playing");
     let v1 = serde_json::to_value(lobby.view(1)).unwrap();
     assert!(v1["matches"][0]["url"].is_null(), "seat 1's link is its own, not seat 0's");
@@ -272,6 +274,7 @@ fn a_seat_never_sees_another_seats_pack_or_pool_and_each_phase_has_a_fixture() {
     let v = serde_json::to_value(lobby.view(0)).unwrap();
     assert_eq!(v["standings"][0]["seat"], 0);
     assert_eq!(v["standings"][0]["wins"], 1);
+    assert_eq!(v["standings_after"], 1);
     assert_eq!(v["matches"][0]["result"], "2-0");
     assert_eq!(v["matches"][1]["round"], 2);
     assert_eq!(v["matches"][1]["opponent"], 2);

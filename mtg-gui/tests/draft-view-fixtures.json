@@ -733,6 +733,7 @@
     ],
     "set": "isd",
     "standings": [],
+    "standings_after": 0,
     "type": "view"
   },
   "done": {
@@ -1582,6 +1583,7 @@
         "wins": 0
       }
     ],
+    "standings_after": 2,
     "type": "view"
   },
   "drafting": {
@@ -1809,6 +1811,7 @@
     ],
     "set": "isd",
     "standings": [],
+    "standings_after": 0,
     "type": "view"
   },
   "lobby": {
@@ -1870,6 +1873,7 @@
     ],
     "set": "isd",
     "standings": [],
+    "standings_after": 0,
     "type": "view"
   },
   "playing": {
@@ -2676,6 +2680,7 @@
         "wins": 0
       }
     ],
+    "standings_after": 0,
     "type": "view"
   },
   "playing_bye": {
@@ -3447,6 +3452,7 @@
         "wins": 0
       }
     ],
+    "standings_after": 0,
     "type": "view"
   },
   "refused": {

@@ -22,6 +22,7 @@ export const SHAPES = {
         deck: "deck|null",
         matches: "array:match",
         standings: "array:standing",
+        standings_after: "number?",
         notice: "string|null",
         pairings: "array:pairing?",
         pick_seconds: "number|null?",

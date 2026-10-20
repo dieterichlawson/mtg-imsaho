@@ -129,6 +129,10 @@ export interface DraftView {
   deck: Deck | null;
   matches: Match[];
   standings: Standing[];
+  /** The rounds `standings` count: a round is counted when its last match
+   * ends, so a finished match or a bye in the round under way is not in
+   * them yet (#818). */
+  standings_after?: number;
   notice: string | null;
   pairings?: Pairing[];
   /** The host's timers, in seconds, when set. */
@@ -186,6 +190,7 @@ export const SHAPES: Record<string, Shape> = {
     deck: "deck|null",
     matches: "array:match",
     standings: "array:standing",
+    standings_after: "number?",
     notice: "string|null",
     pairings: "array:pairing?",
     pick_seconds: "number|null?",

@@ -124,6 +124,16 @@ function seatsTable(view: DraftView): HTMLElement {
     h("tbody", {}, ...rows));
 }
 
+/**
+ * What the standings count. They are recorded when a round's last match
+ * ends, so beside a bye or a finished match marked "done" they still give
+ * that seat its points from before the round (#818); the heading says so.
+ */
+export function standingsHeading(after: number | undefined): string {
+  if (after === undefined) return "Standings";
+  return after === 0 ? "Standings (counted when round 1 ends)" : `Standings after round ${after}`;
+}
+
 function standingsTable(view: DraftView): HTMLElement {
   if (view.standings.length === 0) return h("p", { class: "muted", text: "No results yet." });
   const rows = view.standings.map((s, i) => h("tr", { class: s.seat === view.seat ? "me" : "" },
@@ -366,7 +376,7 @@ function playing(view: DraftView, done: boolean): HTMLElement {
   ].sort((a, b) => a.round - b.round);
   sections.push(h("h3", { text: "Your matches" }),
     rows.length ? h("ul", { class: "matches" }, ...rows.map(r => r.el)) : h("p", { class: "muted", text: "No pairings yet." }));
-  sections.push(h("h3", { text: done ? "Final standings" : "Standings" }), standingsTable(view));
+  sections.push(h("h3", { text: done ? "Final standings" : standingsHeading(view.standings_after) }), standingsTable(view));
   const all = pairingsList(view);
   if (all) sections.push(all);
   sections.push(h("h3", { text: "Seats" }), seatsTable(view));

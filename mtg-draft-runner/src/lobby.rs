@@ -221,6 +221,11 @@ pub struct View {
     /// which holds the viewing seat's own.
     pub pairings: Vec<PairingView>,
     pub standings: Vec<StandingView>,
+    /// The rounds `standings` count. They are recorded when a round's last
+    /// match ends, so a finished match or a bye in the round under way is
+    /// not in them yet; a page beside "done, bye" with the seat on 0 points
+    /// has to say so (#818).
+    pub standings_after: usize,
     pub notice: Option<String>,
     /// Seconds a human has for a pick and for the deck, when the host set
     /// timers; the page shows them beside the deadline.
@@ -1477,6 +1482,7 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
             }
         }
         pairings.sort_by_key(|p| (p.round, p.a));
+        let standings_after = self.tournament.as_ref().map_or(0, |t| t.rounds.len());
         let standings: Vec<StandingView> = self.tournament.as_ref().map(|t| {
             let tags = self.row_tags(t);
             t.sorted_standings().iter().map(|s| StandingView {
@@ -1509,6 +1515,7 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
             matches,
             pairings,
             standings,
+            standings_after,
             notice,
             pick_seconds: self.config.pick_seconds,
             build_seconds: self.config.build_seconds,

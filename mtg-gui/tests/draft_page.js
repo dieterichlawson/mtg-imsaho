@@ -398,6 +398,18 @@ async function main() {
         const href = await page.$eval(".match-playing a", a => a.getAttribute("href"));
         check(href === "http://192.168.1.20:8805/", `${tag}: the live match links its game (${href})`);
         check((await page.$$(".standings tbody tr")).length === 4, `${tag}: standings list every seat`);
+        // A finished match sits beside standings still on 0: the heading
+        // says what they count (#818).
+        await stage({ ...byName.playing, standings_after: 0 });
+        await page.waitForTimeout(50);
+        const heads = await page.$$eval("h3", hs => hs.map(x => x.textContent));
+        check(heads.includes("Standings (counted when round 1 ends)"), `${tag}: the standings say what they count (${heads})`);
+        await stage({ ...byName.playing, standings_after: 2 });
+        await page.waitForTimeout(50);
+        check((await page.$$eval("h3", hs => hs.map(x => x.textContent))).includes("Standings after round 2"),
+          `${tag}: the standings say after which round`);
+        await stage(byName.playing);
+        await page.waitForTimeout(50);
         // The port is never split across lines (#794): its text piece is one
         // line box wherever the URL wraps.
         const portLines = await page.$eval(".match-playing a", a => {
