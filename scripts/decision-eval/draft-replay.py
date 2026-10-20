@@ -44,8 +44,11 @@ def run_one(args, pid, position, sample):
                              cwd=ROOT, env=env, capture_output=True, text=True, timeout=args.timeout)
         line = next((l for l in out.stdout.splitlines() if l.startswith("{")), None)
         rc = out.returncode
+        # Why a pick has no answer, which is otherwise nowhere: the binary
+        # says it on stderr and the row would keep only the exit status.
+        err = (out.stderr.strip().splitlines() or [""])[-1][:300] if rc else ""
     except subprocess.TimeoutExpired:
-        line, rc = None, "timeout"
+        line, rc, err = None, "timeout", ""
     finally:
         os.remove(path)
     r = json.loads(line) if line else {}
@@ -57,6 +60,7 @@ def run_one(args, pid, position, sample):
                   "thinking": 0, "cache_read": u.get("cache_read", 0), "cache_write": u.get("cache_write", 0)},
         "system_bytes": r.get("system_bytes"), "prompt_bytes": r.get("prompt_bytes"),
         "fallback": bool(r.get("substituted")),
+        **({"error": err} if err else {}),
     }
 
 

@@ -95,7 +95,8 @@ def main():
         modal[pos] = top
         if n == len(acts) and len(acts) >= 1:
             settled.add(pos)
-    ref_samples = max((len(v) for v in ref.values()), default=0)
+    # A row without an action is a call that failed, not a sample.
+    ref_samples = max((sum(r["action"] is not None for r in v) for v in ref.values()), default=0)
     print(f"reference {args.ref}: {len(modal)} positions, {ref_samples} sample(s) each, "
           f"{len(settled)} settled (every sample agreed)")
     print()
