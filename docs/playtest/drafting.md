@@ -412,9 +412,10 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   what that costs: the game backend's hang fix never reached this copy.
   #398 is the same shape on the schema side — a top-level property key the
   API refuses is a 400 before the model reads anything, and the seat cannot
-  tell that apart from an answer it did not like. The deck-build schema keys
-  by CARD NAME and is legal only because it nests them under `maindeck`; the
-  pick schema uses an index enum. Neither is guaranteed by anything but a
+  tell that apart from an answer it did not like. The deck-build schema keyed
+  by CARD NAME, legal only because it nested them under `maindeck` (it
+  answers one count per numbered pool row since #867); the pick schema uses
+  an index enum. Neither is guaranteed by anything but a
   `debug_assert`. Walk the two schema builders and the prompt text against
   the game side's (`mtg-player/src/llm.rs`) and list every place they have
   drifted — retry counts, timeouts, session handling, how a refusal is told

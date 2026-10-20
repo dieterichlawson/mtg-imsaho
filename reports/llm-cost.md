@@ -483,7 +483,9 @@ its baseline did at the CLI's default effort.
    one per kind of question a game asks.
    The draft's pick schema got the same treatment; there every pick's
    schema was new, and the system prompt it rewrote was the set's card
-   reference.
+   reference. So did its deck build (#867): `maindeck` was keyed by the
+   seat's pool, ~2.8 KB and new for every seat; it answers one count per
+   numbered pool row now, one 766 B schema for every seat.
 2. **Fewer calls.** The seat is not asked to respond to its own spell
    while only its own are on the stack; the pass-until row no longer
    stops at the seat's own upkeep, and stops for the opponent's attack
