@@ -299,9 +299,9 @@ trait DraftBackend: Send {
     /// the current pack, used to build an enum-constrained `pick` index
     /// schema. Returns the raw JSON response text.
     fn send_pick(&mut self, message: &str, num_cards: usize) -> String;
-    /// Send a deck building message. `pool` is the full set of card
-    /// names the model can pick from, used to build an enum-constrained
-    /// `maindeck` schema. Returns the raw JSON response text.
+    /// Send a deck building message. `pool` is the seat's drafted cards,
+    /// whose rows (`deck_rows`) the `maindeck` counts answer. Returns the
+    /// raw JSON response text.
     fn send_deck_building(&mut self, message: &str, pool: &[String]) -> String;
     /// The full system prompt this backend will send to the model.
     fn system_prompt(&self) -> &str;
@@ -346,9 +346,9 @@ fn pick_schema_for(num_cards: usize) -> serde_json::Value {
 /// `prefixItems` slot and the list to the row count. The `lands` object has
 /// fixed keys for the five basic lands.
 ///
-/// Every backend sends it through [`mtg_player::llm::cache_stable_schema`],
-/// which leaves the slots and the length out, so every seat's deck question
-/// is the same schema. It used to key `maindeck` by the pool's card names
+/// The two Anthropic backends send it through
+/// [`mtg_player::llm::cache_stable_schema`], which leaves the slots and the
+/// length out, so every seat's deck question is the same schema. It used to key `maindeck` by the pool's card names
 /// with the counts as enums, sent as built: no two pools are alike, so each
 /// seat's deck build wrote the cached prefix again (issue #867, #857's
 /// rule). The answer is read back through the rows and checked against the
@@ -990,9 +990,8 @@ impl ClaudeCodeDraftBackend {
         // rule the game side asserts is asserted here too. A top-level
         // property key the API refuses is a 400 before the model reads
         // anything, and the seat cannot tell that apart from an answer it
-        // did not like (#398). The deck-build schema keys by card name and
-        // is safe only because it nests them under `maindeck`; nothing but
-        // this says so.
+        // did not like (#398). No draft schema keys anything by a card name
+        // (the deck build answers by row since #867); this keeps it so.
         debug_assert!(
             schema.get("properties").and_then(serde_json::Value::as_object)
                 .is_none_or(|p| p.keys().all(|k| mtg_player::llm::schema_key_is_legal(k))),
@@ -1258,7 +1257,9 @@ impl DraftBackend for GeminiDraftBackend {
     // prompt restates the whole pool, which is what the build is made of.
     fn send_deck_building(&mut self, message: &str, pool: &[String]) -> String {
         let prev = self.chain_to_continue();
-        let schema = mtg_player::llm::cache_stable_schema(&deck_schema_for(pool));
+        // As built, like a pick: the sanitizer keeps the row count as an
+        // array length and drops the per-row slots.
+        let schema = deck_schema_for(pool);
         let (raw, new_id) = self.call_interactions(message, &schema, prev.as_deref());
         self.interaction_id = new_id;
         self.chain_len += 1;
@@ -1444,9 +1445,10 @@ back to you on your next pick"
         response
     }
 
-    /// Send a deck-building message with the player's full card pool, so
-    /// the backend can build an enum-constrained `maindeck` schema that
-    /// only accepts cards the model actually drafted.
+    /// Send a deck-building message with the player's full card pool, whose
+    /// rows the answer counts. The copies are held to the pool when the
+    /// answer is read (`parse_deck_response_by_rows`, `validate_deck`), and
+    /// a bad answer is quoted back by `build_deck_with_llm`'s retry loop.
     pub fn send_deck_building_message(&mut self, user_message: &str, pool: &[String]) -> String {
         let response = self.backend.send_deck_building(user_message, pool);
         self.keep_notes(&response);

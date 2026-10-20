@@ -765,9 +765,10 @@ pub fn model_takes_effort(model: Option<&str>) -> bool {
 
 /// Output tokens the largest structured answer needs, with room to spare:
 /// an ordering of twelve triggers is ≈ 100 tokens of JSON, a blockers
-/// answer for six creatures ≈ 120, the draft runner's 40-card deck —
-/// every drafted name with a count, five basics, two sentences of
-/// `thoughts` — ≈ 600 (`mtg-draft-runner`'s `deck_schema_for`). The
+/// answer for six creatures ≈ 120, the draft runner's 40-card deck — a
+/// count per pool row, five basics, two sentences of `thoughts` — well
+/// under the ≈ 600 it took when it named every card (`mtg-draft-runner`'s
+/// `deck_schema_for`). The
 /// measured game answer is 60–120 tokens of JSON (`reports/llm-cost.md`).
 pub const ANSWER_TOKENS: u64 = 2048;
 

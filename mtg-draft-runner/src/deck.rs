@@ -167,8 +167,11 @@ mod deck_prompt_tests {
         ];
         let prompt = build_deck_prompt(&pool, &cards);
 
-        // The pool, with what each card costs and is.
-        assert!(prompt.contains("2x Moon Heron {3}{U} | Creature — Spirit Bird 3/2"), "{prompt}");
+        // The pool, with what each card costs and is, numbered for the
+        // answer's counts (#867); a drafted basic is no row.
+        assert!(prompt.contains("0: 1x Chapel Geist"), "{prompt}");
+        assert!(prompt.contains("1: 2x Moon Heron {3}{U} | Creature — Spirit Bird 3/2"), "{prompt}");
+        assert!(prompt.contains("not rows (they go in `lands`): Plains"), "{prompt}");
         assert!(prompt.contains("Colors"), "{prompt}");
         assert!(prompt.contains("Curve"), "{prompt}");
         // The deck it is asking for.
