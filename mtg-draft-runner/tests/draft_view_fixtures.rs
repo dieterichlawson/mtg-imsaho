@@ -601,3 +601,41 @@ fn own_pool(lobby: &Lobby, seat: usize) -> Vec<String> {
     names.extend(["Plains", "Island", "Swamp", "Mountain", "Forest"].map(String::from));
     names
 }
+
+/// #819: the 42nd pick was announced after the lines it causes — "seat 2
+/// has drafted all 42 cards", "the draft is over" — on every pick path:
+/// a person's, an AI seat's and the pick timer's. Each seat's picks come
+/// before its "drafted all", and nothing is picked after the draft is over.
+#[test]
+fn the_last_pick_is_announced_before_what_it_causes() {
+    for by_timer in [false, true] {
+        let (mut lobby, _) = lobby(vec![SeatKind::Human, SeatKind::Ai("cc".into())]);
+        lobby.connected(0);
+        lobby.start();
+        let mut events = Vec::new();
+        while !lobby.seats_with_a_pack().is_empty() {
+            if let Some(id) = jv(&lobby, 0)["pack"]["id"].as_u64() {
+                if by_timer {
+                    lobby.auto_pick(0, "the pick timer ran out").unwrap();
+                } else {
+                    lobby.pick(0, id as usize, 0).unwrap();
+                }
+            } else {
+                let id = jv(&lobby, 1)["pack"]["id"].as_u64().expect("the AI seat holds the pack");
+                lobby.ai_pick(1, id as usize, 0, "prompt", "{\"pick\":0}", false).unwrap();
+            }
+            events.extend(lobby.take_events());
+        }
+        let last = |pred: &dyn Fn(&str) -> bool| events.iter().rposition(|e| pred(e));
+        let first = |pred: &dyn Fn(&str) -> bool| events.iter().position(|e| pred(e));
+        let over = first(&|e| e.starts_with("the draft is over")).expect("the draft ends");
+        for seat in ["seat 0", "seat 1"] {
+            let picked = last(&|e| e.starts_with(seat) && e.contains("picked")).expect("the seat picked");
+            let done = first(&|e| e.starts_with(&format!("{seat} has drafted all"))).expect("the seat is done");
+            assert!(picked < done, "by_timer {by_timer}: {seat}'s last pick after its \"drafted all\":\n{}",
+                events[picked.min(done)..].join("\n"));
+            assert!(picked < over, "by_timer {by_timer}: {seat} picked after the draft was over:\n{}",
+                events[over..].join("\n"));
+        }
+    }
+}

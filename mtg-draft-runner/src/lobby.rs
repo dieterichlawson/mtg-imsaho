@@ -788,9 +788,8 @@ the order they happened, not in seat order", "");
             .ok_or_else(|| format!("card {index} is past the end of the pack ({} cards)", front.cards.len()))?
             .clone();
         let (round, pick) = (front.round, front.pick);
-        self.apply_pick(seat, pack_id, index, false, "human", "human")?;
-        let name = self.who(seat);
-        self.event(format!("{name} picked {} ({round}.{pick})", mtg_draft::front_face(&card)));
+        let line = format!("{} picked {} ({round}.{pick})", self.who(seat), mtg_draft::front_face(&card));
+        self.apply_pick(seat, pack_id, index, false, "human", "human", line)?;
         // The pack may have gone to a seat the table picks for.
         self.run_auto_seats();
         Ok(())
@@ -818,9 +817,8 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
         }
         let card = self.table.in_front(seat).and_then(|f| f.cards.get(index).cloned())
             .ok_or("card index past the pack")?;
-        self.apply_pick(seat, pack_id, index, false, prompt, response)?;
-        let name = self.who(seat);
-        self.event(format!("{name} picked {} ({round}.{pick})", mtg_draft::front_face(&card)));
+        let line = format!("{} picked {} ({round}.{pick})", self.who(seat), mtg_draft::front_face(&card));
+        self.apply_pick(seat, pack_id, index, false, prompt, response, line)?;
         self.run_auto_seats();
         Ok(())
     }
@@ -837,7 +835,8 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
         let index = auto_pick_index(&cards, &pool, &self.registry);
         let card = cards[index].clone();
         let note = format!("auto-pick: {why}");
-        self.apply_pick(seat, pack_id, index, true, &note, &note)?;
+        let line = format!("{}: the table picked {} ({why})", self.who(seat), mtg_draft::front_face(&card));
+        self.apply_pick(seat, pack_id, index, true, &note, &note, line)?;
         // A kicked seat was told once that it is the table's; a notice
         // per pick would only write over that line (the lobby test read
         // "The table picked Moonmist for you" where the kick should be).
@@ -845,16 +844,21 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
             self.seats[seat].notice = Some(format!(
                 "The table picked {} for you ({why}).", mtg_draft::front_face(&card)));
         }
-        self.event(format!("{}: the table picked {} ({why})", self.who(seat), mtg_draft::front_face(&card)));
         Ok(())
     }
 
+    /// Take a pick and announce it with `line`, ahead of what it causes: a
+    /// pack opening, the seat's "drafted all", the draft's end. Each of the
+    /// three pick paths announced it after this returned, so the 42nd pick
+    /// was printed after the draft was declared over (#819).
     fn apply_pick(
         &mut self, seat: usize, pack_id: usize, index: usize, auto: bool, prompt: &str, response: &str,
+        line: String,
     ) -> Result<(), String> {
         let available = self.table.in_front(seat).map(|f| f.cards.to_vec()).unwrap_or_default();
         let picked = self.table.pick(seat, pack_id, index, auto)?;
         log_draft_pick!(self.log, seat, picked.round, picked.pick, &available, &picked.card, prompt, response);
+        self.event(line);
         self.seats[seat].pick_deadline = None;
         if picked.round_over && !picked.draft_over {
             let round = self.table.round().unwrap_or(0);
