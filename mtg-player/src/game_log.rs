@@ -244,8 +244,10 @@ pub fn write_at(level: LogLevel, file: &str, line: u32, label: &str, content: &s
     // and there was no way back from either to the seat whose account or
     // session was the broken one (issues #539, #542). The runners name
     // their per-seat workers, so those lines now name the seat instead.
-    let tid_field = thread.name().map_or_else(
-        || {
+    // A name given by `as_thread` wins over the thread's own (#820).
+    let tid_field = THREAD_AS.with(|a| a.borrow().clone())
+        .or_else(|| thread.name().map(str::to_string))
+        .unwrap_or_else(|| {
             // Thread id renders like `ThreadId(12)` from the Debug impl —
             // strip the wrapper for a slightly terser field.
             let tid_str = format!("{:?}", thread.id());
@@ -254,9 +256,7 @@ pub fn write_at(level: LogLevel, file: &str, line: u32, label: &str, content: &s
                 .and_then(|s| s.strip_suffix(')'))
                 .map(|n| format!("t{n}"))
                 .unwrap_or(tid_str)
-        },
-        std::string::ToString::to_string,
-    );
+        });
 
     // Single-line content: everything on one tab-delimited header line.
     // Multi-line content: header line with no content field, followed by
@@ -289,6 +289,32 @@ pub fn write_at(level: LogLevel, file: &str, line: u32, label: &str, content: &s
         }
     }
     emit(&record);
+}
+
+thread_local! {
+    /// The name this thread's records are written under for now, in place
+    /// of the thread's own: see [`as_thread`].
+    static THREAD_AS: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Run `f` with this thread's records written under `name`. The hosted
+/// table pairs a round, and ends the tournament, on the thread of whichever
+/// match finished last, so round 2's BYE and the FINAL STANDINGS were filed
+/// under "seat 0 v 1" — inside a match a reader filtering by thread looked
+/// past (issue #820). They are the tournament's records, whoever runs them.
+///
+/// Only the name changes: a thread collecting its records ([`buffer_ranked`])
+/// still holds these in its own block.
+pub fn as_thread<R>(name: &str, f: impl FnOnce() -> R) -> R {
+    struct Restore(Option<String>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let prev = self.0.take();
+            THREAD_AS.with(|a| *a.borrow_mut() = prev);
+        }
+    }
+    let _restore = Restore(THREAD_AS.with(|a| a.borrow_mut().replace(name.to_string())));
+    f()
 }
 
 /// Convenience macro that captures file!() and line!() at the call site.

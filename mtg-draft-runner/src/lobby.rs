@@ -196,6 +196,23 @@ fn color_letter(c: Color) -> &'static str {
     }
 }
 
+// ───────────────────────────────────────────────────────── log threads
+
+/// The draft log files each record under the thread that wrote it, and on
+/// the hosted table that is whichever thread the change happened on: a
+/// person's connection, an AI seat's worker, the timer, a match. A record
+/// is filed by whom it is about instead (#820): the table's own sections
+/// under "table", the tournament's under "tournament" (the server's thread
+/// of that name), a seat's picks and deck under "seat N" — the name its AI
+/// worker runs under — whoever picked or built for it.
+fn as_table<R>(f: impl FnOnce() -> R) -> R {
+    mtg_player::game_log::as_thread("table", f)
+}
+
+fn as_seat<R>(seat: usize, f: impl FnOnce() -> R) -> R {
+    mtg_player::game_log::as_thread(&format!("seat {seat}"), f)
+}
+
 // ───────────────────────────────────────────────────────────── the view
 
 /// The whole of what one seat is shown, sent after every change.
@@ -684,8 +701,10 @@ the order they happened, not in seat order", "");
             return;
         }
         self.phase = Phase::Drafting;
-        log_section!(self.log, "DRAFT");
-        log_subsection!(self.log, "Pack 1");
+        as_table(|| {
+            log_section!(self.log, "DRAFT");
+            log_subsection!(self.log, "Pack 1");
+        });
         let absent: Vec<usize> = self.seats.iter().enumerate()
             .filter(|(_, s)| !s.joined).map(|(i, _)| i).collect();
         for seat in &absent {
@@ -855,6 +874,13 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
         &mut self, seat: usize, pack_id: usize, index: usize, auto: bool, prompt: &str, response: &str,
         line: String,
     ) -> Result<(), String> {
+        as_seat(seat, || self.record_pick(seat, pack_id, index, auto, prompt, response, line))
+    }
+
+    fn record_pick(
+        &mut self, seat: usize, pack_id: usize, index: usize, auto: bool, prompt: &str, response: &str,
+        line: String,
+    ) -> Result<(), String> {
         let available = self.table.in_front(seat).map(|f| f.cards.to_vec()).unwrap_or_default();
         let picked = self.table.pick(seat, pack_id, index, auto)?;
         log_draft_pick!(self.log, seat, picked.round, picked.pick, &available, &picked.card, prompt, response);
@@ -862,7 +888,7 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
         self.seats[seat].pick_deadline = None;
         if picked.round_over && !picked.draft_over {
             let round = self.table.round().unwrap_or(0);
-            log_subsection!(self.log, &format!("Pack {round}"));
+            as_table(|| log_subsection!(self.log, &format!("Pack {round}")));
             self.event(format!("pack {round} is open; it passes {}",
                 match self.table.pass_direction() { Some(Direction::Right) => "right", _ => "left" }));
         }
@@ -887,9 +913,11 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
         // playtest: three of four decks were above "DECK BUILDING").
         if !self.started_pool_log {
             self.started_pool_log = true;
-            log_section!(self.log, "DECK BUILDING");
-            mtg_player::game_log::write(file!(), line!(),
-                "NOTE each seat's pool and deck are written as that seat finishes drafting, so they come in the order the seats finished, interleaved with the last picks of the others", "");
+            as_table(|| {
+                log_section!(self.log, "DECK BUILDING");
+                mtg_player::game_log::write(file!(), line!(),
+                    "NOTE each seat's pool and deck are written as that seat finishes drafting, so they come in the order the seats finished, interleaved with the last picks of the others", "");
+            });
         }
         log_pool_summary!(self.log, seat, self.table.pool(seat));
         let name = self.who(seat);
@@ -989,6 +1017,10 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
     /// reason to throw them away (#810). Only a seat that sent nothing
     /// usable gets the table's own deck.
     pub fn auto_build(&mut self, seat: usize, why: &str) {
+        as_seat(seat, || self.build_for(seat, why));
+    }
+
+    fn build_for(&mut self, seat: usize, why: &str) {
         if self.seats[seat].ready {
             return;
         }
@@ -1070,8 +1102,8 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
         &mut self, seat: usize, deck: &DraftDeck, attempts: &[(&str, &str, Option<&str>)],
         retries: usize, fallback: bool,
     ) {
-        log_deck_building!(self.log, seat, &deck.maindeck, &deck.lands, &deck.sideboard, attempts,
-            retries, fallback);
+        as_seat(seat, || log_deck_building!(self.log, seat, &deck.maindeck, &deck.lands, &deck.sideboard,
+            attempts, retries, fallback));
         let s = &mut self.seats[seat];
         s.deck = Some(deck.clone());
         s.deck_problem = None;
@@ -1216,7 +1248,15 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
     }
 
     /// Pair the next round. Returns the matches to play.
+    ///
+    /// Its records (the round's BYE, the FINAL STANDINGS) are the
+    /// tournament's, written under the server's "tournament" thread's name
+    /// although the match that ended the last round runs it (#820).
     fn next_round(&mut self) -> Vec<(usize, usize, usize)> {
+        mtg_player::game_log::as_thread("tournament", || self.pair_next_round())
+    }
+
+    fn pair_next_round(&mut self) -> Vec<(usize, usize, usize)> {
         let Some(t) = &self.tournament else { return Vec::new() };
         if t.is_complete() {
             self.finish();
