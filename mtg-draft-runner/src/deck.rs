@@ -1,5 +1,7 @@
 //! Deck building: the LLM round-trip and the prompt it is built on.
 
+use std::fmt::Write as _;
+
 use mtg_draft::deckbuilding::{self, DraftDeck};
 use mtg_engine::cards::CardRegistry;
 
@@ -32,6 +34,7 @@ pub fn build_deck_with_llm(
     cards: &CardLines,
 ) -> DeckBuildResult {
     let prompt = DraftLlmClient::notes_section(client.notes()) + &build_deck_prompt(pool, cards);
+    let rows = deckbuilding::deck_rows(pool);
     let mut last_error = String::new();
     let mut attempts: Vec<DeckAttempt> = Vec::new();
     let max_retries = 10;
@@ -52,7 +55,7 @@ pub fn build_deck_with_llm(
 
         let response = client.send_deck_building_message(&msg, pool);
 
-        match deckbuilding::parse_deck_response(&response) {
+        match deckbuilding::parse_deck_response_by_rows(&response, &rows) {
             Ok((maindeck, lands)) => match deckbuilding::validate_deck(pool, &maindeck, &lands) {
                 Ok(deck) => {
                     attempts.push(DeckAttempt { prompt: msg, response, error: None });
@@ -99,7 +102,17 @@ pub fn build_deck_prompt(pool: &[String], cards: &CardLines) -> String {
         pool.len(),
         pool.len(),
     );
-    prompt.push_str(&cards.pool_listing(pool));
+    // Numbered, because the answer is one count per row: a schema keyed by
+    // these names was one nobody had sent before, every seat (issue #867).
+    for (i, (name, copies)) in deckbuilding::deck_rows(pool).iter().enumerate() {
+        let _ = writeln!(prompt, "{i}: {copies}x {}", cards.pool_line(name));
+    }
+    let basics: Vec<&str> = pool.iter().map(|c| mtg_draft::front_face(c))
+        .filter(|n| deckbuilding::BASIC_LANDS.contains(n)).collect();
+    if !basics.is_empty() {
+        let _ = writeln!(prompt, "Drafted basic lands, not rows (they go in `lands`): {}", basics.join(", "));
+    }
+    let _ = writeln!(prompt, "\n{}", cards.pool_shape(pool));
     prompt.push_str(
         "\n## Building it\n\
          - A deck is at least 40 cards (CR 100.2b); a smaller one is rejected and you are asked again\n\
@@ -107,7 +120,7 @@ pub fn build_deck_prompt(pool: &[String], cards: &CardLines) -> String {
          - Two colors is the normal build, a third only as a splash you can reliably cast\n\
          - Everything you leave out is your sideboard. It is recorded with your deck, but nothing is sideboarded between games of a match, so a card you leave out is a card you will not play\n\
          \n## Your answer\n\
-         - `maindeck` maps each drafted card you are playing to how many copies (0, or leave it out, to cut it)\n\
+         - `maindeck` is one count per numbered row of your pool, in order: how many copies of that card you are playing (0 cuts it)\n\
          - `lands` maps each basic land to how many to add. Basic lands are not drafted and are not limited: they go here, and only here, even if you drafted one\n",
     );
     prompt
@@ -119,7 +132,6 @@ pub fn build_deck_prompt(pool: &[String], cards: &CardLines) -> String {
 /// # Errors
 /// The directory cannot be made or the file cannot be written.
 pub fn write_deck_file(path: &std::path::Path, deck: &DraftDeck) -> std::io::Result<()> {
-    use std::fmt::Write as _;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;
     }

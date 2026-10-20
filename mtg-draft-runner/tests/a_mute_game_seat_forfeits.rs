@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 /// Answers the draft (picks and the deck build) and fails every game call.
 const STUB: &str = r##"#!/usr/bin/env python3
-import sys, json
+import sys, json, os
 argv = sys.argv[1:]
 if argv and argv[0] == "--version":
     print("1.0.0 (stub)"); sys.exit(0)
@@ -22,8 +22,8 @@ for i, a in enumerate(argv):
 sch = json.loads(sc) if sc else {}
 props = sch.get("properties", {})
 if "maindeck" in props:
-    n = sorted(props["maindeck"].get("properties", {}))
-    o = {"maindeck": {c: 1 for c in n[:23]}, "lands": {"Island": 9, "Swamp": 8}}
+    rows = len(json.loads(os.environ["MTG_LLM_ANSWER_SCHEMA"])["properties"]["maindeck"]["prefixItems"])
+    o = {"maindeck": [1 if i < 23 else 0 for i in range(rows)], "lands": {"Island": 9, "Swamp": 8}}
 elif "pick" in props:
     o = {"thoughts": "t", "pick": 0}
 else:

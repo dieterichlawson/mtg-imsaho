@@ -38,7 +38,7 @@ fn deterministic_seat(dir: &Path) -> PathBuf {
 }
 
 const STUB: &str = r##"#!/usr/bin/env python3
-import sys, json, hashlib
+import sys, json, hashlib, os
 argv = sys.argv[1:]
 if argv and argv[0] == "--version":
     print("1.0.0 (stub)"); sys.exit(0)
@@ -69,8 +69,8 @@ def fill(s, seed):
     return "t"
 sch = json.loads(sc) if sc else {}
 if "maindeck" in sch.get("properties", {}):
-    n = sorted(sch["properties"]["maindeck"].get("properties", {}))
-    o = {"maindeck": {c: 1 for c in n[:23]}, "lands": {"Island": 9, "Swamp": 8}}
+    rows = len(json.loads(os.environ["MTG_LLM_ANSWER_SCHEMA"])["properties"]["maindeck"]["prefixItems"])
+    o = {"maindeck": [1 if i < 23 else 0 for i in range(rows)], "lands": {"Island": 9, "Swamp": 8}}
 else:
     o = fill(sch, H)
     # REJECT=1: one game answer in four comes back without its key, which

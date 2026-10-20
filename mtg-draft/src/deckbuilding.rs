@@ -245,7 +245,8 @@ fn card_count(name: &str, count: &serde_json::Value) -> Result<u32, String> {
 
 /// Parse an LLM's deck building response.
 ///
-/// Preferred format (JSON — card-name → count mapping):
+/// Keyed by card name (a seat answers by row, which
+/// [`parse_deck_response_by_rows`] turns into this):
 /// ```json
 /// {
 ///   "thoughts": "...",
@@ -264,16 +265,82 @@ fn card_count(name: &str, count: &serde_json::Value) -> Result<u32, String> {
 /// `maindeck` field is missing or not an object/array, if the resulting
 /// maindeck is empty, or if the `lands` field is empty or missing.
 pub fn parse_deck_response(response: &str) -> Result<(Vec<String>, HashMap<String, u32>), String> {
-    // Strip optional ```json code fences.
+    parse_deck_value(&deck_json(response)?)
+}
+
+/// The rows the deck question is asked over: each drafted card that is not
+/// a basic land, once, by its front face, with the copies drafted, in name
+/// order. The prompt numbers them, the schema asks for one count per row,
+/// and [`parse_deck_response_by_rows`] reads the answer back through them.
+///
+/// The schema used to key `maindeck` by these names, so no two seats' deck
+/// questions sent the same schema and each one wrote the cached prefix
+/// again (issue #867).
+#[must_use]
+pub fn deck_rows(pool: &[String]) -> Vec<(String, u32)> {
+    let mut rows: Vec<(String, u32)> = Vec::new();
+    for card in pool {
+        let name = crate::front_face(card);
+        if BASIC_LANDS.contains(&name) {
+            continue;
+        }
+        match rows.iter_mut().find(|(n, _)| n == name) {
+            Some((_, copies)) => *copies += 1,
+            None => rows.push((name.to_string(), 1)),
+        }
+    }
+    rows.sort();
+    rows
+}
+
+/// Parse a deck answer whose `maindeck` is one count per row of
+/// [`deck_rows`], in order. A count list of the wrong length is refused
+/// with both lengths, for the retry loop to quote back; the counts
+/// themselves are held to [`parse_deck_response`]'s rules under the row's
+/// name. An answer keyed by name, as the question used to be asked, still
+/// reads.
+///
+/// # Errors
+/// As [`parse_deck_response`], and a `maindeck` count list that is not one
+/// count per row.
+pub fn parse_deck_response_by_rows(
+    response: &str,
+    rows: &[(String, u32)],
+) -> Result<(Vec<String>, HashMap<String, u32>), String> {
+    let mut v = deck_json(response)?;
+    if let Some(counts) = v["maindeck"].as_array() {
+        if !counts.iter().any(serde_json::Value::is_string) {
+            if counts.len() != rows.len() {
+                return Err(format!(
+                    "`maindeck` has {} counts and your pool has {} numbered rows. \
+                     Give one count per row, in the order listed (0 to cut that card).",
+                    counts.len(),
+                    rows.len()
+                ));
+            }
+            let named: serde_json::Map<String, serde_json::Value> = rows
+                .iter()
+                .zip(counts)
+                .map(|((name, _), count)| (name.clone(), count.clone()))
+                .collect();
+            v["maindeck"] = serde_json::Value::Object(named);
+        }
+    }
+    parse_deck_value(&v)
+}
+
+/// A deck answer's JSON, without the ```json fences a model may wrap it in.
+fn deck_json(response: &str) -> Result<serde_json::Value, String> {
     let stripped = response
         .trim()
         .trim_start_matches("```json")
         .trim_start_matches("```")
         .trim_end_matches("```")
         .trim();
-    let v: serde_json::Value = serde_json::from_str(stripped)
-        .map_err(|e| format!("Failed to parse JSON: {e}"))?;
+    serde_json::from_str(stripped).map_err(|e| format!("Failed to parse JSON: {e}"))
+}
 
+fn parse_deck_value(v: &serde_json::Value) -> Result<(Vec<String>, HashMap<String, u32>), String> {
     // Parse maindeck — either object {name: count} or legacy array [name, ...]
     let maindeck: Vec<String> = if let Some(obj) = v["maindeck"].as_object() {
         // New format: expand {name: count} into repeated names. The count
@@ -608,6 +675,33 @@ mod tests {
         assert_eq!(maindeck.len(), 4); // 1 + 2 + 1 + 0
         assert_eq!(lands["Island"], 9);
         assert_eq!(lands["Swamp"], 8);
+    }
+
+    /// #867: the seat answers one count per numbered row; a list of the
+    /// wrong length is refused with both lengths, not read off by one.
+    #[test]
+    fn a_deck_answer_by_row_is_read_through_the_rows() {
+        let pool: Vec<String> = ["Moon Heron", "Moon Heron", "Chapel Geist", "Plains"]
+            .iter().map(|s| (*s).to_string()).collect();
+        let rows = deck_rows(&pool);
+        assert_eq!(rows, vec![("Chapel Geist".to_string(), 1), ("Moon Heron".to_string(), 2)]);
+
+        let (maindeck, lands) = parse_deck_response_by_rows(
+            r#"{"maindeck": [0, 2], "lands": {"Island": 17}}"#, &rows).unwrap();
+        assert_eq!(maindeck, vec!["Moon Heron".to_string(), "Moon Heron".to_string()]);
+        assert_eq!(lands.get("Island"), Some(&17));
+
+        let err = parse_deck_response_by_rows(
+            r#"{"maindeck": [2], "lands": {"Island": 17}}"#, &rows).unwrap_err();
+        assert!(err.contains("1 counts") && err.contains("2 numbered rows"), "{err}");
+        // A count is held to the same rules under the row's name.
+        let err = parse_deck_response_by_rows(
+            r#"{"maindeck": [1, -1], "lands": {"Island": 17}}"#, &rows).unwrap_err();
+        assert!(err.contains("Moon Heron"), "{err}");
+        // An answer keyed by name still reads.
+        let (maindeck, _) = parse_deck_response_by_rows(
+            r#"{"maindeck": {"Chapel Geist": 1}, "lands": {"Island": 17}}"#, &rows).unwrap();
+        assert_eq!(maindeck, vec!["Chapel Geist".to_string()]);
     }
 
     #[test]

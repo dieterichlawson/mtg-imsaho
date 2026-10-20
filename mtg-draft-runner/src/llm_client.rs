@@ -341,39 +341,35 @@ fn pick_schema_for(num_cards: usize) -> serde_json::Value {
     })
 }
 
-/// Build a deck-building schema with one property per card in the pool.
-/// Each card's value is an integer enum `[0..copies_drafted]`, so
-/// constrained decoding prevents the model from including more copies
-/// than it drafted. The `lands` object has fixed keys for the five
-/// basic lands with non-negative integer values.
+/// Build the deck-building schema: `maindeck` is one count per row of
+/// [`mtg_draft::deckbuilding::deck_rows`], each held to `0..=copies` by its
+/// `prefixItems` slot and the list to the row count. The `lands` object has
+/// fixed keys for the five basic lands.
+///
+/// Every backend sends it through [`mtg_player::llm::cache_stable_schema`],
+/// which leaves the slots and the length out, so every seat's deck question
+/// is the same schema. It used to key `maindeck` by the pool's card names
+/// with the counts as enums, sent as built: no two pools are alike, so each
+/// seat's deck build wrote the cached prefix again (issue #867, #857's
+/// rule). The answer is read back through the rows and checked against the
+/// pool (`parse_deck_response_by_rows`, `validate_deck`).
 fn deck_schema_for(pool: &[String]) -> serde_json::Value {
-    // Count copies of each card in the pool (DFC: use front face name)
-    let mut pool_counts: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
-    for card in pool {
-        let name = mtg_draft::front_face(card).to_string();
-        *pool_counts.entry(name).or_insert(0) += 1;
-    }
-
-    let mut maindeck_props = serde_json::Map::new();
-    let mut sorted_cards: Vec<_> = pool_counts.into_iter().collect();
-    sorted_cards.sort_by(|a, b| a.0.cmp(&b.0));
-    for (name, count) in sorted_cards {
-        // A drafted basic land used to be a key in `maindeck` AND in
-        // `lands`, with nothing saying which one a Plains belonged in:
-        // filling both is schema-legal and silently builds a 41-card deck
-        // with an extra land (issue #487). Basics are unlimited and live in
-        // `lands`, drafted or not.
-        if mtg_draft::deckbuilding::BASIC_LANDS.contains(&name.as_str()) {
-            continue;
-        }
-        let valid_counts: Vec<serde_json::Value> = (0..=count)
-            .map(|i| serde_json::json!(i))
-            .collect();
-        maindeck_props.insert(name, serde_json::json!({
+    let slots: Vec<serde_json::Value> = mtg_draft::deckbuilding::deck_rows(pool)
+        .iter()
+        .map(|(_, copies)| serde_json::json!({
             "type": "integer",
-            "enum": valid_counts
-        }));
-    }
+            "enum": (0..=*copies).collect::<Vec<u32>>()
+        }))
+        .collect();
+    let rows = slots.len();
+    let maindeck = serde_json::json!({
+        "type": "array",
+        "items": { "type": "integer" },
+        "prefixItems": slots,
+        "minItems": rows,
+        "maxItems": rows,
+        "description": "One count per numbered row of your pool, in order: how many copies of that card to include in the maindeck (0 to skip). Basic lands are not rows — they go in `lands`."
+    });
 
     let basic_land_count = serde_json::json!({ "type": "integer" });
     serde_json::json!({
@@ -383,11 +379,7 @@ fn deck_schema_for(pool: &[String]) -> serde_json::Value {
                 "type": "string",
                 "description": "At most two sentences: the deck's plan and what you cut."
             },
-            "maindeck": {
-                "type": "object",
-                "properties": maindeck_props,
-                "description": "How many copies of each drafted card to include in the maindeck (0 to skip). Basic lands are not listed here — they go in `lands`."
-            },
+            "maindeck": maindeck,
             "lands": {
                 "type": "object",
                 "properties": {
@@ -724,7 +716,7 @@ impl DraftBackend for AnthropicDraftBackend {
     // Deckbuilding is the next turn of the same (bounded) conversation; the
     // prompt restates the whole pool, which is what the build is made of.
     fn send_deck_building(&mut self, message: &str, pool: &[String]) -> String {
-        let schema = deck_schema_for(pool);
+        let schema = mtg_player::llm::cache_stable_schema(&deck_schema_for(pool));
         self.send_conv_structured(message, &schema)
     }
 
@@ -1080,8 +1072,11 @@ impl DraftBackend for ClaudeCodeDraftBackend {
     // Deckbuilding is the next decision of the same (bounded) session; the
     // prompt restates the whole pool, which is what the build is made of.
     fn send_deck_building(&mut self, message: &str, pool: &[String]) -> String {
-        let schema = deck_schema_for(pool);
-        self.decide(message, &schema)
+        let full = deck_schema_for(pool);
+        self.answer_schema = Some(full.to_string());
+        let response = self.decide(message, &mtg_player::llm::cache_stable_schema(&full));
+        self.answer_schema = None;
+        response
     }
 
     fn system_prompt(&self) -> &str {
@@ -1263,7 +1258,7 @@ impl DraftBackend for GeminiDraftBackend {
     // prompt restates the whole pool, which is what the build is made of.
     fn send_deck_building(&mut self, message: &str, pool: &[String]) -> String {
         let prev = self.chain_to_continue();
-        let schema = deck_schema_for(pool);
+        let schema = mtg_player::llm::cache_stable_schema(&deck_schema_for(pool));
         let (raw, new_id) = self.call_interactions(message, &schema, prev.as_deref());
         self.interaction_id = new_id;
         self.chain_len += 1;
@@ -1677,11 +1672,32 @@ mod draft_prompt_tests {
             "Moon Heron".to_string(),
         ];
         let schema = deck_schema_for(&pool);
-        let maindeck = schema["properties"]["maindeck"]["properties"].as_object().unwrap();
+        let slots = schema["properties"]["maindeck"]["prefixItems"].as_array().unwrap();
 
-        assert!(!maindeck.contains_key("Plains"), "{maindeck:?}");
-        assert!(maindeck.contains_key("Moon Heron"), "{maindeck:?}");
+        // One row, Moon Heron's, held to 0..=2; the Plains is no row.
+        assert_eq!(slots.len(), 1, "{slots:?}");
+        assert_eq!(slots[0]["enum"], serde_json::json!([0, 1, 2]));
+        assert_eq!(mtg_draft::deckbuilding::deck_rows(&pool), vec![("Moon Heron".to_string(), 2)]);
         assert!(schema["properties"]["lands"]["properties"]["Plains"].is_object());
+    }
+
+    /// #867: `maindeck` was keyed by the pool's card names with the copy
+    /// counts as enums, sent as built, so every seat's deck question was a
+    /// schema nobody had sent before — a write of the whole cached prefix.
+    /// What is sent is the same for any two pools.
+    #[test]
+    fn every_pool_sends_the_same_deck_schema() {
+        let a: Vec<String> = ["Moon Heron", "Moon Heron", "Chapel Geist", "Plains"]
+            .iter().map(|s| (*s).to_string()).collect();
+        let b: Vec<String> = ["Brimstone Volley", "Blazing Torch"]
+            .iter().map(|s| (*s).to_string()).collect();
+        let sent_a = mtg_player::llm::cache_stable_schema(&deck_schema_for(&a));
+        let sent_b = mtg_player::llm::cache_stable_schema(&deck_schema_for(&b));
+
+        assert_eq!(sent_a, sent_b);
+        let text = sent_a.to_string();
+        assert!(!text.contains("enum") && !text.contains("prefixItems") && !text.contains("Moon Heron"),
+            "{text}");
     }
 }
 
@@ -1855,6 +1871,26 @@ printf '{"type":"result","subtype":"success","is_error":false,"session_id":"%s",
         assert_eq!(schema["additionalProperties"], false);
         // The response has to come back as the JSON text main.rs parses.
         assert_eq!(serde_json::from_str::<serde_json::Value>(&response).unwrap()["pick"], 2);
+    }
+
+    /// The deck question goes out as one schema whatever the pool, with the
+    /// rows' bounds beside it for a stand-in CLI, as a pick's are (#867).
+    #[test]
+    fn a_deck_build_sends_one_schema_and_the_rows_beside_it() {
+        use super::DraftBackend;
+        let body = format!("echo \"ENV: ${}\" >> \"$LOG\"\n{OK_BODY}",
+            mtg_player::llm::CLAUDE_CODE_ANSWER_SCHEMA_ENV);
+        let fake = Fake::new("deckschema", &body);
+        let mut b = backend(&fake, None);
+        b.send_deck_building("Build", &["Moon Heron".to_string(), "Moon Heron".to_string()]);
+        b.send_deck_building("Build", &["Chapel Geist".to_string()]);
+
+        let calls = fake.calls();
+        assert_eq!(arg_after(&calls[0], "--json-schema"), arg_after(&calls[1], "--json-schema"));
+        let full: serde_json::Value = serde_json::from_str(
+            calls[0].lines().find_map(|l| l.strip_prefix("ENV: ")).expect("the full schema is set")).unwrap();
+        assert_eq!(full["properties"]["maindeck"]["prefixItems"],
+            serde_json::json!([{"type": "integer", "enum": [0, 1, 2]}]));
     }
 
     #[test]

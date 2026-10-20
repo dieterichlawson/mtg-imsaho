@@ -134,10 +134,10 @@ def takes_pass_until():
 
 
 if "maindeck" in props and "lands" in props:
-    md, total = {}, 0
-    for n, s in (props["maindeck"].get("properties") or {}).items():
+    md, total = [], 0
+    for s in props["maindeck"].get("prefixItems") or []:
         take = min(max(s.get("enum", [0])), max(0, 23 - total))
-        md[n] = take
+        md.append(take)
         total += take
     out = {"thoughts": "stub deck", "maindeck": md,
            "lands": {"Plains": 4, "Island": 4, "Swamp": 3, "Mountain": 3, "Forest": 3}}

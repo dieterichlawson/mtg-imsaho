@@ -53,8 +53,8 @@ if "pick" in props:
     enum = props["pick"].get("enum", [0])
     out = {"thoughts": "stub pick", "pick": enum[len(enum) // 2] if enum else 0}
 elif "maindeck" in props:
-    names = list(props["maindeck"].get("properties", {}).keys())
-    out = {"maindeck": {nm: 1 for nm in names[:23]}, "lands": {"Island": 9, "Swamp": 8}}
+    rows = len(props["maindeck"].get("prefixItems") or [])
+    out = {"maindeck": [1 if i < 23 else 0 for i in range(rows)], "lands": {"Island": 9, "Swamp": 8}}
 else:
     out = {}
 print(json.dumps({"type": "result", "subtype": "success", "is_error": False,
