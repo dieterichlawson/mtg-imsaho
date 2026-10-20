@@ -180,6 +180,19 @@ async function main() {
         await page.waitForTimeout(50);
         check((await sent()).length === count0, `${tag}: Enter on a focused tile sent ${JSON.stringify(await lastSent())} for the selected card`);
         check(await page.$(`.tile[data-card-index="5"].selected`) !== null, `${tag}: Enter on a focused tile selects that tile`);
+        // A held Enter on a focused tile selects it and stops: its repeats
+        // were clicks, and the second one picked the card (#852's review).
+        await stage(view);
+        await page.waitForTimeout(50);
+        {
+          const before = (await sent()).length;
+          await page.focus(`.tile[data-card-index="4"]`);
+          for (let k = 0; k < 6; k++) await page.keyboard.down("Enter");
+          await page.keyboard.up("Enter");
+          await page.waitForTimeout(50);
+          check((await sent()).length === before, `${tag}: a held Enter on a tile picks nothing (${JSON.stringify(await lastSent())})`);
+          check(await page.$(`.tile[data-card-index="4"].selected`) !== null, `${tag}: a held Enter on a tile selects it`);
+        }
         // A click focuses the tile; an arrow then moves the selection and the
         // focus with it, so Enter acts on the tile the arrow reached (#787's review).
         await stage(view);
@@ -354,6 +367,17 @@ async function main() {
           await page.waitForTimeout(50);
           const held = (await sent()).slice(before);
           check(held.length === 1, `${tag}: a held Enter moves the card once (${held.length} deck messages)`);
+        }
+        // And on a focused row, where the browser turns each repeat into a
+        // click (the issue's own repro: focus a row, hold Enter).
+        {
+          await page.focus(`.row[data-pool-index="3"]`);
+          const before = (await sent()).length;
+          for (let k = 0; k < 6; k++) await page.keyboard.down("Enter");
+          await page.keyboard.up("Enter");
+          await page.waitForTimeout(50);
+          const held = (await sent()).slice(before);
+          check(held.length === 1, `${tag}: a held Enter on a focused row moves it once (${held.length} deck messages)`);
         }
         // Enter on a focused land "+" adds the land; it does not move the
         // card under the cursor (#787).

@@ -301,6 +301,15 @@ window.addEventListener("keydown", (ev) => {
     return;
   }
   if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+  // A held Enter repeats about every 30 ms, and on a focused row or tile
+  // the browser clicked it once per repeat: a pool card went in and out of
+  // the deck by the parity of the repeat count, one deck message each, and
+  // an unselected tile was selected and then picked (#852, this page's
+  // #806). Only the land steppers repeat, as a held stepper does.
+  if (ev.key === "Enter" && ev.repeat && !(ev.target instanceof Element && ev.target.closest(".inc, .dec"))) {
+    ev.preventDefault();
+    return;
+  }
   // Enter on a focused control is that control's: the browser clicks it.
   // Taken here, Enter picked the selected card instead of the focused one,
   // and on Ready or a land's "+" moved a pool card (#787). Enter acts on the
@@ -377,11 +386,6 @@ function buildingKey(ev: KeyboardEvent, view: DraftView): void {
     case "ArrowDown": case "ArrowRight": move(at < 0 ? 0 : at + 1); break;
     case "ArrowUp": case "ArrowLeft": move(at < 0 ? 0 : at - 1); break;
     case "Enter":
-      // A held Enter repeats about every 30 ms, and each repeat moved the
-      // card back the other way: where it ended up was the parity of the
-      // repeat count, one deck message each (#852, the build screen's
-      // #806). A toggle is one press.
-      if (ev.repeat) { ev.preventDefault(); return; }
       if (state.cursor === null) { state.hint = "Enter moves the card under the cursor; arrows move the cursor, or click a card."; break; }
       actions.toggle(state.cursor, true);
       ev.preventDefault();

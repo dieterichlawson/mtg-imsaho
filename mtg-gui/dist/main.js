@@ -540,11 +540,21 @@ window.addEventListener("keydown", (ev) => {
                 toggleZone("library", v.you);
             break;
         case "s":
+            // A toggle is one press: a held key flipped it per repeat, ending
+            // where the parity left it (#852's review).
+            if (ev.repeat) {
+                ev.preventDefault();
+                return;
+            }
             state.stopAtPass = !state.stopAtPass;
             state.notice = state.stopAtPass ? "Stopping at every priority." : "Passing automatically when there is nothing to do.";
             pushSettings();
             break;
         case "f":
+            if (ev.repeat) {
+                ev.preventDefault();
+                return;
+            }
             toggleAutoPass();
             break;
         default: return;
