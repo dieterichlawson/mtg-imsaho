@@ -432,6 +432,10 @@ prefer, 2.11 calls, 13,190 tokens and $0.0015 a turn.
 
 Decision quality, the 104 settled positions:
 
+The final rows' system prompt is the size measured at d1f4ba1; the final
+build, ff4ed99, sent about 430 B more (#859; item 4 below has today's
+sizes).
+
 | configuration | agrees with the reference | output / decision | system prompt | prompt |
 | --- | ---: | ---: | ---: | ---: |
 | baseline, Sonnet, `low` (at the API seat's effort) | 80.8% (80/99) | 216 (84 thinking) | 17,920 B | 2,411 B |
@@ -503,9 +507,15 @@ its baseline did at the CLI's default effort.
    effort and thought 476-5,212 tokens a decision where `--effort low`
    thought 25-71.
 4. **A smaller system prompt**: 17,920 to 9,096 bytes for a drafted deck
-   (12,647 to 6,409 for a preset one). The rules restate only what the
-   prompt does not show; a decklist entry says each thing once, without
-   reminder text.
+   (12,647 to 6,409 for a preset one), measured at d1f4ba1. The rules
+   restate only what the prompt does not show; a decklist entry says each
+   thing once, without reminder text. It has grown since, by changes that
+   did not say so (#859): 31bc97d (+238 B, a seat counts it out before it
+   concedes) and ff4ed99 (+192 B, the pass-until row is the usual pass),
+   then later rules. At 8ff3bea, under the stub, a preset deck is sent
+   7,000 B (`scripts/measure-llm-prompts.sh`) and the three drafted decks
+   (gw-humans, ub-zombies, rb-vampires, seeds 11-13) 9,988, 9,675 and
+   9,529 B — a mean of 9,731, 635 B over the d1f4ba1 figure.
 5. **A smaller prompt**: 2,411 to 1,841 bytes on the same positions. Mana
    taps and pools emptying are not events; an opponent's card in a
    graveyard is described only where its text works from there (the text
