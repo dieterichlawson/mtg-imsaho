@@ -1530,8 +1530,16 @@ fn game_rules(history: usize) -> std::borrow::Cow<'static, str> {
     match history {
         0 => std::borrow::Cow::Borrowed(GAME_RULES),
         n => std::borrow::Cow::Owned(GAME_RULES.replacen(NO_HISTORY_KEPT, &format!(
-            "Up to {n} of your earlier decisions are also kept in this conversation and older ones are not, so this is how a plan carries over past them"), 1)),
+            "Up to {n} of your earlier decisions are also kept in this conversation and older ones are not, so these notes are how a plan carries over"), 1)),
     }
+}
+
+/// A system prompt built for one history window, said for another: a
+/// backend's window can be set after its prompt is built (`with_history`),
+/// and the prompt is the backend's own, sent with every call (#858's
+/// review).
+fn rewindow(system_prompt: &str, from: usize, to: usize) -> String {
+    system_prompt.replacen(game_rules(from).as_ref(), game_rules(to).as_ref(), 1)
 }
 
 const GAME_RULES: &str = r#"## Prompt format
@@ -1951,11 +1959,12 @@ impl LlmBackend for AnthropicBackend {
     }
 
     fn init(&mut self, deck_info: &str) {
-        self.system_prompt = format!("{THOUGHTS_IN_JSON_FORMAT}{}{deck_info}", game_rules(history_exchanges()));
+        self.system_prompt = format!("{THOUGHTS_IN_JSON_FORMAT}{}{deck_info}", game_rules(self.window));
         self.conversation.clear();
     }
 
     fn set_history_window(&mut self, exchanges: usize) {
+        self.system_prompt = rewindow(&self.system_prompt, self.window, exchanges);
         self.window = exchanges;
         self.trim_history();
     }
@@ -2200,12 +2209,13 @@ impl LlmBackend for GeminiBackend {
     }
 
     fn init(&mut self, deck_info: &str) {
-        self.system_prompt = format!("{THOUGHTS_IN_JSON_FORMAT}{}{deck_info}", game_rules(history_exchanges()));
+        self.system_prompt = format!("{THOUGHTS_IN_JSON_FORMAT}{}{deck_info}", game_rules(self.window));
         self.interaction_id = None;
         self.chain_len = 0;
     }
 
     fn set_history_window(&mut self, exchanges: usize) {
+        self.system_prompt = rewindow(&self.system_prompt, self.window, exchanges);
         self.window = exchanges;
     }
 

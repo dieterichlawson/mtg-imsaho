@@ -129,6 +129,11 @@ fn each_decision_is_its_own_session_unless_a_window_is_asked_for() {
     let fourth = arg_after(&calls[3], "--session-id").expect("the window is full: a fresh session");
     assert_ne!(fourth, first);
     assert_eq!(arg_after(&calls[4], "--resume"), Some(fourth));
+    // And the seat is told so: its system prompt said no earlier prompt is
+    // kept whatever window `with_history` set (#858's review).
+    let sys = p.system_prompt_for_test();
+    assert!(sys.contains("Up to 2 of your earlier decisions are also kept"), "{sys}");
+    assert!(!sys.contains("No earlier prompt is kept"), "{sys}");
 
     for c in &calls {
         assert!(c.contains("ARG: -p\n"), "print mode");

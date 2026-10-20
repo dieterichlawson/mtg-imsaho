@@ -1062,12 +1062,13 @@ impl LlmBackend for ClaudeCodeBackend {
     }
 
     fn init(&mut self, deck_info: &str) {
-        self.system_prompt = format!("{THOUGHTS_IN_JSON_FORMAT}{}{deck_info}", game_rules(history_exchanges()));
+        self.system_prompt = format!("{THOUGHTS_IN_JSON_FORMAT}{}{deck_info}", game_rules(self.window));
         self.session_id = None;
         self.turns = 0;
     }
 
     fn set_history_window(&mut self, exchanges: usize) {
+        self.system_prompt = super::rewindow(&self.system_prompt, self.window, exchanges);
         self.window = exchanges;
     }
 
