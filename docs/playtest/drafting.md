@@ -11,7 +11,9 @@ Two setup rules, both about money and time:
 
 - **`--model` defaults to `claude`, a metered API seat.** Every draft
   run must pass `--model cc` explicitly. A mission that forgets is a
-  mission that spent money.
+  mission that spent money. `cc:claude-haiku-5-5` spends the least of the
+  quota and picked closest to a stronger model's picks on real packs
+  (`reports/llm-cost.md`, phase 4).
 - **Point `CLAUDE_CODE_BIN` at an ABSOLUTE path.** The backend runs each call
   in the seat's scratch `current_dir`, while the up-front "is the CLI runnable"
   check runs in the invocation cwd — so a relative path passes the guard and then
@@ -921,3 +923,27 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   asked and once while its opponent is. Verify every match frees what it
   took, a finished URL says the match is over, and each action does the
   same thing at both moments.
+- D41 [proposed 2026-10-20, from the draft cost work, `reports/llm-cost.md`
+  phase 4] the pick nobody is asked: a pack's last card is now taken without
+  a model call, in the runner (`main.rs`, the worker's early return) and at
+  the hosted table (`server.rs`, `ai_worker`). Under the prompt stub, run
+  `--players 2 --best-of 1 --model cc --seed <n>` and a hosted table with
+  two `ai` seats and one human; count the calls (`STUB_CALLS`) and the
+  log's `PICK` lines. Verify every seat is asked 39 picks, never the
+  fourteenth of a pack; that the fourteenth is logged as taken without
+  asking and still lands in the pool, the snapshot and the page's pick
+  list; that the seat's notes from pick 13 still open its next pack's
+  first prompt; and that `--resume` from a snapshot cut on either side of
+  a fourteenth pick replays it without a call. Then the human: does the
+  page still show a one-card pack, and does the timer still auto-pick it?
+- D42 [proposed 2026-10-20, same source] kept picks are the eval's ground
+  truth: `MTG_DRAFT_POSITIONS` writes one line per asked pick, and
+  `mtg-draft-replay` asks it again. Under the stub, keep a draft's picks,
+  then a `--resume`d draft's, then a draft where one seat's answers are
+  all unusable (a stub that answers out of range). Verify the file holds
+  each asked pick once — a replayed pick is not kept again, a substituted
+  one says `substituted` — that every line's `notes` is what the seat was
+  shown at that pick, and that `mtg-draft-replay --model cc` under the
+  stub chooses `live` on every line (`kept_picks_replay.rs` checks one
+  clean draft; the resumed and the substituted ones are unchecked). A
+  metered `--model` must be refused before anything is read.

@@ -126,7 +126,8 @@ through the draft page or `mtg-draft-client`. There is no `scripted`
 seat, so don't plan around one. The CLI's default model may refuse the
 game prompt outright; name one when it does — `cc:claude-haiku-5-5`, the
 cheapest, which chose better than `cc:claude-sonnet-4-6` on the decision
-replay (`reports/llm-cost.md`, phase 3) and spends far less of the quota.
+replay (`reports/llm-cost.md`, phase 3) and the draft's pick replay
+(phase 4) and spends far less of the quota.
 
 What a `cc` seat is sent is bounded on purpose (`reports/llm-cost.md`):
 one decision is the system prompt plus one prompt, never the game's

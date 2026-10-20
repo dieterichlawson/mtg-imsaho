@@ -87,7 +87,14 @@ measured bill and why. Three rules follow:
    system prompt or a backend, and say in the commit what moved. For the
    same positions byte for byte, replay `logs/eval/positions` (or any
    kept positions) under the stub with each build
-   (`docs/llm-harness.md`, "Saving and resuming").
+   (`docs/llm-harness.md`, "Saving and resuming"). A draft prompt
+   (`build_draft_rules`, `build_pick_prompt`, `build_deck_prompt`) is
+   counted by `scripts/measure-draft-prompts.sh` and replayed from
+   `MTG_DRAFT_POSITIONS` with `scripts/decision-eval/draft-replay.py`
+   (`docs/llm-harness.md`, "Drafting"). Fewer tokens is not a cheaper
+   call when the tokens cut were cache reads: price the change, and
+   replay picks or decisions before taking it (`reports/llm-cost.md`,
+   phase 4).
 3. **Nothing that changes from call to call goes in a schema or the
    system prompt.** Both are the cached prefix: on the Messages API a
    changed `output_config.format` invalidates the prompt cache, and

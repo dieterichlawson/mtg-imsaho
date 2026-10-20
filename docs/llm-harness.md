@@ -60,7 +60,9 @@ carried the session's reminders into every prompt.
 Default models when the spec names none: `claude` → `claude-haiku-5-5`
 (`DEFAULT_ANTHROPIC_MODEL`: replayed over real positions it chose the
 reference's action more often than `claude-sonnet-4-6`, the default before
-it, at about a twelfth of the price; `reports/llm-cost.md`, phase 3),
+it, at about a twelfth of the price; `reports/llm-cost.md`, phase 3 — and
+in the draft, replayed over 156 real picks, it took the reference's card on
+77% of them to the older Sonnet's 58%, at a twentieth of the price; phase 4),
 `gemini` → `gemini-2.5-flash`, `claude-code` → whatever the CLI defaults to
 (no `--model` is passed). The CLI's default model has refused the game
 prompt before; `cc:claude-haiku-5-5` is the same choice on plan quota.
@@ -467,8 +469,48 @@ standings and a token-usage summary to stderr.
 a missing value is refused, and an unknown provider is refused by name — a
 mistyped invocation costs nothing rather than starting an eight-seat draft.
 
-There is no `--seed`, `--save`, or `--resume` here: a draft run cannot be
-replayed or resumed.
+`--seed <N>` fixes the packs, the shuffles and play/draw; a run without one
+logs the seed it drew. `--save <path>` snapshots the run after every pick
+round, the deck builds and every match, and `--resume <path>` carries on
+from one: the recorded picks are replayed without a model call, the decks
+are used as built and the finished matches are counted.
+
+### What a pick sends, and the pick eval
+
+A drafting seat's system prompt is the draft rules, its place at the table
+and the set's whole card reference (`## Card reference`, every card's cost,
+type line and rules text, ≈ 40 KB); it is the same bytes on every pick, so
+after a seat's first call it is read from the prompt cache at a tenth of the
+input price. Each pick prompt is the seat's notes from its last pick, the
+pack's lines (cost, type, size, rarity) and the pool restated with its
+colours and curve — about 2 KB. A pack's last card is taken without a call.
+Dropping the reference for each pack card's own text cut a pick's tokens
+sevenfold and its price by a quarter at most, and picked measurably worse;
+`reports/llm-cost.md`, phase 4, has the numbers, and
+`scripts/measure-draft-prompts.sh` counts what a stub draft sends.
+
+A pick is a pure function of what the seat is shown, so a real draft's picks
+can be asked again of another seat or build and the choices compared — the
+draft's counterpart of the game eval above:
+
+```bash
+# Keep every asked pick of a real draft ...
+MTG_DRAFT_POSITIONS=$PWD/logs/draft-eval/picks.jsonl ./target/release/mtg-draft-runner \
+  --model cc:claude-haiku-5-5 --players 2 --best-of 1 --seed 21 -q --log logs/draft-eval/draft.log
+# ... ask them again under a reference and a candidate, and score one against the other.
+scripts/decision-eval/draft-replay.py --positions logs/draft-eval/picks.jsonl --out logs/draft-eval/res \
+  --name ref --model cc:claude-opus-5-5 --env MTG_LLM_THINKING=high --samples 2
+scripts/decision-eval/draft-replay.py --positions logs/draft-eval/picks.jsonl --out logs/draft-eval/res \
+  --name haiku --model cc:claude-haiku-5-5
+scripts/decision-eval/compare.py --out logs/draft-eval/res --ref ref haiku
+```
+
+`mtg-draft-replay` (what `draft-replay.py` runs, one position at a time)
+refuses a metered seat without `--metered`, and `draft-replay.py` refuses
+one outright. A pick replays as the prompt it was live on any build that
+renders pick prompts as the drafting build did
+(`mtg-draft-runner/tests/kept_picks_replay.rs`). The positions and reference
+behind phase 4 are kept in `reports/decision-eval/2026-10-20-draft/`.
 
 To draft *with* people — a hosted table where humans join from a browser
 or a terminal and AI seats fill the rest, then everybody plays — see
