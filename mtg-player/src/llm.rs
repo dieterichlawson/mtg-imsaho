@@ -4452,14 +4452,7 @@ impl LlmPlayer {
     fn choose_ordering(&mut self, view: &GameView, description: &str, rows: &[String], rule: &str) -> Action {
         use mtg_engine::actions::ResolvedChoice;
         let n = rows.len();
-        let listed: String = rows.iter().enumerate()
-            .map(|(i, r)| format!("  {i}: {r}"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let action_text = format!(
-            "{description}\n{rule}\n\nEntries to order:\n{listed}\n\n\
-             Respond with `order`: every index from 0 to {} exactly once, in the order you choose.",
-            n.saturating_sub(1));
+        let action_text = Self::ordering_text(description, rows, rule, view.you);
         let prompt = self.build_prompt(view, &action_text);
         let schema = ordering_schema(n);
         let response = self.send_message_structured(&prompt, &schema);
@@ -4476,6 +4469,24 @@ impl LlmPlayer {
         };
         self.log("CHOSE", &format!("order: {order:?}"));
         Action::ResolveChoice { choice: ResolvedChoice::ChosenOrder(order) }
+    }
+
+    /// An ordering question as the seat reads it. The rows and the
+    /// description are engine text — a trigger's "triggered by: Rakish Heir
+    /// (#39) dealt 2 combat damage to p1" — and `p0`/`p1` are never defined
+    /// to the seat, so they are rewritten to "you"/"Opp" as every other
+    /// row is (#465, #543; issue #834).
+    fn ordering_text(description: &str, rows: &[String], rule: &str, you: mtg_engine::ids::PlayerId) -> String {
+        let n = rows.len();
+        let description = Self::generic_player_rewrite(description, you);
+        let listed: String = rows.iter().enumerate()
+            .map(|(i, r)| format!("  {i}: {}", Self::generic_player_rewrite(r, you)))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!(
+            "{description}\n{rule}\n\nEntries to order:\n{listed}\n\n\
+             Respond with `order`: every index from 0 to {} exactly once, in the order you choose.",
+            n.saturating_sub(1))
     }
 
     /// Divide combat damage: how much of what is left goes to one blocker
@@ -7308,6 +7319,25 @@ pub(crate) mod tests {
         let theirs = LlmPlayer::format_action_prompt(
             None, &rows, mtg_engine::ids::PlayerId(0));
         assert!(theirs.contains("instead Opp mills 4 cards"), "{theirs}");
+    }
+
+    /// #834: a trigger's cause is engine text, and the ordering rows passed
+    /// it through raw — "triggered by: Rakish Heir (#39) dealt 2 combat
+    /// damage to p1", to a seat that has never been told who `p1` is.
+    #[test]
+    fn an_ordering_row_never_hands_the_seat_a_raw_player_token() {
+        let rows = vec![
+            "Rakish Heir (#39) 2/2 — triggered ability: put a +1/+1 counter on that Vampire — triggered by: Rakish Heir (#39) dealt 2 combat damage to p1".to_string(),
+            "Stromkirk Noble (#40) 1/1 — combat damage trigger: put a +1/+1 counter on Stromkirk Noble — triggered by: it dealt 1 combat damage to p1".to_string(),
+        ];
+        for you in [0u8, 1] {
+            let text = LlmPlayer::ordering_text("p0: choose the order of 2 triggers", &rows, "rule",
+                mtg_engine::ids::PlayerId(you));
+            assert!(raw_player_tokens(&text).is_empty(),
+                "p{you} is offered undefined tokens {:?} in:\n{text}", raw_player_tokens(&text));
+        }
+        let mine = LlmPlayer::ordering_text("", &rows, "rule", mtg_engine::ids::PlayerId(0));
+        assert!(mine.contains("dealt 2 combat damage to Opp"), "{mine}");
     }
 
     /// The system prompt had been written around the leak rather than
