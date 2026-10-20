@@ -830,7 +830,7 @@ the order they happened, not in seat order", "");
         if substituted {
             let card = self.table.in_front(seat)
                 .and_then(|f| f.cards.get(index).cloned()).unwrap_or_default();
-            log_draft_warning!(self.log, seat, round, pick, &card, response);
+            as_seat(seat, || log_draft_warning!(self.log, seat, round, pick, &card, response));
             self.event(format!("WARN {} pack {round} pick {pick}: unusable answer, \
 substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)));
         }
@@ -1172,8 +1172,8 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
     /// the people at the table are not stopped by it.
     pub fn seat_gave_up(&mut self, seat: usize, why: &str) {
         self.seats[seat].auto = true;
-        mtg_player::game_log::write(file!(), line!(),
-            &format!("[Seat {seat}] WARN the seat stopped answering; the table picks and builds for it: {why}"), "");
+        as_seat(seat, || mtg_player::game_log::write(file!(), line!(),
+            &format!("[Seat {seat}] WARN the seat stopped answering; the table picks and builds for it: {why}"), ""));
         self.event(format!("WARN {} stopped answering ({why}); the table picks and builds for it, and its games are forfeit", self.who(seat)));
         self.run_auto_seats();
     }
@@ -1240,7 +1240,7 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
         let config = TournamentConfig { best_of: self.config.best_of };
         self.tournament = Some(Tournament::new(self.seats.len(), config));
         self.phase = Phase::Playing;
-        log_section!(self.log, "TOURNAMENT");
+        mtg_player::game_log::as_thread("tournament", || log_section!(self.log, "TOURNAMENT"));
         let rounds = self.tournament.as_ref().map_or(0, Tournament::total_rounds);
         self.event(format!("every deck is in; the tournament starts: {rounds} round{}, best-of-{}",
             if rounds == 1 { "" } else { "s" }, self.config.best_of));
