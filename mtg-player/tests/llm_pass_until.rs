@@ -1225,3 +1225,31 @@ fn the_seats_own_cast_time_prompt_keeps_its_plan_and_attack() {
     assert!(matches!(&chosen, Action::DeclareAttackers { .. }), "{chosen:?}");
     assert_eq!(fake.calls().len(), calls + 1, "and the attack it named is still declared as planned");
 }
+
+/// The stop line quotes the prompt that ended the pass, into the seat's
+/// next prompt, and it quoted the engine's context raw where the prompt's
+/// own context line is in the seat's words: an engine `p1` reached a seat
+/// that is never told who p1 is (#834's review, #465's leak).
+#[test]
+fn a_stop_line_quotes_the_prompt_in_the_seats_words() {
+    let fake = Fake::new("stopwords");
+    let theirs = LegalActions {
+        actions: vec![],
+        combat_prompt: None,
+        castable_spells: vec![],
+        activatable_abilities: vec![],
+        context: Some("RESPOND TO p1's Brimstone Volley".to_string()),
+        resolution_prompt: None,
+        set_prompt: Some(SetPrompt {
+            kind: SetPromptKind::DiscardToHandSize, player: YOU,
+            options: vec![ObjectId(10), ObjectId(12)], min: 1, max: 1,
+        }),
+    };
+    let mut v = view(3, Step::Cleanup, YOU);
+    v.your_hand.push(card(12, "Grizzly Bears", vec![CardType::Creature], ""));
+    v.opponent_stack_puts = 1;
+    let mut seat = engaged_on_own_turn(&fake);
+    seat.choose_action(&v, &theirs);
+    let line = stop_line(&fake);
+    assert!(line.contains("asked something else: RESPOND TO opp's Brimstone Volley"), "{line}");
+}

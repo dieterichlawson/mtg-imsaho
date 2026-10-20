@@ -5248,8 +5248,16 @@ impl LlmPlayer {
         // they began: one the seat's own planned cast or its own trigger
         // raises is part of the plan, and dropping the plan there asked the
         // same attack again at combat (#862).
+        // The engine labels the other seat `p1`, and the context line is the
+        // one line of the prompt that used to pass that through: every log
+        // entry is rewritten to you/opp, and the line that names the decision
+        // — `[RESPOND TO p1's ...]` — was not, so the prompt used a vocabulary
+        // its own system prompt says it never uses (issue #465). The stop
+        // lines below quote it too, into the next prompt (#834's review).
+        let context: Option<String> = legal.context.as_deref()
+            .map(|c| Self::generic_player_rewrite(c, view.you));
         if !Self::is_plain_priority_offer(legal) {
-            let what = || legal.context.clone()
+            let what = || context.clone()
                 .unwrap_or_else(|| "a prompt that is not a priority pass".to_string());
             let opp_acted = |since: u64| view.opponent_stack_puts > since;
             if self.pass_until.as_ref().is_some_and(|m| opp_acted(m.opp_puts)) {
@@ -5259,14 +5267,6 @@ impl LlmPlayer {
                 self.stop_plan(&format!("{OPPONENT_ACTED}, and you are asked something else: {}", what()));
             }
         }
-        // The engine labels the other seat `p1`, and the context line is the
-        // one line of the prompt that used to pass that through: every log
-        // entry is rewritten to you/opp, and the line that names the decision
-        // — `[RESPOND TO p1's ...]` — was not, so the prompt used a vocabulary
-        // its own system prompt says it never uses (issue #465).
-        let context: Option<String> = legal.context.as_deref()
-            .map(|c| Self::generic_player_rewrite(c, view.you));
-
         // X-cost funding: structured-prompt choice that can't be pre-enumerated.
         // The engine surfaces the `FundingOptions` via `resolution_prompt`; we
         // build a dynamic JSON schema + explanation and parse the response.
