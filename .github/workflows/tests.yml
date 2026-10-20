@@ -81,8 +81,8 @@ jobs:
             target
           key: prompt-shape-${{ runner.os }}-1.97.0-${{ hashFiles('Cargo.lock') }}
 
-      - name: Build the runner
-        run: cargo build --release -p mtg-runner
+      - name: Build the runners
+        run: cargo build --release -p mtg-runner -p mtg-draft-runner
 
       - name: What one game sends, under a stub claude
         run: |
@@ -94,5 +94,18 @@ jobs:
             echo
             echo '```'
             cat prompt-shape.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: What one draft sends, under a stub claude
+        run: |
+          MTG_DRAFT_RUNNER_BIN=./target/release/mtg-draft-runner scripts/measure-draft-prompts.sh 1 2 3 | tee draft-shape.txt
+          {
+            echo '## What a drafting seat is sent per draft (stub claude, nothing billed)'
+            echo
+            echo 'Bytes; divide by ~3 for tokens. Compare with reports/llm-cost.md, phase 4.'
+            echo
+            echo '```'
+            cat draft-shape.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
