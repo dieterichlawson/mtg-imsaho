@@ -19,7 +19,7 @@ pub use claude_code::{available as claude_code_available, binary as claude_code_
 // The one `claude -p` subprocess driver, for both seats in the workspace
 // (#404).
 pub use claude_code::{prepare_seat as claude_code_prepare_seat, run_print_mode as claude_code_run};
-pub use claude_code::ANSWER_SCHEMA_ENV as CLAUDE_CODE_ANSWER_SCHEMA_ENV;
+pub use claude_code::{ANSWER_SCHEMA_ENV as CLAUDE_CODE_ANSWER_SCHEMA_ENV, CACHE_TTL_ENV as CLAUDE_CODE_CACHE_TTL_ENV};
 pub use claude_code::{stop_gracefully_on_signal, stop_signal};
 pub use cost::{api_equivalent, cost, is_plan_quota, model_prices, total_cost, Cost, ModelPrices};
 

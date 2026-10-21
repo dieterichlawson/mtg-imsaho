@@ -58,6 +58,10 @@ pub const FORCE_5M_CACHE_ENV: &str = "FORCE_PROMPT_CACHING_5M";
 /// what every call writes, is never read again. A seat reads its system
 /// prompt back within seconds of the last call; a new game is a new system
 /// prompt anyway (`reports/llm-cost.md`, phase 5).
+///
+/// One call can ask for the hour itself, by setting this on its own
+/// command: a question asked a game apart from the last of its kind (a
+/// draft seat's sideboarding), whose prefix five minutes would not keep.
 pub const CACHE_TTL_ENV: &str = "MTG_CLAUDE_CODE_CACHE_TTL";
 
 /// How long one decision may take before the subprocess is killed and the
@@ -896,8 +900,10 @@ pub fn run_print_mode(
     // (`super::max_output_tokens`). The CLI's own default is far above
     // what any decision needs.
     cmd.env(MAX_OUTPUT_TOKENS_ENV, super::max_output_tokens(super::thinking_level()).to_string());
-    // The 5-minute cache TTL unless the run asks for the CLI's hour.
-    if std::env::var(CACHE_TTL_ENV).as_deref() == Ok("1h") {
+    // The 5-minute cache TTL unless the run asks for the CLI's hour, or
+    // this call does on its own command.
+    let own_hour = cmd.get_envs().any(|(k, v)| k == CACHE_TTL_ENV && v.is_some_and(|v| v == "1h"));
+    if own_hour || std::env::var(CACHE_TTL_ENV).as_deref() == Ok("1h") {
         cmd.env_remove(FORCE_5M_CACHE_ENV);
     } else {
         cmd.env(FORCE_5M_CACHE_ENV, "1");

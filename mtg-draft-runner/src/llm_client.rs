@@ -856,6 +856,12 @@ struct ClaudeCodeDraftBackend {
     answer_schema: Option<String>,
     /// Ask for the answer in the prompt rather than with `--json-schema`.
     text_answers: bool,
+    /// Write this call's cache at the hour TTL. A sideboarding decision
+    /// comes a game after the seat's last, past five minutes, so its prefix
+    /// — the rules and the set's card reference, about 15,000 tokens — was
+    /// written whole on every one; at the hour the seat's first writes it
+    /// and the rest read it (`reports/llm-cost.md`, phase 5).
+    hour_cache: bool,
 }
 
 /// `MTG_CLAUDE_CODE_DRAFT_ANSWERS`: `schema` (the default) or `text`, how a
@@ -913,6 +919,7 @@ impl ClaudeCodeDraftBackend {
             workdir,
             answer_schema: None,
             text_answers,
+            hour_cache: false,
         }
     }
 
@@ -1104,6 +1111,9 @@ impl ClaudeCodeDraftBackend {
         if let Some(full) = &self.answer_schema {
             cmd.env(mtg_player::llm::CLAUDE_CODE_ANSWER_SCHEMA_ENV, full);
         }
+        if self.hour_cache {
+            cmd.env(mtg_player::llm::CLAUDE_CODE_CACHE_TTL_ENV, "1h");
+        }
         match &self.session_id {
             Some(id) => {
                 cmd.args(["--resume", id]);
@@ -1175,7 +1185,9 @@ impl DraftBackend for ClaudeCodeDraftBackend {
     fn send_sideboard(&mut self, message: &str, pool: &[String]) -> String {
         let full = sideboard_schema_for(pool);
         self.answer_schema = Some(full.to_string());
+        self.hour_cache = true;
         let response = self.decide(message, &mtg_player::llm::cache_stable_schema(&full));
+        self.hour_cache = false;
         self.answer_schema = None;
         response
     }
@@ -2033,6 +2045,24 @@ printf '{"type":"result","subtype":"success","is_error":false,"session_id":"%s",
         assert_eq!(schema["additionalProperties"], false);
         // The response has to come back as the JSON text main.rs parses.
         assert_eq!(serde_json::from_str::<serde_json::Value>(&response).unwrap()["pick"], 2);
+    }
+
+    /// A sideboarding call comes a game after the seat's last and writes
+    /// its cache at the hour, so the seat's next one reads its prefix; a
+    /// pick, seconds after the last, keeps five minutes.
+    #[test]
+    fn sideboarding_writes_its_cache_for_the_hour_and_a_pick_for_five_minutes() {
+        use super::DraftBackend;
+        let body = format!("echo \"TTL: ${{{}-unset}} 5M: ${{FORCE_PROMPT_CACHING_5M-unset}}\" >> \"$LOG\"\n{OK_BODY}",
+            mtg_player::llm::CLAUDE_CODE_CACHE_TTL_ENV);
+        let fake = Fake::new("hour", &body);
+        let mut b = answering(backend(&fake, None), false);
+        b.send_pick("Pack 1, Pick 1", 3);
+        b.send_sideboard("Between games", &["Doomed Traveler".to_string()]);
+        b.send_pick("Pack 1, Pick 2", 2);
+        let log = fake.log();
+        let ttl: Vec<&str> = log.lines().filter(|l| l.starts_with("TTL: ")).collect();
+        assert_eq!(ttl, ["TTL: unset 5M: 1", "TTL: 1h 5M: unset", "TTL: unset 5M: 1"], "{log}");
     }
 
     /// Asked in text (`MTG_CLAUDE_CODE_DRAFT_ANSWERS=text`), a pick sends no schema: the pick's

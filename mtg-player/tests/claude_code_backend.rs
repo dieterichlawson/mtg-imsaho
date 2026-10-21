@@ -639,3 +639,23 @@ fn a_claude_code_seat_is_not_a_part_of_the_session_that_started_it() {
     // 1.25x, and a decision's prompt is never read back (phase 5).
     assert!(log.contains("TTL5M=1"), "{log}");
 }
+
+/// A call asked a game apart from the last of its kind sets the hour on its
+/// own command (a draft seat's sideboarding): its child is not switched to
+/// five minutes, and the next call, which does not ask, still is.
+#[test]
+fn one_call_can_ask_for_the_hour_ttl() {
+    let fake = Fake::new(
+        "own-hour",
+        &format!("echo \"TTL5M=${{FORCE_PROMPT_CACHING_5M-unset}}\" >> \"$LOG\"\n{OK_BODY}"),
+    );
+    let mut cmd = std::process::Command::new(fake.bin());
+    cmd.arg("-p").env(mtg_player::llm::CLAUDE_CODE_CACHE_TTL_ENV, "1h");
+    mtg_player::llm::claude_code_run(&mut cmd, "claude", "sideboard").expect("the call succeeds");
+    let mut cmd = std::process::Command::new(fake.bin());
+    cmd.arg("-p");
+    mtg_player::llm::claude_code_run(&mut cmd, "claude", "pick").expect("the call succeeds");
+    let log = fake.log();
+    let ttl: Vec<&str> = log.lines().filter(|l| l.starts_with("TTL5M=")).collect();
+    assert_eq!(ttl, ["TTL5M=unset", "TTL5M=1"], "{log}");
+}
