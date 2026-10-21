@@ -3331,8 +3331,9 @@ impl LlmPlayer {
                 // The entry's controller sits by the entry, not after the
                 // targets: there it read as one phrase with the target's own
                 // tag — "Grizzly Bears (#228) (opponent's) (your)" (#671).
-                // The spell resolving now is on the stack too (#766): the
-                // seat answering its question saw no stack at all.
+                // The spell or ability resolving now is on the stack too
+                // (#766, #833): the seat answering its question saw no
+                // stack at all.
                 let resolving = if i.resolving { " — resolving" } else { "" };
                 entries.push(format!("  {}{id}{x} ({who}){}{resolving}", i.name, targets_str));
             }

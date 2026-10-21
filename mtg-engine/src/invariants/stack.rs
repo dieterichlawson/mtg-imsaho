@@ -251,6 +251,20 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
     if state.resolving_trigger_from_back_face.is_some() {
         v.push("resolving_trigger_from_back_face survived past a trigger's hook".into());
     }
+    // The ability resolving now is shown on the stack (#833) only while it
+    // asks its question, or on a board the game ended under (CR 104.1), as
+    // `resolving_spell` is.
+    if let Some(entry) = &state.resolving_ability {
+        if state.awaiting_action.is_none() && state.result.is_none() {
+            v.push("resolving_ability set with no choice pending (CR 608.2n)".into());
+        }
+        if matches!(entry, StackEntry::Spell(_)) {
+            v.push("resolving_ability holds a spell; a spell resolving is resolving_spell".into());
+        }
+        if state.resolving_spell.is_some() {
+            v.push("an ability and a spell are resolving at once".into());
+        }
+    }
 
     // ── A cast in progress (CR 601.2b/601.2h) ───────────────────────────
     if let Some(c) = &state.pending_spell_cast {

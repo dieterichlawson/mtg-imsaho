@@ -218,7 +218,9 @@ fn resolve_top_of_stack_inner(state: &mut GameState, registry: &CardRegistry) {
             resolve_spell(state, registry, object_id);
         }
         StackEntry::Ability { source_id, ability_index, behavior_card_id, targets, x_value, activator, target_requirement, sacrificed, sacrificed_toughness, loyalty } => {
-            state.stack.pop();
+            // Still on the stack while it resolves (CR 608.2n), so a question
+            // it asks is asked under it (#833).
+            let on_stack = state.stack.pop();
             state.last_activated_x_value = x_value;
             state.last_activated_sacrifice = sacrificed;
             state.last_activated_sacrifice_toughness = sacrificed_toughness;
@@ -285,6 +287,7 @@ fn resolve_top_of_stack_inner(state: &mut GameState, registry: &CardRegistry) {
             state.log(LogLevel::Event, format!("{name} ability resolved"));
             if let Some(behavior) = registry.get(behavior_card_id) {
                 state.resolving_ability_activator = Some(activator);
+                state.resolving_ability = on_stack;
                 if loyalty {
                     // CR 606.5: loyalty abilities resolve like any other
                     // activated ability; their effects live in the loyalty
@@ -302,6 +305,7 @@ fn resolve_top_of_stack_inner(state: &mut GameState, registry: &CardRegistry) {
                 // `choices.rs` clears it when the chain runs out.
                 if state.awaiting_action.is_none() {
                     state.resolving_ability_activator = None;
+                    state.resolving_ability = None;
                 }
             }
         }

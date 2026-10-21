@@ -780,7 +780,8 @@ function drawBand(ctx, hits, state) {
         ctx.fillStyle = "#201828";
         ctx.fillRect(x, sy, 24, 20);
         drawArt(ctx, x + 2, sy + 2, 16, 12, item.name, [], false);
-        // The spell resolving now is marked R, not given a place in the queue (#766).
+        // The spell or ability resolving now is marked R, not given a place in
+        // the queue (#766, #833).
         // The waiting entries still count from 1 under it.
         const queued = i + 1 - (view.stack[0]?.resolving ? 1 : 0);
         text(ctx, item.resolving ? "R" : String(queued), x + 20, sy + 12, { align: "center", font: "6px Silkscreen", color: "#ffe080" });

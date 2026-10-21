@@ -909,9 +909,11 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
         state.consecutive_passes = 0;
     // The activated ability that raised this choice is finished once no
     // further choice is pending. Until then its "you" is still the activator,
-    // which `helpers::ability_controller` reads (CR 602.2a).
+    // which `helpers::ability_controller` reads (CR 602.2a). And it has
+    // finished resolving, so it leaves the stack the view shows (#833).
     if state.awaiting_action.is_none() {
         state.resolving_ability_activator = None;
+        state.resolving_ability = None;
     }
     Applied::Continue
 }

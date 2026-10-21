@@ -751,6 +751,10 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
     // and cost Rakish Heir its counter when the Heir traded in combat. There
     // is one rule and it is stated here: the source's zone is not consulted.
     // A handler that genuinely needs its permanent present checks for itself.
+    //
+    // The trigger is still on the stack while it resolves (CR 608.2n), and a
+    // question its hook asks is asked under it (#833).
+    let on_stack = crate::state::StackEntry::Trigger(trigger.clone());
     let PendingTrigger { source, event, .. } = trigger;
 
     let targets = source.chosen_targets;
@@ -768,6 +772,7 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
     // "its own" means the face it triggered from — which is not necessarily the
     // face that is up now.
     state.resolving_trigger_from_back_face = Some(source.from_back_face);
+    state.resolving_ability = Some(on_stack);
     match event {
         TriggerEvent::SelfEntered => {
             behavior.on_enter_battlefield(state, self_id, &targets, registry);
@@ -832,6 +837,11 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
 
 
     state.resolving_trigger_from_back_face = None;
+    // Finished, unless the hook asked something: then it resolves on until
+    // the answer's chain runs out (`choices.rs`).
+    if state.awaiting_action.is_none() {
+        state.resolving_ability = None;
+    }
     true
 }
 

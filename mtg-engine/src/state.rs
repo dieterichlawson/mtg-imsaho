@@ -218,6 +218,21 @@ pub struct GameState {
     #[serde(default)]
     pub resolving_spell: Option<ObjectId>,
 
+    /// The triggered or activated ability resolving now, as it stood on the
+    /// stack, while it asks a question of its resolution (or ended the game
+    /// part-way, CR 104.1) — `resolving_spell`'s counterpart for an ability.
+    ///
+    /// An ability leaves `state.stack` as it starts to resolve and is still
+    /// on the stack until it finishes (CR 608.2n). Nothing recorded it, so
+    /// the view had no entry for it: Mentor of the Meek's "pay {1} to draw a
+    /// card?" was asked under an empty STACK pane and a seat with no stack
+    /// section, after the events already said the ability resolved (#833).
+    /// Set around the card's hook, kept while a choice it raised is pending,
+    /// and cleared with `resolving_ability_activator` once the chain runs
+    /// out. Read only by the view.
+    #[serde(default)]
+    pub resolving_ability: Option<StackEntry>,
+
     /// Game result, if the game is over.
     pub result: Option<GameResult>,
 
@@ -624,6 +639,7 @@ impl GameState {
             resolving_trigger_from_back_face: None,
             resolving_ability_activator: None,
             resolving_spell: None,
+            resolving_ability: None,
             result: None,
             final_state: None,
             consecutive_passes: 0,

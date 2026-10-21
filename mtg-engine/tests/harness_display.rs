@@ -1011,3 +1011,57 @@ fn the_spell_asking_its_resolution_question_is_on_the_views_stack() {
     assert_eq!(view.stack.len(), 1);
     assert!(!view.stack[0].resolving);
 }
+
+/// A triggered ability asking its resolution question is on the view's stack
+/// too, marked resolving, and leaves it once the question is answered
+/// (#833). Mentor of the Meek's "pay {1} to draw a card?" was asked under an
+/// empty stack: #766 put a resolving spell back on it and nothing else.
+#[test]
+fn the_trigger_asking_its_resolution_question_is_on_the_views_stack() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let mentor = named_permanent(&mut state, &reg, "Mentor of the Meek", P0);
+    let small = ready_creature(&mut state, P0, 1, 1);
+    let card_id = state.get_object(mentor).unwrap().card_id;
+    state.stack.push(mtg_engine::state::StackEntry::Trigger(PendingTrigger::new(
+        TriggerSource::new(mentor, card_id, P0, "you may pay {1} to draw a card"),
+        TriggerEvent::CreatureEntered { entered: small, entered_controller: P0 })));
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert!(state.awaiting_action.is_some() && state.stack.is_empty(),
+        "test precondition: the Mentor's trigger is resolving and asking");
+    for p in [P0, P1] {
+        let view = mtg_engine::view::GameView::for_player(&state, p, &reg);
+        assert_eq!(view.stack.len(), 1, "the resolving trigger, and nothing else");
+        assert_eq!(view.stack[0].source_id, Some(mentor));
+        assert!(view.stack[0].name.contains("Mentor of the Meek"), "{}", view.stack[0].name);
+        assert!(view.stack[0].resolving, "and it is marked as resolving");
+    }
+    // Answered, it has finished resolving and is on the stack no longer.
+    let answered = mtg_engine::engine::submit_action(&state, &mtg_engine::actions::Action::ResolveChoice {
+        choice: mtg_engine::actions::ResolvedChoice::YesNoDecision(false),
+    }, &reg);
+    assert!(answered.awaiting_action.is_none(), "test precondition: the answer ends the chain");
+    let view = mtg_engine::view::GameView::for_player(&answered, P0, &reg);
+    assert!(view.stack.is_empty(), "an answered trigger is not still resolving: {:?}",
+        view.stack.iter().map(|s| &s.name).collect::<Vec<_>>());
+}
+
+/// The same for an activated ability: Civilized Scholar's "draw a card, then
+/// discard a card" asks which card while it is on the stack (#833).
+#[test]
+fn the_activated_ability_asking_its_resolution_question_is_on_the_views_stack() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let scholar = named_permanent(&mut state, &reg, "Civilized Scholar", P0);
+    stock_library(&mut state, &reg, P0, 3);
+    spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
+    spell_in_hand(&mut state, &reg, "Moment of Heroism", P0);
+    let state = activate_offered(&state, &reg, scholar, None);
+    assert!(state.awaiting_action.is_some() && state.stack.is_empty(),
+        "test precondition: the Scholar's ability is resolving and asking which card to discard");
+    let view = mtg_engine::view::GameView::for_player(&state, P0, &reg);
+    assert_eq!(view.stack.len(), 1, "the resolving ability, and nothing else");
+    assert_eq!(view.stack[0].source_id, Some(scholar));
+    assert!(view.stack[0].name.contains("Civilized Scholar"), "{}", view.stack[0].name);
+    assert!(view.stack[0].resolving, "and it is marked as resolving");
+}

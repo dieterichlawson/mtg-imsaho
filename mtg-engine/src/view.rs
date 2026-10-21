@@ -350,12 +350,14 @@ pub struct StackItemView {
     /// that said what it would do — at exactly the moment the player decides
     /// whether to respond (issue #646).
     pub oracle_text: String,
-    /// This is the spell resolving now: it has left `state.stack` but is
-    /// still on the stack until it finishes (CR 608.2n), and it is asking a
-    /// question of its resolution, or it ended the game part-way (CR 104.1).
-    /// It used to be in no zone of the view at all — the STACK pane read
-    /// "(empty)" over Night Terrors' own question, and the card a game was
-    /// won with was missing from the final board (#766). Always the first
+    /// This is the spell or ability resolving now: it has left `state.stack`
+    /// but is still on the stack until it finishes (CR 608.2n), and it is
+    /// asking a question of its resolution, or it ended the game part-way
+    /// (CR 104.1). It used to be in no zone of the view at all — the STACK
+    /// pane read "(empty)" over Night Terrors' own question, and the card a
+    /// game was won with was missing from the final board (#766); a
+    /// triggered or activated ability asking (Mentor of the Meek's "pay
+    /// {1}?") stayed that way after the spell's fix (#833). Always the first
     /// entry when present.
     pub resolving: bool,
 }
@@ -593,76 +595,83 @@ impl GameView {
                 resolving,
             })
         };
-        // The spell resolving now is still on the stack (CR 608.2n), above
-        // everything waiting under it (#766).
-        let resolving = state.resolving_spell
+        // Any other entry: a triggered or an activated ability.
+        let entry_item = |entry: &crate::state::StackEntry, resolving: bool| {
+            match entry {
+                crate::state::StackEntry::Spell(obj_id) => spell_item(*obj_id, resolving),
+                crate::state::StackEntry::Trigger(trigger) => {
+                    Some(StackItemView {
+                        object_id: ObjectId(0), // a trigger is not an object
+                        card_id: CardId(0),
+                        name: trigger.display_name_with_state(registry, Some(state)),
+                        // ... but it has one, and every other screen
+                        // names it by id (#555).
+                        source_id: Some(trigger.source_object()),
+                        controller: trigger.controller(),
+                        // CR 603.3d: a trigger's targets are chosen as it
+                        // goes on the stack and are public — the panel
+                        // never showed them (issue #134).
+                        targets: trigger.chosen_targets().to_vec(),
+                        // A triggered ability announces no X.
+                        x_value: None,
+                        cost: None,
+                        supertypes: Vec::new(),
+                        card_types: Vec::new(),
+                        power: None,
+                        toughness: None,
+                        oracle_text: ability_text(registry, trigger.behavior_card_id()),
+                        resolving,
+                    })
+                }
+                crate::state::StackEntry::Ability { source_id, behavior_card_id, activator, targets, x_value, .. } => {
+                    Some(StackItemView {
+                        object_id: *source_id,
+                        card_id: *behavior_card_id,
+                        // CR 113.7a: the ability's source is the object
+                        // that has it, and that is what the id beside the
+                        // name says and what the log calls it. Naming a
+                        // granted ability after its Aura or Equipment put
+                        // the grantor's name beside the creature's id —
+                        // "Skeletal Grimace ability (#47)" with #47 the
+                        // Priest (issue #632). The grantor's name is only
+                        // the fallback for a source that no longer exists.
+                        name: {
+                            let source = state.name_of(*source_id, registry);
+                            if source.is_empty() {
+                                registry.card_data(*behavior_card_id)
+                                    .map_or_else(|| "Ability".into(), |d| format!("{} ability", d.name))
+                            } else {
+                                format!("{source} ability")
+                            }
+                        },
+                        source_id: Some(*source_id),
+                        controller: *activator,
+                        targets: targets.clone(),
+                        x_value: *x_value,
+                        cost: None,
+                        supertypes: Vec::new(),
+                        card_types: Vec::new(),
+                        power: None,
+                        toughness: None,
+                        oracle_text: ability_text(registry, *behavior_card_id),
+                        resolving,
+                    })
+                }
+            }
+        };
+        // What is resolving now is still on the stack (CR 608.2n), above
+        // everything waiting under it, while it asks its question: a spell
+        // (#766), or a triggered or activated ability (#833).
+        let resolving_spell = state.resolving_spell
             .filter(|id| state.get_object(*id).is_some_and(|o| o.zone == Zone::Stack))
             .and_then(|id| spell_item(id, true));
-        let stack: Vec<StackItemView> = resolving.into_iter().chain(state.stack.iter()
-            .rev() // top of stack first
-            .filter_map(|entry| {
-                match entry {
-                    crate::state::StackEntry::Spell(obj_id) => spell_item(*obj_id, false),
-                    crate::state::StackEntry::Trigger(trigger) => {
-                        Some(StackItemView {
-                            object_id: ObjectId(0), // a trigger is not an object
-                            card_id: CardId(0),
-                            name: trigger.display_name_with_state(registry, Some(state)),
-                            // ... but it has one, and every other screen
-                            // names it by id (#555).
-                            source_id: Some(trigger.source_object()),
-                            controller: trigger.controller(),
-                            // CR 603.3d: a trigger's targets are chosen as it
-                            // goes on the stack and are public — the panel
-                            // never showed them (issue #134).
-                            targets: trigger.chosen_targets().to_vec(),
-                            // A triggered ability announces no X.
-                            x_value: None,
-                            cost: None,
-                            supertypes: Vec::new(),
-                            card_types: Vec::new(),
-                            power: None,
-                            toughness: None,
-                            oracle_text: ability_text(registry, trigger.behavior_card_id()),
-                            resolving: false,
-                        })
-                    }
-                    crate::state::StackEntry::Ability { source_id, behavior_card_id, activator, targets, x_value, .. } => {
-                        Some(StackItemView {
-                            object_id: *source_id,
-                            card_id: *behavior_card_id,
-                            // CR 113.7a: the ability's source is the object
-                            // that has it, and that is what the id beside the
-                            // name says and what the log calls it. Naming a
-                            // granted ability after its Aura or Equipment put
-                            // the grantor's name beside the creature's id —
-                            // "Skeletal Grimace ability (#47)" with #47 the
-                            // Priest (issue #632). The grantor's name is only
-                            // the fallback for a source that no longer exists.
-                            name: {
-                                let source = state.name_of(*source_id, registry);
-                                if source.is_empty() {
-                                    registry.card_data(*behavior_card_id)
-                                        .map_or_else(|| "Ability".into(), |d| format!("{} ability", d.name))
-                                } else {
-                                    format!("{source} ability")
-                                }
-                            },
-                            source_id: Some(*source_id),
-                            controller: *activator,
-                            targets: targets.clone(),
-                            x_value: *x_value,
-                            cost: None,
-                            supertypes: Vec::new(),
-                            card_types: Vec::new(),
-                            power: None,
-                            toughness: None,
-                            oracle_text: ability_text(registry, *behavior_card_id),
-                            resolving: false,
-                        })
-                    }
-                }
-            }))
+        let resolving_ability = state.resolving_ability.as_ref()
+            .and_then(|entry| entry_item(entry, true));
+        let stack: Vec<StackItemView> = resolving_spell.into_iter()
+            .chain(resolving_ability)
+            .chain(state.stack.iter()
+                .rev() // top of stack first
+                .filter_map(|entry| entry_item(entry, false)))
             .collect();
 
         // Exile.

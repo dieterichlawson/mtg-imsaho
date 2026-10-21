@@ -5990,8 +5990,9 @@ return",
         // told all five apart (#116) and so did the log afterwards (#326);
         // only the screen recording the decision could not (#555).
         let id = item.source_id.map(|s| format!(" (#{})", s.0)).unwrap_or_default();
-        // The spell resolving now, asking its question or having ended the
-        // game: it is on the stack, and the pane read "(empty)" (#766).
+        // The spell or ability resolving now, asking its question or having
+        // ended the game: it is on the stack, and the pane read "(empty)"
+        // (#766, #833).
         let resolving = if item.resolving { " — resolving" } else { "" };
         match item.x_value {
             Some(x) => format!("{}{id} (X={x}) ({who}){resolving}", item.name),

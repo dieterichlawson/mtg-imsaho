@@ -129,9 +129,9 @@ export interface StackItemView {
    *  printed on — so hovering the opponent's spell says what it will do
    *  (issue #646). */
   oracle_text: string;
-  /** The spell resolving now: off the engine's stack list but still on the
-   *  stack (CR 608.2n) while it asks its question, or as the game ended
-   *  part-way. Always the first entry when present (#766). */
+  /** The spell or ability resolving now: off the engine's stack list but
+   *  still on the stack (CR 608.2n) while it asks its question, or as the
+   *  game ended part-way. Always the first entry when present (#766, #833). */
   resolving: boolean;
 }
 
