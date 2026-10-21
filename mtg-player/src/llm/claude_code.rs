@@ -1105,7 +1105,18 @@ impl LlmBackend for ClaudeCodeBackend {
         let answer = self.call(message, Some(&sanitized));
         self.answer_schema = None;
         let mut structured = match answer {
-            Some(json) => Self::structured(&json).unwrap_or_else(|| serde_json::json!({})),
+            Some(json) => Self::structured(&json).unwrap_or_else(|| {
+                // The reply as it came, where no object could be read out of
+                // it: the answer is asked again, and the log says why — a
+                // reply cut off at the output cap, prose, two objects.
+                let text: String = json["result"].as_str().unwrap_or("").chars().take(600).collect();
+                crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(),
+                    &api_label("UNREADABLE", &self.seat), &format!(
+                        "no JSON object in the reply (stop {}, {} output tokens): {text:?}",
+                        json["stop_reason"].as_str().unwrap_or("?"),
+                        json["usage"]["output_tokens"].as_u64().unwrap_or(0)));
+                serde_json::json!({})
+            }),
             None => serde_json::json!({}),
         };
         // Taken out of the payload once captured, so every caller sees the

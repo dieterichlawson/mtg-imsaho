@@ -250,6 +250,9 @@ In the `--log`:
   passed for you unasked, the pass stopped: <what happened>.` above a
   `Recent events` recap carrying everything that happened meanwhile (the
   recap's 80-entry cap and its marker apply as always).
+- `UNREADABLE [seat]` (`ERROR`) — a `claude -p` reply no JSON object could
+  be read out of, as it came (its first 600 characters, the stop reason
+  and the output tokens); the `REASK` after it asks again.
 - `USAGE [seat]` (`DEBUG`) — one line per `claude -p` call: input, output,
   thinking, cache tokens and wall time, so the largest answer of a game can
   be read off the log. A call whose `cache_read` is 0 wrote the whole
