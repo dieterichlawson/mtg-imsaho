@@ -20,6 +20,8 @@ The data behind `reports/llm-cost.md`, phase 3.
   | `new4-off` | `cc:claude-sonnet-4-6`, `off` | d1f4ba1 |
   | `new4-haiku55-off` | `cc:claude-haiku-5-5`, `off`, the CLI's own effort | d1f4ba1 |
   | `new5-haiku55-off` | `cc:claude-haiku-5-5`, `off`, `--effort low` | 55b9254 |
+  | `h55-schema` | `cc:claude-haiku-5-5`, `off`, 2 samples, `MTG_CLAUDE_CODE_ANSWERS=schema` | 121cd89 (`llm-cost.md`, phase 5) |
+  | `h55-text` | the same, the answer asked in the prompt (the default since) | 121cd89 |
 
 To score a new configuration against the same reference without spending
 the reference again:

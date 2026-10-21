@@ -22,6 +22,8 @@ The data behind `reports/llm-cost.md`, phase 4 (drafting).
   | `vara-sonnet` | `cc:claude-sonnet-4-6`, `off` | the variant below |
   | `vara-haiku55` | `cc:claude-haiku-5-5`, `off` | the variant below |
   | `ref-opus-high-vara` | `cc:claude-opus-5-5`, `high`, 1 sample | the variant below |
+  | `h55-pick-schema` | `cc:claude-haiku-5-5`, `off`, 2 samples, `--json-schema` | af93e27 (`llm-cost.md`, phase 5) |
+  | `h55-pick-text` | the same, the answer asked in the prompt (`MTG_CLAUDE_CODE_DRAFT_ANSWERS=text`) | af93e27 |
 
 - `variant-pack-text.patch` — the variant that was measured and not
   taken: no card reference in the system prompt; each pack card's rules
