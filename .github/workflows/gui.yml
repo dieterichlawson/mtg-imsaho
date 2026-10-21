@@ -17,7 +17,9 @@ permissions:
 
 jobs:
   gui:
-    runs-on: ubuntu-latest
+    # Pinned beside Playwright: 1.56.1 installs no Chromium on Ubuntu 26.04,
+    # which `ubuntu-latest` became on 2026-10-21.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
