@@ -1096,3 +1096,24 @@ say what your stub says.
   CLI's browser and the page's inspector), Abattoir Ghoul's damaged
   creatures. A fact `GameView` carries that one surface drops is the same
   bug on that surface
+- H35 [proposed 2026-10-21, from `mtg-player/src/llm/answer_text.rs`] the
+  answer in text: a `claude -p` game seat is no longer sent
+  `--json-schema`; the question's fields end the prompt and the answer is
+  read out of the result text. With a stand-in CLI that answers in prose
+  around the JSON, in a code fence, with a field missing, with a field the
+  question does not read, and with no JSON at all, check what the log
+  records for each: the object read, a `REASK` with the reason, never a
+  silent fallback that reads as the seat's answer. Read the format line for
+  every kind of question a stub game asks (mulligan, priority in and out of
+  the main phase, blocks, targets, an ordering, X): every field the reader
+  uses is named, none it ignores. `MTG_CLAUDE_CODE_ANSWERS=schema` must
+  still play a whole game, and the draft seat (on `--json-schema` unless
+  `MTG_CLAUDE_CODE_DRAFT_ANSWERS=text`) must not change with it
+- H36 [proposed 2026-10-21, same source] what a call writes: run one real
+  `cc:claude-haiku-5-5` game and read each `USAGE` line: with the
+  5-minute TTL (`FORCE_PROMPT_CACHING_5M`, set on every child) a call
+  should write its own prompt and read the system prompt; a call that
+  writes the whole system prompt mid-game is a cache miss to explain (a
+  changed system prompt, a gap longer than five minutes). Then
+  `MTG_CLAUDE_CODE_CACHE_TTL=1h`, and check `scripts/measure-llm-prompts.sh`
+  still reports one schema per game

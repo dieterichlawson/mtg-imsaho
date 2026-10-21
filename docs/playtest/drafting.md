@@ -947,3 +947,74 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   stub chooses `live` on every line (`kept_picks_replay.rs` checks one
   clean draft; the resumed and the substituted ones are unchecked). A
   metered `--model` must be refused before anything is read.
+- D43 [proposed 2026-10-21, from the sideboarding change (`lobby.rs`
+  `open_between`/`take_between`, `server.rs` `between_games`, `game.rs`
+  `play_match`)] the time between games, at the hosted table: host
+  `--seats human,human,ai,ai --best-of 3 --sideboard-seconds 120` and play
+  both humans, one from the draft page and one from `mtg-draft-client`.
+  Before game 2, try every way to send a deck the server must refuse (39
+  cards, a card from the other seat's pool, a non-basic land, a sideboard
+  after `ready`) and one it must take; move a card out and back in and
+  check the host's terminal does not say the seat sideboarded. Verify game
+  2 is played with the deck the server last took (read the game log's
+  decklist), that the chooser is the game-1 loser, and that the clock ends
+  it with the decks as they stand. Then the runner: under the prompt stub
+  (which sideboards half the time) read every `SIDEBOARD before game`
+  line against the deck the next game's log plays
+- D44 [proposed 2026-10-21, same source, MTR 2.2] who plays first. Over a
+  dozen stub matches at `--best-of 3`, read each game's first turn against
+  the log's `chose to play first`/`draws first`: game 1 the coin flip's
+  winner chooses, later games the previous game's loser, and after a
+  DRAWN game whoever chose before (drive one to a draw with the action
+  budget). Check the game seat's system prompt ("The loser of game N
+  chose who goes first") and the game page's match line say the same
+  thing the engine did, and that a person who never chooses plays first
+- D45 [proposed 2026-10-21, from the tiebreakers (`tournament.rs`
+  `sorted_standings`, MTR Appendix C)] standings by hand: host or run a
+  six- or seven-seat table with a bye and, if you can force one, a drawn
+  match. After every round compute OMW%, GW% and OGW% by hand (the 33%
+  floor applies to each opponent's own percentage; a bye is no opponent)
+  and compare the runner's FINAL STANDINGS, the page's standings column,
+  `mtg-draft-client`'s line and `/api/view`'s `omw`/`gw`/`ogw`. Before
+  round 1 counts no surface may show a tiebreaker at all
+- D46 [proposed 2026-10-21, from the hosted table's snapshot (`lobby.rs`
+  `snapshot`/`restore`, `--resume`)] stop and carry on: stop a hosted
+  table with Ctrl-C mid-draft, mid-build (one deck ready, one not),
+  between games of a match, and mid-game; `--resume` each from
+  `table.save.json`. Verify the join links still work, every seat's
+  pool, picks, name and AI notes are what they were, a ready deck is
+  still ready, and a match in progress is played again from game 1 with
+  nothing of the stopped game in the standings. Then edit the snapshot
+  (a pick of a card the pack never had, a deck the pool cannot build) and
+  check each is refused with its reason, before anything is dealt
+- D47 [proposed 2026-10-21, from #822-#825] where everybody is: with a
+  person in a match, close their game page, then their draft page, then
+  reopen each; kick them mid-game; Ctrl-C the server. At every step read
+  the other person's draft page and game page, the host's `status`, and
+  `mtg-draft-client`. Verify the presence word is the same everywhere
+  ("in game", "game page closed", "away", "kicked"), the opponent's game
+  page says whose page is closed instead of "Opponent is thinking", and
+  every page and client says the table is closed and why, and stops
+  reconnecting
+- D48 [proposed 2026-10-21, from `scripts/draft-loop/`] the nightly loop's
+  own numbers: run `DRAFT_LOOP_OUT=<scratch> DRAFT_LOOP_PLAYERS=4
+  DRAFT_LOOP_BEST_OF=3 CLAUDE_CODE_BIN=$PWD/scripts/llm-prompt-stub.py
+  scripts/draft-loop/night.sh 2099-01-01` and check `nights/*.json` against
+  the run's own log: every seat's 42 picks in order, its deck, its match
+  and game record (the log's MATCH lines), which seats had the guide.
+  Then read a REAL night in `reports/draft-loop/nights/`: does a seat's
+  lesson name a card it never drafted or faced, does `stats.md` count a
+  card's games right for a deck that sideboarded it out, and does the
+  guide name a card the statistics and lessons do not?
+- D49 [proposed 2026-10-21, from the one-port hosting (`server.rs`
+  `proxy_game_page`)] one port, nothing else: host `--bind 0.0.0.0` with a
+  human seat and open the match link from another machine (or another
+  network namespace) with only `--port` reachable. Play a whole game
+  through it, reload the page mid-game, and close and reopen it. Then try
+  to reach anything else through the lobby: `/game/<the lobby's port>/`,
+  `/game/22/`, a finished match's port, `/game/<live port>/../../`,
+  `/game/<live port>/assets/../../Cargo.toml`, a request line with no path,
+  and a WebSocket upgrade to a port that is not a game page. Verify each is
+  refused without the lobby opening a connection anywhere (watch with `ss
+  -tnp`), and that `netstat` shows the game pages listening on loopback
+  only. `--direct-game-ports` must still hand out per-port links

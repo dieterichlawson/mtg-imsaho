@@ -601,3 +601,19 @@ idea id is one of the G numbers above. A finding on this surface is
 usually a question about the other three: if the page cannot ask
 something well, check whether the CLI and the LLM prompt can before
 writing it up as the page's problem alone.
+- G32 [proposed 2026-10-21, from the draft page's between-games panel
+  (`mtg-gui/src/draft/render.ts` `betweenPanel`)] the time between games
+  on the page, at 1280 and at 390 wide: host a table with two humans and
+  play a match to game 2. Check the panel's lines (who chooses and why,
+  the score, what the opponent has shown, the clock), that Ready sits
+  beside the deck and not under the 45-card pool, that a 39-card deck is
+  not sent and Ready says why, that Play first / Draw first show which is
+  chosen, and that the game page's own line sends the person to the draft
+  page. Then reload the draft page mid-sideboard: the edit starts again
+  from the server's deck, which must be the last one it took
+- G33 [proposed 2026-10-21, from #824, #822 and the tiebreakers] the
+  table's words on the draft page: the standings' "OMW / GW / OGW %"
+  column (empty before round 1 counts, never "33.0" beside a 0-0
+  record), the presence column, and the "The table is closed" banner
+  after the host quits. At 390 wide every one of them must fit without
+  breaking a record or a percentage across lines
