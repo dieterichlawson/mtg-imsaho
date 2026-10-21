@@ -806,9 +806,10 @@ function drawBand(ctx, hits, state) {
  * the band could show (issue #523).
  *
  * Two rows is what the 30px band has, so when the interval does not fit
- * the band says where it started, how much of it is missing, and where it
- * ended. The count is the signal that the `l` drawer is worth opening;
- * there is no room on this line to say so in words.
+ * the band says the line in it that matters most (`bandHeadline`), how
+ * much else there was, and where it ended. The count is the signal that the
+ * `l` drawer is worth opening; there is no room on this line to say so in
+ * words.
  */
 export function bandLogLines(state) {
     const log = state.view.display_log;
@@ -817,7 +818,37 @@ export function bandLogLines(state) {
         return log.slice(-2);
     if (fresh.length <= 2)
         return fresh;
-    return [fresh[0], `+${fresh.length - 2} · ${fresh[fresh.length - 1]}`];
+    return [bandHeadline(state, fresh.slice(0, -1)), `+${fresh.length - 2} · ${fresh[fresh.length - 1]}`];
+}
+/**
+ * Which line of an interval the band leads with, when it cannot show them
+ * all: the first line an opponent wrote that names you or something of
+ * yours ("p1 cast Swords to Plowshares (#70) targeting Goblin Piker (#24)");
+ * failing that, the first line that is neither yours nor about yours (a
+ * turn banner, the opponent's land); failing that, the first line.
+ *
+ * It used to be the interval's first line, and the interval is measured
+ * from the frame the person answered, so that line was nearly always the
+ * echo of their own answer: "You tapped Mountain for mana" / "+17 · You
+ * drew a card", with the Swords to Plowshares that exiled their Goblin
+ * Piker inside the 17. In one driven game 23 of 36 such frames led with
+ * the person's own tap, play or cast, and five hid the removal of one of
+ * their creatures — the case #523 was filed for (#847). What an opponent
+ * did to you is the news; what you did, you know.
+ */
+export function bandHeadline(state, lines) {
+    const you = state.view.you;
+    const author = (l) => { const m = /^p(\d+)\b/.exec(l); return m ? Number(m[1]) : null; };
+    const yours = (id) => {
+        const e = state.index.get(id);
+        return e !== undefined && (e.owner === you || e.obj.owner === you || e.obj.controller === you);
+    };
+    const aboutYou = (l) => new RegExp(`\\bp${you}\\b`).test(l)
+        || [...l.matchAll(/#(\d+)/g)].some(m => yours(Number(m[1])));
+    const byOpponent = (l) => { const a = author(l); return a !== null && a !== you; };
+    return lines.find(l => byOpponent(l) && aboutYou(l))
+        ?? lines.find(l => author(l) !== you && !aboutYou(l))
+        ?? lines[0];
 }
 /** Lines from each stack item to what it targets. */
 function stackLines(ctx, hits, state) {

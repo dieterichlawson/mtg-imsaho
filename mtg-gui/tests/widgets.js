@@ -1060,7 +1060,8 @@ async function main() {
       }
     }
     // 22. The band reports what happened since the page last stopped for
-    // the player, not the last two lines of the log (issue #523).
+    // the player, not the last two lines of the log (issue #523), and
+    // leads with what the opponent did to you (issue #847).
     {
       const r = await page.evaluate(() => {
         const m = window.mtg;
@@ -1068,9 +1069,14 @@ async function main() {
         const since = m.logSince, seen = m.logSeen;
         const out = {};
         const at = (log, from) => { m.view.display_log = log; m.logSince = from; return window.mtgDebug.band(); };
-        const eight = ["\u2500\u2500 Turn 5 (p1) \u2500\u2500", "p1 tapped Swamp (#51) for mana", "p1 tapped Plains (#41) for mana",
-          "p1 cast Doom Blade (#75) targeting Grizzly Bears (#27)", "Doom Blade (#75) resolved",
-          "Grizzly Bears (#27) died", "p1 drew a card", "p1 declared attackers: Walking Corpse (#66) -> p0"];
+        // The Bears are a card of yours from the live view; the opponent's
+        // objects are ids the view does not hold.
+        const card = m.view.your_hand[0] || m.view.battlefield.find(p => p.owner === m.view.you);
+        out.yours = !!card;
+        const bears = card ? card.object_id : 9027;
+        const eight = ["\u2500\u2500 Turn 5 (p1) \u2500\u2500", "p1 tapped Swamp (#9051) for mana", "p1 tapped Plains (#9041) for mana",
+          `p1 cast Doom Blade (#9075) targeting Grizzly Bears (#${bears})`, "Doom Blade (#9075) resolved",
+          `Grizzly Bears (#${bears}) died`, "p1 drew a card", "p1 declared attackers: Walking Corpse (#9066) -> p0"];
         out.wholeTurn = at(["older", "lines"].concat(eight), 2);
         out.two = at(["older"].concat(eight.slice(-2)), 1);
         out.one = at(["older"].concat(eight.slice(-1)), 1);
@@ -1078,9 +1084,11 @@ async function main() {
         m.view.display_log = saved; m.logSince = since; m.logSeen = seen;
         return out;
       });
-      // Eight new lines in two rows: where the interval began, how much is
-      // missing, and where it ended.
-      if (r.wholeTurn.length !== 2 || !/Turn 5/.test(r.wholeTurn[0]) || !/^\+6 · /.test(r.wholeTurn[1]) || !/declared attackers/.test(r.wholeTurn[1]))
+      // Eight new lines in two rows: the Doom Blade that killed your Bears
+      // (or, with no card of yours to name, where the interval began), how
+      // much else there was, and where it ended.
+      const lead = r.yours ? /Doom Blade .*targeting Grizzly Bears/ : /Turn 5/;
+      if (r.wholeTurn.length !== 2 || !lead.test(r.wholeTurn[0]) || !/^\+6 · /.test(r.wholeTurn[1]) || !/declared attackers/.test(r.wholeTurn[1]))
         fail(`band-recap wholeTurn: ${JSON.stringify(r.wholeTurn)}`);
       else ok(`band-recap wholeTurn → ${JSON.stringify(r.wholeTurn)}`);
       if (r.two.length !== 2 || /^\+/.test(r.two[1])) fail(`band-recap two: ${JSON.stringify(r.two)}`);
