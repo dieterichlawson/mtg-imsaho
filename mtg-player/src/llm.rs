@@ -1494,17 +1494,18 @@ tournament point each, against 3 for a match win — so a game that cannot win y
 match is still worth not losing.\n");
                 }
 
+                // Who chose is all the seat is told: a drafting seat
+                // chooses to play or draw itself, between games, and a
+                // person may choose to draw, so "the loser always plays"
+                // stopped being true.
                 if game == 1 {
-                    s.push_str("\nThe starting player for game 1 is randomised (a fair \
-coin flip). For each later game the loser of the previous one chooses who goes first, and \
-in this tournament the loser ALWAYS elects to play first — going on the draw is \
-effectively never correct in Limited, so there is no decision for you to make. The \
-mulligan prompt tells you which side you are on.\n");
+                    s.push_str("\nThe winner of a coin flip chose who goes first in game \
+1; before each later game the loser of the previous one chooses. The mulligan prompt \
+tells you which side you are on.\n");
                 } else {
-                    writeln!(s, "\nThe loser of game {} chose to go first, as the loser \
-always does in this tournament — going on the draw is effectively never correct in \
-Limited, so there is no decision for you to make. The mulligan prompt tells you which \
-side you are on.", game - 1).unwrap();
+                    writeln!(s, "\nThe loser of game {} chose who goes first in this game \
+(after a drawn game, whoever chose before). The mulligan prompt tells you which side you \
+are on.", game - 1).unwrap();
                 }
             }
         }
