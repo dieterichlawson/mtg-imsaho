@@ -875,6 +875,14 @@ export function inspectorFacts(state: LiveState, e: IndexEntry): string[] {
   // only signal was a 2px stripe on the board card (issue #534).
   if (o.is_token) out.push("Token");
   else if (o.is_copy) out.push("Copy");
+  // Whose card it is, when not its controller's: what a control effect
+  // ending gives it back to (CR 611.2b) and whose graveyard it goes to (CR
+  // 404.1). #722 drew a stolen card apart from its controller's own, and
+  // nothing on the page said why (#740; the terminal's detail page and the
+  // LLM board say it too).
+  if (e.zone === "battlefield" && o.owner !== undefined && o.controller !== undefined && o.owner !== o.controller) {
+    out.push(`Owner: ${playerLabel(state, o.owner)}`);
+  }
   // Colour (CR 105.2) is what intimidate reads (CR 702.13a), and a
   // transformed face has no mana cost, so without this line it is
   // obtainable from nothing on screen. "Colorless" is the whole answer for
