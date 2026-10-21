@@ -100,8 +100,9 @@ Options:
                          holds none of. Pass --save to keep writing the file
   --check-invariants     Check structural invariants at every decision point
   --decision-stats <path> Write a JSON count of every kind of question the seats
-                         were asked (priority menus, combat, set and resolution
-                         prompts) — the fuzz campaign's reach report reads it
+                         were asked (mulligans, priority menus, combat, set and
+                         resolution prompts) — the fuzz campaign's reach report
+                         reads it
   --stop-after <N>       Stop after the Nth decision either seat makes, printing
                          `DECISION <n> <seat> <action as JSON>` for it on stdout.
                          With --resume this replays one saved position as one
@@ -116,10 +117,18 @@ black-aggro (ba), innistrad-white (iw), innistrad-blue (iu), innistrad-green (ig
 /// The name of the question `legal` asks, spelled the way the page's
 /// protocol test spells it (`mtg-player/tests/gui_protocol.rs`): a
 /// resolution prompt by its variant (`resolution:ChooseXFunding`), a combat
-/// prompt by its variant (`combat:ChooseAttackers`), the set prompt, or a
-/// priority menu — `priority` when it offers something to do and
-/// `priority:pass-only` when it does not. `scripts/fuzz_reach.py` compares
-/// the names a campaign reached against the variants the engine defines.
+/// prompt by its variant (`combat:ChooseAttackers`), a set prompt by what it
+/// asks for (`set:BottomAfterMulligan`), the keep/mulligan menu
+/// (`mulligan`), or a priority menu — `priority` when it offers something to
+/// do and `priority:pass-only` when it does not. `scripts/fuzz_reach.py`
+/// compares the names a campaign reached against the variants the engine
+/// defines.
+///
+/// The mulligan menu and the set prompt's purpose used to have no names of
+/// their own: the keep/mulligan menu was counted as `priority` and the
+/// London mulligan's bottoming as the same `set_prompt` as a cleanup
+/// discard, so the report would have read the same had the random seat
+/// stopped mulliganing again, the blind spot #456 found (#869).
 fn decision_kind_name(legal: &engine::LegalActions) -> String {
     fn variant<T: serde::Serialize>(value: &T) -> String {
         match serde_json::to_value(value) {
@@ -131,11 +140,15 @@ fn decision_kind_name(legal: &engine::LegalActions) -> String {
     if let Some(prompt) = &legal.resolution_prompt {
         return format!("resolution:{}", variant(prompt));
     }
-    if legal.set_prompt.is_some() {
-        return "set_prompt".into();
+    if let Some(prompt) = &legal.set_prompt {
+        return format!("set:{}", variant(&prompt.kind));
     }
     if let Some(prompt) = &legal.combat_prompt {
         return format!("combat:{}", variant(prompt));
+    }
+    if legal.actions.iter().any(|a| matches!(a,
+        mtg_engine::actions::Action::MulliganKeep | mtg_engine::actions::Action::MulliganMull)) {
+        return "mulligan".into();
     }
     let pass_only = legal.actions.iter().all(|a| matches!(a,
         mtg_engine::actions::Action::PassPriority | mtg_engine::actions::Action::Concede));

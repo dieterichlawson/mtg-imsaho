@@ -151,3 +151,49 @@ fn a_run_stopped_by_stop_after_still_writes_its_decision_stats() {
     assert_eq!(json["decisions"], 5, "the file counts the decisions the run made: {text}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Issue #869: the keep/mulligan menu and the London mulligan's bottoming
+/// are counted under names of their own, and those are names
+/// `scripts/fuzz_reach.py` expects. The menu used to be counted as
+/// `priority` and the bottoming as the same `set_prompt` as a cleanup
+/// discard, so the reach report could not see the random seat stop
+/// mulliganing (#456).
+#[test]
+fn decision_stats_name_the_mulligan_and_the_reach_report_knows_every_name() {
+    let dir = std::env::temp_dir().join(format!("mtg-869-stats-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    // Seeds 1-7 hold mulligans to six (#869's log) and so a bottoming.
+    for seed in 1..=7 {
+        let path = dir.join(format!("seed{seed}.json"));
+        let out = runner()
+            .current_dir(repo_root())
+            .args(["--p1", "random", "--p2", "random", "--seed", &seed.to_string(), "-q",
+                   "--decision-stats", path.to_str().unwrap()])
+            .output()
+            .expect("runner did not start");
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    }
+    let first: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.join("seed1.json")).unwrap()).unwrap();
+    assert!(first["kinds"]["mulligan"].as_u64().unwrap_or(0) >= 2,
+        "both seats' keep/mulligan menus are counted as `mulligan`: {first}");
+
+    let report = std::process::Command::new("python3")
+        .arg(repo_root().join("scripts/fuzz_reach.py"))
+        .args(["--stats", dir.to_str().unwrap(), "--repo", repo_root().to_str().unwrap()])
+        .output();
+    let _ = std::fs::remove_dir_all(&dir);
+    let Ok(report) = report else {
+        eprintln!("skipping the report half: no python3");
+        return;
+    };
+    let text = String::from_utf8_lossy(&report.stdout);
+    assert!(report.status.success(), "{text}{}", String::from_utf8_lossy(&report.stderr));
+    assert!(!text.contains("Counted but not in the engine's enums"),
+        "the runner wrote a kind the reach report does not know:\n{text}");
+    for reached in ["mulligan", "set:BottomAfterMulligan"] {
+        assert!(text.contains(&format!("| `{reached}` |")), "`{reached}` not counted:\n{text}");
+        assert!(!text.contains(&format!("NEVER REACHED: {reached}")), "{text}");
+    }
+}

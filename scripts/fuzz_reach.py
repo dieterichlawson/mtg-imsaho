@@ -71,7 +71,9 @@ def main() -> int:
         for k, n in (d.get("kinds") or {}).items():
             counts[k] = counts.get(k, 0) + int(n)
 
-    expected = {"priority", "priority:pass-only", "set_prompt"}
+    expected = {"mulligan", "priority", "priority:pass-only"}
+    expected |= {"set:" + v for v in enum_variants(
+        os.path.join(args.repo, "mtg-engine/src/actions.rs"), "SetPromptKind")}
     expected |= {"resolution:" + v for v in enum_variants(
         os.path.join(args.repo, "mtg-engine/src/state.rs"), "ResolutionChoiceKind")}
     expected |= {"combat:" + v for v in enum_variants(
