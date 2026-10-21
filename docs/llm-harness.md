@@ -124,8 +124,11 @@ Every `claude -p` child is run with `FORCE_PROMPT_CACHING_5M=1`: the CLI
 otherwise writes its cache at the 1-hour TTL, 2x the input rate where the
 5-minute TTL is 1.25x, and half of what a decision writes is its own prompt,
 which no later call reads. A seat reads its system prompt back within
-seconds. `MTG_CLAUDE_CODE_CACHE_TTL=1h` keeps the CLI's hour. The summary's
-API-rate figure prices writes at the 5-minute rate.
+seconds. `MTG_CLAUDE_CODE_CACHE_TTL=1h` keeps the CLI's hour. One kind of
+call keeps it anyway: a draft seat's sideboarding, which comes a game after
+the seat's last call, writes at the hour, so the seat's next one reads its
+prefix (the rules and the set's card reference) instead of writing it whole
+again. The summary's API-rate figure prices writes at the 5-minute rate.
 
 Every backend asks for the reasoning in the answer's `thoughts` field, one
 or two sentences; it is the notes the next prompt opens with. Thinking is
