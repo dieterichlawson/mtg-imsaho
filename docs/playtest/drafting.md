@@ -1005,7 +1005,15 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   Then read a REAL night in `reports/draft-loop/nights/`: does a seat's
   lesson name a card it never drafted or faced, does `stats.md` count a
   card's games right for a deck that sideboarded it out, and does the
-  guide name a card the statistics and lessons do not?
+  guide name a card the statistics and lessons do not? Since then
+  (138dd70, 649fd38) a night carries on from its snapshot when run again,
+  refuses a date already in the ledger, counts what went wrong from the
+  run's log, and hands the curator only the guide's sections: kill a stub
+  night mid-tournament and run it again (the matches already played stand,
+  once each), run a recorded date (refused, nothing touched), compare the
+  report's "What went wrong" counts with `grep -c` on the night's log, and
+  check `guide.md` has one title after a curator answer that starts with
+  one
 - D49 [proposed 2026-10-21, from the one-port hosting (`server.rs`
   `proxy_game_page`)] one port, nothing else: host `--bind 0.0.0.0` with a
   human seat and open the match link from another machine (or another
@@ -1028,4 +1036,32 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   and `kick 0` on the host's own seat. Verify each line goes where the
   docs say, that the table's event lines never hide the seat's pack, that
   the seat's game link works through the lobby's port, and that `--resume`
-  of a table with a cli seat puts the host back at the keyboard
+  of a table with a cli seat puts the host back at the keyboard. The
+  terminal client is one library now (`client.rs`, 49fa3a6), run by both
+  `mtg-draft-client` and the cli seat: sit one seat each way at the same
+  table and compare the two screens phase by phase — a line one shows and
+  the other drops is the split gone wrong
+- D51 [proposed 2026-10-21, from the pick review (`lobby.rs` `review`,
+  `ReviewPick`; `client.rs` `review_listing`; b3e426d)] what a seat took
+  and passed: at a hosted table with one person on the page and one on
+  `mtg-draft-client`, ask for the review (`review` on the client, the
+  page's review section) mid-pack 1, between packs, while building,
+  between games and after the tournament. Verify every pick is listed
+  once, in order, with the pack exactly as the seat was handed it (its
+  size falls by one a pick, and a card a seat downstream took is never in
+  an earlier pick's pack), the card taken is the one the log says, a
+  double-faced card reads by its front face, and a pick the table made
+  for the seat (its clock ran out, it was away or kicked) is marked as
+  the table's. Then `--resume` the table and ask again: the same review.
+  Finally try to read another seat's review — with your own key and
+  another `seat=`, and with a socket that has not joined — and check the
+  server refuses
+- D52 [proposed 2026-10-21, from a057744 and `--ai`] who the AI seats
+  really are: host `--seats human,ai,ai,ai` under a stand-in CLI that
+  records its argv and environment (`mtg-draft-runner/tests/lobby_support/`
+  builds one) and read every AI call: `claude -p --model claude-haiku-5-5`,
+  no `ANTHROPIC_API_KEY` in the child's environment even when the host's
+  shell exports one. Then `--ai cc:claude-sonnet-4-6`, a table mixing
+  `ai` and `ai:<spec>` seats, and a spec that names a metered provider:
+  no seat may become metered without saying so, and the join lines and
+  `status` must say which model each AI seat is
