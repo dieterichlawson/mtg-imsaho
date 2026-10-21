@@ -1,0 +1,204 @@
+#!/usr/bin/env python3
+"""The nightly draft loop's notes across sessions: each seat's lessons from
+tonight, and the guide rewritten from them and from every night's tables.
+
+    scripts/draft-loop/reflect.py debrief --night DATE --out reports/draft-loop [--guide GUIDE]
+    scripts/draft-loop/reflect.py curate  --night DATE --out reports/draft-loop --guide GUIDE
+
+`debrief` asks every seat of `<out>/nights/<DATE>.json`, in one `claude -p`
+call each, for up to three lessons grounded in what happened to it: its
+picks, its deck, its matches, its own end-of-draft notes, and the guide it
+drafted with (or that it drafted without one). They go to
+`<out>/nights/<DATE>-lessons.json`.
+
+`curate` hands the guide, tonight's lessons and `<out>/stats.md` (every
+night's tables, `ledger.py stats`) to one call that rewrites the guide,
+held to `GUIDE_WORDS` words: the guide is in every guided seat's system
+prompt, so it is bounded on purpose. The old guide is kept in git.
+
+The seats are `claude -p` on the CLI's own login — plan quota, never a
+metered key: `DRAFT_LOOP_MODEL` (default `claude-haiku-5-5`, the model
+that drafts) for the debriefs and `DRAFT_LOOP_CURATOR` (default
+`claude-sonnet-5-5`: one call a night, and the guide is what every guided
+seat reads) for the guide.
+`CLAUDE_CODE_BIN` points at a stand-in CLI for a dry run.
+"""
+import argparse
+import collections
+import concurrent.futures as cf
+import json
+import os
+import re
+import subprocess
+import sys
+import uuid
+
+GUIDE_WORDS = 700
+SECTIONS = ["## Colours and archetypes", "## Commons that win", "## Uncommons and rares",
+            "## Pick order", "## Building", "## Playing"]
+
+
+def claude(system, message, model, timeout=600):
+    """One `claude -p` call: the answer's text and its usage."""
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDECODE") and not k.startswith("CLAUDE_CODE_SESSION")}
+    env["FORCE_PROMPT_CACHING_5M"] = "1"
+    env.setdefault("MAX_THINKING_TOKENS", "0")
+    cmd = [os.environ.get("CLAUDE_CODE_BIN", "claude"), "-p", "--output-format", "json", "--tools", "",
+           "--system-prompt", system, "--session-id", str(uuid.uuid4()), "--model", model, "--effort", "low"]
+    for attempt in range(3):
+        r = subprocess.run(cmd, input=message, capture_output=True, text=True, env=env, cwd="/tmp", timeout=timeout)
+        try:
+            out = json.loads(r.stdout)
+        except json.JSONDecodeError:
+            out = None
+        if out and not out.get("is_error"):
+            return out.get("result", ""), out.get("usage", {})
+        print(f"claude -p failed (attempt {attempt + 1}): {(r.stderr or r.stdout)[-300:]}", file=sys.stderr)
+    return None, {}
+
+
+def json_in_text(text):
+    text = (text or "").strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+    i, j = text.find("{"), text.rfind("}")
+    try:
+        return json.loads(text[i:j + 1]) if i >= 0 < j else None
+    except json.JSONDecodeError:
+        return None
+
+
+def counted(cards):
+    return ", ".join(f"{n}x {c}" if n > 1 else c for c, n in collections.Counter(cards).items())
+
+
+def seat_story(night, s):
+    """What happened to one seat, in the words the debrief is asked about."""
+    seats = night["seats"]
+    picks = collections.defaultdict(list)
+    for pack, _, card in s["picks"]:
+        picks[pack].append(card)
+    lines = [f"You were seat {s['seat']} of {night['players']}. Packs 1 and 3 passed left, pack 2 right.",
+             "Your picks, in order:"]
+    lines += [f"  Pack {p}: " + ", ".join(cards) for p, cards in sorted(picks.items())]
+    lines.append(f"Your deck ({s['colors']}): {counted(s['maindeck'])}; "
+                 + ", ".join(f"{n} {l}" for l, n in s["lands"].items()) + ".")
+    if s.get("notes"):
+        lines.append(f"Your notes at the end of the draft: {s['notes']}")
+    lines.append(f"Your record: {s['match_wins']}-{s['match_losses']}-{s['match_draws']} in matches, "
+                 f"{s['game_wins']}-{s['game_losses']} in games.")
+    for m in night["matches"]:
+        if s["seat"] not in (m["a"], m["b"]):
+            continue
+        me_a = m["a"] == s["seat"]
+        opp = seats[m["b"] if me_a else m["a"]]
+        mine, theirs = (m["wins_a"], m["wins_b"]) if me_a else (m["wins_b"], m["wins_a"])
+        turns = ", ".join(str(g["turns"]) for g in m["games"])
+        lines.append(f"  Round {m['round']} vs seat {opp['seat']} ({opp['colors']}): "
+                     f"{'won' if mine > theirs else 'lost' if mine < theirs else 'drew'} {mine}-{theirs} (games of {turns} turns); "
+                     f"their deck: {counted(opp['maindeck'])}")
+    lines.append("The table: " + "; ".join(f"seat {o['seat']} {o['colors']} {o['match_wins']}-{o['match_losses']}" for o in seats) + ".")
+    return "\n".join(lines)
+
+
+DEBRIEF_SYSTEM = """You played tonight's Innistrad (ISD) booster draft: eight AI drafters, three packs of 14, then a
+Swiss tournament of best-of-three matches with the decks drafted. You are asked what the next drafter of
+this set should learn from what happened to you. Ground every lesson in this draft: a card that won or lost
+games, a colour that flowed or dried up, a pick you would change, a deck-building choice. Name cards by their
+exact names. A lesson that only restates general Limited advice is worth nothing."""
+
+
+def debrief(args):
+    night = json.load(open(os.path.join(args.out, "nights", f"{args.night}.json")))
+    guide = open(args.guide).read().strip() if args.guide and os.path.exists(args.guide) else ""
+    model = os.environ.get("DRAFT_LOOP_MODEL", "claude-haiku-5-5")
+
+    def one(s):
+        told = (f"You drafted with this guide in your prompt:\n\n{guide}\n" if s["guided"] and guide
+                else "You drafted without a guide.\n")
+        message = (f"{seat_story(night, s)}\n\n{told}\nWrite up to three lessons for the next drafter, each one "
+                   "sentence of at most 35 words. Where tonight contradicted the guide, say so in the lesson.\n\n"
+                   'Answer with only this JSON object: {"lessons": [string]}')
+        text, usage = claude(DEBRIEF_SYSTEM, message, model)
+        answer = json_in_text(text) or {}
+        lessons = [l.strip() for l in answer.get("lessons", []) if isinstance(l, str) and l.strip()][:3]
+        return {"seat": s["seat"], "guided": s["guided"], "colors": s["colors"],
+                "record": f"{s['match_wins']}-{s['match_losses']}-{s['match_draws']}", "lessons": lessons, "usage": usage}
+
+    with cf.ThreadPoolExecutor(4) as ex:
+        results = list(ex.map(one, night["seats"]))
+    path = os.path.join(args.out, "nights", f"{args.night}-lessons.json")
+    json.dump({"night": args.night, "model": model, "seats": results}, open(path, "w"), indent=1)
+    print(f"wrote {path}: {sum(len(r['lessons']) for r in results)} lessons from {len(results)} seats")
+
+
+CURATE_SYSTEM = f"""You keep the draft guide for Innistrad (ISD) booster drafts played by AI drafters, eight to a
+table, three packs of 14, best-of-three Swiss. The guide is put in front of every guided drafter at every
+pick, so it must be short, specific and right: at most {GUIDE_WORDS} words of markdown under exactly these
+headings, in this order: {", ".join(h[3:] for h in SECTIONS)}. Each night you get the guide, the lessons
+tonight's drafters wrote, and the statistics of every night so far, and you write the next guide.
+
+- Keep what the statistics or more than one lesson support; correct or drop what they contradict.
+- A claim that rests on numbers says how many games it rests on, e.g. "(31 games)"; numbers from fewer than
+  ten games are anecdotes and are said to be.
+- Name cards exactly as the statistics and lessons spell them, and no others.
+- Write for a drafter at a pick: what to take, what to pass, when to move in, how to build and play the deck."""
+
+
+def curate(args):
+    stats_path = os.path.join(args.out, "stats.md")
+    lessons_path = os.path.join(args.out, "nights", f"{args.night}-lessons.json")
+    guide = open(args.guide).read().strip() if os.path.exists(args.guide) else ""
+    stats = open(stats_path).read() if os.path.exists(stats_path) else "(no statistics yet)"
+    lessons = json.load(open(lessons_path)) if os.path.exists(lessons_path) else {"seats": []}
+    told = "\n".join(f"- seat {s['seat']} ({s['colors']}, {s['record']}, {'guided' if s['guided'] else 'unguided'}): {l}"
+                     for s in lessons["seats"] for l in s["lessons"])
+    message = (f"The guide now:\n\n{guide or '(none yet: write the first one)'}\n\n"
+               f"Tonight's lessons ({args.night}):\n{told or '(none)'}\n\n"
+               f"The statistics of every night so far:\n\n{stats}\n\n"
+               f"Write the next guide: only the markdown, starting with the first heading, at most {GUIDE_WORDS} words.")
+    model = os.environ.get("DRAFT_LOOP_CURATOR", "claude-sonnet-5-5")
+    # One more try for an answer that is not a guide (headings missing,
+    # too long), told why: the night's lessons are not spent on a format slip.
+    for attempt in range(2):
+        text, usage = claude(CURATE_SYSTEM, message, model)
+        new = (text or "").strip()
+        new = re.sub(r"^```(?:markdown)?\n|\n```$", "", new).strip()
+        words = len(new.split())
+        missing = [h for h in SECTIONS if h not in new]
+        if new and not missing and words <= GUIDE_WORDS * 1.25:
+            break
+        message += (f"\n\nYour last answer was not taken: it had {words} words"
+                    + (f" and lacked the headings {', '.join(missing)}" if missing else "")
+                    + ". Use exactly the six `## ` headings, in order.")
+    record = {"night": args.night, "model": model, "attempts": attempt + 1, "words": words,
+              "missing_sections": missing, "usage": usage}
+    if not new or missing or words > GUIDE_WORDS * 1.25:
+        record["kept_old_guide"] = True
+        record["rejected"] = new
+        print(f"the new guide was not taken ({words} words, missing {missing}); the guide stays as it was", file=sys.stderr)
+    else:
+        header = (f"# Innistrad draft guide\n\n_Written by the nightly draft loop (`scripts/draft-loop/`) from "
+                  f"{args.night}'s lessons and every night's statistics. Drafters read it at every pick._\n\n")
+        open(args.guide, "w").write(header + new + "\n")
+        print(f"wrote {args.guide}: {words} words")
+    json.dump(record, open(os.path.join(args.out, "nights", f"{args.night}-curate.json"), "w"), indent=1)
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    for name in ("debrief", "curate"):
+        p = sub.add_parser(name)
+        p.add_argument("--night", required=True)
+        p.add_argument("--out", required=True)
+        p.add_argument("--guide", required=name == "curate")
+    args = ap.parse_args()
+    debrief(args) if args.cmd == "debrief" else curate(args)
+
+
+if __name__ == "__main__":
+    main()

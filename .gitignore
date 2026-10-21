@@ -35,3 +35,6 @@ mtg-gui/node_modules/
 /logs/eval*/
 /logs/verify/
 /logs/llm-prompts/
+# Nightly draft loop run output (log, save, stdout): the kept results are
+# reports/draft-loop/; see scripts/draft-loop/night.sh.
+/logs/draft-loop/
