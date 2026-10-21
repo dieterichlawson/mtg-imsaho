@@ -2024,7 +2024,7 @@ impl CliPlayer {
 
         // Opponent board
         let bf_content_start = row;
-        row = Self::render_battlefield_at(&mut out, &opp_perms, Color::Red, mid_col, row, mid_w, &opp_bf, limits[0]);
+        row = Self::render_battlefield_at(&mut out, &opp_perms, Color::Red, mid_col, row, mid_w, &opp_bf, limits[0], view.you);
         let opp_rows = row - bf_content_start;
         let your_row_count = limits[1].min(your_bf.len());
 
@@ -2052,7 +2052,7 @@ impl CliPlayer {
         row += padding;
 
         // Your board
-        row = Self::render_battlefield_at(&mut out, &your_perms, Color::Green, mid_col, row, mid_w, &your_bf, limits[1]);
+        row = Self::render_battlefield_at(&mut out, &your_perms, Color::Green, mid_col, row, mid_w, &your_bf, limits[1], view.you);
 
         // Your status line
         let _ = execute!(out, cursor::MoveTo(mid_col, row));
@@ -2482,6 +2482,26 @@ impl CliPlayer {
         }
     }
 
+    /// Whose card a permanent is, when that is not the player controlling
+    /// it: `[owned by opp]` on a creature you took, `[owned by you]` on one
+    /// the opponent took. Empty otherwise.
+    ///
+    /// The owner is what a control effect ending gives it back to (CR
+    /// 611.2b) and whose graveyard it goes to (CR 404.1), and no row said
+    /// it: the stolen Vampire Interloper stood on its own row only by its id
+    /// (#740), and a stolen land, artifact or enchantment still merged into
+    /// its controller's own copies. One helper, read by every battlefield
+    /// row, the lands line and the `i` list, so none of them can drop it.
+    fn owner_mark(perm: &PermanentView, view_you: mtg_engine::ids::PlayerId) -> &'static str {
+        if perm.owner == perm.controller {
+            ""
+        } else if perm.owner == view_you {
+            " [owned by you]"
+        } else {
+            " [owned by opp]"
+        }
+    }
+
     fn counters_suffix(counters: &HashMap<mtg_engine::types::CounterType, u32>) -> String {
         let mut parts: Vec<String> = counters.iter()
             .filter(|&(ct, n)| *ct != mtg_engine::types::CounterType::Loyalty && *n > 0)
@@ -2532,7 +2552,7 @@ impl CliPlayer {
         // more" counts the Equipment and Auras that went with it (#781's
         // review). Rows group only identical attachment marks, so every
         // member carries as many as the first.
-        for (n, parts, first) in Self::creature_groups(&creatures, &aura_map) {
+        for (n, parts, first) in Self::creature_groups(&creatures, &aura_map, view_you) {
             let attached = all_perms.iter().filter(|p| p.attached_to == Some(first)).count();
             rows.push(BfRow::Line(Some(color), Self::counted_row(n, &parts, max_w), n * (1 + attached)));
         }
@@ -2547,14 +2567,14 @@ impl CliPlayer {
         // attached auras — not in the standalone artifact list.
         let artifact_parts: Vec<_> = artifacts.iter()
             .filter(|a| a.attached_to.is_none())
-            .map(|a| Self::artifact_row_parts(a))
+            .map(|a| Self::artifact_row_parts(a, view_you))
             .collect();
         for (n, parts) in Self::collapse_rows(artifact_parts) {
             rows.push(BfRow::Line(None, Self::counted_row(n, &parts, max_w), n));
         }
         for pw in &planeswalkers {
             rows.push(BfRow::Line(Some(Color::Cyan),
-                Self::counted_row(1, &Self::planeswalker_row_parts(pw), max_w), 1));
+                Self::counted_row(1, &Self::planeswalker_row_parts(pw, view_you), max_w), 1));
         }
         if lands > 0 {
             if lands_last {
@@ -2624,24 +2644,40 @@ impl CliPlayer {
         give
     }
 
+    /// One side's lands as the lands line counts them: by name, in the order
+    /// each name first appears, untapped and tapped — and a land another
+    /// player owns apart from its controller's own, with its `owner_mark`.
+    /// Grouped by name alone, a stolen Forest was one of "3x Forest" and
+    /// nothing said whose it was (#740).
+    fn land_groups<'a>(lands: &[&'a PermanentView], view_you: mtg_engine::ids::PlayerId)
+        -> Vec<(&'a str, &'static str, usize, usize)>
+    {
+        let mut groups: Vec<(&'a str, &'static str, usize, usize)> = Vec::new();
+        for land in lands {
+            let owner = Self::owner_mark(land, view_you);
+            let entry = match groups.iter_mut().find(|(n, o, _, _)| *n == land.name && *o == owner) {
+                Some(entry) => entry,
+                None => {
+                    groups.push((land.name.as_str(), owner, 0, 0));
+                    groups.last_mut().expect("just pushed")
+                }
+            };
+            if land.tapped { entry.3 += 1; } else { entry.2 += 1; }
+        }
+        groups
+    }
+
     /// Draw one side of the battlefield from `row`, at most `limit` rows of
     /// it, and return the next row.
     #[allow(clippy::too_many_arguments)]
     fn render_battlefield_at(out: &mut io::Stdout, perms: &[&PermanentView], color: Color,
                               col: u16, mut row: u16, max_w: usize, rows: &[BfRow],
-                              limit: usize) -> u16 {
-        let lands: Vec<_> = perms.iter().filter(|p| p.card_types.contains(&CardType::Land)).collect();
+                              limit: usize, view_you: mtg_engine::ids::PlayerId) -> u16 {
+        let lands: Vec<&PermanentView> = perms.iter().copied()
+            .filter(|p| p.card_types.contains(&CardType::Land)).collect();
         let render_lands = |out: &mut io::Stdout, row: &mut u16| {
             if !lands.is_empty() {
-                let mut summary: Vec<(String, usize, usize)> = Vec::new();
-                for land in &lands {
-                    if let Some(entry) = summary.iter_mut().find(|(n, _, _)| *n == land.name) {
-                        if land.tapped { entry.2 += 1; } else { entry.1 += 1; }
-                    } else {
-                        let (u, t) = if land.tapped { (0, 1) } else { (1, 0) };
-                        summary.push((land.name.clone(), u, t));
-                    }
-                }
+                let summary = Self::land_groups(&lands, view_you);
                 let _ = execute!(out, cursor::MoveTo(col, *row),
                     SetForegroundColor(color), Print("  Lands: "), ResetColor);
                 // Every other row in this panel is clipped to `max_w`; this
@@ -2650,25 +2686,27 @@ impl CliPlayer {
                 // a real nonbasic mana base was on the battlefield (issue
                 // #244). The entries are coloured individually, so the budget
                 // is spent entry by entry rather than clipping one string.
-                let suffix_of = |untapped: usize, tapped: usize| if tapped > 0 && untapped > 0 {
-                    format!(" ({tapped} tapped)")
+                // Whose they are, when not their controller's, after the
+                // tapped count (#740).
+                let suffix_of = |untapped: usize, tapped: usize, owner: &str| if tapped > 0 && untapped > 0 {
+                    format!(" ({tapped} tapped){owner}")
                 } else if tapped > 0 {
-                    " (tapped)".to_string()
+                    format!(" (tapped){owner}")
                 } else {
-                    String::new()
+                    owner.to_string()
                 };
                 let entry_lens: Vec<usize> = summary.iter().enumerate()
-                    .map(|(i, (name, untapped, tapped))| {
+                    .map(|(i, (name, owner, untapped, tapped))| {
                         let sep = if i > 0 { 2 } else { 0 };
                         sep + format!("{}x ", untapped + tapped).chars().count()
                             + name.chars().count()
-                            + suffix_of(*untapped, *tapped).chars().count()
+                            + suffix_of(*untapped, *tapped, owner).chars().count()
                     })
                     .collect();
                 let shown = Self::lands_that_fit("  Lands: ".chars().count(), &entry_lens, max_w);
-                for (i, (name, untapped, tapped)) in summary.iter().enumerate() {
+                for (i, (name, owner, untapped, tapped)) in summary.iter().enumerate() {
                     let total = untapped + tapped;
-                    let suffix = suffix_of(*untapped, *tapped);
+                    let suffix = suffix_of(*untapped, *tapped, owner);
                     if i == shown {
                         let sep = if i > 0 { ", " } else { "" };
                         let more = format!("{sep}+{} more", summary.len() - i);
@@ -2849,27 +2887,27 @@ impl CliPlayer {
             .unwrap_or_default();
         (format!("{}{}", e.name, Self::legend_mark(e)),
          String::new(),
-         format!("{host}{named}{}", CliPlayer::counters_suffix(&e.counters)))
+         format!("{}{host}{named}{}", Self::owner_mark(e, view_you), CliPlayer::counters_suffix(&e.counters)))
     }
 
     /// One standalone artifact's battlefield row, split like the others.
     /// `[T]` is live state and stays in the tail; the name gives way (#507).
-    fn artifact_row_parts(a: &PermanentView) -> (String, String, String) {
+    fn artifact_row_parts(a: &PermanentView, view_you: mtg_engine::ids::PlayerId) -> (String, String, String) {
         (format!("{}{}", a.name, Self::legend_mark(a)),
          String::new(),
-         format!("{}{}", CliPlayer::counters_suffix(&a.counters),
+         format!("{}{}{}", Self::owner_mark(a, view_you), CliPlayer::counters_suffix(&a.counters),
              if a.tapped { " [T]" } else { "" }))
     }
 
     /// One planeswalker's battlefield row. Loyalty is its defining public
     /// state (CR 306.5b, issue #58), so it is in the tail.
-    fn planeswalker_row_parts(pw: &PermanentView) -> (String, String, String) {
+    fn planeswalker_row_parts(pw: &PermanentView, view_you: mtg_engine::ids::PlayerId) -> (String, String, String) {
         let loyalty = pw.counters.get(&mtg_engine::types::CounterType::Loyalty)
             .copied().unwrap_or(0);
         let dmg = if pw.damage_marked > 0 { format!(" ({}d)", pw.damage_marked) } else { String::new() };
         (format!("{}{}", pw.name, Self::legend_mark(pw)),
          String::new(),
-         format!(" [{loyalty} loyalty]{dmg}"))
+         format!("{} [{loyalty} loyalty]{dmg}", Self::owner_mark(pw, view_you)))
     }
 
     fn creature_row_parts(c: &PermanentView, auras: Option<&String>) -> (String, String, String) {
@@ -2975,25 +3013,32 @@ impl CliPlayer {
     /// collapse are interchangeable and stay id-free; a name nothing else
     /// shares needs no id to be matched.
     #[cfg(test)]
-    fn creature_rows(creatures: &[&&PermanentView], aura_map: &HashMap<ObjectId, String>)
+    fn creature_rows(creatures: &[&&PermanentView], aura_map: &HashMap<ObjectId, String>,
+                     view_you: mtg_engine::ids::PlayerId)
         -> Vec<(usize, (String, String, String))>
     {
-        Self::creature_groups(creatures, aura_map).into_iter().map(|(n, parts, _)| (n, parts)).collect()
+        Self::creature_groups(creatures, aura_map, view_you).into_iter().map(|(n, parts, _)| (n, parts)).collect()
     }
 
     /// `creature_rows`, with the first creature each row stands for.
-    fn creature_groups(creatures: &[&&PermanentView], aura_map: &HashMap<ObjectId, String>)
+    fn creature_groups(creatures: &[&&PermanentView], aura_map: &HashMap<ObjectId, String>,
+                       view_you: mtg_engine::ids::PlayerId)
         -> Vec<(usize, (String, String, String), ObjectId)>
     {
+        // Whose card it is leads the protected flags (#740).
         let parts: Vec<_> = creatures.iter()
-            .map(|c| Self::creature_row_parts(c, aura_map.get(&c.object_id)))
+            .map(|c| {
+                let (head, mid, flags) = Self::creature_row_parts(c, aura_map.get(&c.object_id));
+                (head, mid, format!("{}{flags}", Self::owner_mark(c, view_you)))
+            })
             .collect();
         // Grouped on owner as well as on the row: a stolen creature is
         // still its owner's (CR 108.3), goes back when the control effect
         // ends (CR 611.2b) and to its owner's graveyard (CR 404.1), so it is
         // not one of its controller's copies however alike the rows read.
         // It merged into them once its `[S]` cleared (#740, the CLI half of
-        // #722's `stackKey`), and now stands on its own row with its id.
+        // #722's `stackKey`), and now stands on its own row, marked
+        // `[owned by opp]`, with its id.
         let mut groups: Vec<(usize, (String, String, String), ObjectId, &str, mtg_engine::ids::PlayerId)> =
             Vec::new();
         for (c, p) in creatures.iter().zip(parts) {
@@ -5296,13 +5341,14 @@ impl CliPlayer {
     /// in the lines they take, the way the other viewers are. The number a
     /// row carries is its index in `all_perms`, not its position on the page,
     /// so it means the same thing whichever page is showing.
-    fn inspect_row(perm: &PermanentView, idx: usize) -> String {
+    fn inspect_row(perm: &PermanentView, idx: usize, view_you: mtg_engine::ids::PlayerId) -> String {
         let pt = match (perm.effective_power, perm.effective_toughness) {
             (Some(p), Some(t)) => format!(" {p}/{t}"),
             _ => String::new(),
         };
-        let flags = format!("{}{}{}{}",
+        let flags = format!("{}{}{}{}{}",
             Self::identity_marks(perm),
+            Self::owner_mark(perm, view_you),
             if perm.tapped { " [T]" } else { "" },
             if perm.affected_by_summoning_sickness { " [S]" } else { "" },
             Self::regen_marker(perm));
@@ -5342,12 +5388,12 @@ impl CliPlayer {
         let perms = Self::inspect_permanents(view);
         let mut rows: Vec<(bool, String)> = vec![(true, " Your permanents:".to_string())];
         for (i, perm) in perms.iter().enumerate().take(your_n) {
-            rows.push((false, Self::inspect_row(perm, i)));
+            rows.push((false, Self::inspect_row(perm, i, view.you)));
         }
         rows.push((true, String::new()));
         rows.push((true, " Opponent's permanents:".to_string()));
         for (i, perm) in perms.iter().enumerate().skip(your_n) {
-            rows.push((false, Self::inspect_row(perm, i)));
+            rows.push((false, Self::inspect_row(perm, i, view.you)));
         }
         rows
     }
@@ -9463,7 +9509,7 @@ pub(crate) mod tests {
         let priest = creature(55, "Avacynian Priest", 0);
         let all = [&plain_a, &plain_b, &armed, &priest];
         let refs: Vec<&&PermanentView> = all.iter().collect();
-        let rows = CliPlayer::creature_rows(&refs, &HashMap::new());
+        let rows = CliPlayer::creature_rows(&refs, &HashMap::new(), PlayerId(1));
         let heads: Vec<(usize, &str)> = rows.iter().map(|(n, p)| (*n, p.0.as_str())).collect();
         assert_eq!(heads[0].0, 2);
         assert!(!heads[0].1.contains('#'), "interchangeable copies need no id: {heads:?}");
@@ -9481,12 +9527,53 @@ pub(crate) mod tests {
         stolen.owner = PlayerId(0);
         let all: Vec<&PermanentView> = mine.iter().chain(std::iter::once(&stolen)).collect();
         let refs: Vec<&&PermanentView> = all.iter().collect();
-        let rows = CliPlayer::creature_rows(&refs, &HashMap::new());
+        let rows = CliPlayer::creature_rows(&refs, &HashMap::new(), PlayerId(1));
         let heads: Vec<(usize, &str)> = rows.iter().map(|(n, p)| (*n, p.0.as_str())).collect();
         assert_eq!(heads.len(), 2, "{heads:?}");
         assert_eq!(heads[0].0, 4, "{heads:?}");
         assert_eq!(heads[1].0, 1, "{heads:?}");
         assert!(heads[1].1.ends_with("(#22)"), "the stolen one is told apart by id: {heads:?}");
+        // And it says whose it is, on the row and in the `i` list, from
+        // either seat; its controller's own say nothing.
+        assert!(rows[1].1.2.contains("[owned by opp]"), "{:?}", rows[1]);
+        assert!(!rows[0].1.2.contains("owned by"), "{:?}", rows[0]);
+        let theirs = CliPlayer::creature_rows(&refs, &HashMap::new(), PlayerId(0));
+        assert!(theirs[1].1.2.contains("[owned by you]"), "{:?}", theirs[1]);
+        assert!(CliPlayer::inspect_row(&stolen, 4, PlayerId(1)).contains("[owned by opp]"));
+        assert!(!CliPlayer::inspect_row(&mine[0], 0, PlayerId(1)).contains("owned by"));
+    }
+
+    /// #740's other half: a stolen land, artifact or enchantment was counted
+    /// with its controller's own copies — the lands line grouped by name
+    /// and the other rows by their text — so "3x Forest" held a Forest
+    /// that goes back to the opponent. Each now stands apart, saying whose
+    /// it is.
+    #[test]
+    fn a_stolen_land_artifact_or_enchantment_is_not_counted_among_its_controllers_copies() {
+        let you = PlayerId(0);
+        let kind = |id: u64, name: &str, t: CardType, owner: u8| {
+            let mut p = creature(id, name, 0);
+            p.card_types = vec![t];
+            p.power = None; p.toughness = None;
+            p.effective_power = None; p.effective_toughness = None;
+            p.owner = PlayerId(owner);
+            p
+        };
+        let forests = [kind(1, "Forest", CardType::Land, 0), kind(2, "Forest", CardType::Land, 0),
+                       kind(3, "Forest", CardType::Land, 1)];
+        let lands: Vec<&PermanentView> = forests.iter().collect();
+        let groups = CliPlayer::land_groups(&lands, you);
+        assert_eq!(groups, vec![("Forest", "", 2, 0), ("Forest", " [owned by opp]", 1, 0)]);
+
+        let all = [kind(10, "Blazing Torch", CardType::Artifact, 0), kind(11, "Blazing Torch", CardType::Artifact, 1),
+                   kind(12, "Travel Preparations", CardType::Enchantment, 0),
+                   kind(13, "Travel Preparations", CardType::Enchantment, 1)];
+        let side: Vec<&PermanentView> = all.iter().collect();
+        let rows = CliPlayer::battlefield_rows(&side, Color::Green, 80, &all, true, you);
+        let texts: Vec<&str> = rows.iter().filter_map(|r| match r { BfRow::Line(_, t, _) => Some(t.as_str()), BfRow::Lands(_) => None }).collect();
+        assert_eq!(texts.len(), 4, "nothing stolen is counted with its controller's own: {texts:?}");
+        assert_eq!(texts.iter().filter(|t| t.contains("[owned by opp]")).count(), 2, "{texts:?}");
+        assert!(texts.iter().all(|t| !t.contains("2x")), "{texts:?}");
     }
 
     /// An activation cost's commas are not list separators: breaking at
@@ -10412,12 +10499,12 @@ Mark 1 of the 1 cards below to exile.");
 
         let (_, _, flags) = CliPlayer::creature_row_parts(&corpse, None);
         assert!(!flags.contains("[R"), "no shield, no mark; got {flags}");
-        assert!(!CliPlayer::inspect_row(&corpse, 7).contains("[R"));
+        assert!(!CliPlayer::inspect_row(&corpse, 7, PlayerId(0)).contains("[R"));
 
         corpse.regeneration_shields = 1;
         let (_, _, flags) = CliPlayer::creature_row_parts(&corpse, None);
         assert!(flags.contains(" [R]"), "got {flags}");
-        let row = CliPlayer::inspect_row(&corpse, 7);
+        let row = CliPlayer::inspect_row(&corpse, 7, PlayerId(0));
         assert!(row.contains(" [R]"), "the inspector says it too; got {row}");
 
         // A second shield stacks (CR 701.15a is per-destruction), so the
@@ -10425,7 +10512,7 @@ Mark 1 of the 1 cards below to exile.");
         corpse.regeneration_shields = 2;
         let (_, _, flags) = CliPlayer::creature_row_parts(&corpse, None);
         assert!(flags.contains(" [Rx2]"), "got {flags}");
-        let row = CliPlayer::inspect_row(&corpse, 7);
+        let row = CliPlayer::inspect_row(&corpse, 7, PlayerId(0));
         assert!(row.contains(" [Rx2]"), "got {row}");
     }
 
@@ -12502,7 +12589,7 @@ Mark 1 of the 1 cards below to exile.");
             let mut v = view(Step::PrecombatMain, 7, false);
             v.battlefield = vec![c.clone()];
 
-            let inspector = CliPlayer::inspect_row(&c, 0);
+            let inspector = CliPlayer::inspect_row(&c, 0, PlayerId(0));
             assert_eq!(inspector.contains("[S]"), sick, "inspector row, sick={sick}: {inspector}");
 
             let (_, mid, right) = CliPlayer::creature_row_parts(&c, None);
@@ -12711,8 +12798,8 @@ Mark 1 of the 1 cards below to exile.");
         let rows = [
             CliPlayer::creature_row_parts(&inquisitor(40), Some(&" [equip 2x Butcher's Cleaver]".to_string())),
             CliPlayer::enchantment_row_parts(&curse(41), PlayerId(0)),
-            CliPlayer::artifact_row_parts(&dagger),
-            CliPlayer::planeswalker_row_parts(&walker),
+            CliPlayer::artifact_row_parts(&dagger, PlayerId(0)),
+            CliPlayer::planeswalker_row_parts(&walker, PlayerId(0)),
         ];
         for parts in &rows {
             for n in [1usize, 4, 12] {
@@ -12808,8 +12895,8 @@ Mark 1 of the 1 cards below to exile.");
 
         let (_, _, flags) = CliPlayer::creature_row_parts(&clone, None);
         assert!(flags.contains(" [copy]"), "the clone says so on the row; got {flags}");
-        assert!(CliPlayer::inspect_row(&clone, 9).contains(" [copy]"),
-            "and in the inspector: {}", CliPlayer::inspect_row(&clone, 9));
+        assert!(CliPlayer::inspect_row(&clone, 9, PlayerId(0)).contains(" [copy]"),
+            "and in the inspector: {}", CliPlayer::inspect_row(&clone, 9, PlayerId(0)));
 
         // `[tok]` already says it, and saying both is noise on a pane that
         // elides for width.
@@ -12852,7 +12939,7 @@ Mark 1 of the 1 cards below to exile.");
         token.is_token = true;
 
         let rows: Vec<String> = [&plain, &clone, &token].iter().enumerate()
-            .map(|(i, p)| CliPlayer::inspect_row(p, i + 8))
+            .map(|(i, p)| CliPlayer::inspect_row(p, i + 8, PlayerId(0)))
             .collect();
 
         for (perm, row) in [&plain, &clone, &token].iter().zip(&rows) {
