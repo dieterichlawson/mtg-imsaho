@@ -24,5 +24,11 @@ for (const [input, want] of cases) {
   const got = P.withoutIds(input);
   if (got !== want) fail(`${JSON.stringify(input)} -> ${JSON.stringify(got)}, want ${JSON.stringify(want)}`);
 }
+// A trigger on the stack names the creature its text means (#835); the
+// inspector's title for it has no id either.
+const R = await import("../dist/render.js");
+const heir = { object_id: 0, name: "Rakish Heir's triggered ability (put a +1/+1 counter on Stromkirk Noble (#40))" };
+const title = R.inspectorTitle(heir);
+if (title !== "Rakish Heir's triggered ability (put a +1/+1 counter on Stromkirk Noble)") fail(`inspector title ${JSON.stringify(title)}`);
 if (failures) { console.error(`${failures} failure(s)`); process.exit(1); }
 console.log("ok: the page shows no engine ids");

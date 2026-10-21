@@ -5,7 +5,7 @@
 // view; it looks at the last frame.
 
 import { drawArt, frameColor, darker, uiImage } from "./assets.js";
-import { nameOf, targetLabel, playerLabel, engineLine, objectOfKey, manaLetter } from "./prompts.js";
+import { nameOf, targetLabel, playerLabel, engineLine, objectOfKey, manaLetter, withoutIds } from "./prompts.js";
 import type { CardView, Color, FaceText, GameView, ManaCost, ManaPool, ObjectId, PermanentView, PlayerId, Step, ViewObject } from "./protocol.js";
 import type { Hit, IndexEntry, LiveState, Row, State, Ui } from "./state.js";
 
@@ -961,6 +961,16 @@ export function otherFace(state: LiveState, o: ViewObject): FaceText | null {
   return null;
 }
 
+/**
+ * The inspector's title for `o`: its name, without engine ids. A trigger's
+ * name says which creature it is for — "Rakish Heir's triggered ability (put
+ * a +1/+1 counter on Stromkirk Noble (#40))" — so that two of one watcher's
+ * triggers do not read alike (#835), and the page shows no ids (#694).
+ */
+export function inspectorTitle(o: ViewObject): string {
+  return withoutIds(o.name);
+}
+
 function inspector(ctx: Ctx, state: LiveState, x: number, y: number, w: number): number {
   const e = inspecting(state);
   if (!e) {
@@ -972,7 +982,7 @@ function inspector(ctx: Ctx, state: LiveState, x: number, y: number, w: number):
   drawArt(ctx, x + 4, y + 4, ART_L.w, ART_L.h, o.name, colors, !!o.is_token);
   let ty = y + 4;
   const tx = x + 4 + ART_L.w + 4, tw = w - (ART_L.w + 12);
-  for (const l of wrapCapped(ctx, o.name, tw, "8px PressStart", 3)) { text(ctx, l, tx, ty, { font: "8px PressStart", color: "#ffffff" }); ty += 10; }
+  for (const l of wrapCapped(ctx, inspectorTitle(o), tw, "8px PressStart", 3)) { text(ctx, l, tx, ty, { font: "8px PressStart", color: "#ffffff" }); ty += 10; }
   if (o.cost) { manaDots(ctx, o.cost, tx, ty); ty += 10; }
   const typeLine = [...(o.supertypes || []), ...(o.card_types || [])].join(" ") + ((o.subtypes && o.subtypes.length) ? " — " + o.subtypes.join(" ") : "");
   for (const l of wrapCapped(ctx, typeLine, tw, "7px Silkscreen", 2)) { text(ctx, l, tx, ty, { font: "7px Silkscreen", color: "#b0b8c8" }); ty += 8; }

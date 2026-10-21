@@ -4,7 +4,7 @@
 // what each one is and what a click on it does. Input never looks at the
 // view; it looks at the last frame.
 import { drawArt, frameColor, darker, uiImage } from "./assets.js";
-import { nameOf, targetLabel, playerLabel, engineLine, objectOfKey, manaLetter } from "./prompts.js";
+import { nameOf, targetLabel, playerLabel, engineLine, objectOfKey, manaLetter, withoutIds } from "./prompts.js";
 export const W = 640, H = 360;
 export const PANEL_X = 480;
 const BOARD_W = PANEL_X;
@@ -1072,6 +1072,15 @@ export function otherFace(state, o) {
         return faces[0];
     return null;
 }
+/**
+ * The inspector's title for `o`: its name, without engine ids. A trigger's
+ * name says which creature it is for — "Rakish Heir's triggered ability (put
+ * a +1/+1 counter on Stromkirk Noble (#40))" — so that two of one watcher's
+ * triggers do not read alike (#835), and the page shows no ids (#694).
+ */
+export function inspectorTitle(o) {
+    return withoutIds(o.name);
+}
 function inspector(ctx, state, x, y, w) {
     const e = inspecting(state);
     if (!e) {
@@ -1083,7 +1092,7 @@ function inspector(ctx, state, x, y, w) {
     drawArt(ctx, x + 4, y + 4, ART_L.w, ART_L.h, o.name, colors, !!o.is_token);
     let ty = y + 4;
     const tx = x + 4 + ART_L.w + 4, tw = w - (ART_L.w + 12);
-    for (const l of wrapCapped(ctx, o.name, tw, "8px PressStart", 3)) {
+    for (const l of wrapCapped(ctx, inspectorTitle(o), tw, "8px PressStart", 3)) {
         text(ctx, l, tx, ty, { font: "8px PressStart", color: "#ffffff" });
         ty += 10;
     }
