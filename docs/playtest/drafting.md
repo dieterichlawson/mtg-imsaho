@@ -1018,3 +1018,14 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   refused without the lobby opening a connection anywhere (watch with `ss
   -tnp`), and that `netstat` shows the game pages listening on loopback
   only. `--direct-game-ports` must still hand out per-port links
+- D50 [proposed 2026-10-21, from the host's `cli` seat (`server.rs`
+  `run`/`host_loop`, `client.rs`)] the host at the keyboard: host
+  `--seats cli,human,ai,ai` (with and without `--quiet`) and play the cli
+  seat from the server's terminal while a person plays from the page.
+  Type every client command and every host command at each phase,
+  including the words both could mean (`help`, `quit`, an empty line, a
+  number while the host is not picking, `start` after the draft started),
+  and `kick 0` on the host's own seat. Verify each line goes where the
+  docs say, that the table's event lines never hide the seat's pack, that
+  the seat's game link works through the lobby's port, and that `--resume`
+  of a table with a cli seat puts the host back at the keyboard

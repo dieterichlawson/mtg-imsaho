@@ -58,9 +58,16 @@ address (or say to replace `0.0.0.0` with it when that cannot be found).
   seat's, in the runner's `provider:model[:draft_thinking[:game_thinking]]`
   form, e.g. `ai:cc:claude-sonnet-5-5`. A `cc` seat needs the `claude`
   CLI on the path (or `CLAUDE_CODE_BIN`).
-- `cli` — the host's own seat at the terminal. Not implemented in this
-  version: the server refuses it and says so. Sit at a `human` seat and
-  open its link on this machine instead.
+- `cli` — the host's own seat, at the server's terminal (at most one).
+  The server runs the terminal client (below) for it against its own
+  port: every line the host types that is not one of the host's commands
+  (`start`, `kick`, `status`, `quit`, `help`) is the seat's — a pick
+  number, `add`, `lands`, `ready`, `review`, `play`/`draw` between games.
+  The seat is at the table before the keyboard is read, and its games are
+  played on the game page whose link it prints, as a person's are. Its
+  join link is printed too, so the draft page can be opened beside it.
+  `--quiet` keeps the table's own lines out of the seat's screen; the
+  answers to the host's commands are printed either way.
 
 `Nx` prefixes repeat: `--seats 1xhuman,7xai`. Two to eight seats.
 
@@ -244,6 +251,5 @@ snapshot's seed, set, seats and match length win over the flags.
 
 ## Limitations
 
-- No `cli` seat (see above).
 - Spectators, chat, cubes, more than one set, and anything past the key
   for access control are out of scope.

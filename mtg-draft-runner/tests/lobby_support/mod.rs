@@ -93,6 +93,8 @@ pub struct Server {
     pub log: PathBuf,
     pub dir: PathBuf,
     stderr: Arc<Mutex<String>>,
+    /// What a `cli` seat prints: the terminal client the server runs.
+    stdout: Arc<Mutex<String>>,
 }
 
 impl Server {
@@ -116,20 +118,25 @@ impl Server {
             .env("MTG_GAME_RETRY_BUDGET_SECS", "5")
             .env("MTG_DRAFT_RETRY_BUDGET_SECS", "5")
             .stdin(Stdio::piped())
-            .stdout(Stdio::null())
+            .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .expect("the server starts");
-        let stderr = Arc::new(Mutex::new(String::new()));
-        let pipe = child.stderr.take().unwrap();
-        let sink = Arc::clone(&stderr);
-        std::thread::spawn(move || {
-            for line in BufReader::new(pipe).lines().map_while(Result::ok) {
-                sink.lock().unwrap().push_str(&line);
-                sink.lock().unwrap().push('\n');
-            }
-        });
-        let mut server = Self { child, port, keys: Vec::new(), log, dir, stderr };
+        let collect = |pipe: Box<dyn std::io::Read + Send>| {
+            let text = Arc::new(Mutex::new(String::new()));
+            let sink = Arc::clone(&text);
+            std::thread::spawn(move || {
+                for line in BufReader::new(pipe).lines().map_while(Result::ok) {
+                    let mut s = sink.lock().unwrap();
+                    s.push_str(&line);
+                    s.push('\n');
+                }
+            });
+            text
+        };
+        let stderr = collect(Box::new(child.stderr.take().unwrap()));
+        let stdout = collect(Box::new(child.stdout.take().unwrap()));
+        let mut server = Self { child, port, keys: Vec::new(), log, dir, stderr, stdout };
         let deadline = Instant::now() + Duration::from_secs(60);
         loop {
             let text = server.stderr();
@@ -168,6 +175,25 @@ impl Server {
                 return text;
             }
             assert!(Instant::now() < deadline, "the terminal never said {needle:?}:\n{text}");
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }
+
+    /// The server's stdout so far: a `cli` seat's screen.
+    pub fn stdout(&self) -> String {
+        self.stdout.lock().unwrap().clone()
+    }
+
+    /// Wait until the server's stdout — a `cli` seat's screen — holds
+    /// `needle`.
+    pub fn wait_for_stdout(&self, needle: &str, timeout: Duration) -> String {
+        let deadline = Instant::now() + timeout;
+        loop {
+            let text = self.stdout.lock().unwrap().clone();
+            if text.contains(needle) {
+                return text;
+            }
+            assert!(Instant::now() < deadline, "the seat's screen never said {needle:?}:\n{text}\nstderr:\n{}", self.stderr());
             std::thread::sleep(Duration::from_millis(100));
         }
     }

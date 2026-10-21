@@ -220,10 +220,6 @@ fn check_models(seats: &[SeatKind]) {
                 llm_client::ACCEPTED_PROVIDERS)),
         }
     }
-    if seats.contains(&SeatKind::Cli) {
-        die("a cli seat is not implemented in this version: sit at a human seat and open its link \
-on this machine (docs/draft-with-friends.md)");
-    }
 }
 
 fn main() {
@@ -349,6 +345,9 @@ client still works", shared.config.web_dir.display(), server::PAGE);
     }
     for (seat, key) in &keys {
         mtg_player::stderr_line!("{}", server::join_lines(&host, args.port, *seat, key));
+        if args.seats.get(*seat) == Some(&SeatKind::Cli) {
+            mtg_player::stderr_line!("seat {seat} is yours, here: type at this terminal (help lists the commands; the host's are start, kick, status and quit); --quiet keeps the table's lines out of your way");
+        }
     }
     if args.bind == "0.0.0.0" && advertise.is_none() {
         mtg_player::stderr_line!("(replace 0.0.0.0 with this machine's address)");

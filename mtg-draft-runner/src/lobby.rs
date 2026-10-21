@@ -598,7 +598,9 @@ struct SeatState {
 
 impl SeatState {
     fn is_human(&self) -> bool {
-        self.kind == SeatKind::Human
+        // The host's own seat at the server's terminal is a person's too:
+        // it joins through the terminal client the server runs for it.
+        matches!(self.kind, SeatKind::Human | SeatKind::Cli)
     }
 }
 
@@ -711,8 +713,8 @@ impl Lobby {
         let seats: Vec<SeatState> = config.seats.iter().enumerate().map(|(i, kind)| SeatState {
             kind: kind.clone(),
             name: format!("seat {i}"),
-            key: if *kind == SeatKind::Human { Some(new_key()) } else { None },
-            joined: !matches!(kind, SeatKind::Human),
+            key: if matches!(kind, SeatKind::Human | SeatKind::Cli) { Some(new_key()) } else { None },
+            joined: !matches!(kind, SeatKind::Human | SeatKind::Cli),
             connected: 0,
             auto: false,
             kicked: false,

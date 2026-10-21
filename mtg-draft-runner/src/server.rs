@@ -76,6 +76,9 @@ pub struct Shared {
     /// dropped (#853), is not the next match's while the range has others.
     /// A page left open from that match reconnects to its own port.
     next_game_port: Mutex<Option<u16>>,
+    /// The host's own seat (`cli`): the lines the host types that are not
+    /// the host's commands, for the terminal client the server runs for it.
+    cli_lines: Mutex<Option<mpsc::Sender<(Instant, String)>>>,
 }
 
 /// A person's game page in a running match.
@@ -121,6 +124,7 @@ impl Shared {
             stop_reason: Mutex::new(None),
             in_game: Mutex::new(Vec::new()),
             next_game_port: Mutex::new(None),
+            cli_lines: Mutex::new(None),
         })
     }
 
@@ -404,6 +408,37 @@ pub fn run(shared: &Arc<Shared>, listener: TcpListener) -> Result<(), String> {
         }
     }).map_err(|e| e.to_string())?;
 
+    // The host's own seat: the terminal client, run here against this
+    // table's own port, its lines taken from the host's keyboard.
+    let cli = {
+        let lobby = shared.lobby();
+        (0..lobby.pod_size()).find(|s| lobby.kind(*s) == Some(&SeatKind::Cli))
+            .and_then(|seat| lobby.human_keys().into_iter().find(|(s, _)| *s == seat))
+    };
+    if let Some((seat, key)) = cli {
+        let host = match shared.config.bind.as_str() {
+            "0.0.0.0" | "::" | "[::]" => "127.0.0.1".to_string(),
+            other => other.to_string(),
+        };
+        let url = format!("ws://{host}:{}/ws?seat={seat}&key={key}", shared.config.port);
+        // Joined before the keyboard is read: a `start` or a name typed at
+        // once went to a table the seat was not at yet, which picked for it.
+        let (mut ws, _) = tungstenite::connect(&url)
+            .map_err(|e| format!("your seat at this terminal could not join: {e}"))?;
+        if let tungstenite::stream::MaybeTlsStream::Plain(s) = ws.get_ref() {
+            let _ = s.set_read_timeout(Some(Duration::from_millis(100)));
+        }
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while shared.lobby().view(seat).seats[seat].presence == "not yet" && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(20));
+        }
+        let (tx, rx) = mpsc::channel();
+        *shared.cli_lines.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(tx);
+        thread::Builder::new().name("cli-seat".into()).spawn(move || {
+            crate::client::run(&mut ws, &rx);
+        }).map_err(|e| e.to_string())?;
+    }
+
     let ai_seats: Vec<(usize, String)> = {
         let lobby = shared.lobby();
         (0..lobby.pod_size()).filter_map(|seat| match lobby.kind(seat) {
@@ -472,8 +507,12 @@ pub fn signal_name(sig: i32) -> String {
 /// is closed.
 fn host_loop(shared: &Arc<Shared>) {
     let stdin = std::io::stdin();
+    // With a `cli` seat the keyboard is the seat's too: what is not one of
+    // the host's commands is the seat's, as `mtg-draft-client` reads it.
+    let cli = shared.cli_lines.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
+        let typed_at = Instant::now();
         let line = line.trim();
         let words: Vec<&str> = line.split_whitespace().collect();
         match words.first().copied() {
@@ -482,7 +521,19 @@ fn host_loop(shared: &Arc<Shared>) {
                     let mut lobby = shared.lobby();
                     if lobby.phase() == Phase::Lobby { lobby.start(); true } else { false }
                 };
-                if started { shared.notify(); } else { shared.reply("the draft has already started"); }
+                if started {
+                    shared.notify();
+                } else if words.is_empty() && cli.is_some() {
+                    // Enter at the seat's prompt, not a second start.
+                } else {
+                    shared.reply("the draft has already started");
+                }
+            }
+            Some("help" | "?") => {
+                shared.reply("host: start (or Enter), kick <seat>, status, quit");
+                if cli.is_some() {
+                    shared.reply(&format!("your seat:\n{}", crate::client::USAGE));
+                }
             }
             Some("kick") => {
                 let result = words.get(1).and_then(|n| n.parse::<usize>().ok())
@@ -507,9 +558,15 @@ fn host_loop(shared: &Arc<Shared>) {
                 shared.quit();
                 return;
             }
-            Some(other) => shared.reply(&format!(
-                "'{other}': the commands are start (or Enter), kick <seat>, status, quit")),
+            Some(other) => match &cli {
+                Some(tx) => { let _ = tx.send((typed_at, line.to_string())); }
+                None => shared.reply(&format!(
+                    "'{other}': the commands are start (or Enter), kick <seat>, status, quit")),
+            },
         }
+    }
+    if let Some(tx) = &cli {
+        let _ = tx.send((Instant::now(), "\u{0}eof".to_string()));
     }
     // stdin closed: nothing to read, so wait for the quit nobody can type.
     loop {
