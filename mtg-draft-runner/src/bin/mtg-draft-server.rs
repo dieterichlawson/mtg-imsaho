@@ -22,8 +22,10 @@ Options:
   --seats <list>         Who sits where, in seat order: a comma list of human,
                          ai, ai:<model spec> and cli, each optionally Nx-prefixed
                          (1xhuman,7xai). 2 to 8 seats.  (default human,ai,ai,ai)
-  --ai <spec>            The model spec a bare `ai` seat uses  (default cc, the
-                         plan-quota seat; never a metered one by default)
+  --ai <spec>            The model spec a bare `ai` seat uses  (default
+                         cc:claude-haiku-5-5, the plan-quota seat on the model
+                         that drafted and played best for its cost; never a
+                         metered one by default)
   --set <name>           Set to draft, from data/sets/<name>.json  (default isd)
   --bind <addr>          Address to listen on  (default 127.0.0.1; 0.0.0.0 for
                          friends on the network)
@@ -68,7 +70,11 @@ struct Args {
 fn parse_args() -> Args {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut seats_spec = "human,ai,ai,ai".to_string();
-    let mut default_ai = "cc".to_string();
+    // Named, not the CLI's own default: that model has refused the game
+    // prompt before, and this one picked and played closest to a stronger
+    // model's choices at a twentieth of the price (reports/llm-cost.md,
+    // phases 3 and 4).
+    let mut default_ai = "cc:claude-haiku-5-5".to_string();
     let mut args = Args {
         seats: Vec::new(),
         set: "isd".to_string(),

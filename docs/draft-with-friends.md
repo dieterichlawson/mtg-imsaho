@@ -41,13 +41,14 @@ address (or say to replace `0.0.0.0` with it when that cannot be found).
 `--seats` is a comma list in seat order (seat 0 passes left to seat 1):
 
 - `human` — a person, through the page or the client.
-- `ai` — an LLM seat under the default spec, `cc` (the plan-quota seat
-  through `claude -p`; never a metered seat by default). `--ai <spec>`
-  changes the default; `ai:<spec>` names one seat's, in the runner's
-  `provider:model[:draft_thinking[:game_thinking]]` form, e.g.
-  `ai:cc:claude-haiku-5-5`. A `cc` seat needs the `claude` CLI on the
-  path (or `CLAUDE_CODE_BIN`), and its default model may refuse the game
-  prompt — name one.
+- `ai` — an LLM seat under the default spec, `cc:claude-haiku-5-5` (the
+  plan-quota seat through `claude -p`, on the model that picked and
+  played closest to a stronger model's choices for its cost —
+  `reports/llm-cost.md`, phases 3 and 4; never a metered seat by
+  default). `--ai <spec>` changes the default; `ai:<spec>` names one
+  seat's, in the runner's `provider:model[:draft_thinking[:game_thinking]]`
+  form, e.g. `ai:cc:claude-sonnet-5-5`. A `cc` seat needs the `claude`
+  CLI on the path (or `CLAUDE_CODE_BIN`).
 - `cli` — the host's own seat at the terminal. Not implemented in this
   version: the server refuses it and says so. Sit at a `human` seat and
   open its link on this machine instead.
@@ -59,7 +60,7 @@ address (or say to replace `0.0.0.0` with it when that cannot be found).
 | flag | default | |
 |---|---|---|
 | `--seats <list>` | `human,ai,ai,ai` | who sits where |
-| `--ai <spec>` | `cc` | the spec a bare `ai` uses |
+| `--ai <spec>` | `cc:claude-haiku-5-5` | the spec a bare `ai` uses |
 | `--set <name>` | `isd` | `data/sets/<name>.json` |
 | `--bind <addr>` | `127.0.0.1` | `0.0.0.0` for friends on the network |
 | `--port <N>` | `8800` | the lobby's port |
@@ -185,6 +186,3 @@ the WebSocket at `/ws?seat=N&key=K` after every change.
 - No `cli` seat (see above).
 - Spectators, chat, cubes, more than one set, and anything past the key
   for access control are out of scope.
-- The browser page is a separate piece of work; until it lands in
-  `mtg-gui/`, `GET /` is a 404 that says so, and the terminal client is
-  the way in.

@@ -394,7 +394,10 @@ at or belongs to another piece:
   `claude -p` child that is mid-call the way the runner's fatal path
   does (`die` in `lib.rs`). The server should take the runner's handler
   and write the same last line `quit` now writes.
-- **`kick` does not end a match in progress.** The seat's `GuiPlayer`
+- **`kick` does not end a match in progress.** (Fixed since: a kicked
+  seat's game in progress and the rest of its match are forfeit within a
+  couple of seconds; `docs/draft-with-friends.md`, "The host's keyboard".)
+  The seat's `GuiPlayer`
   keeps waiting for a browser nobody will open ("Seat0: no browser at
   ..." for ever), the round cannot finish, and `quit` is the host's only
   way out. The guide says "kick before the round"; the real fix is a
