@@ -521,6 +521,13 @@ round, the deck builds and every match, and `--resume <path>` carries on
 from one: the recorded picks are replayed without a model call, the decks
 are used as built and the finished matches are counted.
 
+`scripts/draft-loop/night.sh` is this run as a nightly routine plays it:
+eight `cc:claude-haiku-5-5` seats, best-of-3, the date as the seed, the
+even seats drafting with `reports/draft-loop/guide.md` and the odd seats
+without it. After the tournament each seat is asked for its lessons and
+the guide is rewritten from them and every night's statistics;
+`reports/draft-loop/README.md` says what each night keeps.
+
 ### What a pick sends, and the pick eval
 
 A drafting seat's system prompt is the draft rules, its place at the table
