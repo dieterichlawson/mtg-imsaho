@@ -1378,3 +1378,25 @@ whether it told the truth.
   all. The page never shows a cast's plan (#842, found in the R1 sweep). 30
   random games on the two decks (seeds 5810-5839, 27 fundings) were clean.
   Re-run after a change to `funding.rs` or `mana_demands`.
+- V59 [tried 2026-10-21 → #868, #869; from reading `mtg-runner/src/main.rs`
+  against #235/#687] the runner's own exits and its eval flags, played with
+  a cli seat. `--stop-after` and `--decision-stats` were built for
+  `scripts/decision-eval/` and `scripts/fuzz.sh`, which run no cli seat, and
+  no crew had ever run them. Every `std::process::exit` in the game loop is
+  an exit that skips what the normal path does after the loop. That covers
+  `--stop-after` (`main.rs:863`), the `--check-invariants` failure (`:998`)
+  and the watchdog's `die` (`:913`). The normal path clears the frame,
+  removes `/tmp/mtg-hot-reload-<pid>.json` and writes `--decision-stats`.
+  For each exit, run it under a cli seat in tmux with `; echo EXIT=$?; ls
+  /tmp/mtg-hot-reload-*; stty -a` after it, and look at the pane. On
+  2026-10-21 `--stop-after 2` (seed 7, the cli seat's keep) left the board
+  on screen with `DECISION 2 p0 "MulliganKeep"` and `EXIT=0` painted into
+  it, and left the snapshot. The tty modes were fine. No stats file was
+  written for any `--stop-after` run, with or without a cli seat. Then
+  reconcile the stats with `--stop-after`: both count every decision,
+  so `--stop-after N` past the stats' `decisions` prints nothing. Seed 7's
+  129 agreed, but the first two decisions, `MulliganKeep`, are filed under
+  `priority` (#869). I found no way to stage an invariant failure from
+  outside: `--resume` validates a doctored save (a library id dropped from
+  `library_order`) and refuses it before the first frame. When a fuzz seed
+  fails, re-run it with `--p1 cli` to see that exit.
