@@ -115,7 +115,10 @@ tool ahead of the system prompt. Replayed on the kept positions it chose as
 well as the schema did, for a fifth less (`reports/llm-cost.md`, phase 5).
 A field the question does not read (the plan fields outside the main
 phase) is left out of the line, so the answer does not spend output on it.
-`MTG_CLAUDE_CODE_ANSWERS=schema` sends `--json-schema` as before.
+`MTG_CLAUDE_CODE_ANSWERS=schema` sends `--json-schema` as before. The draft
+seat's picks and deck builds stay on `--json-schema`, where text answers
+saved 6% and agreed with the reference less often;
+`MTG_CLAUDE_CODE_DRAFT_ANSWERS=text` asks them in text.
 
 Every `claude -p` child is run with `FORCE_PROMPT_CACHING_5M=1`: the CLI
 otherwise writes its cache at the 1-hour TTL, 2x the input rate where the

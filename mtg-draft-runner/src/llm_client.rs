@@ -828,7 +828,9 @@ fn fatal(msg: &str) -> ! {
 /// reason to ask for this seat. Mirrors the game-side backend in mtg-player:
 /// one subprocess per decision, the whole draft kept in a single CLI session
 /// (`--session-id` on the first call, `--resume` after), every tool disabled,
-/// and the pick/deck schema handed over as `--json-schema`.
+/// and the pick/deck schema handed over as `--json-schema` — or, under
+/// `MTG_CLAUDE_CODE_DRAFT_ANSWERS=text`, the answer's fields said at the end
+/// of the prompt (`mtg_player::llm::answer_text`).
 struct ClaudeCodeDraftBackend {
     binary: String,
     /// Model alias/name passed as `--model`; `None` leaves the CLI default.
@@ -852,7 +854,30 @@ struct ClaudeCodeDraftBackend {
     /// A pick's full schema while its call is out, for a stand-in CLI
     /// (`mtg_player::llm::CLAUDE_CODE_ANSWER_SCHEMA_ENV`).
     answer_schema: Option<String>,
+    /// Ask for the answer in the prompt rather than with `--json-schema`.
+    text_answers: bool,
 }
+
+/// `MTG_CLAUDE_CODE_DRAFT_ANSWERS`: `schema` (the default) or `text`, how a
+/// `claude -p` draft seat is asked for its answer.
+///
+/// The game seat answers in text (`mtg_player::llm::answer_text`); a pick
+/// does not by default. Text saved a pick 6% — its price is reading the
+/// set's card reference, not the answer's round trip — and on the kept
+/// pick eval it agreed with the reference on 200 of 278 settled picks where
+/// `--json-schema` agreed on 210, lower in both samples
+/// (`reports/llm-cost.md`, phase 5).
+pub const DRAFT_ANSWERS_ENV: &str = "MTG_CLAUDE_CODE_DRAFT_ANSWERS";
+
+/// Whether a `claude -p` draft seat is asked for its answer in text.
+fn draft_text_answers() -> bool {
+    std::env::var(DRAFT_ANSWERS_ENV).as_deref() == Ok("text")
+}
+
+/// The draft rules' answer note for a seat asked in text: the CLI has no
+/// schema to hold the answer to, so it is told the shape is the whole reply.
+const TEXT_ANSWER_NOTE: &str = "\nReply with only that JSON object — no words before or after it, no code \
+fence. Its fields are listed at the end of each question.";
 
 impl ClaudeCodeDraftBackend {
     fn new(model: Option<&str>, set_name: &str, guide: Option<&str>, card_reference: &str, table: Table) -> Self {
@@ -872,19 +897,22 @@ impl ClaudeCodeDraftBackend {
             Some(m) => format!("claude-code:{m}"),
             None => "claude-code".to_string(),
         };
+        let text_answers = draft_text_answers();
         Self {
             binary: binary.to_string(),
             model: model.map(std::string::ToString::to_string),
             label,
             system_prompt: format!(
-                "{}{THOUGHTS_IN_JSON_RESPONSE_FORMAT}",
-                build_draft_rules(set_name, guide, card_reference, table)
+                "{}{THOUGHTS_IN_JSON_RESPONSE_FORMAT}{}",
+                build_draft_rules(set_name, guide, card_reference, table),
+                if text_answers { TEXT_ANSWER_NOTE } else { "" },
             ),
             session_id: None,
             window: mtg_player::llm::history_exchanges(),
             turns: 0,
             workdir,
             answer_schema: None,
+            text_answers,
         }
     }
 
@@ -1063,8 +1091,16 @@ impl ClaudeCodeDraftBackend {
             .args(["--tools", ""])
             // The system prompt is sent every call: a resumed session keeps
             // its history, and restating the prompt is harmless.
-            .args(["--system-prompt", &self.system_prompt])
-            .args(["--json-schema", &schema.to_string()]);
+            .args(["--system-prompt", &self.system_prompt]);
+        // In text the fields end the prompt and the answer is one request;
+        // `--json-schema` is a tool call and a second request after it.
+        let asked = if self.text_answers {
+            let full = self.answer_schema.as_deref().and_then(|t| serde_json::from_str(t).ok());
+            Some(format!("{message}\n\n{}", mtg_player::llm::answer_text::answer_format(full.as_ref().unwrap_or(schema))))
+        } else {
+            cmd.args(["--json-schema", &schema.to_string()]);
+            None
+        };
         if let Some(full) = &self.answer_schema {
             cmd.env(mtg_player::llm::CLAUDE_CODE_ANSWER_SCHEMA_ENV, full);
         }
@@ -1097,17 +1133,17 @@ impl ClaudeCodeDraftBackend {
         // sweep for this prefix. A hung wrapper stopped a draft mid-pick,
         // silently, forever, with nothing on the terminal or in the log
         // (issue #404).
-        mtg_player::llm::claude_code_run(&mut cmd, &self.binary, message)
+        mtg_player::llm::claude_code_run(&mut cmd, &self.binary, asked.as_deref().unwrap_or(message))
     }
 
     /// The structured object of a result: the CLI's parsed
-    /// `structured_output` when a schema was given, else the result text
-    /// parsed as JSON.
+    /// `structured_output` when a schema was given, else the JSON object in
+    /// the result text.
     fn structured(json: &serde_json::Value) -> Option<serde_json::Value> {
         if json["structured_output"].is_object() {
             return Some(json["structured_output"].clone());
         }
-        json["result"].as_str().and_then(|t| serde_json::from_str(t.trim()).ok())
+        json["result"].as_str().and_then(mtg_player::llm::answer_text::json_in_text)
     }
 }
 
@@ -1891,6 +1927,19 @@ printf '{"type":"result","subtype":"success","is_error":false,"session_id":"%s",
         lines.get(idx + 1)?.strip_prefix("ARG: ")
     }
 
+    /// The seat asked in text or with `--json-schema`, whatever the run's
+    /// `MTG_CLAUDE_CODE_DRAFT_ANSWERS` says: a test pins one without racing
+    /// the others on a process-wide variable.
+    fn answering(mut b: super::ClaudeCodeDraftBackend, text: bool) -> super::ClaudeCodeDraftBackend {
+        if let (false, Some(rest)) = (text, b.system_prompt.strip_suffix(super::TEXT_ANSWER_NOTE)) {
+            b.system_prompt = rest.to_string();
+        } else if text && !b.system_prompt.ends_with(super::TEXT_ANSWER_NOTE) {
+            b.system_prompt.push_str(super::TEXT_ANSWER_NOTE);
+        }
+        b.text_answers = text;
+        b
+    }
+
     fn backend(fake: &Fake, model: Option<&str>) -> super::ClaudeCodeDraftBackend {
         super::ClaudeCodeDraftBackend::with_binary(
             &fake.bin(),
@@ -1963,7 +2012,7 @@ printf '{"type":"result","subtype":"success","is_error":false,"session_id":"%s",
         let body = format!("echo \"ENV: ${}\" >> \"$LOG\"\n{OK_BODY}",
             mtg_player::llm::CLAUDE_CODE_ANSWER_SCHEMA_ENV);
         let fake = Fake::new("schema", &body);
-        let mut b = backend(&fake, None);
+        let mut b = answering(backend(&fake, None), false);
         let response = b.send_pick("Pack 1, Pick 1", 3);
         b.send_pick("Pack 1, Pick 2", 2);
 
@@ -1986,6 +2035,28 @@ printf '{"type":"result","subtype":"success","is_error":false,"session_id":"%s",
         assert_eq!(serde_json::from_str::<serde_json::Value>(&response).unwrap()["pick"], 2);
     }
 
+    /// Asked in text (`MTG_CLAUDE_CODE_DRAFT_ANSWERS=text`), a pick sends no schema: the pick's
+    /// fields end the prompt, with the pack's range, and the answer is read
+    /// out of the result text in one request, where `--json-schema` is a
+    /// tool call and a second request (`mtg_player::llm::answer_text`).
+    #[test]
+    fn a_pick_in_text_says_its_fields_at_the_end_of_the_prompt() {
+        use super::DraftBackend;
+        let body = format!("echo \"ENV: ${}\" >> \"$LOG\"\n{}",
+            mtg_player::llm::CLAUDE_CODE_ANSWER_SCHEMA_ENV,
+            r#"printf '{"type":"result","is_error":false,"session_id":"s","result":"{\"thoughts\": \"t\", \"pick\": 1}","usage":{}}\n'"#);
+        let fake = Fake::new("text", &body);
+        let mut b = answering(backend(&fake, None), true);
+        let response = b.send_pick("Pack 1, Pick 1", 3);
+        let call = &fake.calls()[0];
+        assert!(arg_after(call, "--json-schema").is_none(), "{call}");
+        assert!(call.contains("Pack 1, Pick 1\n\nAnswer with only this JSON object: {\"thoughts\": string, \"pick\": integer 0 to 2}"),
+            "{call}");
+        assert!(call.contains("ENV: {"), "the full schema is still set for a stand-in CLI:\n{call}");
+        assert!(call.contains("Its fields are listed at the end of each question."), "the system prompt says so");
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&response).unwrap()["pick"], 1);
+    }
+
     /// The deck question goes out as one schema whatever the pool, with the
     /// rows' bounds beside it for a stand-in CLI, as a pick's are (#867).
     #[test]
@@ -1994,7 +2065,7 @@ printf '{"type":"result","subtype":"success","is_error":false,"session_id":"%s",
         let body = format!("echo \"ENV: ${}\" >> \"$LOG\"\n{OK_BODY}",
             mtg_player::llm::CLAUDE_CODE_ANSWER_SCHEMA_ENV);
         let fake = Fake::new("deckschema", &body);
-        let mut b = backend(&fake, None);
+        let mut b = answering(backend(&fake, None), false);
         b.send_deck_building("Build", &["Moon Heron".to_string(), "Moon Heron".to_string()]);
         b.send_deck_building("Build", &["Chapel Geist".to_string()]);
 
