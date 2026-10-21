@@ -1554,7 +1554,7 @@ Every prompt restates the whole position, in this order:
 - `Opp's cards in view:` rules text for the opponent's cards on the battlefield, on the stack, in exile or revealed, and for a graveyard card that works from there (flashback; cast or returned from a graveyard) or that the question or a stack object points at. You learn them as they come into view, never before. `(×N)` ends a line repeated N times; `3x` is three of a card.
 - A context line (`[MAIN PHASE 1]`, `[RESPOND TO opp's <spell>]`, `[AFTER BLOCKERS DECLARED]`, ...) and the question.
 
-Boards group lands (`2x Forest (1 tapped)`); any other permanent is `Name (#id) P/T keywords [flags]`. The `#id` tells apart permanents of one name. P/T is current, bonuses included, and a creature has exactly the keywords printed after it. Status flags after a permanent, in one bracket: `T` tapped; `S` summoning sick (no attacking or {T} abilities until its controller's next turn; it can block); `attacking you`/`attacking Opp`/`attacking <planeswalker> (#id)`; `blocking <attacker> (#id)`; `blocked by <blocker> (#id)`; `blocked (no blockers left)` (deals no combat damage unless it has trample); `Ndmg` damage marked; `regen shield`/`N regen shields`; `token`; `copy`; `+1+1xN`, `-1-1xN`, `LOYxN` or another counter by kind (`Slimex2`); `names: <card>`; `enchanting you`/`enchanting opponent` (a Curse's player); `legendary` (CR 704.5j: of two with one name under your control, you keep one). Elsewhere an object carries its id and whose it is: `(your)`, `(opponent's)`, `(in your graveyard)`, `(in opponent's exile)`.
+Boards group lands (`2x Forest (1 tapped)`); any other permanent is `Name (#id) P/T keywords [flags]`. The `#id` tells apart permanents of one name. P/T is current, bonuses included, and a creature has exactly the keywords printed after it. Status flags after a permanent, in one bracket: `T` tapped; `S` summoning sick (no attacking or {T} abilities until its controller's next turn; it can block); `attacking you`/`attacking Opp`/`attacking <planeswalker> (#id)`; `blocking <attacker> (#id)`; `blocked by <blocker> (#id)`; `blocked (no blockers left)` (deals no combat damage unless it has trample); `Ndmg` damage marked; `regen shield`/`N regen shields`; `token`; `copy`; `owned by opponent`/`owned by you` (it returns to its owner when the control effect ends, and goes to its owner's graveyard); `+1+1xN`, `-1-1xN`, `LOYxN` or another counter by kind (`Slimex2`); `names: <card>`; `enchanting you`/`enchanting opponent` (a Curse's player); `legendary` (CR 704.5j: of two with one name under your control, you keep one). Elsewhere an object carries its id and whose it is: `(your)`, `(opponent's)`, `(in your graveyard)`, `(in opponent's exile)`.
 
 ## Answering
 
@@ -3471,23 +3471,28 @@ impl LlmPlayer {
         let mut parts = Vec::new();
 
         if !lands.is_empty() {
-            let mut land_groups: Vec<(String, usize, usize)> = Vec::new();
+            // By name, and a land another player owns apart from its
+            // controller's own: it goes back when the control effect ends
+            // (#740).
+            let mut land_groups: Vec<(String, Option<&str>, usize, usize)> = Vec::new();
             for land in &lands {
-                if let Some(entry) = land_groups.iter_mut().find(|(n, _, _)| *n == land.name) {
-                    if land.tapped { entry.2 += 1; } else { entry.1 += 1; }
+                let owner = Self::owner_flag(land, view_you);
+                if let Some(entry) = land_groups.iter_mut().find(|(n, o, _, _)| *n == land.name && *o == owner) {
+                    if land.tapped { entry.3 += 1; } else { entry.2 += 1; }
                 } else {
                     let (u, t) = if land.tapped { (0, 1) } else { (1, 0) };
-                    land_groups.push((land.name.clone(), u, t));
+                    land_groups.push((land.name.clone(), owner, u, t));
                 }
             }
-            for (name, untapped, tapped) in &land_groups {
+            for (name, owner, untapped, tapped) in &land_groups {
                 let total = untapped + tapped;
+                let owner = owner.map(|o| format!(" [{o}]")).unwrap_or_default();
                 if *tapped == 0 {
-                    parts.push(format!("{total}x {name}"));
+                    parts.push(format!("{total}x {name}{owner}"));
                 } else if *untapped == 0 {
-                    parts.push(format!("{total}x {name} (tapped)"));
+                    parts.push(format!("{total}x {name} (tapped){owner}"));
                 } else {
-                    parts.push(format!("{total}x {name} ({tapped} tapped)"));
+                    parts.push(format!("{total}x {name} ({tapped} tapped){owner}"));
                 }
             }
         }
@@ -3540,6 +3545,11 @@ impl LlmPlayer {
             // granted ability below says it only when the copy effect had an
             // "except it has ..." clause to grant (#557).
             else if c.is_copy { flag_parts.push("copy".into()); }
+            // Whose card it is, when not its controller's: what it goes back
+            // to when the control effect ends (CR 611.2b), and whose
+            // graveyard it goes to (CR 404.1). A stolen Vampire Interloper
+            // read like the thief's own four (#740).
+            if let Some(owner) = Self::owner_flag(c, view_you) { flag_parts.push(owner.into()); }
             if c.tapped { flag_parts.push("T".into()); }
             // `S` is the engine's answer to CR 302.6, not the raw
             // "entered this turn" field: a hasty creature carries that field
@@ -3619,7 +3629,7 @@ impl LlmPlayer {
             let mut flag_parts: Vec<String> = Vec::new();
             if Self::is_legendary(o) { flag_parts.push("legendary".into()); }
             if o.is_token { flag_parts.push("token".into()); }
-
+            if let Some(owner) = Self::owner_flag(o, view_you) { flag_parts.push(owner.into()); }
             if o.tapped { flag_parts.push("T".into()); }
             // The chosen name is the permanent's whole identity (Nevermore's
             // ban) — without it a spell just vanishes from the menu (#130).
@@ -3658,6 +3668,19 @@ impl LlmPlayer {
         }
 
         parts.join("\n  ")
+    }
+
+    /// The board's ownership flag: `owned by opponent` on a permanent you
+    /// control that the opponent owns, `owned by you` on one of yours the
+    /// opponent controls, nothing when owner and controller agree (#740).
+    fn owner_flag(p: &mtg_engine::view::PermanentView, view_you: mtg_engine::ids::PlayerId) -> Option<&'static str> {
+        if p.owner == p.controller {
+            None
+        } else if p.owner == view_you {
+            Some("owned by you")
+        } else {
+            Some("owned by opponent")
+        }
     }
 
     /// Format any +1/+1, -1/-1, or loyalty counters on a permanent into a
@@ -9859,6 +9882,45 @@ this Aura deals 1 damage to that player.";
         assert!(other.contains("attacking you"), "{other}");
     }
 
+    /// Issue #740: a stolen creature read like its controller's own copies —
+    /// `Vampire Interloper (#22) 2/1 black, flying, can't block` beside four
+    /// more — and a stolen land was counted among the controller's lands by
+    /// name. Which one goes back when the control effect ends (CR 611.2b),
+    /// and to whose graveyard (CR 404.1), could not be read. The board says
+    /// whose each is when it is not its controller's.
+    #[test]
+    fn the_board_says_whose_a_stolen_permanent_is() {
+        let you = PlayerId(0);
+        let opp = PlayerId(1);
+        let own = perm(71, "Vampire Interloper", 2, 1, you);
+        let mut stolen = perm(22, "Vampire Interloper", 2, 1, you);
+        stolen.owner = opp;
+        let land = |id: u64, owner: PlayerId, controller: PlayerId| {
+            let mut l = perm(id, "Forest", 0, 0, controller);
+            l.card_types = vec![CardType::Land];
+            l.owner = owner;
+            l
+        };
+        let (f1, f2, f3) = (land(1, you, you), land(2, you, you), land(3, opp, you));
+        let mut torch = perm(40, "Blazing Torch", 0, 0, opp);
+        torch.card_types = vec![CardType::Artifact];
+        torch.owner = you;
+        let mine = vec![&own, &stolen, &f1, &f2, &f3];
+        let all = vec![&own, &stolen, &f1, &f2, &f3, &torch];
+        let board = LlmPlayer::format_perms_compact(&mine, &all, you);
+        let line = |id: u64| board.lines().find(|l| l.contains(&format!("(#{id}) ")))
+            .unwrap_or_else(|| panic!("#{id} on a line: {board}")).to_string();
+        assert!(line(22).contains("owned by opponent"), "{board}");
+        assert!(!line(71).contains("owned by"), "{board}");
+        assert!(board.contains("2x Forest\n") && board.contains("1x Forest [owned by opponent]"),
+            "the stolen Forest is not one of the controller's: {board}");
+        // From the owner's seat, the same permanents are its own.
+        let theirs = LlmPlayer::format_perms_compact(&[&torch], &all, opp);
+        assert!(theirs.contains("[owned by opponent]"), "{theirs}");
+        let seen_by_owner = LlmPlayer::format_perms_compact(&[&torch], &all, you);
+        assert!(seen_by_owner.contains("[owned by you]"), "{seen_by_owner}");
+    }
+
     /// Issue #726: every flag the board prints is one the legend defines,
     /// in the spelling it prints — the legend documented counters as
     /// `+1/+1:N` while the board printed `+1+1xN`, and never mentioned
@@ -9898,10 +9960,17 @@ this Aura deals 1 damage to that player.";
         let mut d = curse(51, "Curse of the Pierced Heart", you, opp, oracle);
         d.tapped = true;
         let e = curse(52, "Curse of the Pierced Heart", opp, you, oracle);
-        let all = vec![&a, &alone, &b, &c, &d, &e];
+        // A stolen creature and a stolen land (#740).
+        let mut f = perm(53, "Vampire Interloper", 2, 1, you);
+        f.owner = opp;
+        let mut g = perm(54, "Forest", 0, 0, you);
+        g.card_types = vec![CardType::Land];
+        g.owner = opp;
+        let all = vec![&a, &alone, &b, &c, &d, &e, &f, &g];
         let board = LlmPlayer::format_perms_compact(&all, &all, you);
         assert!(board.contains("blocked (no blockers left)"), "{board}");
         assert!(board.contains("enchanting you") && board.contains("enchanting opponent"), "{board}");
+        assert!(board.contains("1x Forest [owned by opponent]"), "{board}");
         let legend_start = GAME_RULES.find("Status flags after a permanent").expect("the legend");
         let legend = &GAME_RULES[legend_start..(legend_start + 2500).min(GAME_RULES.len())];
         for line in board.lines() {
