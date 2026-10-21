@@ -5216,25 +5216,37 @@
      "seat": 1,
      "wins": 3,
      "losses": 0,
-     "points": 9
+     "points": 9,
+     "omw": 0.6667,
+     "gw": 0.7778,
+     "ogw": 0.5556
     },
     {
      "seat": 0,
      "wins": 2,
      "losses": 1,
-     "points": 6
+     "points": 6,
+     "omw": 0.5556,
+     "gw": 0.625,
+     "ogw": 0.6111
     },
     {
      "seat": 3,
      "wins": 1,
      "losses": 2,
-     "points": 3
+     "points": 3,
+     "omw": 0.4444,
+     "gw": 0.4444,
+     "ogw": 0.5
     },
     {
      "seat": 2,
      "wins": 0,
      "losses": 3,
-     "points": 0
+     "points": 0,
+     "omw": 0.6667,
+     "gw": 0.33,
+     "ogw": 0.5556
     }
    ],
    "notice": null

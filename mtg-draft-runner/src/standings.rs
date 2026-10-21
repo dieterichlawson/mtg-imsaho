@@ -30,9 +30,21 @@ pub fn standings_row_with(rank: usize, s: &Standing, tags: &RowTags, who: &dyn F
         String::new()
     };
     format!(
-        "{}. {} — {}-{}{draws} ({} game wins){}",
-        rank, who(s.seat), s.match_wins, s.match_losses, s.game_wins, row_notes(s, tags),
+        "{}. {} — {}-{}{draws} ({} game wins{}){}",
+        rank, who(s.seat), s.match_wins, s.match_losses, s.game_wins, tiebreakers(s), row_notes(s, tags),
     )
+}
+
+/// "; OMW 55.6%, GW 85.7%, OGW 47.2%": the tiebreakers that ordered seats
+/// level on points, said where the order is read. A standing that has not
+/// been through `sorted_standings` has none to say (every one it fills is
+/// at least the 33% floor).
+#[must_use]
+pub fn tiebreakers(s: &Standing) -> String {
+    if s.omw <= 0.0 {
+        return String::new();
+    }
+    format!("; OMW {:.1}%, GW {:.1}%, OGW {:.1}%", 100.0 * s.omw, 100.0 * s.gw, 100.0 * s.ogw)
 }
 
 /// Everything a standings row says beside the numbers: " [1 bye]" and the
@@ -166,6 +178,10 @@ mod standings_row_tests {
             game_wins,
             game_losses: 0,
             byes,
+            game_draws: 0,
+            omw: 0.0,
+            gw: 0.0,
+            ogw: 0.0,
         }
     }
 

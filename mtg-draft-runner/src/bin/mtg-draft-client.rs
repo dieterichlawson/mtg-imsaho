@@ -484,7 +484,14 @@ fn render(v: &Value, build: &Build) -> (String, String) {
                     // tags: a drawn match vanished from "0-0" (#744).
                     let draws = x["draws"].as_u64().filter(|d| *d > 0).map(|d| format!("-{d}")).unwrap_or_default();
                     let tags = x["tags"].as_str().filter(|t| !t.is_empty()).map(|t| format!(" {t}")).unwrap_or_default();
-                    s.push_str(&format!("  {}. {} {}-{}{draws} ({} points){tags}\n", rank + 1,
+                    // The tiebreakers the order is by, as the runner's
+                    // standings print them.
+                    let pct = |k: &str| x[k].as_f64().map(|f| format!("{:.1}%", 100.0 * f));
+                    let breaks = match (pct("omw"), pct("gw"), pct("ogw")) {
+                        (Some(o), Some(g), Some(og)) => format!("; OMW {o}, GW {g}, OGW {og}"),
+                        _ => String::new(),
+                    };
+                    s.push_str(&format!("  {}. {} {}-{}{draws} ({} points{breaks}){tags}\n", rank + 1,
                         who(x["seat"].as_u64().unwrap_or(0)), x["wins"], x["losses"], x["points"]));
                 }
             }
@@ -723,6 +730,21 @@ mod tests {
         assert!(mine.contains("Round 2 vs Lawson (seat 1): done — 0-0 [1 game abandoned, no winner]\n"), "{mine}");
         assert!(mine.contains("  1. Lawson (seat 1) 1-0-1 (4 points)\n"), "{mine}");
         assert!(mine.contains("  2. seat 0 0-1-1 (1 points) [substitute deck] [1 game forfeited]\n"), "{mine}");
+    }
+
+    /// The order a tie on points is broken by is printed beside the
+    /// points, as the runner's standings print it.
+    #[test]
+    fn the_standings_carry_their_tiebreakers() {
+        let v = serde_json::json!({
+            "type": "view", "phase": "done", "seat": 0, "set": "isd",
+            "seats": [{"seat": 0, "name": "seat 0", "kind": "human", "status": "idle", "picks": 42, "joined": true}],
+            "matches": [], "pool": [], "picks": [], "deck": null, "notice": null, "pairings": [],
+            "standings": [{"seat": 0, "wins": 1, "losses": 1, "draws": 0, "points": 3, "tags": "",
+                           "omw": 0.75, "gw": 0.4, "ogw": 0.5}],
+        });
+        let (_, mine) = render(&v, &Build::default());
+        assert!(mine.contains("  1. seat 0 1-1 (3 points; OMW 75.0%, GW 40.0%, OGW 50.0%)\n"), "{mine}");
     }
 }
 

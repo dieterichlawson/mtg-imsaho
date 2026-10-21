@@ -143,10 +143,20 @@ function standingsTable(view: DraftView): HTMLElement {
     // A drawn match is in the record too: it vanished from "0-0" (#744).
     h("td", { class: "num", text: `${s.wins}-${s.losses}${s.draws ? `-${s.draws}` : ""}` }),
     h("td", { class: "num", text: String(s.points) }),
+    // The tiebreakers a tie on points is ordered by, first to last.
+    h("td", { class: "num tiebreak", text: tiebreakText(s) }),
   ));
   return h("table", { class: "standings" },
-    h("thead", {}, h("tr", {}, ...["#", "seat", "W-L-D", "points"].map(t => h("th", { text: t })))),
+    h("thead", {}, h("tr", {}, ...["#", "seat", "W-L-D", "points", "OMW / GW / OGW %"].map(t => h("th", { text: t })))),
     h("tbody", {}, ...rows));
+}
+
+/** "55.6 / 85.7 / 47.2": the tiebreakers as percentages, or "" before a
+ *  round has counted. */
+export function tiebreakText(s: { omw?: number; gw?: number; ogw?: number }): string {
+  if (!s.omw) return "";
+  const pct = (f: number | undefined) => (100 * (f ?? 0)).toFixed(1);
+  return `${pct(s.omw)} / ${pct(s.gw)} / ${pct(s.ogw)}`;
 }
 
 function matchRow(view: DraftView, m: Match): HTMLElement {

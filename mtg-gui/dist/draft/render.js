@@ -117,8 +117,18 @@ function standingsTable(view) {
     // The tags the terminal standings carry, in their words (#744).
     h("td", { class: "name", text: seatName(view, s.seat) + (s.seat === view.seat ? " (you)" : "") + (s.tags ? ` ${s.tags}` : "") }), 
     // A drawn match is in the record too: it vanished from "0-0" (#744).
-    h("td", { class: "num", text: `${s.wins}-${s.losses}${s.draws ? `-${s.draws}` : ""}` }), h("td", { class: "num", text: String(s.points) })));
-    return h("table", { class: "standings" }, h("thead", {}, h("tr", {}, ...["#", "seat", "W-L-D", "points"].map(t => h("th", { text: t })))), h("tbody", {}, ...rows));
+    h("td", { class: "num", text: `${s.wins}-${s.losses}${s.draws ? `-${s.draws}` : ""}` }), h("td", { class: "num", text: String(s.points) }), 
+    // The tiebreakers a tie on points is ordered by, first to last.
+    h("td", { class: "num tiebreak", text: tiebreakText(s) })));
+    return h("table", { class: "standings" }, h("thead", {}, h("tr", {}, ...["#", "seat", "W-L-D", "points", "OMW / GW / OGW %"].map(t => h("th", { text: t })))), h("tbody", {}, ...rows));
+}
+/** "55.6 / 85.7 / 47.2": the tiebreakers as percentages, or "" before a
+ *  round has counted. */
+export function tiebreakText(s) {
+    if (!s.omw)
+        return "";
+    const pct = (f) => (100 * (f ?? 0)).toFixed(1);
+    return `${pct(s.omw)} / ${pct(s.gw)} / ${pct(s.ogw)}`;
 }
 function matchRow(view, m) {
     // A forfeit is not a game played and won, and an abandoned game is not a

@@ -59,6 +59,7 @@ export const SHAPES = {
     standing: {
         seat: "number", wins: "number", losses: "number", points: "number",
         draws: "number?", game_wins: "number?", byes: "number?", tags: "string?",
+        omw: "number?", gw: "number?", ogw: "number?",
     },
     refused: { type: "enum:refused", reason: "string", echo: "any" },
 };

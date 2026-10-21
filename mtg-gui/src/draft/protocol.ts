@@ -111,6 +111,11 @@ export interface Standing {
   /** The terminal standings' tags for this seat, in their words:
    *  "[1 game forfeited] [substitute deck]", or "" (#744). */
   tags?: string;
+  /** The tiebreakers the order is by, as fractions (MTR Appendix C):
+   *  opponents' match-win %, game-win %, opponents' game-win %. */
+  omw?: number;
+  gw?: number;
+  ogw?: number;
 }
 
 export interface DraftView {
@@ -227,6 +232,7 @@ export const SHAPES: Record<string, Shape> = {
   standing: {
     seat: "number", wins: "number", losses: "number", points: "number",
     draws: "number?", game_wins: "number?", byes: "number?", tags: "string?",
+    omw: "number?", gw: "number?", ogw: "number?",
   },
   refused: { type: "enum:refused", reason: "string", echo: "any" },
 };

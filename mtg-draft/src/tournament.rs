@@ -66,6 +66,16 @@ pub struct Standing {
     pub game_losses: usize,
     /// How many of `match_wins` are byes rather than matches played.
     pub byes: usize,
+    /// Games of its matches that neither seat won: drawn, or stopped with
+    /// no result. A game point each, in the game-win percentage.
+    pub game_draws: usize,
+    /// The tiebreakers, as fractions (MTR Appendix C): opponents'
+    /// match-win percentage, the seat's game-win percentage and its
+    /// opponents' game-win percentage. Filled by
+    /// [`Tournament::sorted_standings`]; zero on a raw standing.
+    pub omw: f64,
+    pub gw: f64,
+    pub ogw: f64,
 }
 
 impl Standing {
@@ -74,6 +84,11 @@ impl Standing {
         self.match_wins * 3 + self.match_draws
     }
 }
+
+/// The floor every percentage in a tiebreaker is held to (MTR Appendix C):
+/// a seat that lost every match counts as having won a third of them, so
+/// meeting it is not ruinous to an opponent's tiebreakers.
+pub const TIEBREAK_FLOOR: f64 = 0.33;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct TournamentRound {
@@ -104,6 +119,10 @@ impl Tournament {
                 game_wins: 0,
                 game_losses: 0,
                 byes: 0,
+                game_draws: 0,
+                omw: 0.0,
+                gw: 0.0,
+                ogw: 0.0,
             })
             .collect();
 
@@ -268,6 +287,9 @@ impl Tournament {
             self.standings[a].game_losses += result.wins_b;
             self.standings[b].game_wins += result.wins_b;
             self.standings[b].game_losses += result.wins_a;
+            let drawn = result.games.len().saturating_sub(result.wins_a + result.wins_b);
+            self.standings[a].game_draws += drawn;
+            self.standings[b].game_draws += drawn;
 
             match result.winner() {
                 Some(w) if w == a => {
@@ -320,15 +342,66 @@ impl Tournament {
         self.rounds.len() >= self.total_rounds()
     }
 
-    /// Return standings sorted by match points (descending).
+    /// Every seat's match-win and game-win percentages (MTR Appendix C),
+    /// each held to [`TIEBREAK_FLOOR`]. A bye is a round played and a match
+    /// won, and the games it awards are games won; a seat that has played
+    /// nothing stands at the floor.
+    fn win_percentages(&self) -> Vec<(f64, f64)> {
+        self.standings.iter().map(|s| {
+            let rounds = s.match_wins + s.match_losses + s.match_draws;
+            let games = s.game_wins + s.game_losses + s.game_draws;
+            #[allow(clippy::cast_precision_loss)]
+            let pct = |points: usize, of: usize| if of == 0 {
+                TIEBREAK_FLOOR
+            } else {
+                (points as f64 / (3 * of) as f64).max(TIEBREAK_FLOOR)
+            };
+            (pct(s.match_points(), rounds), pct(3 * s.game_wins + s.game_draws, games))
+        }).collect()
+    }
+
+    /// The seats each seat has played, a seat once per match; a bye is no
+    /// opponent.
+    fn opponents(&self) -> Vec<Vec<usize>> {
+        let mut opponents = vec![Vec::new(); self.num_players];
+        for result in self.rounds.iter().flat_map(|r| &r.results) {
+            opponents[result.player_a].push(result.player_b);
+            opponents[result.player_b].push(result.player_a);
+        }
+        opponents
+    }
+
+    /// Standings in final order: match points, then opponents' match-win
+    /// percentage, game-win percentage and opponents' game-win percentage
+    /// (MTR Appendix C), then seat number. Each row carries its three
+    /// tiebreakers.
+    ///
+    /// The order used to break a tie on game wins and then game losses,
+    /// which no sanctioned event uses and which ranked a seat that beat
+    /// weak opponents 2-0 above one that beat strong ones 2-1.
     #[must_use]
     pub fn sorted_standings(&self) -> Vec<Standing> {
+        let pct = self.win_percentages();
+        let opponents = self.opponents();
+        #[allow(clippy::cast_precision_loss)]
+        let mean = |seats: &[usize], f: &dyn Fn(usize) -> f64| if seats.is_empty() {
+            TIEBREAK_FLOOR
+        } else {
+            seats.iter().map(|&o| f(o)).sum::<f64>() / seats.len() as f64
+        };
         let mut sorted = self.standings.clone();
+        for s in &mut sorted {
+            s.omw = mean(&opponents[s.seat], &|o| pct[o].0);
+            s.gw = pct[s.seat].1;
+            s.ogw = mean(&opponents[s.seat], &|o| pct[o].1);
+        }
         sorted.sort_by(|a, b| {
             b.match_points()
                 .cmp(&a.match_points())
-                .then(b.game_wins.cmp(&a.game_wins))
-                .then(a.game_losses.cmp(&b.game_losses))
+                .then(b.omw.total_cmp(&a.omw))
+                .then(b.gw.total_cmp(&a.gw))
+                .then(b.ogw.total_cmp(&a.ogw))
+                .then(a.seat.cmp(&b.seat))
         });
         sorted
     }
@@ -394,6 +467,48 @@ mod tests {
                 "round 3 pairs {pair:?} again: {pairings:?}"
             );
         }
+    }
+
+    /// MTR Appendix C. Seats 2 and 3 both finish 1-1. Seat 3 won more
+    /// games (3 to 2), which the old order ranked first; seat 2's
+    /// opponents won more (0 at 2-0 and 3 at 1-1, against 3's opponents 2
+    /// at 1-1 and 1 at 0-2), and the opponents' match-win percentage is
+    /// the first tiebreaker. Seat 1's 0-2 counts as the 33% floor in seat
+    /// 3's average, not as zero.
+    #[test]
+    fn a_tie_on_points_is_broken_by_the_opponents_record_first() {
+        let mut t = Tournament::new(4, TournamentConfig { best_of: 3 });
+        t.record_round(vec![(0, 1), (2, 3)], vec![mr(0, 1, 2, 1), mr(2, 3, 2, 1)]);
+        t.record_round(vec![(0, 2), (3, 1)], vec![mr(0, 2, 2, 0), mr(3, 1, 2, 0)]);
+
+        let sorted = t.sorted_standings();
+        let order: Vec<usize> = sorted.iter().map(|s| s.seat).collect();
+        assert_eq!(order, vec![0, 2, 3, 1]);
+        let seat = |n: usize| sorted.iter().find(|s| s.seat == n).unwrap();
+        let close = |a: f64, b: f64| (a - b).abs() < 1e-9;
+        assert!(close(seat(2).omw, (0.5 + 1.0) / 2.0), "{}", seat(2).omw);
+        assert!(close(seat(3).omw, (0.5 + TIEBREAK_FLOOR) / 2.0), "{}", seat(3).omw);
+        // Game-win percentage: game points over three per game played.
+        assert!(close(seat(3).gw, 9.0 / 15.0), "{}", seat(3).gw);
+        assert!(close(seat(2).gw, 6.0 / 15.0), "{}", seat(2).gw);
+        // Seat 1 won 1 game of 5: 20%, held to the floor.
+        assert!(close(seat(1).gw, TIEBREAK_FLOOR), "{}", seat(1).gw);
+        assert!(close(seat(0).ogw, (seat(1).gw + seat(2).gw) / 2.0), "{}", seat(0).ogw);
+    }
+
+    /// A game neither seat won is a game point to each (MTR Appendix C),
+    /// not a game that never happened.
+    #[test]
+    fn a_drawn_game_is_a_game_point_each() {
+        let mut t = Tournament::new(2, TournamentConfig { best_of: 3 });
+        let mut result = mr(0, 1, 1, 1);
+        result.games.push(GameOutcome { winner: None, turns: 9, game_log: vec![], stalled_seat: None, abandoned: false });
+        t.record_round(vec![(0, 1)], vec![result]);
+
+        let sorted = t.sorted_standings();
+        assert!(sorted.iter().all(|s| s.game_draws == 1 && s.match_draws == 1));
+        // (3 for the win + 1 for the draw) over 3 games.
+        assert!(sorted.iter().all(|s| (s.gw - 4.0 / 9.0).abs() < 1e-9), "{sorted:?}");
     }
 
     /// #651: the comment said a bye is scored 2-0 and the code credited

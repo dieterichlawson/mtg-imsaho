@@ -369,6 +369,12 @@ pub struct StandingView {
     /// The tags the terminal and log standings carry for this seat, in
     /// their words: " [1 game forfeited] [substitute deck]", or "" (#744).
     pub tags: String,
+    /// The tiebreakers the order is by, as fractions: opponents' match-win
+    /// percentage, game-win percentage, opponents' game-win percentage
+    /// (MTR Appendix C, each at least 0.33).
+    pub omw: f64,
+    pub gw: f64,
+    pub ogw: f64,
 }
 
 /// A message to a seat that is not a view: its request was refused.
@@ -1533,6 +1539,7 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
                 seat: s.seat, wins: s.match_wins, losses: s.match_losses, draws: s.match_draws,
                 points: s.match_points(), game_wins: s.game_wins, byes: s.byes,
                 tags: crate::standings::row_notes(s, &tags[s.seat]).trim_start().to_string(),
+                omw: s.omw, gw: s.gw, ogw: s.ogw,
             }).collect()
         }).unwrap_or_default();
         // The seat's own phase: one that has drafted all its cards is
