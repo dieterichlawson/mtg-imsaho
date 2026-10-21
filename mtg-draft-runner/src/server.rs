@@ -190,6 +190,13 @@ impl Shared {
         }
     }
 
+    /// The answer to something the host typed: printed under `--quiet` as
+    /// well, which quiets the table's own lines, not the host's commands
+    /// (`status` printed nothing at all under it).
+    pub fn reply(&self, line: &str) {
+        mtg_player::stderr_line!("{line}");
+    }
+
     /// Something changed: print what, send every page its view, wake the
     /// workers.
     pub fn notify(&self) {
@@ -475,7 +482,7 @@ fn host_loop(shared: &Arc<Shared>) {
                     let mut lobby = shared.lobby();
                     if lobby.phase() == Phase::Lobby { lobby.start(); true } else { false }
                 };
-                if started { shared.notify(); } else { shared.say("the draft has already started"); }
+                if started { shared.notify(); } else { shared.reply("the draft has already started"); }
             }
             Some("kick") => {
                 let result = words.get(1).and_then(|n| n.parse::<usize>().ok())
@@ -483,16 +490,16 @@ fn host_loop(shared: &Arc<Shared>) {
                     .and_then(|seat| shared.kick(seat));
                 match result {
                     Ok(()) => shared.notify(),
-                    Err(e) => shared.say(&format!("kick: {e}")),
+                    Err(e) => shared.reply(&format!("kick: {e}")),
                 }
             }
             Some("status") => {
                 let lobby = shared.lobby();
-                shared.say(&format!("phase: {:?}", lobby.phase()));
+                shared.reply(&format!("phase: {:?}", lobby.phase()));
                 for seat in 0..lobby.pod_size() {
                     let v = lobby.view(seat);
                     let s = &v.seats[seat];
-                    shared.say(&format!("  seat {seat} {} {} — {}, {} ({} picks)",
+                    shared.reply(&format!("  seat {seat} {} {} — {}, {} ({} picks)",
                         s.kind, s.name, s.presence, s.status, s.picks));
                 }
             }
@@ -500,7 +507,7 @@ fn host_loop(shared: &Arc<Shared>) {
                 shared.quit();
                 return;
             }
-            Some(other) => shared.say(&format!(
+            Some(other) => shared.reply(&format!(
                 "'{other}': the commands are start (or Enter), kick <seat>, status, quit")),
         }
     }
