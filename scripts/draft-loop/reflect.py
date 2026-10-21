@@ -148,10 +148,18 @@ tonight's drafters wrote, and the statistics of every night so far, and you writ
 - Write for a drafter at a pick: what to take, what to pass, when to move in, how to build and play the deck."""
 
 
+def sections(text):
+    """A guide from its first section on: the title and the line the loop
+    heads the file with are the loop's, not the curator's to copy (it did,
+    and the guide had two titles)."""
+    i = text.find(SECTIONS[0])
+    return text[i:].strip() if i >= 0 else text.strip()
+
+
 def curate(args):
     stats_path = os.path.join(args.out, "stats.md")
     lessons_path = os.path.join(args.out, "nights", f"{args.night}-lessons.json")
-    guide = open(args.guide).read().strip() if os.path.exists(args.guide) else ""
+    guide = sections(open(args.guide).read()) if os.path.exists(args.guide) else ""
     stats = open(stats_path).read() if os.path.exists(stats_path) else "(no statistics yet)"
     lessons = json.load(open(lessons_path)) if os.path.exists(lessons_path) else {"seats": []}
     told = "\n".join(f"- seat {s['seat']} ({s['colors']}, {s['record']}, {'guided' if s['guided'] else 'unguided'}): {l}"
@@ -167,7 +175,7 @@ def curate(args):
     for attempt in range(2):
         text, usage = claude(CURATE_SYSTEM, message, model)
         new = (text or "").strip()
-        new = re.sub(r"^```(?:markdown)?\n|\n```$", "", new).strip()
+        new = sections(re.sub(r"^```(?:markdown)?\n|\n```$", "", new).strip())
         words = len(new.split())
         missing = [h for h in SECTIONS if h not in new]
         if new and not missing and words <= GUIDE_WORDS * 1.25:
