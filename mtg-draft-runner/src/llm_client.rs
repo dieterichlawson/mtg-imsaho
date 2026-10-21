@@ -129,6 +129,31 @@ fn phase_cost(usage: &HashMap<String, ModelUsage>) -> Cost {
     mtg_player::llm::total_cost(&converted)
 }
 
+/// A cost as the summary prints it: for a plan-quota seat, what the same
+/// tokens would have cost on a key, said as such (`mtg-runner` prints the
+/// same), since "n/a" alone is not a number a run can be compared by.
+fn cost_text(cost: Cost, api_equivalent: Option<f64>) -> String {
+    match (cost, api_equivalent) {
+        (Cost::PlanQuota, Some(usd)) => format!("n/a (plan quota; ${usd:.4} at API rates)"),
+        (cost, _) => cost.to_string(),
+    }
+}
+
+/// One phase's tokens and cost: the draft's picks and deck builds, or the
+/// tournament's games. The per-model lines add the two together, so
+/// without this a run could say how many calls each phase made and not
+/// what either cost.
+fn phase_line(usage: &HashMap<String, ModelUsage>) -> String {
+    let sum = |f: fn(&ModelUsage) -> u64| usage.values().map(f).sum::<u64>();
+    let api: Option<f64> = usage.iter()
+        .map(|(m, u)| mtg_player::llm::api_equivalent(m, &as_llm_usage(u)))
+        .try_fold(0.0, |acc, v| v.map(|v| acc + v));
+    let api = api.filter(|_| usage.keys().all(|m| mtg_player::llm::is_plan_quota(m)));
+    format!("{} calls, {} in / {} out / {} cache_read / {} cache_write, {}",
+        sum(|u| u.calls), sum(|u| u.input), sum(|u| u.output), sum(|u| u.cache_read),
+        sum(|u| u.cache_create), cost_text(phase_cost(usage), api))
+}
+
 /// How a run reached its usage summary.
 ///
 /// The summary used to be a statement on the happy path — one call at the
@@ -172,8 +197,6 @@ pub fn print_usage_summary(outcome: RunOutcome) {
         RunOutcome::Stopped => 0,
     };
 
-    // Draft phase cost
-    let draft_cost = phase_cost(&draft_usage);
     let draft_calls: u64 = draft_usage.values().map(|u| u.calls).sum();
 
     // Game phase cost
@@ -206,7 +229,7 @@ pub fn print_usage_summary(outcome: RunOutcome) {
         RunOutcome::Stopped => "=== Token Usage (run stopped early) ===\n",
     });
 
-    writeln!(summary, "  Draft:  {draft_calls} calls, {draft_cost}").unwrap();
+    writeln!(summary, "  Draft:  {}", phase_line(&draft_usage)).unwrap();
     // A per-game average only means anything for a metered phase; a
     // plan-quota or unpriced one has no dollars to divide.
     let per_game = match (game_cost, total_games) {
@@ -214,7 +237,7 @@ pub fn print_usage_summary(outcome: RunOutcome) {
             v / f64::from(u32::try_from(n).unwrap_or(u32::MAX))),
         _ => String::new(),
     };
-    writeln!(summary, "  Games:  {game_calls} calls, {game_cost}{per_game}").unwrap();
+    writeln!(summary, "  Games:  {}{per_game}", phase_line(&game_usage)).unwrap();
     summary.push('\n');
 
     let mut models: Vec<_> = combined.iter().collect();
@@ -222,7 +245,7 @@ pub fn print_usage_summary(outcome: RunOutcome) {
     let total_cost = phase_cost(&combined);
 
     for (model, u) in &models {
-        let cost = usage_cost(u, model);
+        let cost = cost_text(usage_cost(u, model), mtg_player::llm::api_equivalent(model, &as_llm_usage(u)));
         // The same sentence `mtg-runner` prints, from the same function: a
         // call count alone reads as a healthy seat even when every answer
         // was thrown away (#489).
@@ -230,8 +253,8 @@ pub fn print_usage_summary(outcome: RunOutcome) {
         // A dead backend and a bad answer are different events with
         // different remedies, so they are different numbers (#587).
         let unanswered = mtg_player::llm::unanswered_note(u.unanswered);
-        writeln!(summary, "  {}: {} calls, {}in/{}out/{}cached = {cost}{rejected}{unanswered}",
-            model, u.calls, u.input, u.output, u.cache_read
+        writeln!(summary, "  {}: {} calls, {}in/{}out/{}cached/{}written = {cost}{rejected}{unanswered}",
+            model, u.calls, u.input, u.output, u.cache_read, u.cache_create
         ).unwrap();
     }
     writeln!(summary, "  ---\n  Total: {} calls, {total_cost}", draft_calls + game_calls).unwrap();
