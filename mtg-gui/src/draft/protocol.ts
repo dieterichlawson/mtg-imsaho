@@ -193,7 +193,23 @@ export interface Closed {
   reason: string;
 }
 
-export type ServerMessage = DraftView | Refused | Closed;
+/** One pick of this seat's draft review: the pack as it was handed over
+ *  and what was taken from it (`auto`: the table took it). */
+export interface ReviewPick {
+  round: number;
+  pick: number;
+  pack: CardInfo[];
+  card: string;
+  auto: boolean;
+}
+
+/** This seat's whole draft, sent to the asking page alone. */
+export interface Review {
+  type: "review";
+  picks: ReviewPick[];
+}
+
+export type ServerMessage = DraftView | Refused | Closed | Review;
 
 export type ClientMessage =
   | { type: "pick"; pack_id: number; index: number }
@@ -202,7 +218,8 @@ export type ClientMessage =
   | { type: "name"; name: string }
   | { type: "sideboard"; main: string[]; lands: Record<string, number> }
   | { type: "play_draw"; play: boolean }
-  | { type: "sideboard_ready" };
+  | { type: "sideboard_ready" }
+  | { type: "review" };
 
 // ------------------------------------------------------------ the table
 
@@ -285,6 +302,9 @@ export const SHAPES: Record<string, Shape> = {
     omw: "number?", gw: "number?", ogw: "number?",
   },
   refused: { type: "enum:refused", reason: "string", echo: "any" },
+  review: { type: "enum:review", picks: "array:review_pick" },
+  review_pick: { round: "number", pick: "number", pack: "array:review_card", card: "string", auto: "boolean" },
+  review_card: { name: "string", line: "string", text: "string", rarity: "string|null", colors: "string[]" },
   closed: { type: "enum:closed", reason: "string" },
 };
 

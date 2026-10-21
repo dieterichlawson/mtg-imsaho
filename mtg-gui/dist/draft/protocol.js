@@ -69,6 +69,9 @@ export const SHAPES = {
         omw: "number?", gw: "number?", ogw: "number?",
     },
     refused: { type: "enum:refused", reason: "string", echo: "any" },
+    review: { type: "enum:review", picks: "array:review_pick" },
+    review_pick: { round: "number", pick: "number", pack: "array:review_card", card: "string", auto: "boolean" },
+    review_card: { name: "string", line: "string", text: "string", rarity: "string|null", colors: "string[]" },
     closed: { type: "enum:closed", reason: "string" },
 };
 /**

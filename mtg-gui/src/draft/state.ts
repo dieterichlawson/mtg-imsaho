@@ -2,7 +2,7 @@
 // of on top of it, and the socket. Everything the renderer reads is here.
 
 import type { DeckEdit } from "./deck.js";
-import type { ClientMessage, DraftView } from "./protocol.js";
+import type { ClientMessage, DraftView, ReviewPick } from "./protocol.js";
 
 export interface PendingPick {
   packId: number;
@@ -44,6 +44,10 @@ export interface PageState {
   /** Between games: the match and game the sideboard edit in `deck` is
    *  for ("round-game"), or null when it is the deck being built. */
   between: string | null;
+  /** The draft review, once asked for: every pack this seat was handed. */
+  review: ReviewPick[] | null;
+  /** The review is open; it is asked for when it is opened. */
+  reviewOpen: boolean;
   refusal: Refusal | null;
   /** Drafting: `performance.now()` at which the pick timer runs out. */
   deadlineAt: number | null;
@@ -68,6 +72,8 @@ export interface Actions {
   playDraw(play: boolean): void;
   /** Between games: done sideboarding and choosing. */
   sideboardReady(): void;
+  /** Open or close the draft review. */
+  toggleReview(): void;
   dismiss(): void;
   dismissNotice(): void;
 }
@@ -77,7 +83,7 @@ export function initialState(): PageState {
     ws: null, connected: false, reconnects: 0, retryAt: null, rejected: false, closed: null,
     seat: null, key: null, view: null,
     selected: null, hover: null, pendingPick: null,
-    deck: null, cursor: null, readySent: false, between: null,
+    deck: null, cursor: null, readySent: false, between: null, review: null, reviewOpen: false,
     refusal: null, deadlineAt: null, hint: null, notice: null,
   };
 }

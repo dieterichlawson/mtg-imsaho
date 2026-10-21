@@ -1140,6 +1140,11 @@ fn pump(
                     Ok(Request::Sideboard { main, lands }) => shared.lobby().sideboard(seat, &main, &lands),
                     Ok(Request::PlayDraw { play }) => shared.lobby().play_draw(seat, play),
                     Ok(Request::SideboardReady) => shared.lobby().sideboard_ready(seat),
+                    Ok(Request::Review) => {
+                        let json = serde_json::to_string(&shared.lobby().review(seat)).unwrap_or_default();
+                        shared.send_to(id, &json);
+                        continue;
+                    }
                     Err(e) => Err(format!("unreadable message: {e}")),
                 };
                 match outcome {

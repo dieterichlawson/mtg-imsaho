@@ -25,6 +25,7 @@ same add, drop and lands to sideboard (from game 2), and ready to start
 the game.
 text <n> prints a card's rules text: the pack's card <n> while drafting,
 the pool's card <n> while building or sideboarding.
+review prints every pack you were handed and what you took from it.
 Any time: name <name>, help, quit.";
 
 fn out(line: &str) {
@@ -168,6 +169,7 @@ fn main() {
                         }
                         view = Some(msg);
                     }
+                    Some("review") => out(&review_listing(&msg)),
                     // The host ended the table: said, and nothing to wait for
                     // (#824). The close frame follows.
                     Some("closed") => {
@@ -358,6 +360,7 @@ fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Option<Du
             }
             Command::Send(vec![deck_message(v, build), serde_json::json!({"type": "ready"})])
         }
+        "review" => Command::Send(vec![serde_json::json!({"type": "review"})]),
         "play" | "draw" => {
             let Some(v) = view else { return Command::Print("no view yet".into()) };
             match between(v) {
@@ -902,6 +905,23 @@ mod tests {
         assert_eq!(sent(command("ready", Some(&v), &mut build, None)), vec![serde_json::json!({"type": "sideboard_ready"})]);
     }
 
+    /// `review` asks for the seat's draft and prints it by pack.
+    #[test]
+    fn review_prints_every_pack_and_what_was_taken() {
+        let mut build = Build::default();
+        match command("review", None, &mut build, None) {
+            Command::Send(m) => assert_eq!(m, vec![serde_json::json!({"type": "review"})]),
+            _ => panic!("review is sent"),
+        }
+        let msg = serde_json::json!({"type": "review", "picks": [
+            {"round": 1, "pick": 1, "card": "Chapel Geist", "auto": false,
+             "pack": [{"name": "Doomed Traveler"}, {"name": "Chapel Geist"}, {"name": "Moan of the Unhallowed"}]},
+            {"round": 1, "pick": 2, "card": "Typhoid Rats", "auto": true, "pack": [{"name": "Typhoid Rats"}]}]});
+        let text = review_listing(&msg);
+        assert!(text.contains("Pack 1\n  1.1 Chapel Geist — over Doomed Traveler, Moan of the Unhallowed\n"), "{text}");
+        assert!(text.contains("  1.2 Typhoid Rats (the table's pick)\n"), "{text}");
+    }
+
     /// The order a tie on points is broken by is printed beside the
     /// points, as the runner's standings print it.
     #[test]
@@ -1046,6 +1066,30 @@ fn between_listing(v: &Value, m: &Value, b: &Value, build: &Build, who: &dyn Fn(
         let them = if b["opponent_ready"] == true { "they are ready" } else { "they are still deciding" };
         format!("type ready to start game {game} ({them})\n")
     });
+    s
+}
+
+/// `review`: every pack the seat was handed, by pack, the card taken first.
+fn review_listing(msg: &Value) -> String {
+    let picks = msg["picks"].as_array().cloned().unwrap_or_default();
+    if picks.is_empty() {
+        return "no picks yet".to_string();
+    }
+    let mut s = String::from("your draft:\n");
+    for p in &picks {
+        if p["pick"] == 1 {
+            s.push_str(&format!("Pack {}\n", p["round"]));
+        }
+        let card = p["card"].as_str().unwrap_or("?");
+        let rest: Vec<&str> = p["pack"].as_array().into_iter().flatten()
+            .filter_map(|c| c["name"].as_str()).filter(|n| *n != card).collect();
+        let auto = if p["auto"] == true { " (the table's pick)" } else { "" };
+        s.push_str(&format!("  {}.{} {card}{auto}", p["round"], p["pick"]));
+        if !rest.is_empty() {
+            s.push_str(&format!(" — over {}", rest.join(", ")));
+        }
+        s.push('\n');
+    }
     s
 }
 

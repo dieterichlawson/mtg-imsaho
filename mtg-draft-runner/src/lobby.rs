@@ -409,6 +409,28 @@ pub struct StandingView {
     pub ogw: f64,
 }
 
+/// One pick as the seat made it, for its draft review: the pack as it was
+/// handed over, and what was taken from it.
+#[derive(Debug, Clone, Serialize)]
+pub struct ReviewPick {
+    pub round: usize,
+    pub pick: usize,
+    pub pack: Vec<CardView>,
+    pub card: String,
+    /// The table took it (a timer, an absent or kicked seat).
+    pub auto: bool,
+}
+
+/// A seat's own draft, every pack it was handed and what it took: sent to
+/// the asking client alone (`{"type": "review"}`), never in the view, which
+/// every change at the table resends.
+#[derive(Debug, Clone, Serialize)]
+pub struct Review {
+    #[serde(rename = "type")]
+    pub kind: &'static str,
+    pub picks: Vec<ReviewPick>,
+}
+
 /// A message to a seat that is not a view: its request was refused.
 #[derive(Debug, Clone, Serialize)]
 pub struct Refused {
@@ -443,6 +465,8 @@ pub enum Request {
     PlayDraw { play: bool },
     /// Between games: done; the next game may start.
     SideboardReady,
+    /// Every pack this seat was handed and what it took.
+    Review,
 }
 
 // ───────────────────────────────────────────────────────────── the snapshot
@@ -567,6 +591,9 @@ struct SeatState {
     pick_deadline: Option<Instant>,
     build_deadline: Option<Instant>,
     notice: Option<String>,
+    /// Every pack the seat was handed, as it was, with the card taken:
+    /// `(round, pick, pack, card, auto)`.
+    seen: Vec<(usize, usize, Vec<String>, String, bool)>,
 }
 
 impl SeatState {
@@ -698,6 +725,7 @@ impl Lobby {
             pick_deadline: None,
             build_deadline: None,
             notice: None,
+            seen: Vec::new(),
         }).collect();
 
         let models: Vec<String> = config.seats.iter().map(|k| match k {
@@ -1094,6 +1122,7 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
     ) -> Result<(), String> {
         let available = self.table.in_front(seat).map(|f| f.cards.to_vec()).unwrap_or_default();
         let picked = self.table.pick(seat, pack_id, index, auto)?;
+        self.seats[seat].seen.push((picked.round, picked.pick, available.clone(), picked.card.clone(), auto));
         self.pick_log.push(SavedPick { seat, pack_id, index, auto });
         log_draft_pick!(self.log, seat, picked.round, picked.pick, &available, &picked.card, prompt, response);
         self.event(line);
@@ -1620,6 +1649,19 @@ for the seat from here, and its games are forfeit"), ""));
         m.decks[usize::from(seat == m.b)].clone().or_else(|| self.seats[seat].deck.clone())
     }
 
+    /// A seat's own draft review: every pack it was handed and what it
+    /// took, in order.
+    #[must_use]
+    pub fn review(&self, seat: usize) -> Review {
+        let picks = self.seats.get(seat).map(|s| s.seen.iter().map(|(round, pick, pack, card, auto)| ReviewPick {
+            round: *round, pick: *pick, pack: pack.iter().map(|c| self.book.card(c, None)).collect(),
+            // As the pack names it: a double-faced card is its front face
+            // there and its full name in the pool.
+            card: mtg_draft::front_face(card).to_string(), auto: *auto,
+        }).collect()).unwrap_or_default();
+        Review { kind: "review", picks }
+    }
+
     /// A seat's drafted pool.
     #[must_use]
     pub fn pool(&self, seat: usize) -> Vec<String> {
@@ -1897,8 +1939,10 @@ for the seat from here, and its games are forfeit"), ""));
             self.phase = Phase::Drafting;
         }
         for (n, p) in save.picks.iter().enumerate() {
+            let available = self.table.in_front(p.seat).map(|f| f.cards.to_vec()).unwrap_or_default();
             let picked = self.table.pick(p.seat, p.pack_id, p.index, p.auto)
                 .map_err(|e| format!("snapshot pick {}: {e}", n + 1))?;
+            self.seats[p.seat].seen.push((picked.round, picked.pick, available, picked.card.clone(), p.auto));
             self.pick_log.push(p.clone());
             if picked.draft_over {
                 self.phase = Phase::Building;

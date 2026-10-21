@@ -131,7 +131,9 @@ Open your join link. `mtg-gui/draft.html` is the page (served from the
 same `mtg-gui` directory as the game page, with `dist/` and `assets/`); it
 shows the lobby, the pack with the pool beside it while drafting, a
 checklist and land counts while building, and your match link, results
-and standings while playing. On a phone, a tap on a pool card while
+and standings while playing. Once your own draft is over, "Review your
+picks" lists every pack you were handed, by pack, with the card you took
+over the rest of it. On a phone, a tap on a pool card while
 building opens its text under it and a second tap moves it between main
 and side. If the page is not in the checkout yet the
 server says so at start-up and the client below still works.
@@ -157,6 +159,7 @@ playing — open http://192.168.1.20:8803/`; a round you sit out is
 (they lead 1-0):` with who chooses, what the opponent has shown and your
 pool: `play` or `draw` when the choice is yours, the same `add`, `drop` and
 `lands` to sideboard (a deck is sent once it has 40 cards), and `ready`.
+`review` prints every pack you were handed and what you took from it.
 `name <x>`, `help`, `quit`.
 
 ## Draft, build, play

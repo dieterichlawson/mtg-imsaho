@@ -310,7 +310,33 @@ function building(view, state, actions) {
         panel.append(h("div", { class: "detail panel-detail" }, cardDetail(shown)));
     else
         panel.append(h("p", { class: "muted panel-help", text: `Click a card to move it between main and side (on a phone, tap to read it and tap again to move it); at least ${MIN_DECK} cards with lands. Arrows and Enter work too.` }));
-    return h("section", { class: "phase phase-building" }, h("div", { class: "build-layout" }, list, panel));
+    return h("section", { class: "phase phase-building" }, h("div", { class: "build-layout" }, list, panel), reviewSection(state, actions));
+}
+/**
+ * The draft review: every pack this seat was handed, by pack, with what it
+ * took first and the rest of the pack after it. Asked for when opened, and
+ * only once the seat's own draft is over.
+ */
+function reviewSection(state, actions) {
+    const parts = [h("button", { type: "button", id: "review-toggle", onclick: () => actions.toggleReview() }, state.reviewOpen ? "Hide your picks" : "Review your picks")];
+    if (state.reviewOpen) {
+        if (!state.review)
+            parts.push(h("p", { class: "muted", text: "Asking for your picks…" }));
+        else {
+            const byPack = new Map();
+            for (const p of state.review)
+                byPack.set(p.round, [...(byPack.get(p.round) ?? []), p]);
+            for (const [round, picks] of byPack) {
+                parts.push(h("h4", { text: `Pack ${round}` }));
+                parts.push(h("ol", { class: "review-list" }, ...picks.map(p => {
+                    const taken = p.pack.find(c => c.name === p.card);
+                    const rest = p.pack.filter(c => c !== taken).map(c => c.name);
+                    return h("li", { "data-pick": `${p.round}.${p.pick}` }, h("span", { class: "review-pick", title: taken ? taken.text : "", text: `${p.round}.${p.pick} ${p.card}` }), p.auto ? h("span", { class: "muted", text: " (the table's pick)" }) : null, rest.length ? h("span", { class: "muted review-rest", text: ` — over ${rest.join(", ")}` }) : null);
+                })));
+            }
+        }
+    }
+    return h("section", { class: "review", id: "review" }, h("h3", { text: "Your draft" }), ...parts);
 }
 /** This seat's byes, from the table's pairings: `matches` holds played
  *  matches only, so a seat given a bye read "No pairings yet" (#814). */
@@ -409,6 +435,7 @@ function playing(view, done, state, actions) {
         sections.push(all);
     sections.push(h("h3", { text: "Seats" }), seatsTable(view));
     if (view.deck) {
+        sections.push(reviewSection(state, actions));
         sections.push(h("h3", { text: `Your deck (${view.deck.main.length + Object.values(view.deck.lands).reduce((a, b) => a + b, 0)})` }), h("p", { class: "decklist" }, [...view.deck.main, ...Object.entries(view.deck.lands).filter(([, n]) => n > 0).map(([l, n]) => `${n} ${l}`)].join(", ")));
     }
     return h("section", { class: `phase phase-${done ? "done" : "playing"}` }, ...sections);

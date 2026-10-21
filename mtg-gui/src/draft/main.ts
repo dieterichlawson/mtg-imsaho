@@ -125,6 +125,7 @@ function onMessage(msg: ServerMessage): void {
   if (msg.type === "view") onView(msg);
   else if (msg.type === "refused") onRefused(msg);
   else if (msg.type === "closed") state.closed = msg.reason;
+  else if (msg.type === "review") state.review = msg.picks;
   else console.warn("unknown message", msg);
   draw();
 }
@@ -340,6 +341,12 @@ const actions: Actions = {
     state.refusal = null; state.hint = null; state.notice = null;
     send({ type: "sideboard_ready" });
     state.readySent = true;
+    draw();
+  },
+  toggleReview() {
+    state.reviewOpen = !state.reviewOpen;
+    // Asked for each time it is opened: a pick made since is in the next one.
+    if (state.reviewOpen) send({ type: "review" });
     draw();
   },
   dismiss() { state.refusal = null; draw(); },

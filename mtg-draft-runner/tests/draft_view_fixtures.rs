@@ -922,3 +922,31 @@ fn between_games_a_person_chooses_and_sideboards_and_the_clock_ends_it() {
     assert_eq!(out.decks[0].as_ref().unwrap().maindeck, played.maindeck);
     assert_eq!(out.chooser_plays, None);
 }
+
+/// A seat's draft review: every pack it was handed, as it was, and the
+/// card it took — 42 picks, each card in its own pack, the packs shrinking
+/// by one a pick — and the same after a `--resume`, which replays the
+/// picks rather than making them.
+#[test]
+fn the_review_is_every_pack_a_seat_was_handed() {
+    let seats = || vec![SeatKind::Human, SeatKind::Human, SeatKind::Ai("cc".into()), SeatKind::Ai("cc".into())];
+    let (mut a, _) = lobby(seats());
+    a.connected(0);
+    a.connected(1);
+    draft_to_the_end(&mut a, None);
+    let review = serde_json::to_value(a.review(0)).unwrap();
+    assert_eq!(review["type"], "review");
+    let picks = review["picks"].as_array().unwrap();
+    assert_eq!(picks.len(), 3 * PACK, "every pick of the seat's draft");
+    for (i, p) in picks.iter().enumerate() {
+        let names: Vec<&str> = p["pack"].as_array().unwrap().iter().map(|c| c["name"].as_str().unwrap()).collect();
+        assert!(names.contains(&p["card"].as_str().unwrap()), "pick {i}: {p}");
+        assert_eq!(names.len(), PACK - i % PACK, "pick {i}: the pack shrinks a card a pick");
+        assert_eq!((p["round"].as_u64(), p["pick"].as_u64()), (Some((i / PACK + 1) as u64), Some((i % PACK + 1) as u64)));
+    }
+    let pool = own_pool(&a, 0);
+    assert!(picks.iter().all(|p| pool.contains(&mtg_draft::front_face(p["card"].as_str().unwrap()).to_string())));
+    let (mut b, _) = lobby(seats());
+    b.restore(&serde_json::from_str(&serde_json::to_string(&a.snapshot()).unwrap()).unwrap()).unwrap();
+    assert_eq!(serde_json::to_value(b.review(0)).unwrap(), review, "a resumed table reviews the same draft");
+}

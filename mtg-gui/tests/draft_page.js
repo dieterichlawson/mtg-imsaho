@@ -581,6 +581,33 @@ async function main() {
         console.log("skip: no server fixture between games");
       }
 
+      // The draft review: asked for when opened, shown by pack, the card
+      // taken first and the rest of its pack after it.
+      {
+        const view = byName.done;
+        await stage(view);
+        await page.waitForTimeout(50);
+        await page.click("#review-toggle");
+        await page.waitForTimeout(50);
+        const asked = await lastSent();
+        check(asked && asked.type === "review", `${tag}: opening the review asks for it (${JSON.stringify(asked)})`);
+        const card = (name) => ({ name, line: name, text: `${name} text`, rarity: "common", colors: [] });
+        await page.evaluate((m) => window.mtgDraftDebug.stage(m), { type: "review", picks: [
+          { round: 1, pick: 1, card: "Chapel Geist", auto: false, pack: [card("Doomed Traveler"), card("Chapel Geist"), card("Moan of the Unhallowed")] },
+          { round: 1, pick: 2, card: "Typhoid Rats", auto: true, pack: [card("Typhoid Rats")] },
+          { round: 2, pick: 1, card: "Brimstone Volley", auto: false, pack: [card("Brimstone Volley"), card("Geistflame")] },
+        ] });
+        await page.waitForTimeout(50);
+        const rows = await page.$$eval("#review li", els => els.map(e => e.textContent));
+        check(rows.length === 3 && rows[0] === "1.1 Chapel Geist — over Doomed Traveler, Moan of the Unhallowed",
+          `${tag}: each pick is the card taken over the rest of its pack (${JSON.stringify(rows)})`);
+        check(rows[1].includes("the table's pick"), `${tag}: a pick the table made says so`);
+        check((await page.$$eval("#review h4", els => els.map(e => e.textContent))).join(",") === "Pack 1,Pack 2", `${tag}: by pack`);
+        const o = await overflow();
+        check(o.scrollW <= o.clientW, `${tag}: the review fits sideways (${o.scrollW} <= ${o.clientW})`);
+        await page.click("#review-toggle");
+      }
+
       // The socket was refused, so the page is retrying with backoff.
       {
         await page.waitForTimeout(1200);
