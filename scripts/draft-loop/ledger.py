@@ -3,7 +3,7 @@
 night's results as the tables the guide is curated from.
 
     scripts/draft-loop/ledger.py night --save SAVE --positions POS --night DATE \
-        [--guided 0,2,4,6] [--guide GUIDE] [--usage OUT.TXT] --out reports/draft-loop
+        [--guided 0,2,4,6] [--guide GUIDE] [--usage OUT.TXT] [--log DRAFT.LOG] --out reports/draft-loop
     scripts/draft-loop/ledger.py stats --out reports/draft-loop
 
 `night` reads the runner's `--save` snapshot (picks, decks, matches, each
@@ -132,6 +132,7 @@ def night(args):
         "night": args.night, "seed": save["seed"], "set": save["set"], "players": save["players"],
         "best_of": save["best_of"], "guide_hash": guide_hash, "seats": seats, "matches": matches,
         "offered": offered, "usage": usage_lines(args.usage) if args.usage else None,
+        "health": log_health(args.log),
     }
     os.makedirs(os.path.join(args.out, "nights"), exist_ok=True)
     path = os.path.join(args.out, "nights", f"{args.night}.json")
@@ -139,12 +140,36 @@ def night(args):
     print(f"wrote {path}")
 
 
+def log_health(path):
+    """What the run's log says went wrong, and what its game calls spent:
+    re-asks, replies no answer could be read from, panics and invariant
+    breaks, and the `USAGE` lines of every game call (the runner's own
+    summary misses the calls before a `--resume`)."""
+    if not path or not os.path.exists(path):
+        return None
+    h = {"reasks": 0, "unreadable": 0, "panics": 0, "game_calls": 0,
+         "out": 0, "thinking": 0, "cache_read": 0, "cache_write": 0}
+    usage = re.compile(r"\tUSAGE \[.*out (\d+) thinking (\d+) cache_read (\d+) cache_write (\d+)")
+    for line in open(path, encoding="utf-8", errors="replace"):
+        if "\tREASK [" in line:
+            h["reasks"] += 1
+        elif "UNREADABLE" in line:
+            h["unreadable"] += 1
+        elif "panicked" in line or "INVARIANT" in line:
+            h["panics"] += 1
+        elif (m := usage.search(line)):
+            h["game_calls"] += 1
+            for k, v in zip(("out", "thinking", "cache_read", "cache_write"), m.groups()):
+                h[k] += int(v)
+    return h
+
+
 def usage_lines(path):
     """The runner's token summary, as the lines it printed."""
     if not os.path.exists(path):
         return None
     text = open(path, encoding="utf-8", errors="replace").read()
-    i = text.find("=== Token Usage ===")
+    i = text.rfind("=== Token Usage ===")
     if i < 0:
         return None
     lines = text[i:].strip().splitlines()[:12]
@@ -239,6 +264,7 @@ def main():
     n.add_argument("--guided", default="")
     n.add_argument("--guide")
     n.add_argument("--usage")
+    n.add_argument("--log")
     n.add_argument("--out", required=True)
     s = sub.add_parser("stats")
     s.add_argument("--out", required=True)

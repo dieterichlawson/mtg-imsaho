@@ -40,6 +40,17 @@ esac
 out="${DRAFT_LOOP_OUT:-reports/draft-loop}"
 logs="logs/draft-loop/$night"
 mkdir -p "$out/nights" "$logs"
+if [ -f "$out/nights/$night.md" ]; then
+  echo "$night is already in the ledger ($out/nights/$night.md); a second run that day is ${night}_b" >&2
+  exit 1
+fi
+# A night that stopped partway (the container, a timeout) carries on from
+# its snapshot when run again: the picks and matches already played stand.
+resume=""
+if [ -f "$logs/save.json" ]; then
+  resume="--resume $logs/save.json"
+  echo "carrying on from $logs/save.json"
+fi
 guide="$out/guide.md"
 [ -f "$guide" ] || printf '# Innistrad draft guide\n\nNo nights yet: draft on what you know.\n' > "$guide"
 
@@ -64,11 +75,11 @@ echo "draft loop $night: seed $seed, $players seats on cc:$model, best-of-$best_
 # shellcheck disable=SC2086
 MTG_DRAFT_POSITIONS="$PWD/$logs/positions.jsonl" "$MTG_DRAFT_RUNNER_BIN" \
   --model "cc:$model" --players "$players" --best-of "$best_of" --seed "$seed" --quiet \
-  $guide_flags --save "$logs/save.json" --log "$logs/draft.log" > "$logs/out.txt" 2>&1 || {
+  $guide_flags $resume --save "$logs/save.json" --log "$logs/draft.log" >> "$logs/out.txt" 2>&1 || {
     echo "the run failed; see $logs/out.txt" >&2; tail -20 "$logs/out.txt" >&2; exit 1; }
 
 python3 scripts/draft-loop/ledger.py night --save "$logs/save.json" --positions "$logs/positions.jsonl" \
-  --night "$night" --guided "$guided" --guide "$guide" --usage "$logs/out.txt" --out "$out"
+  --night "$night" --guided "$guided" --guide "$guide" --usage "$logs/out.txt" --log "$logs/draft.log" --out "$out"
 xz -9 -c "$logs/positions.jsonl" > "$out/nights/$night-positions.jsonl.xz"
 python3 scripts/draft-loop/reflect.py debrief --night "$night" --out "$out" --guide "$guide"
 python3 scripts/draft-loop/ledger.py stats --out "$out"

@@ -46,6 +46,14 @@ def main():
         if g:
             out.append(f"\nTonight the {label} seats went {sum(s['match_wins'] for s in g)}-{sum(s['match_losses'] for s in g)} "
                        f"in matches and {sum(s['game_wins'] for s in g)}-{sum(s['game_losses'] for s in g)} in games.")
+    h = night.get("health")
+    subs = sum(s.get("substituted_picks", 0) for s in seats)
+    decks = sum(1 for s in seats if s.get("fallback_deck"))
+    if h:
+        out.append(f"\nWhat went wrong: {h['reasks']} re-asks, {h['unreadable']} replies no answer could be read from, "
+                   f"{h['panics']} panics or invariant breaks, {subs} picks and {decks} decks substituted for a seat. "
+                   f"The games made {h['game_calls']} calls: {h['out']} output tokens ({h['thinking']} thinking), "
+                   f"{h['cache_read']} read from the cache, {h['cache_write']} written to it.")
     out += ["", "## Lessons", ""]
     for s in lessons["seats"]:
         for l in s["lessons"]:
