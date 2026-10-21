@@ -46,6 +46,9 @@ pub struct ServerConfig {
     /// Where the table's snapshot is written after every change, for
     /// `--resume`; nowhere when `None`.
     pub save: Option<PathBuf>,
+    /// Hand out each game page's own port, bound on `bind`, instead of a
+    /// link through this port (`/game/<port>/`, the page on loopback).
+    pub direct_game_ports: bool,
 }
 
 /// What every thread shares.
@@ -87,6 +90,9 @@ struct InGame {
     /// The page itself: whether anybody is at it, and what it is told
     /// about the opponent's (#822).
     page: PageHandle,
+    /// Where the page is served: what `/game/<port>/` on the lobby's own
+    /// port reaches, and nothing else does.
+    addr: std::net::SocketAddr,
 }
 
 struct Client {
@@ -681,7 +687,7 @@ fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usiz
                     shared.set_in_game(seat, Some(InGame {
                         seat, opponent: if seat == a { b } else { a },
                         withdraw: gui.withdraw_handle(), wake: gui.wake_handle(),
-                        page: gui.page_handle(),
+                        page: gui.page_handle(), addr: gui.local_addr(),
                     }));
                     shared.lobby().set_game_pages(seat, Some(0));
                     seats.push(GameSeat::Gui(gui));
@@ -841,10 +847,17 @@ fn game_page(shared: &Shared, name: &str, label: &str) -> Result<GuiPlayer, Stri
     let (lo, hi) = shared.config.game_ports;
     let mut next = shared.next_game_port.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut last = String::from("no ports to try");
+    // Through the lobby's port, the page itself on loopback: a friend
+    // across the internet needs one port forwarded, not a range of them.
+    let bind = if shared.config.direct_game_ports { shared.config.bind.as_str() } else { "127.0.0.1" };
     for port in game_port_order(lo, hi, *next) {
-        match GuiPlayer::new_at(name, &shared.config.bind, Some(port)) {
+        match GuiPlayer::new_at(name, bind, Some(port)) {
             Ok(mut gui) => {
-                gui.url = format!("http://{}:{port}/", shared.config.advertise);
+                gui.url = if shared.config.direct_game_ports {
+                    format!("http://{}:{port}/", shared.config.advertise)
+                } else {
+                    format!("http://{}:{}/game/{port}/", shared.config.advertise, shared.config.port)
+                };
                 gui.notice_name = label.to_string();
                 *next = port.checked_add(1);
                 return Ok(gui);
@@ -885,10 +898,95 @@ fn serve_connection(mut stream: TcpStream, shared: &Arc<Shared>) {
         .and_then(|l| l.split_whitespace().nth(1))
         .unwrap_or("/")
         .to_string();
-    if lower.contains("upgrade: websocket") {
+    if let Some(rest) = path.strip_prefix("/game/") {
+        let (port, tail) = rest.split_once('/').map_or((rest, None), |(p, t)| (p, Some(t)));
+        match (port.parse::<u16>(), tail) {
+            (Ok(port), Some(tail)) => proxy_game_page(stream, shared, port, &format!("/{tail}")),
+            // The page's own links are relative: `/game/8803` would put
+            // its socket at `/game/ws`.
+            (Ok(port), None) => {
+                drain_head(&mut stream);
+                redirect(&mut stream, &format!("/game/{port}/"));
+            }
+            (Err(_), _) => {
+                drain_head(&mut stream);
+                http_response(&mut stream, "404 Not Found", "text/plain", b"not found");
+            }
+        }
+    } else if lower.contains("upgrade: websocket") {
         serve_websocket(stream, shared, &path);
     } else {
         serve_http(&mut stream, shared, &path);
+    }
+}
+
+/// The request head off the socket, and whatever followed it in the same
+/// reads.
+fn drain_head(stream: &mut TcpStream) -> Vec<u8> {
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 1024];
+    loop {
+        match stream.read(&mut chunk) {
+            Ok(n) if n > 0 => {
+                buf.extend_from_slice(&chunk[..n]);
+                if buf.windows(4).any(|w| w == b"\r\n\r\n") || buf.len() > 16 * 1024 {
+                    break;
+                }
+            }
+            Ok(_) | Err(_) => break,
+        }
+    }
+    buf
+}
+
+fn redirect(stream: &mut TcpStream, to: &str) {
+    let _ = stream.write_all(format!(
+        "HTTP/1.1 301 Moved Permanently\r\nLocation: {to}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").as_bytes());
+    let _ = stream.flush();
+}
+
+/// `/game/<port>/...`: a match's game page through the lobby's own port.
+/// Only a port one of this table's game pages is served on is reached —
+/// the lobby is not a way into anything else on the machine — and the
+/// request goes on with the prefix taken off, its bytes then passed both
+/// ways as they come, so the page's socket works through it as its fetches
+/// do.
+fn proxy_game_page(mut client: TcpStream, shared: &Shared, port: u16, rest: &str) {
+    let head = drain_head(&mut client);
+    let addr = shared.in_game.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+        .iter().map(|g| g.addr).find(|a| a.port() == port);
+    let Some(mut addr) = addr else {
+        http_response(&mut client, "404 Not Found", "text/plain",
+            b"no game is being played on this link now: the match is over, or has not started; the draft page has the link to your game");
+        return;
+    };
+    if addr.ip().is_unspecified() {
+        addr.set_ip(std::net::Ipv4Addr::LOCALHOST.into());
+    }
+    let Ok(mut upstream) = TcpStream::connect_timeout(&addr, Duration::from_secs(5)) else {
+        http_response(&mut client, "502 Bad Gateway", "text/plain", b"the game page did not answer");
+        return;
+    };
+    // The request line with the prefix off, the rest as it came.
+    let line_end = head.windows(2).position(|w| w == b"\r\n").unwrap_or(head.len());
+    let line = String::from_utf8_lossy(&head[..line_end]).to_string();
+    let mut words = line.split_whitespace();
+    let (method, _, version) = (words.next().unwrap_or("GET"), words.next(), words.next().unwrap_or("HTTP/1.1"));
+    let mut forward = format!("{method} {rest} {version}").into_bytes();
+    forward.extend_from_slice(&head[line_end..]);
+    if upstream.write_all(&forward).is_err() {
+        return;
+    }
+    let _ = client.set_read_timeout(None);
+    let (Ok(mut from_up), Ok(mut to_client)) = (upstream.try_clone(), client.try_clone()) else { return };
+    let back = thread::Builder::new().name("game-proxy".into()).spawn(move || {
+        let _ = std::io::copy(&mut from_up, &mut to_client);
+        let _ = to_client.shutdown(std::net::Shutdown::Both);
+    });
+    let _ = std::io::copy(&mut client, &mut upstream);
+    let _ = upstream.shutdown(std::net::Shutdown::Both);
+    if let Ok(back) = back {
+        let _ = back.join();
     }
 }
 
@@ -927,20 +1025,7 @@ fn http_response(stream: &mut TcpStream, status: &str, ctype: &str, body: &[u8])
 /// `GET /` is the draft page, `/dist/*` and `/assets/*` its files,
 /// `/api/view?seat=N&key=K` the seat's view as JSON.
 fn serve_http(stream: &mut TcpStream, shared: &Shared, path: &str) {
-    // Drain the request head.
-    let mut buf = Vec::new();
-    let mut chunk = [0u8; 1024];
-    loop {
-        match stream.read(&mut chunk) {
-            Ok(n) if n > 0 => {
-                buf.extend_from_slice(&chunk[..n]);
-                if buf.windows(4).any(|w| w == b"\r\n\r\n") || buf.len() > 16 * 1024 {
-                    break;
-                }
-            }
-            Ok(_) | Err(_) => break,
-        }
-    }
+    drain_head(stream);
     let bare = path.split('?').next().unwrap_or("/");
     if bare == "/api/view" {
         return match check_join(shared, path) {

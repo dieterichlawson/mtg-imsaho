@@ -21,8 +21,11 @@ function live() {
 }
 // ---------------------------------------------------------------- socket
 function connect() {
-    const url = `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
-    const ws = new WebSocket(url);
+    // Beside the page, wherever it is served: at a host's lobby the page is
+    // `/game/<port>/` on the lobby's own port, and its socket `/game/<port>/ws`.
+    const where = new URL("ws", location.href);
+    where.protocol = location.protocol === "https:" ? "wss:" : "ws:";
+    const ws = new WebSocket(where.href);
     state.ws = ws;
     ws.onopen = () => { state.connected = true; sendRaw({ type: "hello" }); draw(); };
     // A table the host has closed has nothing to reconnect to (#824).

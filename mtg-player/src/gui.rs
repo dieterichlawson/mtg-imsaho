@@ -405,6 +405,12 @@ impl GuiPlayer {
         })
     }
 
+    /// The address the page is served on.
+    #[must_use]
+    pub fn local_addr(&self) -> std::net::SocketAddr {
+        self.bound
+    }
+
     /// A handle on this seat's page for a hosted table; see [`PageHandle`].
     #[must_use]
     pub fn page_handle(&self) -> PageHandle {

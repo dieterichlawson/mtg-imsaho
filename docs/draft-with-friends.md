@@ -28,7 +28,16 @@ seat 1  http://192.168.1.20:8800/?seat=1&key=3e0f...
 the draft starts when everybody has joined, or press Enter to start without them
 ```
 
-Send each friend their line. The key is the whole access control: a seat
+Send each friend their line. Everything a friend opens — the draft page,
+the client's socket, and later their game page, at `/game/<port>/` — is on
+the lobby's one port, so that is the only port to open: on a LAN,
+`--bind 0.0.0.0`; across the internet, forward `--port` on the router, or
+put the machine on a tailnet (Tailscale and the like: `--bind 0.0.0.0` and
+give friends the tailnet address), or tunnel it (`ssh -R`, a Cloudflare
+tunnel) and hand out the tunnel's address in place of the join line's
+host. The game pages themselves listen on this machine's loopback only.
+
+The key is the whole access control: a seat
 is whoever holds its key, a second tab with the same key is the same seat
 (the page is a view of the server's state, so a reconnect loses nothing),
 and a wrong key is refused by name. `--bind` defaults to `127.0.0.1`,
@@ -64,7 +73,8 @@ address (or say to replace `0.0.0.0` with it when that cannot be found).
 | `--set <name>` | `isd` | `data/sets/<name>.json` |
 | `--bind <addr>` | `127.0.0.1` | `0.0.0.0` for friends on the network |
 | `--port <N>` | `8800` | the lobby's port |
-| `--game-ports <lo-hi>` | `8801-8899` | ports the humans' game pages take |
+| `--game-ports <lo-hi>` | `8801-8899` | loopback ports the humans' game pages take; the links reach them through `--port` |
+| `--direct-game-ports` | | link each game page on its own port, bound on `--bind`, instead (every port in the range must then be reachable) |
 | `--best-of <N>` | `3` | games per match |
 | `--seed <N>` | generated | packs, shuffles, play/draw; in the log header |
 | `--guide <path>` | none | a draft guide prepended to every AI seat's prompt |
@@ -177,9 +187,10 @@ the log and the standings, as the runner marks it).
 
 When every deck is in, a Swiss tournament pairs the rounds as the runner
 does. For each match a person is in, a game page is bound on the next
-free port in `--game-ports` (counting on from the last one used, round to
-the start; a finished match's port is let go) and the link is shown on
-your page and in the client; a match between two people is two pages on two ports; an
+free loopback port in `--game-ports` (counting on from the last one used,
+round to the start; a finished match's port is let go) and the link —
+`http://<host>:<port>/game/<its port>/`, through the lobby — is shown on
+your page and in the client; once the match is over the link says so; a match between two people is two pages on two ports; an
 AI-vs-AI match plays on its own. Results and standings appear as they
 come; the next round is paired when the round is over.
 

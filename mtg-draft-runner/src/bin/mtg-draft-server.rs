@@ -30,7 +30,12 @@ Options:
   --bind <addr>          Address to listen on  (default 127.0.0.1; 0.0.0.0 for
                          friends on the network)
   --port <N>             The lobby's port  (default 8800)
-  --game-ports <lo-hi>   Ports the humans' game pages take  (default 8801-8899)
+  --game-ports <lo-hi>   Ports the humans' game pages take on this machine's
+                         loopback; the links go through the lobby's port, at
+                         /game/<port>/, so friends need that one port only
+                         (default 8801-8899)
+  --direct-game-ports    Link each game page on its own port instead, bound on
+                         --bind (every port in --game-ports must be reachable)
   --best-of <N>          Games per tournament match  (default 3)
   --seed <N>             Seed for packs, shuffles and play/draw; generated and
                          logged when not given
@@ -71,6 +76,7 @@ struct Args {
     bind: String,
     port: u16,
     game_ports: (u16, u16),
+    direct_game_ports: bool,
     best_of: usize,
     seed: u64,
     guide: Option<String>,
@@ -97,6 +103,7 @@ fn parse_args() -> Args {
         bind: "127.0.0.1".to_string(),
         port: 8800,
         game_ports: (8801, 8899),
+        direct_game_ports: false,
         best_of: 3,
         seed: rand::random(),
         guide: None,
@@ -134,6 +141,7 @@ fn parse_args() -> Args {
             "--bind" => args.bind = value(&mut i, flag),
             "--port" => args.port = u16::try_from(number(&value(&mut i, flag), flag))
                 .unwrap_or_else(|_| die("--port: not a port")),
+            "--direct-game-ports" => args.direct_game_ports = true,
             "--game-ports" => {
                 let text = value(&mut i, flag);
                 let (lo, hi) = text.split_once('-')
@@ -315,6 +323,7 @@ decks and {} finished matches replayed; a match that was in progress is played a
             port: args.port,
             advertise: host.clone(),
             game_ports: args.game_ports,
+            direct_game_ports: args.direct_game_ports,
             web_dir,
             quiet: args.quiet,
             out_dir: Some(out_dir),
