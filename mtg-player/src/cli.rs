@@ -11198,6 +11198,7 @@ Mark 1 of the 1 cards below to exile.");
             creature_died_this_turn: false,
             spells_cast_this_turn: vec![],
             double_faces: Default::default(),
+            nameable_cards: Default::default(),
             step,
             active_player: if our_turn { you } else { PlayerId(1) },
             priority_player: Some(you),

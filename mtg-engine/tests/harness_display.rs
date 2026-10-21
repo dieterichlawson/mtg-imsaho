@@ -274,6 +274,44 @@ fn the_view_reports_the_name_a_nevermore_chose() {
     }
 }
 
+/// Naming a card for Nevermore offers every nonland name in the pool, most
+/// of them cards in no zone of the view, so the view carries what each name
+/// stands for — cost, type line, P/T, rules text — to the seat choosing, and
+/// to no one else (#846). The page has no registry, and its 253 bare names
+/// showed nothing on hover where the terminal shows the highlighted card.
+#[test]
+fn a_card_name_choice_carries_the_text_of_every_name_it_offers() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let nevermore = castable_spell(&mut state, &reg, "Nevermore", P0);
+    let state = cast_and_resolve(&state, &reg, nevermore, vec![]);
+    let Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+        choice: mtg_engine::state::ResolutionChoiceKind::ChooseCardName { options, .. }, ..
+    }) = &state.awaiting_action else {
+        panic!("test precondition: Nevermore asks for a name: {:?}", state.awaiting_action);
+    };
+    let view = mtg_engine::view::GameView::for_player(&state, P0, &reg);
+    let missing: Vec<&String> = options.iter().filter(|n| !view.nameable_cards.contains_key(*n)).collect();
+    assert!(missing.is_empty(), "every offered name has its card: {missing:?}");
+    assert_eq!(view.nameable_cards.len(), options.len(), "and nothing else is sent");
+    let hound = &view.nameable_cards["Ashmouth Hound"];
+    assert_eq!(hound.cost.as_ref().map(ToString::to_string).as_deref(), Some("{1}{R}"));
+    assert_eq!(hound.card_types, vec![CardType::Creature]);
+    assert_eq!((hound.power, hound.toughness), (Some(2), Some(1)));
+    assert!(hound.oracle_text.contains("blocks or becomes blocked"), "{}", hound.oracle_text);
+    assert!(view.nameable_cards["Geist-Honored Monk"].star_pt, "a */* card says so");
+    assert!(!hound.star_pt);
+
+    let other = mtg_engine::view::GameView::for_player(&state, P1, &reg);
+    assert!(other.nameable_cards.is_empty(), "the seat not choosing is sent none of it");
+    let answered = mtg_engine::engine::submit_action(&state, &mtg_engine::actions::Action::ResolveChoice {
+        choice: mtg_engine::actions::ResolvedChoice::ChosenIndex(0, options[0].clone()),
+    }, &reg);
+    assert!(answered.awaiting_action.is_none(), "test precondition: the name is chosen");
+    assert!(mtg_engine::view::GameView::for_player(&answered, P0, &reg).nameable_cards.is_empty(),
+        "nor is anyone once it is chosen");
+}
+
 /// CR 510.4: the two combat damage steps are distinct, and the view has to
 /// say which one the player is in — the first-strike half and the regular
 /// half offer the same actions and would otherwise be indistinguishable

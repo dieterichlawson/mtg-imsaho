@@ -34,6 +34,20 @@ export interface FaceText {
   oracle_text: string;
 }
 
+/** A card as printed, with no object behind it: what a name a card-name
+ *  choice offers stands for (`GameView.nameable_cards`, #846). */
+export interface CardText {
+  name: string;
+  cost: ManaCost | null;
+  supertypes: Supertype[];
+  card_types: CardType[];
+  subtypes: string[];
+  power: number | null;
+  toughness: number | null;
+  star_pt: boolean;
+  oracle_text: string;
+}
+
 export interface CardView {
   object_id: ObjectId;
   card_id: CardId;
@@ -161,6 +175,9 @@ export interface GameView {
   first_strike_damage_step: boolean;
   exile: CardView[];
   double_faces: Record<string, [FaceText, FaceText]>;
+  /** While this seat names a card (Nevermore): what each offered name is,
+   *  by name. Empty otherwise (#846). */
+  nameable_cards: Record<string, CardText>;
   creature_died_this_turn: boolean;
   spells_cast_this_turn: [PlayerId, number][];
   step: Step;

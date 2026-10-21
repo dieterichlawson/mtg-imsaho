@@ -218,6 +218,7 @@ fn view(turn: u32, step: Step, active: PlayerId) -> GameView {
         creature_died_this_turn: false,
         spells_cast_this_turn: vec![],
         double_faces: Default::default(),
+        nameable_cards: Default::default(),
         exile: vec![],
         step,
         active_player: active,

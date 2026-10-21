@@ -55,6 +55,16 @@ pub struct GameView {
     /// page's inspector could not say what a transform decision does (#785).
     /// A copy of a face is keyed by its own card and has no entry.
     pub double_faces: std::collections::BTreeMap<CardId, [FaceText; 2]>,
+    /// The card each name stands for, keyed by name, while this seat is
+    /// asked to choose a card name (Nevermore, CR 201.4): its cost, type
+    /// line, P/T and rules text. Empty otherwise, and for the other seat.
+    ///
+    /// The choice offers every nonland name in the registry — 253 of them —
+    /// and most are cards in no zone of the view, so nothing else the view
+    /// carries can say what "Bloodcrazed Neonate" does. The terminal reads
+    /// its own registry and shows the highlighted card; the page has no
+    /// registry, and its 253 bare names showed nothing on hover (#846).
+    pub nameable_cards: std::collections::BTreeMap<String, CardText>,
 
     pub step: Step,
     pub active_player: PlayerId,
@@ -76,6 +86,44 @@ pub struct GameView {
 pub struct FaceText {
     pub name: String,
     pub oracle_text: String,
+}
+
+/// A card as printed, with no object behind it: what a name offered by a
+/// pending choice stands for (`GameView::nameable_cards`).
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct CardText {
+    pub name: String,
+    pub cost: Option<ManaCost>,
+    pub supertypes: Vec<Supertype>,
+    pub card_types: Vec<CardType>,
+    pub subtypes: Vec<String>,
+    pub power: Option<i32>,
+    pub toughness: Option<i32>,
+    /// The printed P/T is `*`/`*`, filled in by a characteristic-defining
+    /// ability (CR 208.2); `power`/`toughness` are then not numbers to show.
+    pub star_pt: bool,
+    pub oracle_text: String,
+}
+
+impl CardText {
+    /// The face of the registry's card that carries `name`.
+    fn of(registry: &CardRegistry, name: &str) -> Option<Self> {
+        let data = registry.face_data_by_name(name)?;
+        let star_pt = registry.get_id_by_name(name)
+            .and_then(|id| registry.get(id))
+            .is_some_and(crate::cards::CardBehavior::prints_star_pt);
+        Some(CardText {
+            name: data.name,
+            cost: data.cost,
+            supertypes: data.supertypes,
+            card_types: data.card_types,
+            subtypes: data.subtypes,
+            power: data.power,
+            toughness: data.toughness,
+            star_pt,
+            oracle_text: data.oracle_text,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -736,6 +784,19 @@ impl GameView {
             }
         }
 
+        // What each name a card-name choice offers stands for, for the seat
+        // choosing (#846).
+        let nameable_cards = match &state.awaiting_action {
+            Some(crate::state::AwaitingAction::ResolutionChoice {
+                player: asked,
+                choice: crate::state::ResolutionChoiceKind::ChooseCardName { options, .. },
+                ..
+            }) if *asked == player => options.iter()
+                .filter_map(|name| CardText::of(registry, name).map(|text| (name.clone(), text)))
+                .collect(),
+            _ => std::collections::BTreeMap::new(),
+        };
+
         GameView {
             you: player,
             your_hand,
@@ -754,6 +815,7 @@ impl GameView {
                 .filter(|(p, _)| *p != usize::from(player.0))
                 .map(|(_, n)| n).sum(),
             double_faces,
+            nameable_cards,
             creature_died_this_turn: state.creature_died_this_turn,
             spells_cast_this_turn: state.players.iter()
                 .map(|p| (p.id, state.num_spells_cast_this_turn.get(&p.id).copied().unwrap_or(0)))

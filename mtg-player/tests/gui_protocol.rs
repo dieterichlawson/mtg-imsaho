@@ -371,6 +371,34 @@ fn every_view_field_the_page_is_sent_is_one_the_page_declares() {
     assert!(checked >= 60, "only {checked} fields compared — this guard has stopped covering");
 }
 
+/// The card a name stands for, which the view carries while the seat names
+/// a card (#846), is a shape the page declares: its inspector draws the
+/// cost, the type line, the P/T and the text from these fields, and one it
+/// does not declare reads as `undefined` and is silently left off.
+#[test]
+fn every_field_of_a_nameable_card_is_one_the_page_declares() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = mtg_engine::state::GameState::new(2);
+    state.awaiting_action = Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+        player: PlayerId(0),
+        source: mtg_engine::ids::ObjectId(1),
+        choice: mtg_engine::state::ResolutionChoiceKind::ChooseCardName {
+            description: "Nevermore: choose a nonland card name".into(),
+            options: vec!["Ashmouth Hound".into(), "Geist-Honored Monk".into()],
+            source_id: mtg_engine::ids::ObjectId(1),
+        },
+    });
+    let view = GameView::for_player(&state, PlayerId(0), &registry);
+    let json = serde_json::to_value(&view).expect("the view serializes");
+    let card = json["nameable_cards"]["Ashmouth Hound"].as_object().expect("the offered name's card").clone();
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../mtg-gui/src/protocol.ts"))
+        .expect("the page's protocol declarations");
+    let declared = page_interface_fields(&src, "CardText");
+    let missing: Vec<&String> = card.keys().filter(|k| !declared.contains(*k)).collect();
+    assert!(missing.is_empty(), "CardText: the engine sends fields mtg-gui/src/protocol.ts does not declare: {missing:?}");
+    assert!(card.len() >= 8, "only {} fields compared", card.len());
+}
+
 /// The inspector names a counter as the engine does (#723): the page keeps
 /// a table from the serde key the view sends to `CounterType::label`, and
 /// printed the key itself before it had one ("2 PlusOnePlusOne counters").

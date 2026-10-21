@@ -9035,6 +9035,7 @@ pub(crate) mod tests {
             creature_died_this_turn: false,
             spells_cast_this_turn: vec![],
             double_faces: Default::default(),
+            nameable_cards: Default::default(),
             exile: vec![],
             step: Step::PrecombatMain,
             active_player: PlayerId(0),
