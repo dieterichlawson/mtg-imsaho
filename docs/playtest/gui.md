@@ -617,3 +617,23 @@ writing it up as the page's problem alone.
   record), the presence column, and the "The table is closed" banner
   after the host quits. At 390 wide every one of them must fit without
   breaking a record or a percentage across lines
+- G34 [proposed 2026-10-21, from the draft page's review
+  (`mtg-gui/src/draft/main.ts` `reviewOpen`, `protocol.ts` `review`,
+  b3e426d)] the review on the page, at 1280 and at 390 wide: open it
+  mid-pack, while building, between games and after the tournament. It is
+  the longest list the page shows — 42 picks of up to 14 cards — so check
+  it scrolls or pages to the last pick without pushing the current pack,
+  the deck or Ready off the screen, that the taken card is marked by more
+  than colour, that a double-faced card's tile reads by its front face and
+  shows both faces on inspection, and that a pick the table made is
+  marked as the table's. Open and close it during a pick: no card may be
+  picked by the click that closes it, and the pick's clock must keep its
+  place
+- G35 [proposed 2026-10-21, from `mtg-gui/tests/table_rehearsal.js`] the
+  whole table at shapes nobody has run, each on the prompt stub:
+  `--humans 3 --players 5` (a bye every round), `--humans 4 --players 4`
+  (no AI seat at all), `--best-of 1` and `--best-of 5`. Every failure the
+  rehearsal prints is a lead, and a stuck page leaves its screenshot in
+  `--out`; read the server's terminal there too. Then run `autoplay.js`
+  on its own (`--games 1`): it lent the rehearsal its step and must still
+  play its own games
