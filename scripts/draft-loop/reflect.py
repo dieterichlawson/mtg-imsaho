@@ -163,6 +163,7 @@ def curate(args):
     model = os.environ.get("DRAFT_LOOP_CURATOR", "claude-sonnet-5-5")
     # One more try for an answer that is not a guide (headings missing,
     # too long), told why: the night's lessons are not spent on a format slip.
+    refused = []
     for attempt in range(2):
         text, usage = claude(CURATE_SYSTEM, message, model)
         new = (text or "").strip()
@@ -171,11 +172,12 @@ def curate(args):
         missing = [h for h in SECTIONS if h not in new]
         if new and not missing and words <= GUIDE_WORDS * 1.25:
             break
+        refused.append({"words": words, "missing_sections": missing, "usage": usage})
         message += (f"\n\nYour last answer was not taken: it had {words} words"
                     + (f" and lacked the headings {', '.join(missing)}" if missing else "")
                     + ". Use exactly the six `## ` headings, in order.")
     record = {"night": args.night, "model": model, "attempts": attempt + 1, "words": words,
-              "missing_sections": missing, "usage": usage}
+              "missing_sections": missing, "usage": usage, "refused": refused}
     if not new or missing or words > GUIDE_WORDS * 1.25:
         record["kept_old_guide"] = True
         record["rejected"] = new

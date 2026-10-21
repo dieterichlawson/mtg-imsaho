@@ -30,7 +30,8 @@ def main():
     order = sorted(seats, key=lambda s: (-(3 * s["match_wins"] + s["match_draws"]), -s["game_wins"], s["seat"]))
     out = [f"# Draft loop, {args.night}", "",
            f"Seed {night['seed']}, {night['players']} seats on `{seats[0]['model']}`, best-of-{night['best_of']}; "
-           f"even seats drafted with the guide (hash `{night['guide_hash']}`), odd seats without it.", "",
+           + (f"even seats drafted with the guide (hash `{night['guide_hash']}`), odd seats without it."
+              if any(s["guided"] for s in seats) else "no seat drafted with a guide."), "",
            "| # | seat | guide | colours | matches | games | deck notes |", "| ---: | ---: | --- | --- | ---: | ---: | --- |"]
     for i, s in enumerate(order, 1):
         flags = []
@@ -56,8 +57,23 @@ def main():
     elif curate:
         out.append(f"Rewritten by `{curate['model']}` in {curate.get('attempts', 1)} attempt(s): "
                    f"{curate['words']} words. `git log -p reports/draft-loop/guide.md` shows what changed.")
+    # Every answer not taken is in `refused`; when none was, the last of
+    # them is the one the line above already said.
+    refused = curate.get("refused", [])
+    for r in refused[:-1] if curate.get("kept_old_guide") else refused:
+        out.append(f"An answer was refused: {r['words']} words"
+                   + (f", missing {', '.join(r['missing_sections'])}" if r["missing_sections"] else "") + ".")
     if night.get("usage"):
         out += ["", "## What it spent", "", "```", *night["usage"], "```"]
+    calls = [("debriefs", [s.get("usage") or {} for s in lessons["seats"]]),
+             ("curator", [r.get("usage") or {} for r in refused]
+              + ([] if curate.get("kept_old_guide") or not curate else [curate.get("usage") or {}]))]
+    spent = [f"{label}: {len(us)} calls, " + " / ".join(
+                f"{sum(u.get(k, 0) for u in us)} {short}" for k, short in
+                (("output_tokens", "out"), ("cache_read_input_tokens", "cache_read"), ("cache_creation_input_tokens", "cache_write")))
+             for label, us in calls if us]
+    if spent:
+        out += ["", "After the tournament, on the CLI's login: " + "; ".join(spent) + "."]
     open(os.path.join(d, f"{args.night}.md"), "w").write("\n".join(out) + "\n")
     print(f"wrote {os.path.join(d, args.night + '.md')}")
 

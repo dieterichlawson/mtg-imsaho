@@ -145,7 +145,10 @@ def usage_lines(path):
         return None
     text = open(path, encoding="utf-8", errors="replace").read()
     i = text.find("=== Token Usage ===")
-    return text[i:].strip().splitlines()[:12] if i >= 0 else None
+    if i < 0:
+        return None
+    lines = text[i:].strip().splitlines()[:12]
+    return [l for l in lines if not l.startswith("Done. Log written")]
 
 
 def pct(w, n):
