@@ -384,8 +384,11 @@ impl Tournament {
         let pct = self.win_percentages();
         let opponents = self.opponents();
         #[allow(clippy::cast_precision_loss)]
+        // No opponent yet (before round 1 counts, or byes only): no
+        // tiebreaker, which every page and line leaves out, rather than a
+        // floor that read "33.0 / 33.0 / 33.0" beside a 0-0 record.
         let mean = |seats: &[usize], f: &dyn Fn(usize) -> f64| if seats.is_empty() {
-            TIEBREAK_FLOOR
+            0.0
         } else {
             seats.iter().map(|&o| f(o)).sum::<f64>() / seats.len() as f64
         };
@@ -509,6 +512,21 @@ mod tests {
         assert!(sorted.iter().all(|s| s.game_draws == 1 && s.match_draws == 1));
         // (3 for the win + 1 for the draw) over 3 games.
         assert!(sorted.iter().all(|s| (s.gw - 4.0 / 9.0).abs() < 1e-9), "{sorted:?}");
+    }
+
+    /// A seat with no opponent yet has no tiebreaker, where the floor read
+    /// "33.0 / 33.0 / 33.0" beside a 0-0 record before round 1 counted; a
+    /// seat that played keeps the floor on its opponents' records.
+    #[test]
+    fn no_opponent_yet_is_no_tiebreaker() {
+        let t = Tournament::new(4, TournamentConfig { best_of: 3 });
+        assert!(t.sorted_standings().iter().all(|s| s.omw == 0.0 && s.ogw == 0.0), "{:?}", t.sorted_standings());
+        let mut t = Tournament::new(3, TournamentConfig { best_of: 3 });
+        t.record_round(vec![(0, 1), (2, BYE)], vec![mr(0, 1, 2, 0)]);
+        let s = t.sorted_standings();
+        let seat = |n: usize| s.iter().find(|x| x.seat == n).unwrap();
+        assert!((seat(0).omw - TIEBREAK_FLOOR).abs() < 1e-9, "{:?}", seat(0));
+        assert_eq!(seat(2).omw, 0.0, "a bye is no opponent");
     }
 
     /// #651: the comment said a bye is scored 2-0 and the code credited

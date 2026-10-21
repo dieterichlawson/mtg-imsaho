@@ -512,7 +512,8 @@ fn render(v: &Value, build: &Build) -> (String, String) {
                     let tags = x["tags"].as_str().filter(|t| !t.is_empty()).map(|t| format!(" {t}")).unwrap_or_default();
                     // The tiebreakers the order is by, as the runner's
                     // standings print them.
-                    let pct = |k: &str| x[k].as_f64().map(|f| format!("{:.1}%", 100.0 * f));
+                    let pct = |k: &str| x[k].as_f64().map(|f| format!("{:.1}%", 100.0 * f))
+                        .filter(|_| x["omw"].as_f64().is_some_and(|o| o > 0.0));
                     let breaks = match (pct("omw"), pct("gw"), pct("ogw")) {
                         (Some(o), Some(g), Some(og)) => format!("; OMW {o}, GW {g}, OGW {og}"),
                         _ => String::new(),
