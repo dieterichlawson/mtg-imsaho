@@ -326,6 +326,9 @@ trait DraftBackend: Send {
     /// whose rows (`deck_rows`) the `maindeck` counts answer. Returns the
     /// raw JSON response text.
     fn send_deck_building(&mut self, message: &str, pool: &[String]) -> String;
+    /// Send a between-games message: the deck for the next game, as a deck
+    /// build answers it, and whether to play first.
+    fn send_sideboard(&mut self, message: &str, pool: &[String]) -> String;
     /// The full system prompt this backend will send to the model.
     fn system_prompt(&self) -> &str;
     /// The reasoning behind the last answer, for a backend that reads it
@@ -419,6 +422,22 @@ fn deck_schema_for(pool: &[String]) -> serde_json::Value {
     })
 }
 
+/// The between-games schema: a deck build's answer — one count per pool
+/// row and the basic lands, the deck for the next game — and whether to
+/// play first. The same shape whatever the pool, as the deck build's is,
+/// so it is one cached schema for the whole tournament (#867's rule).
+#[must_use]
+pub fn sideboard_schema_for(pool: &[String]) -> serde_json::Value {
+    let mut schema = deck_schema_for(pool);
+    schema["properties"]["thoughts"]["description"] =
+        "At most two sentences: what you changed for the next game and why, or why nothing.".into();
+    schema["properties"]["play_first"] = serde_json::json!({
+        "type": "boolean",
+        "description": "true to play first in the next game, false to draw first; read only when you choose"
+    });
+    schema["required"] = serde_json::json!(["thoughts", "maindeck", "lands", "play_first"]);
+    schema
+}
 
 /// Response-format instructions for every backend: each keeps `thoughts` in
 /// the schema. The `claude -p` seat's result object carries no thinking
@@ -751,6 +770,11 @@ impl DraftBackend for AnthropicDraftBackend {
     // prompt restates the whole pool, which is what the build is made of.
     fn send_deck_building(&mut self, message: &str, pool: &[String]) -> String {
         let schema = mtg_player::llm::cache_stable_schema(&deck_schema_for(pool));
+        self.send_conv_structured(message, &schema)
+    }
+
+    fn send_sideboard(&mut self, message: &str, pool: &[String]) -> String {
+        let schema = mtg_player::llm::cache_stable_schema(&sideboard_schema_for(pool));
         self.send_conv_structured(message, &schema)
     }
 
@@ -1112,6 +1136,14 @@ impl DraftBackend for ClaudeCodeDraftBackend {
         response
     }
 
+    fn send_sideboard(&mut self, message: &str, pool: &[String]) -> String {
+        let full = sideboard_schema_for(pool);
+        self.answer_schema = Some(full.to_string());
+        let response = self.decide(message, &mtg_player::llm::cache_stable_schema(&full));
+        self.answer_schema = None;
+        response
+    }
+
     fn system_prompt(&self) -> &str {
         &self.system_prompt
     }
@@ -1294,6 +1326,15 @@ impl DraftBackend for GeminiDraftBackend {
         // As built, like a pick: the sanitizer keeps the row count as an
         // array length and drops the per-row slots.
         let schema = deck_schema_for(pool);
+        let (raw, new_id) = self.call_interactions(message, &schema, prev.as_deref());
+        self.interaction_id = new_id;
+        self.chain_len += 1;
+        Self::normalize_response(&raw)
+    }
+
+    fn send_sideboard(&mut self, message: &str, pool: &[String]) -> String {
+        let prev = self.chain_to_continue();
+        let schema = sideboard_schema_for(pool);
         let (raw, new_id) = self.call_interactions(message, &schema, prev.as_deref());
         self.interaction_id = new_id;
         self.chain_len += 1;
@@ -1485,6 +1526,15 @@ back to you on your next pick"
     /// a bad answer is quoted back by `build_deck_with_llm`'s retry loop.
     pub fn send_deck_building_message(&mut self, user_message: &str, pool: &[String]) -> String {
         let response = self.backend.send_deck_building(user_message, pool);
+        self.keep_notes(&response);
+        response
+    }
+
+    /// Send a between-games message: the deck for the next game and the
+    /// play-or-draw choice. A bad answer keeps the deck as it is (the
+    /// caller reads it), so it is not asked again.
+    pub fn send_sideboard_message(&mut self, user_message: &str, pool: &[String]) -> String {
+        let response = self.backend.send_sideboard(user_message, pool);
         self.keep_notes(&response);
         response
     }
@@ -1745,6 +1795,22 @@ mod draft_prompt_tests {
         let text = sent_a.to_string();
         assert!(!text.contains("enum") && !text.contains("prefixItems") && !text.contains("Moon Heron"),
             "{text}");
+    }
+
+    /// The question between games is one cached schema too, whatever the
+    /// pool, and its keys are ones the API takes: the deck build's, and
+    /// `play_first`.
+    #[test]
+    fn every_pool_sends_the_same_sideboard_schema() {
+        use super::sideboard_schema_for;
+        let a: Vec<String> = ["Moon Heron", "Chapel Geist"].iter().map(|s| (*s).to_string()).collect();
+        let b: Vec<String> = ["Brimstone Volley"].iter().map(|s| (*s).to_string()).collect();
+        let sent_a = mtg_player::llm::cache_stable_schema(&sideboard_schema_for(&a));
+        assert_eq!(sent_a, mtg_player::llm::cache_stable_schema(&sideboard_schema_for(&b)));
+        assert_ne!(sent_a, mtg_player::llm::cache_stable_schema(&deck_schema_for(&a)), "a question of its own");
+        let keys: Vec<&String> = sent_a["properties"].as_object().unwrap().keys().collect();
+        assert!(keys.iter().all(|k| mtg_player::llm::schema_key_is_legal(k)), "{keys:?}");
+        assert!(sent_a["required"].as_array().unwrap().iter().any(|k| k == "play_first"));
     }
 }
 

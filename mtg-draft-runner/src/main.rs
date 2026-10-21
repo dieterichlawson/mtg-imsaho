@@ -12,7 +12,9 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine::Decklist;
 
 use mtg_draft_runner::deck::{build_deck_with_llm, DeckBuildResult};
-use mtg_draft_runner::game::{make_game_player, match_is_over, match_seed, play_match, GameSeat, MatchSeat};
+use mtg_draft_runner::deck::{log_sideboard, sideboard_with_llm, BetweenGames};
+use mtg_draft_runner::game::{last_game_line, make_game_player, match_is_over, match_seed, play_match, BeforeGame,
+    GameSeat, GameSetup, MatchSeat};
 use mtg_draft_runner::pick::{parse_pick_response, Pick};
 use mtg_draft_runner::progress::{draw_progress, end_progress_line};
 use mtg_draft_runner::standings::{match_score_line, standings_row, RowTags};
@@ -1538,6 +1540,10 @@ and the FINAL STANDINGS below record none",
                     let finished_tx = finished_tx.clone();
                     let deck_a = &decklists[a];
                     let deck_b = &decklists[b];
+                    let built = [&deck_results[a].deck, &deck_results[b].deck];
+                    let pools = [&draft.players[a].pool, &draft.players[b].pool];
+                    let tables = [table_for(a), table_for(b)];
+                    let (card_lines, card_reference, set_name) = (&card_lines, &card_reference, &set_data.set_name);
                     let reg = &registry;
                     let model_a = &args.models[a];
                     let model_b = &args.models[b];
@@ -1559,14 +1565,53 @@ and the FINAL STANDINGS below record none",
                         mtg_player::game_log::buffer_ranked(k as u64);
                         // The game seats are named `Seat{n}`, which is the
                         // name the per-seat tallies are read under.
+                        // Between games each seat may sideboard from its
+                        // pool, and the chooser decides to play or draw
+                        // (MTR 2.2, 2.4): one call a seat, with the seat's
+                        // draft rules and card reference as its system
+                        // prompt, so a cached read. The coin flip's winner
+                        // plays game 1 without a call.
+                        let mut current = [built[0].clone(), built[1].clone()];
+                        let mut between: [Option<llm_client::DraftLlmClient>; 2] = [None, None];
+                        let models = [model_a, model_b];
+                        let guides = [guide_a, guide_b];
+                        let mut before_game = |bg: &BeforeGame| -> GameSetup {
+                            let mut setup = GameSetup::default();
+                            if bg.game == 1 {
+                                return setup;
+                            }
+                            for (i, seat) in [a, b].into_iter().enumerate() {
+                                let client = between[i].get_or_insert_with(|| llm_client::DraftLlmClient::new(
+                                    models[i], set_name, guides[i], card_reference, tables[i]));
+                                let (you, them) = if i == 0 { bg.wins } else { (bg.wins.1, bg.wins.0) };
+                                let situation = BetweenGames {
+                                    game: bg.game, best_of, your_wins: you, their_wins: them,
+                                    last: bg.games.last().map(|g| last_game_line(g, seat, bg.games.len())),
+                                    chooses: bg.chooser == seat,
+                                    opponent_showed: &bg.shown[1 - i],
+                                };
+                                let decision = sideboard_with_llm(client, pools[i], &current[i], card_lines, &situation);
+                                log_sideboard(seat, bg.game, &current[i], &decision, situation.chooses);
+                                if let Some(deck) = decision.deck {
+                                    let list = Decklist { entries: deckbuilding::to_decklist(&deck) };
+                                    if i == 0 { setup.deck_a = Some(list) } else { setup.deck_b = Some(list) }
+                                    current[i] = deck;
+                                }
+                                if situation.chooses {
+                                    setup.chooser_plays = decision.play_first;
+                                }
+                            }
+                            setup
+                        };
                         let outcome = play_match(
-                            MatchSeat { seat: a, label: format!("Seat {a}"), deck: deck_a, player: GameSeat::Llm(
+                            MatchSeat { seat: a, label: format!("Seat {a}"), deck: deck_a.clone(), player: GameSeat::Llm(
                                 make_game_player(model_a, &format!("Seat{a}"), guide_a)) },
-                            MatchSeat { seat: b, label: format!("Seat {b}"), deck: deck_b, player: GameSeat::Llm(
+                            MatchSeat { seat: b, label: format!("Seat {b}"), deck: deck_b.clone(), player: GameSeat::Llm(
                                 make_game_player(model_b, &format!("Seat{b}"), guide_b)) },
                             reg,
                             best_of,
                             seed,
+                            &mut before_game,
                             &mut |_| {},
                         );
                         let _ = finished_tx.send(outcome.clone());

@@ -21,7 +21,8 @@ use mtg_player::gui::{GuiPlayer, PageHandle, Withdraw};
 
 use crate::card_lines::CardLines;
 use crate::deck::build_deck_with_llm;
-use crate::game::{make_game_player, match_seed, play_match, GameSeat, MatchSeat};
+use crate::deck::{sideboard_with_llm, BetweenGames};
+use crate::game::{last_game_line, make_game_player, match_seed, play_match, BeforeGame, GameSeat, GameSetup, MatchSeat};
 use crate::llm_client::{DraftLlmClient, Table};
 use crate::lobby::{Lobby, Phase, Refused, Request, SeatKind};
 use crate::log_system_prompt;
@@ -665,6 +666,7 @@ fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usiz
 
     let mut urls: [Option<String>; 2] = [None, None];
     let mut seats: Vec<GameSeat> = Vec::new();
+    let kinds = [kind_a.clone(), kind_b.clone()];
     // Bound, not inline: a guard in a `match` scrutinee is held through
     // its arms, which take the lobby again.
     let label_of = |seat: usize| shared.lobby().who(seat);
@@ -705,12 +707,17 @@ fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usiz
     let (player_a, player_b) = (seats.next().expect("seat a"), seats.next().expect("seat b"));
     let mut games = 0usize;
     let (label_a, label_b) = { let l = shared.lobby(); (l.who(a), l.who(b)) };
+    let mut between_clients: [Option<DraftLlmClient>; 2] = [None, None];
+    let mut before_game = |bg: &BeforeGame| -> GameSetup {
+        between_games(shared, round, a, b, best_of, &kinds, &mut between_clients, bg)
+    };
     let result = play_match(
-        MatchSeat { seat: a, label: label_a, deck: &deck_a, player: player_a },
-        MatchSeat { seat: b, label: label_b, deck: &deck_b, player: player_b },
+        MatchSeat { seat: a, label: label_a, deck: deck_a, player: player_a },
+        MatchSeat { seat: b, label: label_b, deck: deck_b, player: player_b },
         &shared.registry,
         best_of,
         seed,
+        &mut before_game,
         &mut |outcome: &GameOutcome| {
             games += 1;
             write_game_log(shared.config.out_dir.as_deref(), round, a, b, games, outcome);
@@ -728,6 +735,92 @@ fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usiz
     let next = shared.lobby().match_finished(round, a, b, result);
     shared.notify();
     next
+}
+
+/// Before a game of a hosted match: an AI seat sideboards and chooses
+/// through its model (from game 2; the coin flip's AI winner plays game
+/// 1), a person on the page or the client under the sideboard timer, and
+/// the match waits for both. A person's game page says where to go.
+#[allow(clippy::too_many_arguments)]
+fn between_games(
+    shared: &Arc<Shared>, round: usize, a: usize, b: usize, best_of: usize, kinds: &[SeatKind; 2],
+    clients: &mut [Option<DraftLlmClient>; 2], bg: &BeforeGame,
+) -> GameSetup {
+    let mut decided: [Option<(Option<mtg_draft::deckbuilding::DraftDeck>, Option<bool>)>; 2] = [None, None];
+    for (i, seat) in [a, b].into_iter().enumerate() {
+        let SeatKind::Ai(model) = &kinds[i] else { continue };
+        if bg.game == 1 || shared.lobby().is_auto(seat) {
+            decided[i] = Some((None, None));
+            continue;
+        }
+        let (current, pool, table) = {
+            let lobby = shared.lobby();
+            (lobby.match_deck(round, a, b, seat).unwrap_or_default(), lobby.pool(seat),
+             Table { seat, pod_size: lobby.pod_size(), pack_size: lobby.pack_size() })
+        };
+        let client = clients[i].get_or_insert_with(|| DraftLlmClient::new(
+            model, &shared.set_name, shared.config.guide.as_deref(), &shared.card_reference, table));
+        let (you, them) = if i == 0 { bg.wins } else { (bg.wins.1, bg.wins.0) };
+        let situation = BetweenGames {
+            game: bg.game, best_of, your_wins: you, their_wins: them,
+            last: bg.games.last().map(|g| last_game_line(g, seat, bg.games.len())),
+            chooses: bg.chooser == seat, opponent_showed: &bg.shown[1 - i],
+        };
+        let decision = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+            || sideboard_with_llm(client, &pool, &current, &shared.card_lines, &situation)));
+        decided[i] = Some(match decision {
+            Ok(d) => {
+                crate::deck::log_sideboard(seat, bg.game, &current, &d, situation.chooses);
+                (d.deck, d.play_first)
+            }
+            // A seat whose backend gave up keeps its deck and plays; its
+            // games go on, and the game loop deals with a dead seat.
+            Err(_) => (None, None),
+        });
+    }
+    shared.lobby().open_between(round, a, b, bg.game, bg.chooser, bg.shown.clone(), decided);
+    // The game page is where a person is looking: it says where to go. A
+    // seat with nothing to do before game 1 (it lost the coin flip) is not
+    // sent anywhere.
+    for page in shared.in_game.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter()
+        .filter(|p| p.seat == a || p.seat == b)
+    {
+        let chooses = bg.chooser == page.seat;
+        let what = match (bg.game, chooses) {
+            (1, false) => continue,
+            (1, true) => "you won the coin flip: choose play or draw".to_string(),
+            (_, true) => format!("{}: sideboard and choose play or draw",
+                last_game_why(bg.games.last().and_then(|g| g.winner), page.seat, bg.game - 1)),
+            (_, false) => "sideboard".to_string(),
+        };
+        page.page.set_match_line(Some(format!("Before game {}: {what} on your draft page", bg.game)));
+    }
+    shared.notify();
+    loop {
+        if shared.quitting() {
+            return GameSetup::default();
+        }
+        let outcome = shared.lobby().take_between(round, a, b);
+        if let Some(out) = outcome {
+            shared.notify();
+            let [da, db] = out.decks;
+            let list = |d: mtg_draft::deckbuilding::DraftDeck| mtg_engine::engine::Decklist {
+                entries: mtg_draft::deckbuilding::to_decklist(&d),
+            };
+            return GameSetup { deck_a: da.map(list), deck_b: db.map(list), chooser_plays: out.chooser_plays };
+        }
+        let lobby = shared.lobby();
+        drop(shared.wait(lobby, Duration::from_millis(250)));
+    }
+}
+
+/// Why a seat chooses to play or draw: it lost the last game, or that game
+/// was a draw and the choice stays with whoever had it (MTR 2.2).
+fn last_game_why(winner: Option<usize>, seat: usize, game: usize) -> String {
+    match winner {
+        Some(w) if w != seat => format!("you lost game {game}"),
+        _ => format!("game {game} was a draw"),
+    }
 }
 
 /// Record a match that was not played (a forfeit), and tell the pages.
@@ -959,6 +1052,9 @@ fn pump(
                         shared.lobby().submit_deck(seat, &main, &lands, &sideboard),
                     Ok(Request::Ready) => shared.lobby().ready(seat),
                     Ok(Request::Name { name }) => { shared.lobby().set_name(seat, &name); Ok(()) }
+                    Ok(Request::Sideboard { main, lands }) => shared.lobby().sideboard(seat, &main, &lands),
+                    Ok(Request::PlayDraw { play }) => shared.lobby().play_draw(seat, play),
+                    Ok(Request::SideboardReady) => shared.lobby().sideboard_ready(seat),
                     Err(e) => Err(format!("unreadable message: {e}")),
                 };
                 match outcome {

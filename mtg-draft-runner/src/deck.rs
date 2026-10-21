@@ -126,6 +126,173 @@ pub fn build_deck_prompt(pool: &[String], cards: &CardLines) -> String {
     prompt
 }
 
+/// Where a match stands, from the side of the seat deciding between games.
+pub struct BetweenGames<'a> {
+    /// 1-based number of the game about to be played.
+    pub game: usize,
+    pub best_of: usize,
+    pub your_wins: usize,
+    pub their_wins: usize,
+    /// How the last game went, from this seat's side: "you lost game 1 on
+    /// turn 9". `None` before game 1.
+    pub last: Option<String>,
+    /// This seat chooses whether to play or draw the next game.
+    pub chooses: bool,
+    /// The cards the opponent has shown in the match so far.
+    pub opponent_showed: &'a [String],
+}
+
+/// What a seat decided between games.
+pub struct SideboardDecision {
+    /// The deck for the next game, when it is not the one being played.
+    pub deck: Option<DraftDeck>,
+    /// Whether to play first, when the answer said.
+    pub play_first: Option<bool>,
+    pub prompt: String,
+    pub response: String,
+    /// Why the answer's deck could not be played, when it could not: the
+    /// deck stays as it is.
+    pub error: Option<String>,
+}
+
+/// Ask a seat between games: the deck for the next game, from its pool,
+/// and whether to play first when it chooses. One call, no retry: a deck
+/// the answer gets wrong is the deck it was already playing.
+pub fn sideboard_with_llm(
+    client: &mut DraftLlmClient,
+    pool: &[String],
+    current: &DraftDeck,
+    cards: &CardLines,
+    situation: &BetweenGames<'_>,
+) -> SideboardDecision {
+    let prompt = DraftLlmClient::notes_section(client.notes())
+        + &build_sideboard_prompt(pool, current, cards, situation);
+    let response = client.send_sideboard_message(&prompt, pool);
+    let rows = deckbuilding::deck_rows(pool);
+    let play_first = serde_json::from_str::<serde_json::Value>(&response).ok()
+        .and_then(|v| v["play_first"].as_bool());
+    let parsed = deckbuilding::parse_deck_response_by_rows(&response, &rows)
+        .and_then(|(main, lands)| deckbuilding::validate_deck(pool, &main, &lands));
+    let (deck, error) = match parsed {
+        Ok(deck) if same_deck(&deck, current) => (None, None),
+        Ok(deck) => (Some(deck), None),
+        Err(e) => (None, Some(e)),
+    };
+    SideboardDecision { deck, play_first, prompt, response, error }
+}
+
+/// "in: Bloodcrazed Neonate; out: Moon Heron; Swamp +1, Island -1": what
+/// a sideboard changed, as the log and the table say it.
+#[must_use]
+pub fn deck_change(before: &DraftDeck, after: &DraftDeck) -> String {
+    let count = |cards: &[String]| {
+        let mut m: std::collections::BTreeMap<String, i64> = std::collections::BTreeMap::new();
+        for c in cards {
+            *m.entry(mtg_draft::front_face(c).to_string()).or_default() += 1;
+        }
+        m
+    };
+    let (b, a) = (count(&before.maindeck), count(&after.maindeck));
+    let names: std::collections::BTreeSet<&String> = b.keys().chain(a.keys()).collect();
+    let (mut ins, mut outs) = (Vec::new(), Vec::new());
+    for name in names {
+        let d = a.get(name).copied().unwrap_or(0) - b.get(name).copied().unwrap_or(0);
+        let label = |n: i64| if n.abs() == 1 { name.clone() } else { format!("{}x {name}", n.abs()) };
+        if d > 0 { ins.push(label(d)); } else if d < 0 { outs.push(label(d)); }
+    }
+    let mut lands = Vec::new();
+    for land in deckbuilding::BASIC_LANDS {
+        let d = i64::from(after.lands.get(*land).copied().unwrap_or(0)) - i64::from(before.lands.get(*land).copied().unwrap_or(0));
+        if d != 0 {
+            lands.push(format!("{land} {d:+}"));
+        }
+    }
+    let mut parts = Vec::new();
+    if !ins.is_empty() { parts.push(format!("in: {}", ins.join(", "))); }
+    if !outs.is_empty() { parts.push(format!("out: {}", outs.join(", "))); }
+    if !lands.is_empty() { parts.push(lands.join(", ")); }
+    if parts.is_empty() { "no change".to_string() } else { parts.join("; ") }
+}
+
+/// The log's record of a seat's between-games answer: its prompt, its
+/// answer, and one line of what it did.
+pub fn log_sideboard(seat: usize, game: usize, before: &DraftDeck, decision: &SideboardDecision, chooses: bool) {
+    let w = |label: &str, body: &str| mtg_player::game_log::write(file!(), line!(), label, body);
+    w(&format!("[Seat {seat}] SIDEBOARD_PROMPT before game {game}"), &decision.prompt);
+    w(&format!("[Seat {seat}] SIDEBOARD_RESPONSE before game {game}"), &decision.response);
+    let change = match (&decision.deck, &decision.error) {
+        (Some(deck), _) => deck_change(before, deck),
+        (None, Some(e)) => format!("kept the deck (the answer's could not be played: {e})"),
+        (None, None) => "kept the deck".to_string(),
+    };
+    let choice = match (chooses, decision.play_first) {
+        (false, _) => String::new(),
+        (true, Some(false)) => "; draws first".to_string(),
+        (true, _) => "; plays first".to_string(),
+    };
+    w(&format!("[Seat {seat}] SIDEBOARD before game {game}: {change}{choice}"), "");
+}
+
+/// Two decks with the same cards and lands, in any order.
+#[must_use]
+pub fn same_deck(a: &DraftDeck, b: &DraftDeck) -> bool {
+    let sorted = |d: &DraftDeck| {
+        let mut main = d.maindeck.clone();
+        main.sort();
+        let mut lands: Vec<(String, u32)> = d.lands.iter().filter(|(_, n)| **n > 0).map(|(k, v)| (k.clone(), *v)).collect();
+        lands.sort();
+        (main, lands)
+    };
+    sorted(a) == sorted(b)
+}
+
+/// The between-games message: where the match stands, what the opponent
+/// has shown, and the pool with the counts being played now, answered in
+/// the deck build's own shape so the counts can be repeated to change
+/// nothing.
+#[must_use]
+pub fn build_sideboard_prompt(pool: &[String], current: &DraftDeck, cards: &CardLines, situation: &BetweenGames<'_>) -> String {
+    let BetweenGames { game, best_of, your_wins, their_wins, .. } = *situation;
+    let mut prompt = format!("Between games: game {game} of a best-of-{best_of} is next. You have won {your_wins}, \
+your opponent {their_wins}.");
+    if let Some(last) = &situation.last {
+        let _ = write!(prompt, " Last game: {last}.");
+    }
+    prompt.push('\n');
+    if situation.chooses {
+        let why = if game == 1 { "you won the coin flip" } else { "you lost the last game" };
+        let _ = writeln!(prompt, "You choose whether to play first or draw first in game {game} ({why}). \
+Playing first is the usual choice in Limited; drawing first suits a slow deck that wins the long game.");
+    }
+    if situation.opponent_showed.is_empty() {
+        prompt.push_str("\nYour opponent has shown no cards yet.\n");
+    } else {
+        let _ = writeln!(prompt, "\nYour opponent has shown ({}):", situation.opponent_showed.len());
+        for card in situation.opponent_showed {
+            let _ = writeln!(prompt, "- {}", cards.pool_line(card));
+        }
+    }
+    let playing = |name: &str| current.maindeck.iter()
+        .filter(|c| mtg_draft::front_face(c) == mtg_draft::front_face(name)).count();
+    let _ = writeln!(prompt, "\nYour pool, each row with how many you are playing now ({} cards in the deck):",
+        current.total_cards());
+    for (i, (name, copies)) in deckbuilding::deck_rows(pool).iter().enumerate() {
+        let _ = writeln!(prompt, "{i}: playing {} of {copies}x {}", playing(name), cards.pool_line(name));
+    }
+    let mut lands: Vec<(&String, &u32)> = current.lands.iter().filter(|(_, n)| **n > 0).collect();
+    lands.sort();
+    let lands: Vec<String> = lands.iter().map(|(l, n)| format!("{l} {n}")).collect();
+    let _ = writeln!(prompt, "Basic lands now: {}", if lands.is_empty() { "none".to_string() } else { lands.join(", ") });
+    prompt.push_str(
+        "\n## Your answer\n\
+         - `maindeck` is one count per numbered row: the deck for the next game. Repeat the counts above to keep the deck as it is; a change lasts to the end of the match\n\
+         - `lands` is the basic lands for the next game\n\
+         - `play_first`: true to play first, false to draw first; it is read only when you choose\n\
+         - The deck stays at least 40 cards; one that is not is ignored and the deck stays as it is\n",
+    );
+    prompt
+}
+
 /// Write a built deck as `COUNT NAME` lines, the format `mtg-runner
 /// --deck1 <path>` reads, creating the directory it goes in.
 ///

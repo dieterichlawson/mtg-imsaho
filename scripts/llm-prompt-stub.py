@@ -134,13 +134,20 @@ def takes_pass_until():
 
 
 if "maindeck" in props and "lands" in props:
-    md, total = [], 0
-    for s in props["maindeck"].get("prefixItems") or []:
+    # The first 23 spells of the pool. Between games (the sideboard
+    # question asks `play_first` too) half the answers take the last 23
+    # instead, so a stub match sideboards as well as keeping its deck.
+    rows = list(enumerate(props["maindeck"].get("prefixItems") or []))
+    if "play_first" in props and h(message, "sideboard") % 2:
+        rows.reverse()
+    md, total = [0] * len(rows), 0
+    for i, s in rows:
         take = min(max(s.get("enum", [0])), max(0, 23 - total))
-        md.append(take)
+        md[i] = take
         total += take
     out = {"thoughts": "stub deck", "maindeck": md,
            "lands": {"Plains": 4, "Island": 4, "Swamp": 3, "Mountain": 3, "Forest": 3}}
+    out.update({k: fill(k, v) for k, v in props.items() if k not in out})
 else:
     out = {k: fill(k, v) for k, v in props.items()}
     row = pass_until_row()

@@ -40,6 +40,10 @@ Options:
   --build-seconds <N>    Finish a human's deck after N seconds of building: the
                          deck they last sent (basics fill a short one, up to
                          18 lands), or else the table's own
+  --sideboard-seconds <N>
+                         Between games, a person has N seconds to sideboard
+                         and, when it is theirs, to choose play or draw; then
+                         the deck stands and the chooser plays  (default 120)
   --log <path>           The draft log  (default logs/draft-with-friends/draft.log);
                          decks/ and games/ go in the directory beside it
   --save <path>          Where the table's snapshot is written after every
@@ -57,6 +61,10 @@ joined (an absent seat is picked for until it joins), `kick <seat>` hands a
 seat to the table for good, `status` says where everybody is, `quit` stops
 the server.";
 
+/// A person's time between games when the host sets none: long enough to
+/// look at what the opponent showed and swap a few cards.
+const DEFAULT_SIDEBOARD_SECONDS: u64 = 120;
+
 struct Args {
     seats: Vec<SeatKind>,
     set: String,
@@ -68,6 +76,7 @@ struct Args {
     guide: Option<String>,
     pick_seconds: Option<u64>,
     build_seconds: Option<u64>,
+    sideboard_seconds: Option<u64>,
     log: String,
     quiet: bool,
     save: Option<String>,
@@ -93,6 +102,7 @@ fn parse_args() -> Args {
         guide: None,
         pick_seconds: None,
         build_seconds: None,
+        sideboard_seconds: Some(DEFAULT_SIDEBOARD_SECONDS),
         log: "logs/draft-with-friends/draft.log".to_string(),
         quiet: false,
         save: None,
@@ -143,9 +153,13 @@ fn parse_args() -> Args {
             }
             "--seed" => args.seed = number(&value(&mut i, flag), flag),
             "--guide" => args.guide = Some(value(&mut i, flag)),
-            "--pick-seconds" | "--build-seconds" => {
+            "--pick-seconds" | "--build-seconds" | "--sideboard-seconds" => {
                 let secs = timer_seconds(number(&value(&mut i, flag), flag), flag);
-                if flag == "--pick-seconds" { args.pick_seconds = Some(secs) } else { args.build_seconds = Some(secs) }
+                match flag {
+                    "--pick-seconds" => args.pick_seconds = Some(secs),
+                    "--build-seconds" => args.build_seconds = Some(secs),
+                    _ => args.sideboard_seconds = Some(secs),
+                }
             }
             "--log" => args.log = value(&mut i, flag),
             "--resume" => args.resume = Some(value(&mut i, flag)),
@@ -273,6 +287,7 @@ root or set {} to the mtg-gui directory", web_dir.display(), mtg_player::gui::WE
         guide_path: args.guide.clone(),
         pick_seconds: args.pick_seconds,
         build_seconds: args.build_seconds,
+        sideboard_seconds: args.sideboard_seconds,
         out_dir: Some(out_dir.clone()),
     };
     let mut lobby = Lobby::new(config, &packs, &set_data, Arc::clone(&registry), &card_lines, log)

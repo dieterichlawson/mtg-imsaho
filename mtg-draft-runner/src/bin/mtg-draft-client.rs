@@ -20,8 +20,11 @@ While drafting, type a card's number to pick it (a number typed before a
 new pack has been up 300 ms is not taken: type it again). While building:
 add <n>, drop <n> (by the pool numbers shown), lands plains=7 island=10,
 show, ready.
+Between games of a match: play or draw (when the choice is yours), the
+same add, drop and lands to sideboard (from game 2), and ready to start
+the game.
 text <n> prints a card's rules text: the pack's card <n> while drafting,
-the pool's card <n> while building.
+the pool's card <n> while building or sideboarding.
 Any time: name <name>, help, quit.";
 
 fn out(line: &str) {
@@ -220,6 +223,19 @@ enum Command {
 /// are in flight a record that is none of them is not taken, unless it is
 /// final: a deck the table finished is the one played whatever was sent.
 fn refresh_build(view: &Value, build: &mut Build, built_for_phase: &mut String) {
+    // Between games the deck starts from the one played last game, once
+    // per game: the server takes a whole deck or refuses it, so its record
+    // is the last legal deck sent, never a command behind.
+    if let Some((m, b)) = between(view) {
+        let key = format!("between {} {}", m["round"], b["game"]);
+        if key != *built_for_phase {
+            if let Some(deck) = b["deck"].as_object() {
+                *build = build_from_view(view, deck);
+            }
+            *built_for_phase = key;
+        }
+        return;
+    }
     let phase = view["phase"].as_str().unwrap_or("");
     let new_phase = phase != built_for_phase.as_str();
     *built_for_phase = phase.to_string();
@@ -291,6 +307,31 @@ fn deck_message(view: &Value, build: &Build) -> Value {
     serde_json::json!({"type": "deck", "main": main, "lands": build.lands, "sideboard": side})
 }
 
+/// The match of this seat's that is between games, and its `between`.
+fn between(v: &Value) -> Option<(&Value, &Value)> {
+    v["matches"].as_array()?.iter().find(|m| m["between"].is_object()).map(|m| (m, &m["between"]))
+}
+
+/// The deck being edited, sent as the phase takes it: every change while
+/// building (a short deck is kept as work in progress), and between games
+/// only a deck of 40 or more, which is all the server takes there.
+fn send_edit(v: &Value, build: &Build) -> Command {
+    let Some((_, b)) = between(v) else { return Command::Send(vec![deck_message(v, build)]) };
+    if b["sideboarding"] != true {
+        return Command::Print(format!("no sideboarding before game {}", b["game"]));
+    }
+    let total = build.main.len() + build.lands.values().sum::<u32>() as usize;
+    if total < 40 {
+        return Command::Print(format!("{total} cards: the deck for the next game needs 40 or more; nothing sent yet"));
+    }
+    Command::Send(vec![sideboard_message(v, build)])
+}
+
+fn sideboard_message(v: &Value, build: &Build) -> Value {
+    let deck = deck_message(v, build);
+    serde_json::json!({"type": "sideboard", "main": deck["main"], "lands": deck["lands"]})
+}
+
 /// `early` is set when the line was typed before the pack on screen had
 /// been up for `PICK_GRACE`: how much sooner than that.
 fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Option<Duration>) -> Command {
@@ -304,7 +345,27 @@ fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Option<Du
         "show" => view.map_or(Command::Nothing, |v| Command::Print({ let (t, m) = render(v, build); format!("{t}{m}") })),
         "ready" => {
             let Some(v) = view else { return Command::Print("no view yet".into()) };
+            if let Some((_, b)) = between(v) {
+                let mut msgs = Vec::new();
+                if b["sideboarding"] == true {
+                    match send_edit(v, build) {
+                        Command::Send(m) => msgs.extend(m),
+                        other => return other,
+                    }
+                }
+                msgs.push(serde_json::json!({"type": "sideboard_ready"}));
+                return Command::Send(msgs);
+            }
             Command::Send(vec![deck_message(v, build), serde_json::json!({"type": "ready"})])
+        }
+        "play" | "draw" => {
+            let Some(v) = view else { return Command::Print("no view yet".into()) };
+            match between(v) {
+                Some((_, b)) if b["you_choose"] == true =>
+                    Command::Send(vec![serde_json::json!({"type": "play_draw", "play": *first == "play"})]),
+                Some(_) => Command::Print("the choice to play or draw is your opponent's".into()),
+                None => Command::Print("play and draw choose who starts the next game of a match, between games".into()),
+            }
         }
         "add" | "drop" => {
             let Some(v) = view else { return Command::Print("no view yet".into()) };
@@ -313,7 +374,7 @@ fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Option<Du
                 return Command::Print(format!("{first} takes a pool number (0-{})", pool_len.saturating_sub(1)));
             };
             if *first == "add" { build.main.insert(n); } else { build.main.remove(&n); }
-            Command::Send(vec![deck_message(v, build)])
+            send_edit(v, build)
         }
         "text" => {
             let Some(v) = view else { return Command::Print("no view yet".into()) };
@@ -330,7 +391,7 @@ fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Option<Du
                 if let Some(c) = land.get_mut(0..1) { c.make_ascii_uppercase(); }
                 if n == 0 { build.lands.remove(&land); } else { build.lands.insert(land, n); }
             }
-            Command::Send(vec![deck_message(v, build)])
+            send_edit(v, build)
         }
         word => match (word.parse::<usize>(), view) {
             (Ok(index), Some(v)) if phase == "drafting" => match v["pack"]["id"].as_u64() {
@@ -521,6 +582,13 @@ fn render(v: &Value, build: &Build) -> (String, String) {
                     s.push_str(&format!("  {}. {} {}-{}{draws} ({} points{breaks}){tags}\n", rank + 1,
                         who(x["seat"].as_u64().unwrap_or(0)), x["wins"], x["losses"], x["points"]));
                 }
+            }
+            if let Some((m, b)) = between(v) {
+                if let (Some(ms), false) = (b["deadline_ms"].as_u64(), b["ready"] == true) {
+                    table.push_str(&format!("  {}s left before game {}; then it starts with the deck as it stands\n",
+                        ms / 1000, b["game"]));
+                }
+                s.push_str(&between_listing(v, m, b, build, &who));
             }
             if phase == "done" {
                 s.push_str("the tournament is over\n");
@@ -778,6 +846,62 @@ mod tests {
         assert!(table_line(&v).contains("Lawson (seat 1) playing 42p, game page closed"), "{}", table_line(&v));
     }
 
+    /// Between games: who chooses, what the opponent showed, the pool to
+    /// sideboard with; `play`/`draw` for the chooser only, a short deck is
+    /// kept on the screen and not sent, and `ready` sends the deck and
+    /// then says so.
+    #[test]
+    fn between_games_the_client_sideboards_and_chooses() {
+        let card = |n: &str| serde_json::json!({"name": n, "line": format!("{n} {{1}}{{R}}"), "text": ""});
+        let pool: Vec<Value> = (0..30).map(|i| card(&format!("Card {i}"))).collect();
+        let main: Vec<String> = (0..23).map(|i| format!("Card {i}")).collect();
+        let mut v = serde_json::json!({
+            "type": "view", "phase": "playing", "seat": 0, "set": "isd",
+            "seats": [{"seat": 0, "name": "seat 0", "kind": "human", "status": "playing", "picks": 30, "joined": true},
+                      {"seat": 1, "name": "Bo", "kind": "human", "status": "playing", "picks": 30, "joined": true}],
+            "matches": [{"round": 1, "opponent": 1, "url": "http://h:1/", "status": "playing",
+                         "games": [{"winner": 1}], "result": null,
+                         "between": {"game": 2, "sideboarding": true, "you_choose": true, "play_first": null,
+                                     "ready": false, "opponent_ready": false, "deadline_ms": 90_500,
+                                     "deck": {"main": main, "lands": {"Mountain": 17}, "sideboard": [], "valid": true, "problem": null, "ready": false},
+                                     "opponent_showed": [card("Brimstone Volley")]}}],
+            "pool": pool, "picks": [], "deck": null, "notice": null, "pairings": [], "standings": [],
+        });
+        let mut build = Build::default();
+        let mut phase = String::new();
+        refresh_build(&v, &mut build, &mut phase);
+        assert_eq!(build.main.len(), 23, "the deck played last game");
+        let (table, mine) = render(&v, &build);
+        assert!(table.contains("90s left before game 2"), "{table}");
+        assert!(mine.contains("Before game 2 vs Bo (seat 1) (they lead 1-0):"), "{mine}");
+        assert!(mine.contains("you lost game 1: type play or draw (not chosen yet: you play first)"), "{mine}");
+        assert!(mine.contains("Bo (seat 1) has shown: Brimstone Volley"), "{mine}");
+        assert!(mine.contains(" 23 [side] Card 23"), "{mine}");
+        assert!(mine.contains("23 spells + 17 lands = 40 cards"), "{mine}");
+
+        let sent = |c: Command| match c { Command::Send(m) => m, Command::Print(p) => panic!("printed {p}"), _ => panic!("nothing") };
+        let printed = |c: Command| match c { Command::Print(p) => p, _ => panic!("not printed") };
+        assert_eq!(sent(command("draw", Some(&v), &mut build, None)), vec![serde_json::json!({"type": "play_draw", "play": false})]);
+        assert!(printed(command("drop 0", Some(&v), &mut build, None)).contains("39 cards"), "a short deck is not sent");
+        let m = sent(command("add 25", Some(&v), &mut build, None));
+        assert_eq!(m[0]["type"], "sideboard");
+        assert!(m[0]["main"].as_array().unwrap().iter().any(|c| c == "Card 25") && m[0].get("sideboard").is_none());
+        let m = sent(command("ready", Some(&v), &mut build, None));
+        assert_eq!(m.iter().map(|x| x["type"].as_str().unwrap()).collect::<Vec<_>>(), ["sideboard", "sideboard_ready"]);
+        // A later view of the same game keeps the edit; the next game starts from the record.
+        refresh_build(&v, &mut build, &mut phase);
+        assert!(build.main.contains(&25) && !build.main.contains(&0));
+        v["matches"][0]["between"]["you_choose"] = false.into();
+        assert!(printed(command("play", Some(&v), &mut build, None)).contains("your opponent's"));
+        v["matches"][0]["between"]["game"] = 3.into();
+        refresh_build(&v, &mut build, &mut phase);
+        assert!(build.main.contains(&0) && !build.main.contains(&25), "game 3 starts from the deck recorded");
+        v["matches"][0]["between"]["sideboarding"] = false.into();
+        v["matches"][0]["between"]["game"] = 1.into();
+        assert!(printed(command("add 25", Some(&v), &mut build, None)).contains("no sideboarding before game 1"));
+        assert_eq!(sent(command("ready", Some(&v), &mut build, None)), vec![serde_json::json!({"type": "sideboard_ready"})]);
+    }
+
     /// The order a tie on points is broken by is printed beside the
     /// points, as the runner's standings print it.
     #[test]
@@ -862,6 +986,67 @@ fn card_text(v: &Value, arg: Option<&str>) -> String {
     };
     let body = card["text"].as_str().filter(|t| !t.is_empty()).unwrap_or("(no rules text)");
     format!("{}\n{body}", card["line"].as_str().unwrap_or("?"))
+}
+
+/// Before a game of a match: who chooses to play or draw, and from game 2
+/// the deck, sideboarded from the pool, beside what the opponent showed.
+fn between_listing(v: &Value, m: &Value, b: &Value, build: &Build, who: &dyn Fn(u64) -> String) -> String {
+    let game = b["game"].as_u64().unwrap_or(1);
+    let opponent = who(m["opponent"].as_u64().unwrap_or(0));
+    let me = v["seat"].as_u64();
+    let wins = |s: Option<u64>| m["games"].as_array().into_iter().flatten().filter(|g| g["winner"].as_u64() == s).count();
+    let (mine, theirs) = (wins(me), wins(m["opponent"].as_u64()));
+    let score = match mine.cmp(&theirs) {
+        _ if game == 1 => String::new(),
+        std::cmp::Ordering::Equal => format!(" ({mine}-{theirs})"),
+        std::cmp::Ordering::Greater => format!(" (you lead {mine}-{theirs})"),
+        std::cmp::Ordering::Less => format!(" (they lead {theirs}-{mine})"),
+    };
+    let mut s = format!("\nBefore game {game} vs {opponent}{score}:\n");
+    // The last game's loser chooses; after a draw, whoever chose it (MTR 2.2).
+    let last_winner = m["games"].as_array().and_then(|g| g.last()).and_then(|g| g["winner"].as_u64());
+    if b["you_choose"] == true {
+        let why = match last_winner {
+            _ if game == 1 => "you won the coin flip".to_string(),
+            Some(w) if Some(w) != me => format!("you lost game {}", game - 1),
+            _ => format!("game {} was a draw, and the choice is still yours", game - 1),
+        };
+        let now = match b["play_first"].as_bool() {
+            None => "not chosen yet: you play first",
+            Some(true) => "you play first",
+            Some(false) => "you draw first",
+        };
+        s.push_str(&format!("  {why}: type play or draw ({now})\n"));
+    } else if game == 1 {
+        s.push_str(&format!("  {opponent} won the coin flip and chooses whether to play or draw\n"));
+    } else if last_winner.is_some() && last_winner == me {
+        s.push_str(&format!("  {opponent} lost game {} and chooses whether to play or draw\n", game - 1));
+    } else {
+        s.push_str(&format!("  {opponent} chose last game and chooses whether to play or draw\n"));
+    }
+    if b["sideboarding"] == true {
+        let shown: Vec<&str> = b["opponent_showed"].as_array().into_iter().flatten()
+            .filter_map(|c| c["name"].as_str()).collect();
+        if !shown.is_empty() {
+            s.push_str(&format!("  {opponent} has shown: {}\n", shown.join(", ")));
+        }
+        s.push_str("your pool — add <n> / drop <n> to sideboard, text <n> to read a card, lands plains=7 island=10:\n");
+        for (i, c) in v["pool"].as_array().into_iter().flatten().enumerate() {
+            let tag = if build.main.contains(&i) { "MAIN" } else { "side" };
+            s.push_str(&format!("  {i:>2} [{tag}] {}\n", c["line"].as_str().unwrap_or("?")));
+        }
+        let lands: u32 = build.lands.values().sum();
+        s.push_str(&format!("lands: {}\n", build.lands.iter().map(|(l, n)| format!("{l}={n}"))
+            .collect::<Vec<_>>().join(" ")));
+        s.push_str(&format!("{} spells + {lands} lands = {} cards\n", build.main.len(), build.main.len() as u32 + lands));
+    }
+    s.push_str(&if b["ready"] == true {
+        if b["opponent_ready"] == true { format!("ready — game {game} is starting\n") } else { format!("ready — waiting for {opponent}\n") }
+    } else {
+        let them = if b["opponent_ready"] == true { "they are ready" } else { "they are still deciding" };
+        format!("type ready to start game {game} ({them})\n")
+    });
+    s
 }
 
 fn build_listing(v: &Value, build: &Build) -> String {

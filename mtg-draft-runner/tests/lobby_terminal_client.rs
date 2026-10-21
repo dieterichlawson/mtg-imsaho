@@ -170,3 +170,49 @@ fn a_pick_typed_twice_is_not_spent_on_the_next_pack() {
     writeln!(stdin, "quit").unwrap();
     assert!(child.wait().unwrap().success());
 }
+
+/// Before game 1 the coin flip's winner chooses to play or draw (MTR
+/// 2.2), from the client: the server waits for the choice — under a
+/// sideboard clock long enough not to make it — and the game starts the
+/// way it was chosen.
+#[test]
+fn the_coin_flips_winner_chooses_from_the_client() {
+    if !lobby_support::python3_available() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    // The timers draft and build for the person; seed 11 gives seat 0 the flip.
+    let server = Server::start("client-flip", "human,ai",
+        &["--pick-seconds", "1", "--build-seconds", "2", "--sideboard-seconds", "600"]);
+    let mut child = Command::new(env!("CARGO_BIN_EXE_mtg-draft-client"))
+        .arg(server.ws_url(0, server.key(0)))
+        .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
+        .spawn().expect("the client starts");
+    let out = Arc::new(Mutex::new(String::new()));
+    let sink = Arc::clone(&out);
+    let stdout = child.stdout.take().unwrap();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+            let mut s = sink.lock().unwrap();
+            s.push_str(&line);
+            s.push('\n');
+        }
+    });
+    let mut stdin = child.stdin.take().unwrap();
+    let text = wait_for(&out, "Before game 1 vs seat 1:", Duration::from_secs(180));
+    assert!(text.contains("you won the coin flip: type play or draw (not chosen yet: you play first)"), "{text}");
+    assert!(text.contains("type ready to start game 1 (they are ready)"), "{text}");
+    assert!(text.contains("s left before game 1; then it starts with the deck as it stands"), "{text}");
+    // Nothing to sideboard before game 1.
+    writeln!(stdin, "add 0").unwrap();
+    wait_for(&out, "no sideboarding before game 1", Duration::from_secs(10));
+    std::thread::sleep(Duration::from_secs(2));
+    assert!(!server.stderr().contains("no browser at"), "the game waits for the choice:\n{}", server.stderr());
+    writeln!(stdin, "draw").unwrap();
+    wait_for(&out, "(you draw first)", Duration::from_secs(10));
+    writeln!(stdin, "ready").unwrap();
+    let terminal = server.wait_for_stderr("seat 0: no browser at http://", Duration::from_secs(30));
+    assert!(terminal.contains("round 1: game 1: seat 0 chose to draw first"), "{terminal}");
+    writeln!(stdin, "quit").unwrap();
+    assert!(child.wait().unwrap().success());
+}

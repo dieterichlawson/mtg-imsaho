@@ -4,7 +4,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 
 /// A validated draft deck.
-#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, serde::Deserialize)]
 pub struct DraftDeck {
     pub maindeck: Vec<String>,
     pub lands: HashMap<String, u32>,

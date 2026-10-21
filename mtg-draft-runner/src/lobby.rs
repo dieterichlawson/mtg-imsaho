@@ -334,6 +334,32 @@ pub struct MatchView {
     pub status: &'static str,
     pub games: Vec<GameView>,
     pub result: Option<String>,
+    /// Between games of this match: what the seat may do before the next.
+    pub between: Option<BetweenView>,
+}
+
+/// Between two games of a match (or before the first, when the seat won
+/// the coin flip): the deck for the next game, sideboarded from the pool,
+/// and the choice to play or draw for the seat that has it (MTR 2.2, 2.4).
+#[derive(Debug, Clone, Serialize)]
+pub struct BetweenView {
+    /// The game about to be played.
+    pub game: usize,
+    /// Whether the deck may change: not before game 1.
+    pub sideboarding: bool,
+    /// This seat chooses whether to play or draw the next game.
+    pub you_choose: bool,
+    /// What it chose, once it has.
+    pub play_first: Option<bool>,
+    /// This seat is done; the next game starts when both are.
+    pub ready: bool,
+    pub opponent_ready: bool,
+    /// Milliseconds left, when the host set a sideboard timer.
+    pub deadline_ms: Option<u64>,
+    /// The deck for the next game as it stands.
+    pub deck: DeckView,
+    /// The cards the opponent has shown in the match so far.
+    pub opponent_showed: Vec<CardView>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -407,6 +433,16 @@ pub enum Request {
     },
     Ready,
     Name { name: String },
+    /// Between games: the deck for the next game.
+    Sideboard {
+        main: Vec<String>,
+        #[serde(default)]
+        lands: HashMap<String, u32>,
+    },
+    /// Between games: play first (`true`) or draw first.
+    PlayDraw { play: bool },
+    /// Between games: done; the next game may start.
+    SideboardReady,
 }
 
 // ───────────────────────────────────────────────────────────── the snapshot
@@ -499,6 +535,10 @@ pub struct LobbyConfig {
     pub guide_path: Option<String>,
     pub pick_seconds: Option<u64>,
     pub build_seconds: Option<u64>,
+    /// Seconds a person has between games to sideboard and, when it is
+    /// theirs, to choose play or draw; then the deck stands and the chooser
+    /// plays. `None` waits.
+    pub sideboard_seconds: Option<u64>,
     /// Where `decks/` goes: the directory beside the log, or nowhere.
     pub out_dir: Option<PathBuf>,
 }
@@ -544,6 +584,34 @@ struct MatchState {
     status: MatchStatus,
     games: Vec<GameView>,
     result: Option<MatchResult>,
+    /// The decks being played in this match, `a`'s and `b`'s: the
+    /// registered decks, then whatever sideboarding made of them.
+    decks: [Option<DraftDeck>; 2],
+    between: Option<Between>,
+}
+
+/// A match between two games; see [`BetweenView`].
+struct Between {
+    game: usize,
+    chooser: usize,
+    play_first: Option<bool>,
+    /// `a`'s and `b`'s.
+    ready: [bool; 2],
+    deadline: Option<Instant>,
+    /// What each side has shown its opponent, `a`'s and `b`'s.
+    shown: [Vec<String>; 2],
+    /// Seats whose deck changed, `a`'s and `b`'s.
+    changed: [bool; 2],
+    /// The decks played in the last game, `a`'s and `b`'s: a person who
+    /// sideboards a card out and back in has not changed theirs.
+    played: [Option<DraftDeck>; 2],
+}
+
+/// What the seats decided between games: the decks that changed, `a`'s and
+/// `b`'s, and whether the chooser plays.
+pub struct BetweenOutcome {
+    pub decks: [Option<DraftDeck>; 2],
+    pub chooser_plays: Option<bool>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1390,6 +1458,23 @@ for the seat from here, and its games are forfeit"), ""));
                 changed = true;
             }
         }
+        // A sideboard clock that ran out: the decks stand as they are, and
+        // the chooser plays.
+        let mut expired = Vec::new();
+        for m in &mut self.matches {
+            if let Some(b) = m.between.as_mut() {
+                if b.deadline.is_some_and(|d| d <= now) && b.ready.iter().any(|r| !r) {
+                    b.ready = [true; 2];
+                    b.deadline = None;
+                    expired.push((m.round, m.a, m.b, b.game));
+                }
+            }
+        }
+        for (round, a, b, game) in expired {
+            self.event(format!("round {round}: {} vs {}: the sideboard timer ran out before game {game}",
+                self.who(a), self.who(b)));
+            changed = true;
+        }
         if changed {
             self.run_auto_seats();
         }
@@ -1444,6 +1529,8 @@ for the seat from here, and its games are forfeit"), ""));
                 self.matches.push(MatchState {
                     round, a, b, urls: [None, None], status: MatchStatus::Waiting,
                     games: Vec::new(), result: None,
+                    decks: [self.seats[a].deck.clone(), self.seats[b].deck.clone()],
+                    between: None,
                 });
                 self.event(format!("round {round}: {} vs {}", self.who(a), self.who(b)));
                 to_play.push((round, a, b));
@@ -1521,6 +1608,151 @@ for the seat from here, and its games are forfeit"), ""));
         }
         self.event(format!("round {round} is over"));
         self.next_round()
+    }
+
+    // ── between games ──
+
+    /// The deck a seat is playing in a match now: its registered deck,
+    /// then whatever it sideboarded.
+    #[must_use]
+    pub fn match_deck(&self, round: usize, a: usize, b: usize, seat: usize) -> Option<DraftDeck> {
+        let m = self.matches.iter().find(|m| m.round == round && m.a == a && m.b == b)?;
+        m.decks[usize::from(seat == m.b)].clone().or_else(|| self.seats[seat].deck.clone())
+    }
+
+    /// A seat's drafted pool.
+    #[must_use]
+    pub fn pool(&self, seat: usize) -> Vec<String> {
+        self.table.pool(seat).to_vec()
+    }
+
+    /// Open the time between games (or before game 1, for the coin flip's
+    /// winner): a person sideboards and chooses on the page or the client,
+    /// under the host's sideboard timer. `decided` holds what an AI seat
+    /// already decided — its deck if it changed, and its play-first answer
+    /// — and such a seat, and one the table plays for, is ready at once;
+    /// so is a seat with nothing to do before game 1.
+    #[allow(clippy::too_many_arguments)]
+    pub fn open_between(
+        &mut self, round: usize, a: usize, b: usize, game: usize, chooser: usize,
+        shown: [Vec<String>; 2], decided: [Option<(Option<DraftDeck>, Option<bool>)>; 2],
+    ) {
+        let deadline = self.config.sideboard_seconds.and_then(deadline_in);
+        let people: [bool; 2] = [a, b].map(|s| self.seats[s].is_human() && !self.seats[s].auto);
+        let played = [a, b].map(|s| self.match_deck(round, a, b, s));
+        let Some(m) = self.match_mut(round, a, b) else { return };
+        let mut between = Between {
+            game, chooser, play_first: None, ready: [false; 2], deadline, shown, changed: [false; 2], played,
+        };
+        for (i, seat) in [a, b].into_iter().enumerate() {
+            if let Some((deck, play)) = &decided[i] {
+                if let Some(deck) = deck {
+                    m.decks[i] = Some(deck.clone());
+                    between.changed[i] = true;
+                }
+                if seat == chooser {
+                    between.play_first = *play;
+                }
+                between.ready[i] = true;
+            }
+            // Nothing to decide: no sideboarding before game 1 and not the
+            // chooser, or a seat nobody is at.
+            if !people[i] || (game == 1 && seat != chooser) {
+                between.ready[i] = true;
+            }
+        }
+        let waits = between.ready.iter().any(|r| !r);
+        m.between = Some(between);
+        if waits {
+            let (wa, wb) = (self.who(a), self.who(b));
+            let what = if game == 1 { "choosing play or draw" } else { "sideboarding" };
+            self.event(format!("round {round}: {wa} vs {wb}, before game {game}: {what}"));
+        }
+    }
+
+    fn between_mut(&mut self, seat: usize) -> Result<(&mut MatchState, usize), String> {
+        let m = self.matches.iter_mut()
+            .find(|m| (m.a == seat || m.b == seat) && m.between.is_some())
+            .ok_or("you are not between games")?;
+        let side = usize::from(seat == m.b);
+        Ok((m, side))
+    }
+
+    /// A person's deck for the next game.
+    ///
+    /// # Errors
+    /// Not between games, before game 1, already ready, or a deck the pool
+    /// cannot make (or shorter than 40), with `validate_deck`'s reason.
+    pub fn sideboard(&mut self, seat: usize, main: &[String], lands: &HashMap<String, u32>) -> Result<(), String> {
+        let pool = self.table.pool(seat).to_vec();
+        let (m, side) = self.between_mut(seat)?;
+        let between = m.between.as_mut().expect("between");
+        if between.game == 1 {
+            return Err("no sideboarding before game 1".to_string());
+        }
+        if between.ready[side] {
+            return Err("you are ready for the next game".to_string());
+        }
+        let deck = deckbuilding::validate_deck(&pool, main, lands)?;
+        between.changed[side] = between.played[side].as_ref().is_none_or(|p| !crate::deck::same_deck(p, &deck));
+        m.decks[side] = Some(deck);
+        Ok(())
+    }
+
+    /// A person's choice to play or draw the next game.
+    ///
+    /// # Errors
+    /// Not between games, or not this seat's choice.
+    pub fn play_draw(&mut self, seat: usize, play: bool) -> Result<(), String> {
+        let (m, _) = self.between_mut(seat)?;
+        let between = m.between.as_mut().expect("between");
+        if between.chooser != seat {
+            return Err("the choice to play or draw is your opponent's".to_string());
+        }
+        between.play_first = Some(play);
+        Ok(())
+    }
+
+    /// A person is done between games.
+    ///
+    /// # Errors
+    /// Not between games.
+    pub fn sideboard_ready(&mut self, seat: usize) -> Result<(), String> {
+        let (m, side) = self.between_mut(seat)?;
+        m.between.as_mut().expect("between").ready[side] = true;
+        Ok(())
+    }
+
+    /// When both seats are done between games: what they decided, and the
+    /// time between games is over. `None` while one is still deciding.
+    pub fn take_between(&mut self, round: usize, a: usize, b: usize) -> Option<BetweenOutcome> {
+        let kicked = [a, b].map(|s| self.seats[s].auto);
+        let m = self.match_mut(round, a, b)?;
+        let between = m.between.as_mut()?;
+        for i in 0..2 {
+            if kicked[i] {
+                between.ready[i] = true;
+            }
+        }
+        if !between.ready.iter().all(|r| *r) {
+            return None;
+        }
+        let between = m.between.take()?;
+        let decks = [0, 1].map(|i| if between.changed[i] { m.decks[i].clone() } else { None });
+        let chooser = between.chooser;
+        let plays = between.play_first.unwrap_or(true);
+        let changes: Vec<(usize, String)> = [a, b].into_iter().enumerate()
+            .filter(|(i, _)| between.changed[*i])
+            .map(|(i, s)| (s, format!("{} cards", m.decks[i].as_ref().map_or(0, DraftDeck::total_cards))))
+            .collect();
+        let game = between.game;
+        let chooser_name = self.who(chooser);
+        for (seat, size) in changes {
+            self.event(format!("round {round}: {} sideboarded for game {game} ({size})", self.who(seat)));
+        }
+        self.event(format!("round {round}: game {game}: {chooser_name} chose to {}",
+            if plays { "play first" } else { "draw first" }));
+        Some(BetweenOutcome { decks, chooser_plays: between.play_first })
     }
 
     /// The match a seat the table plays for loses without playing: every
@@ -1833,6 +2065,23 @@ for the seat from here, and its games are forfeit"), ""));
                     status: m.status.word(),
                     games: m.games.clone(),
                     result: m.result.as_ref().map(|r| score_for(r, seat)),
+                    between: m.between.as_ref().map(|b| {
+                        let deck = m.decks[me].clone().or_else(|| self.seats[seat].deck.clone()).unwrap_or_default();
+                        BetweenView {
+                            game: b.game,
+                            sideboarding: b.game > 1,
+                            you_choose: b.chooser == seat,
+                            play_first: b.play_first.filter(|_| b.chooser == seat),
+                            ready: b.ready[me],
+                            opponent_ready: b.ready[1 - me],
+                            deadline_ms: b.deadline.map(|d| millis_left(d, now)),
+                            deck: DeckView {
+                                main: deck.maindeck.clone(), lands: deck.lands.clone(),
+                                sideboard: deck.sideboard.clone(), valid: true, problem: None, ready: b.ready[me],
+                            },
+                            opponent_showed: b.shown[1 - me].iter().map(|c| self.book.card(c, None)).collect(),
+                        }
+                    }),
                 }
             })
             .collect();

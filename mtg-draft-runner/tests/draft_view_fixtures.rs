@@ -58,6 +58,12 @@ fn lobby_with(seats: Vec<SeatKind>, pick_seconds: Option<u64>) -> (Lobby, Vec<Ve
 fn lobby_timed(
     seats: Vec<SeatKind>, pick_seconds: Option<u64>, build_seconds: Option<u64>,
 ) -> (Lobby, Vec<Vec<BoosterPack>>) {
+    lobby_clocked(seats, pick_seconds, build_seconds, None)
+}
+
+fn lobby_clocked(
+    seats: Vec<SeatKind>, pick_seconds: Option<u64>, build_seconds: Option<u64>, sideboard_seconds: Option<u64>,
+) -> (Lobby, Vec<Vec<BoosterPack>>) {
     let set_path = repo_root().join("data/sets/isd.json");
     let mut set_data = SetData::load(&set_path).unwrap();
     let registry = Arc::new(CardRegistry::with_all_cards());
@@ -74,6 +80,7 @@ fn lobby_timed(
         guide_path: None,
         pick_seconds,
         build_seconds,
+        sideboard_seconds,
         out_dir: None,
     };
     let lobby = Lobby::new(config, &packs, &set_data, registry, &lines, DraftLogger::silent()).unwrap();
@@ -91,7 +98,8 @@ fn a_table_dealt_for_the_wrong_number_of_seats_is_refused() {
     let config = LobbyConfig {
         set_code: "isd".into(), set_name: set_data.set_name.clone(),
         seats: vec![SeatKind::Human, SeatKind::Ai("cc".into())],
-        best_of: 1, seed: 1, guide_path: None, pick_seconds: None, build_seconds: None, out_dir: None,
+        best_of: 1, seed: 1, guide_path: None, pick_seconds: None, build_seconds: None, sideboard_seconds: None,
+        out_dir: None,
     };
     let err = Lobby::new(config, &packs, &set_data, registry, &lines, DraftLogger::silent()).err()
         .expect("four seats' packs do not seat two: a pass would go to a seat that is not at the table");
@@ -264,6 +272,25 @@ fn a_seat_never_sees_another_seats_pack_or_pool_and_each_phase_has_a_fixture() {
     assert!(v1["matches"][0]["url"].is_null(), "seat 1's link is its own, not seat 0's");
     assert_eq!(v1["matches"][0]["opponent"], 0);
     fixtures.insert("playing", v);
+    // Between games 1 and 2: seat 0 won game 1, so seat 1 (kicked, the
+    // table's) chooses; seat 0 may sideboard, beside what seat 1 showed.
+    let showed = jv(&lobby, 1)["pool"][0]["name"].as_str().unwrap().to_string();
+    lobby.open_between(1, 0, 1, 2, 1, [vec![], vec![showed.clone()]], [None, None]);
+    let v = jv(&lobby, 0);
+    let b = &v["matches"][0]["between"];
+    assert_eq!((b["game"].as_u64(), b["sideboarding"].as_bool(), b["you_choose"].as_bool()), (Some(2), Some(true), Some(false)));
+    assert_eq!(b["opponent_ready"], true, "the table's seat has nothing to wait for");
+    assert_eq!(b["opponent_showed"][0]["name"], showed.as_str());
+    assert_eq!(b["deck"]["main"], v["deck"]["main"], "the deck played last game");
+    let mut allowed = own_pool(&lobby, 0);
+    allowed.push(mtg_draft::front_face(&showed).to_string());
+    assert_only(&v, &allowed, &all, "playing_sideboard");
+    assert!(jv(&lobby, 1)["matches"][0]["between"]["opponent_showed"].as_array().unwrap().is_empty(),
+        "seat 0 has shown nothing");
+    fixtures.insert("playing_sideboard", v);
+    lobby.sideboard_ready(0).unwrap();
+    let out = lobby.take_between(1, 0, 1).expect("both ready");
+    assert!(out.decks.iter().all(Option::is_none) && out.chooser_plays.is_none());
     let result = |a: usize, b: usize, wa: usize, wb: usize| MatchResult {
         player_a: a, player_b: b, wins_a: wa, wins_b: wb,
         games: (0..wa).map(|_| game(a)).chain((0..wb).map(|_| game(b))).collect(),
@@ -302,6 +329,8 @@ draft_view_fixtures` and commit the result.".into()));
     for phase in ["lobby", "drafting", "building", "playing", "done"] {
         doc.insert(phase.into(), fixtures.remove(phase).unwrap());
     }
+    // Between two games of a match, sideboarding (MTR 2.4).
+    doc.insert("playing_sideboard".into(), fixtures.remove("playing_sideboard").unwrap());
     // A seat on a bye, from an odd table: the page must read its status
     // word and its pairing with no opponent (#814).
     let (odd, _, _, bye) = odd_table_round_one();
@@ -784,4 +813,112 @@ fn a_snapshot_carries_the_table_on_where_it_stopped() {
     other.seed += 1;
     let (mut d, _) = lobby(seats());
     assert!(d.restore(&other).unwrap_err().contains("another table"));
+}
+
+/// Between games of a match (MTR 2.2, 2.4): the coin flip's winner chooses
+/// to play or draw before game 1 and nobody sideboards; from game 2 the
+/// last game's loser chooses and either seat may sideboard from its pool.
+/// Only a deck the pool makes is taken, only the chooser chooses, a seat
+/// that is ready is done, and the host's sideboard timer ends it. A deck
+/// sideboarded out and back in is no change.
+#[test]
+fn between_games_a_person_chooses_and_sideboards_and_the_clock_ends_it() {
+    let registry = CardRegistry::with_all_cards();
+    let (mut l, _) = lobby_clocked(
+        vec![SeatKind::Human, SeatKind::Human, SeatKind::Ai("cc".into()), SeatKind::Ai("cc".into())],
+        None, None, Some(60));
+    l.connected(0);
+    l.connected(1);
+    draft_to_the_end(&mut l, None);
+    for seat in 0..POD {
+        let deck = fallback_deck(&l.pool(seat), &registry);
+        if seat < 2 {
+            l.submit_deck(seat, &deck.maindeck, &deck.lands, &[]).unwrap();
+            l.ready(seat).unwrap();
+        } else {
+            l.ai_deck(seat, &mtg_draft_runner::deck::DeckBuildResult { deck, attempts: vec![], retries: 0, fallback: false });
+        }
+    }
+    assert_eq!(l.begin_tournament(), vec![(1, 0, 1), (1, 2, 3)]);
+    l.match_started(1, 0, 1, [None, None]);
+    l.take_events();
+    let between = |l: &Lobby, seat: usize| jv(l, seat)["matches"][0]["between"].clone();
+
+    // Game 1: seat 0 won the flip. Seat 1 has nothing to do.
+    l.open_between(1, 0, 1, 1, 0, [vec![], vec![]], [None, None]);
+    let b0 = between(&l, 0);
+    assert_eq!((b0["you_choose"].as_bool(), b0["sideboarding"].as_bool(), b0["ready"].as_bool()), (Some(true), Some(false), Some(false)));
+    assert!(b0["deadline_ms"].as_u64().is_some_and(|ms| ms > 50_000), "the host's clock: {b0}");
+    assert_eq!(between(&l, 1)["ready"], true, "the flip's loser waits on nothing");
+    assert!(l.take_events().iter().any(|e| e.contains("before game 1: choosing play or draw")));
+    let deck = l.match_deck(1, 0, 1, 0).unwrap();
+    assert_eq!(l.sideboard(0, &deck.maindeck, &deck.lands).unwrap_err(), "no sideboarding before game 1");
+    assert_eq!(l.play_draw(1, true).unwrap_err(), "the choice to play or draw is your opponent's");
+    l.play_draw(0, false).unwrap();
+    assert_eq!(between(&l, 0)["play_first"], false);
+    assert!(between(&l, 1)["play_first"].is_null(), "the opponent is not told until the game starts");
+    assert!(l.take_between(1, 0, 1).is_none(), "seat 0 is still deciding");
+    l.sideboard_ready(0).unwrap();
+    let out = l.take_between(1, 0, 1).unwrap();
+    assert_eq!(out.chooser_plays, Some(false));
+    assert!(out.decks.iter().all(Option::is_none));
+    assert!(l.take_events().iter().any(|e| e == "round 1: game 1: seat 0 chose to draw first"));
+    assert_eq!(l.play_draw(0, true).unwrap_err(), "you are not between games");
+
+    // Game 2: seat 0 lost game 1 and chooses; both may sideboard.
+    let game = |winner: usize| GameOutcome { winner: Some(winner), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false };
+    l.game_finished(1, 0, 1, &game(1));
+    let played = l.match_deck(1, 0, 1, 0).unwrap();
+    l.open_between(1, 0, 1, 2, 0, [vec![], vec!["Brimstone Volley".into()]], [None, None]);
+    let b0 = between(&l, 0);
+    assert_eq!((b0["sideboarding"].as_bool(), b0["you_choose"].as_bool()), (Some(true), Some(true)));
+    assert_eq!(b0["opponent_showed"][0]["name"], "Brimstone Volley");
+    assert_eq!(between(&l, 1)["ready"], false, "seat 1 may sideboard");
+    let short = &played.maindeck[..10];
+    assert!(l.sideboard(0, short, &HashMap::new()).unwrap_err().contains("40"), "a short deck is not taken");
+    // One card out for one from the sideboard.
+    let pool = l.pool(0);
+    let mut spare = pool.clone();
+    for c in &played.maindeck {
+        if let Some(i) = spare.iter().position(|p| mtg_draft::front_face(p) == mtg_draft::front_face(c)) {
+            spare.remove(i);
+        }
+    }
+    let swap_in = spare.first().expect("a sideboard card").clone();
+    let mut swapped = played.maindeck.clone();
+    let out_card = swapped.remove(0);
+    swapped.push(swap_in.clone());
+    l.sideboard(0, &swapped, &played.lands).unwrap();
+    assert!(between(&l, 0)["deck"]["main"].as_array().unwrap().iter().any(|c| c.as_str() == Some(swap_in.as_str())));
+    l.sideboard_ready(0).unwrap();
+    assert_eq!(l.sideboard(0, &played.maindeck, &played.lands).unwrap_err(), "you are ready for the next game");
+    assert!(l.take_between(1, 0, 1).is_none(), "seat 1 is sideboarding");
+    // Seat 1 takes a card out and puts it back: no change.
+    let theirs = l.match_deck(1, 0, 1, 1).unwrap();
+    l.sideboard(1, &theirs.maindeck[1..], &{ let mut lands = theirs.lands.clone(); *lands.entry("Plains".into()).or_insert(0) += 1; lands }).unwrap();
+    l.sideboard(1, &theirs.maindeck, &theirs.lands).unwrap();
+    l.sideboard_ready(1).unwrap();
+    l.take_events();
+    let out = l.take_between(1, 0, 1).unwrap();
+    let mine = out.decks[0].as_ref().expect("seat 0 sideboarded");
+    assert!(mine.maindeck.contains(&swap_in) && mine.maindeck.iter().filter(|c| **c == out_card).count()
+        < played.maindeck.iter().filter(|c| **c == out_card).count());
+    assert!(out.decks[1].is_none(), "out and back in is the same deck");
+    assert_eq!(out.chooser_plays, None, "never chosen: the game plays the chooser first");
+    let events = l.take_events();
+    assert!(events.iter().any(|e| e.starts_with("round 1: seat 0 sideboarded for game 2")), "{events:?}");
+    assert!(!events.iter().any(|e| e.starts_with("round 1: seat 1 sideboarded")), "{events:?}");
+    assert_eq!(l.match_deck(1, 0, 1, 0).unwrap().maindeck, mine.maindeck, "game 3 starts from it");
+
+    // Game 3: the clock runs out with seat 1 still deciding. Seat 0 went
+    // back to its registered deck, which is a change from game 2's.
+    l.game_finished(1, 0, 1, &game(0));
+    l.open_between(1, 0, 1, 3, 1, [vec![], vec![]], [None, None]);
+    l.sideboard(0, &played.maindeck, &played.lands).unwrap();
+    assert!(!l.tick(std::time::Instant::now()), "not yet");
+    assert!(l.tick(std::time::Instant::now() + std::time::Duration::from_secs(61)));
+    assert!(l.take_events().iter().any(|e| e == "round 1: seat 0 vs seat 1: the sideboard timer ran out before game 3"));
+    let out = l.take_between(1, 0, 1).unwrap();
+    assert_eq!(out.decks[0].as_ref().unwrap().maindeck, played.maindeck);
+    assert_eq!(out.chooser_plays, None);
 }

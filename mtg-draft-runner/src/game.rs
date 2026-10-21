@@ -12,6 +12,7 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine::{self, Decklist, GameConfig};
 use mtg_engine::ids::PlayerId;
 use mtg_engine::state::GameState;
+use mtg_engine::types::Zone;
 use mtg_engine::view::GameView;
 use mtg_player::gui::GuiPlayer;
 use mtg_player::llm::{LlmPlayer, MatchFormat};
@@ -111,13 +112,69 @@ pub fn match_line(format: MatchFormat) -> Option<String> {
 }
 
 /// One side of a match.
-pub struct MatchSeat<'a> {
+pub struct MatchSeat {
     pub seat: usize,
     /// How the host's terminal names the seat: `Seat N` for the runner,
     /// the hosted table's "Ann (seat 3)" (#816). The log keeps `Seat N`.
     pub label: String,
-    pub deck: &'a Decklist,
+    /// The deck it plays, as registered; sideboarding between games
+    /// replaces it for the rest of the match.
+    pub deck: Decklist,
     pub player: GameSeat,
+}
+
+/// What a match knows before each game: who chooses to play or draw, and
+/// how the match stands.
+pub struct BeforeGame<'a> {
+    /// 1-based number of the game about to be played.
+    pub game: usize,
+    /// The seat that chooses whether to play or draw: the coin flip's
+    /// winner for game 1, the loser of the game before after that, and the
+    /// same seat again after a drawn game (MTR 2.2).
+    pub chooser: usize,
+    pub games: &'a [GameOutcome],
+    /// Game wins so far: seat `a`'s, seat `b`'s.
+    pub wins: (usize, usize),
+    /// The cards each seat has shown its opponent in the match so far —
+    /// on the battlefield, the stack, in a graveyard or exile by a game's
+    /// end — seat `a`'s first. A sideboard is built against these.
+    pub shown: &'a [Vec<String>; 2],
+    /// The decks being played now: seat `a`'s, seat `b`'s.
+    pub decks: [&'a Decklist; 2],
+}
+
+/// What the seats decided before a game.
+#[derive(Default)]
+pub struct GameSetup {
+    /// A seat's deck from this game on, when it sideboarded.
+    pub deck_a: Option<Decklist>,
+    pub deck_b: Option<Decklist>,
+    /// Whether the chooser plays first; `None` is the usual choice in
+    /// Limited, to play.
+    pub chooser_plays: Option<bool>,
+}
+
+/// "you lost game 2 on turn 11": how a game went, from one seat's side.
+#[must_use]
+pub fn last_game_line(game: &GameOutcome, seat: usize, number: usize) -> String {
+    let how = match game.winner {
+        Some(w) if w == seat => "you won",
+        Some(_) => "you lost",
+        None if game.abandoned => "no winner in",
+        None => "you drew",
+    };
+    let forfeit = match game.stalled_seat {
+        Some(s) if s == seat => " (you forfeited)",
+        Some(_) => " (your opponent forfeited)",
+        None => "",
+    };
+    format!("{how} game {number} on turn {}{forfeit}", game.turns)
+}
+
+/// Before every game: nobody sideboards and the chooser plays, which is
+/// what a match did before sideboarding existed.
+pub fn no_sideboarding(_: &BeforeGame) -> GameSetup {
+    GameSetup::default()
 }
 
 /// The seed a match is played under: a function of the run's seed and the
@@ -148,14 +205,18 @@ pub fn match_is_over(best_of: usize, games_played: usize, wins_a: usize, wins_b:
     wins_a >= needed || wins_b >= needed || games_played >= best_of
 }
 
-/// Play one match. `after_game` is told each game's outcome as it ends, so
-/// a surface that shows a match in progress can.
+/// Play one match. `before_game` is asked before each game who plays
+/// first and what each seat plays — the chooser's play or draw, and any
+/// sideboarding between games (MTR 2.2, 2.4) — and `after_game` is told
+/// each game's outcome as it ends, so a surface that shows a match in
+/// progress can.
 pub fn play_match(
-    mut a: MatchSeat<'_>,
-    mut b: MatchSeat<'_>,
+    mut a: MatchSeat,
+    mut b: MatchSeat,
     registry: &CardRegistry,
     best_of: usize,
     seed: u64,
+    before_game: &mut dyn FnMut(&BeforeGame) -> GameSetup,
     after_game: &mut dyn FnMut(&GameOutcome),
 ) -> MatchResult {
     let mut wins_a = 0;
@@ -165,21 +226,33 @@ pub fn play_match(
     let seat_a = a.seat;
     let seat_b = b.seat;
 
-    // Play/draw per MTG tournament rules, delegated to the engine helpers:
-    //   Game 1: a fair coin flip.
-    //   Games 2+: engine::next_starter_loser_plays() — the loser of the
-    //   previous game always elects to play first (the strategically
-    //   dominant choice in Limited); drawn games keep the previous starter.
+    // Play/draw per MTG tournament rules (MTR 2.2): the winner of a coin
+    // flip chooses for game 1, the loser of each game for the next, and the
+    // same player again after a drawn game. The choice is `before_game`'s;
+    // without one the chooser plays, the usual choice in Limited.
     //
     // The flip and each game's engine seed come off this match's own RNG
     // rather than the thread's, so a seeded run replays its games and not
     // only its packs (issue #212).
     let mut match_rng = <rand::rngs::StdRng as rand::SeedableRng>::seed_from_u64(seed);
-    let mut starter = PlayerId(u8::from(rand::Rng::gen_bool(&mut match_rng, 0.5)));
+    let mut chooser = if rand::Rng::gen_bool(&mut match_rng, 0.5) { seat_b } else { seat_a };
+    let mut shown: [Vec<String>; 2] = [Vec::new(), Vec::new()];
 
     while !match_is_over(best_of, games.len(), wins_a, wins_b) {
         let game_number = games.len() + 1;
-        let mut outcome = play_game(
+        let setup = before_game(&BeforeGame {
+            game: game_number, chooser, games: &games, wins: (wins_a, wins_b), shown: &shown,
+            decks: [&a.deck, &b.deck],
+        });
+        if let Some(deck) = setup.deck_a {
+            a.deck = deck;
+        }
+        if let Some(deck) = setup.deck_b {
+            b.deck = deck;
+        }
+        let starts = if setup.chooser_plays.unwrap_or(true) { chooser } else if chooser == seat_a { seat_b } else { seat_a };
+        let starter = if starts == seat_a { PlayerId(0) } else { PlayerId(1) };
+        let (mut outcome, showed) = play_game(
             &mut a,
             &mut b,
             registry,
@@ -189,11 +262,17 @@ pub fn play_match(
             rand::Rng::gen(&mut match_rng),
         );
 
-        // Engine's winner is a PlayerId (0 = seat_a, 1 = seat_b).
-        let prev_winner: Option<PlayerId> = outcome.winner.map(|w| {
-            if w == seat_a { PlayerId(0) } else { PlayerId(1) }
-        });
-        starter = engine::next_starter_loser_plays(starter, prev_winner, 2);
+        // The loser chooses for the next game; after a draw, the same seat.
+        if let Some(w) = outcome.winner {
+            chooser = if w == seat_a { seat_b } else { seat_a };
+        }
+        for (all, these) in shown.iter_mut().zip(showed) {
+            for card in these {
+                if !all.contains(&card) {
+                    all.push(card);
+                }
+            }
+        }
 
         match outcome.winner {
             Some(w) if w == seat_a => wins_a += 1,
@@ -248,8 +327,8 @@ pub fn play_match(
 
 #[allow(clippy::too_many_arguments)]
 fn play_game(
-    a: &mut MatchSeat<'_>,
-    b: &mut MatchSeat<'_>,
+    a: &mut MatchSeat,
+    b: &mut MatchSeat,
     registry: &CardRegistry,
     starting_player: PlayerId,
     // Each seat's own side of the match: the score is stated from the seat's
@@ -257,12 +336,12 @@ fn play_game(
     format_a: MatchFormat,
     format_b: MatchFormat,
     rng_seed: u64,
-) -> GameOutcome {
+) -> (GameOutcome, [Vec<String>; 2]) {
     let seat_a = a.seat;
     let seat_b = b.seat;
     let (label_a, label_b) = (a.label.clone(), b.label.clone());
     let label_of = |seat: usize| if seat == seat_a { label_a.clone() } else { label_b.clone() };
-    let (deck_a, deck_b) = (a.deck, b.deck);
+    let (deck_a, deck_b) = (&a.deck, &b.deck);
     let (p1, p2) = (&mut a.player, &mut b.player);
     let config = GameConfig {
         player_names: vec![p1.name().to_string(), p2.name().to_string()],
@@ -460,13 +539,26 @@ fn play_game(
         .map(|entry| entry.message.clone())
         .collect();
 
-    GameOutcome {
+    // What each seat showed its opponent: its cards (not tokens) that were
+    // public when the game ended.
+    let showed = [PlayerId(0), PlayerId(1)].map(|p| {
+        let mut cards: Vec<String> = state.objects.values()
+            .filter(|o| o.owner == p && !o.is_token)
+            .filter(|o| matches!(o.zone, Zone::Battlefield | Zone::Graveyard | Zone::Exile | Zone::Stack))
+            .map(|o| mtg_draft::front_face(&o.name).to_string())
+            .collect();
+        cards.sort();
+        cards.dedup();
+        cards
+    });
+
+    (GameOutcome {
         winner,
         turns: state.turn_number,
         game_log,
         stalled_seat,
         abandoned,
-    }
+    }, showed)
 }
 
 /// Say on the terminal and in the log that a seat stopped playing: its

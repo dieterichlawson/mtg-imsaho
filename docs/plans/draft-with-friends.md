@@ -168,7 +168,10 @@ Server → client:
   "picks": [ {"round": 1, "pick": 1, "card": "...", "auto": false} ],
   "deck": null | {"main": ["name", ...], "lands": {"Plains": 7, "Island": 10}, "sideboard": [...], "valid": true, "problem": null},
   "matches": [ {"round": 1, "opponent": 3, "url": "http://192.168.1.20:8803/", "status": "waiting"|"playing"|"done",
-                "games": [ {"winner": 0} ], "result": "2-1"} ],
+                "games": [ {"winner": 0} ], "result": "2-1",
+                "between": null | {"game": 2, "sideboarding": true, "you_choose": false, "play_first": null,
+                                   "ready": false, "opponent_ready": true, "deadline_ms": 90000,
+                                   "deck": {...as "deck"...}, "opponent_showed": [ {...a pool card...} ]}} ],
   "standings": [ {"seat": 0, "wins": 2, "losses": 0, "points": 6} ],
   "notice": null | "text the server wants this seat to read once"
 }
@@ -182,6 +185,9 @@ Client → server:
 { "type": "deck", "main": ["..."], "lands": {"Plains": 7}, "sideboard": ["..."] }   // can be re-sent until "ready"
 { "type": "ready" }                                    // deck final; the seat is ready to play
 { "type": "name", "name": "Lawson" }                   // optional, cosmetic
+{ "type": "sideboard", "main": ["..."], "lands": {"Plains": 7} }   // between games, from game 2: a whole deck of 40+
+{ "type": "play_draw", "play": true }                  // between games, the chooser only
+{ "type": "sideboard_ready" }                          // done between games; the game starts when both are
 ```
 
 The server also serves `GET /` → `mtg-gui/draft.html`, `GET /dist/*`,

@@ -469,6 +469,21 @@ standings and a token-usage summary to stderr.
 a missing value is refused, and an unknown provider is refused by name — a
 mistyped invocation costs nothing rather than starting an eight-seat draft.
 
+Between the games of a match each seat is asked once, before game 2 and
+before game 3: the score, how the last game went, the cards the opponent
+has shown (public zones, tokens left out), and its pool with the counts it
+is playing now. It answers in the deck build's shape plus `play_first`,
+which is read only when the choice is its own — the last game's loser
+chooses, and after a drawn game whoever chose before. Repeating the counts
+keeps the deck; an answer that does not make a legal deck keeps it too,
+with no retry. The log has `[Seat N] SIDEBOARD_PROMPT before game G`, its
+`_RESPONSE`, and one `[Seat N] SIDEBOARD before game G: in: ...; out: ...`
+line (or `no change`) with `; plays first` or `; draws first` for the
+chooser. Game 1's player on the play is a coin flip's winner, who plays —
+no seat is asked before game 1. The question is one cached schema for every
+pool, like the deck build's, and costs at most two calls a seat a match;
+the usage summary counts it under `Draft`.
+
 `--seed <N>` fixes the packs, the shuffles and play/draw; a run without one
 logs the seed it drew. `--save <path>` snapshots the run after every pick
 round, the deck builds and every match, and `--resume <path>` carries on

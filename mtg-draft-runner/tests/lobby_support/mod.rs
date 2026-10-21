@@ -105,6 +105,9 @@ impl Server {
             .args(["--seats", seats, "--port", &port.to_string(), "--best-of", "1", "--seed", "11"])
             .args(["--game-ports", &format!("{game_lo}-{}", game_lo.saturating_add(40))])
             .args(["--log", log.to_str().unwrap()])
+            // A scripted person does not choose play or draw, nor sideboard:
+            // the clock does it for them, unless the test sets its own.
+            .args(if extra.contains(&"--sideboard-seconds") { &[][..] } else { &["--sideboard-seconds", "1"][..] })
             .args(extra)
             .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
             .env("CLAUDE_CODE_BIN", &bin)

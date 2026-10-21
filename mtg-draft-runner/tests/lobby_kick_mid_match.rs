@@ -31,8 +31,13 @@ fn a_kick_mid_match_forfeits_the_match_and_the_table_finishes() {
         }
         assert!(Instant::now() < deadline, "the match never started:\n{}", server.stderr());
     }
-    // The game is waiting on seat 0's page.
-    std::thread::sleep(Duration::from_secs(1));
+    // The game is waiting on seat 0's page (after the time before game 1,
+    // which the sideboard clock ends for a seat that never chooses).
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !server.stderr().contains("seat 0: no browser at http://") {
+        assert!(Instant::now() < deadline, "the game never waited on seat 0's page:\n{}", server.stderr());
+        std::thread::sleep(Duration::from_millis(200));
+    }
     assert!(!server.log_text().contains("MATCH Round 1"), "the match is under way");
     server.type_line("kick 0");
     let log = server.wait_for_log("FINAL STANDINGS", Duration::from_secs(60));
