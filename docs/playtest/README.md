@@ -22,11 +22,12 @@ files, something nobody has named yet — that is a subject too. Write a
 guide for it and add a row.
 
 Choosing: `reports/playtests/LEDGER.md` records every night ever played.
-Prefer the subject that has gone longest without one, and inside it
-prefer ideas nobody has tried, then ideas nobody has tried lately (two
-weeks is a reasonable floor unless you are re-probing a fresh fix). One
-subject a night is normal; two or three probes within it is a night's
-work.
+New code comes first (R2, below): while any idea proposed in the last
+two weeks is untried, the night is spent on those. Otherwise prefer the
+subject that has gone longest without one, and inside it prefer ideas
+nobody has tried, then ideas nobody has tried lately (two weeks is a
+reasonable floor unless you are re-probing a fresh fix). One subject a
+night is normal; two or three probes within it is a night's work.
 
 **Every night opens with the propagation sweep, R1, before the subject's
 probes.** The most common defect of the last two weeks was not a new bug
@@ -50,6 +51,37 @@ fix it escaped, and record the sweep as one ledger row with mission id
 most productive hour of the night (the 2026-10-05 crew did it unprompted
 and it found #680 and #681). The fixer is asked to do this check before
 closing (see "Filing"); the sweep is the audit of that.
+
+**Then the new-code sweep, R2: what landed since the last night is
+probed before the rotation.** New code is where new bugs are, and the
+rotation alone can leave a feature merged this week untouched for days.
+List what reached master since the crew's last night that is neither an
+issue fix (R1 has those) nor documentation:
+
+```
+base=$(git log -1 --format=%h -- reports/playtests/LEDGER.md)   # the last night's record
+git log --no-merges --format='%h %s' "$base"..origin/master \
+  -- '*.rs' '*.ts' 'scripts/' 'mtg-gui/tests/' | grep -vE '\(#[0-9]+'
+```
+
+For every feature or change of behaviour there that no idea in any guide
+names (search the guides for its commit, file or function), add one —
+"Adding an idea" below says how, and its provenance tag dates it. Then
+list the untried ideas proposed in the last fourteen days:
+
+```
+since=$(date -u -d '14 days ago' +%F)
+grep -ohE '^- [CLVMHDG][0-9]+ \[proposed [0-9]{4}-[0-9]{2}-[0-9]{2}' docs/playtest/*.md \
+  | awk -v s="$since" '$4 >= s {print $2}' | sort -uV > /tmp/fresh-ideas
+grep -oE '\| [CLVMHDG][0-9]+' reports/playtests/LEDGER.md | grep -oE '[A-Z][0-9]+' | sort -u > /tmp/run-ideas
+grep -vxFf /tmp/run-ideas /tmp/fresh-ideas
+```
+
+If that list is not empty, tonight's subject is the one holding the most
+of them, and its probes are taken from the list, ahead of the rotation;
+the rotation resumes when the list is empty. Record the sweep as one
+ledger row with mission id `R2`, the commit range it read and the ideas
+it added.
 
 **The floor is per idea, not per subject, and "already played" is a fact
 to look up rather than infer.** The ledger's Mission column starts with
