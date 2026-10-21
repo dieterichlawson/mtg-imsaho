@@ -3,6 +3,7 @@
 //! `mtg-draft-client` (its terminal client) share.
 
 pub mod card_lines;
+pub mod client;
 pub mod deck;
 pub mod draft_log;
 pub mod game;
