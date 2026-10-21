@@ -2,8 +2,9 @@
 //! stand in a fake `claude` (a shell script that records its argv and stdin
 //! and prints a canned print-mode JSON result) and check the contract the
 //! real CLI is spoken to with: session creation then resumption, the
-//! system prompt on every call, `--json-schema` for structured decisions,
-//! tools disabled, and the error/fallback path.
+//! system prompt on every call, the answer's fields at the end of the
+//! prompt (or `--json-schema`, when asked for), tools disabled, and the
+//! error/fallback path.
 #![cfg(unix)]
 
 use mtg_player::llm::MatchFormat;
@@ -142,8 +143,11 @@ fn each_decision_is_its_own_session_unless_a_window_is_asked_for() {
         let sys = arg_after(c, "--system-prompt").expect("system prompt every call");
         assert!(sys.contains("Magic: The Gathering"), "the game rules prompt is the system prompt");
         assert!(c.contains("--- stdin\npick"), "the decision prompt goes on stdin:\n{c}");
-        let schema = arg_after(c, "--json-schema").expect("action calls are schema-constrained");
-        assert!(schema.contains("\"action\""));
+        // The answer is asked for at the end of the prompt, in one request:
+        // `--json-schema` is a tool call and a second request after it.
+        assert!(arg_after(c, "--json-schema").is_none(), "{c}");
+        assert!(c.contains("pick\n\nAnswer with only this JSON object: {\"action\": integer}\n--- end"), "{c}");
+        assert!(c.contains("## Answer format"), "the shared fields are said once, in the system prompt");
     }
     assert_eq!(p.model_name_for_test(), "claude-code");
 }
@@ -168,10 +172,32 @@ fn init_restarts_the_session_and_carries_the_deck_info() {
         "deck info reaches the system prompt after init:\n{}", calls[1]);
 }
 
+/// In text, the question's fields end the prompt — `thoughts` first, a
+/// field the question does not read left out — and the object is read out
+/// of the result text, a code fence or a sentence around it included.
+#[test]
+fn text_answers_say_the_fields_and_read_the_object_from_the_text() {
+    let fake = Fake::new("text", r#"printf '{"type":"result","is_error":false,"session_id":"s","result":"Here:\\n```json\\n{\"word\": \"ok\", \"thoughts\": \"t\"}\\n```","usage":{}}\n'"#);
+    let mut p = mtg_player::llm::LlmPlayer::new_claude_code_with_binary("t", &fake.bin()).with_text_answers(true);
+    let schema = serde_json::json!({
+        "type": "object",
+        "properties": {"word": {"type": "string", "description": "A word"}, "thoughts": {"type": "string"},
+                       "then": {"type": "array", "items": {"type": "string"}, "x-unread": true}},
+        "required": ["word", "thoughts", "then"]
+    });
+    let got = p.backend_send_with_schema_for_test("choose", &schema);
+    assert_eq!(got["word"], "ok", "{got}");
+    let call = &fake.calls()[0];
+    assert!(arg_after(call, "--json-schema").is_none());
+    assert!(call.contains("choose\n\nAnswer with only this JSON object: {\"thoughts\": string, \"word\": string}\n`word`: A word"), "{call}");
+    assert_eq!(p.backend_take_thinking_for_test().as_deref(), Some("t"));
+}
+
 #[test]
 fn structured_calls_pass_the_schema_and_return_the_object() {
     let fake = Fake::new("schema", OK_BODY);
-    let mut p = mtg_player::llm::LlmPlayer::new_claude_code_with_binary("t", &fake.bin());
+    let mut p = mtg_player::llm::LlmPlayer::new_claude_code_with_binary("t", &fake.bin()).with_text_answers(false);
+    assert!(!p.system_prompt_for_test().contains("## Answer format"), "no fields to explain without text answers");
     let schema = serde_json::json!({
         "type": "object",
         "properties": {"word": {"type": "string"}, "thoughts": {"type": "string"}, "n": {"type": "integer", "minimum": 0}},

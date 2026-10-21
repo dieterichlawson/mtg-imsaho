@@ -19,6 +19,8 @@ msg = sys.stdin.read(); sid = ""; sc = None
 for i, a in enumerate(argv):
     if a in ("--session-id", "--resume") and i + 1 < len(argv): sid = argv[i + 1]
     if a == "--json-schema" and i + 1 < len(argv): sc = argv[i + 1]
+# Asked in text (the default) a seat sends no schema; the full one is beside it.
+sc = sc or os.environ.get("MTG_LLM_ANSWER_SCHEMA")
 sch = json.loads(sc) if sc else {}
 props = sch.get("properties", {})
 if "maindeck" in props:

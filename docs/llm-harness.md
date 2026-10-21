@@ -102,6 +102,21 @@ Every decision is sent on its own. A call carries:
   reason (`REASK` in the log). `mtg-runner/tests/schema_cache.rs` plays stub
   games and holds every kind of question to one schema.
 
+A `claude -p` game seat is not sent the schema at all, by default: the
+question's fields end the decision prompt (`Answer with only this JSON
+object: {"thoughts": string, "action": integer 0 to 7}` and a line for each
+field whose meaning is the question's own), the fields every game asks the
+same way (`thoughts`, `then`, `ask_again`, `attack`) are explained once in
+the system prompt's "Answer format", and the object is read out of the
+result text. Through `--json-schema` the CLI made each answer a tool call and
+a second request after it — about 575 tokens of cache write and 100 of
+output a decision, whatever was asked — and each kind of question a new
+tool ahead of the system prompt. Replayed on the kept positions it chose as
+well as the schema did, for a fifth less (`reports/llm-cost.md`, phase 5).
+A field the question does not read (the plan fields outside the main
+phase) is left out of the line, so the answer does not spend output on it.
+`MTG_CLAUDE_CODE_ANSWERS=schema` sends `--json-schema` as before.
+
 Every `claude -p` child is run with `FORCE_PROMPT_CACHING_5M=1`: the CLI
 otherwise writes its cache at the 1-hour TTL, 2x the input rate where the
 5-minute TTL is 1.25x, and half of what a decision writes is its own prompt,

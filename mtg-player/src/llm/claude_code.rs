@@ -60,7 +60,6 @@ pub const FORCE_5M_CACHE_ENV: &str = "FORCE_PROMPT_CACHING_5M";
 /// prompt anyway (`reports/llm-cost.md`, phase 5).
 pub const CACHE_TTL_ENV: &str = "MTG_CLAUDE_CODE_CACHE_TTL";
 
-
 /// How long one decision may take before the subprocess is killed and the
 /// call retried. Print mode with thinking can run well past the API path's
 /// two minutes.
@@ -630,6 +629,9 @@ pub(super) struct ClaudeCodeBackend {
     window: usize,
     /// The question's full schema while a call is out; see [`ANSWER_SCHEMA_ENV`].
     answer_schema: Option<String>,
+    /// Ask for the answer in the prompt rather than with `--json-schema`
+    /// ([`super::answer_text`]).
+    text_answers: bool,
 }
 
 impl ClaudeCodeBackend {
@@ -647,7 +649,7 @@ impl ClaudeCodeBackend {
             binary: binary.to_string(),
             model: model.map(str::to_string),
             label,
-            system_prompt: format!("{THOUGHTS_IN_JSON_FORMAT}{}", game_rules(history_exchanges())),
+            system_prompt: Self::system_prompt_for(game_rules(history_exchanges()), "", super::answer_text::text_answers()),
             session_id: None,
             turns: 0,
             workdir,
@@ -657,7 +659,15 @@ impl ClaudeCodeBackend {
             seat: String::new(),
             window: super::history_exchanges(),
             answer_schema: None,
+            text_answers: super::answer_text::text_answers(),
         }
+    }
+
+    /// The seat's system prompt: the intro, the rules, the deck, and for a
+    /// seat that answers in text what the shared answer fields mean.
+    fn system_prompt_for(rules: impl std::fmt::Display, deck_info: &str, text_answers: bool) -> String {
+        let fields = if text_answers { super::answer_text::answer_fields_section() } else { String::new() };
+        format!("{THOUGHTS_IN_JSON_FORMAT}{rules}{deck_info}{fields}")
     }
 
     /// A fresh RFC 4122 version-4 id for `--session-id`.
@@ -809,14 +819,23 @@ impl ClaudeCodeBackend {
         if super::model_takes_effort(self.model.as_deref()) {
             cmd.args(["--effort", super::effort_for(super::thinking_level())]);
         }
+        // In text, the fields go at the end of the prompt and the answer is
+        // one request; with `--json-schema` it is a tool call and a second
+        // request after it (`super::answer_text`).
+        let mut asked = None;
         if let Some(s) = schema {
-            cmd.args(["--json-schema", &s.to_string()]);
+            if self.text_answers {
+                let full = self.answer_schema.as_deref().and_then(|t| serde_json::from_str(t).ok());
+                asked = Some(format!("{message}\n\n{}", super::answer_text::answer_format(full.as_ref().unwrap_or(s))));
+            } else {
+                cmd.args(["--json-schema", &s.to_string()]);
+            }
         }
         if let Some(full) = &self.answer_schema {
             cmd.env(ANSWER_SCHEMA_ENV, full);
         }
         cmd.current_dir(&self.workdir);
-        run_print_mode(&mut cmd, &self.binary, message)
+        run_print_mode(&mut cmd, &self.binary, asked.as_deref().unwrap_or(message))
     }
 }
 
@@ -1023,13 +1042,13 @@ fn failure_reason(out: &str, err: &str) -> String {
 
 impl ClaudeCodeBackend {
     /// The structured object of a result: the CLI's parsed
-    /// `structured_output` when a schema was given, else the result text
-    /// parsed as JSON.
+    /// `structured_output` when a schema was given, else the JSON object in
+    /// the result text.
     fn structured(json: &serde_json::Value) -> Option<serde_json::Value> {
         if json["structured_output"].is_object() {
             return Some(json["structured_output"].clone());
         }
-        json["result"].as_str().and_then(|t| serde_json::from_str(t.trim()).ok())
+        json["result"].as_str().and_then(super::answer_text::json_in_text)
     }
 }
 
@@ -1058,7 +1077,10 @@ impl LlmBackend for ClaudeCodeBackend {
             "required": ["action"],
             "additionalProperties": false
         });
-        let Some(json) = self.call(message, Some(&schema)) else {
+        self.answer_schema = Some(schema.to_string());
+        let answer = self.call(message, Some(&schema));
+        self.answer_schema = None;
+        let Some(json) = answer else {
             return "0".to_string();
         };
         if let Some(action) = Self::structured(&json).and_then(|s| s["action"].as_u64()) {
@@ -1113,7 +1135,7 @@ impl LlmBackend for ClaudeCodeBackend {
     }
 
     fn init(&mut self, deck_info: &str) {
-        self.system_prompt = format!("{THOUGHTS_IN_JSON_FORMAT}{}{deck_info}", game_rules(self.window));
+        self.system_prompt = Self::system_prompt_for(game_rules(self.window), deck_info, self.text_answers);
         self.session_id = None;
         self.turns = 0;
     }
@@ -1121,6 +1143,16 @@ impl LlmBackend for ClaudeCodeBackend {
     fn set_history_window(&mut self, exchanges: usize) {
         self.system_prompt = super::rewindow(&self.system_prompt, self.window, exchanges);
         self.window = exchanges;
+    }
+
+    fn set_text_answers(&mut self, on: bool) {
+        let section = super::answer_text::answer_fields_section();
+        if let (false, Some(rest)) = (on, self.system_prompt.strip_suffix(&section)) {
+            self.system_prompt = rest.to_string();
+        } else if on && !self.system_prompt.ends_with(&section) {
+            self.system_prompt.push_str(&section);
+        }
+        self.text_answers = on;
     }
 
     fn conversation_len(&self) -> usize {

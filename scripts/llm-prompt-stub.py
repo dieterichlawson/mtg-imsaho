@@ -25,11 +25,15 @@ never picks it (#754: the schema fill used to land on it as well).
 prompt, #749) is always false: a stub that cancelled half its casts would
 measure a game nobody plays.
 
-The `--json-schema` a seat sends has no enums or counts in it, so that the
-prompt cache holds from one call to the next (`cache_stable_schema` in
-mtg-player/src/llm.rs). The seat sets the full schema on the child as
-`MTG_LLM_ANSWER_SCHEMA`, and the stub answers from that; the record keeps
-the schema that was sent, which is the one the cache sees.
+A seat asks for its JSON at the end of the prompt (the default) or sends
+`--json-schema` (`MTG_CLAUDE_CODE_ANSWERS=schema`); a sent schema has no
+enums or counts in it, so that the prompt cache holds from one call to the
+next (`cache_stable_schema` in mtg-player/src/llm.rs). Either way the seat
+sets the full schema on the child as `MTG_LLM_ANSWER_SCHEMA`, and the stub
+answers from that; the record keeps the schema that was sent (none, in
+text), which is the one the cache sees. Like the CLI, the stub returns a
+`structured_output` only for a call that sent a schema, and the answer as
+the result text either way.
 """
 import hashlib
 import json
@@ -52,9 +56,10 @@ def flag(name):
 
 
 message = sys.stdin.read()
-schema_text = flag("--json-schema") or "{}"
-schema = json.loads(schema_text)
-answer_schema = json.loads(os.environ.get("MTG_LLM_ANSWER_SCHEMA") or schema_text)
+sent_schema = flag("--json-schema")
+schema_text = sent_schema or ""
+schema = json.loads(schema_text or "{}")
+answer_schema = json.loads(os.environ.get("MTG_LLM_ANSWER_SCHEMA") or schema_text or "{}")
 props = answer_schema.get("properties") or {}
 system = flag("--system-prompt") or ""
 opened = flag("--session-id")
@@ -172,9 +177,12 @@ if record:
             "sid": sid,
         }) + "\n")
 
-print(json.dumps({
+result = {
     "type": "result", "subtype": "success", "is_error": False, "session_id": sid,
     "usage": {"input_tokens": 0, "output_tokens": 0,
               "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0},
-    "structured_output": out, "result": json.dumps(out),
-}))
+    "result": json.dumps(out),
+}
+if sent_schema is not None:
+    result["structured_output"] = out
+print(json.dumps(result))

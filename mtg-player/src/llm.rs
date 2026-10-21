@@ -12,6 +12,7 @@ use std::sync::Mutex;
 use std::collections::HashMap;
 use std::fmt::Write;
 
+pub mod answer_text;
 mod claude_code;
 pub mod cost;
 pub use claude_code::{available as claude_code_available, binary as claude_code_binary, kill_live_calls as claude_code_kill_live_calls, kill_live_calls_from_signal as claude_code_kill_live_calls_from_signal, BINARY_ENV as CLAUDE_CODE_BINARY_ENV, MAX_LIVE_CALLS as CLAUDE_CODE_MAX_LIVE_CALLS};
@@ -1624,6 +1625,9 @@ trait LlmBackend {
     /// How many earlier exchanges a decision is sent with; see
     /// [`HISTORY_ENV`], whose value every backend starts from.
     fn set_history_window(&mut self, _exchanges: usize) {}
+    /// Whether a `claude -p` seat asks for its answer in the prompt rather
+    /// than with `--json-schema` ([`answer_text`]); no-op for the others.
+    fn set_text_answers(&mut self, _on: bool) {}
     /// Set thinking level (Gemini only, no-op for others).
     fn set_thinking_level(&mut self, _level: &str) {}
     /// Point a `claude -p` backend at another model, keeping the binary it
@@ -2527,6 +2531,14 @@ impl LlmPlayer {
     #[must_use]
     pub fn with_history(mut self, exchanges: usize) -> Self {
         self.backend.set_history_window(exchanges);
+        self
+    }
+
+    /// Whether a `claude -p` seat asks for its answer in the prompt,
+    /// overriding the run's [`answer_text::ANSWERS_ENV`] setting.
+    #[must_use]
+    pub fn with_text_answers(mut self, on: bool) -> Self {
+        self.backend.set_text_answers(on);
         self
     }
 

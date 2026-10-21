@@ -34,7 +34,10 @@ def flag(n):
         if a == n and i + 1 < len(argv): return argv[i + 1]
     return None
 message = sys.stdin.read()
-raw = flag("--json-schema") or "{}"
+sent = flag("--json-schema")
+# Asked in text (the default) a seat sends no schema: its fields end the
+# prompt, and the full schema is set beside it.
+raw = sent or os.environ.get("MTG_LLM_ANSWER_SCHEMA") or "{}"
 schema = json.loads(raw)
 # The sent schema has no enums (cache_stable_schema); the seat sets the
 # full one beside it for a stand-in like this one.
@@ -46,7 +49,7 @@ d = os.environ["STUB_SCHEMAS"]
 # same index and one silently overwrite the other, which read as a lost call
 # ("saw 85 draft calls" for a run that made 86) whenever the machine was busy
 # enough to interleave them.
-json.dump({"schema": schema, "system": flag("--system-prompt") or "", "prompt": message},
+json.dump({"schema": schema, "sent": sent is not None, "system": flag("--system-prompt") or "", "prompt": message},
           open(os.path.join(d, "call_%d_%s.json" % (os.getpid(), uuid.uuid4().hex)), "w"))
 def h(*p): return int(hashlib.sha256("\x00".join(map(str, p)).encode()).hexdigest(), 16)
 def fill(name, spec):
@@ -165,6 +168,12 @@ fn the_draft_seat_is_asked_for_its_reasoning_and_the_log_keeps_it() {
             "asked for, not merely allowed: {}",
             c["schema"]["required"]
         );
+        // Asked in text, the fields that end the prompt are the question.
+        if c["sent"] == false {
+            let prompt = c["prompt"].as_str().unwrap_or("");
+            assert!(prompt.contains("Answer with only this JSON object: {\"thoughts\": string"),
+                "a pick asked in text asks for its reasoning first:\n{prompt}");
+        }
     }
 
     // 2. And the prompt agrees with the schema it is paired with, rather than

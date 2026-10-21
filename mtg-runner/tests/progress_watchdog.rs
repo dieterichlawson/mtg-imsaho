@@ -28,6 +28,7 @@ for a in "$@"; do
   if [ "$prev" = "--json-schema" ]; then SCHEMA="$a"; fi
   prev="$a"
 done
+[ -z "$SCHEMA" ] && SCHEMA="$MTG_LLM_ANSWER_SCHEMA"
 PROMPT=$(cat)
 case "$SCHEMA" in
   *indices*)
