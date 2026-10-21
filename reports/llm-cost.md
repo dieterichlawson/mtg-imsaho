@@ -38,6 +38,20 @@ against a Sonnet 4.6 seat that asked every pick —
 The bill fell with the model; the token count did not, and the section
 says why the obvious cut to it was measured and not taken.
 
+**Phase 5 (2026-10-21, a whole draft night)**: eight Haiku 5.5 seats
+drafting, building, and playing a best-of-three Swiss, at API rates —
+
+| | $ / game call | $ / night |
+| --- | ---: | ---: |
+| phase 4's end (hour cache, `--json-schema`) | 0.00074 | 2.34 |
+| phase 5 (five-minute cache, answers in text) | 0.00048 (35% less) | ≈ 1.41 (40% less) |
+
+A game call's answer is asked at the end of its prompt instead of
+through the CLI's schema tool, and the cache is written at the
+five-minute rate; on the kept decision eval the seat chose as before
+(184 against 187 of 208). Picks stayed on the schema, which picked
+better. What is left is mostly thinking the CLI cannot turn off.
+
 Phases 1 and 2. Phase 1 (below) made a decision stateless and the
 prompt around it smaller; phase 2 (the last section) lets the seat say
 "go" so that fewer decisions are model calls at all, caps the output, and
@@ -711,6 +725,134 @@ change measured on both the game and the draft eval.
   seat's calls are a few seconds apart, so a live draft's cache behaves as
   the replays' did after their first calls.
 
+## Phase 5: a whole Haiku draft night
+
+Measured 2026-10-21. Asked for what is left to cut across a whole draft
+night — eight `cc:claude-haiku-5-5` seats drafting Innistrad, building,
+and playing a best-of-three Swiss tournament, the shape of the nightly
+draft loop (`reports/draft-loop/`) — and to cut it.
+
+### What a night was
+
+One run on the build before this phase (`mtg-draft-runner --model
+cc:claude-haiku-5-5 --players 8 --best-of 3 --seed 101`): 323 pick and
+deck calls, then 12 matches of 31 games and 2,794 game calls, in 1 hour
+51 minutes. At API rates, with the cache written at the hour TTL the CLI
+was using (the runner's own summary priced it at the 5-minute rate and
+said $1.86):
+
+| phase | calls | output | cache read | cache write | $ |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| picks and builds | 323 | 115,315 | 5,556,542 | 809,894 | 0.28 |
+| games | 2,794 | 1,637,200 (1,019,311 thinking) | 12,645,221 | 5,598,277 | 2.07 |
+| **night** | 3,117 | | | | **2.34** |
+
+The games are 88% of it: 90 calls a game, and a call 586 tokens out (365
+of them thinking), 4,526 read and 2,004 written. Priced, a game call was
+739 µ$: 54% the cache write, 40% the output, 6% the reads.
+
+### What changed
+
+1. **The cache is written at the 5-minute TTL** (`56286bf`). The CLI
+   writes at the hour TTL unless told otherwise, at 2x the input rate
+   where the 5-minute write is 1.25x. Half of a decision's write is its
+   own prompt, which no later call reads, and a seat reads its system
+   prompt back within seconds. Every child now runs with
+   `FORCE_PROMPT_CACHING_5M=1` (`MTG_CLAUDE_CODE_CACHE_TTL=1h` keeps the
+   hour). On the baseline night's writes, $1.28 becomes $0.80.
+2. **A game seat answers in text** (`121cd89`). `--json-schema` is a tool
+   the model calls and a second request after it: about 575 tokens of
+   cache write and 100 of output a decision for the round trip, and each
+   kind of question a new tool ahead of the system prompt. The fields now
+   end the prompt (`Answer with only this JSON object: {"thoughts":
+   string, "action": integer 0 to 7}`), the fields every game asks the
+   same way are explained once in the system prompt, and the answer is
+   held to the full schema as before. On the kept decision eval (113
+   positions, two samples each against the Opus reference) text agreed on
+   184 of 208 settled positions and the schema on 187, no re-asks in
+   either; output fell 535 → 402 and writes 1,939 → 1,534 a decision, 20%
+   of its price. `MTG_CLAUDE_CODE_ANSWERS=schema` keeps the tool.
+3. **A list nothing may go in is not offered** (`0ab9837`). In text, the
+   attack question offered `planeswalker_attacks` with no planeswalker to
+   attack, a seat filled it, and was asked again.
+4. **A reply no answer can be read from is logged** as it came
+   (`UNREADABLE`, `0ff770c`): three of the new build's first re-asks were
+   an empty object, and the log could not say what the model wrote.
+
+### What was measured and not taken: picks in text
+
+The draft seat can answer in text too (`MTG_CLAUDE_CODE_DRAFT_ANSWERS=text`,
+`af93e27`), and does not by default. On the kept pick eval (156 positions,
+two samples each) text agreed with the reference on 200 of 278 settled
+picks where the schema agreed on 210, lower in both samples, and saved a
+pick 6% (538 against 574 µ$): a pick's price is reading the set's card
+reference, not the answer's round trip.
+
+### The night after
+
+The same eight seats, seed and packs on the build with 1 and 2 (built
+from 685c2a8 with them; the run was cut at the end of round 1 by its
+shell's time limit and carried on from its snapshot, `--resume`, which lost no
+game):
+
+| | calls, games | turns | calls / turn | output / call | thinking / call | read / call | write / call | µ$ / call | $ / game |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| before (hour TTL, schema) | 2,794 in 31 | 731 | 3.82 | 586 | 365 | 4,526 | 2,004 | 739 | 0.067 |
+| after (5 minutes, text) | 2,294 in 32 | 659 | 3.48 | 440 | 341 | 4,218 | 1,759 | 482 | 0.035 |
+
+A game call costs 35% less: the answer's own output fell from about 220
+tokens to 100 (the thinking hardly moved), the writes by an eighth, and
+what is written is priced at 1.25x, not 2x. A game cost half as much,
+but the two nights' decks differ — the same packs, drafted again — and
+the second night's games were three turns shorter; the per-call row is
+the one that holds. Re-asks: 7 in each night's game calls. On the new
+build three were a seat filling `planeswalker_attacks` with no
+planeswalker to attack (fixed after the run's build), three an empty
+object, and one a planned card that could not be planned.
+
+The night as a whole, at API rates:
+
+| | picks and builds | sideboarding | games | night |
+| --- | ---: | ---: | ---: | ---: |
+| before | 0.28 | — | 2.07 | **2.34** |
+| after | 0.21 | ≈ 0.09 | 1.11 | **≈ 1.41 (40% less)** |
+
+The picks are the same calls as before at the five-minute rate (the
+run's own count of them was lost with its first shell). Sideboarding is
+new this phase — a seat is asked between games — and the 26 of its calls
+the resumed run counted wrote 15,400 tokens each: the seat's whole
+prefix, the rules and the set's card reference, because a seat's last
+call was a game ago and five minutes had passed. So:
+
+5. **Sideboarding writes its cache for the hour** (`b143c20`).
+   One call can ask for the hour on its own command
+   (`MTG_CLAUDE_CODE_CACHE_TTL=1h` on the child); a draft seat's
+   sideboarding does. Its first call writes the prefix at 2x and the
+   seat's next ones, a game apart, read it at 0.1x: on the night's
+   counts about a third off what sideboarding cost, $0.03 of a night.
+   Measured on two calls with one 45 KB system prompt, 6.5 minutes apart:
+   the second read 18,836 tokens of what the first wrote at the hour and
+   wrote only the 4,604 after it.
+
+### What is left, and why it stays
+
+- **Thinking is three quarters of the output.** Haiku 5.5 thinks
+  adaptively, and neither `MAX_THINKING_TOKENS=0` nor `--effort low`
+  (which the seat already sends) stops it through the CLI: 341 tokens a
+  call, more than half of it in the seat's own main phase, where it plans
+  a turn. The Messages API seat can turn it off; the CLI seat cannot.
+- **The CLI's own context**, about 450 tokens a call written to the cache
+  (phase 4), is the CLI's, not the seat's: no flag removes it.
+- **The prompt** is 2.1 KB a decision on a real night (stub games
+  understate it at 1.2 KB), and on a late board about half of it is the
+  rules text of the opponent's cards in view. Each call is stateless on
+  purpose (`MTG_LLM_HISTORY=0`), so what the seat must know is restated;
+  a set reference in the cached system prompt instead, as the draft has,
+  would read 40,000 tokens a call to save a few hundred.
+- **The after-tournament calls** — eight debriefs on the drafting model
+  and one or two curator calls on Sonnet 5.5 — are about $0.05, 3% of a
+  night.
+
 ## How to re-measure
 
 ```bash
@@ -753,4 +895,14 @@ scripts/measure-draft-prompts.sh 1 2 3
 scripts/decision-eval/draft-replay.py --positions logs/draft-eval/positions-asked.jsonl \
   --out logs/draft-eval/res --name mine --model cc:claude-haiku-5-5
 scripts/decision-eval/compare.py --out logs/draft-eval/res --ref ref-opus-high base-haiku55 mine
+
+# Phase 5's night: the eight-seat draft and Swiss on plan quota (about two hours);
+# the draft loop runs the same thing nightly and keeps its numbers in reports/draft-loop/.
+MTG_DRAFT_POSITIONS=$PWD/logs/night/positions.jsonl ./target/release/mtg-draft-runner \
+  --model cc:claude-haiku-5-5 --players 8 --best-of 3 --seed 101 --save logs/night/save.json \
+  --log logs/night/draft.log     # USAGE lines per game call; the summary per phase
+# Phase 5's text-against-schema replays, from the kept results:
+MTG_CLAUDE_CODE_ANSWERS=schema scripts/decision-eval/replay.py --positions logs/eval/positions \
+  --out logs/eval/res --name mine-schema --p1 cc:claude-haiku-5-5
+scripts/decision-eval/compare.py --out logs/eval/res --ref ref-opus-high h55-schema h55-text mine-schema
 ```
