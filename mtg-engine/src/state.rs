@@ -4565,7 +4565,8 @@ pub struct TriggerOrderOption {
     pub power_toughness: Option<(i32, i32)>,
     /// What kind of trigger: "dies trigger", "upkeep trigger".
     pub kind: String,
-    /// What the ability does, in the card's own words (may be empty).
+    /// What the ability does, in the card's own words (may be empty), with
+    /// the creature it calls "that Vampire" named (#835).
     pub ability: String,
     /// What set it off: "Unruly Mob (#23) died", "the upkeep step began".
     pub cause: String,

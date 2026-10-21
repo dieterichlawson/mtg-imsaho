@@ -248,6 +248,62 @@ impl TriggerEvent {
             TriggerEvent::DelayedTokenExile { .. } => "delayed exile trigger",
         }
     }
+
+    /// The object this event happened to or was done by, other than the
+    /// trigger's own source — the one a watcher's text calls "that Vampire"
+    /// or "blocked creature" — with its name as last known, where the event
+    /// kept one (a token that died is gone from the game).
+    fn subject(&self) -> Option<(ObjectId, Option<&str>)> {
+        match self {
+            TriggerEvent::CreatureDied { dead } =>
+                Some((dead.id, Some(dead.name.as_str()).filter(|n| !n.is_empty()))),
+            TriggerEvent::CreatureEntered { entered: id, .. }
+            | TriggerEvent::AnyCombatDamageToPlayer { dealer: id, .. }
+            | TriggerEvent::AnyDamageToPlayer { dealer: id, .. }
+            | TriggerEvent::CombatDamageToCreature { damaged_creature: id, .. }
+            | TriggerEvent::SpellCast { spell_id: id, .. }
+            | TriggerEvent::Attacks { attacker: id, .. }
+            | TriggerEvent::CreatureAttacked { attacker: id, .. }
+            | TriggerEvent::Blocks { blocked_attacker: id }
+            | TriggerEvent::BecomesBlocked { blocker_id: id }
+            | TriggerEvent::CreatureCardMilled { milled_object: id, .. } => Some((*id, None)),
+            TriggerEvent::SelfDies | TriggerEvent::SelfEntered
+            | TriggerEvent::CombatDamageToPlayer { .. } | TriggerEvent::LeftBattlefield
+            | TriggerEvent::Upkeep | TriggerEvent::EndStep | TriggerEvent::EndCombat
+            | TriggerEvent::StateTriggered | TriggerEvent::DelayedTokenExile { .. } => None,
+        }
+    }
+}
+
+/// The spans of `description` that refer to the trigger's subject without
+/// naming it: "that creature", "that Vampire" (any capitalised subtype),
+/// "that card", "that spell", "blocked creature", "blocking creature",
+/// "milled creature". "That player" and "that much" are about something
+/// else and are left alone.
+fn subject_phrases(description: &str) -> Vec<std::ops::Range<usize>> {
+    let mut spans = Vec::new();
+    for lead in ["that ", "blocked ", "blocking ", "milled "] {
+        for (at, _) in description.match_indices(lead) {
+            if description[..at].chars().next_back().is_some_and(char::is_alphanumeric) {
+                continue; // inside a word
+            }
+            let start = at + lead.len();
+            let word: String = description[start..].chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '-')
+                .collect();
+            let refers = if lead == "that " {
+                matches!(word.as_str(), "creature" | "card" | "spell" | "permanent")
+                    || word.chars().next().is_some_and(char::is_uppercase)
+            } else {
+                word == "creature"
+            };
+            if refers {
+                spans.push(at..start + word.len());
+            }
+        }
+    }
+    spans.sort_by_key(|r| r.start);
+    spans
 }
 
 impl PendingTrigger {
@@ -276,7 +332,7 @@ impl PendingTrigger {
             source_name: self.source_name(registry, Some(state)),
             power_toughness,
             kind: self.event.phrase().to_string(),
-            ability: self.source.description.clone(),
+            ability: self.description(registry, Some(state)),
             cause: self.event.cause(state),
         }
     }
@@ -356,11 +412,49 @@ impl PendingTrigger {
             name = format!("{name} (#{})", self.source.id.0);
         }
         let phrase = self.event.phrase();
-        if self.source.description.is_empty() {
+        let description = self.description(registry, state);
+        if description.is_empty() {
             format!("{name}'s {phrase}")
         } else {
-            format!("{name}'s {phrase} ({})", self.source.description)
+            format!("{name}'s {phrase} ({description})")
         }
+    }
+
+    /// What this trigger does, with the object its text refers to only as
+    /// "that Vampire" or "blocked creature" named: "put a +1/+1 counter on
+    /// Stromkirk Noble (#40)".
+    ///
+    /// The text is the card's `TriggeredAbilityDef` description, which is
+    /// written once for every instance, so the instances a watcher puts on
+    /// the stack for different creatures read byte-identically — two Rakish
+    /// Heir triggers, one for the Heir and one for a Stromkirk Noble, were
+    /// two rows saying "put a +1/+1 counter on that Vampire" beside the
+    /// Heir's own id, and an LLM seat read them as "Rakish Heir gets two
+    /// counters" (#835). The event knows which creature it was. Without a
+    /// state to name it from, the phrase keeps its id: "that Vampire (#40)".
+    #[must_use]
+    pub fn description(&self, registry: &crate::cards::CardRegistry, state: Option<&crate::state::GameState>) -> String {
+        let text = &self.source.description;
+        let Some((id, known)) = self.event.subject() else { return text.clone() };
+        let spans = subject_phrases(text);
+        if spans.is_empty() {
+            return text.clone();
+        }
+        let name = known.map(str::to_string).or_else(|| state
+            .filter(|s| s.get_object(id).is_some())
+            .map(|s| s.name_of(id, registry)));
+        let mut out = String::with_capacity(text.len() + 16);
+        let mut at = 0;
+        for span in spans {
+            out.push_str(&text[at..span.start]);
+            match &name {
+                Some(n) => out.push_str(&format!("{n} (#{})", id.0)),
+                None => out.push_str(&format!("{} (#{})", &text[span.clone()], id.0)),
+            }
+            at = span.end;
+        }
+        out.push_str(&text[at..]);
+        out
     }
 }
 

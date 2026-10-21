@@ -1065,3 +1065,93 @@ fn the_activated_ability_asking_its_resolution_question_is_on_the_views_stack() 
     assert!(view.stack[0].name.contains("Civilized Scholar"), "{}", view.stack[0].name);
     assert!(view.stack[0].resolving, "and it is marked as resolving");
 }
+
+/// One watcher's triggers for different creatures name each creature
+/// (#835). Rakish Heir's text is "put a +1/+1 counter on that Vampire", and
+/// with the Heir and a Stromkirk Noble both connecting, the stack held two
+/// Heir triggers whose rows were byte-identical beside the Heir's own id:
+/// an LLM seat read them as "Rakish Heir gets two counters", when one goes
+/// on each Vampire.
+#[test]
+fn a_watchers_triggers_for_different_creatures_name_each_creature() {
+    use mtg_engine::events::{DamageTarget, GameEvent};
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+    let heir = named_permanent(&mut state, &reg, "Rakish Heir", P0);
+    let noble = named_permanent(&mut state, &reg, "Stromkirk Noble", P0);
+    for dealer in [heir, noble] {
+        state.events.push(GameEvent::CombatDamageDealt {
+            source: dealer, target: DamageTarget::Player(P1), amount: 2 });
+    }
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+    // The ordering prompt's rows already differ by what each is for.
+    let Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+        choice: mtg_engine::state::ResolutionChoiceKind::ChooseTriggerOrder { options, details, .. }, ..
+    }) = &state.awaiting_action else {
+        panic!("test precondition: three triggers, two kinds, are put in order: {:?}", state.awaiting_action);
+    };
+    let heirs: Vec<&String> = options.iter().filter(|o| o.starts_with("Rakish Heir's")).collect();
+    assert_eq!(heirs.len(), 2, "{options:?}");
+    assert_ne!(heirs[0], heirs[1], "two Heir triggers for two Vampires are two different rows: {options:?}");
+    assert!(details.iter().any(|d| d.ability == format!("put a +1/+1 counter on Stromkirk Noble (#{})", noble.0)),
+        "{details:?}");
+    order_triggers_front_first(&mut state, &reg);
+    let view = mtg_engine::view::GameView::for_player(&state, P0, &reg);
+    let rows: Vec<&str> = view.stack.iter().map(|s| s.name.as_str())
+        .filter(|n| n.starts_with("Rakish Heir's")).collect();
+    assert_eq!(rows.len(), 2, "{:?}", view.stack.iter().map(|s| &s.name).collect::<Vec<_>>());
+    assert!(rows.iter().any(|r| r.contains(&format!("put a +1/+1 counter on Rakish Heir (#{})", heir.0))), "{rows:?}");
+    assert!(rows.iter().any(|r| r.contains(&format!("put a +1/+1 counter on Stromkirk Noble (#{})", noble.0))), "{rows:?}");
+    assert!(rows.iter().all(|r| !r.contains("that Vampire")), "{rows:?}");
+}
+
+/// Every watcher whose text refers to the creature its event was about —
+/// "that creature", "that Vampire", "blocked creature", "milled creature" —
+/// names it on the stack, across the whole card pool (#835).
+#[test]
+fn every_watchers_that_creature_is_named_on_the_stack() {
+    use mtg_engine::cards::TriggerKind as K;
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let subject = named_permanent(&mut state, &reg, "Grizzly Bears", P1);
+    let tag = format!("Grizzly Bears (#{})", subject.0);
+    let mut names: Vec<String> = reg.all_names().iter().map(|s| (*s).to_string()).collect();
+    names.sort();
+    let mut offenders = Vec::new();
+    let mut checked = 0;
+    for name in names {
+        let card_id = reg.get_id_by_name(&name).unwrap();
+        let Some(data) = reg.card_data(card_id) else { continue };
+        for t in data.triggered_abilities {
+            let event = match t.kind {
+                K::AnyCreatureDies => TriggerEvent::CreatureDied { dead: mtg_engine::triggers::DeadCreature {
+                    id: subject, name: "Grizzly Bears".into(), controller: P1, damaged_by: vec![],
+                    toughness: 2, is_token: false, subtypes: vec!["Bear".into()] } },
+                K::AnyCreatureEnters => TriggerEvent::CreatureEntered { entered: subject, entered_controller: P1 },
+                K::AnyCombatDamageToPlayer =>
+                    TriggerEvent::AnyCombatDamageToPlayer { dealer: subject, damaged_player: P0, amount: 2 },
+                K::AnyDamageToPlayer => TriggerEvent::AnyDamageToPlayer { dealer: subject, damaged_player: P0, amount: 2 },
+                K::DealsCombatDamageToCreature =>
+                    TriggerEvent::CombatDamageToCreature { damaged_creature: subject, amount: 2 },
+                K::Blocks => TriggerEvent::Blocks { blocked_attacker: subject },
+                K::BecomesBlocked => TriggerEvent::BecomesBlocked { blocker_id: subject },
+                K::AnyCreatureAttacks => TriggerEvent::CreatureAttacked { attacker: subject, attacker_controller: P1 },
+                K::CreatureCardMilled => TriggerEvent::CreatureCardMilled { milled_object: subject, milled_player: P1 },
+                _ => continue,
+            };
+            let refers = ["that creature", "that Vampire", "that Human", "that Zombie", "that Spirit",
+                          "blocked creature", "blocking creature", "milled creature"]
+                .iter().any(|p| t.description.contains(p));
+            if !refers { continue; }
+            checked += 1;
+            let trigger = PendingTrigger::new(
+                TriggerSource::new(subject, card_id, P0, t.description.clone()), event);
+            let row = trigger.display_name_with_state(&reg, Some(&state));
+            if !row.contains(&tag) {
+                offenders.push(format!("{name}: {row}"));
+            }
+        }
+    }
+    assert!(checked >= 6, "the sweep found the watchers it is about ({checked})");
+    assert!(offenders.is_empty(), "a stack row that does not say which creature:\n{}", offenders.join("\n"));
+}

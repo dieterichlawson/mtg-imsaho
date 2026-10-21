@@ -9199,6 +9199,39 @@ pub(crate) mod tests {
         assert!(body.contains("This turn: spells cast — you 0, opp 2; a creature died\n"), "{body}");
     }
 
+    /// Issue #835: two of Rakish Heir's triggers, one for the Heir and one
+    /// for a Stromkirk Noble, were one Stack line — "put a +1/+1 counter on
+    /// that Vampire (#39) (your) (×2)" beside the Heir's id — and the seat
+    /// read it as "Rakish Heir gets two counters". Each line names its
+    /// Vampire.
+    #[test]
+    fn a_watchers_triggers_on_the_stack_say_which_creature_each_is_for() {
+        use mtg_engine::triggers::{PendingTrigger, TriggerEvent, TriggerSource};
+        let (mut state, registry) = view_for_contract_test();
+        let you = PlayerId(0);
+        let mut put = |name: &str| {
+            let card_id = registry.get_id_by_name(name).unwrap();
+            let data = registry.card_data(card_id).unwrap();
+            let id = state.create_object(card_id, you, mtg_engine::types::Zone::Battlefield, data.power, data.toughness);
+            state.get_object_mut(id).unwrap().name = name.into();
+            (id, card_id)
+        };
+        let (heir, heir_card) = put("Rakish Heir");
+        let (noble, _) = put("Stromkirk Noble");
+        let text = registry.card_data(heir_card).unwrap().triggered_abilities[0].description.clone();
+        for dealer in [heir, noble] {
+            state.stack.push(mtg_engine::state::StackEntry::Trigger(PendingTrigger::new(
+                TriggerSource::new(heir, heir_card, you, text.clone()),
+                TriggerEvent::AnyCombatDamageToPlayer { dealer, damaged_player: PlayerId(1), amount: 2 })));
+        }
+        let view = GameView::for_player(&state, you, &registry);
+        let body = LlmPlayer::format_state_body(&view);
+        let stack = &body[body.find("Stack:\n").expect("a stack section")..];
+        assert!(stack.contains(&format!("put a +1/+1 counter on Rakish Heir (#{})", heir.0)), "{stack}");
+        assert!(stack.contains(&format!("put a +1/+1 counter on Stromkirk Noble (#{})", noble.0)), "{stack}");
+        assert!(!stack.contains("that Vampire") && !stack.contains("(×2)"), "{stack}");
+    }
+
     /// Issue #828: exile was the one public zone the prompt only counted
     /// ("3exile"). A seat holding Runic Repetition chose whether to cast it
     /// without seeing which of its cards it could return, and a target
