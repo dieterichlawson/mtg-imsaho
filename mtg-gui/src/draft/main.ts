@@ -9,9 +9,9 @@
 // selected but not picked, and the deck they are building.
 
 import { loadManifest, fontsReady } from "../assets.js";
-import { fromView, problem, sameDeck, settle, toMessage, type SentDeck } from "./deck.js";
+import { fromView, problem, sameDeck, settle, toMessage, toSideboard, type SentDeck } from "./deck.js";
 import { packColumns, render } from "./render.js";
-import type { ClientMessage, Deck, DraftView, Refused, ServerMessage } from "./protocol.js";
+import type { Between, ClientMessage, Deck, DraftView, Match, Refused, ServerMessage } from "./protocol.js";
 import { initialState, type Actions, type PageState, type Sent } from "./state.js";
 
 const root = document.getElementById("app") as HTMLElement;
@@ -153,7 +153,10 @@ function onView(view: DraftView): void {
   if (state.selected !== null && (!pack || !pack.cards.some(c => c.index === state.selected))) state.selected = null;
   // The countdown: the pick timer while a pack is in front, else the
   // build timer while the deck is not yet final.
-  const buildLeft = view.phase === "building" && view.build_deadline_ms != null ? view.build_deadline_ms : null;
+  // Between games, the sideboard timer.
+  const between = betweenOf(view);
+  const buildLeft = view.phase === "building" && view.build_deadline_ms != null ? view.build_deadline_ms
+    : between && !between.b.ready && between.b.deadline_ms !== null ? between.b.deadline_ms : null;
   state.deadlineAt = pack && pack.deadline_ms !== null ? performance.now() + pack.deadline_ms
     : buildLeft !== null ? performance.now() + buildLeft : null;
 
@@ -180,9 +183,37 @@ function onView(view: DraftView): void {
     deckInFlight = settled.inFlight;
     if (settled.reset) state.deck = fromView(view.deck, view.pool);
     if (state.cursor !== null && state.cursor >= view.pool.length) state.cursor = null;
+    state.between = null;
+  } else if (between) {
+    // Between games the edit starts from the deck played last game, once
+    // per game: the server takes a whole deck or refuses it, so its record
+    // is the last legal deck this page sent, never a click behind it.
+    const key = `${between.m.round}-${between.b.game}`;
+    if (state.between !== key) {
+      state.between = key;
+      state.deck = between.b.sideboarding ? fromView(between.b.deck, view.pool) : null;
+      state.cursor = null;
+      state.readySent = false;
+    }
+    deckInFlight = [];
   } else {
-    state.deck = null; state.cursor = null; state.readySent = false; deckInFlight = [];
+    state.deck = null; state.cursor = null; state.readySent = false; state.between = null; deckInFlight = [];
   }
+}
+
+/** The match of this seat's that is between games, if one is. */
+function betweenOf(view: DraftView | null): { m: Match; b: Between } | null {
+  const m = view ? view.matches.find(x => x.between) : undefined;
+  return m && m.between ? { m, b: m.between } : null;
+}
+
+/** Send the deck being edited: while building every edit, short or not,
+ *  which the server keeps as work in progress; between games only a deck
+ *  that can be played, which is all the server takes there. */
+function sendEdit(view: DraftView): void {
+  if (!state.deck) return;
+  if (state.between === null) send(toMessage(state.deck, view.pool));
+  else if (!problem(state.deck, view.pool)) send(toSideboard(state.deck, view.pool));
 }
 
 /** The `deck` messages this page sent that no view has recorded yet,
@@ -268,7 +299,7 @@ const actions: Actions = {
     }
     state.deck.main[poolIndex] = !state.deck.main[poolIndex];
     state.cursor = poolIndex;
-    send(toMessage(state.deck, view.pool));
+    sendEdit(view);
     draw();
   },
   setLand(name, n) {
@@ -276,7 +307,7 @@ const actions: Actions = {
     if (!view || !state.deck || state.readySent) return;
     state.refusal = null; state.hint = null;
     state.deck.lands[name] = Math.max(0, Math.floor(n));
-    send(toMessage(state.deck, view.pool));
+    sendEdit(view);
     draw();
   },
   ready() {
@@ -287,6 +318,27 @@ const actions: Actions = {
     state.refusal = null; state.hint = null; state.notice = null;
     send(toMessage(state.deck, view.pool));
     send({ type: "ready" });
+    state.readySent = true;
+    draw();
+  },
+  playDraw(play) {
+    const between = betweenOf(state.view);
+    if (!between || !between.b.you_choose || between.b.ready || state.readySent) return;
+    state.refusal = null; state.hint = null;
+    send({ type: "play_draw", play });
+    draw();
+  },
+  sideboardReady() {
+    const view = state.view;
+    const between = betweenOf(view);
+    if (!view || !between || between.b.ready || state.readySent) return;
+    if (between.b.sideboarding && state.deck) {
+      const why = problem(state.deck, view.pool);
+      if (why) { state.hint = why; draw(); return; }
+      send(toSideboard(state.deck, view.pool));
+    }
+    state.refusal = null; state.hint = null; state.notice = null;
+    send({ type: "sideboard_ready" });
     state.readySent = true;
     draw();
   },
@@ -319,7 +371,7 @@ window.addEventListener("keydown", (ev) => {
   const view = state.view;
   if (!view) return;
   if (view.phase === "drafting") draftingKey(ev, view);
-  else if (view.phase === "building") buildingKey(ev, view);
+  else if (view.phase === "building" || (state.between !== null && state.deck)) buildingKey(ev, view);
   else if (ev.key === "Escape" && state.refusal) { state.refusal = null; ev.preventDefault(); draw(); }
   else if (ev.key === "Escape" && state.notice) { state.notice = null; ev.preventDefault(); draw(); }
 });

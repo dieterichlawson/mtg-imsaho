@@ -43,6 +43,12 @@ export function toMessage(edit, pool) {
             lands[b] = edit.lands[b];
     return { type: "deck", main, lands, sideboard };
 }
+/** The edit as the `sideboard` message between games carries it: the main
+ *  deck and the lands; the sideboard is the rest of the pool. */
+export function toSideboard(edit, pool) {
+    const deck = toMessage(edit, pool);
+    return { type: "sideboard", main: deck.main, lands: deck.lands };
+}
 export function counts(edit) {
     const spells = edit.main.filter(Boolean).length;
     const lands = BASICS.reduce((n, b) => n + (edit.lands[b] || 0), 0);

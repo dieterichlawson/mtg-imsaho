@@ -50,6 +50,13 @@ export function toMessage(edit: DeckEdit, pool: CardInfo[]): ClientMessage {
   return { type: "deck", main, lands, sideboard };
 }
 
+/** The edit as the `sideboard` message between games carries it: the main
+ *  deck and the lands; the sideboard is the rest of the pool. */
+export function toSideboard(edit: DeckEdit, pool: CardInfo[]): ClientMessage {
+  const deck = toMessage(edit, pool) as { main: string[]; lands: Record<string, number> };
+  return { type: "sideboard", main: deck.main, lands: deck.lands };
+}
+
 export interface Counts { spells: number; lands: number; total: number }
 
 export function counts(edit: DeckEdit): Counts {

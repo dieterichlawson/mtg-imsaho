@@ -223,21 +223,17 @@ function drafting(view, state, actions) {
     side.append(h("div", { class: "pool" }, h("h3", { text: `Pool (${view.pool.length})` }), poolGroups(view.pool)));
     return h("section", { class: "phase phase-drafting" }, status, h("div", { class: "draft-layout" }, grid, side));
 }
-function building(view, state, actions) {
-    const me = view.seats.find(s => s.seat === view.seat);
-    const ready = (me && me.status === "ready") || state.readySent;
-    const edit = state.deck;
-    const list = h("div", { class: "checklist" });
-    const panel = h("aside", { class: "deckpanel" });
-    if (!edit) {
-        list.append(h("p", { class: "muted", text: "Waiting for the pool." }));
-        return h("section", { class: "phase phase-building" }, h("div", { class: "build-layout" }, list, panel));
-    }
+/**
+ * The pool as rows, by colour, each in the main deck or the sideboard; a
+ * click moves one. The deck build's checklist, and the sideboard's
+ * between games. `ready`: the deck is final, nothing moves.
+ */
+function poolRows(list, pool, edit, state, actions, ready) {
     const c = counts(edit);
     // The count where the rows are, on a phone: the deck panel's own count
     // line is under the whole pool there, 1,500px from the first row (#792).
     list.append(h("div", { class: "phone-count", id: "phone-count", text: `${c.spells} spells + ${c.lands} lands = ${c.total}` }));
-    const groups = groupByColor(view.pool.map((c, i) => ({ ...c, poolIndex: i })));
+    const groups = groupByColor(pool.map((c, i) => ({ ...c, poolIndex: i })));
     for (const g of groups) {
         list.append(h("h4", { class: `group-head color-${g.key}` }, `${g.label} (${g.cards.length})`));
         for (const c of g.cards) {
@@ -257,6 +253,28 @@ function building(view, state, actions) {
             }
         }
     }
+}
+/** A stepper per basic land. */
+function landSteppers(edit, ready, actions) {
+    const landsEl = h("div", { class: "lands" });
+    for (const b of BASICS) {
+        const n = edit.lands[b] || 0;
+        landsEl.append(h("div", { class: "land", "data-land": b }, h("button", { type: "button", class: "dec", disabled: ready || n === 0, onclick: () => actions.setLand(b, n - 1), text: "−" }), h("span", { class: "n", text: String(n) }), h("button", { type: "button", class: "inc", disabled: ready, onclick: () => actions.setLand(b, n + 1), text: "+" }), h("span", { class: `land-name color-${"WUBRG"[BASICS.indexOf(b)]}`, text: b })));
+    }
+    return landsEl;
+}
+function building(view, state, actions) {
+    const me = view.seats.find(s => s.seat === view.seat);
+    const ready = (me && me.status === "ready") || state.readySent;
+    const edit = state.deck;
+    const list = h("div", { class: "checklist" });
+    const panel = h("aside", { class: "deckpanel" });
+    if (!edit) {
+        list.append(h("p", { class: "muted", text: "Waiting for the pool." }));
+        return h("section", { class: "phase phase-building" }, h("div", { class: "build-layout" }, list, panel));
+    }
+    const c = counts(edit);
+    poolRows(list, view.pool, edit, state, actions, ready);
     const why = problem(edit, view.pool);
     const s = summary(edit, view.pool);
     panel.append(h("h3", { text: ready ? "Deck — ready" : "Deck" }));
@@ -264,12 +282,7 @@ function building(view, state, actions) {
     if (!ready && view.build_deadline_ms != null) {
         panel.append(h("div", { class: "build-timer" }, h("span", { id: "countdown", class: "countdown" }), h("span", { class: "muted", text: " to build; then the deck as you last sent it is played (basics fill a short one, up to 18 lands), or else the table builds one" })));
     }
-    const landsEl = h("div", { class: "lands" });
-    for (const b of BASICS) {
-        const n = edit.lands[b] || 0;
-        landsEl.append(h("div", { class: "land", "data-land": b }, h("button", { type: "button", class: "dec", disabled: ready || n === 0, onclick: () => actions.setLand(b, n - 1), text: "−" }), h("span", { class: "n", text: String(n) }), h("button", { type: "button", class: "inc", disabled: ready, onclick: () => actions.setLand(b, n + 1), text: "+" }), h("span", { class: `land-name color-${"WUBRG"[BASICS.indexOf(b)]}`, text: b })));
-    }
-    panel.append(landsEl);
+    panel.append(landSteppers(edit, ready, actions));
     const colorsEl = h("div", { class: "colors-summary" });
     for (const { key, n } of s.colors)
         colorsEl.append(h("span", { class: `swatch color-${key}`, text: `${COLOR_NAMES[key]} ${n}` }));
@@ -304,7 +317,72 @@ function building(view, state, actions) {
 export function ownByes(view) {
     return (view.pairings || []).filter(p => p.a === view.seat && p.b === null).map(p => p.round);
 }
-function playing(view, done) {
+/** "you lead 1-0", "your opponent leads 1-0", "1-1": the match so far. */
+export function matchScore(view, m) {
+    const mine = m.games.filter(g => g.winner === view.seat).length;
+    const theirs = m.games.filter(g => g.winner === m.opponent).length;
+    if (mine === theirs)
+        return `${mine}-${theirs}`;
+    return mine > theirs ? `you lead ${mine}-${theirs}` : `your opponent leads ${theirs}-${mine}`;
+}
+/**
+ * Before a game of a match: the choice to play or draw, for the seat that
+ * has it (the coin flip's winner for game 1, the last game's loser after,
+ * MTR 2.2), and from game 2 the deck, sideboarded from the pool (2.4),
+ * beside the cards the opponent has shown. The next game starts when both
+ * seats are ready, or the host's sideboard timer runs out.
+ */
+function betweenPanel(view, m, b, state, actions) {
+    const opponent = seatName(view, m.opponent);
+    const ready = b.ready || state.readySent;
+    const parts = [
+        h("h3", { id: "between-head" }, ...withRecords(`Before game ${b.game} vs ${opponent}${b.game > 1 ? ` — ${matchScore(view, m)}` : ""}`)),
+    ];
+    if (!ready && b.deadline_ms !== null) {
+        parts.push(h("div", { class: "build-timer" }, h("span", { id: "countdown", class: "countdown" }), h("span", { class: "muted", text: " — then the game starts with the deck as it stands" })));
+    }
+    if (b.you_choose) {
+        // The last game's loser chooses; after a draw, whoever chose it (MTR 2.2).
+        const last = m.games[m.games.length - 1];
+        const why = b.game === 1 ? "You won the coin flip"
+            : last && last.winner === m.opponent ? `You lost game ${b.game - 1}` : `Game ${b.game - 1} was a draw, and the choice is still yours`;
+        const chosen = b.play_first;
+        parts.push(h("div", { class: "play-draw", id: "play-draw" }, h("span", { text: `${why}: play first or draw first? ` }), h("button", { type: "button", id: "play-first", class: chosen === true ? "primary" : "", disabled: ready, onclick: () => actions.playDraw(true) }, "Play first"), " ", h("button", { type: "button", id: "draw-first", class: chosen === false ? "primary" : "", disabled: ready, onclick: () => actions.playDraw(false) }, "Draw first"), h("span", { class: "muted", text: chosen === null ? " (not chosen yet: you play first)" : chosen ? " — you play first" : " — you draw first" })));
+    }
+    else {
+        parts.push(h("p", { class: "muted", id: "play-draw", text: b.game === 1
+                ? `${opponent} won the coin flip and chooses whether to play or draw.`
+                : `${opponent} ${m.games.length && m.games[m.games.length - 1].winner === view.seat ? `lost game ${b.game - 1}` : "chose last game"} and chooses whether to play or draw.` }));
+    }
+    const edit = state.deck;
+    const why = b.sideboarding && edit ? problem(edit, view.pool) : null;
+    // Ready, beside the deck when there is one (the pool is long), else
+    // under the choice.
+    const readyEl = ready
+        ? h("div", { class: "ready-line", id: "ready-line", text: b.opponent_ready
+                ? `Ready — game ${b.game} is starting.` : `Ready — waiting for ${opponent}.` })
+        : h("div", {}, h("button", { type: "button", class: "primary", id: "sideboard-ready", disabled: !!why, title: why ?? `Start game ${b.game}`, onclick: () => actions.sideboardReady() }, `Ready for game ${b.game}`), h("div", { class: "ready-reason", id: "ready-reason", text: why ?? (b.opponent_ready ? `${opponent} is ready.` : `${opponent} is still deciding.`) }));
+    if (!(b.sideboarding && edit))
+        parts.push(readyEl);
+    if (b.sideboarding && edit) {
+        const c = counts(edit);
+        const list = h("div", { class: "checklist" });
+        poolRows(list, view.pool, edit, state, actions, ready);
+        const side = h("aside", { class: "deckpanel" }, h("div", { class: "count-line", id: "count-line", text: `${c.spells} spells + ${c.lands} lands = ${c.total}` }), landSteppers(edit, ready, actions), readyEl);
+        if (b.opponent_showed.length) {
+            side.append(h("div", { class: "summary", id: "opponent-showed" }, h("div", { class: "summary-title", text: `${opponent} has shown (${b.opponent_showed.length})` }), h("ul", { class: "pool-list" }, ...b.opponent_showed.map(card => {
+                const p = parseLine(card.name, card.line);
+                return h("li", { title: card.text }, pips(p.cost), " ", h("span", { class: "pool-name", text: card.name }));
+            }))));
+        }
+        const shown = state.cursor !== null ? view.pool[state.cursor] : undefined;
+        if (shown)
+            side.append(h("div", { class: "detail panel-detail" }, cardDetail(shown)));
+        parts.push(h("p", { class: "muted", text: "Sideboarding: move cards between your deck and your sideboard; any deck of the pool with 40 or more cards." }), h("div", { class: "build-layout" }, list, side));
+    }
+    return h("section", { class: "between", id: "between" }, ...parts);
+}
+function playing(view, done, state, actions) {
     const mine = view.matches.filter(m => m.status !== "done");
     const me = view.seats.find(s => s.seat === view.seat);
     const byes = ownByes(view);
@@ -316,6 +394,9 @@ function playing(view, done) {
         sections.push(h("div", { class: "waiting" }, mine.length === 0
             ? (byes.includes(latest) ? `You have a bye in round ${latest}. Waiting for the others to finish their matches.` : "Waiting for the others to finish their matches.")
             : me && me.status === "waiting" ? "Waiting for your opponent." : "Your match is on."));
+        const m = view.matches.find(x => x.between);
+        if (m && m.between)
+            sections.push(betweenPanel(view, m, m.between, state, actions));
     }
     const rows = [
         ...view.matches.map(m => ({ round: m.round, el: matchRow(view, m) })),
@@ -363,10 +444,10 @@ export function render(root, state, actions) {
                 parts.push(building(view, state, actions));
                 break;
             case "playing":
-                parts.push(playing(view, false));
+                parts.push(playing(view, false, state, actions));
                 break;
             case "done":
-                parts.push(playing(view, true));
+                parts.push(playing(view, true, state, actions));
                 break;
             default: parts.push(h("section", { class: "phase" }, h("p", { text: `Unknown phase ${String(view.phase)}; here is what the server sent.` }), h("pre", { text: JSON.stringify(view, null, 1) })));
         }

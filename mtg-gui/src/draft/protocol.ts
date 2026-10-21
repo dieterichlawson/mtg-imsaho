@@ -93,6 +93,35 @@ export interface Match {
   status: MatchStatus;
   games: GameResult[];
   result: string | null;
+  /** Between two games of this match, or before the first for the coin
+   *  flip's winner: what this seat may do before the next game. */
+  between?: Between | null;
+}
+
+/**
+ * The time before a game of a match (MTR 2.2, 2.4): the seat that chooses
+ * to play or draw (the coin flip's winner for game 1, the last game's
+ * loser after), and from game 2 the deck, sideboarded from the pool. The
+ * next game starts when both seats are ready, or the host's sideboard
+ * timer runs out.
+ */
+export interface Between {
+  /** The game about to be played. */
+  game: number;
+  /** The deck may change: not before game 1. */
+  sideboarding: boolean;
+  /** This seat chooses whether to play or draw. */
+  you_choose: boolean;
+  /** What it chose, once it has; null before (play first, if never). */
+  play_first: boolean | null;
+  ready: boolean;
+  opponent_ready: boolean;
+  /** Milliseconds left on the sideboard timer, or null without one. */
+  deadline_ms: number | null;
+  /** The deck for the next game as it stands. */
+  deck: Deck;
+  /** The cards the opponent has shown in the match so far. */
+  opponent_showed: CardInfo[];
 }
 
 /** Every match of the tournament, for everybody: `b` null is a bye. */
@@ -170,7 +199,10 @@ export type ClientMessage =
   | { type: "pick"; pack_id: number; index: number }
   | { type: "deck"; main: string[]; lands: Record<string, number>; sideboard: string[] }
   | { type: "ready" }
-  | { type: "name"; name: string };
+  | { type: "name"; name: string }
+  | { type: "sideboard"; main: string[]; lands: Record<string, number> }
+  | { type: "play_draw"; play: boolean }
+  | { type: "sideboard_ready" };
 
 // ------------------------------------------------------------ the table
 
@@ -236,6 +268,12 @@ export const SHAPES: Record<string, Shape> = {
   match: {
     round: "number", opponent: "number", url: "string|null",
     status: "enum:waiting|playing|done", games: "array:game", result: "string|null",
+    between: "between|null?",
+  },
+  between: {
+    game: "number", sideboarding: "boolean", you_choose: "boolean", play_first: "boolean|null",
+    ready: "boolean", opponent_ready: "boolean", deadline_ms: "number|null",
+    deck: "deck", opponent_showed: "array:card",
   },
   pairing: {
     round: "number", a: "number", b: "number|null",

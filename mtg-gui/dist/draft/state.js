@@ -5,7 +5,7 @@ export function initialState() {
         ws: null, connected: false, reconnects: 0, retryAt: null, rejected: false, closed: null,
         seat: null, key: null, view: null,
         selected: null, hover: null, pendingPick: null,
-        deck: null, cursor: null, readySent: false,
+        deck: null, cursor: null, readySent: false, between: null,
         refusal: null, deadlineAt: null, hint: null, notice: null,
     };
 }

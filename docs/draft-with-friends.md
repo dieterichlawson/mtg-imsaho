@@ -70,6 +70,7 @@ address (or say to replace `0.0.0.0` with it when that cannot be found).
 | `--guide <path>` | none | a draft guide prepended to every AI seat's prompt |
 | `--pick-seconds <N>` | none | pick for a human who has not in N seconds (1 to 86400) |
 | `--build-seconds <N>` | none | after N seconds building, a human's deck is final: the one they last sent (basics fill a short one, up to 18 lands), or else the table's (1 to 86400) |
+| `--sideboard-seconds <N>` | `120` | between games, a person has N seconds to sideboard and, when it is theirs, to choose play or draw; then the deck stands and the chooser plays (1 to 86400) |
 | `--log <path>` | `logs/draft-with-friends/draft.log` | the draft log; `decks/` and `games/` beside it |
 | `--save <path>` | `table.save.json` beside the log | the table's snapshot, rewritten after every change |
 | `--resume <path>` | none | carry on from a snapshot (below) |
@@ -142,7 +143,11 @@ drafting, the pool's while building); the server's refusal (`Deck has 39 cards (
 printed as it comes. When a match is paired it prints `Round 1 vs seat 3:
 playing — open http://192.168.1.20:8803/`; a round you sit out is
 `Round 2: a bye — counted as a match won`, and the seats show you as
-`bye` (on the page too). `name <x>`, `help`, `quit`.
+`bye` (on the page too). Between games it prints `Before game 2 vs seat 3
+(they lead 1-0):` with who chooses, what the opponent has shown and your
+pool: `play` or `draw` when the choice is yours, the same `add`, `drop` and
+`lands` to sideboard (a deck is sent once it has 40 cards), and `ready`.
+`name <x>`, `help`, `quit`.
 
 ## Draft, build, play
 
@@ -177,6 +182,24 @@ the start; a finished match's port is let go) and the link is shown on
 your page and in the client; a match between two people is two pages on two ports; an
 AI-vs-AI match plays on its own. Results and standings appear as they
 come; the next round is paired when the round is over.
+
+### Between games
+
+Matches are played as a tournament plays them (MTR 2.2 and 2.4). Before
+game 1 a coin flip's winner chooses to play or draw; before each later
+game the last game's loser chooses (after a drawn game, whoever chose
+before), and both players may sideboard: any deck of their pool with 40 or
+more cards, starting from the deck they played last game. The draft page
+shows a panel for it under "Your match is on" — the choice, the pool as
+rows to move between deck and sideboard, the land steppers, the cards the
+opponent has shown in the match, the clock, and "Ready for game N" — and
+the game page says "Before game N: ... on your draft page" to the seats
+with something to do. The next game starts when both are ready, or when
+`--sideboard-seconds` runs out: the decks stand as they are, and a chooser
+who never chose plays. An AI seat answers in one call (its notes, the
+score and what its opponent showed); a seat the table plays for keeps its
+deck and plays. The host's terminal says who sideboarded and who chose
+what, and the log has each AI seat's prompt and answer.
 
 ## The log and the files
 

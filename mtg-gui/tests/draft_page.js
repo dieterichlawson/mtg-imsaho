@@ -521,6 +521,66 @@ async function main() {
         check(((await text(".standings tbody tr.me") || "").includes("you")), `${tag}: final standings mark this seat`);
       }
 
+      // Between games of a match (MTR 2.2, 2.4): the server's fixture has
+      // seat 0 sideboarding before game 2, its opponent choosing.
+      const between = byName["server-playing_sideboard"];
+      if (between) {
+        const b = between.matches.find(m => m.between).between;
+        await stage(byName.done);
+        await stage(between);
+        await page.waitForTimeout(50);
+        check(((await text("#between-head")) || "").startsWith("Before game 2 vs"), `${tag}: the panel says which game is next (${await text("#between-head")})`);
+        check(((await text("#play-draw")) || "").includes("chooses whether to play or draw"), `${tag}: the opponent's choice is said as theirs`);
+        check(((await text("#opponent-showed")) || "").includes(b.opponent_showed[0].name), `${tag}: what the opponent showed is listed`);
+        const rows = await page.$$eval("#between .row", r => r.length);
+        check(rows === between.pool.length, `${tag}: every pool card is a row to sideboard with (${rows})`);
+        const inMain = await page.$$eval("#between .row.in-main", r => r.length);
+        check(inMain === b.deck.main.length, `${tag}: the deck played last game is the one marked (${inMain} of ${b.deck.main.length})`);
+        const before = (await sent()).length;
+        // One card out: 39, which the server would refuse, so nothing is sent
+        // and Ready says why; a basic in for it is a deck again, and is sent.
+        await page.click("#between .row.in-main");
+        if (viewport.width < 700) await page.click("#between .row.in-main.cursor");
+        await page.waitForTimeout(50);
+        const total = b.deck.main.length + Object.values(b.deck.lands).reduce((x, y) => x + y, 0);
+        if (total === 40) {
+          check((await sent()).length === before, `${tag}: a 39-card deck is not sent between games`);
+          check(await page.$eval("#sideboard-ready", el => el.disabled), `${tag}: and Ready waits for 40 (${await text("#ready-reason")})`);
+        }
+        await page.click('#between [data-land="Plains"] > .inc');
+        await page.waitForTimeout(50);
+        const sb = await lastSent();
+        check(sb && sb.type === "sideboard" && sb.main.length === b.deck.main.length - 1 && !("sideboard" in sb),
+          `${tag}: a playable deck is sent as a sideboard message (${JSON.stringify(sb && { type: sb.type, main: sb.main.length, lands: sb.lands })})`);
+        await page.click("#sideboard-ready");
+        await page.waitForTimeout(50);
+        const last2 = (await sent()).slice(-2).map(m => m.type);
+        check(last2.join(",") === "sideboard,sideboard_ready", `${tag}: Ready sends the deck and then says so (${last2})`);
+        check(((await text("#ready-line")) || "").includes("game 2 is starting"), `${tag}: the panel says the game is starting (${await text("#ready-line")})`);
+        check(await page.$eval("#between .row", el => el.disabled), `${tag}: and nothing moves after Ready`);
+
+        // Before game 1, for the flip's winner: the choice and no deck.
+        const flip = JSON.parse(JSON.stringify(between));
+        Object.assign(flip.matches.find(m => m.between).between, {
+          game: 1, sideboarding: false, you_choose: true, play_first: null, ready: false, opponent_ready: true, deadline_ms: 30000, opponent_showed: [],
+        });
+        flip.matches.find(m => m.between).games = [];
+        await stage(byName.done);
+        await stage(flip);
+        await page.waitForTimeout(50);
+        check(await page.$$eval("#between .row", r => r.length) === 0, `${tag}: no sideboarding before game 1`);
+        check(((await text("#play-draw")) || "").includes("You won the coin flip"), `${tag}: the flip's winner is asked (${await text("#play-draw")})`);
+        check(/\d+s left/.test((await text("#countdown")) || ""), `${tag}: the sideboard clock is shown (${await text("#countdown")})`);
+        await page.click("#draw-first");
+        await page.waitForTimeout(50);
+        const pd = await lastSent();
+        check(pd && pd.type === "play_draw" && pd.play === false, `${tag}: Draw first is sent (${JSON.stringify(pd)})`);
+        const o = await overflow();
+        check(o.scrollW <= o.clientW, `${tag}: the panel fits sideways (${o.scrollW} <= ${o.clientW})`);
+      } else {
+        console.log("skip: no server fixture between games");
+      }
+
       // The socket was refused, so the page is retrying with backoff.
       {
         await page.waitForTimeout(1200);

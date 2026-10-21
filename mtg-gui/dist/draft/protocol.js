@@ -52,6 +52,12 @@ export const SHAPES = {
     match: {
         round: "number", opponent: "number", url: "string|null",
         status: "enum:waiting|playing|done", games: "array:game", result: "string|null",
+        between: "between|null?",
+    },
+    between: {
+        game: "number", sideboarding: "boolean", you_choose: "boolean", play_first: "boolean|null",
+        ready: "boolean", opponent_ready: "boolean", deadline_ms: "number|null",
+        deck: "deck", opponent_showed: "array:card",
     },
     pairing: {
         round: "number", a: "number", b: "number|null",

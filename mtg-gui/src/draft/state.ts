@@ -38,8 +38,12 @@ export interface PageState {
   deck: DeckEdit | null;
   /** Building: the pool index the keyboard cursor is on, or null. */
   cursor: number | null;
-  /** Building: `ready` has been sent and no view has confirmed it yet. */
+  /** Building: `ready` has been sent and no view has confirmed it yet;
+   *  between games, `sideboard_ready`. */
   readySent: boolean;
+  /** Between games: the match and game the sideboard edit in `deck` is
+   *  for ("round-game"), or null when it is the deck being built. */
+  between: string | null;
   refusal: Refusal | null;
   /** Drafting: `performance.now()` at which the pick timer runs out. */
   deadlineAt: number | null;
@@ -60,6 +64,10 @@ export interface Actions {
   toggle(poolIndex: number, keyboard?: boolean): void;
   setLand(name: string, n: number): void;
   ready(): void;
+  /** Between games: play first (true) or draw first. */
+  playDraw(play: boolean): void;
+  /** Between games: done sideboarding and choosing. */
+  sideboardReady(): void;
   dismiss(): void;
   dismissNotice(): void;
 }
@@ -69,7 +77,7 @@ export function initialState(): PageState {
     ws: null, connected: false, reconnects: 0, retryAt: null, rejected: false, closed: null,
     seat: null, key: null, view: null,
     selected: null, hover: null, pendingPick: null,
-    deck: null, cursor: null, readySent: false,
+    deck: null, cursor: null, readySent: false, between: null,
     refusal: null, deadlineAt: null, hint: null, notice: null,
   };
 }
