@@ -409,11 +409,19 @@ fn play_game(
         None => format!("Game ended without a result.\nFinal turn: {}", state.turn_number),
     };
     // The engine's word for a forfeit is "stopped answering"; a page taken
-    // out of the game (a kick, #821) is told what actually happened.
+    // out of the game (a kick, #821) is told what actually happened, as
+    // the one reason: the summary gave both, one after the other (#825).
     let mut summary = summary;
     for (pid, player) in [(PlayerId(0), &*p1), (PlayerId(1), &*p2)] {
         if let Some(why) = player.withdrawn() {
-            summary.push_str(&format!("\nSeat {} was withdrawn: {why}.", seat_of(pid)));
+            let engine_words = format!("p{} (Seat {}) {}", pid.0, seat_of(pid),
+                mtg_engine::events::FORFEIT_DESCRIPTION);
+            let ours = format!("p{} (Seat {}) forfeited: withdrawn, {why}", pid.0, seat_of(pid));
+            if summary.contains(&engine_words) {
+                summary = summary.replacen(&engine_words, &ours, 1);
+            } else {
+                summary.push_str(&format!("\nSeat {} was withdrawn: {why}.", seat_of(pid)));
+            }
         }
     }
     // And the log is told, as `mtg-runner`'s is: how the game ended was

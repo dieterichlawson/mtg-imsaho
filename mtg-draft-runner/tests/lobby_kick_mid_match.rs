@@ -45,7 +45,11 @@ fn a_kick_mid_match_forfeits_the_match_and_the_table_finishes() {
     assert!(terminal.contains("seat 0: no browser at http://") && !terminal.contains("Seat0:"), "{terminal}");
     // Named as a kick everywhere the forfeit is told, not as a stall.
     assert!(terminal.contains("seat 0 forfeited (the host kicked seat 0)"), "{terminal}");
-    assert!(log.contains("Seat 0 was withdrawn: the host kicked seat 0."), "the result says why:\n{log}");
+    // One reason, the kick, where the engine's generic "stopped answering"
+    // was followed by it (#825).
+    let result = log.lines().find(|l| l.starts_with("Game over!")).unwrap_or("");
+    assert_eq!(result, "Game over! p1 (Seat 1) wins! (p0 (Seat 0) forfeited: withdrawn, the host kicked seat 0)",
+        "the result says why:\n{log}");
     assert!(log.contains("WITHDRAWN (Seat 0 vs Seat 1)") && !log.contains("STALLED"), "{log}");
     assert!(terminal.contains("[1 game forfeited: the host kicked seat 0]") && !terminal.contains("a seat stalled"),
         "{terminal}");
@@ -112,7 +116,9 @@ fn a_kick_while_the_opponent_holds_the_decision_forfeits_the_game_now() {
     let line = if kicked == 0 { "MATCH Round 1 — Seat 0 vs Seat 1: 0-2 (Seat 1 wins)" }
         else { "MATCH Round 1 — Seat 0 vs Seat 1: 2-0 (Seat 0 wins)" };
     assert!(log.contains(line), "the kicked seat forfeits every game, the one in progress too:\n{log}");
-    assert!(log.contains(&format!("Seat {kicked} was withdrawn: the host kicked seat {kicked}.")), "{log}");
+    let result = log.lines().find(|l| l.starts_with("Game over!")).unwrap_or("");
+    assert!(result.ends_with(&format!("(p{kicked} (Seat {kicked}) forfeited: withdrawn, the host kicked seat {kicked})")),
+        "one reason, the kick (#825): {result}\n{log}");
     // The terminal's summary is printed after the log's standings, so it is
     // waited for, not read once (it lost that race under a loaded suite).
     server.wait_for_stderr(&format!("[2 games forfeited: the host kicked seat {kicked}]"), Duration::from_secs(30));

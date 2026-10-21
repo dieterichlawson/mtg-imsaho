@@ -94,6 +94,11 @@ pub enum LossReason {
     OpponentWon { source: ObjectId },
 }
 
+/// How a forfeit is described: the harness ended the game for a seat
+/// that stopped answering. A host that knows a better reason (a hosted
+/// table's kick) puts it in this phrase's place.
+pub const FORFEIT_DESCRIPTION: &str = "forfeited: stopped answering, and the harness ended the game for it";
+
 impl LossReason {
     /// Human sentence fragment, read as "<player> <describe()>". One string
     /// for both the game log's loss line and the runner's result summary
@@ -108,8 +113,7 @@ impl LossReason {
             LossReason::DrewFromEmptyLibrary =>
                 "lost the game: tried to draw from an empty library (CR 704.5b)".into(),
             LossReason::Conceded => "conceded".into(),
-            LossReason::Forfeited =>
-                "forfeited: stopped answering, and the harness ended the game for it".into(),
+            LossReason::Forfeited => FORFEIT_DESCRIPTION.into(),
             LossReason::OpponentWon { source } => format!(
                 "lost the game: the opponent won by the effect of {} (CR 104.2b)",
                 state.obj_name(source)),

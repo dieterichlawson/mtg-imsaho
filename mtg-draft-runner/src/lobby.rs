@@ -430,6 +430,8 @@ struct SeatState {
     /// The host handed the seat to the table for good; an absent seat
     /// that was only being picked for gets it back when it joins.
     kicked: bool,
+    /// An AI seat whose backend spent its retries: the table plays for it.
+    gave_up: bool,
     deck: Option<DraftDeck>,
     deck_problem: Option<String>,
     ready: bool,
@@ -528,6 +530,7 @@ impl Lobby {
             connected: 0,
             auto: false,
             kicked: false,
+            gave_up: false,
             deck: None,
             deck_problem: None,
             ready: false,
@@ -1165,6 +1168,13 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
         s.kicked = true;
         s.joined = true;
         s.notice = Some("The host has handed your seat to the table.".to_string());
+        // The log is the table's record, and a kick was said only on the
+        // host's terminal: the forfeits it causes read as a seat that
+        // walked away (#825).
+        let phase = format!("{:?}", self.phase).to_lowercase();
+        as_seat(seat, || mtg_player::game_log::write(file!(), line!(), &format!(
+            "[Seat {seat}] KICKED by the host while the table was {phase}: the table picks and builds \
+for the seat from here, and its games are forfeit"), ""));
         self.event(format!("{} kicked: the table picks and builds for it, and its games are forfeit", self.who(seat)));
         if self.phase == Phase::Lobby && self.seats.iter().all(|s| s.joined) {
             self.start();
@@ -1178,6 +1188,7 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
     /// the people at the table are not stopped by it.
     pub fn seat_gave_up(&mut self, seat: usize, why: &str) {
         self.seats[seat].auto = true;
+        self.seats[seat].gave_up = true;
         as_seat(seat, || mtg_player::game_log::write(file!(), line!(),
             &format!("[Seat {seat}] WARN the seat stopped answering; the table picks and builds for it: {why}"), ""));
         self.event(format!("WARN {} stopped answering ({why}); the table picks and builds for it, and its games are forfeit", self.who(seat)));
@@ -1190,6 +1201,22 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
         self.seats[seat].auto
     }
 
+    /// Why the table plays for a seat, in the words its picks, its deck
+    /// and its forfeits are recorded with. Every one of them said "the
+    /// seat is away", which for a kicked seat contradicted the page beside
+    /// it showing the person still there (#825).
+    #[must_use]
+    pub fn away_reason(&self, seat: usize) -> &'static str {
+        let s = &self.seats[seat];
+        if s.kicked {
+            "the host kicked the seat"
+        } else if s.gave_up {
+            "the seat stopped answering"
+        } else {
+            "the seat is away"
+        }
+    }
+
     /// Pick and build for every auto seat with something to do and no
     /// timer to wait for; the others get their deadlines armed.
     fn run_auto_seats(&mut self) {
@@ -1197,13 +1224,13 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
             self.picks_at_once(s) && self.phase == Phase::Drafting
                 && self.table.in_front(s).is_some()
         }) {
-            let _ = self.auto_pick(seat, "the seat is away");
+            let _ = self.auto_pick(seat, self.away_reason(seat));
         }
         for seat in 0..self.seats.len() {
             if self.builds_at_once(seat) && !self.seats[seat].ready
                 && self.table.seat_done(seat)
             {
-                self.auto_build(seat, "the seat is away");
+                self.auto_build(seat, self.away_reason(seat));
             }
         }
         self.arm_deadlines();
@@ -1214,7 +1241,7 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
     pub fn tick(&mut self, now: Instant) -> bool {
         let mut changed = false;
         for seat in 0..self.seats.len() {
-            let why = if self.seats[seat].auto { "the seat is away" } else { "the pick timer ran out" };
+            let why = if self.seats[seat].auto { self.away_reason(seat) } else { "the pick timer ran out" };
             if self.seats[seat].pick_deadline.is_some_and(|d| d <= now) {
                 self.seats[seat].pick_deadline = None;
                 if self.auto_pick(seat, why).is_ok() {
@@ -1223,7 +1250,7 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
             }
             if self.seats[seat].build_deadline.is_some_and(|d| d <= now) {
                 self.seats[seat].build_deadline = None;
-                let why = if self.seats[seat].auto { "the seat is away" } else { "the build timer ran out" };
+                let why = if self.seats[seat].auto { self.away_reason(seat) } else { "the build timer ran out" };
                 self.auto_build(seat, why);
                 changed = true;
             }
@@ -1365,8 +1392,8 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
     #[must_use]
     pub fn forfeit_result(&self, a: usize, b: usize) -> MatchResult {
         match (self.is_auto(a), self.is_auto(b)) {
-            (true, false) => self.forfeit_by(a, b, a, "the seat is away"),
-            (false, true) => self.forfeit_by(a, b, b, "the seat is away"),
+            (true, false) => self.forfeit_by(a, b, a, self.away_reason(a)),
+            (false, true) => self.forfeit_by(a, b, b, self.away_reason(b)),
             _ => MatchResult { player_a: a, player_b: b, wins_a: 0, wins_b: 0, games: Vec::new() },
         }
     }
