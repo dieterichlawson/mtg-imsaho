@@ -59,22 +59,7 @@ async function playOne(browser, seed, deck1, deck2, kinds) {
     while (decisions < maxDecisions) {
       const ready = await page.waitForFunction(() => window.mtg && (window.mtg.decision || window.mtg.gameOver), null, { timeout: 60000 }).catch(() => null);
       if (!ready) { fail(`${label}: no decision for 60s at decision ${decisions}`); await shot("hang"); break; }
-      const snap = await page.evaluate(() => {
-        const m = window.mtg;
-        if (m.gameOver) return { over: m.gameOver };
-        const ui = m.ui;
-        const kind = m.decision.combat ? "combat:" + Object.keys(m.decision.combat)[0]
-          : m.decision.legal.resolution_prompt ? "resolution:" + Object.keys(m.decision.legal.resolution_prompt)[0]
-          : m.decision.legal.set_prompt ? "set_prompt" : "menu:" + (m.decision.legal.context || "");
-        const clickable = (k) => m.hits.filter(h => h.onClick && (!k || k.includes(h.kind))).map(h => ({ x: h.x + h.w / 2, y: h.y + h.h / 2, kind: h.kind, label: h.label || null, key: h.key || null }));
-        return {
-          seq: m.decision.seq, kind, mode: ui && ui.mode, title: ui && ui.title, turn: m.view.turn_number, step: m.view.step,
-          options: clickable(["perm", "hand", "player", "stack", "card"]), rows: clickable(["row"]), buttons: clickable(["button"]),
-          popover: !!m.popover, min: ui && ui.min, max: ui && ui.max, marked: ui ? ui.marked.length : 0, canPass: !!(ui && ui.canPass),
-          verbs: ui && ui.verbs ? [...ui.verbs.keys()] : [], hasCancel: !!(ui && ui.onCancel), maxX: ui && ui.mode === "number" ? ui.max : null,
-          notice: m.notice, lastSent: m.lastSent ? JSON.stringify(m.lastSent.action) : null,
-        };
-      });
+      const snap = await snapshot(page);
       if (snap.over) { outcome = snap.over.split("\n")[0]; break; }
       if (snap.seq === lastSeq) { if (committed) stuck++; } else { stuck = 0; lastSeq = snap.seq; decisions++; kinds.set(snap.kind.split(":")[0] + ":" + snap.kind.split(":")[1], (kinds.get(snap.kind.split(":")[0] + ":" + snap.kind.split(":")[1]) || 0) + 1); }
       if (stuck >= 3) {
@@ -94,6 +79,26 @@ async function playOne(browser, seed, deck1, deck2, kinds) {
   }
   console.log(`${label}: ${decisions} decisions, ${outcome}`);
   return decisions;
+}
+
+/** What the page is asking, and what on it can be clicked. */
+function snapshot(page) {
+  return page.evaluate(() => {
+        const m = window.mtg;
+        if (m.gameOver) return { over: m.gameOver };
+        const ui = m.ui;
+        const kind = m.decision.combat ? "combat:" + Object.keys(m.decision.combat)[0]
+          : m.decision.legal.resolution_prompt ? "resolution:" + Object.keys(m.decision.legal.resolution_prompt)[0]
+          : m.decision.legal.set_prompt ? "set_prompt" : "menu:" + (m.decision.legal.context || "");
+        const clickable = (k) => m.hits.filter(h => h.onClick && (!k || k.includes(h.kind))).map(h => ({ x: h.x + h.w / 2, y: h.y + h.h / 2, kind: h.kind, label: h.label || null, key: h.key || null }));
+        return {
+          seq: m.decision.seq, kind, mode: ui && ui.mode, title: ui && ui.title, turn: m.view.turn_number, step: m.view.step,
+          options: clickable(["perm", "hand", "player", "stack", "card"]), rows: clickable(["row"]), buttons: clickable(["button"]),
+          popover: !!m.popover, min: ui && ui.min, max: ui && ui.max, marked: ui ? ui.marked.length : 0, canPass: !!(ui && ui.canPass),
+          verbs: ui && ui.verbs ? [...ui.verbs.keys()] : [], hasCancel: !!(ui && ui.onCancel), maxX: ui && ui.mode === "number" ? ui.max : null,
+          notice: m.notice, lastSent: m.lastSent ? JSON.stringify(m.lastSent.action) : null,
+        };
+      });
 }
 
 const click = async (page, h) => { await page.mouse.move(h.x * 2, h.y * 2); await page.mouse.click(h.x * 2, h.y * 2); await page.waitForTimeout(60); };
@@ -199,4 +204,7 @@ async function main() {
   console.log(process.exitCode ? "autoplay: FAILED" : "autoplay: ok");
 }
 
-main().catch(e => { fail(e.stack || String(e)); });
+// Run as a script it plays its own games; required, it lends its step to
+// another driver (`table_rehearsal.js` plays a hosted table's game pages).
+if (require.main === module) main().catch(e => { fail(e.stack || String(e)); });
+module.exports = { step, snapshot };
