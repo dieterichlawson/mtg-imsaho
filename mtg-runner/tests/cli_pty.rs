@@ -1192,6 +1192,43 @@ fn a_sigquit_restores_the_terminal_and_removes_the_snapshot() {
     assert!(g.seen[before..].contains("\x1b[2J"), "the frame was not cleared on the way out");
 }
 
+/// Issue #868: `--stop-after` with a cli seat leaves the way every other
+/// exit does — the frame cleared before its `DECISION` line is printed, so
+/// the line is not written into the board, and the hot-reload snapshot
+/// (both hands, both library orders) removed. It used to `process::exit`
+/// past both.
+#[test]
+fn stop_after_with_a_cli_seat_clears_the_frame_and_removes_the_snapshot() {
+    let stats = std::env::temp_dir().join(format!("mtg-868-pty-{}.json", std::process::id()));
+    let mut g = PtyGame::spawn(&[
+        "--p1", "cli", "--p2", "random",
+        "--deck1", "decks/rb-vampires.txt", "--deck2", "decks/gw-humans.txt",
+        "--seed", "2301", "--on-the-play", "1", "--quiet",
+        "--stop-after", "1", "--decision-stats", stats.to_str().unwrap(),
+    ]);
+    g.expect("Keep opening hand", T);
+    let pid = g.child.id();
+    let snapshot = std::env::temp_dir().join(format!("mtg-hot-reload-{pid}.json"));
+    let deadline = Instant::now() + T;
+    while !snapshot.exists() && Instant::now() < deadline {
+        g.pump(Duration::from_millis(100));
+    }
+    assert!(snapshot.exists(), "the runner writes its snapshot before a decision");
+    let before = g.seen.len();
+    g.answer("0\r");
+    let status = g.wait_exit(T);
+    assert_eq!(status.code(), Some(0), "{status:?}");
+    let after = &g.seen[before..];
+    let clear = after.find("\x1b[2J").unwrap_or_else(|| panic!(
+        "the frame was not cleared on the way out:\n{}", tail(after)));
+    let line = after.find("DECISION 1 ").unwrap_or_else(|| panic!(
+        "no DECISION line:\n{}", tail(after)));
+    assert!(clear < line, "the DECISION line was printed into the frame, then the frame cleared");
+    assert!(!snapshot.exists(), "the snapshot with both hands in it was left in /tmp");
+    assert!(stats.exists(), "--decision-stats was not written");
+    let _ = std::fs::remove_file(&stats);
+}
+
 /// Issue #566: while the program works on something a person is waiting
 /// for — here, everything after keeping a hand up to the next prompt — a
 /// "working" indicator is painted onto the frame already on screen. Its

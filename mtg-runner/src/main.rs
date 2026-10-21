@@ -142,8 +142,31 @@ fn decision_kind_name(legal: &engine::LegalActions) -> String {
     if pass_only { "priority:pass-only".into() } else { "priority".into() }
 }
 
+/// Whether a cli seat's frame is on screen: set when the game loop starts
+/// with one, cleared once [`leave_game`] has wiped it.
+static TUI_FRAME_UP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// What every exit from inside a game does before it prints its last
+/// words: clear a cli seat's frame and take the hot-reload snapshot, which
+/// holds both hands and both library orders (#234), with the process.
+///
+/// `quit_at_prompt` (#235) and the signal handlers (#687) did this, but the
+/// runner's own exits — `--stop-after`, an invariant violation, a stalled
+/// game, a fatal error — called `process::exit` past it, so their report
+/// was written into the frame, the shell then painted over the board, and
+/// the snapshot stayed in /tmp until some later run swept it (#868). A
+/// no-op before the game starts: no frame is up and no snapshot is
+/// registered.
+fn leave_game() {
+    if TUI_FRAME_UP.swap(false, std::sync::atomic::Ordering::SeqCst) {
+        mtg_player::cli::reset_terminal_for_exit();
+    }
+    mtg_player::cli::unlink_scratch_file();
+}
+
 /// A user error: report it and exit without a Rust panic/backtrace.
 fn die(msg: &str) -> ! {
+    leave_game();
     mtg_player::stderr_line!("Error: {msg}");
     // The log is the run's record: a refused `--resume` or any later fatal
     // left it ending with no word of why the run stopped, as the draft
@@ -774,6 +797,7 @@ stops here — pass --save {path} to keep writing it");
     // signal, a closed window. Only the normal-completion path used to
     // unlink it (issues #234, #239).
     mtg_player::cli::unlink_on_exit(&hot_reload_path);
+    TUI_FRAME_UP.store(has_human, std::sync::atomic::Ordering::SeqCst);
 
     // Per-owner count of non-token objects, captured at the first decision
     // point. No effect in the pool creates or destroys real cards, so the
@@ -802,6 +826,37 @@ stops here — pass --save {path} to keep writing it");
     // the file should hold.
     let streamed_log = std::cell::Cell::new(already_logged);
     let streamed_log_ref = &streamed_log;
+    // What kind of question each decision was, for --decision-stats. The
+    // fuzz campaign's only oracle is the invariant checker, which says
+    // nothing about a prompt it never reaches: the random seat went weeks
+    // without sending a ChosenOrder and reached Ghoulcaller's Chant's second
+    // mode in 1.8% of casts (#664-#667), and nothing was red. Counting the
+    // kinds asked lets the campaign say which ones it never was.
+    let decision_kinds: std::cell::RefCell<std::collections::BTreeMap<String, u64>> = Default::default();
+    // The widest board the game reached, for the same report: the walls at
+    // 500-2,000 permanents (#565, #640-#642) were found on boards no fuzz
+    // game ever built, and nothing said so.
+    let max_permanents = std::cell::Cell::new(0usize);
+    // Written however the game ends — at game over, and on the runner's own
+    // early exits too: `--stop-after` and an invariant violation used to
+    // exit before it, so `scripts/fuzz.sh`'s failing seeds added nothing to
+    // `fuzz_reach.py`'s counts and no file said so (#868).
+    let write_decision_stats = || {
+        if let Some(path) = &decision_stats_file {
+            let kinds = decision_kinds.borrow();
+            let stats = serde_json::json!({
+                "decisions": kinds.values().sum::<u64>(),
+                "max_permanents": max_permanents.get(),
+                "kinds": *kinds,
+            });
+            let text = serde_json::to_string_pretty(&stats).unwrap_or_default();
+            if let Err(e) = fs::write(path, text) {
+                mtg_player::stderr_line!("warning: could not write --decision-stats {path}: {e}");
+            }
+        }
+    };
+    let write_decision_stats = &write_decision_stats;
+
     // The decision itself, separated so the callback can record what was chosen.
     let mut choose = |game_state: &GameState, acting_player: PlayerId, legal: &engine::LegalActions, action_count: u64| -> mtg_engine::actions::Action {
         // The runner giving up on a game that has run past its budget is the
@@ -856,6 +911,8 @@ stops here — pass --save {path} to keep writing it");
         decisions_made.set(decisions_made.get() + 1);
         if stop_after == Some(decisions_made.get()) {
             let json = serde_json::to_string(&answer).unwrap_or_else(|e| format!("\"unserializable: {e}\""));
+            leave_game();
+            write_decision_stats();
             mtg_player::stdout_line!("DECISION {} p{} {json}", decisions_made.get(), acting_player.0);
             mtg_player::game_log::write(file!(), line!(), "STOPPED",
                 &format!("--stop-after {}: p{} chose {json}", decisions_made.get(), acting_player.0));
@@ -888,28 +945,17 @@ stops here — pass --save {path} to keep writing it");
     // draft runner's copy of this loop (#488).
     let mut watchdog = mtg_player::watchdog::ProgressWatchdog::new();
 
-    // What kind of question each decision was, for --decision-stats. The
-    // fuzz campaign's only oracle is the invariant checker, which says
-    // nothing about a prompt it never reaches: the random seat went weeks
-    // without sending a ChosenOrder and reached Ghoulcaller's Chant's second
-    // mode in 1.8% of casts (#664-#667), and nothing was red. Counting the
-    // kinds asked lets the campaign say which ones it never was.
-    let mut decision_kinds: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
-    // The widest board the game reached, for the same report: the walls at
-    // 500-2,000 permanents (#565, #640-#642) were found on boards no fuzz
-    // game ever built, and nothing said so.
-    let mut max_permanents: usize = 0;
-
     let mut game_callback = |game_state: &GameState, acting_player: PlayerId, legal: &engine::LegalActions| -> mtg_engine::actions::Action {
         action_count += 1;
-        *decision_kinds.entry(decision_kind_name(legal)).or_insert(0) += 1;
-        max_permanents = max_permanents.max(
-            game_state.all_objects_in_zone(mtg_engine::types::Zone::Battlefield).len());
+        *decision_kinds.borrow_mut().entry(decision_kind_name(legal)).or_insert(0) += 1;
+        max_permanents.set(max_permanents.get().max(
+            game_state.all_objects_in_zone(mtg_engine::types::Zone::Battlefield).len()));
 
         if watchdog.observe(game_state) {
             let seat = player_names_ref.get(acting_player.0 as usize)
                 .cloned()
                 .unwrap_or_else(|| format!("p{}", acting_player.0));
+            write_decision_stats();
             die(&mtg_player::watchdog::stall_report(game_state, acting_player, legal, &seat));
         }
 
@@ -984,6 +1030,8 @@ stops here — pass --save {path} to keep writing it");
 
             let all: Vec<String> = violations.into_iter().chain(extra).collect();
             if !all.is_empty() {
+                leave_game();
+                write_decision_stats();
                 mtg_player::stderr_line!("INVARIANT VIOLATION at action {action_count} (turn {}, step {:?}):",
                     game_state.turn_number, game_state.step);
                 for msg in &all {
@@ -1060,17 +1108,7 @@ use --save if you need a resumable file.");
     }
     drop(game_callback);
 
-    if let Some(path) = &decision_stats_file {
-        let stats = serde_json::json!({
-            "decisions": decision_kinds.values().sum::<u64>(),
-            "max_permanents": max_permanents,
-            "kinds": decision_kinds,
-        });
-        let text = serde_json::to_string_pretty(&stats).unwrap_or_default();
-        if let Err(e) = fs::write(path, text) {
-            mtg_player::stderr_line!("warning: could not write --decision-stats {path}: {e}");
-        }
-    }
+    write_decision_stats();
 
     // Flush log entries written after the last decision point (final combat
     // damage, "wins the game") — the callback never sees them (issue #77).

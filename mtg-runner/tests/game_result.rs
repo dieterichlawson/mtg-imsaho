@@ -130,3 +130,24 @@ fn a_run_with_no_llm_seat_prints_no_usage_line() {
     assert!(!stdout.contains("answers rejected"), "nothing to report:\n{stdout}");
     assert!(!stdout.contains("calls,"), "no usage line at all:\n{stdout}");
 }
+
+/// Issue #868: `--decision-stats` is written when `--stop-after` ends the
+/// run, not only at game over. The early exit skipped the write, exited 0
+/// and said nothing, so a stopped run's counts were lost.
+#[test]
+fn a_run_stopped_by_stop_after_still_writes_its_decision_stats() {
+    let dir = std::env::temp_dir().join(format!("mtg-868-stats-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let stats = dir.join("ds.json");
+    let out = runner()
+        .current_dir(repo_root())
+        .args(["--p1", "random", "--p2", "random", "--seed", "7", "-q",
+               "--stop-after", "5", "--decision-stats", stats.to_str().unwrap()])
+        .output()
+        .expect("runner did not start");
+    assert_eq!(out.status.code(), Some(0), "{}", String::from_utf8_lossy(&out.stderr));
+    let text = std::fs::read_to_string(&stats).expect("--stop-after left no --decision-stats file");
+    let json: serde_json::Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(json["decisions"], 5, "the file counts the decisions the run made: {text}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
