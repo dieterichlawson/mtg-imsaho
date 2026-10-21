@@ -131,12 +131,17 @@ replay (`reports/llm-cost.md`, phase 3) and the draft's pick replay
 
 What a `cc` seat is sent is bounded on purpose (`reports/llm-cost.md`):
 one decision is the system prompt plus one prompt, never the game's
-earlier exchanges, and the system prompt and the answer schema are the
-same bytes every time a kind of question is asked, so the prompt cache
-serves them. A probe that makes a seat's calls grow with the decision
-count, or a call that reads nothing from the cache after the first of
-its kind (`cache_read 0` on a `USAGE` line), has found a bug of the same
-rank as a clipped row — H26 and H32 in `harness.md` are the checks.
+earlier exchanges, and the system prompt is the same bytes on every call
+of a game, so the prompt cache serves it. A game seat is asked for its
+answer at the end of the prompt, not through `--json-schema`
+(`MTG_CLAUDE_CODE_ANSWERS=schema` brings the schema back; the draft seat
+keeps it unless `MTG_CLAUDE_CODE_DRAFT_ANSWERS=text`), and every call
+writes its cache at the 5-minute TTL. A probe that makes a seat's calls
+grow with the decision count, or a call that reads nothing from the
+cache after a game's first (`cache_read 0` on a `USAGE` line), has found
+a bug of the same rank as a clipped row — H26, H32, H35 and H36 in
+`harness.md` are the checks. A reply the seat could not read is logged as
+`UNREADABLE` with what the model wrote; a run of them is a finding.
 
 Most nights want two `cli` seats. Only the harness and draft subjects
 need `cc`, where it is the thing under test.
@@ -170,9 +175,31 @@ For the draft subject's hosted table, build `mtg-draft-runner` too
 `./target/release/mtg-draft-server --seats human,ai,ai,ai --port <yours>
 --log logs/playtest/<mission>/draft.log` under a `CLAUDE_CODE_BIN` stub,
 and sit at the human seat from the Playwright Chromium (the printed URL)
-or from `./target/release/mtg-draft-client <ws url>` through a pipe;
+or from `./target/release/mtg-draft-client <ws url>` through a pipe, or
+host `--seats cli,...` and sit at the server's own terminal;
 `docs/draft-with-friends.md` is the manual and
-`mtg-draft-runner/tests/lobby_*.rs` show the stub and the clients.
+`mtg-draft-runner/tests/lobby_*.rs` show the stub and the clients. A
+whole table played by people through the real pages — drafting, building,
+sideboarding, and every game on the game page reached through the
+lobby's one port — is one command (build the debug `mtg-draft-runner`
+first):
+
+```
+NODE_PATH=$(npm root -g) node mtg-gui/tests/table_rehearsal.js --humans 2 --players 4 \
+    --best-of 3 --out logs/playtest/<mission>     # --ai cc:claude-haiku-5-5 for real AI seats
+```
+
+Its server terminal and log stay in `--out`; a stuck page leaves a
+screenshot there.
+
+The nightly draft loop (`scripts/draft-loop/`, its results in
+`reports/draft-loop/`) plays an eight-seat Haiku draft every night and
+keeps each night's picks, decks, records, the seats' lessons and the
+guide it writes. It is evidence for the drafting and harness subjects:
+a night's `nights/DATE.md` and its run's numbers are a probe someone
+already ran, and an oddity in them — a seat that took a card it never
+saw, a lesson about a card it never played, a guide that names a card no
+statistic does, a cost line that jumped — is worth chasing (D48).
 
 For the GUI subject the terminal is not the surface: the page is. Build
 the runner, then drive the page in the Playwright Chromium the way
