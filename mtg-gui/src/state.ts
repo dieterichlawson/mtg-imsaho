@@ -3,7 +3,8 @@
 import type { Action, Decision, GameView, ObjectId, PlayerId, Target, ViewObject } from "./protocol.js";
 
 /** Where an object is, for the index the page keeps over the view. */
-export type ZoneName = "battlefield" | "hand" | "graveyard" | "exile" | "stack" | "library" | "revealed";
+/** `named`: a card with no object, which a card-name choice offers by name (#846). */
+export type ZoneName = "battlefield" | "hand" | "graveyard" | "exile" | "stack" | "library" | "revealed" | "named";
 export interface IndexEntry { obj: ViewObject; zone: ZoneName; owner: PlayerId | null }
 
 /** A row in a list or the panel. */

@@ -837,6 +837,9 @@ export function inspectorPt(o: ViewObject): string[] {
     if (o.printed_power === o.effective_power && o.printed_toughness === o.effective_toughness) return [live];
     return [live, `(printed ${o.printed_power}/${o.printed_toughness})`];
   }
+  // A card with no object (a name a card-name choice offers, #846) prints
+  // its */* as the card does.
+  if (o.star_pt) return ["*/*"];
   if (o.power !== undefined && o.power !== null) return [`${o.power}/${o.toughness}`];
   return [];
 }
@@ -921,7 +924,7 @@ export function inspectorFacts(state: LiveState, e: IndexEntry): string[] {
   }
   if (o.targets && o.targets.length) out.push("Targets: " + o.targets.map(t => targetLabel(state, t)).join(", "));
   if (o.x_value !== undefined && o.x_value !== null) out.push(`X = ${o.x_value}`);
-  if (e.zone !== "battlefield" && e.zone !== "hand") out.push(`In ${e.zone}`);
+  if (e.zone !== "battlefield" && e.zone !== "hand" && e.zone !== "named") out.push(`In ${e.zone}`);
   return out;
 }
 
@@ -943,6 +946,10 @@ export function inspecting(state: LiveState): IndexEntry | undefined {
   }
   const hoverId = h ? objectOfKey(h.key) : null;
   if (hoverId !== null) return state.index.get(hoverId);
+  // A row that names a card in no zone — one of the names a card-name choice
+  // offers — is read off the card the view carries for it (#846).
+  const named = h && h.cardName ? (state.view.nameable_cards || {})[h.cardName] : undefined;
+  if (named) return { obj: { object_id: 0, ...named }, zone: "named", owner: null };
   return state.selected !== null ? state.index.get(state.selected) : undefined;
 }
 

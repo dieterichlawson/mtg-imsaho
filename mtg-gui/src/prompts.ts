@@ -388,6 +388,12 @@ function describeChoice(state: LiveState, c: ResolvedChoice): string {
 
 function resolve(choice: ResolvedChoice): Action { return { ResolveChoice: { choice } }; }
 
+/** The name a `ChosenIndex` answer carries, or null for any other action. */
+function chosenName(a: Action): string | null {
+  const c = isObj(a) && "ResolveChoice" in a ? a.ResolveChoice.choice : null;
+  return c && typeof c === "object" && "ChosenIndex" in c ? c.ChosenIndex[1] : null;
+}
+
 export function targetKey(t: Target | null | undefined): string | null {
   if (t && typeof t === "object") {
     if ("Object" in t) return `o${t.Object}`;
@@ -596,10 +602,19 @@ function beginResolution(state: LiveState, ui: Ui, legal: LegalActions, actions:
     case "ChooseFromLookedAt":
     case "ChooseFromLibrary":
       return beginPickFromActions(state, ui, actions, desc, send);
+    case "ChooseCardName": {
+      // Every nonland name in the pool, most of them cards in no zone: each
+      // row names its card, which the view carries for this question, so
+      // hovering one shows what it is (#846).
+      const list = beginList(state, ui, actions.map(a => ({ label: describeAction(state, a), run: () => send(a), cardName: chosenName(a) })),
+        desc, send, true);
+      list.hint = "Type to filter. Hover a name to read the card; click it to choose.";
+      return list;
+    }
     default:
       // PayOrNot, YesNo, ChooseCardType, ChooseDamageEffect, ChoosePile,
-      // ChooseCardName, and anything newer: the offered actions as rows.
-      return beginList(state, ui, actions, desc, send, kind === "ChooseCardName");
+      // and anything newer: the offered actions as rows.
+      return beginList(state, ui, actions, desc, send, false);
   }
 }
 
