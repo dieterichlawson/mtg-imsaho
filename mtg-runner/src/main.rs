@@ -1091,8 +1091,10 @@ use --save if you need a resumable file.");
             // file be replaced mid-game — that's a user-environment failure,
             // reported cleanly, not a panic (issue #69).
             if let Some(ref path) = save_file_ref {
-                write_save_atomically(path, &json)
-                    .unwrap_or_else(|e| die(&format!("failed to write save file '{path}': {e}")));
+                write_save_atomically(path, &json).unwrap_or_else(|e| {
+                    write_decision_stats();
+                    die(&format!("failed to write save file '{path}': {e}"))
+                });
             }
         }
 
