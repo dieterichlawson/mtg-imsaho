@@ -47,6 +47,20 @@ pub const ANSWER_SCHEMA_ENV: &str = "MTG_LLM_ANSWER_SCHEMA";
 /// The CLI's `max_tokens` for the request, as an environment variable.
 pub const MAX_OUTPUT_TOKENS_ENV: &str = "CLAUDE_CODE_MAX_OUTPUT_TOKENS";
 
+/// The CLI's switch to the 5-minute cache TTL, set on every child.
+pub const FORCE_5M_CACHE_ENV: &str = "FORCE_PROMPT_CACHING_5M";
+
+/// `MTG_CLAUDE_CODE_CACHE_TTL`: `5m` (the default) or `1h`, the TTL a seat's
+/// cache writes are made at.
+///
+/// The CLI writes at the 1-hour TTL by default, which is 2x the input rate
+/// where the 5-minute TTL is 1.25x — and a decision's prompt, about half of
+/// what every call writes, is never read again. A seat reads its system
+/// prompt back within seconds of the last call; a new game is a new system
+/// prompt anyway (`reports/llm-cost.md`, phase 5).
+pub const CACHE_TTL_ENV: &str = "MTG_CLAUDE_CODE_CACHE_TTL";
+
+
 /// How long one decision may take before the subprocess is killed and the
 /// call retried. Print mode with thinking can run well past the API path's
 /// two minutes.
@@ -863,6 +877,12 @@ pub fn run_print_mode(
     // (`super::max_output_tokens`). The CLI's own default is far above
     // what any decision needs.
     cmd.env(MAX_OUTPUT_TOKENS_ENV, super::max_output_tokens(super::thinking_level()).to_string());
+    // The 5-minute cache TTL unless the run asks for the CLI's hour.
+    if std::env::var(CACHE_TTL_ENV).as_deref() == Ok("1h") {
+        cmd.env_remove(FORCE_5M_CACHE_ENV);
+    } else {
+        cmd.env(FORCE_5M_CACHE_ENV, "1");
+    }
 
     // Give the child its own process group, so the timeout and the
     // signal handler can reach everything it spawns and not just the

@@ -598,7 +598,8 @@ fn a_claude_code_seat_is_not_a_part_of_the_session_that_started_it() {
         &format!(
             "echo \"REMOTE=${{CLAUDE_CODE_REMOTE-unset}} SID=${{CLAUDE_CODE_SESSION_ID-unset}} \
              CCR=${{CCR_SESSION_PROFILE-unset}} BEDROCK=${{CLAUDE_CODE_USE_BEDROCK-unset}} \
-             CONFIG=${{CLAUDE_CONFIG_DIR-unset}} MAXOUT=${{CLAUDE_CODE_MAX_OUTPUT_TOKENS-unset}}\" >> \"$LOG\"\n{OK_BODY}"
+             CONFIG=${{CLAUDE_CONFIG_DIR-unset}} MAXOUT=${{CLAUDE_CODE_MAX_OUTPUT_TOKENS-unset}} \
+             TTL5M=${{FORCE_PROMPT_CACHING_5M-unset}}\" >> \"$LOG\"\n{OK_BODY}"
         ),
     );
     let mut cmd = std::process::Command::new(fake.bin());
@@ -608,4 +609,7 @@ fn a_claude_code_seat_is_not_a_part_of_the_session_that_started_it() {
     assert!(log.contains("REMOTE=unset SID=unset CCR=unset"), "the child inherited the session:\n{log}");
     assert!(log.contains("BEDROCK=1 CONFIG=/elsewhere"), "the CLI's own settings are the caller's:\n{log}");
     assert!(!log.contains("MAXOUT=unset"), "the seat's own settings are set after the strip:\n{log}");
+    // The 5-minute cache TTL: the CLI's hour is 2x input where 5 minutes is
+    // 1.25x, and a decision's prompt is never read back (phase 5).
+    assert!(log.contains("TTL5M=1"), "{log}");
 }

@@ -102,6 +102,13 @@ Every decision is sent on its own. A call carries:
   reason (`REASK` in the log). `mtg-runner/tests/schema_cache.rs` plays stub
   games and holds every kind of question to one schema.
 
+Every `claude -p` child is run with `FORCE_PROMPT_CACHING_5M=1`: the CLI
+otherwise writes its cache at the 1-hour TTL, 2x the input rate where the
+5-minute TTL is 1.25x, and half of what a decision writes is its own prompt,
+which no later call reads. A seat reads its system prompt back within
+seconds. `MTG_CLAUDE_CODE_CACHE_TTL=1h` keeps the CLI's hour. The summary's
+API-rate figure prices writes at the 5-minute rate.
+
 Every backend asks for the reasoning in the answer's `thoughts` field, one
 or two sentences; it is the notes the next prompt opens with. Thinking is
 billed as output, and `MTG_LLM_THINKING` sets it for every seat: `off` (the
