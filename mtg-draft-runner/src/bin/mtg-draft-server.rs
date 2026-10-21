@@ -8,7 +8,7 @@ use mtg_draft::pack::{generate_draft_packs, SheetData};
 use mtg_draft::set_data::SetData;
 use mtg_draft_runner::card_lines::CardLines;
 use mtg_draft_runner::draft_log::DraftLogger;
-use mtg_draft_runner::lobby::{parse_seats, Lobby, LobbyConfig, SeatKind};
+use mtg_draft_runner::lobby::{parse_seats, Lobby, LobbyConfig, SeatKind, TableSave};
 use mtg_draft_runner::server::{self, ServerConfig, Shared};
 use mtg_draft_runner::{die, install_panic_hook, llm_client};
 use mtg_engine::cards::CardRegistry;
@@ -42,6 +42,12 @@ Options:
                          18 lands), or else the table's own
   --log <path>           The draft log  (default logs/draft-with-friends/draft.log);
                          decks/ and games/ go in the directory beside it
+  --save <path>          Where the table's snapshot is written after every
+                         change  (default table.save.json beside the log)
+  --resume <path>        Carry on from a snapshot: the same seats and join
+                         links, every pick, deck and finished match; a match
+                         that was in progress is played again. Its seed, set,
+                         seats and match length win over the flags
   --quiet, -q            No event lines on the terminal
   --help, -h             Print this help and exit
   --version              Print the version and exit
@@ -64,6 +70,7 @@ struct Args {
     build_seconds: Option<u64>,
     log: String,
     quiet: bool,
+    save: Option<String>,
     resume: Option<String>,
 }
 
@@ -88,6 +95,7 @@ fn parse_args() -> Args {
         build_seconds: None,
         log: "logs/draft-with-friends/draft.log".to_string(),
         quiet: false,
+        save: None,
         resume: None,
     };
     let mut i = 0;
@@ -141,6 +149,7 @@ fn parse_args() -> Args {
             }
             "--log" => args.log = value(&mut i, flag),
             "--resume" => args.resume = Some(value(&mut i, flag)),
+            "--save" => args.save = Some(value(&mut i, flag)),
             other => die(&format!("unknown flag '{other}' (see --help)")),
         }
         i += 1;
@@ -197,7 +206,22 @@ on this machine (docs/draft-with-friends.md)");
 
 fn main() {
     install_panic_hook();
-    let args = parse_args();
+    let mut args = parse_args();
+    // A snapshot names its own table: the seed, the set, the seats and the
+    // match length are its, whatever the flags say.
+    let save: Option<TableSave> = args.resume.as_ref().map(|path| {
+        let text = std::fs::read_to_string(path)
+            .unwrap_or_else(|e| die(&format!("--resume: cannot read {path}: {e}")));
+        let save: TableSave = serde_json::from_str(&text)
+            .unwrap_or_else(|e| die(&format!("--resume: {path} is not a table snapshot: {e}")));
+        save
+    });
+    if let Some(save) = &save {
+        args.seats = save.seat_kinds().unwrap_or_else(|e| die(&format!("--resume: {e}")));
+        args.seed = save.seed;
+        args.set.clone_from(&save.set);
+        args.best_of = save.best_of;
+    }
     check_models(&args.seats);
 
     let guide = args.guide.as_deref().map(|path| std::fs::read_to_string(path)
@@ -229,7 +253,9 @@ root or set {} to the mtg-gui directory", web_dir.display(), mtg_player::gui::WE
                 .unwrap_or_else(|e| die(&format!("cannot create {}: {e}", dir.display())));
         }
     }
-    let log = DraftLogger::new(&log_path);
+    // A resumed table opens its log after the replay, so what the snapshot
+    // already recorded is not written to it twice.
+    let log = if save.is_some() { DraftLogger::silent() } else { DraftLogger::new(&log_path) };
     let out_dir = mtg_draft_runner::lobby::out_dir_for(&log_path);
 
     let mut rng = <rand::rngs::StdRng as rand::SeedableRng>::seed_from_u64(args.seed);
@@ -249,13 +275,19 @@ root or set {} to the mtg-gui directory", web_dir.display(), mtg_player::gui::WE
         build_seconds: args.build_seconds,
         out_dir: Some(out_dir.clone()),
     };
-    let lobby = Lobby::new(config, &packs, &set_data, Arc::clone(&registry), &card_lines, log)
+    let mut lobby = Lobby::new(config, &packs, &set_data, Arc::clone(&registry), &card_lines, log)
         .unwrap_or_else(|e| die(&format!("could not seat the table: {e}")));
-    if let Some(path) = &args.resume {
-        let note = format!("--resume {path}: this version has no snapshot or resume; the draft starts fresh");
+    if let (Some(save), Some(path)) = (&save, &args.resume) {
+        lobby.restore(save).unwrap_or_else(|e| die(&format!("--resume {path}: {e}")));
+        let _ = DraftLogger::new(&log_path);
+        let note = format!("the table carries on from the snapshot {path} (seed {}, seats {}): {} picks, {} \
+decks and {} finished matches replayed; a match that was in progress is played again from its first game",
+            save.seed, save.seats.iter().map(|s| s.kind.as_str()).collect::<Vec<_>>().join(","),
+            save.picks.len(), save.decks.len(), save.matches.len());
         mtg_player::game_log::write(file!(), line!(), &format!("NOTE {note}"), "");
-        mtg_player::stderr_line!("note: {note}");
+        mtg_player::stderr_line!("{note}");
     }
+    let save_path = args.save.as_ref().map_or_else(|| out_dir.join("table.save.json"), PathBuf::from);
 
     let advertise = server::advertised_host(&args.bind);
     let host = advertise.clone().unwrap_or_else(|| args.bind.clone());
@@ -272,6 +304,7 @@ root or set {} to the mtg-gui directory", web_dir.display(), mtg_player::gui::WE
             quiet: args.quiet,
             out_dir: Some(out_dir),
             guide,
+            save: Some(save_path.clone()),
         },
         registry,
         card_lines,
@@ -284,6 +317,8 @@ root or set {} to the mtg-gui directory", web_dir.display(), mtg_player::gui::WE
 
     mtg_player::stderr_line!("{} draft: {} seats, best-of-{}, seed {}; log {}",
         set_data.set_name, args.seats.len(), args.best_of, args.seed, args.log);
+    mtg_player::stderr_line!("snapshot: {} (if the server stops, carry on with --resume {})",
+        save_path.display(), save_path.display());
     if page_missing {
         mtg_player::stderr_line!("note: {}/{} is missing, so the browser page is not served; the terminal \
 client still works", shared.config.web_dir.display(), server::PAGE);
@@ -298,8 +333,13 @@ client still works", shared.config.web_dir.display(), server::PAGE);
         mtg_player::stderr_line!("no human seats: the AI seats draft on their own");
         shared.lobby().start();
         shared.notify();
-    } else {
+    } else if shared.lobby().phase() == mtg_draft_runner::lobby::Phase::Lobby {
         mtg_player::stderr_line!("the draft starts when everybody has joined, or press Enter to start without them");
+    } else {
+        // A table carried on from a snapshot is under way: the links are
+        // the ones everybody already has.
+        mtg_player::stderr_line!("the table carries on: everybody rejoins with the link they had");
+        shared.notify();
     }
 
     // A Ctrl-C takes the seats' calls down at once and is then the

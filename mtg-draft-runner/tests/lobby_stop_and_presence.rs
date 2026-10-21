@@ -131,3 +131,48 @@ fn a_kick_is_on_the_record_and_its_forfeits_say_so() {
     let v = c0.view_until("the table is done", Duration::from_secs(30), |v| v["phase"] == "done");
     assert_eq!(presence_of(&v, 0), "kicked", "{}", v["seats"]);
 }
+
+/// The server writes a snapshot beside its log after every change, and
+/// `--resume` carries the table on from it: the same join link opens the
+/// same seat, with the picks it had made, and the table finishes. A server
+/// that died used to take the draft with it (`--resume` was accepted and
+/// ignored).
+#[test]
+fn a_stopped_table_carries_on_from_its_snapshot() {
+    if !lobby_support::python3_available() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let mut first = Server::start("resume-first", "human,ai", &["--pick-seconds", "1", "--build-seconds", "2"]);
+    first.wait_for_stderr("snapshot: ", Duration::from_secs(5));
+    let key = first.key(0).to_string();
+    let mut c0 = first.client(0);
+    c0.view_until("seat 0 has picked a few", Duration::from_secs(60),
+        |v| v["picks"].as_array().is_some_and(|p| p.len() >= 5));
+    let snapshot = first.dir.join("table.save.json");
+    let kill = std::process::Command::new("kill").args(["-INT", &first.child.id().to_string()]).status().unwrap();
+    assert!(kill.success());
+    first.child.wait().unwrap();
+    let saved: Value = serde_json::from_str(&std::fs::read_to_string(&snapshot).expect("a snapshot was written")).unwrap();
+    let picks = saved["picks"].as_array().unwrap().iter().filter(|p| p["seat"] == 0).count();
+    assert!(picks >= 5, "{saved}");
+    let kept = first.dir.with_extension("save.json");
+    std::fs::copy(&snapshot, &kept).unwrap();
+
+    let mut second = Server::start("resume-second", "human,ai", &["--resume", kept.to_str().unwrap(),
+        "--pick-seconds", "1", "--build-seconds", "2"]);
+    let terminal = second.wait_for_stderr("the table carries on: everybody rejoins", Duration::from_secs(10));
+    assert!(terminal.contains(&format!("key={key}")), "the same join link:\n{terminal}");
+    let mut again = WsClient::connect(&second.ws_url(0, &key));
+    let v = again.view_until("the resumed seat's view", Duration::from_secs(10), |v| v["phase"] == "drafting");
+    assert!(v["picks"].as_array().unwrap().len() >= picks, "the picks it had made: {}", v["picks"]);
+    // It drafts and builds on to the tournament; nobody opens seat 0's
+    // game page, so the host hands it to the table to finish.
+    second.wait_for_log("TOURNAMENT", Duration::from_secs(240));
+    second.type_line("kick 0");
+    let log = second.wait_for_log("FINAL STANDINGS", Duration::from_secs(60));
+    assert!(log.contains("NOTE the table carries on from the snapshot"), "{log}");
+    assert_eq!(log.matches("DRAFT POOLS").count() + log.matches("BOOSTER PACKS").count(), 0,
+        "the replay wrote nothing the first log already had:\n{log}");
+    let _ = std::fs::remove_file(&kept);
+}

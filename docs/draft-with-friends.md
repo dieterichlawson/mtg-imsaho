@@ -71,6 +71,8 @@ address (or say to replace `0.0.0.0` with it when that cannot be found).
 | `--pick-seconds <N>` | none | pick for a human who has not in N seconds (1 to 86400) |
 | `--build-seconds <N>` | none | after N seconds building, a human's deck is final: the one they last sent (basics fill a short one, up to 18 lands), or else the table's (1 to 86400) |
 | `--log <path>` | `logs/draft-with-friends/draft.log` | the draft log; `decks/` and `games/` beside it |
+| `--save <path>` | `table.save.json` beside the log | the table's snapshot, rewritten after every change |
+| `--resume <path>` | none | carry on from a snapshot (below) |
 | `--quiet` | | no event lines on the terminal |
 
 `--help` and `--version` answer and exit; an unknown flag, a bad seat
@@ -191,10 +193,20 @@ asynchronous, so picks are in the order they happened. Beside the log:
 what the client and the tests read; the page gets the same object over
 the WebSocket at `/ws?seat=N&key=K` after every change.
 
+## When the server stops
+
+The server rewrites its snapshot (`table.save.json` beside the log, or
+`--save`) after every change, and prints where at start-up. If it stops —
+a crash, Ctrl-C, a reboot — start it again with `--resume <snapshot>`
+(and the same `--log`, so the log carries on): the seats, their names and
+their join links are the ones everybody already has, every pick, deck and
+finished match is replayed onto packs dealt again from the same seed, the
+AI seats keep their notes, and the draft or the tournament carries on. A
+match that was in progress is played again from its first game. The
+snapshot's seed, set, seats and match length win over the flags.
+
 ## Limitations
 
-- No snapshot or resume: `--resume` is accepted, noted in the log, and
-  ignored. A server that dies takes the draft with it.
 - No `cli` seat (see above).
 - Spectators, chat, cubes, more than one set, and anything past the key
   for access control are out of scope.

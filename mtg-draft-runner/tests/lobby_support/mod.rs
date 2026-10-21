@@ -128,7 +128,9 @@ impl Server {
         let deadline = Instant::now() + Duration::from_secs(60);
         loop {
             let text = server.stderr();
-            if text.contains("the draft starts when") || text.contains("no human seats") {
+            if text.contains("the draft starts when") || text.contains("no human seats")
+                || text.contains("the table carries on: everybody rejoins")
+            {
                 server.keys = text.lines()
                     .filter(|l| l.starts_with("seat ") && l.contains("key="))
                     .filter_map(|l| {

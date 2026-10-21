@@ -409,6 +409,84 @@ pub enum Request {
     Name { name: String },
 }
 
+// ───────────────────────────────────────────────────────────── the snapshot
+
+/// Everything a table needs to carry on after the server stops: the seats
+/// (their keys, so every join link still works), every pick in the order
+/// it was made, the decks, the finished matches and the AI seats' notes.
+/// The packs are not in it: they are dealt again from the seed, and the
+/// picks replayed onto them land the table where it was. A match in
+/// progress when the server stopped is played again from its first game.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TableSave {
+    pub version: u32,
+    pub set: String,
+    pub seed: u64,
+    pub best_of: usize,
+    pub seats: Vec<SavedSeat>,
+    pub picks: Vec<SavedPick>,
+    pub decks: Vec<SavedDeck>,
+    pub matches: Vec<SavedMatch>,
+}
+
+/// The snapshot format this build writes and reads.
+pub const TABLE_SAVE_VERSION: u32 = 1;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedSeat {
+    /// `human`, `cli` or `ai:<model spec>`, as `--seats` takes it.
+    pub kind: String,
+    pub name: String,
+    pub key: Option<String>,
+    pub joined: bool,
+    pub kicked: bool,
+    pub gave_up: bool,
+    /// An AI seat's notes from its last pick, which open its next prompt.
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedPick {
+    pub seat: usize,
+    pub pack_id: usize,
+    pub index: usize,
+    pub auto: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedDeck {
+    pub seat: usize,
+    pub main: Vec<String>,
+    pub lands: HashMap<String, u32>,
+    pub sideboard: Vec<String>,
+    /// The table built it, not the seat.
+    pub fallback: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SavedMatch {
+    pub round: usize,
+    pub a: usize,
+    pub b: usize,
+    pub result: MatchResult,
+}
+
+impl TableSave {
+    /// The seats as `--seats` would name them.
+    ///
+    /// # Errors
+    /// A seat word this build does not know.
+    pub fn seat_kinds(&self) -> Result<Vec<SeatKind>, String> {
+        self.seats.iter().map(|s| match s.kind.as_str() {
+            "human" => Ok(SeatKind::Human),
+            "cli" => Ok(SeatKind::Cli),
+            other => other.strip_prefix("ai:").filter(|m| !m.is_empty())
+                .map(|m| SeatKind::Ai(m.to_string()))
+                .ok_or_else(|| format!("'{other}' is not a seat this build knows")),
+        }).collect()
+    }
+}
+
 // ───────────────────────────────────────────────────────────── the lobby
 
 /// How the table is set up.
@@ -510,6 +588,10 @@ pub struct Lobby {
     /// Lines for the host's terminal, drained by the server.
     events: Vec<String>,
     started_pool_log: bool,
+    /// Every pick in the order it was made, for the snapshot.
+    pick_log: Vec<SavedPick>,
+    /// Each AI seat's notes from its last pick, for the snapshot.
+    ai_notes: Vec<Option<String>>,
 }
 
 impl Lobby {
@@ -568,6 +650,7 @@ the order they happened, not in seat order", "");
             }
         }
 
+        let pod = config.seats.len();
         Ok(Self {
             config,
             seats,
@@ -581,6 +664,8 @@ the order they happened, not in seat order", "");
             round_pairings: Vec::new(),
             events: Vec::new(),
             started_pool_log: false,
+            pick_log: Vec::new(),
+            ai_notes: vec![None; pod],
         })
     }
 
@@ -941,6 +1026,7 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
     ) -> Result<(), String> {
         let available = self.table.in_front(seat).map(|f| f.cards.to_vec()).unwrap_or_default();
         let picked = self.table.pick(seat, pack_id, index, auto)?;
+        self.pick_log.push(SavedPick { seat, pack_id, index, auto });
         log_draft_pick!(self.log, seat, picked.round, picked.pick, &available, &picked.card, prompt, response);
         self.event(line);
         self.seats[seat].pick_deadline = None;
@@ -1316,8 +1402,10 @@ for the seat from here, and its games are forfeit"), ""));
     /// Returns the matches to play, `(round, a, b)`, byes excluded.
     #[must_use]
     pub fn begin_tournament(&mut self) -> Vec<(usize, usize, usize)> {
+        // A tournament restored from a snapshot has begun: what is left of
+        // its round is what to play.
         if self.tournament.is_some() {
-            return Vec::new();
+            return self.matches_to_play();
         }
         let config = TournamentConfig { best_of: self.config.best_of };
         self.tournament = Some(Tournament::new(self.seats.len(), config));
@@ -1491,6 +1579,163 @@ for the seat from here, and its games are forfeit"), ""));
         for (rank, s) in sorted.iter().enumerate() {
             self.event(format!("  {}", crate::standings::standings_row_with(rank + 1, s, &tags[s.seat], &|x| self.who(x))));
         }
+    }
+
+    // ── the snapshot ──
+
+    /// An AI seat's notes from its last pick, kept for the snapshot.
+    pub fn set_ai_notes(&mut self, seat: usize, notes: Option<String>) {
+        if let Some(slot) = self.ai_notes.get_mut(seat) {
+            *slot = notes;
+        }
+    }
+
+    /// An AI seat's notes, as last kept (or restored from a snapshot).
+    #[must_use]
+    pub fn ai_notes(&self, seat: usize) -> Option<String> {
+        self.ai_notes.get(seat).cloned().flatten()
+    }
+
+    /// The table as it stands, to carry on from; see [`TableSave`].
+    #[must_use]
+    pub fn snapshot(&self) -> TableSave {
+        TableSave {
+            version: TABLE_SAVE_VERSION,
+            set: self.config.set_code.clone(),
+            seed: self.config.seed,
+            best_of: self.config.best_of,
+            seats: self.seats.iter().enumerate().map(|(i, s)| SavedSeat {
+                kind: match &s.kind {
+                    SeatKind::Ai(model) => format!("ai:{model}"),
+                    other => other.word().to_string(),
+                },
+                name: s.name.clone(),
+                key: s.key.clone(),
+                joined: s.joined,
+                kicked: s.kicked,
+                gave_up: s.gave_up,
+                notes: self.ai_notes.get(i).cloned().flatten(),
+            }).collect(),
+            picks: self.pick_log.clone(),
+            decks: self.seats.iter().enumerate()
+                .filter(|(_, s)| s.ready)
+                .filter_map(|(seat, s)| s.deck.as_ref().map(|d| SavedDeck {
+                    seat, main: d.maindeck.clone(), lands: d.lands.clone(),
+                    sideboard: d.sideboard.clone(), fallback: s.deck_fallback,
+                }))
+                .collect(),
+            matches: self.matches.iter()
+                .filter_map(|m| m.result.clone().map(|result| SavedMatch { round: m.round, a: m.a, b: m.b, result }))
+                .collect(),
+        }
+    }
+
+    /// Carry on from `save`: the seats as they were (names, keys, kicks),
+    /// every pick replayed in order onto the packs this lobby was dealt
+    /// from the same seed, the decks, and the finished matches recorded
+    /// round by round. Called on a fresh lobby before the log is opened,
+    /// so nothing the snapshot already recorded is written twice; the
+    /// terminal lines the replay makes are dropped. Returns the matches
+    /// still to play when the tournament had begun.
+    ///
+    /// # Errors
+    /// The snapshot is not this table's: another pod, a pick that is not
+    /// the pack in front of its seat, a deck the pool cannot make, a match
+    /// the pairings do not have.
+    pub fn restore(&mut self, save: &TableSave) -> Result<Vec<(usize, usize, usize)>, String> {
+        if save.version != TABLE_SAVE_VERSION {
+            return Err(format!("snapshot version {} (this build reads {TABLE_SAVE_VERSION})", save.version));
+        }
+        if save.seats.len() != self.seats.len() || save.seed != self.config.seed || save.set != self.config.set_code {
+            return Err("the snapshot is of another table (seats, seed or set differ)".to_string());
+        }
+        for (i, saved) in save.seats.iter().enumerate() {
+            let s = &mut self.seats[i];
+            s.name.clone_from(&saved.name);
+            if s.key.is_some() {
+                s.key.clone_from(&saved.key);
+            }
+            s.joined = saved.joined;
+            s.kicked = saved.kicked;
+            s.gave_up = saved.gave_up;
+            s.auto = saved.kicked || saved.gave_up;
+            self.ai_notes[i].clone_from(&saved.notes);
+        }
+        if !save.picks.is_empty() {
+            self.phase = Phase::Drafting;
+        }
+        for (n, p) in save.picks.iter().enumerate() {
+            let picked = self.table.pick(p.seat, p.pack_id, p.index, p.auto)
+                .map_err(|e| format!("snapshot pick {}: {e}", n + 1))?;
+            self.pick_log.push(p.clone());
+            if picked.draft_over {
+                self.phase = Phase::Building;
+            }
+        }
+        for d in &save.decks {
+            let pool = self.table.pool(d.seat).to_vec();
+            let deck = deckbuilding::validate_deck(&pool, &d.main, &d.lands)
+                .map_err(|e| format!("snapshot deck of seat {}: {e}", d.seat))?;
+            let s = &mut self.seats[d.seat];
+            s.deck = Some(DraftDeck { sideboard: d.sideboard.clone(), ..deck });
+            s.ready = true;
+            s.deck_fallback = d.fallback;
+        }
+        // The DECK BUILDING section is already in the log for a seat that
+        // finished drafting before the stop.
+        self.started_pool_log = self.seats.iter().enumerate().any(|(i, _)| self.table.seat_done(i));
+        let mut to_play = Vec::new();
+        if self.all_ready() && (!save.matches.is_empty() || self.phase == Phase::Building) {
+            to_play = self.begin_tournament();
+            loop {
+                let round = to_play.first().map(|&(r, _, _)| r);
+                let Some(round) = round else { break };
+                let saved: Vec<&SavedMatch> = save.matches.iter().filter(|m| m.round == round).collect();
+                if saved.is_empty() {
+                    break;
+                }
+                let mut next = Vec::new();
+                let mut left = Vec::new();
+                for &(r, a, b) in &to_play {
+                    match saved.iter().find(|m| m.a == a && m.b == b) {
+                        Some(m) => {
+                            self.match_started(r, a, b, [None, None]);
+                            next = self.match_finished(r, a, b, m.result.clone());
+                        }
+                        None => left.push((r, a, b)),
+                    }
+                }
+                if saved.iter().any(|m| !to_play.iter().any(|&(_, a, b)| a == m.a && b == m.b)) {
+                    return Err(format!("the snapshot's round {round} has a match the pairings do not"));
+                }
+                if !left.is_empty() {
+                    to_play = left;
+                    break;
+                }
+                to_play = next;
+            }
+        }
+        self.events.clear();
+        // Seats still drafting or building get their clocks afresh.
+        self.arm_deadlines();
+        for seat in 0..self.seats.len() {
+            if self.seats[seat].is_human() && self.table.seat_done(seat) && !self.seats[seat].ready {
+                if let Some(secs) = self.config.build_seconds {
+                    self.seats[seat].build_deadline = deadline_in(secs);
+                }
+            }
+        }
+        self.run_auto_seats();
+        self.events.clear();
+        Ok(to_play)
+    }
+
+    /// The matches of the round under way that have not started: what a
+    /// tournament restored from a snapshot still has to play.
+    #[must_use]
+    pub fn matches_to_play(&self) -> Vec<(usize, usize, usize)> {
+        self.matches.iter().filter(|m| m.status == MatchStatus::Waiting)
+            .map(|m| (m.round, m.a, m.b)).collect()
     }
 
     // ── names ──

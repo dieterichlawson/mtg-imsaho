@@ -18,7 +18,7 @@ use mtg_draft::set_data::SetData;
 use mtg_draft::tournament::{GameOutcome, MatchResult};
 use mtg_draft_runner::card_lines::CardLines;
 use mtg_draft_runner::draft_log::DraftLogger;
-use mtg_draft_runner::lobby::{Lobby, LobbyConfig, Phase, SeatKind};
+use mtg_draft_runner::lobby::{Lobby, LobbyConfig, Phase, SeatKind, TableSave};
 use mtg_engine::cards::CardRegistry;
 use serde_json::Value;
 
@@ -689,4 +689,99 @@ fn a_seat_is_where_its_game_page_is_and_a_kicked_seat_says_so() {
     assert_eq!(l.away_reason(2), "the seat stopped answering");
     let forfeit = l.forfeit_result(1, 0);
     assert_eq!(forfeit.games[0].game_log, vec!["forfeit: the host kicked the seat".to_string()]);
+}
+
+/// The hosted table's snapshot: a server that stops, mid-draft or
+/// mid-tournament, carries on where it was with `--resume` — the same
+/// join keys, packs, pools, picks, names, AI notes, decks and standings,
+/// and the matches left to play — where it used to start a new draft.
+#[test]
+fn a_snapshot_carries_the_table_on_where_it_stopped() {
+    let registry = CardRegistry::with_all_cards();
+    let seats = || vec![SeatKind::Human, SeatKind::Human, SeatKind::Ai("cc".into()), SeatKind::Ai("cc".into())];
+    let through_json = |save: TableSave| -> TableSave {
+        serde_json::from_str(&serde_json::to_string(&save).unwrap()).unwrap()
+    };
+    let same_draft = |a: &Lobby, b: &Lobby| {
+        for seat in 0..POD {
+            let (va, vb) = (jv(a, seat), jv(b, seat));
+            for key in ["phase", "pack", "pool", "picks", "deck", "standings", "pairings"] {
+                assert_eq!(va[key], vb[key], "seat {seat}'s {key} after the resume");
+            }
+            for (sa, sb) in va["seats"].as_array().unwrap().iter().zip(vb["seats"].as_array().unwrap()) {
+                assert_eq!((&sa["name"], &sa["picks"], &sa["status"]), (&sb["name"], &sb["picks"], &sb["status"]));
+            }
+        }
+    };
+
+    // Mid-draft.
+    let (mut a, _) = lobby(seats());
+    a.connected(0);
+    a.connected(1);
+    a.set_name(0, "Ann");
+    draft_to_the_end(&mut a, Some(20));
+    a.set_ai_notes(2, Some("taking blue".into()));
+    let (mut b, _) = lobby(seats());
+    let to_play = b.restore(&through_json(a.snapshot())).unwrap();
+    assert!(to_play.is_empty());
+    same_draft(&a, &b);
+    assert_eq!(b.human_keys(), a.human_keys(), "every join link still works");
+    assert_eq!(b.ai_notes(2).as_deref(), Some("taking blue"));
+    assert_eq!(b.phase(), Phase::Drafting);
+    assert!(b.take_events().is_empty(), "the replay says nothing on the terminal");
+
+    // Both carry on alike: to the end of the draft, the decks, round 1 and
+    // half of round 2.
+    for l in [&mut a, &mut b] {
+        draft_to_the_end(l, None);
+        for seat in 0..POD {
+            let pool: Vec<String> = jv(l, seat)["pool"].as_array().unwrap().iter()
+                .map(|c| c["name"].as_str().unwrap().to_string()).collect();
+            let deck = fallback_deck(&pool, &registry);
+            if seat < 2 {
+                l.submit_deck(seat, &deck.maindeck, &deck.lands, &[]).unwrap();
+                l.ready(seat).unwrap();
+            } else {
+                l.ai_deck(seat, &mtg_draft_runner::deck::DeckBuildResult { deck, attempts: vec![], retries: 0, fallback: false });
+            }
+        }
+    }
+    same_draft(&a, &b);
+    let game = |winner: usize| GameOutcome { winner: Some(winner), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false };
+    let result = |p: usize, q: usize, wp: usize, wq: usize| MatchResult {
+        player_a: p, player_b: q, wins_a: wp, wins_b: wq,
+        games: (0..wp).map(|_| game(p)).chain((0..wq).map(|_| game(q))).collect(),
+    };
+    assert_eq!(a.begin_tournament(), vec![(1, 0, 1), (1, 2, 3)]);
+    for (r, p, q) in [(1, 0, 1), (1, 2, 3)] {
+        a.match_started(r, p, q, [None, None]);
+    }
+    a.match_finished(1, 0, 1, result(0, 1, 2, 1));
+    let round2 = a.match_finished(1, 2, 3, result(2, 3, 0, 2));
+    assert_eq!(round2, vec![(2, 0, 3), (2, 1, 2)]);
+    a.match_started(2, 0, 3, [None, None]);
+    a.match_started(2, 1, 2, [None, None]);
+    a.match_finished(2, 0, 3, result(0, 3, 2, 0));
+
+    // Mid-tournament: the finished matches are recorded, the one in
+    // progress is to play again.
+    let (mut c, _) = lobby(seats());
+    let to_play = c.restore(&through_json(a.snapshot())).unwrap();
+    assert_eq!(c.phase(), Phase::Playing);
+    assert_eq!(to_play, vec![(2, 1, 2)], "the match that was in progress");
+    assert_eq!(c.begin_tournament(), vec![(2, 1, 2)], "and what the tournament thread is handed");
+    for seat in 0..POD {
+        let (va, vc) = (jv(&a, seat), jv(&c, seat));
+        assert_eq!(va["standings"], vc["standings"], "seat {seat}");
+        assert_eq!(va["deck"], vc["deck"], "seat {seat}");
+    }
+    c.match_started(2, 1, 2, [None, None]);
+    assert!(c.match_finished(2, 1, 2, result(1, 2, 1, 2)).is_empty());
+    assert_eq!(c.phase(), Phase::Done, "the table finishes from where it stopped");
+
+    // Another table's snapshot is refused, not half-applied.
+    let mut other = a.snapshot();
+    other.seed += 1;
+    let (mut d, _) = lobby(seats());
+    assert!(d.restore(&other).unwrap_err().contains("another table"));
 }

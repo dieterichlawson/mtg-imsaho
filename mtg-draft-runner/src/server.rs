@@ -42,6 +42,9 @@ pub struct ServerConfig {
     /// Where `games/` goes.
     pub out_dir: Option<PathBuf>,
     pub guide: Option<String>,
+    /// Where the table's snapshot is written after every change, for
+    /// `--resume`; nowhere when `None`.
+    pub save: Option<PathBuf>,
 }
 
 /// What every thread shares.
@@ -217,7 +220,19 @@ impl Shared {
         for line in events {
             self.say(&line);
         }
+        self.write_snapshot();
         self.changed.notify_all();
+    }
+
+    /// Write the table's snapshot, whole, to a file beside it and then over
+    /// it, so a server that dies mid-write leaves the last good one.
+    fn write_snapshot(&self) {
+        let Some(path) = &self.config.save else { return };
+        let Ok(json) = serde_json::to_string(&self.lobby().snapshot()) else { return };
+        let tmp = path.with_extension("tmp");
+        if std::fs::write(&tmp, json).is_ok() {
+            let _ = std::fs::rename(&tmp, path);
+        }
     }
 
     /// Wait for a change, or `timeout`.
@@ -517,6 +532,9 @@ fn ai_worker(shared: &Arc<Shared>, seat: usize, model: &str) {
         }
     };
     log_system_prompt!((), seat, client.system_prompt(), None);
+    // A table carried on from a snapshot: the seat's notes from its last
+    // pick open its next prompt, as they would have.
+    client.restore_notes(shared.lobby().ai_notes(seat));
 
     loop {
         let work = {
@@ -564,7 +582,11 @@ fn ai_worker(shared: &Arc<Shared>, seat: usize, model: &str) {
                 let pick = parse_pick_response(&response, &job.cards);
                 let substituted = pick.was_substituted();
                 let index = job.cards.iter().position(|c| c == pick.card()).unwrap_or(0);
-                let applied = shared.lobby().ai_pick(seat, job.pack_id, index, &prompt, &response, substituted);
+                let applied = {
+                    let mut lobby = shared.lobby();
+                    lobby.set_ai_notes(seat, client.notes().map(str::to_string));
+                    lobby.ai_pick(seat, job.pack_id, index, &prompt, &response, substituted)
+                };
                 if let Err(e) = applied {
                     let who = shared.lobby().who(seat);
                     shared.say(&format!("WARN {who}: a pick could not be applied: {e}"));
