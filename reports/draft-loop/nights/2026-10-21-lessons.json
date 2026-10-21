@@ -1,0 +1,366 @@
+{
+ "night": "2026-10-21",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": false,
+   "colors": "WR",
+   "record": "1-2-0",
+   "lessons": [
+    "Pick Tormented Pariah or Ashmouth Hound over a blue first pick like Claustrophobia, since Claustrophobia never made my WR deck and I had to settle for a fallback colour pair.",
+    "Draft more answers for green 4-toughness bodies: Somberwald Spider and Villagers of Estwald beat my red-white deck 2-0 in round 3.",
+    "My long wins and losses (35, 40, 30 turns) show that a red-white aggro deck with 17 lands and few evasive threats stalls, so prioritise flyers and cut a land for a low curve."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3111,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1848,
+    "output_tokens_details": {
+     "thinking_tokens": 1644
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3111
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1848,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3111,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3111,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "colors": "WG",
+   "record": "1-2-0",
+   "lessons": [
+    "Don't run five Forests for four green cards: Elder of Laurels, Silverchase Fox and Unruly Mob strained my 12 Plains/5 Forest mana, and I drafted Spidery Grasp and Sensory Deprivation but played neither.",
+    "My two lost matches went 35, 40 and 56 turns, so favour evasive fliers and removal like Rebuke and Urgent Exorcism over extra Avacyn's Pilgrim mana accelerants that don't break stalls.",
+    "Settle the second colour by mid pack 2 rather than drifting: I ended with a light green splash of playables instead of a committed deck, and my 1-2 record reflected it."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3183,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1831,
+    "output_tokens_details": {
+     "thinking_tokens": 1597
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3183
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1831,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3183,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3183,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": false,
+   "colors": "UB",
+   "record": "0-3-0",
+   "lessons": [
+    "Prioritise cheap removal like Dead Weight and Corpse Lunge over top-end: my UB deck had few early answers, and every match ran into long grinds of 15\u201325 turns.",
+    "Pick up cheap flying or reach blockers earlier: GW's three Chapel Geists and two Abbey Griffins flew over my ground Skaabs, Walking Corpse and Village Cannibals.",
+    "Blue-black was not the problem: seat 5 also drafted UB and went 2-1, so judge my deck by its interaction and curve, not its colours."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3190,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2756,
+    "output_tokens_details": {
+     "thinking_tokens": 2562
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3190
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2756,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3190,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3190,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "colors": "W",
+   "record": "2-1-0",
+   "lessons": [
+    "Mono-white with Fiend Hunter, Smite the Monstrous and Feeling of Dread went 2-1 against UB and WR but lost 0-2 to BG; keep a second colour's removal as insurance.",
+    "BG's Boneyard Wurm and Victim of Night outclassed my white board in both losses; keep a hedge colour's big bodies or removal as a backup.",
+    "Pack 1 picks 4 and 8, Night Terrors and Grimoire of the Dead, were wasted on colours I cut; settle on white sooner to get better two-drops."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3137,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2533,
+    "output_tokens_details": {
+     "thinking_tokens": 2335
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3137
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2533,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3137,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3137,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": false,
+   "colors": "RG",
+   "record": "2-1-0",
+   "lessons": [
+    "Prioritise cheap removal: Brimstone Volley, Geistflame and Heretic's Punishment anchored this 2-1 RG deck, so take them over mid-curve creatures in the early picks.",
+    "Secure a second top-end threat: Essence of the Wild was RG's only real finisher, and the 51-turn game in the 1-2 loss to BG suggests stalled boards need more late power.",
+    "Value the 2-drops: Reckless Waif, Kruin Outlaw and the werewolves kept early pressure on, so keep that curve while weighing Kindercatch against Moonmist for the last slots."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3282,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1437,
+    "output_tokens_details": {
+     "thinking_tokens": 1224
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3282
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1437,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3282,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3282,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "colors": "UB",
+   "record": "2-1-0",
+   "lessons": [
+    "Blue-black flyers (Moon Heron, Murder of Crows, Stitched Drake) plus Dead Weight and Victim of Night helped win 2-0 over UR and 2-1 over WG, including 25- and 56-turn games.",
+    "Ground-based RG beat me 1-2 in 16- to 17-turn games, so this slow deck needed more cheap early blockers and fewer expensive top-end cards.",
+    "Count your 40 before registering: my recorded list has 24 spells plus 17 lands, and still includes Disciple of Griselbrand despite the note to cut it."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3182,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2361,
+    "output_tokens_details": {
+     "thinking_tokens": 2156
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3182
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2361,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3182,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3182,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": false,
+   "colors": "UR",
+   "record": "1-2-0",
+   "lessons": [
+    "Blasphemous Act, my pack 3 first pick, never reached my UR deck, so take first picks in the colours you will actually play.",
+    "My losses to UB ran 22 and 25 turns, suggesting my deck couldn't close stalled boards, so value finishers and fliers over extra ground filler.",
+    "Six red cards (Brimstone Volley, two Harvest Pyre, Pitchburn Devils, Riot Devils, Night Revelers) ran on only six Mountains, so give a split like that 8 or 9 red sources or cut red."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3248,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2556,
+    "output_tokens_details": {
+     "thinking_tokens": 2364
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3248
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2556,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3248,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3248,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "colors": "BG",
+   "record": "3-0-0",
+   "lessons": [
+    "Green-black flowed here: Festerhide Boar, Villagers of Estwald, Kindercatch and removal Prey Upon, Victim of Night, Tribute to Hunger went 3-0 in matches.",
+    "Build the green-heavy costs with 10 Forest and 7 Swamp, and cut speculative off-colour cards like Avacyn's Pilgrim and Disciple of Griselbrand for 23 playables.",
+    "Expect grindy matches: Round 2 ran to a 51-turn game, so keep Boneyard Wurm and Morkrut Banshee's late-game value rather than chasing early speculative picks."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3235,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1527,
+    "output_tokens_details": {
+     "thinking_tokens": 1306
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3235
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1527,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3235,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3235,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}
