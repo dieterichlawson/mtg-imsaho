@@ -1,58 +1,58 @@
 # Innistrad draft guide
 
-_Written by the nightly draft loop (`scripts/draft-loop/`) from 2026-10-21's lessons and every night's statistics. Drafters read it at every pick._
+_Written by the nightly draft loop (`scripts/draft-loop/`) from 2026-10-21_b's lessons and every night's statistics. Drafters read it at every pick._
 
 ## Colours and archetypes
 
-All data so far is one night: 8 decks, 31 games, all unguided. Every number below is thin, so treat it as a lean, not a rule.
+Two nights: 16 decks, 63 games, all unguided, so most numbers are thin.
 
-- BG went 3-0 in matches (8 games, anecdote). Green was the deepest colour and green commons came late.
-- RG went 2-1 (8 games, anecdote). UB decks went 2-4 across two decks (16 games), one 2-1 and one 0-3, so colours were not the whole story.
-- UR, WG and WR each went 1-2. Mono-white went 2-1 but lost 0-2 to BG.
-- Games ran long (30-56 turns). Decks with fliers, removal and a late finisher did better than ground aggro.
-- Pick a main colour by about pick 5 and commit to a pair by mid pack 2. Several drafters said wasted early picks in colours they cut hurt them.
+- BG went 6-0 in matches, 80% of games (15 games, 2 decks). It is the best result so far. Green was deep and flowed late, and both BG decks played 10 Forest and 7 Swamp style splits.
+- BR went 4-2 (16 games, 56%). Its two-drop aggro lost to grindy green-black, 0-2 in 32- and 33-turn games (anecdote).
+- RG went 2-1 (8 games, anecdote).
+- Weak so far: WU 1-5 (16 games, 31%), UR 2-4 (16 games, 38%), UB 3-6 (25 games, 44%).
+- WG went 3-3 (15 games, 53%).
+- Lean green first, with black as the best partner. Pick a main colour by about pick 5 and commit to a pair before pack 3. Several drafters wasted picks (Victim of Night, Brimstone Volley, Essence of the Wild) on colours they later cut.
 
 ## Commons that win
 
-Each of these ran in one or two decks of 8-16 games, so all are anecdotes. They ran in decks that won.
+Deck game win rate for decks running the card.
 
-- Green: Villagers of Estwald (16 games, 69%), Darkthicket Wolf, Orchard Spirit, Festerhide Boar, Kindercatch, Prey Upon, Somberwald Spider, Grave Bramble. Villagers and Somberwald Spider were also hard for a WR deck to beat.
-- Black: Victim of Night (16 games, 69%), Typhoid Rats, Ghoulraiser, Brain Weevil.
-- Blue: Stitched Drake, Silent Departure, Frightful Delusion.
-- White: Chapel Geist went early, and fliers beat ground UB. Its deck results are not in the winners table.
-- Red: Bloodcrazed Neonate, Feral Ridgewolf.
+- Green: Villagers of Estwald (31 games, 71%), Orchard Spirit (31 games, 71%), Festerhide Boar (23 games, 74%), Darkthicket Wolf (23 games, 74%), Somberwald Spider (23 games, 70%), Prey Upon (15 games, 80%), Kindercatch and Grave Bramble (16 games, 69%).
+- Black: Typhoid Rats (24 games, 62%), Victim of Night (25 games, 60%), Walking Corpse (32 games, 59%), Brain Weevil (15 games, 60%).
+- Red: Bloodcrazed Neonate and Feral Ridgewolf (15 games, 60% each).
+- Blue: Silent Departure and Frightful Delusion (8 games, anecdote).
+- White: Chapel Geist formed the core of a 2-0 white flier-and-removal run alongside Ghostly Possession (anecdote).
 
 ## Uncommons and rares
 
-Anecdotes, 8 games each unless noted.
-
-- Take removal and big bodies: Tribute to Hunger, Morkrut Banshee, Sever the Bloodline, Boneyard Wurm, Hollowhenge Scavenger, Heretic's Punishment.
-- Green uncommons that were in winning decks: Gatstaf Shepherd (16 games, 69%), Lumberknot, Spider Spawning, Hamlet Captain.
-- Essence of the Wild was RG's only real finisher. Kruin Outlaw and Reckless Waif kept early pressure.
-- Geistcatcher's Rig is colourless and went 53% across 15 games. It is fine, not a priority.
+- Green: Gatstaf Shepherd (23 games, 74%), Spider Spawning, Hollowhenge Scavenger and Lumberknot (15 games, 80% each), Hamlet Captain (16 games, 62%).
+- Black: Morkrut Banshee (15 games, 80%), Sever the Bloodline (15 games, 73%), Disciple of Griselbrand (15 games, 73%), Tribute to Hunger (17 games, 59%).
+- Boneyard Wurm (15 games, 80%) beat grindy decks.
+- Red: Kruin Outlaw, Falkenrath Marauders and Heretic's Punishment (15 games, 60% each); Reckless Waif (24 games, 58%).
+- Geistcatcher's Rig was contested and taken at about pick 3; it is fine, not a bomb.
 
 ## Pick order
 
-1. Cheap removal: Victim of Night, Prey Upon, Dead Weight, Brimstone Volley, Geistflame, Tribute to Hunger.
-2. Rares and uncommons that win a stalled board: Boneyard Wurm, Morkrut Banshee, Essence of the Wild, Heretic's Punishment.
-3. Fliers and reach: Chapel Geist, Stitched Drake, Moon Heron, Murder of Crows, Orchard Spirit.
-4. Good green bodies: Villagers of Estwald, Darkthicket Wolf, Festerhide Boar, Kindercatch.
-5. Two-drops in your colours.
+1. Cheap removal: Victim of Night, Prey Upon, Dead Weight, Geistflame, Brimstone Volley, Tribute to Hunger.
+2. Strong green and black uncommons and rares: Morkrut Banshee, Sever the Bloodline, Boneyard Wurm, Spider Spawning, Hollowhenge Scavenger.
+3. Good green commons: Villagers of Estwald, Darkthicket Wolf, Festerhide Boar, Somberwald Spider, Orchard Spirit.
+4. Evasive finishers: Chapel Geist, Stitched Drake, Murder of Crows, Moon Heron.
+5. Two-drops such as Typhoid Rats.
 
-Pass: Claustrophobia as a speculative first pick (it never made its drafter's deck), Grimoire of the Dead, Night Terrors, Wooden Stake, Ghoulcaller's Bell, Avacyn's Pilgrim unless you are already green. Blasphemous Act was a first pick that never got played, so take first picks in colours you will actually play.
+Pass: Claustrophobia early, Ancient Grudge (both copies ended in a sideboard), Dream Twist, Traveler's Amulet, a second Hysterical Blindness or Lost in the Mist, Grimoire of the Dead, Night Terrors. After about pick 10 take a playable creature or removal over speculation.
 
 ## Building
 
-- Play 17 lands and 23 spells, and count to 40 before registering. One drafter listed 24 spells plus 17 lands.
-- Split basics by colour weight. A BG deck on 10 Forest and 7 Swamp went 3-0. Six red cards on six Mountains stumbled, so give a heavy second colour 8 or 9 sources, or cut it.
-- Do not play a colour for only four cards on five basics. Splashes strained the mana.
-- Play a hedge of cheap interaction. Mono-white lost to BG's Boneyard Wurm and Victim of Night, so keep a second colour's removal.
-- Include 2-3 fliers or reach creatures and one or two finishers. Cut filler that does nothing in stalls.
-- Do not leave playable removal in the sideboard. Two drafters drafted Spidery Grasp and Sensory Deprivation and played neither.
+- 17 lands and 23 spells, counted to 40. A 17-land deck of small threats stalled in a 39-turn game (anecdote), so with a low curve of small threats consider 16.
+- Split basics by colour weight. BG on 10 Forest and 7 Swamp went 3-0 (anecdote). Six Islands strained a deck with many double-blue cards, so cut double-pip cards or split lands evenly.
+- No colour for only four cards on five basics. Avoid splashes.
+- Play 5 or more two-drops. Slow WU and UB decks lost to early Typhoid Rats and Bloodcrazed Neonate.
+- Count finishers and evasive threats before registering. Fliers with cheap removal worked in WU's grindy wins (anecdote).
+- Do not leave playable removal or bodies in the sideboard.
 
 ## Playing
 
-- Expect long games (typical 25-55 turns). Trade early, keep removal for fliers and big blockers, and don't race with a deck that can't finish.
-- Ground aggro stalled against 4-toughness green bodies like Somberwald Spider and Villagers of Estwald. Use fliers or removal to break through.
-- Block early with cheap creatures when your deck is slow, as the UB drafter who lost to ground RG found.
-- Hold late-game bombs such as Boneyard Wurm and Morkrut Banshee for value rather than rushing them out.
+- Games run long, 25-55 turns in many matches. Trade early, save removal for fliers and big blockers, and do not race with a deck that cannot finish.
+- Ground aggro stalled against 4-toughness green bodies; break through with fliers or removal.
+- Block early with cheap creatures when your deck is slow. WU lost fast to wide green ground creatures (13 and 14 turns).
+- Hold bombs such as Boneyard Wurm and Morkrut Banshee for value.

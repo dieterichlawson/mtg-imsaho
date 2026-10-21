@@ -1,0 +1,365 @@
+{
+ "night": "2026-10-21_b",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": false,
+   "colors": "BR",
+   "record": "2-1-0",
+   "lessons": [
+    "Red-black aggro lost round 1 1-2 to WG's Festerhide Boars and Avacyn's Pilgrims in a 28-turn game, so take evasive threats like Vampire Interloper and Geistcatcher's Rig over ground filler.",
+    "Rounds 2 and 3 were 2-1 wins over WU decks built around Feeling of Dread and Rebuke, so prioritize cheap removal like Geistflame and Into the Maw of Hell over fringe creatures.",
+    "Geistcatcher's Rig was contested, since seat 5's WU deck also played one, so take it early rather than late in pack 2."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3190,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2696,
+    "output_tokens_details": {
+     "thinking_tokens": 2476
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3190
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2696,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3190,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3190,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "colors": "WG",
+   "record": "2-1-0",
+   "lessons": [
+    "Green-white with three Avacyn's Pilgrims and 17 lands produced 15-28 turn grinds, and I lost round 2 1-2 to a BR deck with three Markov Patrician, so favor cheap removal and evasive threats over extra ramp.",
+    "Pack 1 spent late picks on Dream Twist and Traveler's Amulet, and neither made my deck, so take playable creatures or removal over speculative fillers after about pick ten.",
+    "Chapel Geist and Ghostly Possession formed the white flyer-and-removal core of my deck that went 2-0 against UR, so prioritize those cards early in the packs."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3184,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2004,
+    "output_tokens_details": {
+     "thinking_tokens": 1783
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3184
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2004,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3184,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3184,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": false,
+   "colors": "WU",
+   "record": "0-3-0",
+   "lessons": [
+    "Prioritise two-drops over the late-game creatures I took; my slow WU deck couldn't handle BR's Typhoid Rats and Bloodcrazed Neonate starts, and I lost all three matches.",
+    "Count coloured pips before building: six Islands strained two Feeling of Dread, Sensory Deprivation, Murder of Crows and Skaab Goliath, so split lands more evenly or cut double-blue cards.",
+    "My 17 to 24 turn stalls against Unburial Rites and Grimgrin showed my ground creatures never closed, so draft evasive finishers like Murder of Crows higher."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3122,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2645,
+    "output_tokens_details": {
+     "thinking_tokens": 2429
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3122
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2645,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3122,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3122,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "colors": "BR",
+   "record": "2-1-0",
+   "lessons": [
+    "Against grindy green-black decks like round 3's Boneyard Wurm, Lumberknot and Spider Spawning, my two-drop BR aggro stalled and lost 0-2 in 33- and 32-turn games, so prioritise card advantage or late-game reach.",
+    "Ancient Grudge cost me picks in packs 2 and 3, and both copies ended in my sideboard, so a body like Riot Devils or Feral Ridgewolf would have helped the deck more.",
+    "Round 2 went to three games and round 3 to zero, so take evasive threats like Crossway Vampire and Falkenrath Marauders over marginal removal to close long games."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3176,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2205,
+    "output_tokens_details": {
+     "thinking_tokens": 1978
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3176
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2205,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3176,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3176,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": false,
+   "colors": "UB",
+   "record": "1-2-0",
+   "lessons": [
+    "I opened Brimstone Volley and Essence of the Wild, then cut every red and green card to finish UB, so commit to black by about pick five instead of keeping speculative early picks.",
+    "Both of my lost matches ran 21 to 28 turns, so a Grimgrin and Skaab midrange deck needs early evasive pressure; prefer two-drops over slow value cards like Unburial Rites."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3202,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2636,
+    "output_tokens_details": {
+     "thinking_tokens": 2494
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3202
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2636,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3202,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3202,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "colors": "WU",
+   "record": "1-2-0",
+   "lessons": [
+    "Against BG's wide ground creatures (3x Villagers of Estwald, Darkthicket Wolf), the WU deck lost in 13 and 14 turns, so prioritize early blockers over duplicate situational picks like the second Hysterical Blindness.",
+    "Our flyers plus Rebuke and Smite won the grindy 17- and 18-turn Round 1 games, so a two-Stitched-Drake flying plan with cheap removal is viable in this pod.",
+    "Pack 3 took two Lost in the Mist and two Hysterical Blindness; the duplicates were cut, so take the second copy only when no creature or two-drop is available."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3186,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1553,
+    "output_tokens_details": {
+     "thinking_tokens": 1329
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3186
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1553,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3186,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3186,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": false,
+   "colors": "UR",
+   "record": "1-2-0",
+   "lessons": [
+    "Commit to two colours before pack 3: I took Victim of Night third there, then cut it, so that pick was wasted for the blue-red deck.",
+    "Don't run 17 lands with 23 spells in a deck of small threats: my blue-red list stalled into a 39-turn Round 1 game and won only three games in eight.",
+    "Count your finishers before deck-building: my Delvers, Deranged Assistants and Pitchburn Devils had little late-game power, and Round 3 went 0-2 in 16 and 20 turns against WG."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3179,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2007,
+    "output_tokens_details": {
+     "thinking_tokens": 1821
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3179
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2007,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3179,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3179,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "colors": "BG",
+   "record": "3-0-0",
+   "lessons": [
+    "Green was my deep colour and it flowed: green-black with 10 Forest, 7 Swamp and the black playables went 3-0 in matches, 6-1 in games.",
+    "Pack 3 handed me two Darkthicket Wolves and a Villagers of Estwald, so taking green commons over red or blue speculation paid off.",
+    "Fill the second colour with black playables like Walking Corpse, Disciple of Griselbrand, Moan of the Unhallowed and Sever the Bloodline rather than splashing, as this 3-0 deck did."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3234,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1678,
+    "output_tokens_details": {
+     "thinking_tokens": 1486
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3234
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1678,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3234,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3234,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}
