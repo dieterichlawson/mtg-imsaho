@@ -387,7 +387,9 @@ Found on 2026-10-08 (`reports/playtests/2026-10-08-draft-with-friends.md`)
 and not fixed there, because each is bigger than the seam it showed up
 at or belongs to another piece:
 
-- **Ctrl-C of the server leaves no record.** The server installs no
+- **Ctrl-C of the server leaves no record.** (Fixed since, #823: a stop
+  signal ends the table the way `quit` does — the log's NOTE, the pages
+  told, the usage summary — and exits 130.) The server installs no
   signal handler: SIGINT ends the process by the default action — within
   2 s, with no stub children left and the ports freed — but the log
   ends mid-pick with no NOTE or FATAL line, and nothing sweeps a real

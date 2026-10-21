@@ -127,6 +127,13 @@ export interface State {
   overlay: Overlay | null;
   selected: ObjectId | null;
   notice: string | null;
+  /** A hosted table's line on the match around this game (#855). */
+  matchLine?: string | null;
+  /** What the opponent is doing when it is not deciding: its page is
+   *  closed (#822). Shown where "Opponent is thinking" would be. */
+  opponentAway?: string | null;
+  /** The host ended the table, and why (#824): the page stops reconnecting. */
+  closed?: string | null;
   /** Where the modal painted its text field last frame, in canvas
    *  coordinates; the DOM input is placed over it (issue #531). */
   fieldRect?: { x: number; y: number; w: number; h: number } | null;

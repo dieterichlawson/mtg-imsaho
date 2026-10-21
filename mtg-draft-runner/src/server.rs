@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 
 use mtg_draft::tournament::GameOutcome;
 use mtg_engine::cards::CardRegistry;
-use mtg_player::gui::{GuiPlayer, Withdraw};
+use mtg_player::gui::{GuiPlayer, PageHandle, Withdraw};
 
 use crate::card_lines::CardLines;
 use crate::deck::build_deck_with_llm;
@@ -58,6 +58,9 @@ pub struct Shared {
     pub set_name: String,
     /// The host asked to quit.
     quit: AtomicBool,
+    /// Why the table is ending, as the log's last line and every page say
+    /// it: the host's `quit`, or a signal (#823, #824).
+    stop_reason: Mutex<Option<String>>,
     /// The game pages of the people in a match now, by seat: what a kick
     /// reaches into a running match with (#821).
     in_game: Mutex<Vec<InGame>>,
@@ -77,6 +80,9 @@ struct InGame {
     /// Stops this seat waiting on its page when the opponent is taken
     /// out (#854).
     wake: Withdraw,
+    /// The page itself: whether anybody is at it, and what it is told
+    /// about the opponent's (#822).
+    page: PageHandle,
 }
 
 struct Client {
@@ -102,6 +108,7 @@ impl Shared {
             card_reference,
             set_name,
             quit: AtomicBool::new(false),
+            stop_reason: Mutex::new(None),
             in_game: Mutex::new(Vec::new()),
             next_game_port: Mutex::new(None),
         })
@@ -237,8 +244,73 @@ impl Shared {
 
     /// The host said to quit.
     pub fn quit(&self) {
+        self.quit_because("the host quit");
+    }
+
+    /// End the table, saying why. The first reason given stands, and is
+    /// queued to every client before the flag is set: a connection that
+    /// sees the flag closes, and one that saw it before the message was
+    /// queued closed without it.
+    pub fn quit_because(&self, reason: &str) {
+        {
+            let mut slot = self.stop_reason.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            if slot.is_some() {
+                return;
+            }
+            *slot = Some(reason.to_string());
+        }
+        let closed = serde_json::json!({"type": "closed", "reason": reason}).to_string();
+        for c in self.clients().iter() {
+            let _ = c.tx.send(closed.clone());
+        }
         self.quit.store(true, Ordering::SeqCst);
         self.changed.notify_all();
+    }
+
+    /// Why the table ended, once it has.
+    #[must_use]
+    pub fn stop_reason(&self) -> Option<String> {
+        self.stop_reason.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
+    }
+
+    /// Every page and client is told the table is over and why, and given
+    /// a moment to be closed properly: the process used to exit before the
+    /// connection threads had their next turn, so the sockets were reset
+    /// and every page retried for ever, reading the stop as a dropped
+    /// network (#824).
+    pub fn close_everything(&self) {
+        let reason = self.stop_reason().unwrap_or_else(|| "the table is over".to_string());
+        for page in self.in_game.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter() {
+            page.page.close(&reason);
+        }
+        let until = Instant::now() + Duration::from_millis(1500);
+        while Instant::now() < until && !self.clients().is_empty() {
+            thread::sleep(Duration::from_millis(25));
+        }
+        // The game pages' sockets are closed by their own threads, on
+        // their next beat (50 ms) and a moment for the page's answer.
+        thread::sleep(Duration::from_millis(600));
+    }
+
+    /// Bring the table's record of who is at a game page up to date, and
+    /// tell each person in a match whether their opponent's page is open:
+    /// "Opponent is thinking" over a closed tab was all they got (#822).
+    fn poll_game_pages(&self) {
+        let pages: Vec<(usize, usize, usize, PageHandle)> = self.in_game.lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner).iter()
+            .map(|p| (p.seat, p.opponent, p.page.connected(), p.page.clone())).collect();
+        let mut changed = false;
+        for &(seat, opponent, open, _) in &pages {
+            changed |= self.lobby().set_game_pages(seat, Some(open));
+            let Some((_, _, _, their_page)) = pages.iter().find(|(s, ..)| *s == opponent) else { continue };
+            let line = (open == 0).then(|| format!(
+                "{}'s game page is closed: the game waits for them to open it again",
+                self.lobby().who(seat)));
+            their_page.set_opponent(line);
+        }
+        if changed {
+            self.notify();
+        }
     }
 
     #[must_use]
@@ -331,8 +403,38 @@ pub fn run(shared: &Arc<Shared>, listener: TcpListener) -> Result<(), String> {
     thread::Builder::new().name("tournament".into()).spawn(move || tournament_thread(&tourney))
         .map_err(|e| e.to_string())?;
 
-    host_loop(shared);
+    let pages = Arc::clone(shared);
+    thread::Builder::new().name("game-pages".into()).spawn(move || {
+        while !pages.quitting() {
+            thread::sleep(Duration::from_secs(1));
+            pages.poll_game_pages();
+        }
+    }).map_err(|e| e.to_string())?;
+
+    // The keyboard on a thread of its own, so a Ctrl-C is seen while the
+    // host's terminal is waiting for a line (#823).
+    let keyboard = Arc::clone(shared);
+    thread::Builder::new().name("host".into()).spawn(move || host_loop(&keyboard))
+        .map_err(|e| e.to_string())?;
+    while !shared.quitting() {
+        if let Some(sig) = mtg_player::llm::stop_signal() {
+            shared.quit_because(&format!("the server was stopped by {}", signal_name(sig)));
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+    shared.close_everything();
     Ok(())
+}
+
+/// A stop signal as a host knows it.
+#[must_use]
+pub fn signal_name(sig: i32) -> String {
+    match sig {
+        2 => "Ctrl-C (SIGINT)".to_string(),
+        15 => "SIGTERM".to_string(),
+        1 => "SIGHUP".to_string(),
+        n => format!("signal {n}"),
+    }
 }
 
 /// The host's keyboard: Enter or `start` starts the draft, `kick N` hands
@@ -368,8 +470,8 @@ fn host_loop(shared: &Arc<Shared>) {
                 for seat in 0..lobby.pod_size() {
                     let v = lobby.view(seat);
                     let s = &v.seats[seat];
-                    shared.say(&format!("  seat {seat} {} {} — {} ({} picks, {} connected)",
-                        s.kind, s.name, s.status, s.picks, s.connected));
+                    shared.say(&format!("  seat {seat} {} {} — {}, {} ({} picks)",
+                        s.kind, s.name, s.presence, s.status, s.picks));
                 }
             }
             Some("quit" | "q" | "exit") => {
@@ -555,7 +657,9 @@ fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usiz
                     shared.set_in_game(seat, Some(InGame {
                         seat, opponent: if seat == a { b } else { a },
                         withdraw: gui.withdraw_handle(), wake: gui.wake_handle(),
+                        page: gui.page_handle(),
                     }));
+                    shared.lobby().set_game_pages(seat, Some(0));
                     seats.push(GameSeat::Gui(gui));
                 }
                 Err(e) => {
@@ -594,6 +698,11 @@ fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usiz
     );
     shared.set_in_game(a, None);
     shared.set_in_game(b, None);
+    {
+        let mut lobby = shared.lobby();
+        lobby.set_game_pages(a, None);
+        lobby.set_game_pages(b, None);
+    }
     let next = shared.lobby().match_finished(round, a, b, result);
     shared.notify();
     next
@@ -791,14 +900,27 @@ fn pump(
     seat: usize,
 ) {
     loop {
-        if shared.quitting() {
-            let _ = ws.close(None);
-            return;
-        }
         while let Ok(msg) = rx.try_recv() {
             if ws.send(tungstenite::Message::Text(msg.into())).is_err() {
                 return;
             }
+        }
+        if shared.quitting() {
+            // What was queued went out above — the "closed" message among
+            // it — and the socket is closed with a close frame, answered
+            // before the process goes (#824).
+            let _ = ws.close(None);
+            let _ = ws.flush();
+            let until = Instant::now() + Duration::from_millis(500);
+            while Instant::now() < until {
+                match ws.read() {
+                    Ok(_) => {}
+                    Err(tungstenite::Error::Io(e))
+                        if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {}
+                    Err(_) => break,
+                }
+            }
+            return;
         }
         match ws.read() {
             Ok(tungstenite::Message::Text(text)) => {

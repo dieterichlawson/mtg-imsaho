@@ -84,8 +84,12 @@ function seatName(view, seat) {
         return `seat ${seat}`;
     return s.name === `seat ${seat}` ? s.name : `${s.name} (seat ${seat})`;
 }
-/** "here", "away" (joined, no socket) or "not yet"; an AI seat is always here. */
+/** Where the seat is: the table's own word when it sends one (a person in
+ *  a match is wherever their game page is, #822); else "here", "away"
+ *  (joined, no socket) or "not yet", an AI seat always here. */
 function presence(s) {
+    if (s.presence)
+        return s.presence;
     if (!s.joined)
         return "not yet";
     if (s.kind === "human" && s.connected === 0)
@@ -332,6 +336,10 @@ function playing(view, done) {
 export function render(root, state, actions) {
     const parts = [];
     const view = state.view;
+    // The table is over: said first and for good, as nothing will reconnect.
+    if (state.closed !== null) {
+        parts.push(h("div", { class: "banner refusal", role: "alert", text: `The table is closed: ${state.closed}.` }));
+    }
     if (state.refusal) {
         parts.push(h("div", { class: "banner refusal", role: "alert" }, h("span", { text: `Refused: ${state.refusal.reason}` }), h("button", { type: "button", class: "dismiss", onclick: () => actions.dismiss(), text: "×", title: "Dismiss" })));
     }

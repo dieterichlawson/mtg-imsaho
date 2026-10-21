@@ -39,7 +39,7 @@ impl GameSeat {
     fn init_conversation(
         &mut self, deck: &[(String, u32)], registry: &CardRegistry, format: MatchFormat,
     ) {
-        if let GameSeat::Llm(p) = self {
+        match self {
             // No set-wide card reference here. The game's system prompt
             // is re-read, cached, on every decision, and the whole set's
             // rules text is the largest thing it could carry — while every
@@ -47,7 +47,11 @@ impl GameSeat {
             // prompt itself (`Opp's cards in view`). The draft phase, where
             // the whole set is what is being chosen from, keeps the
             // reference.
-            p.init_conversation(deck, "", registry, format);
+            GameSeat::Llm(p) => p.init_conversation(deck, "", registry, format),
+            // A page is told which game this is and how the match stands,
+            // which the LLM seat's system prompt says and a person returning
+            // to the page was never told (#855).
+            GameSeat::Gui(p) => p.page_handle().set_match_line(match_line(format)),
         }
     }
 
@@ -89,6 +93,20 @@ impl GameSeat {
         if let GameSeat::Gui(p) = self {
             p.game_over(view, summary);
         }
+    }
+}
+
+/// "Game 2 of a best-of-3 · you 1, them 0": the match around a game, from
+/// one seat's side, as a page shows it.
+#[must_use]
+pub fn match_line(format: MatchFormat) -> Option<String> {
+    match format {
+        MatchFormat::SingleGame => None,
+        MatchFormat::BestOf { best_of, game, your_wins, their_wins } => Some(if game == 1 {
+            format!("Game 1 of a best-of-{best_of}")
+        } else {
+            format!("Game {game} of a best-of-{best_of} · you {your_wins}, them {their_wins}")
+        }),
     }
 }
 

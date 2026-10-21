@@ -327,7 +327,13 @@ export type ServerMessage =
   /** The seat's settings, which every page attached to it shares. A page
    *  that decides for the seat — auto-passing a priority — cannot decide it
    *  from settings only it can see (issue #515). */
-  | { type: "settings"; stop_at_pass: boolean; auto_pass_since_turn: number | null };
+  | { type: "settings"; stop_at_pass: boolean; auto_pass_since_turn: number | null }
+  /** A hosted table's word on the match around the game — "Game 2 of a
+   *  best-of-3 · you 1, them 0" (#855) — and on the opponent when it is not
+   *  thinking but has closed its page (#822). Either may be null. */
+  | { type: "table"; match_line: string | null; opponent: string | null }
+  /** The host ended the table: nothing to reconnect to (#824). */
+  | { type: "closed"; reason: string };
 
 export type ClientMessage =
   | { type: "hello" }

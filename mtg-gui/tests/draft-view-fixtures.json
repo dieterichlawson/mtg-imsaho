@@ -697,6 +697,7 @@
         "kind": "human",
         "name": "seat 0",
         "picks": 42,
+        "presence": "here",
         "seat": 0,
         "status": "building"
       },
@@ -707,6 +708,7 @@
         "kind": "human",
         "name": "seat 1",
         "picks": 42,
+        "presence": "here",
         "seat": 1,
         "status": "building"
       },
@@ -717,6 +719,7 @@
         "kind": "ai",
         "name": "seat 2",
         "picks": 42,
+        "presence": "here",
         "seat": 2,
         "status": "building"
       },
@@ -727,6 +730,7 @@
         "kind": "ai",
         "name": "seat 3",
         "picks": 42,
+        "presence": "here",
         "seat": 3,
         "status": "building"
       }
@@ -1506,6 +1510,7 @@
         "kind": "human",
         "name": "seat 0",
         "picks": 42,
+        "presence": "here",
         "seat": 0,
         "status": "idle"
       },
@@ -1516,6 +1521,7 @@
         "kind": "human",
         "name": "seat 1",
         "picks": 42,
+        "presence": "kicked",
         "seat": 1,
         "status": "idle"
       },
@@ -1526,6 +1532,7 @@
         "kind": "ai",
         "name": "seat 2",
         "picks": 42,
+        "presence": "here",
         "seat": 2,
         "status": "idle"
       },
@@ -1536,6 +1543,7 @@
         "kind": "ai",
         "name": "seat 3",
         "picks": 42,
+        "presence": "here",
         "seat": 3,
         "status": "idle"
       }
@@ -1787,6 +1795,7 @@
         "kind": "human",
         "name": "seat 0",
         "picks": 3,
+        "presence": "here",
         "seat": 0,
         "status": "picking"
       },
@@ -1797,6 +1806,7 @@
         "kind": "human",
         "name": "seat 1",
         "picks": 4,
+        "presence": "here",
         "seat": 1,
         "status": "waiting"
       },
@@ -1807,6 +1817,7 @@
         "kind": "ai",
         "name": "seat 2",
         "picks": 5,
+        "presence": "here",
         "seat": 2,
         "status": "waiting"
       },
@@ -1817,6 +1828,7 @@
         "kind": "ai",
         "name": "seat 3",
         "picks": 6,
+        "presence": "here",
         "seat": 3,
         "status": "waiting"
       }
@@ -1849,6 +1861,7 @@
         "kind": "human",
         "name": "seat 0",
         "picks": 0,
+        "presence": "here",
         "seat": 0,
         "status": "idle"
       },
@@ -1859,6 +1872,7 @@
         "kind": "human",
         "name": "seat 1",
         "picks": 0,
+        "presence": "not yet",
         "seat": 1,
         "status": "idle"
       },
@@ -1869,6 +1883,7 @@
         "kind": "ai",
         "name": "seat 2",
         "picks": 0,
+        "presence": "here",
         "seat": 2,
         "status": "idle"
       },
@@ -1879,6 +1894,7 @@
         "kind": "ai",
         "name": "seat 3",
         "picks": 0,
+        "presence": "here",
         "seat": 3,
         "status": "idle"
       }
@@ -2615,6 +2631,7 @@
         "kind": "human",
         "name": "seat 0",
         "picks": 42,
+        "presence": "here",
         "seat": 0,
         "status": "playing"
       },
@@ -2625,6 +2642,7 @@
         "kind": "human",
         "name": "seat 1",
         "picks": 42,
+        "presence": "kicked",
         "seat": 1,
         "status": "playing"
       },
@@ -2635,6 +2653,7 @@
         "kind": "ai",
         "name": "seat 2",
         "picks": 42,
+        "presence": "here",
         "seat": 2,
         "status": "playing"
       },
@@ -2645,6 +2664,7 @@
         "kind": "ai",
         "name": "seat 3",
         "picks": 42,
+        "presence": "here",
         "seat": 3,
         "status": "playing"
       }
@@ -3419,6 +3439,7 @@
         "kind": "human",
         "name": "seat 0",
         "picks": 42,
+        "presence": "kicked",
         "seat": 0,
         "status": "waiting"
       },
@@ -3429,6 +3450,7 @@
         "kind": "ai",
         "name": "seat 1",
         "picks": 42,
+        "presence": "here",
         "seat": 1,
         "status": "waiting"
       },
@@ -3439,6 +3461,7 @@
         "kind": "ai",
         "name": "seat 2",
         "picks": 42,
+        "presence": "here",
         "seat": 2,
         "status": "bye"
       }

@@ -84,7 +84,7 @@ function connect() {
  *  server refused this link itself (a wrong key, a seat that is not at
  *  the table), which no amount of retrying changes. */
 function scheduleReconnect() {
-    if (retryTimer !== null || state.rejected)
+    if (retryTimer !== null || state.rejected || state.closed !== null)
         return;
     state.reconnects++;
     exposed.reconnects = state.reconnects;
@@ -108,6 +108,8 @@ function onMessage(msg) {
         onView(msg);
     else if (msg.type === "refused")
         onRefused(msg);
+    else if (msg.type === "closed")
+        state.closed = msg.reason;
     else
         console.warn("unknown message", msg);
     draw();
@@ -525,10 +527,11 @@ function draw() {
     }
     const v = state.view;
     seatEl.textContent = v ? `seat ${v.seat} of ${v.pod_size} · ${v.set.toUpperCase()} · ${v.phase}` : (state.seat !== null ? `seat ${state.seat}` : "");
-    connEl.textContent = state.connected ? "connected"
-        : state.rejected ? "refused — check the link"
-            : state.retryAt ? `disconnected — retrying in ${Math.max(0, Math.ceil((state.retryAt - Date.now()) / 1000))}s`
-                : params.has("nosocket") ? "no socket" : "connecting…";
+    connEl.textContent = state.closed !== null ? "the table is closed"
+        : state.connected ? "connected"
+            : state.rejected ? "refused — check the link"
+                : state.retryAt ? `disconnected — retrying in ${Math.max(0, Math.ceil((state.retryAt - Date.now()) / 1000))}s`
+                    : params.has("nosocket") ? "no socket" : "connecting…";
     connEl.className = state.connected ? "ok" : "down";
     tick();
 }
@@ -544,7 +547,7 @@ function tick() {
             el.classList.toggle("urgent", left <= 10);
         }
     }
-    if (!state.connected && state.retryAt && !state.rejected) {
+    if (!state.connected && state.retryAt && !state.rejected && state.closed === null) {
         connEl.textContent = `disconnected — retrying in ${Math.max(0, Math.ceil((state.retryAt - Date.now()) / 1000))}s`;
     }
 }

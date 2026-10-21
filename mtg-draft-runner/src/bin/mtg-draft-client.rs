@@ -165,6 +165,12 @@ fn main() {
                         }
                         view = Some(msg);
                     }
+                    // The host ended the table: said, and nothing to wait for
+                    // (#824). The close frame follows.
+                    Some("closed") => {
+                        out(&format!("the table is closed: {}", msg["reason"].as_str().unwrap_or("?")));
+                        return;
+                    }
                     Some("refused") => {
                         out(&format!("refused: {}", msg["reason"].as_str().unwrap_or("?")));
                         // A refusal with nothing echoed, before any view, is
@@ -346,7 +352,14 @@ fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Option<Du
 /// Everybody's state on one line: `[seat 0 picking 4p; Bo (seat 1) waiting 4p]`.
 fn table_line(v: &Value) -> String {
     let parts: Vec<String> = v["seats"].as_array().into_iter().flatten().map(|x| {
-        let joined = if x["joined"].as_bool().unwrap_or(false) { "" } else { ", not here yet" };
+        // The table's presence word, when it is not the plain "here": a
+        // person in a match is wherever their game page is (#822).
+        let joined = match x["presence"].as_str() {
+            Some("here") => String::new(),
+            Some(p) => format!(", {p}"),
+            None if x["joined"].as_bool().unwrap_or(false) => String::new(),
+            None => ", not here yet".to_string(),
+        };
         let auto = if x["auto"].as_bool().unwrap_or(false) { ", table picks" } else { "" };
         // Named as the page names a seat (#816).
         let n = x["seat"].as_u64().unwrap_or(0);
@@ -380,7 +393,12 @@ fn render(v: &Value, build: &Build) -> (String, String) {
     };
     table.push_str(&format!("== {} draft, seat {seat}: {phase} ==\n", v["set"].as_str().unwrap_or("?")));
     for x in v["seats"].as_array().into_iter().flatten() {
-        let joined = if x["joined"].as_bool().unwrap_or(false) { "" } else { " (not here yet)" };
+        let joined = match x["presence"].as_str() {
+            Some("here") => String::new(),
+            Some(p) => format!(" ({p})"),
+            None if x["joined"].as_bool().unwrap_or(false) => String::new(),
+            None => " (not here yet)".to_string(),
+        };
         let auto = if x["auto"].as_bool().unwrap_or(false) { " [table picks]" } else { "" };
         table.push_str(&format!("  seat {} {:<6} {:<12} {} {} picks{joined}{auto}\n",
             x["seat"], x["kind"].as_str().unwrap_or("?"), x["name"].as_str().unwrap_or("?"),
@@ -439,6 +457,14 @@ fn render(v: &Value, build: &Build) -> (String, String) {
                 let name = who(m["opponent"].as_u64().unwrap_or(0));
                 let status = m["status"].as_str().unwrap_or("?");
                 s.push_str(&format!("Round {} vs {name}: {status}", m["round"]));
+                // The games so far, as the page lists them: a match in
+                // progress read "playing" from its first game to its last,
+                // with the score nowhere (#855).
+                if status == "playing" {
+                    if let Some(line) = games_so_far(m, me.unwrap_or(0), &who) {
+                        s.push_str(&format!(" ({line})"));
+                    }
+                }
                 // The link is for a match still to be played; a finished
                 // one is its result (the page stays readable, but it is
                 // not something to open).
@@ -524,7 +550,7 @@ mod tests {
         let (_, mine) = render(&v, &Build::default());
         assert!(mine.contains("Round 1 vs Lawson (seat 1): done — 0-2\n"), "{mine}");
         assert!(!mine.contains("8801"), "a finished match's page is not offered:\n{mine}");
-        assert!(mine.contains("Round 2 vs Lawson (seat 1): playing — open http://h:8803/\n"), "{mine}");
+        assert!(mine.contains("Round 2 vs Lawson (seat 1): playing (game 1) — open http://h:8803/\n"), "{mine}");
         assert!(mine.contains("Round 3 vs Lawson (seat 1): waiting\n"), "{mine}");
     }
 
@@ -732,6 +758,25 @@ mod tests {
         assert!(mine.contains("  2. seat 0 0-1-1 (1 points) [substitute deck] [1 game forfeited]\n"), "{mine}");
     }
 
+    /// #855: a match in progress said "playing" from its first game to its
+    /// last, where the page lists each game; and a person in a match is
+    /// wherever their game page is (#822).
+    #[test]
+    fn a_match_in_progress_says_which_game_and_how_the_others_went() {
+        let v = serde_json::json!({
+            "type": "view", "phase": "playing", "seat": 0, "set": "isd",
+            "seats": [{"seat": 0, "name": "seat 0", "kind": "human", "status": "playing", "picks": 42, "joined": true, "presence": "in game"},
+                      {"seat": 1, "name": "Lawson", "kind": "human", "status": "playing", "picks": 42, "joined": true, "presence": "game page closed"}],
+            "matches": [{"round": 1, "opponent": 1, "url": "http://h:1/", "status": "playing",
+                         "games": [{"winner": 1}, {"winner": 0}], "result": null}],
+            "pool": [], "picks": [], "deck": null, "notice": null, "pairings": [], "standings": [],
+        });
+        let (table, mine) = render(&v, &Build::default());
+        assert!(mine.contains("Round 1 vs Lawson (seat 1): playing (game 3; G1 Lawson (seat 1), G2 you) — open http://h:1/\n"), "{mine}");
+        assert!(table.contains("Lawson") && table.contains("(game page closed)"), "{table}");
+        assert!(table_line(&v).contains("Lawson (seat 1) playing 42p, game page closed"), "{}", table_line(&v));
+    }
+
     /// The order a tie on points is broken by is printed beside the
     /// points, as the runner's standings print it.
     #[test]
@@ -746,6 +791,23 @@ mod tests {
         let (_, mine) = render(&v, &Build::default());
         assert!(mine.contains("  1. seat 0 1-1 (3 points; OMW 75.0%, GW 40.0%, OGW 50.0%)\n"), "{mine}");
     }
+}
+
+/// "game 2; G1 you": the game a match in progress is on and how each one
+/// before it went, the viewing seat as "you".
+fn games_so_far(m: &Value, me: u64, who: &dyn Fn(u64) -> String) -> Option<String> {
+    let games = m["games"].as_array()?;
+    let name = |s: u64| if s == me { "you".to_string() } else { who(s) };
+    let done: Vec<String> = games.iter().enumerate().map(|(i, g)| {
+        let won = match g["winner"].as_u64() {
+            Some(w) => name(w),
+            None if g["abandoned"] == true => "abandoned".to_string(),
+            None => "drawn".to_string(),
+        };
+        format!("G{} {won}", i + 1)
+    }).collect();
+    let on = format!("game {}", games.len() + 1);
+    Some(if done.is_empty() { on } else { format!("{on}; {}", done.join(", ")) })
 }
 
 fn pool_listing(v: &Value) -> String {

@@ -643,3 +643,50 @@ fn the_last_pick_is_announced_before_what_it_causes() {
         }
     }
 }
+
+/// #822 and #825: a seat's presence is one word every surface prints, and
+/// a person in a match is wherever their game page is. The draft page's
+/// socket said "here" for a player who had closed the game and "away" for
+/// one playing it, and a kicked seat with its tab open read "here".
+#[test]
+fn a_seat_is_where_its_game_page_is_and_a_kicked_seat_says_so() {
+    let (mut l, _) = lobby(vec![SeatKind::Human, SeatKind::Human, SeatKind::Ai("cc".into())]);
+    let presence = |l: &Lobby, seat: usize| l.view(2).seats[seat].presence;
+    assert_eq!(presence(&l, 0), "not yet");
+    assert_eq!(presence(&l, 2), "here", "an AI seat is always here");
+    l.connected(0);
+    l.connected(1);
+    assert_eq!(presence(&l, 0), "here");
+    l.disconnected(0);
+    assert_eq!(presence(&l, 0), "away");
+
+    // In a match: the game page decides, whatever the draft page does.
+    l.connected(0);
+    assert!(l.set_game_pages(0, Some(0)));
+    assert_eq!(presence(&l, 0), "game page closed", "a match with nobody at its game");
+    assert!(l.set_game_pages(0, Some(1)));
+    assert_eq!(presence(&l, 0), "in game");
+    l.disconnected(0);
+    assert_eq!(presence(&l, 0), "in game", "playing with the draft page closed is not away");
+    l.take_events();
+    assert!(l.set_game_pages(0, Some(0)));
+    assert!(l.take_events().iter().any(|e| e == "seat 0's game page is closed; the game waits for them to open it again"),
+        "the host is told");
+    assert!(!l.set_game_pages(0, Some(0)), "no change, nothing to send");
+    assert!(l.set_game_pages(0, Some(2)));
+    assert!(l.take_events().iter().any(|e| e == "seat 0's game page is open again"));
+    assert!(l.set_game_pages(0, None));
+    assert_eq!(presence(&l, 0), "away", "the match is over and the draft page is closed");
+
+    // A kick is the seat's state from then on, and the reason the table
+    // gives for everything it does for the seat.
+    l.kick(1).unwrap();
+    assert_eq!(presence(&l, 1), "kicked", "with its draft page still open");
+    assert_eq!(l.away_reason(1), "the host kicked the seat");
+    assert_eq!(l.away_reason(0), "the seat is away");
+    l.seat_gave_up(2, "no answer");
+    assert_eq!(presence(&l, 2), "not answering");
+    assert_eq!(l.away_reason(2), "the seat stopped answering");
+    let forfeit = l.forfeit_result(1, 0);
+    assert_eq!(forfeit.games[0].game_log, vec!["forfeit: the host kicked the seat".to_string()]);
+}

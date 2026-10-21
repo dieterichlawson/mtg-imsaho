@@ -94,9 +94,21 @@ every pairing, every game and match result, the standings — and reads:
   progress and the rest of the match go to the opponent, and the round
   carries on — whichever of the two is deciding (against an AI seat, once
   the AI's answer is in).
-- `status`: where everybody is.
-- `quit`: stop the server. It stays up after the tournament so the pages
-  can be read until you do.
+- `status`: where everybody is — "here", "away", "in game", "game page
+  closed", "kicked", "not answering" — and what they are doing. A person
+  in a match is wherever their game page is.
+- `quit`, or Ctrl-C: stop the server. Every page and client is told the
+  table is closed and why, and stops reconnecting; the log ends with
+  `NOTE the host quit` (or `NOTE the server was stopped by Ctrl-C
+  (SIGINT)`) and the usage summary. It stays up after the tournament so
+  the pages can be read until you do.
+
+While a match is on, closing a game page is said: the opponent's game
+page shows "<name>'s game page is closed: the game waits for them to open
+it again" where it would say "Opponent is thinking", both draft pages
+show the seat as "game page closed", and the host's terminal says so.
+Reopening the link carries on from the decision that was waiting. Each
+game page also says which game of the match it is and the score.
 
 ## Join
 

@@ -102,7 +102,7 @@ function connect(): void {
  *  server refused this link itself (a wrong key, a seat that is not at
  *  the table), which no amount of retrying changes. */
 function scheduleReconnect(): void {
-  if (retryTimer !== null || state.rejected) return;
+  if (retryTimer !== null || state.rejected || state.closed !== null) return;
   state.reconnects++; exposed.reconnects = state.reconnects;
   state.retryAt = Date.now() + retryDelay;
   retryTimer = window.setTimeout(connect, retryDelay);
@@ -124,6 +124,7 @@ function send(message: ClientMessage): boolean {
 function onMessage(msg: ServerMessage): void {
   if (msg.type === "view") onView(msg);
   else if (msg.type === "refused") onRefused(msg);
+  else if (msg.type === "closed") state.closed = msg.reason;
   else console.warn("unknown message", msg);
   draw();
 }
@@ -441,7 +442,8 @@ function draw(): void {
   }
   const v = state.view;
   seatEl.textContent = v ? `seat ${v.seat} of ${v.pod_size} · ${v.set.toUpperCase()} · ${v.phase}` : (state.seat !== null ? `seat ${state.seat}` : "");
-  connEl.textContent = state.connected ? "connected"
+  connEl.textContent = state.closed !== null ? "the table is closed"
+    : state.connected ? "connected"
     : state.rejected ? "refused — check the link"
     : state.retryAt ? `disconnected — retrying in ${Math.max(0, Math.ceil((state.retryAt - Date.now()) / 1000))}s`
     : params.has("nosocket") ? "no socket" : "connecting…";
@@ -460,7 +462,7 @@ function tick(): void {
       el.classList.toggle("urgent", left <= 10);
     }
   }
-  if (!state.connected && state.retryAt && !state.rejected) {
+  if (!state.connected && state.retryAt && !state.rejected && state.closed === null) {
     connEl.textContent = `disconnected — retrying in ${Math.max(0, Math.ceil((state.retryAt - Date.now()) / 1000))}s`;
   }
 }

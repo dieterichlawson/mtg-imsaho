@@ -25,6 +25,10 @@ export interface SeatInfo {
   /** The table picks and builds for this seat (kicked, or absent after
    *  the host started without it). */
   auto?: boolean;
+  /** Where the seat is, in the table's one word: "not yet", "here",
+   *  "away", "in game", "game page closed", "kicked", "not answering".
+   *  A person in a match is wherever their game page is (#822). */
+  presence?: string;
 }
 
 /** A card as the pack and the pool describe it: a name, the runner's
@@ -153,7 +157,14 @@ export interface Refused {
   echo: unknown;
 }
 
-export type ServerMessage = DraftView | Refused;
+/** The table is over — the host quit, or stopped the server — and why.
+ *  Nothing will answer a reconnect; the page stops trying (#824). */
+export interface Closed {
+  type: "closed";
+  reason: string;
+}
+
+export type ServerMessage = DraftView | Refused | Closed;
 
 export type ClientMessage =
   | { type: "pick"; pack_id: number; index: number }
@@ -211,6 +222,7 @@ export const SHAPES: Record<string, Shape> = {
     picks: "number",
     connected: "number?",
     auto: "boolean?",
+    presence: "string?",
   },
   card: { name: "string", line: "string", text: "string", rarity: "string", colors: "string[]" },
   pack_card: { index: "number", name: "string", line: "string", text: "string", rarity: "string", colors: "string[]" },
@@ -235,6 +247,7 @@ export const SHAPES: Record<string, Shape> = {
     omw: "number?", gw: "number?", ogw: "number?",
   },
   refused: { type: "enum:refused", reason: "string", echo: "any" },
+  closed: { type: "enum:closed", reason: "string" },
 };
 
 /**

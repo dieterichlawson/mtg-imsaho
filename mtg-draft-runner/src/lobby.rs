@@ -271,6 +271,12 @@ pub struct SeatView {
     pub joined: bool,
     /// Live connections right now; a joined seat with none is away.
     pub connected: usize,
+    /// Where the seat is, in one word every surface prints as it is: "not
+    /// yet", "here", "away", "in game", "game page closed", "kicked",
+    /// "not answering". A person in a match is wherever their game page
+    /// is; the draft page's socket said "here" for a player who had closed
+    /// the game and "away" for one playing it (#822).
+    pub presence: &'static str,
     pub status: &'static str,
     pub picks: usize,
     /// The table picks for this seat: it was kicked, or never joined and
@@ -432,6 +438,9 @@ struct SeatState {
     kicked: bool,
     /// An AI seat whose backend spent its retries: the table plays for it.
     gave_up: bool,
+    /// Pages attached to the seat's game while it is in a match with one;
+    /// `None` outside a match.
+    game_pages: Option<usize>,
     deck: Option<DraftDeck>,
     deck_problem: Option<String>,
     ready: bool,
@@ -531,6 +540,7 @@ impl Lobby {
             auto: false,
             kicked: false,
             gave_up: false,
+            game_pages: None,
             deck: None,
             deck_problem: None,
             ready: false,
@@ -695,6 +705,45 @@ the order they happened, not in seat order", "");
     /// A connection for `seat` closed.
     pub fn disconnected(&mut self, seat: usize) {
         self.seats[seat].connected = self.seats[seat].connected.saturating_sub(1);
+    }
+
+    /// How many pages are attached to the seat's game: `Some(0)` from the
+    /// moment its match is served, `None` when the match is over. Returns
+    /// whether that changed what the table shows. The host's terminal is
+    /// told when a page closes on a game and when it comes back (#822).
+    pub fn set_game_pages(&mut self, seat: usize, pages: Option<usize>) -> bool {
+        let before = self.seats[seat].game_pages;
+        self.seats[seat].game_pages = pages;
+        let open = |p: Option<usize>| p.is_some_and(|n| n > 0);
+        match (before, pages) {
+            (Some(b), Some(0)) if b > 0 => self.event(format!(
+                "{}'s game page is closed; the game waits for them to open it again", self.who(seat))),
+            (Some(0), Some(n)) if n > 0 => self.event(format!("{}'s game page is open again", self.who(seat))),
+            _ => {}
+        }
+        open(before) != open(pages) || before.is_some() != pages.is_some()
+    }
+
+    /// The seat's presence word; see [`SeatView::presence`].
+    #[must_use]
+    pub fn presence(&self, seat: usize) -> &'static str {
+        let s = &self.seats[seat];
+        if !s.joined {
+            "not yet"
+        } else if s.kicked {
+            "kicked"
+        } else if s.gave_up {
+            "not answering"
+        } else if !s.is_human() {
+            "here"
+        } else {
+            match s.game_pages {
+                Some(0) => "game page closed",
+                Some(_) => "in game",
+                None if s.connected > 0 => "here",
+                None => "away",
+            }
+        }
     }
 
     /// Whether every human seat has been seen.
@@ -1493,6 +1542,7 @@ for the seat from here, and its games are forfeit"), ""));
                 name: s.name.clone(),
                 joined: s.joined,
                 connected: s.connected,
+                presence: self.presence(i),
                 status: self.status_word(i),
                 picks: self.table.picks(i).len(),
                 auto: s.auto,

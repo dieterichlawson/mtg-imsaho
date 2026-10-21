@@ -372,11 +372,42 @@ extern "C" fn handle_fatal_signal(sig: libc::c_int) {
     // A cli seat's terminal is put back too, whichever of the two handler
     // sets was installed last: they used to replace each other (#686).
     crate::cli::restore_terminal_from_signal();
+    // A process that asked to stop on its own terms is told, once, and
+    // stops itself; a second signal, or Ctrl-\, ends it here as before.
+    if GRACEFUL.load(Ordering::Relaxed) && sig != libc::SIGQUIT
+        && STOP_SIGNAL.compare_exchange(0, sig, Ordering::SeqCst, Ordering::SeqCst).is_ok()
+    {
+        return;
+    }
     // Re-raise with the default disposition so the exit status is the one
     // the caller expects from a Ctrl-C.
     unsafe {
         libc::signal(sig, libc::SIG_DFL);
         libc::raise(sig);
+    }
+}
+
+/// When set, Ctrl-C, SIGTERM and SIGHUP still take every in-flight call
+/// down at once, but the process is not ended on the spot: the signal is
+/// recorded for it to act on ([`stop_signal`]). A hosted draft has a record
+/// to finish and pages to tell, and died mid-line instead (#823).
+static GRACEFUL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// The stop signal received in graceful mode, 0 for none.
+static STOP_SIGNAL: AtomicI32 = AtomicI32::new(0);
+
+/// Install the handlers now, in graceful mode; see [`GRACEFUL`]. A second
+/// stop signal ends the process at once.
+pub fn stop_gracefully_on_signal() {
+    GRACEFUL.store(true, Ordering::SeqCst);
+    install_signal_handlers();
+}
+
+/// The stop signal received since [`stop_gracefully_on_signal`], if any.
+#[must_use]
+pub fn stop_signal() -> Option<i32> {
+    match STOP_SIGNAL.load(Ordering::SeqCst) {
+        0 => None,
+        sig => Some(sig),
     }
 }
 

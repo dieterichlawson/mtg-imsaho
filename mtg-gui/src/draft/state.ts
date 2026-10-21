@@ -23,6 +23,8 @@ export interface PageState {
   /** The server refused the join itself (wrong key, no such seat): no
    *  reconnect will change that, so none is scheduled. */
   rejected: boolean;
+  /** The host ended the table, and why: nothing to reconnect to (#824). */
+  closed: string | null;
   seat: number | null;
   key: string | null;
   view: DraftView | null;
@@ -64,7 +66,7 @@ export interface Actions {
 
 export function initialState(): PageState {
   return {
-    ws: null, connected: false, reconnects: 0, retryAt: null, rejected: false,
+    ws: null, connected: false, reconnects: 0, retryAt: null, rejected: false, closed: null,
     seat: null, key: null, view: null,
     selected: null, hover: null, pendingPick: null,
     deck: null, cursor: null, readySent: false,

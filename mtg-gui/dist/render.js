@@ -1142,6 +1142,14 @@ function promptArea(ctx, hits, state, x, y, w, h) {
     let ty = y + 6;
     x += 2;
     w -= 4;
+    // The table is over (#824): said in place of everything else.
+    if (state.closed) {
+        for (const l of wrapCapped(ctx, `The table is closed: ${state.closed}.`, w - 8, "8px Silkscreen", 4)) {
+            text(ctx, l, x + 4, ty, { color: "#ff9080" });
+            ty += 9;
+        }
+        return;
+    }
     if (state.gameOver) {
         const headline = outcomeHeadline(state, state.gameOver);
         if (headline) {
@@ -1156,9 +1164,20 @@ function promptArea(ctx, hits, state, x, y, w, h) {
     }
     if (!state.decision) {
         const dots = ".".repeat(1 + Math.floor(Date.now() / 400) % 3);
-        text(ctx, state.connected ? `Opponent is thinking${dots}` : "Connecting…", x + 4, ty, { color: "#b0a8c0" });
+        // A closed page on the other side is not an opponent thinking (#822).
+        const waiting = !state.connected ? "Connecting…" : state.opponentAway ?? `Opponent is thinking${dots}`;
+        for (const l of wrapCapped(ctx, waiting, w - 8, "8px Silkscreen", 3)) {
+            text(ctx, l, x + 4, ty, { color: state.opponentAway ? "#ff9080" : "#b0a8c0" });
+            ty += 9;
+        }
+        // Which game this is, and the score: a person back at the page could
+        // not tell (#855).
+        if (state.matchLine) {
+            text(ctx, clip(ctx, state.matchLine, w - 8, "7px Silkscreen"), x + 4, ty, { font: "7px Silkscreen", color: "#a0d0e0" });
+            ty += 9;
+        }
         if (state.autoPass)
-            text(ctx, "AUTO-PASS on (f to stop)", x + 4, ty + 10, { font: "7px Silkscreen", color: "#ffe080" });
+            text(ctx, "AUTO-PASS on (f to stop)", x + 4, ty + 1, { font: "7px Silkscreen", color: "#ffe080" });
         return;
     }
     if (state.autoPass) {

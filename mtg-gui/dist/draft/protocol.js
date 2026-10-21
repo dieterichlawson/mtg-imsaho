@@ -38,6 +38,7 @@ export const SHAPES = {
         picks: "number",
         connected: "number?",
         auto: "boolean?",
+        presence: "string?",
     },
     card: { name: "string", line: "string", text: "string", rarity: "string", colors: "string[]" },
     pack_card: { index: "number", name: "string", line: "string", text: "string", rarity: "string", colors: "string[]" },
@@ -62,6 +63,7 @@ export const SHAPES = {
         omw: "number?", gw: "number?", ogw: "number?",
     },
     refused: { type: "enum:refused", reason: "string", echo: "any" },
+    closed: { type: "enum:closed", reason: "string" },
 };
 /**
  * Every way `value` fails to be a `shape`, as "path: what is wrong" lines.

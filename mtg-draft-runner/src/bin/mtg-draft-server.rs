@@ -302,18 +302,26 @@ client still works", shared.config.web_dir.display(), server::PAGE);
         mtg_player::stderr_line!("the draft starts when everybody has joined, or press Enter to start without them");
     }
 
+    // A Ctrl-C takes the seats' calls down at once and is then the
+    // table's to act on: the log's last word, the pages told, the usage
+    // summary — the same ending as `quit` (#823).
+    mtg_player::llm::stop_gracefully_on_signal();
     if let Err(e) = server::run(&shared, listener) {
         die(&e);
     }
-    // The log is the table's record: say that the host ended it, and
-    // where it was (the first playtest's quit mid-match left the log
-    // ending in a usage summary with no word of why).
+    // The log is the table's record: say who ended it, and where it was
+    // (the first playtest's quit mid-match left the log ending in a usage
+    // summary with no word of why).
+    let reason = shared.stop_reason().unwrap_or_else(|| "the host quit".to_string());
     {
         let lobby = shared.lobby();
         let phase = format!("{:?}", lobby.phase()).to_lowercase();
         let unfinished = lobby.phase() != mtg_draft_runner::lobby::Phase::Done;
         mtg_player::game_log::write(file!(), line!(), &format!(
-            "NOTE the host quit; the table was {phase}{}", if unfinished { " and is not finished" } else { "" }), "");
+            "NOTE {reason}; the table was {phase}{}", if unfinished { " and is not finished" } else { "" }), "");
+    }
+    if mtg_player::llm::stop_signal().is_some() {
+        mtg_player::stderr_line!("{reason}; the table is closed");
     }
     mtg_player::llm::claude_code_kill_live_calls();
     mtg_player::game_log::flush_all();
@@ -326,4 +334,8 @@ client still works", shared.config.web_dir.display(), server::PAGE);
         }
     };
     llm_client::print_usage_summary(outcome);
+    // The exit status a stopped process has, as if the signal had ended it.
+    if let Some(sig) = mtg_player::llm::stop_signal() {
+        std::process::exit(128 + sig);
+    }
 }

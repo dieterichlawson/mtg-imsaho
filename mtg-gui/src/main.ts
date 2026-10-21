@@ -78,7 +78,8 @@ function connect(): void {
   const ws = new WebSocket(url);
   state.ws = ws;
   ws.onopen = () => { state.connected = true; sendRaw({ type: "hello" }); draw(); };
-  ws.onclose = () => { state.connected = false; draw(); setTimeout(connect, 1000); };
+  // A table the host has closed has nothing to reconnect to (#824).
+  ws.onclose = () => { state.connected = false; draw(); if (!state.closed) setTimeout(connect, 1000); };
   ws.onerror = () => { ws.close(); };
   ws.onmessage = (ev) => { try { onMessage(JSON.parse(ev.data as string) as ServerMessage); } catch (e) { console.error(e); } };
 }
@@ -191,6 +192,14 @@ function onMessage(msg: ServerMessage): void {
       setView(msg.view);
       state.decision = null; state.ui = null; state.popover = null;
       state.gameOver = msg.summary;
+      break;
+    case "table":
+      state.matchLine = msg.match_line;
+      state.opponentAway = msg.opponent;
+      document.title = msg.match_line ? `${msg.match_line} — mtg-imsaho` : "mtg-imsaho";
+      break;
+    case "closed":
+      state.closed = msg.reason;
       break;
     default:
       console.warn("unknown message", msg);

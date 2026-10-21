@@ -71,6 +71,16 @@ enum Outbound<'a> {
     Settings { stop_at_pass: bool, auto_pass_since_turn: Option<u32> },
     /// The game is over.
     GameOver { seat: PlayerId, view: &'a GameView, summary: String },
+    /// What a hosted table tells the page about the match around the game:
+    /// which game this is and the score (#855), and whether the opponent's
+    /// own page is open — "Opponent is thinking" over a closed tab was the
+    /// only thing a waiting person was told (#822). Either is `None` when
+    /// there is nothing to say.
+    Table { match_line: Option<String>, opponent: Option<String> },
+    /// The seat's host has ended the table: stop reconnecting and say why.
+    /// A deliberate stop used to look like a dropped network, a page
+    /// retrying for ever (#824).
+    Closed { reason: String },
 }
 
 /// A message from the page to the seat.
@@ -113,6 +123,11 @@ struct Shared {
     /// Set when the seat is dropped: the accept loop stops and the port
     /// is let go (#853).
     closed: std::sync::atomic::AtomicBool,
+    /// The table's lines for the page (`Outbound::Table`), kept for a page
+    /// that connects after they were said.
+    table: Mutex<(Option<String>, Option<String>)>,
+    /// Set when the host ends the table: every page is told why and closed.
+    closing: Mutex<Option<String>>,
 }
 
 impl Shared {
@@ -132,6 +147,18 @@ impl Shared {
 
     fn connected(&self) -> usize {
         self.clients.lock().unwrap_or_else(std::sync::PoisonError::into_inner).len()
+    }
+
+    fn table_message(&self) -> Option<String> {
+        let (match_line, opponent) = self.table.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone();
+        if match_line.is_none() && opponent.is_none() {
+            return None;
+        }
+        serde_json::to_string(&Outbound::Table { match_line, opponent }).ok()
+    }
+
+    fn closing(&self) -> Option<String> {
+        self.closing.lock().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
     }
 
     /// Register a page's outbound channel; the id is how it deregisters.
@@ -170,6 +197,59 @@ fn browser_notice(name: &str, url: &str, connected: usize, said: &mut bool) -> O
     }
     *said = true;
     Some(format!("{name}: no browser at {url} — open it to answer"))
+}
+
+/// What a hosted table holds of a seat's page while the seat is in a game:
+/// whether anybody is at it, and a way to tell it about the match around
+/// the game or that the table is over. Cloned out of the [`GuiPlayer`]
+/// that the game loop owns.
+#[derive(Clone)]
+pub struct PageHandle(Arc<Shared>);
+
+impl PageHandle {
+    /// Pages attached to the seat right now.
+    #[must_use]
+    pub fn connected(&self) -> usize {
+        self.0.connected()
+    }
+
+    /// Say where the match stands ("Game 2 of 3 · you 1, them 0"), or
+    /// nothing.
+    pub fn set_match_line(&self, line: Option<String>) {
+        self.set(|t| t.0 = line);
+    }
+
+    /// Say what the opponent is doing when it is not "thinking" — its page
+    /// is closed — or nothing.
+    pub fn set_opponent(&self, line: Option<String>) {
+        self.set(|t| t.1 = line);
+    }
+
+    fn set(&self, change: impl FnOnce(&mut (Option<String>, Option<String>))) {
+        {
+            let mut table = self.0.table.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let before = table.clone();
+            change(&mut table);
+            if *table == before {
+                return;
+            }
+        }
+        let msg = self.0.table_message().or_else(|| {
+            serde_json::to_string(&Outbound::Table { match_line: None, opponent: None }).ok()
+        });
+        if let Some(msg) = msg {
+            self.0.broadcast(&msg);
+        }
+    }
+
+    /// The table is over: every page attached is told why and closed, and
+    /// a page that connects from now on is told the same.
+    pub fn close(&self, reason: &str) {
+        let mut closing = self.0.closing.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if closing.is_none() {
+            *closing = Some(reason.to_string());
+        }
+    }
 }
 
 /// Takes a page's seat out of its game from another thread: a hosted
@@ -292,6 +372,8 @@ impl GuiPlayer {
             web_dir,
             settings: Mutex::new((false, None)),
             closed: std::sync::atomic::AtomicBool::new(false),
+            table: Mutex::new((None, None)),
+            closing: Mutex::new(None),
         });
         let accept_shared = Arc::clone(&shared);
         let accept = thread::Builder::new().name("gui-accept".into()).spawn(move || {
@@ -321,6 +403,12 @@ impl GuiPlayer {
             bound,
             accept: Some(accept),
         })
+    }
+
+    /// A handle on this seat's page for a hosted table; see [`PageHandle`].
+    #[must_use]
+    pub fn page_handle(&self) -> PageHandle {
+        PageHandle(Arc::clone(&self.shared))
     }
 
     /// A handle that withdraws this seat from its game; see [`Withdraw`].
@@ -581,6 +669,10 @@ fn pump_websocket(
                 return;
             }
         }
+        if let Some(reason) = shared.closing() {
+            close_page(ws, &reason);
+            return;
+        }
         match ws.read() {
             Ok(tungstenite::Message::Text(text)) => {
                 match serde_json::from_str::<Inbound>(&text) {
@@ -600,6 +692,14 @@ fn pump_websocket(
                         let latest = shared.latest.lock()
                             .unwrap_or_else(std::sync::PoisonError::into_inner).clone();
                         if let Some(msg) = latest {
+                            if ws.send(tungstenite::Message::Text(msg.into())).is_err() {
+                                return;
+                            }
+                        }
+                        // And what the table has said about the match, which
+                        // a page that has just come back would otherwise not
+                        // hear until it changes (#855).
+                        if let Some(msg) = shared.table_message() {
                             if ws.send(tungstenite::Message::Text(msg.into())).is_err() {
                                 return;
                             }
@@ -629,6 +729,26 @@ fn pump_websocket(
                 }
             }
             Ok(tungstenite::Message::Close(_)) => return,
+            Ok(_) => {}
+            Err(tungstenite::Error::Io(e))
+                if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {}
+            Err(_) => return,
+        }
+    }
+}
+
+/// Tell a page the table is over, close its socket with a close frame, and
+/// give it a moment to answer: a socket the process simply drops is a reset
+/// to the page, which reads it as a network to reconnect to for ever (#824).
+fn close_page(ws: &mut tungstenite::WebSocket<TcpStream>, reason: &str) {
+    if let Ok(msg) = serde_json::to_string(&Outbound::Closed { reason: reason.to_string() }) {
+        let _ = ws.send(tungstenite::Message::Text(msg.into()));
+    }
+    let _ = ws.close(None);
+    let _ = ws.flush();
+    let until = std::time::Instant::now() + Duration::from_millis(500);
+    while std::time::Instant::now() < until {
+        match ws.read() {
             Ok(_) => {}
             Err(tungstenite::Error::Io(e))
                 if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {}
@@ -701,6 +821,8 @@ mod tests {
             web_dir: PathBuf::from("."),
             settings: Mutex::new((false, None)),
             closed: std::sync::atomic::AtomicBool::new(false),
+            table: Mutex::new((None, None)),
+            closing: Mutex::new(None),
         };
         let (a_tx, a_rx) = mpsc::channel();
         let (b_tx, b_rx) = mpsc::channel();
@@ -729,6 +851,8 @@ mod tests {
                 web_dir: PathBuf::from("."),
                 settings: Mutex::new((false, None)),
                 closed: std::sync::atomic::AtomicBool::new(false),
+                table: Mutex::new((None, None)),
+                closing: Mutex::new(None),
             }),
             answers: answers_rx,
             seq: 1,
@@ -812,6 +936,40 @@ mod tests {
         assert!(matches!(answer, Action::AbandonGame), "{answer:?}");
         assert!(began.elapsed() < BROWSER_CHECK * 2, "it stopped waiting within a beat");
         assert!(Player::gave_up(&seat).is_none(), "the opponent's kick is no loss of this seat's");
+    }
+
+    /// #822, #855, #824: what a hosted table tells a seat's page — the
+    /// match around the game, the opponent's closed page, the end of the
+    /// table — goes to every page attached, is kept for a page that comes
+    /// back, and is said once per change.
+    #[test]
+    fn the_tables_lines_reach_every_page_and_wait_for_the_next() {
+        let seat = test_seat();
+        let page = seat.page_handle();
+        let (a_tx, a_rx) = mpsc::channel();
+        let _a = seat.shared.add_client(a_tx);
+        assert_eq!(page.connected(), 1);
+        assert!(seat.shared.table_message().is_none(), "nothing said yet, nothing kept");
+
+        page.set_match_line(Some("Game 2 of a best-of-3 · you 1, them 0".into()));
+        let msg: serde_json::Value = serde_json::from_str(&a_rx.try_recv().unwrap()).unwrap();
+        assert_eq!(msg, serde_json::json!({"type": "table",
+            "match_line": "Game 2 of a best-of-3 · you 1, them 0", "opponent": null}));
+        page.set_match_line(Some("Game 2 of a best-of-3 · you 1, them 0".into()));
+        assert!(a_rx.try_recv().is_err(), "the same line again is no message");
+
+        page.set_opponent(Some("Bea's game page is closed".into()));
+        let msg: serde_json::Value = serde_json::from_str(&a_rx.try_recv().unwrap()).unwrap();
+        assert_eq!(msg["opponent"], "Bea's game page is closed");
+        // A page connecting now is sent both, after the board (Hello).
+        let kept: serde_json::Value = serde_json::from_str(&seat.shared.table_message().unwrap()).unwrap();
+        assert_eq!(kept["match_line"], "Game 2 of a best-of-3 · you 1, them 0");
+        assert_eq!(kept["opponent"], "Bea's game page is closed");
+
+        assert!(seat.shared.closing().is_none());
+        page.close("the host quit");
+        page.close("a second reason");
+        assert_eq!(seat.shared.closing().as_deref(), Some("the host quit"), "the first reason stands");
     }
 
     /// #647: a refused answer is told to the page that sent it, and to no
