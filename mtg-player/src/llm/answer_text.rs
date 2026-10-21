@@ -66,7 +66,8 @@ a question asks for them:\n");
 /// fields, in the order to write them — `thoughts` first, then the rest as
 /// the schema lists them — with each one's type and, for a field not in
 /// [`SHARED_FIELDS`], its description. A field this question does not read
-/// ([`UNREAD`]) is left out: the answer is not asked to fill it.
+/// ([`UNREAD`]), or a list nothing may go in, is left out: the answer is not
+/// asked to fill it.
 #[must_use]
 pub fn answer_format(schema: &Value) -> String {
     let Some(properties) = schema.get("properties").and_then(Value::as_object) else {
@@ -74,8 +75,12 @@ pub fn answer_format(schema: &Value) -> String {
     };
     let required: Vec<&str> = schema.get("required").and_then(Value::as_array)
         .map(|r| r.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
+    // A field this question does not read, or one nothing may go in (no
+    // planeswalker to attack: `maxItems` 0), is not offered: offered, it
+    // was filled, and the answer asked again (`planeswalker_attacks` has 1
+    // entries; it takes at most 0).
     let mut names: Vec<&String> = properties.iter()
-        .filter(|(_, spec)| spec.get(UNREAD).is_none())
+        .filter(|(_, spec)| spec.get(UNREAD).is_none() && spec.get("maxItems").and_then(Value::as_u64) != Some(0))
         .map(|(name, _)| name).collect();
     // `thoughts` first, as the reason before the answer; the rest in the
     // order the question requires them, then any it does not.
@@ -166,6 +171,17 @@ mod tests {
         assert!(!f.contains("ask_again") && !f.contains(ATTACK_DESCRIPTION), "shared and unread fields are not spelled out: {f}");
         let section = answer_fields_section();
         assert!(section.contains(ATTACK_DESCRIPTION) && section.contains("`thoughts`"), "{section}");
+    }
+
+    #[test]
+    fn a_list_nothing_may_go_in_is_not_offered() {
+        let schema = serde_json::json!({"type": "object", "properties": {
+            "attacker_indices": {"type": "array", "items": {"type": "integer"}},
+            "planeswalker_attacks": {"type": "array", "items": {"type": "object"}, "maxItems": 0,
+                                     "description": "No planeswalker can be attacked: leave empty"}},
+            "required": ["attacker_indices"]});
+        let f = answer_format(&schema);
+        assert!(!f.contains("planeswalker"), "{f}");
     }
 
     #[test]
