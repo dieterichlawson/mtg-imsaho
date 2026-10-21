@@ -1103,7 +1103,9 @@ say what your stub says.
   around the JSON, in a code fence, with a field missing, with a field the
   question does not read, and with no JSON at all, check what the log
   records for each: the object read, a `REASK` with the reason, never a
-  silent fallback that reads as the seat's answer. Read the format line for
+  silent fallback that reads as the seat's answer (a reply with no object
+  in it is logged `UNREADABLE` with the reply as it came, 0ff770c, and
+  then asked again). Read the format line for
   every kind of question a stub game asks (mulligan, priority in and out of
   the main phase, blocks, targets, an ordering, X): every field the reader
   uses is named, none it ignores. `MTG_CLAUDE_CODE_ANSWERS=schema` must
@@ -1116,4 +1118,36 @@ say what your stub says.
   writes the whole system prompt mid-game is a cache miss to explain (a
   changed system prompt, a gap longer than five minutes). Then
   `MTG_CLAUDE_CODE_CACHE_TTL=1h`, and check `scripts/measure-llm-prompts.sh`
-  still reports one schema per game
+  still reports one schema per game. The runner's usage summary now splits
+  `Draft` (picks, deck builds and sideboarding) from `Games` (f9507c2), and
+  a `--resume`d run says its numbers are this run's only: check both lines
+  against the run's `USAGE` lines and its call counts, before and after a
+  resume
+- H37 [proposed 2026-10-21, from the AI seat's sideboarding (`deck.rs`
+  `build_sideboard_prompt`/`sideboard_with_llm`, `llm_client.rs`
+  `send_sideboard`, b143c20)] what an AI seat is asked between games: run
+  `mtg-draft-runner --model cc --players 2 --best-of 3` under the prompt
+  stub and read each `SIDEBOARD_PROMPT before game G` against the games'
+  logs: the score, how the last game went, the opponent's shown cards —
+  public zones only; a card that never left the opponent's hand or library
+  is hidden information leaked — and the seat's pool with the counts it is
+  playing. The sent `--json-schema` must be the same bytes for every pool
+  and key nothing by a card name; `play_first` is read only from the
+  chooser; an answer that makes no legal deck keeps the deck, and the log
+  says so. Then the cache: a stand-in CLI that records
+  `FORCE_PROMPT_CACHING_5M` and `MTG_CLAUDE_CODE_CACHE_TTL` must see the
+  hour on every sideboarding call and five minutes on every pick and deck
+  build — a sideboarding call a game after the last one wrote the seat's
+  whole 15,000-token prefix again until b143c20
+- H38 [proposed 2026-10-21, from 0ab9837, 0ff770c and the draft loop's
+  "What went wrong" line] every re-ask has a cause: read the re-ask and
+  unreadable counts of the latest nights in `reports/draft-loop/nights/`,
+  and reproduce the kinds under the stub or in one real
+  `cc:claude-haiku-5-5` game (`REASK` and `UNREADABLE` lines). For each,
+  ask whether the format line that ends the prompt offered something the
+  question cannot take — a list with `maxItems` 0 was one
+  (`planeswalker_attacks` with no planeswalker to attack); a `then` card
+  the plan cannot cast, whose allowed names the line does not say, may be
+  another — or whether the reply held no JSON object at all. A re-ask the
+  prompt invited is a harness bug: file it with the format line and the
+  reply
