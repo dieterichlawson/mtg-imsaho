@@ -75,6 +75,9 @@ fn two_humans_and_two_ai_seats_draft_build_and_the_ai_match_plays() {
     assert_eq!(lobby["seats"][2]["kind"], "ai");
     assert!(lobby["pack"].is_null());
     c0.send(json!({"type": "name", "name": "Lawson"}));
+    // Taken before seat 1 arrives and the draft starts: the start's view
+    // could otherwise go out before the name was read.
+    c0.view_until("the name is taken", T, |v| v["seats"][0]["name"] == "Lawson");
     let mut c1 = server.client(1);
     let started = c0.view_until("the draft starts", T, |v| v["phase"] == "drafting");
     assert_eq!(started["pass_direction"], "left");
