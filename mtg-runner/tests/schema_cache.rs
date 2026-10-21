@@ -10,6 +10,12 @@
 //! 0.1x (reports/llm-cost.md, phase 3). `cache_stable_schema` sends the
 //! schema without its per-call constraints; this plays stub games and
 //! holds every kind of question to one schema.
+//!
+//! A `claude -p` game seat sends no schema by default: the fields end the
+//! prompt (`mtg_player::llm::answer_text`). The schema path is still there
+//! (`MTG_CLAUDE_CODE_ANSWERS=schema`) and is what the first test holds; the
+//! second holds the text path to what replaced it — no schema at all, and
+//! one system prompt for every call of a game.
 
 #![cfg(unix)]
 
@@ -38,6 +44,12 @@ fn kind(schema: &serde_json::Value, path: &str, out: &mut BTreeSet<String>) {
 
 /// The stub's record of each call of one game: the sent schema and its hash.
 fn play(name: &str, args: &[&str]) -> Vec<(BTreeSet<String>, String, serde_json::Value)> {
+    play_answering(name, args, "schema").into_iter().map(|(k, sha, schema, _)| (k, sha, schema)).collect()
+}
+
+/// [`play`], the seat answering `answers` (`schema` or `text`), with each
+/// call's system prompt size beside its schema.
+fn play_answering(name: &str, args: &[&str], answers: &str) -> Vec<(BTreeSet<String>, String, serde_json::Value, u64)> {
     let dir = std::env::temp_dir().join(format!("mtg-schema-cache-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -47,6 +59,7 @@ fn play(name: &str, args: &[&str]) -> Vec<(BTreeSet<String>, String, serde_json:
         .env("TMPDIR", &dir)
         .env("CLAUDE_CODE_BIN", repo_root().join("scripts/llm-prompt-stub.py"))
         .env("STUB_CALLS", &calls)
+        .env("MTG_CLAUDE_CODE_ANSWERS", answers)
         .args(["--p1", "cc", "--p2", "random", "--quiet"])
         .args(args)
         .output()
@@ -58,8 +71,21 @@ fn play(name: &str, args: &[&str]) -> Vec<(BTreeSet<String>, String, serde_json:
         let r: serde_json::Value = serde_json::from_str(line).unwrap();
         let mut k = BTreeSet::new();
         kind(&r["schema"], "", &mut k);
-        (k, r["schema_sha"].as_str().unwrap().to_string(), r["schema"].clone())
+        (k, r["schema_sha"].as_str().unwrap().to_string(), r["schema"].clone(), r["system_bytes"].as_u64().unwrap_or(0))
     }).collect()
+}
+
+/// Answered in text, a game sends no schema at all, and every call of it
+/// the same system prompt: the one cached prefix a game has, where each
+/// new kind of question used to be a new tool ahead of it.
+#[test]
+fn a_game_answered_in_text_sends_no_schema_and_one_system_prompt() {
+    let records = play_answering("text", &["--seed", "2"], "text");
+    assert!(records.len() >= 20, "the game asked enough to say anything: {} calls", records.len());
+    assert!(records.iter().all(|(_, _, schema, _)| schema.as_object().is_none_or(serde_json::Map::is_empty)),
+        "no call sent a schema");
+    let systems: BTreeSet<u64> = records.iter().map(|(_, _, _, bytes)| *bytes).collect();
+    assert_eq!(systems.len(), 1, "one system prompt for the game: {systems:?}");
 }
 
 #[test]
