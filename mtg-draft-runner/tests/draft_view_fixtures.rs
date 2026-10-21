@@ -313,9 +313,13 @@ draft_view_fixtures` and commit the result.".into()));
     }).unwrap());
     let doc = Value::Object(doc);
     let path = repo_root().join("mtg-gui/tests/draft-view-fixtures.json");
-    let current: Option<Value> = std::fs::read_to_string(&path).ok().and_then(|t| serde_json::from_str(&t).ok());
-    if current.as_ref() != Some(&doc) {
-        std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap() + "\n").unwrap();
+    // Compared as text: a tiebreaker is a float, and a float read back
+    // through serde_json is not always the bits that were written, so two
+    // equal fixtures compared as values could never match.
+    let text = serde_json::to_string_pretty(&doc).unwrap() + "\n";
+    let current = std::fs::read_to_string(&path).ok();
+    if current.as_deref() != Some(text.as_str()) {
+        std::fs::write(&path, &text).unwrap();
         assert!(current.is_some(), "{} did not exist; it has been written — commit it", path.display());
         panic!("{} was stale and has been rewritten — commit it", path.display());
     }
