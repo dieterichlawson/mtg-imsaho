@@ -62,7 +62,8 @@ presented by `mtg-draft-runner`'s pick loop (the LLM prompt in
 `mtg-draft-runner/src/llm_client.rs`), by the hosted table's view
 (`mtg-draft-runner/src/lobby.rs`, what every seat is sent), by the draft
 page (`mtg-gui/src/draft/`) and by the terminal client
-(`mtg-draft-runner/src/bin/mtg-draft-client.rs`). A change to what a
+(`mtg-draft-runner/src/client.rs`, which `mtg-draft-client` and the
+hosted server's `cli` seat both run). A change to what a
 seat is asked at the table is a change to all of them;
 `mtg-draft-runner/tests/draft_view_fixtures.rs` and
 `mtg-gui/tests/draft_fixtures.js` fail when the view and the page's
