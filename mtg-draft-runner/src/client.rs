@@ -328,7 +328,9 @@ pub fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Optio
         return Command::Print(if phase == "done" {
             "the tournament is over: there is no deck to change".into()
         } else {
-            format!("your deck is final for this game: {first} sideboards between games of a match")
+            // True at every match length: a best-of-1 has no next game
+            // to sideboard for (#907's review).
+            format!("your deck is final for this game: in a match of more than one game, {first} sideboards before the next")
         });
     }
     match *first {
@@ -679,7 +681,7 @@ mod tests {
         v["phase"] = "playing".into();
         v["matches"] = serde_json::json!([]);
         let Command::Print(t) = command("add 0", Some(&v), &mut Build::default(), None) else { panic!("sent") };
-        assert!(t.contains("sideboards between games"), "{t}");
+        assert!(t.contains("sideboards before the next"), "{t}");
     }
 
     #[test]
