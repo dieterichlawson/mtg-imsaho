@@ -839,7 +839,11 @@ fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usiz
         &mut before_game,
         &mut |outcome: &GameOutcome| {
             games += 1;
-            write_game_log(shared.config.out_dir.as_deref(), round, a, b, games, outcome);
+            if let Err(e) = write_game_log(shared.config.out_dir.as_deref(), round, a, b, games, outcome) {
+                let line = format!("WARN {e}");
+                mtg_player::game_log::write(file!(), line!(), &line, "");
+                shared.reply(&line);
+            }
             shared.lobby().game_finished(round, a, b, outcome);
             shared.notify();
         },
@@ -1005,14 +1009,19 @@ fn game_port_order(lo: u16, hi: u16, from: Option<u16>) -> impl Iterator<Item = 
     (start..=hi).chain(lo..start)
 }
 
-fn write_game_log(out_dir: Option<&Path>, round: usize, a: usize, b: usize, game: usize, outcome: &GameOutcome) {
-    let Some(dir) = out_dir else { return };
+/// A finished game's log under `games/`, which the host is told is there.
+///
+/// # Errors
+/// It could not be written, and where: both errors were dropped, and the
+/// game's log was missing without a word (#891's review).
+fn write_game_log(out_dir: Option<&Path>, round: usize, a: usize, b: usize, game: usize, outcome: &GameOutcome) -> Result<(), String> {
+    let Some(dir) = out_dir else { return Ok(()) };
     let dir = dir.join("games");
-    let _ = std::fs::create_dir_all(&dir);
     let path = dir.join(format!("r{round}-{a}v{b}-g{game}.log"));
     let mut text = outcome.game_log.join("\n");
     text.push('\n');
-    let _ = std::fs::write(path, text);
+    std::fs::create_dir_all(&dir).and_then(|()| std::fs::write(&path, text))
+        .map_err(|e| format!("could not write {}: {e}", path.display()))
 }
 
 // ───────────────────────────────────────────────────────────── connections
@@ -1298,6 +1307,23 @@ fn pump(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A game log that cannot be written is said, not dropped.
+    #[test]
+    fn a_game_log_that_cannot_be_written_says_where() {
+        let dir = std::env::temp_dir().join(format!("mtg-game-log-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let outcome = GameOutcome { winner: Some(0), turns: 3, game_log: vec!["a line".into()], stalled_seat: None, abandoned: false };
+        write_game_log(Some(&dir), 1, 0, 1, 1, &outcome).unwrap();
+        assert_eq!(std::fs::read_to_string(dir.join("games/r1-0v1-g1.log")).unwrap(), "a line\n");
+        // `games` is a file: neither the directory nor the log can be made.
+        std::fs::remove_dir_all(dir.join("games")).unwrap();
+        std::fs::write(dir.join("games"), "").unwrap();
+        let e = write_game_log(Some(&dir), 1, 0, 1, 2, &outcome).unwrap_err();
+        assert!(e.contains("r1-0v1-g2.log"), "{e}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     /// #879: the line names where to go for the seat it is sent to; the
     /// game page's test draws the longest of these whole.
