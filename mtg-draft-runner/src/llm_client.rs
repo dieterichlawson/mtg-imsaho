@@ -1396,6 +1396,21 @@ impl DraftBackend for GeminiDraftBackend {
 
 /// The model providers a seat spec may name, for every message that has to
 /// list them.
+/// The key variable a metered provider's seat needs, when it is not set
+/// (or is blank): `claude` bills `ANTHROPIC_API_KEY`, `gemini`
+/// `GEMINI_API_KEY`; any other provider needs none. The backends `expect`
+/// the variable, so a seat without it was dealt in and then panicked at its
+/// first pick (#903): both binaries refuse it before anything is dealt.
+#[must_use]
+pub fn missing_api_key(provider: &str) -> Option<&'static str> {
+    let var = match provider {
+        "claude" => "ANTHROPIC_API_KEY",
+        "gemini" => "GEMINI_API_KEY",
+        _ => return None,
+    };
+    if std::env::var(var).is_ok_and(|v| !v.trim().is_empty()) { None } else { Some(var) }
+}
+
 pub const ACCEPTED_PROVIDERS: &str = "claude[:model], gemini[:model], claude-code[:model], cc[:model]";
 
 /// LLM client for draft picks and deck building.

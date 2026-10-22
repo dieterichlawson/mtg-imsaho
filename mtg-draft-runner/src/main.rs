@@ -689,6 +689,12 @@ fn validate_model_specs(models: &[String]) {
     for (i, spec) in models.iter().enumerate() {
         let parts: Vec<&str> = spec.split(':').collect();
         let provider = parts[0];
+        // A metered seat with no key was drafted in and panicked at its
+        // first call (#903).
+        if let Some(var) = llm_client::missing_api_key(provider) {
+            die(&format!("seat {i} model '{spec}' calls a metered API and {var} is not set \
+(cc:<model> runs the same seat through the Claude Code CLI)"));
+        }
         match provider {
             "claude" => continue,
             // Every decision a claude-code seat makes shells out to `claude`.

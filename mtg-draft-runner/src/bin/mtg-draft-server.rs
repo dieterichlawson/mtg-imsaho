@@ -204,7 +204,10 @@ fn check_models(seats: &[SeatKind]) {
         let SeatKind::Ai(spec) = kind else { continue };
         let provider = spec.split(':').next().unwrap_or("");
         match provider {
-            "claude" | "gemini" => {}
+            "claude" | "gemini" => if let Some(var) = llm_client::missing_api_key(provider) {
+                die(&format!("seat {seat} '{spec}' calls a metered API and {var} is not set \
+(cc:<model> runs the same seat through the Claude Code CLI)"));
+            },
             "claude-code" | "cc" => {
                 if !mtg_player::llm::claude_code_available() {
                     die(&format!(
