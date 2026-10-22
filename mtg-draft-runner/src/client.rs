@@ -487,10 +487,10 @@ pub fn render(v: &Value, build: &Build) -> (String, String) {
                 }
                 // The link is for a match still to be played; a finished
                 // one is its result (the page stays readable, but it is
-                // not something to open).
-                if let (Some(url), false) = (m["url"].as_str(), status == "done") {
-                    s.push_str(&format!(" — open {url}"));
-                }
+                // not something to open). It goes on a line of its own,
+                // last: with the page's key in it (#872) it is ~70
+                // characters, and a URL cannot be wrapped and still pasted.
+                let link = m["url"].as_str().filter(|_| status != "done");
                 if let Some(r) = m["result"].as_str() {
                     s.push_str(&format!(" — {r}"));
                 }
@@ -505,6 +505,9 @@ pub fn render(v: &Value, build: &Build) -> (String, String) {
                 s.push_str(&count(games.iter().filter(|g| !g["forfeited_by"].is_null()).count(), "forfeited"));
                 s.push_str(&count(games.iter().filter(|g| g["abandoned"] == true).count(), "abandoned, no winner"));
                 s.push('\n');
+                if let Some(url) = link {
+                    s.push_str(&format!("  open {url}\n"));
+                }
             }
             for p in v["pairings"].as_array().into_iter().flatten() {
                 let a = who(p["a"].as_u64().unwrap_or(0));
@@ -578,7 +581,7 @@ mod tests {
         let (_, mine) = render(&v, &Build::default());
         assert!(mine.contains("Round 1 vs Lawson (seat 1): done — 0-2\n"), "{mine}");
         assert!(!mine.contains("8801"), "a finished match's page is not offered:\n{mine}");
-        assert!(mine.contains("Round 2 vs Lawson (seat 1): playing (game 1) — open http://h:8803/\n"), "{mine}");
+        assert!(mine.contains("Round 2 vs Lawson (seat 1): playing (game 1)\n  open http://h:8803/\n"), "{mine}");
         assert!(mine.contains("Round 3 vs Lawson (seat 1): waiting\n"), "{mine}");
     }
 
@@ -800,7 +803,7 @@ mod tests {
             "pool": [], "picks": [], "deck": null, "notice": null, "pairings": [], "standings": [],
         });
         let (table, mine) = render(&v, &Build::default());
-        assert!(mine.contains("Round 1 vs Lawson (seat 1): playing (game 3; G1 Lawson (seat 1), G2 you) — open http://h:1/\n"), "{mine}");
+        assert!(mine.contains("Round 1 vs Lawson (seat 1): playing (game 3; G1 Lawson (seat 1), G2 you)\n  open http://h:1/\n"), "{mine}");
         assert!(table.contains("Lawson") && table.contains("(game page closed)"), "{table}");
         assert!(table_line(&v).contains("Lawson (seat 1) playing 42p, game page closed"), "{}", table_line(&v));
     }

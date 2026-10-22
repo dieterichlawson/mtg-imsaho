@@ -93,7 +93,7 @@ fn the_terminal_client_drafts_builds_and_names_the_game_link() {
     wait_for(&out, "your deck is final", Duration::from_secs(30));
 
     // Paired: the game link is printed.
-    let text = wait_for(&out, "Round 1 vs seat 1: playing (game 1) — open http://127.0.0.1:", Duration::from_secs(60));
+    let text = wait_for(&out, "Round 1 vs seat 1: playing (game 1)\n  open http://127.0.0.1:", Duration::from_secs(60));
     assert!(text.contains("== isd draft, seat 0: playing =="), "{text}");
     writeln!(stdin, "quit").unwrap();
     let status = child.wait().unwrap();
