@@ -342,6 +342,21 @@ pub fn repair_enum_strings(schema: &serde_json::Value, answer: &serde_json::Valu
     }
 }
 
+/// `answer` with each list nothing may go in (`maxItems` 0) that it left
+/// out put in as `[]`. The format line does not offer such a list and the
+/// check does not require it (#897), so the callers read an answer without
+/// it as the empty list it stands for, not as "no usable list".
+#[must_use]
+pub fn with_empty_lists(schema: &serde_json::Value, answer: serde_json::Value) -> serde_json::Value {
+    let serde_json::Value::Object(mut object) = answer else { return answer };
+    for (key, spec) in schema.get("properties").and_then(serde_json::Value::as_object).into_iter().flatten() {
+        if spec.get("maxItems").and_then(serde_json::Value::as_u64) == Some(0) && !object.contains_key(key) {
+            object.insert(key.clone(), serde_json::json!([]));
+        }
+    }
+    serde_json::Value::Object(object)
+}
+
 /// Why `answer` is not one `schema` allows, if it is not: the check a
 /// request without the per-call constraints ([`cache_stable_schema`]) no
 /// longer asks the API to make. A missing `thoughts` is not a reason.
@@ -375,9 +390,13 @@ pub fn schema_violation(schema: &serde_json::Value, answer: &serde_json::Value) 
                 let properties = schema.get("properties").and_then(serde_json::Value::as_object);
                 let unread = |key: &str| properties.and_then(|p| p.get(key))
                     .is_some_and(|sub| sub.get(UNREAD).is_some());
+                // Not asked for, so not missing: what the format line
+                // leaves out is what this does not require (#897).
+                let not_asked = |key: &str| properties.and_then(|p| p.get(key))
+                    .is_some_and(answer_text::not_asked);
                 let required = schema.get("required").and_then(serde_json::Value::as_array);
                 for key in required.into_iter().flatten().filter_map(serde_json::Value::as_str) {
-                    if key != "thoughts" && !unread(key) && !object.contains_key(key) {
+                    if key != "thoughts" && !not_asked(key) && !object.contains_key(key) {
                         return Some(format!("`{key}` is missing"));
                     }
                 }
@@ -4231,7 +4250,7 @@ impl LlmPlayer {
         if repaired != result {
             self.log("REPAIRED", &format!("{result} read as {repaired}"));
         }
-        let result = repaired;
+        let result = with_empty_lists(schema, repaired);
         let Some(why) = schema_violation(schema, &result) else {
             return result;
         };
@@ -4242,7 +4261,8 @@ impl LlmPlayer {
         let again = format!(
             "{user_message}\n\nYour answer {result} is not one this question allows: {why}. Answer again.");
         self.log("PROMPT", &again);
-        self.ask_structured(&again, schema)
+        let again = self.ask_structured(&again, schema);
+        with_empty_lists(schema, again)
     }
 
     /// One structured call and the logging every call gets.

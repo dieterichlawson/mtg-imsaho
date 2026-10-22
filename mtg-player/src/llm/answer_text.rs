@@ -62,6 +62,17 @@ a question asks for them:\n");
     s
 }
 
+/// Whether a field is one this question does not ask for: one it does not
+/// read ([`UNREAD`]), or a list nothing may go in (`maxItems` 0: no
+/// planeswalker to attack, no untapped source to fund X with). The format
+/// line leaves it out, and [`super::schema_violation`] does not require it:
+/// the line once left out a required `sources` the check then asked for,
+/// and every such answer was asked again (#897).
+#[must_use]
+pub fn not_asked(spec: &Value) -> bool {
+    spec.get(UNREAD).is_some() || spec.get("maxItems").and_then(Value::as_u64) == Some(0)
+}
+
 /// The end of a prompt for a seat that answers in text: the object's
 /// fields, in the order to write them — `thoughts` first, then the rest as
 /// the schema lists them — with each one's type and, for a field not in
@@ -80,7 +91,7 @@ pub fn answer_format(schema: &Value) -> String {
     // was filled, and the answer asked again (`planeswalker_attacks` has 1
     // entries; it takes at most 0).
     let mut names: Vec<&String> = properties.iter()
-        .filter(|(_, spec)| spec.get(UNREAD).is_none() && spec.get("maxItems").and_then(Value::as_u64) != Some(0))
+        .filter(|(_, spec)| !not_asked(spec))
         .map(|(name, _)| name).collect();
     // `thoughts` first, as the reason before the answer; the rest in the
     // order the question requires them, then any it does not.
@@ -184,6 +195,33 @@ mod tests {
         assert!(!f.contains("ask_again") && !f.contains(ATTACK_DESCRIPTION), "shared and unread fields are not spelled out: {f}");
         let section = answer_fields_section();
         assert!(section.contains(ATTACK_DESCRIPTION) && section.contains("`thoughts`"), "{section}");
+    }
+
+    /// #897: X funding with every source tapped. `sources` is required and
+    /// takes nothing (`maxItems` 0); the line leaves it out, so the check
+    /// takes an answer without it instead of asking again for it.
+    #[test]
+    fn a_required_list_nothing_may_go_in_is_neither_offered_nor_missing() {
+        let schema = serde_json::json!({"type": "object", "properties": {
+            "thoughts": {"type": "string"},
+            "sources": {"type": "array", "items": {"type": "string"}, "minItems": 0, "maxItems": 0},
+            "floating": {"type": "object", "properties": {"red": {"type": "string"}}, "required": ["red"]},
+            "cancel": {"type": "boolean"}},
+            "required": ["thoughts", "sources", "floating", "cancel"]});
+        let f = answer_format(&schema);
+        assert!(!f.contains("sources"), "{f}");
+        let answer = serde_json::json!({"thoughts": "t", "floating": {"red": "1"}, "cancel": false});
+        assert_eq!(crate::llm::schema_violation(&schema, &answer), None);
+        // and its callers read it as the empty list it stands for.
+        assert_eq!(crate::llm::with_empty_lists(&schema, answer.clone())["sources"], serde_json::json!([]));
+        // The fields the line does offer are still required.
+        let short = serde_json::json!({"thoughts": "t", "cancel": false});
+        assert_eq!(crate::llm::schema_violation(&schema, &short).as_deref(), Some("`floating` is missing"));
+        // And one source group untapped: offered, and required.
+        let mut one = schema.clone();
+        one["properties"]["sources"]["maxItems"] = serde_json::json!(1);
+        assert!(answer_format(&one).contains("\"sources\""));
+        assert_eq!(crate::llm::schema_violation(&one, &answer).as_deref(), Some("`sources` is missing"));
     }
 
     #[test]
