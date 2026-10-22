@@ -217,7 +217,8 @@ more cards, starting from the deck they played last game. The draft page
 shows a panel for it under "Your match is on" — the choice, the pool as
 rows to move between deck and sideboard, the land steppers, the cards the
 opponent has shown in the match, the clock, and "Ready for game N" — and
-the game page says "Before game N: ... on your draft page" to the seats
+the game page says "Before game N: ... where you drafted" (the host's own
+seat: "at the server's terminal") to the seats
 with something to do. The next game starts when both are ready, or when
 `--sideboard-seconds` runs out: the decks stand as they are, and a chooser
 who never chose plays. An AI seat answers in one call (its notes, the

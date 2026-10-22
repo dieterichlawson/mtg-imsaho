@@ -1215,10 +1215,11 @@ function promptArea(ctx, hits, state, x, y, w, h) {
             ty += 11;
         }
         // Between a match's games the table's line is what to do next ("Before
-        // game 2: sideboard on your draft page"): drawn here, ahead of the
+        // game 2: sideboard where you drafted"): drawn here, ahead of the
         // result, because the box stays up until the next game starts (#879).
+        // The longest the server sends takes four lines at this width.
         if (state.matchLine)
-            for (const l of wrapCapped(ctx, state.matchLine, w - 8, "8px Silkscreen", 3)) {
+            for (const l of wrapCapped(ctx, state.matchLine, w - 8, "8px Silkscreen", 5)) {
                 text(ctx, l, x + 4, ty, { color: "#a0d0e0" });
                 ty += 9;
             }

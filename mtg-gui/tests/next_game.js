@@ -63,14 +63,15 @@ async function main() {
       const fill = CanvasRenderingContext2D.prototype.fillText;
       CanvasRenderingContext2D.prototype.fillText = function (t, ...rest) { said.push(String(t)); return fill.call(this, t, ...rest); };
       const m = window.mtg;
-      const line = "Before game 2: sideboard, and choose play or draw, on your draft page";
+      // The longest line the server sends (server.rs, between_games).
+      const line = "Before game 3: game 2 was a draw: sideboard and choose play or draw where you drafted";
       window.mtgDebug.message({ type: "table", match_line: line, opponent: null });
       window.mtgDebug.render();
       const between = said.join(" ");
       said.length = 0;
       const view = m.view;
       m.view = null;
-      window.mtgDebug.message({ type: "table", match_line: "Before game 1: choose play or draw on your draft page", opponent: null });
+      window.mtgDebug.message({ type: "table", match_line: "Before game 1: you won the coin flip: choose play or draw at the server's terminal", opponent: null });
       window.mtgDebug.render();
       const first = said.join(" ");
       m.view = view;
@@ -79,9 +80,11 @@ async function main() {
       return { between, first };
     });
     const squash = (t) => t.replace(/\s+/g, " ");
-    check(squash(drawn.between).includes("Before game 2: sideboard, and choose play or draw, on your draft page"),
+    // Every word of it, the place to go last (#879's review: it was cut
+    // at three lines, before "where you drafted").
+    check(squash(drawn.between).includes("Before game 3: game 2 was a draw: sideboard and choose play or draw where you drafted"),
       `after a game the panel says what comes before the next (${JSON.stringify(drawn.between.slice(0, 200))})`);
-    check(squash(drawn.first).includes("Before game 1: choose play or draw on your draft page"),
+    check(squash(drawn.first).includes("Before game 1: you won the coin flip: choose play or draw at the server's terminal"),
       `before the first game the page says what the table needs (${JSON.stringify(drawn.first)})`);
 
     // Game 2's first message: a view, then its first decision.

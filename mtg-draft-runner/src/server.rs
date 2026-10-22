@@ -881,15 +881,11 @@ fn between_games(
     for page in shared.in_game.lock().unwrap_or_else(std::sync::PoisonError::into_inner).iter()
         .filter(|p| p.seat == a || p.seat == b)
     {
-        let chooses = bg.chooser == page.seat;
-        let what = match (bg.game, chooses) {
-            (1, false) => continue,
-            (1, true) => "you won the coin flip: choose play or draw".to_string(),
-            (_, true) => format!("{}: sideboard and choose play or draw",
-                last_game_why(bg.games.last().and_then(|g| g.winner), page.seat, bg.game - 1)),
-            (_, false) => "sideboard".to_string(),
-        };
-        page.page.set_match_line(Some(format!("Before game {}: {what} on your draft page", bg.game)));
+        let kind = if page.seat == a { &kinds[0] } else { &kinds[1] };
+        let last_winner = bg.games.last().and_then(|g| g.winner);
+        if let Some(line) = between_line(bg.game, bg.chooser == page.seat, last_winner, page.seat, kind) {
+            page.page.set_match_line(Some(line));
+        }
     }
     shared.notify();
     loop {
@@ -912,6 +908,22 @@ fn between_games(
 
 /// Why a seat chooses to play or draw: it lost the last game, or that game
 /// was a draw and the choice stays with whoever had it (MTR 2.2).
+/// What a seat's game page says before game `game` of a match, or nothing
+/// for a seat with nothing to do (it lost the coin flip). The host's own
+/// seat has no draft page: it answers at the server's terminal; a person
+/// may be on the page or the terminal client, both where they drafted
+/// (#879's review).
+fn between_line(game: usize, chooses: bool, last_winner: Option<usize>, seat: usize, kind: &SeatKind) -> Option<String> {
+    let what = match (game, chooses) {
+        (1, false) => return None,
+        (1, true) => "you won the coin flip: choose play or draw".to_string(),
+        (_, true) => format!("{}: sideboard and choose play or draw", last_game_why(last_winner, seat, game - 1)),
+        (_, false) => "sideboard".to_string(),
+    };
+    let place = if *kind == SeatKind::Cli { "at the server's terminal" } else { "where you drafted" };
+    Some(format!("Before game {game}: {what} {place}"))
+}
+
 fn last_game_why(winner: Option<usize>, seat: usize, game: usize) -> String {
     match winner {
         Some(w) if w != seat => format!("you lost game {game}"),
@@ -1263,6 +1275,21 @@ fn pump(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #879: the line names where to go for the seat it is sent to; the
+    /// game page's test draws the longest of these whole.
+    #[test]
+    fn the_between_games_line_says_where_to_go() {
+        let h = SeatKind::Human;
+        assert_eq!(between_line(1, false, None, 0, &h), None);
+        assert_eq!(between_line(1, true, None, 0, &SeatKind::Cli).as_deref(),
+            Some("Before game 1: you won the coin flip: choose play or draw at the server's terminal"));
+        assert_eq!(between_line(3, true, None, 0, &h).as_deref(),
+            Some("Before game 3: game 2 was a draw: sideboard and choose play or draw where you drafted"));
+        assert_eq!(between_line(2, true, Some(1), 0, &h).as_deref(),
+            Some("Before game 2: you lost game 1: sideboard and choose play or draw where you drafted"));
+        assert_eq!(between_line(2, false, Some(1), 1, &h).as_deref(), Some("Before game 2: sideboard where you drafted"));
+    }
 
     #[test]
     fn the_query_string_names_the_seat_and_the_key() {
