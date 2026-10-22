@@ -534,6 +534,16 @@ pub struct SavedDeck {
     pub sideboard: Vec<String>,
     /// The table built it, not the seat.
     pub fallback: bool,
+    /// The seat said it is final. A person's deck sent and not yet final
+    /// is kept too: it was lost on a restart, and the build timer then
+    /// finalised the table's own build instead of it (#890). Absent in a
+    /// snapshot written when only final decks were kept.
+    #[serde(default = "final_deck")]
+    pub ready: bool,
+}
+
+fn final_deck() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1961,10 +1971,9 @@ for the seat from here, and its games are forfeit"), ""));
             }).collect(),
             picks: self.pick_log.clone(),
             decks: self.seats.iter().enumerate()
-                .filter(|(_, s)| s.ready)
                 .filter_map(|(seat, s)| s.deck.as_ref().map(|d| SavedDeck {
                     seat, main: d.maindeck.clone(), lands: d.lands.clone(),
-                    sideboard: d.sideboard.clone(), fallback: s.deck_fallback,
+                    sideboard: d.sideboard.clone(), fallback: s.deck_fallback, ready: s.ready,
                 }))
                 .collect(),
             matches: self.matches.iter()
@@ -2030,6 +2039,15 @@ there: the packs are not the ones the table drafted (another seed, or a build wi
             // ready: 40 Plains at pick 8 passed against the pool so far (#886).
             if !self.table.seat_done(d.seat) {
                 return Err(format!("snapshot deck of seat {}: the seat has not finished drafting", d.seat));
+            }
+            if !d.ready {
+                // As it was sent: kept with what is wrong with it, if
+                // anything, for the person to carry on from.
+                if !self.seats[d.seat].is_human() {
+                    return Err(format!("snapshot deck of seat {}: an AI seat's deck is final or absent", d.seat));
+                }
+                let _ = self.submit_deck(d.seat, &d.main, &d.lands, &d.sideboard);
+                continue;
             }
             let pool = self.table.pool(d.seat).to_vec();
             let deck = deckbuilding::validate_deck(&pool, &d.main, &d.lands)

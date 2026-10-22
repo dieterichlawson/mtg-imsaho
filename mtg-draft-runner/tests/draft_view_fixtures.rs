@@ -821,6 +821,35 @@ fn a_snapshot_carries_the_table_on_where_it_stopped() {
     assert!(d.restore(&other).unwrap_err().contains("another table"));
 }
 
+/// A person's deck sent and not yet final is in the snapshot, and after a
+/// resume it is theirs to carry on from: it was dropped, and the build
+/// timer then finalised the table's own build in its place (#890).
+#[test]
+fn a_sent_deck_not_yet_final_survives_a_resume() {
+    let registry = CardRegistry::with_all_cards();
+    let seats = || vec![SeatKind::Human, SeatKind::Human, SeatKind::Ai("cc".into()), SeatKind::Ai("cc".into())];
+    let (mut a, _) = lobby(seats());
+    a.connected(0);
+    a.connected(1);
+    draft_to_the_end(&mut a, None);
+    let pool: Vec<String> = jv(&a, 0)["pool"].as_array().unwrap().iter()
+        .map(|c| c["name"].as_str().unwrap().to_string()).collect();
+    let deck = fallback_deck(&pool, &registry);
+    // Twelve spells and the lands: sent, short of 40, not final.
+    let main: Vec<String> = deck.maindeck.iter().take(12).cloned().collect();
+    a.submit_deck(0, &main, &deck.lands, &[]).unwrap();
+    let save = a.snapshot();
+    let saved = save.decks.iter().find(|d| d.seat == 0).expect("the sent deck is in the snapshot");
+    assert!(!saved.ready);
+
+    let (mut b, _) = lobby(seats());
+    b.restore(&serde_json::from_str(&serde_json::to_string(&save).unwrap()).unwrap()).unwrap();
+    let (va, vb) = (jv(&a, 0), jv(&b, 0));
+    assert_eq!(va["deck"], vb["deck"], "the deck as it was sent, with what is wrong with it");
+    assert_eq!(vb["deck"]["ready"], false);
+    assert_eq!(vb["deck"]["main"].as_array().unwrap().len(), 12);
+}
+
 /// A hand-edited snapshot is refused with a reason, before anything is
 /// dealt, rather than taken as it stands (#882, #886, #887, #888): a score
 /// its games do not add up to, a game won by a seat not in the match, a
