@@ -518,6 +518,12 @@ pub struct SavedPick {
     pub pack_id: usize,
     pub index: usize,
     pub auto: bool,
+    /// The card it took. The replay deals the packs again from the seed,
+    /// and a seed edited, or a build whose card pool changed, deals other
+    /// packs: by index alone every pool was replaced in silence (#884).
+    /// Absent in a snapshot written before it was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1186,7 +1192,7 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
         let available = self.table.in_front(seat).map(|f| f.cards.to_vec()).unwrap_or_default();
         let picked = self.table.pick(seat, pack_id, index, auto)?;
         self.seats[seat].seen.push((picked.round, picked.pick, available.clone(), picked.card.clone(), auto));
-        self.pick_log.push(SavedPick { seat, pack_id, index, auto });
+        self.pick_log.push(SavedPick { seat, pack_id, index, auto, card: Some(picked.card.clone()) });
         log_draft_pick!(self.log, seat, picked.round, picked.pick, &available, &picked.card, prompt, response);
         self.event(line);
         self.seats[seat].pick_deadline = None;
@@ -2008,6 +2014,11 @@ for the seat from here, and its games are forfeit"), ""));
             let available = self.table.in_front(p.seat).map(|f| f.cards.to_vec()).unwrap_or_default();
             let picked = self.table.pick(p.seat, p.pack_id, p.index, p.auto)
                 .map_err(|e| format!("snapshot pick {}: {e}", n + 1))?;
+            if let Some(card) = p.card.as_ref().filter(|c| **c != picked.card) {
+                return Err(format!("snapshot pick {}: seat {} took {card}, and the pack dealt now has {} \
+there: the packs are not the ones the table drafted (another seed, or a build with another card pool)",
+                    n + 1, p.seat, picked.card));
+            }
             self.seats[p.seat].seen.push((picked.round, picked.pick, available, picked.card.clone(), p.auto));
             self.pick_log.push(p.clone());
             if picked.draft_over {

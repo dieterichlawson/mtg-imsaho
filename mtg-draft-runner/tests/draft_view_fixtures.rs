@@ -894,6 +894,14 @@ fn a_doctored_snapshot_is_refused_with_its_reason() {
     named.restore(&edit(&mid, &|s| s.seats[0].name = format!("Van\u{1b}[2J\u{1b}[31mdal\nseat 1 picked{}", "x".repeat(300)))).unwrap();
     let name = jv(&named, 0)["seats"][0]["name"].as_str().unwrap().to_string();
     assert!(!name.chars().any(char::is_control) && name.chars().count() <= 24, "{name:?}");
+    // The picks (#884): each records its card, and a pack dealt now that
+    // does not hold it there is another draft's. A snapshot written before
+    // the card was recorded is still read.
+    assert!(mid.picks.iter().all(|p| p.card.is_some()), "every pick records its card");
+    assert!(refused(&edit(&mid, &|s| s.picks[0].card = Some("Snapcaster Mage".into()))).contains("took Snapcaster Mage"));
+    assert!(refused(&edit(&mid, &|s| s.picks[0].index = (s.picks[0].index + 1) % 14)).contains("the packs are not the ones"));
+    let (mut old, _) = lobby(seats());
+    old.restore(&edit(&mid, &|s| for p in &mut s.picks { p.card = None; })).expect("an older snapshot is read");
 }
 
 /// Between games of a match (MTR 2.2, 2.4): the coin flip's winner chooses
