@@ -353,13 +353,16 @@ fn an_entry_that_was_already_on_the_stack_resolving_does_not_stop_it() {
     // Asked with two of the opponent's spells on the stack, the seat says
     // "go": the top one resolving and the bottom one still there is what
     // it declined to respond to, not news.
+    // The view lists the stack top first (`view.rs`): the Lions on top.
     let mut v = view(2, Step::PrecombatMain, OPP);
-    v.stack.push(stack_item(40, "Grizzly Bears", OPP));
     v.stack.push(stack_item(41, "Savannah Lions", OPP));
+    v.stack.push(stack_item(40, "Grizzly Bears", OPP));
     fake.answer(1);
     seat.choose_action(&v, &offer("RESPOND TO opp's Savannah Lions"));
     fake.answer(0);
-    v.stack.pop();
+    // The top resolves: it comes off the front (#870; the stack was built
+    // bottom first here, and a resolution read as a new stack).
+    v.stack.remove(0);
     let chosen = seat.choose_action(&v, &offer("RESPOND TO opp's Grizzly Bears"));
     assert!(matches!(chosen, Action::PassPriority));
     assert_eq!(fake.calls().len(), 1, "the same stack, shorter, is passed unasked");
@@ -860,8 +863,11 @@ fn a_plan_stops_and_asks_when_the_opponent_responds_or_a_card_cannot_be_cast() {
     fake.answer(0);
     let (v, legal) = main_phase(vec![], true, false);
     assert!(matches!(seat.choose_action(&v, &legal), Action::CastSpell { object_id: ObjectId(12), .. }));
-    // The opponent answers the Bears with a Bolt of its own.
-    let (v, legal) = main_phase(vec![stack_item(12, "Grizzly Bears", YOU), stack_item(40, "Lightning Bolt", OPP)], true, false);
+    // The opponent answers the Bears with a Bolt of its own: on top, which
+    // the view lists first (`view.rs`, top of stack first). The stack was
+    // built bottom first here, which is how the test passed while the seat
+    // was told its own Bears had stopped its plan (#870).
+    let (v, legal) = main_phase(vec![stack_item(40, "Lightning Bolt", OPP), stack_item(12, "Grizzly Bears", YOU)], true, false);
     seat.choose_action(&v, &legal);
     assert_eq!(fake.calls().len(), 2, "the response is asked");
     let prompt = fake.calls().pop().unwrap();

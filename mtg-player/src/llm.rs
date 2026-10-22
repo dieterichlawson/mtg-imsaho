@@ -5478,7 +5478,8 @@ impl LlmPlayer {
         if self.offer_pass_until && Self::is_plain_priority_offer(legal)
             && !view.stack.is_empty() && view.stack.iter().all(|s| s.controller == view.you)
         {
-            let top = view.stack.last().map_or_else(String::new, |s| s.name.clone());
+            // The view's stack is top first (#870).
+            let top = view.stack.first().map_or_else(String::new, |s| s.name.clone());
             self.log("AUTO_PASS", &format!("only your own spells and abilities are on the stack ({top} on top): passing so they resolve"));
             return Action::PassPriority;
         }
@@ -5759,7 +5760,10 @@ impl LlmPlayer {
             let next = plan.steps.first().map_or("it", String::as_str);
             return PlanMove::Stop(format!("{next} could not be played before the main phase ended"));
         }
-        if let Some(top) = view.stack.last() {
+        // The view's stack is top first: `last()` was the bottom, and the
+        // seat was told its own spell had stopped its plan when the
+        // opponent's response on top of it had (#870).
+        if let Some(top) = view.stack.first() {
             return PlanMove::Stop(format!("{} ({}) is on the stack", top.name,
                 if top.controller == view.you { "yours" } else { "the opponent's" }));
         }
@@ -6149,12 +6153,14 @@ impl LlmPlayer {
 
         if !view.stack.is_empty() {
             let now = PassUntil::stack_identity(view);
+            // Top first, as the view lists it (#870): what resolved since
+            // came off the front, so what is left is the end of what was.
             let unchanged = same_point && view.stack_puts == mode.stack_puts
-                && now.len() <= mode.stack.len() && mode.stack[..now.len()] == now[..];
+                && now.len() <= mode.stack.len() && mode.stack[mode.stack.len() - now.len()..] == now[..];
             if !unchanged {
-                let newest = view.stack.iter().rev()
+                let newest = view.stack.iter()
                     .find(|s| !mode.stack.contains(&(s.object_id, s.card_id, s.name.clone())))
-                    .or_else(|| view.stack.last())
+                    .or_else(|| view.stack.first())
                     .map_or_else(|| "something".to_string(), |s| format!("{} ({})", s.name,
                         if s.controller == view.you { "yours" } else { "the opponent's" }));
                 return Some(format!("{newest} is on the stack"));
