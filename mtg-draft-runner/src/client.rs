@@ -309,6 +309,16 @@ pub fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Optio
     let words: Vec<&str> = line.split_whitespace().collect();
     let Some(first) = words.first() else { return Command::Nothing };
     let phase = view.map(|v| v["phase"].as_str().unwrap_or("")).unwrap_or("");
+    // A deck is built once the seat's own draft is over (the view says
+    // "building" for it then): before that the server refuses each message,
+    // and `ready` is two of them, so the refusal was printed twice (#907).
+    if matches!(*first, "ready" | "add" | "drop" | "lands") && matches!(phase, "lobby" | "drafting") {
+        return Command::Print(if phase == "lobby" {
+            "the draft has not started: the deck is built once your last pick is made".into()
+        } else {
+            format!("you are still drafting: {first} builds the deck once your last pick is made")
+        });
+    }
     match *first {
         "help" | "?" => Command::Print(USAGE.to_string()),
         "quit" | "q" | "exit" => Command::Quit,
@@ -636,6 +646,24 @@ mod tests {
 
     /// #792: a pool card's rules text can be read while building, and a
     /// pack card's while drafting, by the number the listing shows.
+    /// #907: building commands while the seat still drafts are answered
+    /// here, once, instead of sending messages the server refuses one by one
+    /// (`ready` is two: it printed the refusal twice).
+    #[test]
+    fn building_commands_wait_for_the_seats_last_pick() {
+        let mut v = serde_json::json!({"type": "view", "phase": "drafting", "seat": 0, "set": "isd",
+            "pool": [{"name": "Bonds of Faith", "line": "Bonds of Faith", "text": ""}], "pack": null});
+        for line in ["ready", "add 0", "drop 0", "lands plains=17"] {
+            let Command::Print(t) = command(line, Some(&v), &mut Build::default(), None) else { panic!("{line} sent") };
+            assert!(t.starts_with("you are still drafting"), "{line}: {t}");
+        }
+        v["phase"] = "lobby".into();
+        let Command::Print(t) = command("ready", Some(&v), &mut Build::default(), None) else { panic!() };
+        assert!(t.contains("has not started"), "{t}");
+        v["phase"] = "building".into();
+        assert!(matches!(command("add 0", Some(&v), &mut Build::default(), None), Command::Send(_)));
+    }
+
     #[test]
     fn text_reads_a_card() {
         let mut v = serde_json::json!({
