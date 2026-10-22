@@ -46,7 +46,7 @@ logs="logs/draft-loop/$night"
 if [ "$out" != "reports/draft-loop" ]; then
   logs="$logs-$(printf '%s' "$out" | tr -c 'A-Za-z0-9._-' '_')"
 fi
-run="out=$out cli=${CLAUDE_CODE_BIN:-claude}"
+run="out=$out cli=${CLAUDE_CODE_BIN:-claude} model=$model players=$players best_of=$best_of"
 mkdir -p "$out/nights" "$logs"
 if [ -f "$out/nights/$night.md" ]; then
   echo "$night is already in the ledger ($out/nights/$night.md); a second run that day is ${night}_b" >&2
@@ -58,11 +58,15 @@ resume=""
 if [ -f "$logs/save.json" ]; then
   # A snapshot from before the stamp is carried on as it always was.
   if [ -f "$logs/run" ] && [ "$(cat "$logs/run")" != "$run" ]; then
-    echo "$logs/save.json is another run's ($(cat "$logs/run"); this one is $run): move it away to start afresh" >&2
+    echo "$logs/save.json is another run's ($(cat "$logs/run"); this one is $run): move the directory away to start afresh" >&2
     exit 1
   fi
   resume="--resume $logs/save.json"
   echo "carrying on from $logs/save.json"
+else
+  # A fresh run starts with nothing of another's: the positions, the log
+  # and the stdout are appended to, and the ledger reads all three.
+  rm -f "$logs/positions.jsonl" "$logs/draft.log" "$logs/out.txt"
 fi
 printf '%s' "$run" > "$logs/run"
 guide="$out/guide.md"

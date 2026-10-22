@@ -27,6 +27,8 @@ import subprocess
 import sys
 import tempfile
 
+import runstamp
+
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
@@ -85,6 +87,10 @@ def main():
         lines = lines[: args.limit]
     os.makedirs(args.out, exist_ok=True)
     result_path = os.path.join(args.out, f"{args.name}.jsonl")
+    runstamp.check(args.out, args.name, {
+        "positions": os.path.abspath(args.positions), "model": args.model, "env": sorted(args.env),
+        "bin": os.path.abspath(args.bin), "cli": os.environ.get("CLAUDE_CODE_BIN", "claude"),
+    }, os.path.basename(__file__))
     done = set()
     if os.path.exists(result_path):
         for line in open(result_path):

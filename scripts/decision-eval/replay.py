@@ -28,6 +28,8 @@ import re
 import subprocess
 import sys
 
+import runstamp
+
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
@@ -121,6 +123,10 @@ def main():
     logdir = os.path.join(args.out, args.name)
     os.makedirs(logdir, exist_ok=True)
     result_path = os.path.join(args.out, f"{args.name}.jsonl")
+    runstamp.check(args.out, args.name, {
+        "positions": os.path.abspath(args.positions), "p1": args.p1, "env": sorted(args.env),
+        "bin": os.path.abspath(args.bin), "cli": os.environ.get("CLAUDE_CODE_BIN", "claude"),
+    }, os.path.basename(__file__))
     done = set()
     if os.path.exists(result_path):
         for line in open(result_path):
