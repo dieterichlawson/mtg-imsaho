@@ -302,15 +302,16 @@ root or set {} to the mtg-gui directory", web_dir.display(), mtg_player::gui::WE
     };
     let mut lobby = Lobby::new(config, &packs, &set_data, Arc::clone(&registry), &card_lines, log)
         .unwrap_or_else(|e| die(&format!("could not seat the table: {e}")));
+    // Said, and the log opened for it, only once the port is ours: on a
+    // taken port it went into the log of the table still running there,
+    // beside the FATAL (#893, as #745 for a fresh table).
+    let mut resumed_note = None;
     if let (Some(save), Some(path)) = (&save, &args.resume) {
         lobby.restore(save).unwrap_or_else(|e| die(&format!("--resume {path}: {e}")));
-        let _ = DraftLogger::new(&log_path);
-        let note = format!("the table carries on from the snapshot {path} (seed {}, seats {}): {} picks, {} \
+        resumed_note = Some(format!("the table carries on from the snapshot {path} (seed {}, seats {}): {} picks, {} \
 decks and {} finished matches replayed; a match that was in progress is played again from its first game",
             save.seed, save.seats.iter().map(|s| s.kind.as_str()).collect::<Vec<_>>().join(","),
-            save.picks.len(), save.decks.len(), save.matches.len());
-        mtg_player::game_log::write(file!(), line!(), &format!("NOTE {note}"), "");
-        mtg_player::stderr_line!("{note}");
+            save.picks.len(), save.decks.len(), save.matches.len()));
     }
     let save_path = args.save.as_ref().map_or_else(|| out_dir.join("table.save.json"), PathBuf::from);
 
@@ -340,6 +341,11 @@ decks and {} finished matches replayed; a match that was in progress is played a
 
     // The port first: nothing below is true of a table that cannot listen.
     let listener = server::bind(&shared).unwrap_or_else(|e| die(&e));
+    if let Some(note) = resumed_note {
+        let _ = DraftLogger::new(&log_path);
+        mtg_player::game_log::write(file!(), line!(), &format!("NOTE {note}"), "");
+        mtg_player::stderr_line!("{note}");
+    }
     // A snapshot that cannot be written is refused now, before anybody
     // joins, rather than promised and never made (#891). After the bind: a
     // second server on a taken port must not write over the running
