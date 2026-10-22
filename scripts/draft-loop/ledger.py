@@ -80,6 +80,26 @@ def deck_colors(maindeck, facts, lands=None):
     return "".join(sorted(main[:2], key=COLORS.index)) or (n.most_common(1)[0][0] if n else "C")
 
 
+def final_ranks(log):
+    """Each seat's place in the runner's FINAL STANDINGS, as the log prints
+    them: points, then the event's tiebreakers (OMW, GW, OGW). The report
+    ranked by points and raw game wins, so seats tied on points stood in
+    another order than the runner's (#883's review)."""
+    ranks, reading = {}, False
+    if not log or not os.path.exists(log):
+        return ranks
+    for line in open(log, errors="replace"):
+        if line.rstrip().endswith("FINAL STANDINGS"):
+            ranks, reading = {}, True
+            continue
+        m = re.match(r"(\d+)\. Seat (\d+) \u2014 ", line) if reading else None
+        if m:
+            ranks[int(m.group(2))] = int(m.group(1))
+        elif reading and ranks:
+            reading = False
+    return ranks
+
+
 def night(args):
     facts = card_facts()
     save = json.load(open(args.save))
@@ -104,6 +124,9 @@ def night(args):
             "notes": save["notes"][seat] if save.get("notes") else None,
             "match_wins": 0, "match_losses": 0, "match_draws": 0, "game_wins": 0, "game_losses": 0, "game_draws": 0,
         })
+    for seat, rank in final_ranks(args.log).items():
+        if seat < len(seats):
+            seats[seat]["rank"] = rank
     matches = []
     for m in save["matches"]:
         r = m["result"]

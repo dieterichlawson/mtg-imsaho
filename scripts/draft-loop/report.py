@@ -27,7 +27,12 @@ def main():
     lessons = load(os.path.join(d, f"{args.night}-lessons.json")) or {"seats": []}
     curate = load(os.path.join(d, f"{args.night}-curate.json")) or {}
     seats = night["seats"]
-    order = sorted(seats, key=lambda s: (-(3 * s["match_wins"] + s["match_draws"]), -s["game_wins"], s["seat"]))
+    # The runner's own order where the ledger has it (points, then OMW, GW,
+    # OGW); a night recorded before it is ranked as it was.
+    if all("rank" in s for s in seats):
+        order = sorted(seats, key=lambda s: s["rank"])
+    else:
+        order = sorted(seats, key=lambda s: (-(3 * s["match_wins"] + s["match_draws"]), -s["game_wins"], s["seat"]))
     out = [f"# Draft loop, {args.night}", "",
            f"Seed {night['seed']}, {night['players']} seats on `{seats[0]['model']}`, best-of-{night['best_of']}; "
            + (f"even seats drafted with the guide (hash `{night['guide_hash']}`), odd seats without it."
