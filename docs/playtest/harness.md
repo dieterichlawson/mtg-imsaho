@@ -1151,3 +1151,14 @@ say what your stub says.
   another — or whether the reply held no JSON object at all. A re-ask the
   prompt invited is a harness bug: file it with the format line and the
   reply
+- H39 [proposed 2026-10-22, from #897 and #896] every field the format
+  line leaves out, and every brace around the answer: for each field
+  `answer_format` filters (`x-unread`, `maxItems: 0`), check the answer
+  check does not then require it, and stage each with zero options (X
+  funding with every source tapped, an "up to N" set with nothing
+  eligible, an ordering of nothing) under a stand-in that answers only
+  from the `Answer with only this JSON object:` line; count REASK lines.
+  Then send replies that wrap a correct object in prose holding a mana
+  symbol, a second object, or a trailing `}`: each must be read. Record
+  the stand-in's stdin — the `--log` PROMPT record does not hold the
+  format line (#910)
