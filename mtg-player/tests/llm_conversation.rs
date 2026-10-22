@@ -457,9 +457,14 @@ fn a_tournament_seat_is_told_which_game_it_is_playing_and_the_score() {
 
     // Game 1 gets the coin flip; a later game gets the rule that applies to
     // it, which the seat could not tell apart before.
-    assert!(early.contains("coin flip chose who goes first in game"), "{early}");
-    assert!(!early.contains("chose who goes first in this game"), "{early}");
-    assert!(g3.contains("loser of game 2 chose who goes first"), "{g3}");
+    assert!(early.contains("coin flip may choose who goes first in game"), "{early}");
+    assert!(!early.contains("choose who goes first in this game"), "{early}");
+    assert!(g3.contains("loser of game 2 may choose who goes first"), "{g3}");
+    // A choice is not claimed where none may have been made: the clock, or
+    // a seat never asked, leaves the chooser playing first (#877's review).
+    for s in [&early, &g3] {
+        assert!(!s.contains(" chose who goes first") && s.contains("plays first if it does not choose"), "{s}");
+    }
 }
 
 /// #649: once a game can be drawn, a match can reach a game that cannot

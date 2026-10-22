@@ -1473,8 +1473,8 @@ mulligan prompt tells you which you are.\n",
             ),
             Self::BestOf { best_of: 1, .. } => s.push_str(
                 "Matches are best-of-one: this game decides the match, and there is no \
-game 2. The starting player is randomised (a fair coin flip); the mulligan prompt \
-tells you which you are.\n",
+game 2. The winner of a coin flip may choose to play or draw, and plays first if it \
+does not choose; the mulligan prompt tells you which you are.\n",
             ),
             Self::BestOf { best_of: n, game, your_wins, their_wins } => {
                 // Two bounds end a match, and only one of them is a win
@@ -1550,13 +1550,13 @@ match is still worth not losing.\n");
                 // person may choose to draw, so "the loser always plays"
                 // stopped being true.
                 if game == 1 {
-                    s.push_str("\nThe winner of a coin flip chose who goes first in game \
-1; before each later game the loser of the previous one chooses. The mulligan prompt \
-tells you which side you are on.\n");
+                    s.push_str("\nThe winner of a coin flip may choose who goes first in game \
+1, and plays first if it does not choose; before each later game the loser of the \
+previous one chooses in the same way. The mulligan prompt tells you which side you are on.\n");
                 } else {
-                    writeln!(s, "\nThe loser of game {} chose who goes first in this game \
-(after a drawn game, whoever chose before). The mulligan prompt tells you which side you \
-are on.", game - 1).unwrap();
+                    writeln!(s, "\nThe loser of game {} may choose who goes first in this game \
+(after a drawn game, whoever chose before), and plays first if it does not choose. The \
+mulligan prompt tells you which side you are on.", game - 1).unwrap();
                 }
             }
         }
