@@ -305,6 +305,37 @@ fn a_seat_that_spent_its_retry_budget_has_given_up() {
     assert_eq!(fake.calls().len(), attempts, "a seat that gave up is not asked again");
 }
 
+/// #898: a CLI that answers every call in prose, with no object in it, is
+/// as gone as one that does not answer: after a run of such replies the
+/// seat has given up, and its runner forfeits it rather than choosing every
+/// decision for it with fallbacks. A readable reply ends the run.
+#[test]
+fn a_seat_whose_replies_are_never_readable_has_given_up() {
+    use mtg_player::Player;
+    // Calls 1-5 in prose, call 6 readable, then prose again.
+    let fake = Fake::new("unreadable", r#"if [ "$CALL" = 6 ]; then R='{\"word\": \"ok\"}'; else R='I would like to pass priority here.'; fi
+printf '{"type":"result","is_error":false,"session_id":"s","result":"%s","usage":{}}\n' "$R""#);
+    let mut p = mtg_player::llm::LlmPlayer::new_claude_code_with_binary("t", &fake.bin()).with_text_answers(true);
+    let schema = serde_json::json!({"type": "object", "properties": {"word": {"type": "string"}}, "required": ["word"]});
+    let limit = mtg_player::llm::CLAUDE_CODE_UNREADABLE_LIMIT;
+    assert_eq!(limit, 6);
+    for _ in 0..5 {
+        p.backend_send_with_schema_for_test("choose", &schema);
+    }
+    assert!(p.gave_up().is_none(), "five slips in a row are not the end of a seat");
+    assert_eq!(p.backend_send_with_schema_for_test("choose", &schema)["word"], "ok");
+    for _ in 0..limit - 1 {
+        p.backend_send_with_schema_for_test("choose", &schema);
+    }
+    assert!(p.gave_up().is_none(), "the readable reply started the count again");
+    p.backend_send_with_schema_for_test("choose", &schema);
+    let why = p.gave_up().expect("a run of unreadable replies gives the seat up");
+    assert!(why.contains("replies in a row had no JSON object"), "{why}");
+    let calls = fake.calls().len();
+    p.backend_send_with_schema_for_test("choose", &schema);
+    assert_eq!(fake.calls().len(), calls, "a seat that gave up is not asked again");
+}
+
 #[test]
 fn a_failed_call_names_its_exit_status_once() {
     let fake = Fake::new("exit-status", "echo 'boom' >&2; exit 3");

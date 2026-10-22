@@ -67,6 +67,14 @@ pub const CACHE_TTL_ENV: &str = "MTG_CLAUDE_CODE_CACHE_TTL";
 /// How long one decision may take before the subprocess is killed and the
 /// call retried. Print mode with thinking can run well past the API path's
 /// two minutes.
+/// Replies in a row with no JSON object in them after which the seat has
+/// given up, as one that spends its retry budget has (#587, #898). Six is
+/// three decisions, each asked and asked again: one reply in prose is a
+/// slip, and is asked again; a seat that answers nothing it is asked in
+/// three decisions running is not going to (#896 made a reply with a
+/// readable object anywhere in it count as read).
+pub const UNREADABLE_LIMIT: usize = 6;
+
 const CALL_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// Overrides [`CALL_TIMEOUT`], so the timeout path can be exercised in
@@ -625,6 +633,11 @@ pub(super) struct ClaudeCodeBackend {
     /// without an answer: the seat has stopped answering, and its runner
     /// forfeits it rather than playing on with fallbacks (#587).
     gave_up: Option<String>,
+    /// Replies in a row with no JSON object in them. A CLI that answers
+    /// every call in prose is as gone as one that does not answer: it was
+    /// played on with fallbacks for a whole game, two calls a decision, and
+    /// never forfeited (#898). See [`UNREADABLE_LIMIT`].
+    unreadable_run: usize,
     /// The seat this backend answers for; see `LlmBackend::set_seat`.
     seat: String,
     /// How many decisions one CLI session carries before the seat starts a
@@ -660,6 +673,7 @@ impl ClaudeCodeBackend {
             last_thinking: None,
             last_call_failure: None,
             gave_up: None,
+            unreadable_run: 0,
             seat: String::new(),
             window: super::history_exchanges(),
             answer_schema: None,
@@ -1111,7 +1125,7 @@ impl LlmBackend for ClaudeCodeBackend {
         let answer = self.call(message, Some(&sanitized));
         self.answer_schema = None;
         let mut structured = match answer {
-            Some(json) => Self::structured(&json).unwrap_or_else(|| {
+            Some(json) => Self::structured(&json).inspect(|_| self.unreadable_run = 0).unwrap_or_else(|| {
                 // The reply as it came, where no object could be read out of
                 // it: the answer is asked again, and the log says why — a
                 // reply cut off at the output cap, prose, two objects.
@@ -1121,6 +1135,16 @@ impl LlmBackend for ClaudeCodeBackend {
                         "no JSON object in the reply (stop {}, {} output tokens): {text:?}",
                         json["stop_reason"].as_str().unwrap_or("?"),
                         json["usage"]["output_tokens"].as_u64().unwrap_or(0)));
+                self.unreadable_run += 1;
+                if self.unreadable_run >= UNREADABLE_LIMIT && self.gave_up.is_none() {
+                    let msg = format!("claude -p gave up: {UNREADABLE_LIMIT} replies in a row had no JSON \
+object in them (the seat is not answering in the format it is asked for)");
+                    crate::stderr_line!("{}{msg}", seat_tag(&self.seat));
+                    crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(),
+                        &api_label("API_ERROR", &self.seat), &msg);
+                    self.last_call_failure = Some(msg.clone());
+                    self.gave_up = Some(msg);
+                }
                 serde_json::json!({})
             }),
             None => serde_json::json!({}),
