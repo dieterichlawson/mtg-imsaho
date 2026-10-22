@@ -29,7 +29,7 @@ the draft starts when everybody has joined, or press Enter to start without them
 ```
 
 Send each friend their line. Everything a friend opens — the draft page,
-the client's socket, and later their game page, at `/game/<port>/` — is on
+the client's socket, and later their game page, at `/game/<port>/<key>/` — is on
 the lobby's one port, so that is the only port to open: on a LAN,
 `--bind 0.0.0.0`; across the internet, forward `--port` on the router, or
 put the machine on a tailnet (Tailscale and the like: `--bind 0.0.0.0` and
@@ -40,7 +40,9 @@ host. The game pages themselves listen on this machine's loopback only.
 The key is the whole access control: a seat
 is whoever holds its key, a second tab with the same key is the same seat
 (the page is a view of the server's state, so a reconnect loses nothing),
-and a wrong key is refused by name. `--bind` defaults to `127.0.0.1`,
+and a wrong key is refused by name. A game page has a key of its own in
+its link, so the page (the person's hand, their decisions) is not reached
+by guessing its port. `--bind` defaults to `127.0.0.1`,
 which only this machine can reach; `--bind 0.0.0.0` listens for the LAN or
 a tailnet, and the join lines name this machine's first non-loopback
 address (or say to replace `0.0.0.0` with it when that cannot be found).
@@ -199,7 +201,8 @@ When every deck is in, a Swiss tournament pairs the rounds as the runner
 does. For each match a person is in, a game page is bound on the next
 free loopback port in `--game-ports` (counting on from the last one used,
 round to the start; a finished match's port is let go) and the link —
-`http://<host>:<port>/game/<its port>/`, through the lobby — is shown on
+`http://<host>:<port>/game/<its port>/<key>/`, through the lobby, with a key
+of the page's own that only that person's link carries — is shown on
 your page and in the client; once the match is over the link says so; a match between two people is two pages on two ports; an
 AI-vs-AI match plays on its own. Results and standings appear as they
 come; the next round is paired when the round is over.

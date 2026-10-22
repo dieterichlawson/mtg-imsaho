@@ -277,6 +277,12 @@ impl WsClient {
         Self { ws, last: None }
     }
 
+    /// The socket, or `None` when the server refuses the handshake.
+    pub fn try_connect(url: &str) -> Option<Self> {
+        let (ws, _) = tungstenite::connect(url).ok()?;
+        Some(Self { ws, last: None })
+    }
+
     pub fn send(&mut self, msg: Value) {
         self.ws.send(tungstenite::Message::Text(msg.to_string().into())).expect("the message sends");
     }

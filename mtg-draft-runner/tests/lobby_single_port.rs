@@ -38,17 +38,33 @@ fn the_game_page_and_its_socket_come_through_the_lobbys_port() {
     let url = match_url(&server);
     let prefix = format!("http://127.0.0.1:{}/game/", server.port);
     assert!(url.starts_with(&prefix) && url.ends_with('/'), "the link is through the lobby: {url}");
-    let game_port: u16 = url[prefix.len()..].trim_end_matches('/').parse().expect("a port in the link");
+    let (game_port, key) = url[prefix.len()..].trim_end_matches('/').split_once('/').expect("/game/<port>/<key>/");
+    let game_port: u16 = game_port.parse().expect("a port in the link");
+    assert!(key.len() >= 16, "the link carries the page's key: {url}");
 
     // The page, its script, and its socket, all on the lobby's port.
-    let (status, body) = server.http_get(&format!("/game/{game_port}/"));
+    let page_path = format!("/game/{game_port}/{key}/");
+    let (status, body) = server.http_get(&page_path);
     assert_eq!(status, 200, "{body}");
     assert!(body.contains("dist/main.js"), "the game page: {body}");
-    let (status, _) = server.http_get(&format!("/game/{game_port}/dist/main.js"));
+    let (status, _) = server.http_get(&format!("{page_path}dist/main.js"));
     assert_eq!(status, 200);
     let (status, _) = server.http_get(&format!("/game/{game_port}"));
     assert_eq!(status, 301, "a bare /game/<port> is sent to the page's own directory");
-    let mut page = WsClient::connect(&format!("ws://127.0.0.1:{}/game/{game_port}/ws", server.port));
+    let (status, _) = server.http_get(&format!("/game/{game_port}/{key}"));
+    assert_eq!(status, 301, "a link without its last slash is sent to the page's own directory");
+
+    // Without the key, or with another, the live page is not there: a
+    // stranger who guesses the port reads no hand and answers nothing (#872).
+    for stranger in [format!("/game/{game_port}/"), format!("/game/{game_port}/dist/main.js"),
+                     format!("/game/{game_port}/{}/", "0".repeat(key.len()))] {
+        let (status, body) = server.http_get(&stranger);
+        assert_eq!(status, 404, "{stranger} is refused: {body}");
+    }
+    assert!(WsClient::try_connect(&format!("ws://127.0.0.1:{}/game/{game_port}/ws", server.port)).is_none(),
+        "the page's socket without the key is refused");
+
+    let mut page = WsClient::connect(&format!("ws://127.0.0.1:{}{page_path}ws", server.port));
     page.send(serde_json::json!({"type": "hello"}));
     let deadline = Instant::now() + Duration::from_secs(30);
     loop {
@@ -76,6 +92,20 @@ fn direct_game_ports_link_each_page_on_its_own_port() {
         &["--pick-seconds", "1", "--build-seconds", "2", "--direct-game-ports"]);
     let url = match_url(&server);
     assert!(!url.contains("/game/") && url.starts_with("http://127.0.0.1:"), "{url}");
-    let port: u16 = url.trim_start_matches("http://127.0.0.1:").trim_end_matches('/').parse().unwrap();
+    let (port, key) = url.trim_start_matches("http://127.0.0.1:").trim_end_matches('/').split_once('/').expect("<port>/<key>/");
+    let port: u16 = port.parse().unwrap();
     assert_ne!(port, server.port, "a port of its own");
+    // On its own port too, the page answers only under its key (#872).
+    assert!(key.len() >= 16, "{url}");
+    let get = |path: &str| {
+        use std::io::{Read, Write};
+        let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).expect("the page's port");
+        write!(s, "GET {path} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n").unwrap();
+        let mut out = String::new();
+        let _ = s.read_to_string(&mut out);
+        out
+    };
+    assert!(get(&format!("/{key}/")).starts_with("HTTP/1.1 200"), "the keyed page is served");
+    assert!(get("/").starts_with("HTTP/1.1 404"), "the bare port serves nothing");
+    assert!(WsClient::try_connect(&format!("ws://127.0.0.1:{port}/ws")).is_none(), "nor its socket");
 }

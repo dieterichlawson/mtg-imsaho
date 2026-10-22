@@ -472,6 +472,18 @@ async function main() {
           const r = document.createRange(); r.selectNodeContents(node); return r.getClientRects().length;
         });
         check(portLines === 1, `${tag}: the game link's port sits on one line (${portLines} line boxes)`);
+        // A hosted table's link carries the page's own 32-character key (#872):
+        // it fits a phone's width too.
+        {
+          const keyed = JSON.parse(JSON.stringify(byName.playing));
+          for (const m of keyed.matches) if (m.url) m.url = `http://192.168.1.20:8800/game/8805/${"0123456789abcdef".repeat(2)}/`;
+          await stage(keyed);
+          await page.waitForTimeout(50);
+          const o = await overflow();
+          check(o.scrollW <= o.clientW, `${tag}: a keyed game link fits sideways (${o.scrollW} <= ${o.clientW})`);
+          await stage(byName.playing);
+          await page.waitForTimeout(50);
+        }
         // A long one-word name and the #744 tags fit a phone (#789), and a
         // record is never broken at its hyphen (#790).
         const wide = JSON.parse(JSON.stringify(byName.playing));

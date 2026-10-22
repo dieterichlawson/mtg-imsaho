@@ -32,7 +32,7 @@ Options:
   --port <N>             The lobby's port  (default 8800)
   --game-ports <lo-hi>   Ports the humans' game pages take on this machine's
                          loopback; the links go through the lobby's port, at
-                         /game/<port>/, so friends need that one port only
+                         /game/<port>/<key>/, so friends need that one port only
                          (default 8801-8899)
   --direct-game-ports    Link each game page on its own port instead, bound on
                          --bind (every port in --game-ports must be reachable)

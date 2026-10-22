@@ -914,13 +914,18 @@ fn game_page(shared: &Shared, name: &str, label: &str) -> Result<GuiPlayer, Stri
     // Through the lobby's port, the page itself on loopback: a friend
     // across the internet needs one port forwarded, not a range of them.
     let bind = if shared.config.direct_game_ports { shared.config.bind.as_str() } else { "127.0.0.1" };
+    // The page answers only under a key of its own, which only this seat's
+    // link carries: the ports are handed out in order, and without it
+    // anyone reaching the lobby could read the person's hand and answer
+    // for them (#872).
+    let key = crate::lobby::new_key();
     for port in game_port_order(lo, hi, *next) {
-        match GuiPlayer::new_at(name, bind, Some(port)) {
+        match GuiPlayer::new_keyed(name, bind, Some(port), Some(&key)) {
             Ok(mut gui) => {
                 gui.url = if shared.config.direct_game_ports {
-                    format!("http://{}:{port}/", shared.config.advertise)
+                    format!("http://{}:{port}/{key}/", shared.config.advertise)
                 } else {
-                    format!("http://{}:{}/game/{port}/", shared.config.advertise, shared.config.port)
+                    format!("http://{}:{}/game/{port}/{key}/", shared.config.advertise, shared.config.port)
                 };
                 gui.notice_name = label.to_string();
                 *next = port.checked_add(1);
@@ -1010,7 +1015,8 @@ fn redirect(stream: &mut TcpStream, to: &str) {
 }
 
 /// `/game/<port>/...`: a match's game page through the lobby's own port.
-/// Only a port one of this table's game pages is served on is reached —
+/// The page itself refuses anything not under its key (`/game/<port>/<key>/`,
+/// #872). Only a port one of this table's game pages is served on is reached —
 /// the lobby is not a way into anything else on the machine — and the
 /// request goes on with the prefix taken off, its bytes then passed both
 /// ways as they come, so the page's socket works through it as its fetches
