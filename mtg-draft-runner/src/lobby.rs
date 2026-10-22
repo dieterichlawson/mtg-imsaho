@@ -114,6 +114,13 @@ pub fn parse_seats(spec: &str, default_ai: &str) -> Result<Vec<SeatKind>, String
 /// A seat's key: 128 random bits as hex, printed once by the host and
 /// carried by every join.
 #[must_use]
+/// A name as a seat may carry it: no control characters (no escapes, no
+/// newlines), 24 characters at most, trimmed.
+fn clean_name(name: &str) -> String {
+    let clean: String = name.chars().filter(|c| !c.is_control()).take(24).collect();
+    clean.trim().to_string()
+}
+
 pub fn new_key() -> String {
     format!("{:032x}", rand::random::<u128>())
 }
@@ -532,6 +539,60 @@ pub struct SavedMatch {
 }
 
 impl TableSave {
+    /// The checks the flags a snapshot stands in for make, and the ones
+    /// a snapshot needs of itself: a pod of two to eight with at most one
+    /// `cli` seat, a match of at least one game, a key for every person's
+    /// seat, a kick only of a person's seat, and every deck and match of a
+    /// seat the table has, once each. A hand-edited snapshot was taken as
+    /// it stood: best-of-0 drew every match, a person's seat with no key
+    /// waited for nobody, a deck of seat 5 at a 2-seat table panicked
+    /// (#887, #888).
+    ///
+    /// # Errors
+    /// The first check that fails, by name.
+    pub fn check(&self) -> Result<(), String> {
+        let kinds = self.seat_kinds()?;
+        if !(MIN_SEATS..=MAX_SEATS).contains(&kinds.len()) {
+            return Err(format!("it names {} seats; a pod is {MIN_SEATS} to {MAX_SEATS}", kinds.len()));
+        }
+        if kinds.iter().filter(|k| **k == SeatKind::Cli).count() > 1 {
+            return Err("it has more than one cli seat".to_string());
+        }
+        if self.best_of == 0 {
+            return Err("its best_of is 0: a match needs at least one game".to_string());
+        }
+        for (i, (seat, kind)) in self.seats.iter().zip(&kinds).enumerate() {
+            let person = matches!(kind, SeatKind::Human | SeatKind::Cli);
+            if person && seat.key.as_deref().is_none_or(|k| k.trim().is_empty()) {
+                return Err(format!("seat {i} is a person's and has no key to join with"));
+            }
+            if !person && seat.kicked {
+                return Err(format!("seat {i} is an AI seat and is marked kicked; only a person's seat is kicked"));
+            }
+        }
+        let n = kinds.len();
+        let seat_ok = |seat: usize| seat < n;
+        for (i, d) in self.decks.iter().enumerate() {
+            if !seat_ok(d.seat) {
+                return Err(format!("it has a deck for seat {}, and the table has {n} seats", d.seat));
+            }
+            if self.decks[..i].iter().any(|o| o.seat == d.seat) {
+                return Err(format!("it has two decks for seat {}", d.seat));
+            }
+        }
+        for m in &self.matches {
+            let r = &m.result;
+            if ![m.a, m.b, r.player_a, r.player_b].into_iter().all(seat_ok) {
+                return Err(format!("its round {} match names a seat the {n}-seat table does not have", m.round));
+            }
+            if (m.a, m.b) != (r.player_a, r.player_b) {
+                return Err(format!("its round {} match is seat {} v seat {}, and its result is seat {} v seat {}",
+                    m.round, m.a, m.b, r.player_a, r.player_b));
+            }
+        }
+        Ok(())
+    }
+
     /// The seats as `--seats` would name them.
     ///
     /// # Errors
@@ -1922,12 +1983,15 @@ for the seat from here, and its games are forfeit"), ""));
         if save.version != TABLE_SAVE_VERSION {
             return Err(format!("snapshot version {} (this build reads {TABLE_SAVE_VERSION})", save.version));
         }
+        save.check()?;
         if save.seats.len() != self.seats.len() || save.seed != self.config.seed || save.set != self.config.set_code {
             return Err("the snapshot is of another table (seats, seed or set differ)".to_string());
         }
         for (i, saved) in save.seats.iter().enumerate() {
             let s = &mut self.seats[i];
-            s.name.clone_from(&saved.name);
+            // As `set_name` takes one: no escapes, no newlines, 24 at most.
+            let name = clean_name(&saved.name);
+            s.name = if name.is_empty() { format!("seat {i}") } else { name };
             if s.key.is_some() {
                 s.key.clone_from(&saved.key);
             }
@@ -1951,9 +2015,26 @@ for the seat from here, and its games are forfeit"), ""));
             }
         }
         for d in &save.decks {
+            // A deck is a ready seat's, and a seat still drafting is not
+            // ready: 40 Plains at pick 8 passed against the pool so far (#886).
+            if !self.table.seat_done(d.seat) {
+                return Err(format!("snapshot deck of seat {}: the seat has not finished drafting", d.seat));
+            }
             let pool = self.table.pool(d.seat).to_vec();
             let deck = deckbuilding::validate_deck(&pool, &d.main, &d.lands)
                 .map_err(|e| format!("snapshot deck of seat {}: {e}", d.seat))?;
+            // The sideboard is the rest of the pool, as a deck sent at the
+            // table has it: a list of cards the seat never drafted was
+            // shown as its sideboard (#886).
+            let fronts = |cards: &[String]| {
+                let mut f: Vec<String> = cards.iter().map(|c| mtg_draft::front_face(c).to_string()).collect();
+                f.sort_unstable();
+                f
+            };
+            let (saved, rest) = (fronts(&d.sideboard), fronts(&deck.sideboard));
+            if saved != rest {
+                return Err(format!("snapshot deck of seat {}: its sideboard is not the rest of its pool", d.seat));
+            }
             let s = &mut self.seats[d.seat];
             s.deck = Some(DraftDeck { sideboard: d.sideboard.clone(), ..deck });
             s.ready = true;
@@ -1962,6 +2043,14 @@ for the seat from here, and its games are forfeit"), ""));
         // The DECK BUILDING section is already in the log for a seat that
         // finished drafting before the stop.
         self.started_pool_log = self.seats.iter().enumerate().any(|(i, _)| self.table.seat_done(i));
+        // The matches are a finished tournament's so far: each score its
+        // own games add up to, at this match length, paired as this
+        // tournament pairs them (#882, as the runner's #731).
+        if !save.matches.is_empty() && !self.all_ready() {
+            return Err("the snapshot has finished matches, and not every seat has a deck".to_string());
+        }
+        let records: Vec<(usize, &MatchResult)> = save.matches.iter().map(|m| (m.round, &m.result)).collect();
+        crate::game::check_finished_matches(&records, self.seats.len(), self.config.best_of)?;
         let mut to_play = Vec::new();
         if self.all_ready() && (!save.matches.is_empty() || self.phase == Phase::Building) {
             to_play = self.begin_tournament();
@@ -2020,8 +2109,7 @@ for the seat from here, and its games are forfeit"), ""));
 
     /// A seat's cosmetic name.
     pub fn set_name(&mut self, seat: usize, name: &str) {
-        let clean: String = name.chars().filter(|c| !c.is_control()).take(24).collect();
-        let clean = clean.trim().to_string();
+        let clean = clean_name(name);
         // A client sends its name on every connect: the same name again is
         // no rename (#856).
         if clean.is_empty() || clean == self.seats[seat].name {

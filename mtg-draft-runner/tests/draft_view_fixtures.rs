@@ -779,7 +779,13 @@ fn a_snapshot_carries_the_table_on_where_it_stopped() {
     let game = |winner: usize| GameOutcome { winner: Some(winner), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false };
     let result = |p: usize, q: usize, wp: usize, wq: usize| MatchResult {
         player_a: p, player_b: q, wins_a: wp, wins_b: wq,
-        games: (0..wp).map(|_| game(p)).chain((0..wq).map(|_| game(q))).collect(),
+        // The match's loser's wins first: the games in an order a match is
+        // played in, which the restore checks (#882).
+        games: if wp >= wq {
+            (0..wq).map(|_| game(q)).chain((0..wp).map(|_| game(p))).collect()
+        } else {
+            (0..wp).map(|_| game(p)).chain((0..wq).map(|_| game(q))).collect()
+        },
     };
     assert_eq!(a.begin_tournament(), vec![(1, 0, 1), (1, 2, 3)]);
     for (r, p, q) in [(1, 0, 1), (1, 2, 3)] {
@@ -813,6 +819,81 @@ fn a_snapshot_carries_the_table_on_where_it_stopped() {
     other.seed += 1;
     let (mut d, _) = lobby(seats());
     assert!(d.restore(&other).unwrap_err().contains("another table"));
+}
+
+/// A hand-edited snapshot is refused with a reason, before anything is
+/// dealt, rather than taken as it stands (#882, #886, #887, #888): a score
+/// its games do not add up to, a game won by a seat not in the match, a
+/// match twice, a deck for a seat still drafting or twice over, a seat the
+/// table does not have, best-of-0, a pod of one, a person's seat with no
+/// key, an AI seat kicked. A name with escapes in it is cleaned as a name
+/// typed at the table is.
+#[test]
+fn a_doctored_snapshot_is_refused_with_its_reason() {
+    let registry = CardRegistry::with_all_cards();
+    let seats = || vec![SeatKind::Human, SeatKind::Human, SeatKind::Ai("cc".into()), SeatKind::Ai("cc".into())];
+    let refused = |save: &TableSave| -> String {
+        let (mut l, _) = lobby(seats());
+        match l.restore(save) {
+            Ok(_) => panic!("taken: {}", serde_json::to_string(save).unwrap()),
+            Err(e) => e,
+        }
+    };
+
+    let (mut a, _) = lobby(seats());
+    a.connected(0);
+    a.connected(1);
+    draft_to_the_end(&mut a, Some(8));
+    let mid = a.snapshot();
+    draft_to_the_end(&mut a, None);
+    for seat in 0..POD {
+        let pool: Vec<String> = jv(&a, seat)["pool"].as_array().unwrap().iter()
+            .map(|c| c["name"].as_str().unwrap().to_string()).collect();
+        let deck = fallback_deck(&pool, &registry);
+        if seat < 2 {
+            a.submit_deck(seat, &deck.maindeck, &deck.lands, &[]).unwrap();
+            a.ready(seat).unwrap();
+        } else {
+            a.ai_deck(seat, &mtg_draft_runner::deck::DeckBuildResult { deck, attempts: vec![], retries: 0, fallback: false });
+        }
+    }
+    let game = |winner: usize| GameOutcome { winner: Some(winner), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false };
+    assert_eq!(a.begin_tournament(), vec![(1, 0, 1), (1, 2, 3)]);
+    a.match_started(1, 0, 1, [None, None]);
+    a.match_finished(1, 0, 1, MatchResult { player_a: 0, player_b: 1, wins_a: 2, wins_b: 0, games: vec![game(0), game(0)] });
+    let done = a.snapshot();
+    let (mut ok, _) = lobby(seats());
+    ok.restore(&done).expect("the snapshot as written is taken");
+
+    let edit = |base: &TableSave, f: &dyn Fn(&mut TableSave)| { let mut s = base.clone(); f(&mut s); s };
+    // The matches (#882).
+    assert!(refused(&edit(&done, &|s| { s.matches[0].result.wins_a = 0; s.matches[0].result.wins_b = 2; })).contains("its games say 2-0"));
+    assert!(refused(&edit(&done, &|s| s.matches[0].result.wins_a = 7)).contains("its games say 2-0"));
+    assert!(refused(&edit(&done, &|s| { s.matches[0].result.games.pop(); s.matches[0].result.wins_a = 1; }))
+        .contains("not a finished best-of-3"));
+    assert!(refused(&edit(&done, &|s| s.matches[0].result.games[0].winner = Some(3))).contains("not in the match"));
+    assert!(refused(&edit(&done, &|s| { let m = s.matches[0].clone(); s.matches.push(m); })).contains("two records"));
+    assert!(refused(&edit(&done, &|s| s.matches[0].round = 2)).contains("not a match this tournament pairs"));
+    assert!(refused(&edit(&mid, &|s| s.matches = done.matches.clone())).contains("not every seat has a deck"));
+    // The decks (#886).
+    let deck0 = done.decks.iter().find(|d| d.seat == 0).unwrap().clone();
+    assert!(refused(&edit(&mid, &|s| s.decks = vec![deck0.clone()])).contains("has not finished drafting"));
+    assert!(refused(&edit(&done, &|s| s.decks.push(deck0.clone()))).contains("two decks for seat 0"));
+    assert!(refused(&edit(&done, &|s| s.decks[0].sideboard.push("Snapcaster Mage".into()))).contains("not the rest of its pool"));
+    // Seats the table does not have (#887): refused, not a panic.
+    assert!(refused(&edit(&done, &|s| s.decks[0].seat = 5)).contains("seat 5"));
+    assert!(refused(&edit(&done, &|s| { s.matches[0].result.player_a = 5; s.matches[0].result.player_b = 6; }))
+        .contains("does not have"));
+    // What the flags check (#888).
+    assert!(refused(&edit(&done, &|s| s.best_of = 0)).contains("at least one game"));
+    assert!(refused(&edit(&mid, &|s| s.seats.truncate(1))).contains("a pod is 2 to 8"));
+    assert!(refused(&edit(&mid, &|s| s.seats[0].key = None)).contains("no key"));
+    assert!(refused(&edit(&mid, &|s| s.seats[0].key = Some(String::new()))).contains("no key"));
+    assert!(refused(&edit(&mid, &|s| s.seats[2].kicked = true)).contains("AI seat"));
+    let (mut named, _) = lobby(seats());
+    named.restore(&edit(&mid, &|s| s.seats[0].name = format!("Van\u{1b}[2J\u{1b}[31mdal\nseat 1 picked{}", "x".repeat(300)))).unwrap();
+    let name = jv(&named, 0)["seats"][0]["name"].as_str().unwrap().to_string();
+    assert!(!name.chars().any(char::is_control) && name.chars().count() <= 24, "{name:?}");
 }
 
 /// Between games of a match (MTR 2.2, 2.4): the coin flip's winner chooses

@@ -232,6 +232,9 @@ fn main() {
             .unwrap_or_else(|e| die(&format!("--resume: cannot read {path}: {e}")));
         let save: TableSave = serde_json::from_str(&text)
             .unwrap_or_else(|e| die(&format!("--resume: {path} is not a table snapshot: {e}")));
+        // Its seats and match length stand in for the flags': checked as
+        // they would be, before anything is built from them (#888).
+        save.check().unwrap_or_else(|e| die(&format!("--resume {path}: {e}")));
         save
     });
     if let Some(save) = &save {
