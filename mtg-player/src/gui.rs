@@ -128,6 +128,10 @@ struct Shared {
     table: Mutex<(Option<String>, Option<String>)>,
     /// Set when the host ends the table: every page is told why and closed.
     closing: Mutex<Option<String>>,
+    /// When set, the page is served only under `/<key>/`: a hosted table's
+    /// game link carries it, and a request without it reaches nothing —
+    /// neither the person's hand nor their decisions (#872).
+    path_key: Option<String>,
 }
 
 impl Shared {
@@ -344,6 +348,16 @@ impl GuiPlayer {
     /// The page directory is missing, the address is not one this machine
     /// has, or no port could be bound.
     pub fn new_at(name: &str, bind: &str, port: Option<u16>) -> Result<Self, String> {
+        Self::new_keyed(name, bind, port, None)
+    }
+
+    /// [`GuiPlayer::new_at`], with the page and its socket served only
+    /// under `/<key>/` when `key` is given; the `url` carries it. Anything
+    /// else on the port is a 404, so the link is the access control.
+    ///
+    /// # Errors
+    /// As [`GuiPlayer::new_at`].
+    pub fn new_keyed(name: &str, bind: &str, port: Option<u16>, key: Option<&str>) -> Result<Self, String> {
         let web_dir = std::env::var(WEB_DIR_ENV)
             .map_or_else(|_| PathBuf::from(DEFAULT_WEB_DIR), PathBuf::from);
         if !web_dir.join("index.html").is_file() {
@@ -374,6 +388,7 @@ impl GuiPlayer {
             closed: std::sync::atomic::AtomicBool::new(false),
             table: Mutex::new((None, None)),
             closing: Mutex::new(None),
+            path_key: key.map(str::to_string),
         });
         let accept_shared = Arc::clone(&shared);
         let accept = thread::Builder::new().name("gui-accept".into()).spawn(move || {
@@ -395,7 +410,10 @@ impl GuiPlayer {
             shared,
             answers: answer_rx,
             seq: 0,
-            url: format!("http://{bound}/"),
+            url: match key {
+                Some(k) => format!("http://{bound}/{k}/"),
+                None => format!("http://{bound}/"),
+            },
             notice_name: name.to_string(),
             said_waiting: false,
             withdrawn: Withdraw::default(),
@@ -585,17 +603,54 @@ fn serve_connection(mut stream: TcpStream, shared: &Shared) {
     // Give the request head a moment to arrive, then decide what this is.
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
     let Ok(n) = stream.peek(&mut head) else { return };
-    let head = String::from_utf8_lossy(&head[..n]).to_ascii_lowercase();
-    if head.contains("upgrade: websocket") {
+    let head = String::from_utf8_lossy(&head[..n]);
+    let path = head.lines().next()
+        .and_then(|l| l.split_whitespace().nth(1))
+        .unwrap_or("/");
+    let path = path.split('?').next().unwrap_or("/");
+    let path = match keyed_path(path, shared.path_key.as_deref()) {
+        Keyed::Page(p) => p.to_string(),
+        Keyed::Directory(to) => {
+            read_head(&mut stream);
+            respond(&mut stream, "301 Moved Permanently", &format!("Location: {to}\r\n"), "text/plain", b"");
+            return;
+        }
+        Keyed::Refused => {
+            read_head(&mut stream);
+            respond(&mut stream, "404 Not Found", "", "text/plain", b"not found");
+            return;
+        }
+    };
+    if head.to_ascii_lowercase().contains("upgrade: websocket") {
         serve_websocket(stream, shared);
     } else {
-        serve_http(&mut stream, &shared.web_dir);
+        serve_http(&mut stream, &shared.web_dir, &path);
     }
 }
 
-/// Serve one static file and close. Only files under the page directory,
-/// only by a path with no `..` in it.
-fn serve_http(stream: &mut TcpStream, web_dir: &Path) {
+/// What a request path reaches on a page served under a key.
+#[derive(Debug, PartialEq, Eq)]
+enum Keyed<'a> {
+    /// The path under the key, with the key taken off.
+    Page(&'a str),
+    /// `/<key>` with no slash: sent on to `<key>/`, where the page's
+    /// relative links work.
+    Directory(String),
+    /// No key, or the wrong one.
+    Refused,
+}
+
+fn keyed_path<'a>(path: &'a str, key: Option<&str>) -> Keyed<'a> {
+    let Some(key) = key else { return Keyed::Page(path) };
+    match path.strip_prefix('/').and_then(|p| p.strip_prefix(key)) {
+        Some("") => Keyed::Directory(format!("{key}/")),
+        Some(rest) if rest.starts_with('/') => Keyed::Page(rest),
+        _ => Keyed::Refused,
+    }
+}
+
+/// The request head off the socket.
+fn read_head(stream: &mut TcpStream) {
     let mut buf = Vec::new();
     let mut chunk = [0u8; 1024];
     loop {
@@ -609,25 +664,29 @@ fn serve_http(stream: &mut TcpStream, web_dir: &Path) {
             Ok(_) | Err(_) => break,
         }
     }
-    let request = String::from_utf8_lossy(&buf);
-    let path = request.lines().next()
-        .and_then(|l| l.split_whitespace().nth(1))
-        .unwrap_or("/");
-    let path = path.split('?').next().unwrap_or("/");
+}
+
+fn respond(stream: &mut TcpStream, status: &str, extra: &str, ctype: &str, body: &[u8]) {
+    let header = format!(
+        "HTTP/1.1 {status}\r\n{extra}Content-Type: {ctype}\r\nContent-Length: {}\r\n\
+         Cache-Control: no-cache\r\nConnection: close\r\n\r\n", body.len());
+    let _ = stream.write_all(header.as_bytes());
+    let _ = stream.write_all(body);
+    let _ = stream.flush();
+}
+
+/// Serve one static file and close. Only files under the page directory,
+/// only by a path with no `..` in it.
+fn serve_http(stream: &mut TcpStream, web_dir: &Path, path: &str) {
+    read_head(stream);
     let rel = if path == "/" { "index.html" } else { path.trim_start_matches('/') };
     let safe = !rel.split('/').any(|seg| seg == ".." || seg.is_empty());
     let file = web_dir.join(rel);
     let body = if safe { std::fs::read(&file).ok() } else { None };
-    let (status, ctype, body) = match body {
-        Some(b) => ("200 OK", content_type(rel), b),
-        None => ("404 Not Found", "text/plain", b"not found".to_vec()),
-    };
-    let header = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\n\
-         Cache-Control: no-cache\r\nConnection: close\r\n\r\n", body.len());
-    let _ = stream.write_all(header.as_bytes());
-    let _ = stream.write_all(&body);
-    let _ = stream.flush();
+    match body {
+        Some(b) => respond(stream, "200 OK", "", content_type(rel), &b),
+        None => respond(stream, "404 Not Found", "", "text/plain", b"not found"),
+    }
 }
 
 fn content_type(path: &str) -> &'static str {
@@ -782,6 +841,22 @@ fn unreadable_notice(text: &str, e: &serde_json::Error) -> String {
 mod tests {
     use super::*;
 
+    /// #872: under a key, the page and its socket are reached only through
+    /// it; a bare port, another path or a wrong key reaches nothing.
+    #[test]
+    fn a_keyed_page_is_reached_only_through_its_key() {
+        assert_eq!(keyed_path("/", None), Keyed::Page("/"));
+        assert_eq!(keyed_path("/ws", None), Keyed::Page("/ws"));
+        let k = Some("k3y");
+        assert_eq!(keyed_path("/k3y/", k), Keyed::Page("/"));
+        assert_eq!(keyed_path("/k3y/ws", k), Keyed::Page("/ws"));
+        assert_eq!(keyed_path("/k3y/dist/main.js", k), Keyed::Page("/dist/main.js"));
+        assert_eq!(keyed_path("/k3y", k), Keyed::Directory("k3y/".into()));
+        for refused in ["/", "/ws", "/dist/main.js", "/k3", "/k3y2/", "/K3Y/", "/x/k3y/"] {
+            assert_eq!(keyed_path(refused, k), Keyed::Refused, "{refused}");
+        }
+    }
+
     /// #602: the seat says where its page is every time the last browser
     /// goes away, not once for the life of the run.
     ///
@@ -829,6 +904,7 @@ mod tests {
             closed: std::sync::atomic::AtomicBool::new(false),
             table: Mutex::new((None, None)),
             closing: Mutex::new(None),
+            path_key: None,
         };
         let (a_tx, a_rx) = mpsc::channel();
         let (b_tx, b_rx) = mpsc::channel();
@@ -859,6 +935,7 @@ mod tests {
                 closed: std::sync::atomic::AtomicBool::new(false),
                 table: Mutex::new((None, None)),
                 closing: Mutex::new(None),
+                path_key: None,
             }),
             answers: answers_rx,
             seq: 1,
