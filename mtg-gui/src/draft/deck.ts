@@ -74,7 +74,8 @@ export function problem(edit: DeckEdit, pool: CardInfo[]): string | null {
     if (n > MAX_LAND) return `${b} count is ${n}; the server allows at most ${MAX_LAND}.`;
   }
   const c = counts(edit);
-  if (c.total < MIN_DECK) return `Deck has ${c.total} cards (need at least ${MIN_DECK}). Add ${MIN_DECK - c.total} more cards or basic lands.`;
+  const short = MIN_DECK - c.total;
+  if (short > 0) return `Deck has ${c.total} cards (need at least ${MIN_DECK}). Add ${short} more ${short === 1 ? "card or basic land" : "cards or basic lands"}.`;
   return null;
 }
 

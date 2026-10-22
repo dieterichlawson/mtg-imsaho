@@ -345,6 +345,7 @@ async function main() {
         await page.click(`.land[data-land="Forest"] .dec`);
         await page.waitForTimeout(50);
         check(await page.$eval("#ready", b => b.disabled) && (await text("#ready-reason") || "").includes("39 cards"), `${tag}: 39 cards disables Ready and says so`);
+        check((await text("#ready-reason") || "").includes("Add 1 more card or basic land."), `${tag}: one card short is said in the singular (${await text("#ready-reason")})`);
         await page.click(`.land[data-land="Forest"] .inc`);
         await page.click("#ready");
         await page.waitForTimeout(50);
