@@ -19,7 +19,7 @@
 #   guide.md                    the guide the next night drafts with
 #
 # The run's own log, save and stdout stay under logs/draft-loop/DATE/
-# (gitignored). Seats are plan quota, never metered:
+# (gitignored; DATE-<out> for a DRAFT_LOOP_OUT of its own). Seats are plan quota, never metered:
 #   DRAFT_LOOP_MODEL    the drafting and debrief model (default claude-haiku-5-5)
 #   DRAFT_LOOP_CURATOR  the guide's curator (default claude-sonnet-5-5)
 #   DRAFT_LOOP_PLAYERS  seats (default 8); DRAFT_LOOP_BEST_OF (default 3)
@@ -38,7 +38,15 @@ case "$night" in
   *) seed=$(printf '%s' "$night" | tr -d '-') ;;
 esac
 out="${DRAFT_LOOP_OUT:-reports/draft-loop}"
+# The snapshot is the ledger's it was played for, and by the CLI it was
+# played with: a stub dry run into a scratch DRAFT_LOOP_OUT kept its save
+# where the real night of that date then carried it on, recording the
+# stub's draft and tournament with no call made (#899).
 logs="logs/draft-loop/$night"
+if [ "$out" != "reports/draft-loop" ]; then
+  logs="$logs-$(printf '%s' "$out" | tr -c 'A-Za-z0-9._-' '_')"
+fi
+run="out=$out cli=${CLAUDE_CODE_BIN:-claude}"
 mkdir -p "$out/nights" "$logs"
 if [ -f "$out/nights/$night.md" ]; then
   echo "$night is already in the ledger ($out/nights/$night.md); a second run that day is ${night}_b" >&2
@@ -48,9 +56,15 @@ fi
 # its snapshot when run again: the picks and matches already played stand.
 resume=""
 if [ -f "$logs/save.json" ]; then
+  # A snapshot from before the stamp is carried on as it always was.
+  if [ -f "$logs/run" ] && [ "$(cat "$logs/run")" != "$run" ]; then
+    echo "$logs/save.json is another run's ($(cat "$logs/run"); this one is $run): move it away to start afresh" >&2
+    exit 1
+  fi
   resume="--resume $logs/save.json"
   echo "carrying on from $logs/save.json"
 fi
+printf '%s' "$run" > "$logs/run"
 guide="$out/guide.md"
 [ -f "$guide" ] || printf '# Innistrad draft guide\n\nNo nights yet: draft on what you know.\n' > "$guide"
 
