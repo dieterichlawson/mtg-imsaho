@@ -122,7 +122,7 @@ pub const API_AUTH_VARS: &[&str] = &["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"
 pub const INHERIT_AUTH_ENV: &str = "MTG_CLAUDE_CODE_INHERIT_AUTH";
 
 fn inherit_auth() -> bool {
-    std::env::var(INHERIT_AUTH_ENV).is_ok_and(|v| v == "1")
+    super::env_flag(INHERIT_AUTH_ENV)
 }
 
 /// The prefixes of the variables a Claude Code session sets for itself and
@@ -159,7 +159,7 @@ pub const INHERIT_SESSION_ENV: &str = "MTG_CLAUDE_CODE_INHERIT_SESSION_ENV";
 /// The calling session's variables, by name, that a seat's child is run
 /// without.
 fn session_vars() -> Vec<String> {
-    if std::env::var(INHERIT_SESSION_ENV).is_ok_and(|v| v == "1") {
+    if super::env_flag(INHERIT_SESSION_ENV) {
         return Vec::new();
     }
     std::env::vars_os()

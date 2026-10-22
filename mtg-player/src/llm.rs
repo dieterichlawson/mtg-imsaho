@@ -858,10 +858,41 @@ pub fn claude_code_thinking_tokens(level: ThinkingLevel) -> Option<u32> {
 /// conversation, so they start a fresh one every this-many decisions.
 pub const HISTORY_ENV: &str = "MTG_LLM_HISTORY";
 
+/// Say once that `var` holds `value`, which it does not know, and what the
+/// run does instead. A setting taken as its default in silence ran the
+/// opposite of what was asked with no sign of it (#911).
+pub fn unknown_setting(var: &str, value: &str, instead: &str) {
+    static WARNED: std::sync::LazyLock<Mutex<std::collections::HashSet<String>>> =
+        std::sync::LazyLock::new(|| Mutex::new(std::collections::HashSet::new()));
+    if WARNED.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(var.to_string()) {
+        crate::stderr_line!("Warning: {var}={value:?} is not a value it takes; {instead}.");
+    }
+}
+
+/// Whether `var` is set to `1`, as the on-or-off settings are; `0`, empty
+/// or unset is off, and anything else is off and said.
+#[must_use]
+pub fn env_flag(var: &str) -> bool {
+    match std::env::var(var).as_deref().map(str::trim) {
+        Ok("1") => true,
+        Err(_) | Ok("" | "0") => false,
+        Ok(other) => {
+            unknown_setting(var, other, "it is off (1 turns it on)");
+            false
+        }
+    }
+}
+
 /// The history window this run's seats use, from [`HISTORY_ENV`].
 #[must_use]
 pub fn history_exchanges() -> usize {
-    std::env::var(HISTORY_ENV).ok().and_then(|v| v.trim().parse().ok()).unwrap_or(0)
+    let Ok(value) = std::env::var(HISTORY_ENV) else { return 0 };
+    value.trim().parse().unwrap_or_else(|_| {
+        if !value.trim().is_empty() {
+            unknown_setting(HISTORY_ENV, &value, "no history is kept (a whole number of exchanges sets one)");
+        }
+        0
+    })
 }
 
 /// `MTG_LLM_PASS_UNTIL`: whether a priority offer carries the
@@ -7187,6 +7218,20 @@ pub(crate) fn follows_preposition(before: &str) -> bool {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
+
+    /// #911's review: an on-or-off setting is on only for `1`; anything
+    /// else is off, and a value it does not know is said rather than
+    /// silently taken as off (`true` or `yes` stripped what was asked for).
+    #[test]
+    fn an_on_or_off_setting_is_on_for_1_alone() {
+        const VAR: &str = "MTG_TEST_ENV_FLAG_911";
+        for (value, on) in [("1", true), (" 1 ", true), ("0", false), ("", false), ("yes", false), ("true", false)] {
+            std::env::set_var(VAR, value);
+            assert_eq!(env_flag(VAR), on, "{value:?}");
+        }
+        std::env::remove_var(VAR);
+        assert!(!env_flag(VAR));
+    }
     use mtg_engine::cards::CardRegistry;
     use mtg_engine::types::CounterType;
     use std::collections::HashMap;

@@ -880,7 +880,15 @@ pub const DRAFT_ANSWERS_ENV: &str = "MTG_CLAUDE_CODE_DRAFT_ANSWERS";
 
 /// Whether a `claude -p` draft seat is asked for its answer in text.
 fn draft_text_answers() -> bool {
-    std::env::var(DRAFT_ANSWERS_ENV).as_deref() == Ok("text")
+    match std::env::var(DRAFT_ANSWERS_ENV).as_deref().map(str::trim) {
+        Ok("text") => true,
+        Err(_) | Ok("" | "schema" | "tool") => false,
+        // As its game twin warns (`answer_text::text_answers`, #911).
+        Ok(other) => {
+            mtg_player::llm::unknown_setting(DRAFT_ANSWERS_ENV, other, "draft answers stay in the schema");
+            false
+        }
+    }
 }
 
 /// The draft rules' answer note for a seat asked in text: the CLI has no
