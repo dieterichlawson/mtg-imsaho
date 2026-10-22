@@ -920,6 +920,12 @@ mod tests {
         let text = review_listing(&msg);
         assert!(text.contains("Pack 1\n  1.1 Chapel Geist — over Doomed Traveler, Moan of the Unhallowed\n"), "{text}");
         assert!(text.contains("  1.2 Typhoid Rats (the table's pick)\n"), "{text}");
+        // #904: two copies in the pack, one taken: the other was passed over.
+        let twice = serde_json::json!({"type": "review", "picks": [
+            {"round": 1, "pick": 1, "card": "Shimmering Grotto", "auto": false,
+             "pack": [{"name": "Shimmering Grotto"}, {"name": "Moonmist"}, {"name": "Shimmering Grotto"}]}]});
+        assert!(review_listing(&twice).contains("1.1 Shimmering Grotto — over Moonmist, Shimmering Grotto\n"),
+            "{}", review_listing(&twice));
     }
 
     /// The order a tie on points is broken by is printed beside the
@@ -1081,8 +1087,13 @@ pub fn review_listing(msg: &Value) -> String {
             s.push_str(&format!("Pack {}\n", p["round"]));
         }
         let card = p["card"].as_str().unwrap_or("?");
-        let rest: Vec<&str> = p["pack"].as_array().into_iter().flatten()
-            .filter_map(|c| c["name"].as_str()).filter(|n| *n != card).collect();
+        let mut rest: Vec<&str> = p["pack"].as_array().into_iter().flatten()
+            .filter_map(|c| c["name"].as_str()).collect();
+        // The one copy taken: a second copy in the pack went on to the next
+        // seat, and was dropped from the list with it (#904).
+        if let Some(i) = rest.iter().position(|n| *n == card) {
+            rest.remove(i);
+        }
         let auto = if p["auto"] == true { " (the table's pick)" } else { "" };
         s.push_str(&format!("  {}.{} {card}{auto}", p["round"], p["pick"]));
         if !rest.is_empty() {
