@@ -150,8 +150,7 @@ pub fn run(
                 return Ended::Over;
             }
             Ok(_) => {}
-            Err(tungstenite::Error::Io(e))
-                if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {}
+            Err(e) if mtg_player::gui::nothing_to_read(&e) => {}
             Err(e) => {
                 out(&format!("the connection ended: {e}"));
                 return Ended::Over;

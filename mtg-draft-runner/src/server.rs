@@ -423,19 +423,42 @@ pub fn run(shared: &Arc<Shared>, listener: TcpListener) -> Result<(), String> {
         let url = format!("ws://{host}:{}/ws?seat={seat}&key={key}", shared.config.port);
         // Joined before the keyboard is read: a `start` or a name typed at
         // once went to a table the seat was not at yet, which picked for it.
-        let (mut ws, _) = tungstenite::connect(&url)
-            .map_err(|e| format!("your seat at this terminal could not join: {e}"))?;
-        if let tungstenite::stream::MaybeTlsStream::Plain(s) = ws.get_ref() {
-            let _ = s.set_read_timeout(Some(Duration::from_millis(100)));
-        }
+        let join = move || -> Result<_, String> {
+            let (ws, _) = tungstenite::connect(&url)
+                .map_err(|e| format!("your seat at this terminal could not join: {e}"))?;
+            if let tungstenite::stream::MaybeTlsStream::Plain(s) = ws.get_ref() {
+                let _ = s.set_read_timeout(Some(Duration::from_millis(100)));
+            }
+            Ok(ws)
+        };
+        let mut ws = join()?;
         let deadline = Instant::now() + Duration::from_secs(5);
         while shared.lobby().view(seat).seats[seat].presence == "not yet" && Instant::now() < deadline {
             thread::sleep(Duration::from_millis(20));
         }
         let (tx, rx) = mpsc::channel();
         *shared.cli_lines.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(tx);
-        thread::Builder::new().name("cli-seat".into()).spawn(move || {
-            crate::client::run(&mut ws, &rx);
+        let seat_shared = Arc::clone(shared);
+        thread::Builder::new().name("cli-seat".into()).spawn(move || loop {
+            let ended = crate::client::run(&mut ws, &rx);
+            if seat_shared.quitting() || matches!(ended, crate::client::Ended::Refused) {
+                return;
+            }
+            // The table is still on: the host's seat joins it again rather
+            // than leaving nobody at it, with what was typed meanwhile
+            // still queued (#880).
+            seat_shared.reply("your seat at this terminal lost its connection; joining again");
+            let mut tries = 0;
+            ws = loop {
+                match join() {
+                    Ok(ws) => break ws,
+                    Err(e) if tries >= 10 => {
+                        seat_shared.reply(&format!("{e}; what you type for it now goes nowhere"));
+                        return;
+                    }
+                    Err(_) => { tries += 1; thread::sleep(Duration::from_millis(500)); }
+                }
+            };
         }).map_err(|e| e.to_string())?;
     }
 
@@ -559,7 +582,9 @@ fn host_loop(shared: &Arc<Shared>) {
                 return;
             }
             Some(other) => match &cli {
-                Some(tx) => { let _ = tx.send((typed_at, line.to_string())); }
+                Some(tx) => if tx.send((typed_at, line.to_string())).is_err() {
+                    shared.reply(&format!("'{other}' went nowhere: your seat at this terminal is no longer joined"));
+                },
                 None => shared.reply(&format!(
                     "'{other}': the commands are start (or Enter), kick <seat>, status, quit")),
             },
@@ -1185,8 +1210,7 @@ fn pump(
             while Instant::now() < until {
                 match ws.read() {
                     Ok(_) => {}
-                    Err(tungstenite::Error::Io(e))
-                        if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {}
+                    Err(e) if mtg_player::gui::nothing_to_read(&e) => {}
                     Err(_) => break,
                 }
             }
@@ -1229,8 +1253,7 @@ fn pump(
             }
             Ok(tungstenite::Message::Close(_)) => return,
             Ok(_) => {}
-            Err(tungstenite::Error::Io(e))
-                if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {}
+            Err(e) if mtg_player::gui::nothing_to_read(&e) => {}
             Err(_) => return,
         }
     }

@@ -795,11 +795,21 @@ fn pump_websocket(
             }
             Ok(tungstenite::Message::Close(_)) => return,
             Ok(_) => {}
-            Err(tungstenite::Error::Io(e))
-                if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {}
+            Err(e) if nothing_to_read(&e) => {}
             Err(_) => return,
         }
     }
+}
+
+/// A socket read that found nothing yet, rather than a socket that ended:
+/// the read timeout, and a read cut short by a signal. A process stopped
+/// and resumed (Ctrl-Z, then `fg`) gets `EINTR` from a read with a timeout
+/// set even with no handler installed, and that ended every terminal seat
+/// (#880).
+#[must_use]
+pub fn nothing_to_read(e: &tungstenite::Error) -> bool {
+    matches!(e, tungstenite::Error::Io(e) if matches!(e.kind(),
+        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut | std::io::ErrorKind::Interrupted))
 }
 
 /// Tell a page the table is over, close its socket with a close frame, and
@@ -815,8 +825,7 @@ fn close_page(ws: &mut tungstenite::WebSocket<TcpStream>, reason: &str) {
     while std::time::Instant::now() < until {
         match ws.read() {
             Ok(_) => {}
-            Err(tungstenite::Error::Io(e))
-                if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => {}
+            Err(e) if nothing_to_read(&e) => {}
             Err(_) => return,
         }
     }
@@ -840,6 +849,18 @@ fn unreadable_notice(text: &str, e: &serde_json::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #880: a read interrupted by a stop and continue is not the end of
+    /// the socket; nor is a timeout; a reset is.
+    #[test]
+    fn an_interrupted_read_is_nothing_to_read_yet() {
+        use std::io::{Error, ErrorKind};
+        for kind in [ErrorKind::Interrupted, ErrorKind::WouldBlock, ErrorKind::TimedOut] {
+            assert!(nothing_to_read(&tungstenite::Error::Io(Error::from(kind))), "{kind:?}");
+        }
+        assert!(!nothing_to_read(&tungstenite::Error::Io(Error::from(ErrorKind::ConnectionReset))));
+        assert!(!nothing_to_read(&tungstenite::Error::ConnectionClosed));
+    }
 
     /// #872: under a key, the page and its socket are reached only through
     /// it; a bare port, another path or a wrong key reaches nothing.
