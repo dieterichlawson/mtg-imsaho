@@ -585,7 +585,17 @@ fn host_loop(shared: &Arc<Shared>) {
             Some("kick") => {
                 let result = words.get(1).and_then(|n| n.parse::<usize>().ok())
                     .ok_or_else(|| "kick takes a seat number".to_string())
-                    .and_then(|seat| shared.kick(seat));
+                    .and_then(|seat| {
+                        // The host's own seat is at this keyboard, and a kick
+                        // is for good: a mistyped seat number ended the
+                        // host's tournament with no question asked (#909).
+                        let own = shared.lobby().kind(seat) == Some(&SeatKind::Cli);
+                        if own && words.get(2) != Some(&"yes") {
+                            return Err(format!("seat {seat} is yours, at this terminal: `kick {seat} yes` \
+hands it to the table for good, and its games are forfeit"));
+                        }
+                        shared.kick(seat)
+                    });
                 match result {
                     Ok(()) => shared.notify(),
                     Err(e) => shared.reply(&format!("kick: {e}")),

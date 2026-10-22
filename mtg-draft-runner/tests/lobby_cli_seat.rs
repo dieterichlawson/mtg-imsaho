@@ -59,3 +59,24 @@ fn the_host_drafts_and_builds_at_the_servers_own_terminal() {
     assert!(status.success(), "quit ends the table: {status}");
     assert!(server.wait_for_stdout("the table is closed", Duration::from_secs(5)).contains("the host quit"));
 }
+
+/// #909: the host's own seat is at the keyboard the host kicks from, and a
+/// kick is for good: `kick 0` on it asks for `yes` first.
+#[test]
+fn kicking_the_hosts_own_seat_asks_first() {
+    if !lobby_support::python3_available() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let mut server = Server::start("cli-kick", "cli,ai", &["--quiet"]);
+    server.wait_for_stdout("type a number to pick", Duration::from_secs(60));
+    server.type_line("kick 0");
+    server.wait_for_stderr("seat 0 is yours, at this terminal: `kick 0 yes`", Duration::from_secs(10));
+    server.type_line("status");
+    let status = server.wait_for_stderr("seat 0 cli", Duration::from_secs(10));
+    assert!(!status.contains("kicked"), "not kicked: {status}");
+    server.type_line("kick 0 yes");
+    std::thread::sleep(Duration::from_millis(500));
+    server.type_line("status");
+    server.wait_for_stderr("kicked", Duration::from_secs(10));
+}

@@ -109,7 +109,8 @@ every pairing, every game and match result, the standings — and reads:
   it is theirs again — on the pick timer when `--pick-seconds` is set
   (so somebody a minute late has lost a few picks, not the draft), at
   once when it is not. The deck likewise, under `--build-seconds`.
-- `kick <seat>`: hand a human seat to the table for good. It is picked
+- `kick <seat>`: hand a human seat to the table for good (your own seat,
+  at this terminal, takes `kick <seat> yes`). It is picked
   for and built for, and its matches are forfeit (recorded as such in the
   log and the standings) rather than waited on — a match it is playing
   too: within a couple of seconds its page stops being asked, the game in
