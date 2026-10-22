@@ -689,12 +689,6 @@ fn validate_model_specs(models: &[String]) {
     for (i, spec) in models.iter().enumerate() {
         let parts: Vec<&str> = spec.split(':').collect();
         let provider = parts[0];
-        // A metered seat with no key was drafted in and panicked at its
-        // first call (#903).
-        if let Some(var) = llm_client::missing_api_key(provider) {
-            die(&format!("seat {i} model '{spec}' calls a metered API and {var} is not set \
-(cc:<model> runs the same seat through the Claude Code CLI)"));
-        }
         match provider {
             "claude" => continue,
             // Every decision a claude-code seat makes shells out to `claude`.
@@ -890,6 +884,15 @@ this draft will be made under {} — this draft is a mixture of the two",
         std::process::exit(1);
     });
 
+    // A metered seat with no key was drafted in and panicked at its first
+    // call (#903). Checked here, after every other refusal the arguments
+    // can get and before any seat is asked anything.
+    for (i, spec) in args.models.iter().enumerate() {
+        if let Some(var) = llm_client::missing_api_key(spec.split(':').next().unwrap_or("")) {
+            die(&format!("seat {i} model '{spec}' calls a metered API and {var} is not set \
+(cc:<model> runs the same seat through the Claude Code CLI)"));
+        }
+    }
     if !args.quiet {
         mtg_player::stderr_line!(
             "=== {} Draft: {} players, best-of-{} ===",
