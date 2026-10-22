@@ -104,6 +104,24 @@ async function main() {
         scrollH: document.documentElement.scrollHeight, clientH: document.documentElement.clientHeight,
       }));
       const text = (sel) => page.evaluate((s) => { const el = document.querySelector(s); return el ? el.textContent : null; }, sel);
+      // Every visible button whose label is under 3:1 against what it is drawn on
+      // (#873: a classless button was #eee on the browser's #efefef face).
+      const unreadable = () => page.evaluate(() => {
+        const rgb = (c) => (c.match(/[\d.]+/g) || []).map(Number);
+        const lum = ([r, g, b]) => [r, g, b].map(v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; })
+          .reduce((a, v, i) => a + v * [0.2126, 0.7152, 0.0722][i], 0);
+        const ground = (el) => {
+          for (let e = el; e; e = e.parentElement) {
+            const c = rgb(getComputedStyle(e).backgroundColor);
+            if (c.length === 3 || c[3] > 0) return c;
+          }
+          return rgb(getComputedStyle(document.body).backgroundColor);
+        };
+        return [...document.querySelectorAll("button")].filter(b => b.offsetParent && b.textContent.trim()).map(b => {
+          const [a, c] = [lum(rgb(getComputedStyle(b).color)), lum(ground(b))];
+          return { label: b.textContent.trim().slice(0, 30), ratio: (Math.max(a, c) + 0.05) / (Math.min(a, c) + 0.05) };
+        }).filter(x => x.ratio < 3).map(x => `${x.label} ${x.ratio.toFixed(2)}:1`);
+      });
 
       // Every phase renders, fits sideways, and is screenshotted.
       for (const { name, view } of fixtures.views) {
@@ -112,6 +130,8 @@ async function main() {
         await shot(name);
         const o = await overflow();
         check(o.scrollW <= o.clientW, `${tag}: ${name} has no horizontal overflow (${o.scrollW} <= ${o.clientW})`);
+        const faint = await unreadable();
+        check(faint.length === 0, `${tag}: ${name}: every button's label can be read (${JSON.stringify(faint)})`);
         const phaseEl = await page.$(`.phase-${view.phase}`);
         check(!!phaseEl, `${tag}: ${name} rendered as phase ${view.phase}`);
         if (view.phase === "drafting" && view.pack) {
@@ -570,6 +590,8 @@ async function main() {
         await page.waitForTimeout(50);
         check(await page.$$eval("#between .row", r => r.length) === 0, `${tag}: no sideboarding before game 1`);
         check(((await text("#play-draw")) || "").includes("You won the coin flip"), `${tag}: the flip's winner is asked (${await text("#play-draw")})`);
+        const faintChoice = await unreadable();
+        check(faintChoice.length === 0, `${tag}: Play first and Draw first can be read before either is chosen (${JSON.stringify(faintChoice)})`);
         check(/\d+s left/.test((await text("#countdown")) || ""), `${tag}: the sideboard clock is shown (${await text("#countdown")})`);
         await page.click("#draw-first");
         await page.waitForTimeout(50);
