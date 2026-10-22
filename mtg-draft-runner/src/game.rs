@@ -205,6 +205,70 @@ pub fn match_is_over(best_of: usize, games_played: usize, wins_a: usize, wins_b:
     wins_a >= needed || wins_b >= needed || games_played >= best_of
 }
 
+/// Whether every saved match (its round and result) is one this tournament
+/// finished: a score its
+/// own games add up to, decided at the match length, and a pairing the
+/// tournament makes in the round it names, given the matches before it.
+///
+/// A record was carried when its round and seats matched a pairing, and
+/// taken as it stood: a 7-0 best-of-1 went into the standings, and a record
+/// with its seats the other way round, for a seat or a round the pod does
+/// not have, or twice over, was dropped in silence — the match it stood for
+/// re-played and re-billed (#731). The pairings are a function of the
+/// results, so the tournament is walked here on the records alone.
+pub fn check_finished_matches(matches: &[(usize, &MatchResult)], players: usize, best_of: usize) -> Result<(), String> {
+    let name = |&(round, r): &(usize, &MatchResult)| format!("round {round}, seat {} v seat {}", r.player_a, r.player_b);
+    for (i, m) in matches.iter().enumerate() {
+        let r = m.1;
+        if matches[..i].iter().any(|o| o.0 == m.0
+            && o.1.player_a == r.player_a && o.1.player_b == r.player_b)
+        {
+            return Err(format!("it has two records for {}", name(m)));
+        }
+        if r.games.iter().any(|g| g.winner.is_some_and(|w| w != r.player_a && w != r.player_b)) {
+            return Err(format!("its record for {} has a game won by a seat not in the match", name(m)));
+        }
+        let won = |seat: usize, games: &[GameOutcome]| games.iter().filter(|g| g.winner == Some(seat)).count();
+        let (a, b) = (won(r.player_a, &r.games), won(r.player_b, &r.games));
+        if (r.wins_a, r.wins_b) != (a, b) {
+            return Err(format!("its record for {} says {}-{}, and its games say {a}-{b}",
+                name(m), r.wins_a, r.wins_b));
+        }
+        let before = &r.games[..r.games.len().saturating_sub(1)];
+        let finished = !r.games.is_empty()
+            && match_is_over(best_of, r.games.len(), a, b)
+            && !match_is_over(best_of, before.len(), won(r.player_a, before), won(r.player_b, before));
+        if !finished {
+            return Err(format!("its record for {} is {a}-{b} over {} game(s), which is not a finished \
+best-of-{best_of}", name(m), r.games.len()));
+        }
+    }
+    let mut tournament = tournament::Tournament::new(players, tournament::TournamentConfig { best_of });
+    let mut used = vec![false; matches.len()];
+    while !tournament.is_complete() {
+        let round = tournament.rounds.len() + 1;
+        let pairings = tournament.generate_pairings();
+        let real: Vec<(usize, usize)> = pairings.iter().filter(|&&(_, b)| b != tournament::BYE).copied().collect();
+        let mut results = Vec::new();
+        for &(a, b) in &real {
+            let found = matches.iter()
+                .position(|m| m.0 == round && m.1.player_a == a && m.1.player_b == b);
+            if let Some(i) = found {
+                used[i] = true;
+                results.push(matches[i].1.clone());
+            }
+        }
+        if results.len() < real.len() {
+            break;
+        }
+        tournament.record_round(pairings, results);
+    }
+    match used.iter().position(|&u| !u) {
+        Some(i) => Err(format!("its record for {} is not a match this tournament pairs", name(&matches[i]))),
+        None => Ok(()),
+    }
+}
+
 /// Play one match. `before_game` is asked before each game who plays
 /// first and what each seat plays — the chooser's play or draw, and any
 /// sideboarding between games (MTR 2.2, 2.4) — and `after_game` is told

@@ -13,7 +13,7 @@ use mtg_engine::engine::Decklist;
 
 use mtg_draft_runner::deck::{build_deck_with_llm, DeckBuildResult};
 use mtg_draft_runner::deck::{log_sideboard, sideboard_with_llm, BetweenGames};
-use mtg_draft_runner::game::{last_game_line, make_game_player, match_is_over, match_seed, play_match, BeforeGame,
+use mtg_draft_runner::game::{last_game_line, make_game_player, check_finished_matches, match_seed, play_match, BeforeGame,
     GameSeat, GameSetup, MatchSeat};
 use mtg_draft_runner::pick::{parse_pick_response, Pick};
 use mtg_draft_runner::progress::{draw_progress, end_progress_line};
@@ -410,67 +410,10 @@ fn check_snapshot_decks(decks: &[SavedDeck], pools: &[Vec<String>]) -> Result<()
     Ok(())
 }
 
-/// Whether every saved match is one this tournament finished: a score its
-/// own games add up to, decided at the match length, and a pairing the
-/// tournament makes in the round it names, given the matches before it.
-///
-/// A record was carried when its round and seats matched a pairing, and
-/// taken as it stood: a 7-0 best-of-1 went into the standings, and a record
-/// with its seats the other way round, for a seat or a round the pod does
-/// not have, or twice over, was dropped in silence — the match it stood for
-/// re-played and re-billed (#731). The pairings are a function of the
-/// results, so the tournament is walked here on the records alone.
+/// [`check_finished_matches`] over the snapshot's records (#731).
 fn check_snapshot_matches(matches: &[SavedMatch], players: usize, best_of: usize) -> Result<(), String> {
-    let name = |m: &SavedMatch| format!("round {}, seat {} v seat {}", m.round, m.result.player_a, m.result.player_b);
-    for (i, m) in matches.iter().enumerate() {
-        let r = &m.result;
-        if matches[..i].iter().any(|o| o.round == m.round
-            && o.result.player_a == r.player_a && o.result.player_b == r.player_b)
-        {
-            return Err(format!("it has two records for {}", name(m)));
-        }
-        if r.games.iter().any(|g| g.winner.is_some_and(|w| w != r.player_a && w != r.player_b)) {
-            return Err(format!("its record for {} has a game won by a seat not in the match", name(m)));
-        }
-        let won = |seat: usize, games: &[mtg_draft::tournament::GameOutcome]| games.iter().filter(|g| g.winner == Some(seat)).count();
-        let (a, b) = (won(r.player_a, &r.games), won(r.player_b, &r.games));
-        if (r.wins_a, r.wins_b) != (a, b) {
-            return Err(format!("its record for {} says {}-{}, and its games say {a}-{b}",
-                name(m), r.wins_a, r.wins_b));
-        }
-        let before = &r.games[..r.games.len().saturating_sub(1)];
-        let finished = !r.games.is_empty()
-            && match_is_over(best_of, r.games.len(), a, b)
-            && !match_is_over(best_of, before.len(), won(r.player_a, before), won(r.player_b, before));
-        if !finished {
-            return Err(format!("its record for {} is {a}-{b} over {} game(s), which is not a finished \
-best-of-{best_of}", name(m), r.games.len()));
-        }
-    }
-    let mut tournament = Tournament::new(players, TournamentConfig { best_of });
-    let mut used = vec![false; matches.len()];
-    while !tournament.is_complete() {
-        let round = tournament.rounds.len() + 1;
-        let pairings = tournament.generate_pairings();
-        let real: Vec<(usize, usize)> = pairings.iter().filter(|&&(_, b)| b != BYE).copied().collect();
-        let mut results = Vec::new();
-        for &(a, b) in &real {
-            let found = matches.iter()
-                .position(|m| m.round == round && m.result.player_a == a && m.result.player_b == b);
-            if let Some(i) = found {
-                used[i] = true;
-                results.push(matches[i].result.clone());
-            }
-        }
-        if results.len() < real.len() {
-            break;
-        }
-        tournament.record_round(pairings, results);
-    }
-    match used.iter().position(|&u| !u) {
-        Some(i) => Err(format!("its record for {} is not a match this tournament pairs", name(&matches[i]))),
-        None => Ok(()),
-    }
+    let records: Vec<(usize, &MatchResult)> = matches.iter().map(|m| (m.round, &m.result)).collect();
+    check_finished_matches(&records, players, best_of)
 }
 
 /// What one seat was told to do while it was making the recorded picks.
