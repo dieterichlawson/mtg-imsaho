@@ -393,7 +393,9 @@ function reviewSection(state: PageState, actions: Actions): HTMLElement {
       for (const p of state.review) byPack.set(p.round, [...(byPack.get(p.round) ?? []), p]);
       for (const [round, picks] of byPack) {
         parts.push(h("h4", { text: `Pack ${round}` }));
-        parts.push(h("ol", { class: "review-list" }, ...picks.map(p => {
+        // Unnumbered: each row begins with its pick ("3.4"), and an ordered
+        // list put a second counter before it ("4. 3.4 Rage Thrower", #889).
+        parts.push(h("ul", { class: "review-list" }, ...picks.map(p => {
           const taken = p.pack.find(c => c.name === p.card);
           const rest = p.pack.filter(c => c !== taken).map(c => c.name);
           return h("li", { "data-pick": `${p.round}.${p.pick}` },

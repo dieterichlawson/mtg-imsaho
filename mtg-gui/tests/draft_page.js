@@ -634,6 +634,7 @@ async function main() {
         ] });
         await page.waitForTimeout(50);
         const rows = await page.$$eval("#review li", els => els.map(e => e.textContent));
+        check(await page.$$eval("#review ol", els => els.length) === 0, `${tag}: the review's rows carry their pick and no second counter (#889)`);
         check(rows.length === 3 && rows[0] === "1.1 Chapel Geist — over Doomed Traveler, Moan of the Unhallowed",
           `${tag}: each pick is the card taken over the rest of its pack (${JSON.stringify(rows)})`);
         check(rows[1].includes("the table's pick"), `${tag}: a pick the table made says so`);
