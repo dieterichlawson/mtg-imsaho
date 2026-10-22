@@ -49,7 +49,8 @@ const rnd = () => { rng = (rng * 1664525 + 1013904223) >>> 0; return rng / 42949
 
 async function main() {
   fs.mkdirSync(out, { recursive: true });
-  const seats = [`${humans}xhuman`, `${players - humans}xai`].join(",");
+  // The server refuses a zero count, so an all-human (or all-AI) table names one kind.
+  const seats = [`${humans}xhuman`, `${players - humans}xai`].filter(s => !s.startsWith("0x")).join(",");
   const env = { ...process.env };
   const args = ["--seats", seats, "--port", String(port), "--game-ports", `${port + 100}-${port + 140}`,
     "--best-of", String(bestOf), "--seed", String(seed), "--log", path.join(out, "draft.log"),
@@ -85,7 +86,6 @@ async function main() {
   log(`${tally.picks} picks clicked, ${tally.games} game pages, ${tally.decisions} game decisions clicked; ${(Date.now() - began) / 60000 | 0} min`);
   if (tally.refusals.length) log(`refusals the pages showed: ${JSON.stringify(tally.refusals.slice(0, 10))}`);
   console.log(failures ? `table rehearsal: ${failures} failure(s)` : "table rehearsal: ok");
-  process.exitCode = failures ? 1 : 0;
 }
 
 /** One person at the table, from the join link to the end of the tournament. */
@@ -203,4 +203,5 @@ async function playMatch(browser, seat, m, draftPage, tally) {
   log(`${label}: match over`);
 }
 
-main().catch(e => { fail(e.stack || String(e)); process.exitCode = 1; });
+// The exit code is set here, after every return in main(), so an early FAIL is a failure.
+main().catch(e => fail(e.stack || String(e))).finally(() => { process.exitCode = failures ? 1 : 0; });

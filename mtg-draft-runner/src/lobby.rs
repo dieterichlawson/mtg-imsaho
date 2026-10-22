@@ -78,7 +78,7 @@ pub fn parse_seats(spec: &str, default_ai: &str) -> Result<Vec<SeatKind>, String
             Some((n, rest)) if n.chars().all(|c| c.is_ascii_digit()) && !n.is_empty() => {
                 let n: usize = n.parse().map_err(|_| format!("'{entry}': bad count"))?;
                 if n == 0 {
-                    return Err(format!("'{entry}': a count of 0 seats nobody"));
+                    return Err(format!("'{entry}': a count of 0 names no seat"));
                 }
                 (n, rest)
             }
