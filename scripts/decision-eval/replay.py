@@ -126,6 +126,7 @@ def main():
     runstamp.check(args.out, args.name, {
         "positions": os.path.abspath(args.positions), "p1": args.p1, "env": sorted(args.env),
         "bin": os.path.abspath(args.bin), "cli": os.environ.get("CLAUDE_CODE_BIN", "claude"),
+        "inherited": runstamp.inherited(),
     }, os.path.basename(__file__))
     done = set()
     if os.path.exists(result_path):

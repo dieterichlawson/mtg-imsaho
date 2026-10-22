@@ -7,9 +7,23 @@ taken as the real seat's (#899's review, as night.sh did with its save).
 The run is stamped beside its results, and one stamped for another run is
 refused rather than carried on.
 """
+import hashlib
 import json
 import os
 import sys
+
+
+def inherited():
+    """The `MTG_*` settings a child seat takes from this shell: they change
+    what the seat does as much as `--env` does."""
+    return {k: v for k, v in sorted(os.environ.items()) if k.startswith("MTG_")}
+
+
+def content(path):
+    """A file's content as a hash: results keyed by line number belong to
+    the lines that were there, not to whatever the path holds now."""
+    with open(path, "rb") as f:
+        return hashlib.sha256(f.read()).hexdigest()
 
 
 def check(out, name, run, script):
