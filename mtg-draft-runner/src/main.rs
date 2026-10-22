@@ -404,8 +404,13 @@ fn replay_pools(mut draft: DraftState, picks: &[PickRecord], players: usize) -> 
 /// refused here, and every card in a pool is a card the set dealt.
 fn check_snapshot_decks(decks: &[SavedDeck], pools: &[Vec<String>]) -> Result<(), String> {
     for (seat, (saved, pool)) in decks.iter().zip(pools).enumerate() {
-        deckbuilding::validate_deck(pool, &saved.deck.maindeck, &saved.deck.lands)
+        let built = deckbuilding::validate_deck(pool, &saved.deck.maindeck, &saved.deck.lands)
             .map_err(|e| format!("seat {seat}'s deck is not one its pool builds: {e}"))?;
+        // Its sideboard is the rest of the pool: a list of cards the seat
+        // never drafted went into the log and every later snapshot (#886).
+        if !deckbuilding::same_cards(&saved.deck.sideboard, &built.sideboard) {
+            return Err(format!("seat {seat}'s sideboard is not the rest of its pool"));
+        }
     }
     Ok(())
 }

@@ -2037,13 +2037,7 @@ there: the packs are not the ones the table drafted (another seed, or a build wi
             // The sideboard is the rest of the pool, as a deck sent at the
             // table has it: a list of cards the seat never drafted was
             // shown as its sideboard (#886).
-            let fronts = |cards: &[String]| {
-                let mut f: Vec<String> = cards.iter().map(|c| mtg_draft::front_face(c).to_string()).collect();
-                f.sort_unstable();
-                f
-            };
-            let (saved, rest) = (fronts(&d.sideboard), fronts(&deck.sideboard));
-            if saved != rest {
+            if !deckbuilding::same_cards(&d.sideboard, &deck.sideboard) {
                 return Err(format!("snapshot deck of seat {}: its sideboard is not the rest of its pool", d.seat));
             }
             let s = &mut self.seats[d.seat];

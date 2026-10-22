@@ -389,6 +389,18 @@ fn parse_deck_value(v: &serde_json::Value) -> Result<(Vec<String>, HashMap<Strin
     Ok((maindeck, lands))
 }
 
+/// Whether two lists are the same cards, in any order, by front face: a
+/// saved sideboard against the rest of the pool its deck leaves (#886).
+#[must_use]
+pub fn same_cards(a: &[String], b: &[String]) -> bool {
+    fn fronts(cards: &[String]) -> Vec<&str> {
+        let mut f: Vec<&str> = cards.iter().map(|c| crate::front_face(c)).collect();
+        f.sort_unstable();
+        f
+    }
+    fronts(a) == fronts(b)
+}
+
 /// Validate a deck built from a draft pool.
 ///
 /// Rules:

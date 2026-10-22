@@ -230,6 +230,15 @@ fn a_saved_deck_its_pool_could_not_build_is_refused() {
         assert_eq!(calls(&pod.path(&counter)), 0, "{name}: refused before any game");
     }
 
+    // A sideboard of a card the seat never drafted (#886's review).
+    let mut side = save.clone();
+    side["decks"][0]["deck"]["sideboard"].as_array_mut().unwrap().push(other_seats_card.clone());
+    let path = pod.write("side.json", &side);
+    let out = pod.run(&["--resume", &path], "side.calls", "side.log");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success() && stderr.contains("seat 0's sideboard is not the rest of its pool"), "{stderr}");
+    assert_eq!(calls(&pod.path("side.calls")), 0, "refused before any game");
+
     let mut short = save.clone();
     short["decks"][0]["deck"]["maindeck"].as_array_mut().unwrap().truncate(5);
     let path = pod.write("short.json", &short);
