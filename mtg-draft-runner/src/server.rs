@@ -412,9 +412,8 @@ pub fn join_lines(host: &str, port: u16, seat: usize, key: &str) -> String {
 ///
 /// # Errors
 /// The listening port cannot be bound.
-pub fn bind(shared: &Arc<Shared>) -> Result<TcpListener, String> {
-    TcpListener::bind((shared.config.bind.as_str(), shared.config.port))
-        .map_err(|e| format!("cannot listen on {}:{}: {e}", shared.config.bind, shared.config.port))
+pub fn bind(addr: &str, port: u16) -> Result<TcpListener, String> {
+    TcpListener::bind((addr, port)).map_err(|e| format!("cannot listen on {addr}:{port}: {e}"))
 }
 
 /// Serve the table on `listener` until the host quits. Returns when the

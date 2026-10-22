@@ -270,6 +270,11 @@ root or set {} to the mtg-gui directory", web_dir.display(), mtg_player::gui::WE
     }
     let page_missing = !web_dir.join(server::PAGE).is_file();
 
+    // The port first, before the log is opened: nothing is true of a table
+    // that cannot listen, and a second server started by mistake on a
+    // running table's port wrote its header, packs and FATAL into that
+    // table's log (#745, #893's review).
+    let listener = server::bind(&args.bind, args.port).unwrap_or_else(|e| die(&e));
     let log_path = PathBuf::from(&args.log);
     if let Some(dir) = log_path.parent() {
         if !dir.as_os_str().is_empty() {
@@ -339,8 +344,6 @@ decks and {} finished matches replayed; a match that was in progress is played a
         set_data.set_name.clone(),
     );
 
-    // The port first: nothing below is true of a table that cannot listen.
-    let listener = server::bind(&shared).unwrap_or_else(|e| die(&e));
     if let Some(note) = resumed_note {
         let _ = DraftLogger::new(&log_path);
         mtg_player::game_log::write(file!(), line!(), &format!("NOTE {note}"), "");

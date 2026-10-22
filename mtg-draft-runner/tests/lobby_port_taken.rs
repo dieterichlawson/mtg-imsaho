@@ -31,10 +31,10 @@ fn a_taken_port_is_the_only_thing_the_table_reports() {
     for claim in ["the draft has started", "no human seats", "key="] {
         assert!(!stderr.contains(claim), "nothing is said of a table that never opened ({claim:?}):\n{stderr}");
     }
+    // Nor is the log written: the port is taken before it is opened, and
+    // the log may be the running table's own (#893's review).
     let log = std::fs::read_to_string(&log).unwrap_or_default();
-    // The packs dealt are the table's setup and are logged; a pass is not.
-    assert!(!log.contains("--- Pack 1 ---"), "the log records no draft:\n{log}");
-    assert!(log.contains("FATAL cannot listen"), "and ends saying why:\n{log}");
+    assert!(log.is_empty(), "the log is not written:\n{log}");
     drop(held);
 }
 
