@@ -47,7 +47,7 @@ pub struct ServerConfig {
     /// `--resume`; nowhere when `None`.
     pub save: Option<PathBuf>,
     /// Hand out each game page's own port, bound on `bind`, instead of a
-    /// link through this port (`/game/<port>/`, the page on loopback).
+    /// link through this port (`/game/<port>/<key>/`, the page on loopback).
     pub direct_game_ports: bool,
 }
 
@@ -94,7 +94,8 @@ struct InGame {
     /// about the opponent's (#822).
     page: PageHandle,
     /// Where the page is served: what `/game/<port>/` on the lobby's own
-    /// port reaches, and nothing else does.
+    /// port is passed to, and nothing else is; the page itself answers
+    /// only under its key (#872).
     addr: std::net::SocketAddr,
 }
 

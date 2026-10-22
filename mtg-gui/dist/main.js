@@ -22,7 +22,8 @@ function live() {
 // ---------------------------------------------------------------- socket
 function connect() {
     // Beside the page, wherever it is served: at a host's lobby the page is
-    // `/game/<port>/` on the lobby's own port, and its socket `/game/<port>/ws`.
+    // `/game/<port>/<key>/` on the lobby's own port, and its socket
+    // `/game/<port>/<key>/ws`: relative, so the key goes with it (#872).
     const where = new URL("ws", location.href);
     where.protocol = location.protocol === "https:" ? "wss:" : "ws:";
     const ws = new WebSocket(where.href);

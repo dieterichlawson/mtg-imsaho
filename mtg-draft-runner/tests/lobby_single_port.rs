@@ -3,7 +3,7 @@
 //! The game pages used to be links to ports of their own (`--game-ports`,
 //! 8801-8899), so a host had to forward a range of ports to play with
 //! anyone off the LAN. The links now go through the lobby's port, at
-//! `/game/<port>/`, and the pages themselves listen on loopback; the lobby
+//! `/game/<port>/<key>/`, and the pages themselves listen on loopback; the lobby
 //! passes a page's fetches and its socket through, and reaches nothing on
 //! the machine but this table's live game pages.
 #![cfg(unix)]
