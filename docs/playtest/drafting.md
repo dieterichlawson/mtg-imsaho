@@ -1013,7 +1013,15 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   once each), run a recorded date (refused, nothing touched), compare the
   report's "What went wrong" counts with `grep -c` on the night's log, and
   check `guide.md` has one title after a curator answer that starts with
-  one
+  one. 13421e6 also writes each refused curator answer (its length, its
+  missing headings, its usage) to `DATE-curate.json` and adds the debriefs'
+  and curator's calls to what the night spent: make the stub curator answer
+  without a heading and check the report names the refusal and its reason,
+  and that the spend adds up to the USAGE lines after the tournament.
+  Tried 2026-10-22 (#899-#901, #912): run `ledger.py`'s `log_health` itself
+  on a log with forced pick re-asks rather than trusting the report's
+  sentence, and kill the runner from a script file — `pgrep -f` from the
+  same shell line matches its own command and kills the shell (exit 144)
 - D49 [proposed 2026-10-21, from the one-port hosting (`server.rs`
   `proxy_game_page`)] one port, nothing else: host `--bind 0.0.0.0` with a
   human seat and open the match link from another machine (or another
@@ -1064,4 +1072,42 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   shell exports one. Then `--ai cc:claude-sonnet-4-6`, a table mixing
   `ai` and `ai:<spec>` seats, and a spec that names a metered provider:
   no seat may become metered without saying so, and the join lines and
-  `status` must say which model each AI seat is
+  `status` must say which model each AI seat is. A metered seat can be
+  probed for free (2026-10-22, #902): `ANTHROPIC_API_KEY=sk-fake`,
+  `ANTHROPIC_BASE_URL=http://127.0.0.1:<your port>` with a ten-line
+  recorder that answers 401, `HTTP(S)_PROXY` at a dead port and
+  `NO_PROXY=127.0.0.1` — the request is seen and nothing is billed
+- D53 [proposed 2026-10-22, from D44 and #877] a drawn game in a match:
+  no stub game drew in 85 on 2026-10-22, and the runner's 50,000-action
+  cap has no flag. Drive a hosted match with both people at the table to a
+  draw (a simultaneous loss), or lower the cap if a knob appears, and check
+  that the game-N chooser chooses again, the game page and the AI's system
+  prompt say "game N was a draw", the standings count the game as drawn in
+  GW%, and the announcement names who actually chose
+- D54 [proposed 2026-10-22, from #884 and #890] resume across a rebuild:
+  stop a hosted table mid-draft, change the card pool the build deals from
+  (implement or unimplement one ISD card, rebuild) and `--resume`; the
+  resume must refuse, not replay picks by index onto different cards. Then
+  send a deck without ready, stop, resume under `--build-seconds`, and
+  check the deck that plays is the one the person sent. Technique from
+  D46: a Python loop that writes one doctored `table.save.json` at a time
+  and resumes it on a spare port (exit code, `/api/view`, Ctrl-C) covers 30
+  variants in two minutes with no table played after the first
+- D55 [proposed 2026-10-22, from #904] duplicates in the pool and the
+  review: `--seats human,ai --seed 122` gives seat 0 two Shimmering Grotto
+  in pack 1 (indexes 5 and 13). Take one at 1.1 and read the review on the
+  client, the page and `/api/view`; then draft both and check the pool
+  counts, the build listing's `add`/`drop` by index, the deck message and
+  the sideboard panel all keep two
+- D56 [proposed 2026-10-22, from #872] whose game page is it: with two
+  people in one match (or one each in two), open the other person's
+  `/game/<port>/` from your own browser and from a key-less WebSocket.
+  A game page must refuse a socket that does not hold that seat's key,
+  and a second tab of the right seat must still work. The probes that
+  matter for the one-port proxy are the ones *to* a live port
+- D57 [proposed 2026-10-22, from #900 and #878] the record of a match
+  that sideboarded: the hosted table records no person's sideboarded deck
+  and the draft loop's `nights/DATE.json` and `stats.json` keep none.
+  Compare every `SIDEBOARD` line in a run's log with what the night record,
+  the card statistics and the hosted table's log say each game was played
+  with, card by card
