@@ -158,7 +158,12 @@ async function main() {
         await stage(named);
         await page.waitForTimeout(50);
         check(await page.$eval("#name", el => el.value) === "Ann", `${tag}: the name box shows the seat's name after a reload`);
-        await page.$eval("#name", el => { el.value = ""; });
+        // Renamed from another connection: the box follows, so a reconnect
+        // does not send the old name back.
+        named.seats[named.seat].name = "Bea";
+        await stage(named);
+        await page.waitForTimeout(50);
+        check(await page.$eval("#name", el => el.value) === "Bea", `${tag}: the name box follows a rename made elsewhere`);
         const unnamed = JSON.parse(JSON.stringify(byName.drafting));
         unnamed.seats[unnamed.seat].name = `seat ${unnamed.seat}`;
         await stage(unnamed);

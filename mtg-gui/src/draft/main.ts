@@ -139,12 +139,15 @@ function onView(view: DraftView): void {
   // in the last building view and the playing view replaced it a
   // millisecond later, so nobody could read it (#817).
   if (view.notice) state.notice = view.notice;
-  // The name the seat already set, back in the header after a reload: the
-  // box came back empty while every row called the seat by it (#892). Not
-  // while it is being typed in, and not the table's own "seat N".
+  // The name the table has for the seat, in the header: after a reload the
+  // box came back empty while every row called the seat by it (#892). Kept
+  // in step with every view, not filled once: a box left holding an old
+  // name re-sent it on the next reconnect and undid a rename made from
+  // another connection (#892's review). Not while it is being typed in;
+  // the table's own "seat N" is no name to show.
   const own = view.seats[view.seat];
-  if (own && !nameField.value && document.activeElement !== nameField && own.name !== `seat ${view.seat}`) {
-    nameField.value = own.name;
+  if (own && document.activeElement !== nameField) {
+    nameField.value = own.name === `seat ${view.seat}` ? "" : own.name;
   }
 
   // Drafting: the selection belongs to one pack; a new pack starts clean.
