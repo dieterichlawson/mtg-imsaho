@@ -570,6 +570,12 @@ fn host_loop(shared: &Arc<Shared>) {
                 };
                 if started {
                     shared.notify();
+                    // The table's own line went through `say`, which
+                    // --quiet silences: the host's command is answered
+                    // either way (#905).
+                    if shared.config.quiet {
+                        shared.reply("the draft has started");
+                    }
                 } else if words.is_empty() && cli.is_some() {
                     // Enter at the seat's prompt, not a second start.
                 } else {
@@ -594,10 +600,18 @@ fn host_loop(shared: &Arc<Shared>) {
                             return Err(format!("seat {seat} is yours, at this terminal: `kick {seat} yes` \
 hands it to the table for good, and its games are forfeit"));
                         }
-                        shared.kick(seat)
+                        shared.kick(seat).map(|()| seat)
                     });
                 match result {
-                    Ok(()) => shared.notify(),
+                    Ok(seat) => {
+                        shared.notify();
+                        // A kick is for good: the host is told it took,
+                        // --quiet or not (#905).
+                        if shared.config.quiet {
+                            let who = shared.lobby().who(seat);
+                            shared.reply(&format!("{who} kicked: the table picks and builds for it, and its games are forfeit"));
+                        }
+                    }
                     Err(e) => shared.reply(&format!("kick: {e}")),
                 }
             }

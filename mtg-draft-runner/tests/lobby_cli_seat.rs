@@ -85,7 +85,6 @@ fn kicking_the_hosts_own_seat_asks_first() {
     let status = server.wait_for_stderr("seat 0 cli", Duration::from_secs(10));
     assert!(!status.contains("kicked"), "not kicked: {status}");
     server.type_line("kick 0 yes");
-    std::thread::sleep(Duration::from_millis(500));
-    server.type_line("status");
-    server.wait_for_stderr("kicked", Duration::from_secs(10));
+    // #905: under --quiet the kick that took is answered too.
+    server.wait_for_stderr("seat 0 kicked: the table picks and builds for it", Duration::from_secs(10));
 }
