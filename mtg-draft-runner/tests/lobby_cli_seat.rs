@@ -69,6 +69,9 @@ fn kicking_the_hosts_own_seat_asks_first() {
         return;
     }
     let mut server = Server::start("cli-kick", "cli,ai", &["--quiet"]);
+    // #902: start-up says which model the AI seat is (a plan-quota cc one).
+    let started = server.stderr();
+    assert!(started.contains("seat 1  ai cc:") && !started.contains("metered"), "{started}");
     server.wait_for_stdout("type a number to pick", Duration::from_secs(60));
     server.type_line("kick 0");
     server.wait_for_stderr("seat 0 is yours, at this terminal: `kick 0 yes`", Duration::from_secs(10));

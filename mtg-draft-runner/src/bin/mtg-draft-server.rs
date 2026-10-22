@@ -352,6 +352,12 @@ decks and {} finished matches replayed; a match that was in progress is played a
         set_data.set_name, args.seats.len(), args.best_of, args.seed, args.log);
     mtg_player::stderr_line!("snapshot: {} (if the server stops, carry on with --resume {})",
         save_path.display(), save_path.display());
+    // Which model each AI seat is, and which ones bill per call (#902).
+    for (seat, kind) in args.seats.iter().enumerate() {
+        if let SeatKind::Ai(spec) = kind {
+            mtg_player::stderr_line!("seat {seat}  {}", llm_client::ai_seat_label(spec));
+        }
+    }
     if page_missing {
         mtg_player::stderr_line!("note: {}/{} is missing, so the browser page is not served; the terminal \
 client still works", shared.config.web_dir.display(), server::PAGE);

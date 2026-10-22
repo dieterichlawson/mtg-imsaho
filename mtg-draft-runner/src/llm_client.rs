@@ -1403,12 +1403,31 @@ impl DraftBackend for GeminiDraftBackend {
 /// first pick (#903): both binaries refuse it before anything is dealt.
 #[must_use]
 pub fn missing_api_key(provider: &str) -> Option<&'static str> {
-    let var = match provider {
-        "claude" => "ANTHROPIC_API_KEY",
-        "gemini" => "GEMINI_API_KEY",
-        _ => return None,
-    };
+    let var = metered_key(provider)?;
     if std::env::var(var).is_ok_and(|v| !v.trim().is_empty()) { None } else { Some(var) }
+}
+
+/// The key variable a provider bills per call, if it is a metered one:
+/// `cc` (Claude Code) runs on plan quota and bills nothing per call.
+#[must_use]
+pub fn metered_key(provider: &str) -> Option<&'static str> {
+    match provider {
+        "claude" => Some("ANTHROPIC_API_KEY"),
+        "gemini" => Some("GEMINI_API_KEY"),
+        _ => None,
+    }
+}
+
+/// How the host's terminal names an AI seat: its model spec, and what it
+/// bills when it is metered. Start-up and `status` said only "ai", the
+/// same for a plan-quota `cc` seat and one billing the host's
+/// `ANTHROPIC_API_KEY` from its first pick (#902).
+#[must_use]
+pub fn ai_seat_label(spec: &str) -> String {
+    match metered_key(spec.split(':').next().unwrap_or("")) {
+        Some(var) => format!("ai {spec} (metered: bills {var} per call)"),
+        None => format!("ai {spec}"),
+    }
 }
 
 pub const ACCEPTED_PROVIDERS: &str = "claude[:model], gemini[:model], claude-code[:model], cc[:model]";
@@ -1657,6 +1676,15 @@ mod usage_summary_tests {
 
 #[cfg(test)]
 mod draft_prompt_tests {
+    /// #902: a metered seat says what it bills; a cc seat does not.
+    #[test]
+    fn an_ai_seat_is_named_by_its_model_and_what_it_bills() {
+        assert_eq!(super::ai_seat_label("cc:claude-sonnet-4-6"), "ai cc:claude-sonnet-4-6");
+        assert_eq!(super::ai_seat_label("claude:claude-haiku-4-5"),
+            "ai claude:claude-haiku-4-5 (metered: bills ANTHROPIC_API_KEY per call)");
+        assert_eq!(super::ai_seat_label("gemini"), "ai gemini (metered: bills GEMINI_API_KEY per call)");
+    }
+
     use super::{build_draft_rules, deck_schema_for, DraftLlmClient, Table};
     use crate::card_lines::CardLines;
 

@@ -607,8 +607,12 @@ hands it to the table for good, and its games are forfeit"));
                 for seat in 0..lobby.pod_size() {
                     let v = lobby.view(seat);
                     let s = &v.seats[seat];
-                    shared.reply(&format!("  seat {seat} {} {} — {}, {} ({} picks)",
-                        s.kind, s.name, s.presence, s.status, s.picks));
+                    let kind = match lobby.kind(seat) {
+                        Some(SeatKind::Ai(spec)) => crate::llm_client::ai_seat_label(spec),
+                        _ => s.kind.to_string(),
+                    };
+                    shared.reply(&format!("  seat {seat} {kind} {} — {}, {} ({} picks)",
+                        s.name, s.presence, s.status, s.picks));
                 }
             }
             Some("quit" | "q" | "exit") => {
