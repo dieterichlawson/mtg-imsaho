@@ -1871,8 +1871,14 @@ for the seat from here, and its games are forfeit"), ""));
         for (seat, size) in changes {
             self.event(format!("round {round}: {} sideboarded for game {game} ({size})", self.who(seat)));
         }
-        self.event(format!("round {round}: game {game}: {chooser_name} chose to {}",
-            if plays { "play first" } else { "draw first" }));
+        // Credited as a choice only when one was made: the clock running
+        // out, or an AI seat not asked before game 1, leaves the chooser
+        // playing first by default, and the line said it chose to (#877).
+        self.event(match between.play_first {
+            Some(_) => format!("round {round}: game {game}: {chooser_name} chose to {}",
+                if plays { "play first" } else { "draw first" }),
+            None => format!("round {round}: game {game}: {chooser_name} plays first (no choice was made; the one to choose plays)"),
+        });
         Some(BetweenOutcome { decks, chooser_plays: between.play_first })
     }
 

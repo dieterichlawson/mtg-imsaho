@@ -1026,6 +1026,9 @@ fn between_games_a_person_chooses_and_sideboards_and_the_clock_ends_it() {
     let events = l.take_events();
     assert!(events.iter().any(|e| e.starts_with("round 1: seat 0 sideboarded for game 2")), "{events:?}");
     assert!(!events.iter().any(|e| e.starts_with("round 1: seat 1 sideboarded")), "{events:?}");
+    // Nobody chose, and the line does not say anybody did (#877).
+    assert!(events.iter().any(|e| e.contains("game 2: seat 0 plays first (no choice was made")) && !events.iter().any(|e| e.contains("chose")),
+        "{events:?}");
     assert_eq!(l.match_deck(1, 0, 1, 0).unwrap().maindeck, mine.maindeck, "game 3 starts from it");
 
     // Game 3: the clock runs out with seat 1 still deciding. Seat 0 went
