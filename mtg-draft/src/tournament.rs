@@ -395,7 +395,10 @@ impl Tournament {
         let mut sorted = self.standings.clone();
         for s in &mut sorted {
             s.omw = mean(&opponents[s.seat], &|o| pct[o].0);
-            s.gw = pct[s.seat].1;
+            // Nor a game-win percentage for a seat that has played no game:
+            // it was left at the floor, 0.33 in every view before round 1
+            // counted (#883).
+            s.gw = if s.game_wins + s.game_losses + s.game_draws == 0 { 0.0 } else { pct[s.seat].1 };
             s.ogw = mean(&opponents[s.seat], &|o| pct[o].1);
         }
         sorted.sort_by(|a, b| {
@@ -520,7 +523,7 @@ mod tests {
     #[test]
     fn no_opponent_yet_is_no_tiebreaker() {
         let t = Tournament::new(4, TournamentConfig { best_of: 3 });
-        assert!(t.sorted_standings().iter().all(|s| s.omw == 0.0 && s.ogw == 0.0), "{:?}", t.sorted_standings());
+        assert!(t.sorted_standings().iter().all(|s| s.omw == 0.0 && s.gw == 0.0 && s.ogw == 0.0), "{:?}", t.sorted_standings());
         let mut t = Tournament::new(3, TournamentConfig { best_of: 3 });
         t.record_round(vec![(0, 1), (2, BYE)], vec![mr(0, 1, 2, 0)]);
         let s = t.sorted_standings();
