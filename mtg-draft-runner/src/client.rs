@@ -576,8 +576,9 @@ pub fn render(v: &Value, build: &Build) -> (String, String) {
                         (Some(o), Some(g), Some(og)) => format!("; OMW {o}, GW {g}, OGW {og}"),
                         _ => String::new(),
                     };
-                    s.push_str(&format!("  {}. {} {}-{}{draws} ({} points{breaks}){tags}\n", rank + 1,
-                        who(x["seat"].as_u64().unwrap_or(0)), x["wins"], x["losses"], x["points"]));
+                    let points = x["points"].as_u64().unwrap_or(0);
+                    s.push_str(&format!("  {}. {} {}-{}{draws} ({points} point{}{breaks}){tags}\n", rank + 1,
+                        who(x["seat"].as_u64().unwrap_or(0)), x["wins"], x["losses"], if points == 1 { "" } else { "s" }));
                 }
             }
             if let Some((m, b)) = between(v) {
@@ -844,7 +845,7 @@ mod tests {
         assert!(mine.contains("Round 1 vs Lawson (seat 1): done — 0-1 [1 game forfeited]\n"), "{mine}");
         assert!(mine.contains("Round 2 vs Lawson (seat 1): done — 0-0 [1 game abandoned, no winner]\n"), "{mine}");
         assert!(mine.contains("  1. Lawson (seat 1) 1-0-1 (4 points)\n"), "{mine}");
-        assert!(mine.contains("  2. seat 0 0-1-1 (1 points) [substitute deck] [1 game forfeited]\n"), "{mine}");
+        assert!(mine.contains("  2. seat 0 0-1-1 (1 point) [substitute deck] [1 game forfeited]\n"), "{mine}");
     }
 
     /// #855: a match in progress said "playing" from its first game to its

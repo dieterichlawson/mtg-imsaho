@@ -30,8 +30,9 @@ pub fn standings_row_with(rank: usize, s: &Standing, tags: &RowTags, who: &dyn F
         String::new()
     };
     format!(
-        "{}. {} — {}-{}{draws} ({} game wins{}){}",
-        rank, who(s.seat), s.match_wins, s.match_losses, s.game_wins, tiebreakers(s), row_notes(s, tags),
+        "{}. {} — {}-{}{draws} ({} game win{}{}){}",
+        rank, who(s.seat), s.match_wins, s.match_losses, s.game_wins, if s.game_wins == 1 { "" } else { "s" },
+        tiebreakers(s), row_notes(s, tags),
     )
 }
 
@@ -194,8 +195,8 @@ mod standings_row_tests {
         let played = standings_row(2, &standing(0, 1, 1, 1, 0), &RowTags::default());
         let byed = standings_row(3, &standing(1, 1, 1, 1, 1), &RowTags::default());
 
-        assert_eq!(played, "2. Seat 0 — 1-1 (1 game wins)");
-        assert_eq!(byed, "3. Seat 1 — 1-1 (1 game wins) [1 bye]");
+        assert_eq!(played, "2. Seat 0 — 1-1 (1 game win)");
+        assert_eq!(byed, "3. Seat 1 — 1-1 (1 game win) [1 bye]");
     }
 
     #[test]
