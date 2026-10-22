@@ -2273,7 +2273,7 @@ mod tests {
         assert!(parse_seats("9xai", "cc").unwrap_err().contains("2 to 8"));
         assert!(parse_seats("human,robot", "cc").unwrap_err().contains("'robot' is not a seat"));
         assert!(parse_seats("cli,cli", "cc").unwrap_err().contains("at most one cli"));
-        assert!(parse_seats("0xhuman,ai", "cc").unwrap_err().contains("nobody"));
+        assert!(parse_seats("0xhuman,ai", "cc").unwrap_err().contains("names no seat"));
         assert!(parse_seats("ai:,human", "cc").unwrap_err().contains("not a seat"));
     }
 
