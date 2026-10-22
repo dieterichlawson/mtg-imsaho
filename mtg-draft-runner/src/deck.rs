@@ -118,7 +118,7 @@ pub fn build_deck_prompt(pool: &[String], cards: &CardLines) -> String {
          - A deck is at least 40 cards (CR 100.2b); a smaller one is rejected and you are asked again\n\
          - The usual limited build is 17 basic lands and 23 spells from the pool\n\
          - Two colors is the normal build, a third only as a splash you can reliably cast\n\
-         - Everything you leave out is your sideboard. It is recorded with your deck, but nothing is sideboarded between games of a match, so a card you leave out is a card you will not play\n\
+         - Everything you leave out is your sideboard: before each game of a match after the first you may swap cards between deck and sideboard\n\
          \n## Your answer\n\
          - `maindeck` is one count per numbered row of your pool, in order: how many copies of that card you are playing (0 cuts it)\n\
          - `lands` maps each basic land to how many to add. Basic lands are not drafted and are not limited: they go here, and only here, even if you drafted one\n",
@@ -343,6 +343,9 @@ mod deck_prompt_tests {
         assert!(prompt.contains("Curve"), "{prompt}");
         // The deck it is asking for.
         assert!(prompt.contains("40 cards"), "{prompt}");
+        // A card left out can come in between games (#876): the prompt
+        // said nothing was sideboarded, which stopped being true with 1de2aac.
+        assert!(prompt.contains("swap cards between deck and sideboard") && !prompt.contains("nothing is sideboarded"), "{prompt}");
         assert!(prompt.contains("17 basic lands and 23 spells"), "{prompt}");
         // The answer's shape, and where a drafted basic land goes.
         assert!(prompt.contains("`maindeck`"), "{prompt}");
