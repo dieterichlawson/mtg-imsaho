@@ -636,4 +636,21 @@ writing it up as the page's problem alone.
   rehearsal prints is a lead, and a stuck page leaves its screenshot in
   `--out`; read the server's terminal there too. Then run `autoplay.js`
   on its own (`--games 1`): it lent the rehearsal its step and must still
-  play its own games
+  play its own games. Tried 2026-10-22 (#871): neither script takes a port —
+  `table_rehearsal.js` draws its lobby from 18900-18949 with game ports at
+  +100..+140, `autoplay.js` from 8800-8889 — so a crew with a port range
+  runs a copy with the port patched. `window.mtgSend("Concede")` on the
+  game page reaches game 2 in seconds, but game 1 also waits on "Ready for
+  game 1" on the draft page or the sideboard clock runs out first
+- G36 [proposed 2026-10-22, from #871] every driver failure has an exit
+  code: run `table_rehearsal.js`, `autoplay.js` and `draft_page.js` against
+  a server that refuses their arguments, a port already taken, and a page
+  that never loads, and check `echo $?` is non-zero every time FAIL is
+  printed — the all-human rehearsal printed FAIL and exited 0
+- G37 [proposed 2026-10-22, from #881 and #892] every table on the draft
+  page at 390 wide with seat names of 1, 8, 16 and 24 letters: no word of
+  8 letters or fewer may break, no tag ("[1 bye]") or percentage may
+  split, no line may end in "/". Screenshot the elements (`table.standings`,
+  `table.seats`, the review list), not the page — a full-page shot at 390
+  is too small to read a wrapped cell. Then reload: the name box must
+  still hold the name the table uses
