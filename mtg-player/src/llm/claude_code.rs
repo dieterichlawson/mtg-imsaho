@@ -64,6 +64,28 @@ pub const FORCE_5M_CACHE_ENV: &str = "FORCE_PROMPT_CACHING_5M";
 /// draft seat's sideboarding), whose prefix five minutes would not keep.
 pub const CACHE_TTL_ENV: &str = "MTG_CLAUDE_CODE_CACHE_TTL";
 
+/// What a [`CACHE_TTL_ENV`] value asks for: the hour, the five minutes, or
+/// (`None`) neither, which is run at five minutes and said once: `1H` or
+/// `60m` ran at five minutes without a word (#911).
+fn ttl_is_hour(value: &str) -> Option<bool> {
+    match value.trim() {
+        "1h" => Some(true),
+        "" | "5m" => Some(false),
+        _ => None,
+    }
+}
+
+/// Whether the run asks for the CLI's hour TTL.
+fn run_wants_hour() -> bool {
+    static WARNED: std::sync::Once = std::sync::Once::new();
+    let Ok(value) = std::env::var(CACHE_TTL_ENV) else { return false };
+    ttl_is_hour(&value).unwrap_or_else(|| {
+        WARNED.call_once(|| crate::stderr_line!(
+            "Warning: {CACHE_TTL_ENV}={value:?} is not 1h or 5m; the cache stays at 5 minutes."));
+        false
+    })
+}
+
 /// How long one decision may take before the subprocess is killed and the
 /// call retried. Print mode with thinking can run well past the API path's
 /// two minutes.
@@ -917,7 +939,7 @@ pub fn run_print_mode(
     // The 5-minute cache TTL unless the run asks for the CLI's hour, or
     // this call does on its own command.
     let own_hour = cmd.get_envs().any(|(k, v)| k == CACHE_TTL_ENV && v.is_some_and(|v| v == "1h"));
-    if own_hour || std::env::var(CACHE_TTL_ENV).as_deref() == Ok("1h") {
+    if own_hour || run_wants_hour() {
         cmd.env_remove(FORCE_5M_CACHE_ENV);
     } else {
         cmd.env(FORCE_5M_CACHE_ENV, "1");
@@ -1206,5 +1228,23 @@ object in them (the seat is not answering in the format it is asked for)");
 
     fn model_name(&self) -> &str {
         &self.label
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ttl_is_hour;
+
+    /// #911: a spelling the knob does not know is neither, and is said,
+    /// rather than read as the five minutes in silence.
+    #[test]
+    fn the_cache_ttl_knob_knows_its_values_and_no_others() {
+        assert_eq!(ttl_is_hour("1h"), Some(true));
+        assert_eq!(ttl_is_hour(" 1h "), Some(true));
+        assert_eq!(ttl_is_hour("5m"), Some(false));
+        assert_eq!(ttl_is_hour(""), Some(false));
+        for unknown in ["1H", "60m", "hour"] {
+            assert_eq!(ttl_is_hour(unknown), None, "{unknown}");
+        }
     }
 }
