@@ -298,10 +298,13 @@ so this seat's games are not wholly its own", if *n == 1 { "" } else { "s" }).un
         mute.sort();
         summary.push_str("\n  Decisions the seat's backend never answered:\n");
         for (seat, n) in &mute {
+            // A seat given up for replies it could not read (#898) lands
+            // here too: that is the seat not answering in the format, not
+            // the CLI failing, and the API_ERROR line says which.
             writeln!(summary, "    {seat}: {n} decision{} got no answer at all — the CLI or \
-API failed, not the model", if *n == 1 { "" } else { "s" }).unwrap();
+API failed, or the seat stopped answering in the format it is asked for", if *n == 1 { "" } else { "s" }).unwrap();
         }
-        summary.push_str("  (grep the log for NO_ANSWER to see each one)\n");
+        summary.push_str("  (grep the log for NO_ANSWER to see each one, and API_ERROR for why)\n");
     }
 
     // Write to stderr
