@@ -149,6 +149,23 @@ async function main() {
 
       const byName = Object.fromEntries(fixtures.views.map(v => [v.name, v.view]));
 
+      // #892: back on the page, the header's box shows the name the seat
+      // set; the table's own "seat N" is no name to show.
+      {
+        await page.$eval("#name", el => { el.value = ""; el.blur(); });
+        const named = JSON.parse(JSON.stringify(byName.drafting));
+        named.seats[named.seat].name = "Ann";
+        await stage(named);
+        await page.waitForTimeout(50);
+        check(await page.$eval("#name", el => el.value) === "Ann", `${tag}: the name box shows the seat's name after a reload`);
+        await page.$eval("#name", el => { el.value = ""; });
+        const unnamed = JSON.parse(JSON.stringify(byName.drafting));
+        unnamed.seats[unnamed.seat].name = `seat ${unnamed.seat}`;
+        await stage(unnamed);
+        await page.waitForTimeout(50);
+        check(await page.$eval("#name", el => el.value) === "", `${tag}: and stays empty for a seat with no name of its own`);
+      }
+
       // Drafting: click selects, a second click picks, the message names the pack and the index.
       {
         const view = byName.drafting;
