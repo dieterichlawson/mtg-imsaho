@@ -917,9 +917,9 @@ struct PassUntil {
     /// Whose turn it was: a pass-until engaged on the opponent's turn
     /// ends when the seat's own turn starts.
     our_turn: bool,
-    /// The stack as it stood, bottom first, by each entry's identity. An
-    /// entry resolving off the top is expected; anything else on the stack
-    /// is new.
+    /// The stack as it stood, top first as the view lists it, by each
+    /// entry's identity. An entry resolving off the top is expected;
+    /// anything else on the stack is new.
     stack: Vec<(ObjectId, mtg_engine::ids::CardId, String)>,
     /// The engine's count of entries ever put on the stack. A second
     /// activation of an ability already on it, or a repeat of a trigger,
@@ -1571,7 +1571,7 @@ Every prompt restates the whole position, in this order:
 - `Your notes from your last decision:` your own thoughts from the last prompt. No earlier prompt is kept, so this is how a plan carries over; trust the board over them.
 - `Recent events:` what happened since your last prompt, at most the most recent 80 entries (a marker such as `… 227 earlier entries omitted, through turn 94 …` says when older ones were dropped).
 - `You:`/`Opp:` life (hp), hand, library, graveyard and exile counts; `This turn:` spells each side cast (werewolves transform on these) and `a creature died` (morbid).
-- `Mana pool:` yours and `Opp mana pool:` (when not empty); `Your board:` and `Opp board:`; `Stack:` (top last, with controller and targets); `Hand:` (cost, and base P/T for creatures); graveyards; exile; `Flashback available`.
+- `Mana pool:` yours and `Opp mana pool:` (when not empty); `Your board:` and `Opp board:`; `Stack:` (top first, with controller and targets); `Hand:` (cost, and base P/T for creatures); graveyards; exile; `Flashback available`.
 - `Opp's cards in view:` rules text for the opponent's cards on the battlefield, on the stack, in exile or revealed, and for a graveyard card that works from there (flashback; cast or returned from a graveyard) or that the question or a stack object points at. You learn them as they come into view, never before. `(×N)` ends a line repeated N times; `3x` is three of a card.
 - A context line (`[MAIN PHASE 1]`, `[RESPOND TO opp's <spell>]`, `[AFTER BLOCKERS DECLARED]`, ...) and the question.
 
@@ -9293,6 +9293,14 @@ pub(crate) mod tests {
         assert!(stack.contains(&format!("put a +1/+1 counter on Rakish Heir (#{})", heir.0)), "{stack}");
         assert!(stack.contains(&format!("put a +1/+1 counter on Stromkirk Noble (#{})", noble.0)), "{stack}");
         assert!(!stack.contains("that Vampire") && !stack.contains("(×2)"), "{stack}");
+        // The Noble's trigger went on last, so it is on top: the section
+        // lists it first, which is what the rules say of it. They said
+        // "top last" (#870's review), so a seat in a response war read the
+        // bottom entry as the next to resolve.
+        let noble_line = stack.find(&format!("counter on Stromkirk Noble (#{})", noble.0)).unwrap();
+        let heir_line = stack.find(&format!("counter on Rakish Heir (#{})", heir.0)).unwrap();
+        assert!(noble_line < heir_line, "{stack}");
+        assert!(GAME_RULES.contains("`Stack:` (top first"), "the rules say the order the section prints");
     }
 
     /// Issue #828: exile was the one public zone the prompt only counted

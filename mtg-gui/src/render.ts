@@ -683,7 +683,7 @@ function drawBand(ctx: Ctx, hits: Hit[], state: LiveState): void {
   // moved past the death (#832). After "first strike" — after first-strike
   // damage is exactly when both are on — and clipped short of the stack.
   if (view.creature_died_this_turn) text(ctx, clip(ctx, "creature died", 176 - flagX, "7px Silkscreen"), flagX, y + 3, { color: "#e09080", font: "7px Silkscreen" });
-  // The stack: newest on the right.
+  // The stack: the top (next to resolve) on the left, as the view lists it.
   const sx0 = 180;
   text(ctx, view.stack.length ? "STACK →" : "stack empty", sx0, y + 2, { color: "#8a8090", font: "7px Silkscreen" });
   // Whose turn, which step, and the last two things that happened.
