@@ -906,8 +906,6 @@ fn between_games(
     }
 }
 
-/// Why a seat chooses to play or draw: it lost the last game, or that game
-/// was a draw and the choice stays with whoever had it (MTR 2.2).
 /// What a seat's game page says before game `game` of a match, or nothing
 /// for a seat with nothing to do (it lost the coin flip). The host's own
 /// seat has no draft page: it answers at the server's terminal; a person
@@ -924,6 +922,8 @@ fn between_line(game: usize, chooses: bool, last_winner: Option<usize>, seat: us
     Some(format!("Before game {game}: {what} {place}"))
 }
 
+/// Why a seat chooses to play or draw: it lost the last game, or that game
+/// was a draw and the choice stays with whoever had it (MTR 2.2).
 fn last_game_why(winner: Option<usize>, seat: usize, game: usize) -> String {
     match winner {
         Some(w) if w != seat => format!("you lost game {game}"),

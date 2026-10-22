@@ -1223,7 +1223,10 @@ function promptArea(ctx, hits, state, x, y, w, h) {
                 text(ctx, l, x + 4, ty, { color: "#a0d0e0" });
                 ty += 9;
             }
-        for (const l of wrapCapped(ctx, engineLine(state, state.gameOver), w - 8, "8px Silkscreen", 8)) {
+        // The result takes what room is left in the panel, not a fixed eight
+        // lines: with the table's line above it, eight ran into the log.
+        const room = Math.max(1, Math.min(8, Math.floor((y + h - 6 - ty) / 9)));
+        for (const l of wrapCapped(ctx, engineLine(state, state.gameOver), w - 8, "8px Silkscreen", room)) {
             text(ctx, l, x + 4, ty, { color: "#ffe080" });
             ty += 9;
         }

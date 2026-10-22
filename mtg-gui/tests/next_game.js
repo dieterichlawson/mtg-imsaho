@@ -80,6 +80,26 @@ async function main() {
       return { between, first };
     });
     const squash = (t) => t.replace(/\s+/g, " ");
+    // With the log open the panel is 100px tall: the table's line and a
+    // long result share it, and the result does not run into the log.
+    const fit = await page.evaluate(() => {
+      const said = [];
+      const fill = CanvasRenderingContext2D.prototype.fillText;
+      CanvasRenderingContext2D.prototype.fillText = function (t, x, y, ...rest) { said.push({ t: String(t), x, y, font: this.font, color: this.fillStyle }); return fill.call(this, t, x, y, ...rest); };
+      const m = window.mtg;
+      const summary = m.gameOver;
+      m.gameOver = "Game over! p1 (Seat 1) wins! (p0 (Seat 0) conceded) after a long and winding game with many, many turns in it\nFinal turn: 29\nand more lines\nand more\nand more";
+      m.logOpen = true;
+      window.mtgDebug.render();
+      CanvasRenderingContext2D.prototype.fillText = fill;
+      m.logOpen = false; m.gameOver = summary;
+      window.mtgDebug.render();
+      const head = said.find(d => /PressStart/.test(d.font) && /WIN|OVER|DRAW/.test(d.t));
+      // The panel's column (render.ts PANEL_X), not the board's.
+      const result = said.filter(d => d.color === "#ffe080" && d.x >= 480);
+      return { top: head ? head.y - 6 : null, bottom: Math.max(...result.map(d => d.y)) };
+    });
+    check(fit.top !== null && fit.bottom + 9 <= fit.top + 100, `with the log open the result stays in its panel (last line at ${fit.bottom}, panel ${fit.top}-${fit.top + 100})`);
     // Every word of it, the place to go last (#879's review: it was cut
     // at three lines, before "where you drafted").
     check(squash(drawn.between).includes("Before game 3: game 2 was a draw: sideboard and choose play or draw where you drafted"),
