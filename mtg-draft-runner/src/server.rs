@@ -577,9 +577,9 @@ fn host_loop(shared: &Arc<Shared>) {
                 }
             }
             Some("help" | "?") => {
-                shared.reply("host: start (or Enter), kick <seat>, status, quit");
+                shared.reply("host: start (or Enter), kick <seat>, status, quit (closes the table for everybody)");
                 if cli.is_some() {
-                    shared.reply(&format!("your seat:\n{}", crate::client::USAGE));
+                    shared.reply(&format!("your seat:\n{}", crate::client::SEAT_COMMANDS));
                 }
             }
             Some("kick") => {

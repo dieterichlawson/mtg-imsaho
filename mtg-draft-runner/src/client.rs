@@ -10,12 +10,13 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-pub const USAGE: &str = "\
-mtg-draft-client — sit at a hosted draft from the terminal
-
-Usage: mtg-draft-client ws://host:8800/ws?seat=N&key=K [--name <name>]
-
-While drafting, type a card's number to pick it (a number typed before a
+/// What a seat can type, as the client and the host's own seat both read
+/// it. Its own constant: the host's `help` printed the whole of [`USAGE`],
+/// the binary's usage line and a `quit` that, at the server's terminal,
+/// closes the table for everybody (#906).
+macro_rules! seat_commands {
+    () => {
+"While drafting, type a card's number to pick it (a number typed before a
 new pack has been up 300 ms is not taken: type it again). While building:
 add <n>, drop <n> (by the pool numbers shown), lands plains=7 island=10,
 show, ready.
@@ -24,8 +25,21 @@ same add, drop and lands to sideboard (from game 2), and ready to start
 the game.
 text <n> prints a card's rules text: the pack's card <n> while drafting,
 the pool's card <n> while building or sideboarding.
-review prints every pack you were handed and what you took from it.
-Any time: name <name>, help, quit.";
+review prints every pack you were handed and what you took from it."
+    };
+}
+
+/// The seat's commands at the host's own terminal: `help` and `quit` there
+/// are the host's.
+pub const SEAT_COMMANDS: &str = concat!(seat_commands!(), "\nAny time: name <name>.");
+
+pub const USAGE: &str = concat!("\
+mtg-draft-client — sit at a hosted draft from the terminal
+
+Usage: mtg-draft-client ws://host:8800/ws?seat=N&key=K [--name <name>]
+
+", seat_commands!(), "
+Any time: name <name>, help, quit.");
 
 pub fn out(line: &str) {
     let mut stdout = std::io::stdout().lock();

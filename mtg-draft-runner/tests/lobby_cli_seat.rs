@@ -73,6 +73,12 @@ fn kicking_the_hosts_own_seat_asks_first() {
     let started = server.stderr();
     assert!(started.contains("seat 1  ai cc:") && !started.contains("metered"), "{started}");
     server.wait_for_stdout("type a number to pick", Duration::from_secs(60));
+    // #906: the seat's part of `help` is its commands, not the client
+    // binary's usage, and offers no `quit` (the host's, closing the table).
+    server.type_line("help");
+    let help = server.wait_for_stderr("review prints every pack", Duration::from_secs(10));
+    let seat_part = help.split("your seat:").nth(1).unwrap_or_default();
+    assert!(!seat_part.contains("mtg-draft-client") && !seat_part.contains("quit"), "{help}");
     server.type_line("kick 0");
     server.wait_for_stderr("seat 0 is yours, at this terminal: `kick 0 yes`", Duration::from_secs(10));
     server.type_line("status");
