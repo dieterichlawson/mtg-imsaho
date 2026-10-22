@@ -337,6 +337,13 @@ decks and {} finished matches replayed; a match that was in progress is played a
 
     // The port first: nothing below is true of a table that cannot listen.
     let listener = server::bind(&shared).unwrap_or_else(|e| die(&e));
+    // A snapshot that cannot be written is refused now, before anybody
+    // joins, rather than promised and never made (#891). After the bind: a
+    // second server on a taken port must not write over the running
+    // table's snapshot.
+    if let Err(e) = shared.write_snapshot() {
+        die(&format!("--save: {e}"));
+    }
 
     mtg_player::stderr_line!("{} draft: {} seats, best-of-{}, seed {}; log {}",
         set_data.set_name, args.seats.len(), args.best_of, args.seed, args.log);

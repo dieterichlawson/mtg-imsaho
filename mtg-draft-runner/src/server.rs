@@ -79,6 +79,9 @@ pub struct Shared {
     /// The host's own seat (`cli`): the lines the host types that are not
     /// the host's commands, for the terminal client the server runs for it.
     cli_lines: Mutex<Option<mpsc::Sender<(Instant, String)>>>,
+    /// The last snapshot write failed: said once, and again when one
+    /// succeeds (#891).
+    snapshot_failing: AtomicBool,
 }
 
 /// A person's game page in a running match.
@@ -122,6 +125,7 @@ impl Shared {
             card_reference,
             set_name,
             quit: AtomicBool::new(false),
+            snapshot_failing: AtomicBool::new(false),
             stop_reason: Mutex::new(None),
             in_game: Mutex::new(Vec::new()),
             next_game_port: Mutex::new(None),
@@ -239,19 +243,38 @@ impl Shared {
         for line in events {
             self.say(&line);
         }
-        self.write_snapshot();
+        self.keep_snapshot();
         self.changed.notify_all();
     }
 
     /// Write the table's snapshot, whole, to a file beside it and then over
     /// it, so a server that dies mid-write leaves the last good one.
-    fn write_snapshot(&self) {
-        let Some(path) = &self.config.save else { return };
-        let Ok(json) = serde_json::to_string(&self.lobby().snapshot()) else { return };
+    ///
+    /// # Errors
+    /// The snapshot could not be written, and why.
+    pub fn write_snapshot(&self) -> Result<(), String> {
+        let Some(path) = &self.config.save else { return Ok(()) };
+        let json = serde_json::to_string(&self.lobby().snapshot()).map_err(|e| e.to_string())?;
         let tmp = path.with_extension("tmp");
-        if std::fs::write(&tmp, json).is_ok() {
-            let _ = std::fs::rename(&tmp, path);
-        }
+        std::fs::write(&tmp, json).and_then(|()| std::fs::rename(&tmp, path))
+            .map_err(|e| format!("the snapshot cannot be written to {}: {e}", path.display()))
+    }
+
+    /// [`Shared::write_snapshot`] after a change. A write that fails is
+    /// said on the host's terminal and in the log, once until one succeeds
+    /// again: both errors were dropped, and a host told where the snapshot
+    /// was found nothing to resume from (#891).
+    fn keep_snapshot(&self) {
+        let written = self.write_snapshot();
+        let was_failing = self.snapshot_failing.swap(written.is_err(), Ordering::SeqCst);
+        let line = match (&written, was_failing) {
+            (Err(e), false) => format!("WARN {e}; if the server stops now, --resume has nothing newer to carry on from"),
+            (Ok(()), true) => format!("NOTE the snapshot is written again{}",
+                self.config.save.as_ref().map(|p| format!(" to {}", p.display())).unwrap_or_default()),
+            _ => return,
+        };
+        mtg_player::game_log::write(file!(), line!(), &line, "");
+        self.reply(&line);
     }
 
     /// Wait for a change, or `timeout`.
