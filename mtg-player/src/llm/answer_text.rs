@@ -134,19 +134,32 @@ fn type_of(spec: &Value) -> String {
     }
 }
 
-/// The JSON object in a text answer: the whole text, or the first `{` to
-/// the last `}` when the model wrapped it in a code fence or a sentence.
+/// The JSON object in a text answer: the whole text, or else the last
+/// object in it that parses, wherever it sits — in a code fence, after a
+/// sentence, or after a draft of itself. The first `{` to the last `}` was
+/// read before, and a mana symbol in the prose around the answer ("I have
+/// {G}{G} open") made that no object at all: every answer of a seat that
+/// explained itself was thrown away (#896).
 #[must_use]
 pub fn json_in_text(text: &str) -> Option<Value> {
     let text = text.trim();
     if let Ok(v @ Value::Object(_)) = serde_json::from_str(text) {
         return Some(v);
     }
-    let (start, end) = (text.find('{')?, text.rfind('}')?);
-    match serde_json::from_str(text.get(start..=end)?) {
-        Ok(v @ Value::Object(_)) => Some(v),
-        _ => None,
+    let mut last = None;
+    let mut at = 0;
+    while let Some(i) = text[at..].find('{').map(|i| at + i) {
+        let mut objects = serde_json::Deserializer::from_str(&text[i..]).into_iter::<Value>();
+        match objects.next() {
+            // Past the whole object: a brace inside it is not another one.
+            Some(Ok(v @ Value::Object(_))) => {
+                at = i + objects.byte_offset();
+                last = Some(v);
+            }
+            _ => at = i + 1,
+        }
     }
+    last
 }
 
 #[cfg(test)]
@@ -201,6 +214,12 @@ mod tests {
         assert_eq!(json_in_text("```json\n{\"action\": 2}\n```"), Some(serde_json::json!({"action": 2})));
         assert_eq!(json_in_text("I pass. {\"action\": 0} Done."), Some(serde_json::json!({"action": 0})));
         assert_eq!(json_in_text("no json here"), None);
+        // #896: braces in the prose around the answer, and a draft before it.
+        assert_eq!(json_in_text("I have {G}{G} open and could tap for {B}. {\"thoughts\": \"t\", \"mull\": false}"),
+            Some(serde_json::json!({"thoughts": "t", "mull": false})));
+        assert_eq!(json_in_text("{\"thoughts\": \"draft\"}\nActually: {\"action\": 3, \"x\": {\"y\": 1}} costs {2}{R}."),
+            Some(serde_json::json!({"action": 3, "x": {"y": 1}})));
+        assert_eq!(json_in_text("Tap for {C}{C}, then {T}."), None);
         assert_eq!(json_in_text("[1, 2]"), None);
     }
 }

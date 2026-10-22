@@ -59,16 +59,25 @@ def claude(system, message, model, timeout=600):
 
 
 def json_in_text(text):
+    """The whole text as JSON, or else the last object in it that parses:
+    the first `{` to the last `}` was no object at all when a mana symbol
+    like {G} sat in the prose around it (#896, as answer_text.rs reads)."""
     text = (text or "").strip()
     try:
         return json.loads(text)
     except json.JSONDecodeError:
         pass
-    i, j = text.find("{"), text.rfind("}")
-    try:
-        return json.loads(text[i:j + 1]) if i >= 0 < j else None
-    except json.JSONDecodeError:
-        return None
+    decoder, last, at = json.JSONDecoder(), None, 0
+    while (i := text.find("{", at)) >= 0:
+        try:
+            value, end = decoder.raw_decode(text, i)
+        except json.JSONDecodeError:
+            at = i + 1
+            continue
+        if isinstance(value, dict):
+            last = value
+        at = end
+    return last
 
 
 def counted(cards):
