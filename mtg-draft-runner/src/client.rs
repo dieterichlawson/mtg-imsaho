@@ -319,6 +319,18 @@ pub fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Optio
             format!("you are still drafting: {first} builds the deck once your last pick is made")
         });
     }
+    // Once the deck is final, outside a match's between-games window, the
+    // server answers 'your deck is final', which in a best-of-3 reads as
+    // if it could never change again (#907's review).
+    if matches!(*first, "ready" | "add" | "drop" | "lands") && matches!(phase, "playing" | "done")
+        && view.and_then(between).is_none()
+    {
+        return Command::Print(if phase == "done" {
+            "the tournament is over: there is no deck to change".into()
+        } else {
+            format!("your deck is final for this game: {first} sideboards between games of a match")
+        });
+    }
     match *first {
         "help" | "?" => Command::Print(USAGE.to_string()),
         "quit" | "q" | "exit" => Command::Quit,
@@ -662,6 +674,11 @@ mod tests {
         assert!(t.contains("has not started"), "{t}");
         v["phase"] = "building".into();
         assert!(matches!(command("add 0", Some(&v), &mut Build::default(), None), Command::Send(_)));
+        // Final, and no game to sideboard for yet: said here too.
+        v["phase"] = "playing".into();
+        v["matches"] = serde_json::json!([]);
+        let Command::Print(t) = command("add 0", Some(&v), &mut Build::default(), None) else { panic!("sent") };
+        assert!(t.contains("sideboards between games"), "{t}");
     }
 
     #[test]
