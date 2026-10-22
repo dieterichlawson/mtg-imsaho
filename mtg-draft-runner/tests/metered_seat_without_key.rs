@@ -32,3 +32,10 @@ fn the_batch_runner_refuses_a_metered_seat_with_no_key() {
     cmd.args(["--players", "2", "--model", "claude:claude-haiku-4-5"]);
     refused(cmd, "ANTHROPIC_API_KEY");
 }
+
+#[test]
+fn the_pick_replay_refuses_a_metered_model_with_no_key() {
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_mtg-draft-replay"));
+    cmd.args(["--positions", "/nonexistent", "--model", "claude:claude-haiku-4-5", "--metered"]);
+    refused(cmd, "ANTHROPIC_API_KEY");
+}

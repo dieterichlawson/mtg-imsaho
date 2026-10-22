@@ -896,6 +896,12 @@ this draft will be made under {} — this draft is a mixture of the two",
             set_data.set_name, args.players, args.best_of
         );
         mtg_player::stderr_line!("Log file: {}", args.log);
+        // Which model each seat is, and which bill per call: the default
+        // `claude` is metered, and only the log header said so (#902's
+        // review).
+        for (seat, spec) in args.models.iter().enumerate() {
+            mtg_player::stderr_line!("seat {seat}  {}", llm_client::ai_seat_label(spec));
+        }
     }
 
     // ── Phase 1: Generate packs ──

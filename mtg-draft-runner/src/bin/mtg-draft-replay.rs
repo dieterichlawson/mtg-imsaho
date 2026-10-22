@@ -58,6 +58,11 @@ fn main() {
     if !args.iter().any(|a| a == "--metered") && !matches!(model.split(':').next(), Some("cc" | "claude-code")) {
         die(&format!("{model} is a metered seat; pass --metered to spend on it"));
     }
+    // The backend expects its key: a run with none panicked at the first
+    // position (#903's review).
+    if let Some(var) = mtg_draft_runner::llm_client::missing_api_key(model.split(':').next().unwrap_or("")) {
+        die(&format!("{model} calls a metered API and {var} is not set"));
+    }
     let guide = get("--guide").map(|p| std::fs::read_to_string(&p)
         .unwrap_or_else(|e| die(&format!("cannot read --guide {p}: {e}"))));
 

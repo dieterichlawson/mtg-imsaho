@@ -59,7 +59,10 @@ address (or say to replace `0.0.0.0` with it when that cannot be found).
   default). `--ai <spec>` changes the default; `ai:<spec>` names one
   seat's, in the runner's `provider:model[:draft_thinking[:game_thinking]]`
   form, e.g. `ai:cc:claude-sonnet-5-5`. A `cc` seat needs the `claude`
-  CLI on the path (or `CLAUDE_CODE_BIN`).
+  CLI on the path (or `CLAUDE_CODE_BIN`). An `ai:claude:` or `ai:gemini:`
+  seat bills your `ANTHROPIC_API_KEY` / `GEMINI_API_KEY` per call: start-up
+  and `status` say so beside the seat, and one whose key is not set is
+  refused before anything is dealt.
 - `cli` — the host's own seat, at the server's terminal (at most one).
   The server runs the terminal client (below) for it against its own
   port: every line the host types that is not one of the host's commands
@@ -118,7 +121,8 @@ every pairing, every game and match result, the standings — and reads:
   carries on — whichever of the two is deciding (against an AI seat, once
   the AI's answer is in).
 - `status`: where everybody is — "here", "away", "in game", "game page
-  closed", "kicked", "not answering" — and what they are doing. A person
+  closed", "kicked", "not answering" — and what they are doing, and each
+  AI seat's model (and what a metered one bills). A person
   in a match is wherever their game page is.
 - `quit`, or Ctrl-C: stop the server. Every page and client is told the
   table is closed and why, and stops reconnecting; the log ends with
