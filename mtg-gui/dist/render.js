@@ -1214,6 +1214,14 @@ function promptArea(ctx, hits, state, x, y, w, h) {
             text(ctx, headline, x + 4, ty, { font: "8px PressStart", color: "#ffffff" });
             ty += 11;
         }
+        // Between a match's games the table's line is what to do next ("Before
+        // game 2: sideboard on your draft page"): drawn here, ahead of the
+        // result, because the box stays up until the next game starts (#879).
+        if (state.matchLine)
+            for (const l of wrapCapped(ctx, state.matchLine, w - 8, "8px Silkscreen", 3)) {
+                text(ctx, l, x + 4, ty, { color: "#a0d0e0" });
+                ty += 9;
+            }
         for (const l of wrapCapped(ctx, engineLine(state, state.gameOver), w - 8, "8px Silkscreen", 8)) {
             text(ctx, l, x + 4, ty, { color: "#ffe080" });
             ty += 9;
@@ -1547,6 +1555,16 @@ export function render(ctx, state) {
     ctx.fillRect(0, 0, BOARD_W, H);
     if (!state.view) {
         text(ctx, state.connected ? "Waiting for the game…" : "Connecting to the runner…", 12, 12, { font: "8px PressStart", color: "#ffe080" });
+        // Before a match's first game the table may need something of the
+        // person first ("Before game 1: choose play or draw on your draft
+        // page"), and there is no board yet to put it under (#879).
+        if (state.matchLine) {
+            let ty = 30;
+            for (const l of wrapCapped(ctx, state.matchLine, BOARD_W - 24, "8px Silkscreen", 3)) {
+                text(ctx, l, 12, ty, { color: "#a0d0e0" });
+                ty += 10;
+            }
+        }
         return hits;
     }
     const live = state;

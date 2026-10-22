@@ -55,6 +55,35 @@ async function main() {
     check(r.headline === (r.you === 1 ? "YOU WIN" : "OPPONENT WINS"), `the hosted table's headline is read (${JSON.stringify(r.headline)})`);
     check(r.gameOver === "Game over! p1 (Seat 1) wins! (p0 (Seat 0) conceded)\nFinal turn: 9" && !r.decision, `game over is shown and nothing is asked (${JSON.stringify(r)})`);
 
+    // Between games the table says what to do before the next one, and the
+    // page draws it while the box is still up; before a first game there is
+    // no board, and the line is drawn under the waiting line (#879).
+    const drawn = await page.evaluate(() => {
+      const said = [];
+      const fill = CanvasRenderingContext2D.prototype.fillText;
+      CanvasRenderingContext2D.prototype.fillText = function (t, ...rest) { said.push(String(t)); return fill.call(this, t, ...rest); };
+      const m = window.mtg;
+      const line = "Before game 2: sideboard, and choose play or draw, on your draft page";
+      window.mtgDebug.message({ type: "table", match_line: line, opponent: null });
+      window.mtgDebug.render();
+      const between = said.join(" ");
+      said.length = 0;
+      const view = m.view;
+      m.view = null;
+      window.mtgDebug.message({ type: "table", match_line: "Before game 1: choose play or draw on your draft page", opponent: null });
+      window.mtgDebug.render();
+      const first = said.join(" ");
+      m.view = view;
+      CanvasRenderingContext2D.prototype.fillText = fill;
+      window.mtgDebug.render();
+      return { between, first };
+    });
+    const squash = (t) => t.replace(/\s+/g, " ");
+    check(squash(drawn.between).includes("Before game 2: sideboard, and choose play or draw, on your draft page"),
+      `after a game the panel says what comes before the next (${JSON.stringify(drawn.between.slice(0, 200))})`);
+    check(squash(drawn.first).includes("Before game 1: choose play or draw on your draft page"),
+      `before the first game the page says what the table needs (${JSON.stringify(drawn.first)})`);
+
     // Game 2's first message: a view, then its first decision.
     const after = await page.evaluate(() => {
       const m = window.mtg;
