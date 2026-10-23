@@ -1055,10 +1055,8 @@ fn write_game_log(out_dir: Option<&Path>, round: usize, a: usize, b: usize, game
 
 /// One TCP connection: a page fetch, the view API, or a WebSocket.
 fn serve_connection(mut stream: TcpStream, shared: &Arc<Shared>) {
-    let mut head = [0u8; 2048];
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
-    let Ok(n) = stream.peek(&mut head) else { return };
-    let head = String::from_utf8_lossy(&head[..n]);
+    let Some(head) = mtg_player::gui::peek_head(&stream) else { return };
     let lower = head.to_ascii_lowercase();
     let path = head.lines().next()
         .and_then(|l| l.split_whitespace().nth(1))

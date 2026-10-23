@@ -599,11 +599,8 @@ impl Player for GuiPlayer {
 
 /// One TCP connection: a page fetch, or a WebSocket for the game.
 fn serve_connection(mut stream: TcpStream, shared: &Shared) {
-    let mut head = [0u8; 2048];
-    // Give the request head a moment to arrive, then decide what this is.
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
-    let Ok(n) = stream.peek(&mut head) else { return };
-    let head = String::from_utf8_lossy(&head[..n]);
+    let Some(head) = peek_head(&stream) else { return };
     let path = head.lines().next()
         .and_then(|l| l.split_whitespace().nth(1))
         .unwrap_or("/");
@@ -625,6 +622,27 @@ fn serve_connection(mut stream: TcpStream, shared: &Shared) {
         serve_websocket(stream, shared);
     } else {
         serve_http(&mut stream, &shared.web_dir, &path);
+    }
+}
+
+/// The request head, left on the socket for whoever reads it next: up to
+/// its blank line, or what arrived in five seconds, or the first 2 KiB.
+///
+/// One peek returns whatever has arrived, and a client may send the head
+/// in pieces (a `write!` to a `TcpStream` sends `GET `, the path and the
+/// rest separately): a path read from `GET ` alone was `/`, which a keyed
+/// page refuses, so its own link was a 404 now and then.
+#[must_use]
+pub fn peek_head(stream: &TcpStream) -> Option<String> {
+    let mut head = [0u8; 2048];
+    let until = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let n = stream.peek(&mut head).ok()?;
+        let done = n == 0 || n == head.len() || head[..n].windows(4).any(|w| w == b"\r\n\r\n");
+        if done || std::time::Instant::now() >= until {
+            return Some(String::from_utf8_lossy(&head[..n]).into_owned());
+        }
+        thread::sleep(Duration::from_millis(5));
     }
 }
 
@@ -860,6 +878,29 @@ mod tests {
         }
         assert!(!nothing_to_read(&tungstenite::Error::Io(Error::from(ErrorKind::ConnectionReset))));
         assert!(!nothing_to_read(&tungstenite::Error::ConnectionClosed));
+    }
+
+    /// A head sent in pieces is read whole before its path is: a keyed
+    /// page's own link answered 404 when the peek saw only `GET `.
+    #[test]
+    fn a_request_head_sent_in_pieces_is_peeked_whole() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let client = thread::spawn(move || {
+            let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            for piece in ["GET ", "/k3y/", " HTTP/1.1\r\nHost: x\r\n", "\r\n"] {
+                s.write_all(piece.as_bytes()).unwrap();
+                s.flush().unwrap();
+                thread::sleep(Duration::from_millis(50));
+            }
+            s
+        });
+        let (stream, _) = listener.accept().unwrap();
+        let head = peek_head(&stream).expect("a head");
+        assert_eq!(head, "GET /k3y/ HTTP/1.1\r\nHost: x\r\n\r\n");
+        let mut left = [0u8; 4];
+        assert_eq!(stream.peek(&mut left).unwrap(), 4, "the head is still on the socket");
+        drop(client.join());
     }
 
     /// #872: under a key, the page and its socket are reached only through
