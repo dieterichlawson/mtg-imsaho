@@ -469,6 +469,7 @@ fn a_position_resumed_under_other_prompt_settings_says_so() {
 
     let resume = ["--resume", save.as_str(), "--p1", "cc", "--p2", "random", "--quiet", "--stop-after", "1"];
     let same = run(&resume, &[]);
+    assert!(same.status.success(), "{}", String::from_utf8_lossy(&same.stderr));
     assert!(!String::from_utf8_lossy(&same.stderr).contains("not the live one"), "{}", String::from_utf8_lossy(&same.stderr));
     let other = run(&resume, &[("MTG_LLM_HISTORY", "2"), ("MTG_CLAUDE_CODE_ANSWERS", "schema")]);
     let stderr = String::from_utf8_lossy(&other.stderr);

@@ -630,8 +630,7 @@ stops here — pass --save {path} to keep writing it");
             (specs.iter().any(|s| !seat_is_local(s)) && save.history.is_some_and(|h| h != history),
                 format!("it was saved under MTG_LLM_HISTORY={}, and is resumed under {history}",
                     save.history.unwrap_or_default())),
-            (specs.iter().any(|s| matches!(s.split(':').next(), Some("cc" | "claude-code")))
-                && save.text_answers.is_some_and(|t| t != text),
+            (specs.iter().any(|s| is_claude_code(s)) && save.text_answers.is_some_and(|t| t != text),
                 format!("it was saved under {}={}, and is resumed asking {}", mtg_player::llm::answer_text::ANSWERS_ENV,
                     if text { "schema" } else { "text" }, if text { "in text" } else { "in the schema" })),
         ];
@@ -1109,8 +1108,8 @@ stops here — pass --save {path} to keep writing it");
                 seat_notes: seat_notes(),
                 seat_rng: seat_rng(),
                 seat_memory: seat_memory(),
-                history: Some(mtg_player::llm::history_exchanges()),
-                text_answers: Some(mtg_player::llm::answer_text::text_answers()),
+                history: prompt_settings(&seats_ref).0,
+                text_answers: prompt_settings(&seats_ref).1,
             };
             let json = serde_json::to_string(&save).expect("Failed to serialize game state");
             // The hot-reload snapshot, so `rr` works without --save. Nobody
@@ -1228,8 +1227,8 @@ use --save if you need a resumable file.");
             seat_notes: seat_notes(),
             seat_rng: seat_rng(),
             seat_memory: seat_memory(),
-            history: Some(mtg_player::llm::history_exchanges()),
-            text_answers: Some(mtg_player::llm::answer_text::text_answers()),
+            history: prompt_settings(&[p1_spec.clone(), p2_spec.clone()]).0,
+            text_answers: prompt_settings(&[p1_spec.clone(), p2_spec.clone()]).1,
         };
         match serde_json::to_string(&save) {
             Ok(json) => {
@@ -1354,6 +1353,19 @@ fn seat_is_metered(spec: &str) -> bool {
 
 /// Whether a seat spec names a backend that is nothing but this process —
 /// no model, no quota, no network.
+/// What a save records of the settings an LLM seat's system prompt is made
+/// under: the history for any LLM seat, the answer format for a `claude -p`
+/// one, whose prompt alone says how it answers; `None` where no seat's
+/// prompt carries it.
+fn prompt_settings(seats: &[String]) -> (Option<usize>, Option<bool>) {
+    (seats.iter().any(|s| !seat_is_local(s)).then(mtg_player::llm::history_exchanges),
+     seats.iter().any(|s| is_claude_code(s)).then(mtg_player::llm::answer_text::text_answers))
+}
+
+fn is_claude_code(spec: &str) -> bool {
+    matches!(spec.split(':').next(), Some("cc" | "claude-code"))
+}
+
 fn seat_is_local(spec: &str) -> bool {
     let kind = spec.split_once(':').map_or(spec, |(k, _)| k);
     matches!(kind, "cli" | "gui" | "random")
