@@ -879,7 +879,8 @@ struct ClaudeCodeDraftBackend {
 pub const DRAFT_ANSWERS_ENV: &str = "MTG_CLAUDE_CODE_DRAFT_ANSWERS";
 
 /// Whether a `claude -p` draft seat is asked for its answer in text.
-fn draft_text_answers() -> bool {
+#[must_use]
+pub fn draft_text_answers() -> bool {
     match std::env::var(DRAFT_ANSWERS_ENV).as_deref().map(str::trim) {
         Ok("text") => true,
         Err(_) | Ok("" | "schema" | "tool") => false,

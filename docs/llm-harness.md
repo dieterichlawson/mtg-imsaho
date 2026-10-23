@@ -563,10 +563,13 @@ refuses a metered seat without `--metered`, and `draft-replay.py` refuses
 one outright. A pick replays as the prompt it was live on any build that
 renders pick prompts as the drafting build did
 (`mtg-draft-runner/tests/kept_picks_replay.rs`). A position records its
-seat's guide and the `MTG_LLM_HISTORY` it was asked under, and is asked
-again under that guide; `mtg-draft-replay --guide FILE` asks every position
-under one file instead. A position kept before guides were recorded, or a
-replay under another history, is said once on stderr (#920). The positions and reference
+seat's guide, the `MTG_LLM_HISTORY` and the `MTG_CLAUDE_CODE_DRAFT_ANSWERS`
+it was asked under, and is asked again under that guide;
+`mtg-draft-replay --guide FILE` asks every position under one file instead.
+A position whose system prompt the replay cannot make as it was live (kept
+before guides were recorded, or replayed under another history or answer
+format) is said on stderr, and `draft-replay.py` keeps it in the row as
+`unlike_live` and counts it in a WARN at the end of the run (#920). The positions and reference
 behind phase 4 are kept in `reports/decision-eval/2026-10-20-draft/`.
 
 To draft *with* people — a hosted table where humans join from a browser

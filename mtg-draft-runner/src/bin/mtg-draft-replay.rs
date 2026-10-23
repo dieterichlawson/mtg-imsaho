@@ -17,8 +17,8 @@
 //! Each position is asked under the guide its seat drafted with, which the
 //! position records (#920); `--guide` asks every position under that one
 //! file instead. A position kept before guides were recorded, or under
-//! another `MTG_LLM_HISTORY`, is said once on stderr: its system prompt is
-//! not the one it was live.
+//! another `MTG_LLM_HISTORY` or `MTG_CLAUDE_CODE_DRAFT_ANSWERS`, is said
+//! once on stderr: its system prompt is not the one it was live.
 //!
 //! Every position is a real model call. A `claude` or `gemini` seat is a
 //! metered one, refused unless `--metered` says it is meant.
@@ -71,7 +71,11 @@ fn main() {
     }
     let override_guide = get("--guide").map(|p| std::fs::read_to_string(&p)
         .unwrap_or_else(|e| die(&format!("cannot read --guide {p}: {e}"))));
-    let (mut said_no_guide, mut said_history) = (false, false);
+    // What a line's system prompt was that this replay's is not: said once
+    // a kind, by the line it was first seen on.
+    let mut said: Vec<&str> = Vec::new();
+    let (history, text_answers) = (mtg_player::llm::history_exchanges(), llm_client::draft_text_answers());
+    let asks_in_text = matches!(model.split(':').next(), Some("cc" | "claude-code"));
 
     let registry = CardRegistry::with_all_cards();
     let mut sets: HashMap<String, LoadedSet> = HashMap::new();
@@ -95,17 +99,20 @@ fn main() {
             continue;
         }
 
-        if override_guide.is_none() && p.get("guide").is_none() && !said_no_guide {
-            said_no_guide = true;
-            eprintln!("mtg-draft-replay: {positions} line {} records no guide (kept before #920): \
-                such positions are asked with none, which a guided seat was not", id + 1);
-        }
-        let history = mtg_player::llm::history_exchanges();
-        if p["history"].as_u64().is_some_and(|h| h != history as u64) && !said_history {
-            said_history = true;
-            eprintln!("mtg-draft-replay: {positions} line {} was kept under MTG_LLM_HISTORY={}, \
-                and this replay runs under {history}: its system prompt says so differently",
-                id + 1, p["history"]);
+        let unlike: [(&str, bool, String); 3] = [
+            ("guide", override_guide.is_none() && p.get("guide").is_none(),
+                "it records no guide (kept before #920), and is asked with none, which a guided seat was not".into()),
+            ("history", p["history"].as_u64().is_some_and(|h| h != history as u64),
+                format!("it was kept under MTG_LLM_HISTORY={}, and this replay runs under {history}", p["history"])),
+            ("answers", asks_in_text && p["text_answers"].as_bool().is_some_and(|t| t != text_answers),
+                format!("it was kept under {}={}, and this replay asks {}", llm_client::DRAFT_ANSWERS_ENV,
+                    if text_answers { "schema" } else { "text" }, if text_answers { "in text" } else { "in the schema" })),
+        ];
+        for (kind, differs, why) in unlike {
+            if differs && !said.contains(&kind) {
+                said.push(kind);
+                eprintln!("mtg-draft-replay: {positions} line {}: its system prompt is not the live one: {why}", id + 1);
+            }
         }
         let guide = override_guide.clone().or_else(|| p["guide"].as_str().map(str::to_string));
         let mut client = DraftLlmClient::new(&model, &set.name, guide.as_deref(), &set.reference, table);

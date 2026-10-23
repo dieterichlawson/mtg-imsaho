@@ -49,8 +49,12 @@ def run_one(args, pid, position, sample):
         # Why a pick has no answer, which is otherwise nowhere: the binary
         # says it on stderr and the row would keep only the exit status.
         err = (out.stderr.strip().splitlines() or [""])[-1][:300] if rc else ""
+        # A pick asked under another system prompt than the live one (#920):
+        # said with exit 0, and kept in the row so the run can say it.
+        unlike = [l.split(": its system prompt is not the live one: ", 1)[1]
+                  for l in out.stderr.splitlines() if ": its system prompt is not the live one: " in l]
     except subprocess.TimeoutExpired:
-        line, rc, err = None, "timeout", ""
+        line, rc, err, unlike = None, "timeout", "", []
     finally:
         os.remove(path)
     r = json.loads(line) if line else {}
@@ -63,6 +67,7 @@ def run_one(args, pid, position, sample):
         "system_bytes": r.get("system_bytes"), "prompt_bytes": r.get("prompt_bytes"),
         "fallback": bool(r.get("substituted")),
         **({"error": err} if err else {}),
+        **({"unlike_live": unlike} if unlike else {}),
     }
 
 
@@ -101,13 +106,23 @@ def main():
     todo = [(f"{i:04d}", l, s) for i, l in enumerate(lines) for s in range(args.samples)
             if (f"{i:04d}", s) not in done]
     print(f"{args.name}: {len(todo)} picks to replay ({len(done)} already done)", file=sys.stderr)
+    unlike = {}
     with cf.ThreadPoolExecutor(args.jobs) as pool, open(result_path, "a") as out:
         futures = [pool.submit(run_one, args, pid, l, s) for pid, l, s in todo]
         for n, f in enumerate(cf.as_completed(futures), 1):
-            out.write(json.dumps(f.result()) + "\n")
+            r = f.result()
+            for why in r.get("unlike_live", []):
+                if why not in unlike:
+                    print(f"{args.name}: WARN position {r['position']}'s system prompt is not the live one: {why}",
+                          file=sys.stderr)
+                unlike[why] = unlike.get(why, 0) + 1
+            out.write(json.dumps(r) + "\n")
             out.flush()
             if n % 10 == 0 or n == len(futures):
                 print(f"{args.name}: {n}/{len(futures)}", file=sys.stderr)
+    for why, count in unlike.items():
+        print(f"{args.name}: WARN {count} picks were asked under another system prompt than the live one: {why}",
+              file=sys.stderr)
 
 
 if __name__ == "__main__":
