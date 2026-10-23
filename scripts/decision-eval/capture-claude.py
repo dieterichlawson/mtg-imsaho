@@ -26,7 +26,20 @@ import sys
 
 real = os.environ["EVAL_REAL_BIN"]
 args = sys.argv[1:]
-if args and args[0] != "--version":
+if args and args[0] == "--version":
+    # The runner's preflight: a positions directory that cannot be written
+    # is refused here, before the game, rather than warned of at every call
+    # while the calls are spent and nothing is kept (#921's twin).
+    out = os.environ.get("EVAL_POSITIONS", "")
+    try:
+        os.makedirs(out, exist_ok=True)
+        probe = os.path.join(out, f".probe-{os.getpid()}")
+        open(probe, "wb").close()
+        os.remove(probe)
+    except OSError as e:
+        print(f"capture-claude: EVAL_POSITIONS {out!r} cannot be written: {e}", file=sys.stderr)
+        sys.exit(1)
+elif args:
     save = os.environ["EVAL_SAVE"]
     out = os.environ["EVAL_POSITIONS"]
     try:

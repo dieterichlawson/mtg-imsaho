@@ -416,3 +416,27 @@ fn every_saved_position_resumes_as_the_prompt_it_was_live() {
             "{} resumed with a prompt the live game never sent:\n{first}", position.display());
     }
 }
+
+/// #921's twin: `capture-claude.py` with a positions directory it cannot
+/// write fails the runner's preflight, rather than warning at every model
+/// call of a game that keeps nothing.
+#[test]
+fn a_capture_that_cannot_keep_positions_is_refused_before_the_game() {
+    let scratch = Scratch::new("capture-unwritable");
+    let save = scratch.path("live.json");
+    let out = runner()
+        .current_dir(repo_root())
+        .env("TMPDIR", &scratch.dir)
+        .env("CLAUDE_CODE_BIN", repo_root().join("scripts/decision-eval/capture-claude.py"))
+        .env("EVAL_REAL_BIN", repo_root().join("scripts/llm-prompt-stub.py"))
+        .env("EVAL_SAVE", &save)
+        .env("EVAL_POSITIONS", "/dev/null/positions")
+        .env("STUB_CALLS", "/dev/null")
+        .args(["--p1", "cc", "--p2", "random", "--seed", "3", "--quiet", "--save", &save])
+        .output()
+        .expect("the runner runs");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(1), "refused before the game: {stderr}");
+    assert!(stderr.contains("not runnable"), "{stderr}");
+    assert!(!String::from_utf8_lossy(&out.stdout).contains("DECISION"), "no decision was asked");
+}

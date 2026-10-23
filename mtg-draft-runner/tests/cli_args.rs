@@ -924,6 +924,33 @@ fn an_unwritable_save_or_positions_file_is_refused_before_drafting() {
     let out = run(true);
     assert_clean_refusal(&out, "an unwritable --save");
     assert!(stderr(&out).contains(&format!("--save: the draft snapshot cannot be written to {missing}")), "{}", stderr(&out));
+    // A directory passed a probe that wrote beside it; only its rename failed.
+    let dir = std::env::temp_dir().join(format!("mtg-save-is-a-dir-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut cmd = runner();
+    let out = cmd.current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
+        .env("CLAUDE_CODE_BIN", stub).env("STUB_CALLS", "/dev/null").env_remove("MTG_DRAFT_POSITIONS")
+        .args(["--model", "cc", "--players", "2", "--best-of", "1", "--seed", "4105", "-q", "--log", "/dev/null"])
+        .arg("--save").arg(&dir)
+        .output().expect("failed to run");
+    assert_clean_refusal(&out, "a --save that is a directory");
+    assert!(stderr(&out).contains("it is a directory"), "{}", stderr(&out));
+    // The probe touches neither the save nor the `.tmp` it is written
+    // through, which may hold the only copy of a snapshot being resumed.
+    std::fs::create_dir_all(&dir).unwrap();
+    let save = dir.join("t.json");
+    let tmp = dir.join("t.json.tmp");
+    std::fs::write(&tmp, "kept").unwrap();
+    let mut cmd = runner();
+    let out = cmd.current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
+        .env("CLAUDE_CODE_BIN", stub).env("STUB_CALLS", "/dev/null").env_remove("MTG_DRAFT_POSITIONS")
+        .args(["--model", "cc", "--players", "2", "--best-of", "1", "--seed", "4105", "-q", "--log", "/dev/null"])
+        .arg("--save").arg(&save).arg("--resume").arg(&tmp)
+        .output().expect("failed to run");
+    assert!(!out.status.success(), "'kept' is no snapshot: {}", stderr(&out));
+    assert_eq!(std::fs::read_to_string(&tmp).unwrap(), "kept", "the resume's source is left as it was");
+    assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "and nothing else is left beside it");
+    let _ = std::fs::remove_dir_all(&dir);
     let out = run(false);
     assert_clean_refusal(&out, "an unwritable MTG_DRAFT_POSITIONS");
     assert!(stderr(&out).contains(&format!("MTG_DRAFT_POSITIONS: the pick positions cannot be kept in {missing}")),

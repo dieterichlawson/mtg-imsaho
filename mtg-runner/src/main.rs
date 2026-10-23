@@ -456,6 +456,18 @@ fn main() {
             .unwrap_or_else(|e| die(&format!("cannot write save file '{path}': {e}")));
         let _ = fs::remove_file(&probe);
     }
+    // The decision stats are written once, when the game ends: an
+    // unwritable path played the whole game, LLM seats and all, and then
+    // kept nothing for `fuzz_reach.py` (#921's twin). Probed as the save is.
+    if let Some(path) = &decision_stats_file {
+        if fs::metadata(path).is_ok_and(|m| m.is_dir()) {
+            die(&format!("cannot write --decision-stats '{path}': Is a directory"));
+        }
+        let probe = format!("{}.{}.tmp", path, std::process::id());
+        fs::write(&probe, b"")
+            .unwrap_or_else(|e| die(&format!("cannot write --decision-stats '{path}': {e}")));
+        let _ = fs::remove_file(&probe);
+    }
 
     let banner: String;
     let mut resumed_notes: Vec<Option<String>> = Vec::new();

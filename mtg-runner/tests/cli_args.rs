@@ -85,6 +85,21 @@ fn save_path_that_is_a_directory_is_refused_cleanly() {
     assert_clean_refusal(&output, "--save naming a directory");
 }
 
+/// #921's twin: `--decision-stats` is written once, at the end, so an
+/// unwritable one played the whole game and then kept nothing.
+#[test]
+fn unwritable_decision_stats_are_refused_before_the_game() {
+    for (path, what) in [(a_missing_directory_path(), "in a missing directory"), (a_directory(), "naming a directory")] {
+        let output = runner()
+            .args(["--p1", "random", "--p2", "random", "-q", "--seed", "3", "--decision-stats", &path])
+            .output()
+            .expect("failed to run");
+        assert_clean_refusal(&output, &format!("--decision-stats {what}"));
+        assert!(String::from_utf8_lossy(&output.stderr).contains("cannot write --decision-stats"),
+            "{}", String::from_utf8_lossy(&output.stderr));
+    }
+}
+
 // ── issue #103: a cli seat with no terminal is refused, not spun ────
 
 /// With stdin redirected and no controlling terminal (setsid), a `cli`
