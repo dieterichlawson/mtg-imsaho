@@ -257,10 +257,11 @@ finished match is replayed onto packs dealt again from the same seed, the
 AI seats keep their notes, and the draft or the tournament carries on. A
 match that was in progress is played again from its first game. The
 snapshot's seed, set, seats and match length win over the flags, and are
-checked as the flags would be. Each pick records the card it took, so a
-build whose card pool has changed since (a `git pull` and a rebuild deal
-other packs from the same seed) refuses the snapshot by name rather than
-handing everybody another pool; so does a snapshot whose decks, matches
+checked as the flags would be. The snapshot records a digest of the whole
+deal and each pick the card it took, so a build whose card pool has
+changed since (a `git pull` and a rebuild deal other packs from the same
+seed) refuses the snapshot, even when every card taken so far is where it
+was, rather than handing anybody another pack; so does a snapshot whose decks, matches
 or seats the table could not have written.
 
 ## Limitations

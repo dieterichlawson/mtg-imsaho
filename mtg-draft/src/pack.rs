@@ -420,6 +420,34 @@ fn remove_from_run(commons: &mut Vec<String>, run: &str) {
     }
 }
 
+/// A digest of a whole deal, every seat's packs card by card, for a
+/// snapshot to be checked against the packs a resume deals again. Checking
+/// only the cards a snapshot's picks took let a build whose card pool
+/// moved untaken cards resume onto other packs (#924): collation draws
+/// each slot from its own run, so one card fewer reshuffles one sheet's
+/// slots and leaves the rest as they were.
+#[must_use]
+pub fn deal_digest(packs: &[Vec<BoosterPack>]) -> String {
+    // FNV-1a, 64 bits: stable across builds and platforms, unlike std's hasher.
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    let mut feed = |bytes: &[u8]| {
+        for b in bytes {
+            h ^= u64::from(*b);
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    };
+    for (seat, seat_packs) in packs.iter().enumerate() {
+        for (n, pack) in seat_packs.iter().enumerate() {
+            feed(format!("{seat}/{n}:").as_bytes());
+            for card in pack.all_cards() {
+                feed(card.as_bytes());
+                feed(b"\n");
+            }
+        }
+    }
+    format!("{h:016x}")
+}
+
 /// Generate all packs for a draft pod.
 /// Returns packs grouped by player: packs[`player_seat`][pack_number].
 pub fn generate_draft_packs(
@@ -462,6 +490,25 @@ pub fn generate_draft_packs(
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    /// #924: the digest is of the whole deal, so a card no pick has seen
+    /// changes it, as does the same card in another seat's pack.
+    #[test]
+    fn the_deal_digest_changes_with_any_card_of_any_pack() {
+        let pack = |rare: &str| BoosterPack {
+            commons: vec!["a".into(), "b".into()], uncommons: vec!["c".into()],
+            rare: rare.into(), dfc: "d".into(), foil: None,
+        };
+        let deal = vec![vec![pack("r1"), pack("r2")], vec![pack("r3"), pack("r4")]];
+        let digest = deal_digest(&deal);
+        assert_eq!(digest, deal_digest(&deal.clone()), "stable");
+        assert_eq!(digest.len(), 16);
+        let mut untaken = deal.clone();
+        untaken[1][1].rare = "r5".into();
+        assert_ne!(deal_digest(&untaken), digest);
+        let swapped = vec![deal[1].clone(), deal[0].clone()];
+        assert_ne!(deal_digest(&swapped), digest, "whose pack it is counts");
+    }
 
     fn load_sheets() -> SheetData {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

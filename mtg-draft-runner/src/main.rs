@@ -536,6 +536,11 @@ struct DraftSave {
     /// all (#836, the game runner's save had the same hole).
     #[serde(default)]
     notes: Vec<Option<String>>,
+    /// `mtg_draft::pack::deal_digest` of the packs dealt: a resume that
+    /// deals others is refused whatever the picks took (#924). `None` in a
+    /// snapshot written before it was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    deal: Option<String>,
 }
 
 /// A seat's deck as the snapshot keeps it.
@@ -937,6 +942,7 @@ this draft will be made under {} — this draft is a mixture of the two",
         mtg_player::stderr_line!("Generating booster packs...");
     }
     let packs = generate_draft_packs(&sheets, args.players, &mut rng);
+    let deal = mtg_draft::pack::deal_digest(&packs);
 
     let mut draft = DraftState::new(&packs);
 
@@ -951,6 +957,12 @@ this draft will be made under {} — this draft is a mixture of the two",
     let resumed_decks: Vec<SavedDeck> = resumed.as_ref().map(|s| s.decks.clone()).unwrap_or_default();
     let resumed_matches: Vec<SavedMatch> = resumed.as_ref().map(|s| s.matches.clone()).unwrap_or_default();
     let resumed_notes: Vec<Option<String>> = resumed.as_ref().map(|s| s.notes.clone()).unwrap_or_default();
+    // The whole deal, not only the cards the picks took: a build whose
+    // pool moved an untaken card dealt other packs under the same picks (#924).
+    if resumed.as_ref().and_then(|s| s.deal.as_ref()).is_some_and(|d| *d != deal) {
+        die(&format!("draft save '{}' cannot be replayed: {}",
+            args.resume.as_deref().unwrap_or_default(), mtg_draft_runner::lobby::DEALT_OTHER_PACKS));
+    }
     let replaying: Vec<PickRecord> = resumed.map(|s| s.picks).unwrap_or_default();
     if let Err(e) = check_snapshot_shape(&replaying, args.players, draft.cards_remaining(0)) {
         die(&format!("draft save '{}' cannot be replayed: {e}",
@@ -1099,6 +1111,7 @@ resume with the --best-of its run was played at)", args.best_of) };
             matches: matches.to_vec(),
             best_of: Some(args.best_of),
             notes,
+            deal: Some(deal.clone()),
         };
         // Write-then-rename: a snapshot half-written when the run dies is
         // worse than none, because it looks resumable.

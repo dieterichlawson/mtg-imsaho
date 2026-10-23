@@ -403,3 +403,32 @@ fn a_resumed_draft_gives_each_seat_its_notes_back() {
             "the first live pick after the resume carries {plan:?}");
     }
 }
+
+/// #924: the snapshot records the deal, and a run that deals other packs —
+/// a build whose card pool moved a card no pick took — is refused before
+/// anything is written, rather than replaying the picks onto them. A
+/// snapshot written before the deal was recorded carries on as before.
+#[test]
+fn a_snapshot_of_another_deal_is_refused() {
+    if !have_python() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let pod = Pod::new("deal");
+    let mut save = pod.finished_snapshot("snap.json");
+    assert!(save["deal"].as_str().is_some_and(|d| d.len() == 16), "the deal is recorded: {}", save["deal"]);
+    save["deal"] = "0000000000000000".into();
+    let path = pod.write("other.json", &save);
+    let before = std::fs::read_to_string(&path).unwrap();
+    let out = pod.run(&["--resume", &path, "--save", &path], "other.calls", "other.log");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!out.status.success(), "{stderr}");
+    assert!(stderr.contains("the packs dealt now are not the ones the table drafted"), "{stderr}");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), before, "the refused snapshot is left as it was found");
+    assert_eq!(calls(&pod.path("other.calls")), 0);
+
+    save.as_object_mut().unwrap().remove("deal");
+    let path = pod.write("old.json", &save);
+    let out = pod.run(&["--resume", &path], "old.calls", "old.log");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+}

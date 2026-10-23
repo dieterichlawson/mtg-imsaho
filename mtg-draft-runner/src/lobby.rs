@@ -494,10 +494,20 @@ pub struct TableSave {
     pub picks: Vec<SavedPick>,
     pub decks: Vec<SavedDeck>,
     pub matches: Vec<SavedMatch>,
+    /// [`mtg_draft::pack::deal_digest`] of the packs the table was dealt:
+    /// a resume that deals others (another build's card pool) is refused
+    /// whatever the picks took (#924). Absent in a snapshot written before
+    /// it was recorded, where the taken cards are all there is to check.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deal: Option<String>,
 }
 
 /// The snapshot format this build writes and reads.
 pub const TABLE_SAVE_VERSION: u32 = 1;
+
+/// Why a snapshot whose deal is not this one's is refused, on both resumes.
+pub const DEALT_OTHER_PACKS: &str = "the packs dealt now are not the ones the table drafted \
+(another seed, or a build with another card pool)";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SavedSeat {
@@ -766,6 +776,8 @@ pub struct Lobby {
     pick_log: Vec<SavedPick>,
     /// Each AI seat's notes from its last pick, for the snapshot.
     ai_notes: Vec<Option<String>>,
+    /// [`mtg_draft::pack::deal_digest`] of the packs dealt, for the snapshot.
+    deal: String,
 }
 
 impl Lobby {
@@ -786,6 +798,7 @@ impl Lobby {
             return Err(format!("{} seats but packs for {}", config.seats.len(), packs.len()));
         }
         let table = Table::new(packs)?;
+        let deal = mtg_draft::pack::deal_digest(packs);
         let book = CardBook::new(set_data, &registry, lines);
         let seats: Vec<SeatState> = config.seats.iter().enumerate().map(|(i, kind)| SeatState {
             kind: kind.clone(),
@@ -841,6 +854,7 @@ the order they happened, not in seat order", "");
             started_pool_log: false,
             pick_log: Vec::new(),
             ai_notes: vec![None; pod],
+            deal,
         })
     }
 
@@ -1985,6 +1999,7 @@ for the seat from here, and its games are forfeit"), ""));
             matches: self.matches.iter()
                 .filter_map(|m| m.result.clone().map(|result| SavedMatch { round: m.round, a: m.a, b: m.b, result }))
                 .collect(),
+            deal: Some(self.deal.clone()),
         }
     }
 
@@ -2007,6 +2022,9 @@ for the seat from here, and its games are forfeit"), ""));
         save.check()?;
         if save.seats.len() != self.seats.len() || save.seed != self.config.seed || save.set != self.config.set_code {
             return Err("the snapshot is of another table (seats, seed or set differ)".to_string());
+        }
+        if save.deal.as_ref().is_some_and(|d| *d != self.deal) {
+            return Err(DEALT_OTHER_PACKS.to_string());
         }
         for (i, saved) in save.seats.iter().enumerate() {
             let s = &mut self.seats[i];

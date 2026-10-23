@@ -64,12 +64,21 @@ fn lobby_timed(
 fn lobby_clocked(
     seats: Vec<SeatKind>, pick_seconds: Option<u64>, build_seconds: Option<u64>, sideboard_seconds: Option<u64>,
 ) -> (Lobby, Vec<Vec<BoosterPack>>) {
+    lobby_dealt(seats, pick_seconds, build_seconds, sideboard_seconds, |_| {})
+}
+
+/// [`lobby_clocked`] with the packs changed by `deal` before they are dealt.
+fn lobby_dealt(
+    seats: Vec<SeatKind>, pick_seconds: Option<u64>, build_seconds: Option<u64>, sideboard_seconds: Option<u64>,
+    deal: impl FnOnce(&mut [Vec<BoosterPack>]),
+) -> (Lobby, Vec<Vec<BoosterPack>>) {
     let set_path = repo_root().join("data/sets/isd.json");
     let mut set_data = SetData::load(&set_path).unwrap();
     let registry = Arc::new(CardRegistry::with_all_cards());
     set_data.filter_implemented(&registry);
     let mut packs = disjoint_packs(&set_data);
     packs.truncate(seats.len());
+    deal(&mut packs);
     let lines = CardLines::new(&set_data.all_card_names(), &set_data.rarities(), &registry);
     let config = LobbyConfig {
         set_code: "isd".into(),
@@ -718,6 +727,41 @@ fn a_seat_is_where_its_game_page_is_and_a_kicked_seat_says_so() {
     assert_eq!(l.away_reason(2), "the seat stopped answering");
     let forfeit = l.forfeit_result(1, 0);
     assert_eq!(forfeit.games[0].game_log, vec!["forfeit: the host kicked the seat".to_string()]);
+}
+
+/// #924: a snapshot is refused by a lobby dealt other packs, even where
+/// every card its picks took is where it was: a build whose pool moved an
+/// untaken card (one sheet's rares) dealt a person another pack under the
+/// same picks. A snapshot that predates the record is checked as before.
+#[test]
+fn a_snapshot_is_refused_by_a_table_dealt_other_packs() {
+    let seats = || vec![SeatKind::Human, SeatKind::Ai("cc".into())];
+    let (mut a, packs) = lobby(seats());
+    a.connected(0);
+    // Each seat's first pick: pack 1's first card.
+    for seat in 0..2 {
+        let id = jv(&a, seat)["pack"]["id"].as_u64().expect("a pack in front") as usize;
+        match a.kind(seat) {
+            Some(SeatKind::Ai(_)) => a.ai_pick(seat, id, 0, "prompt", "{\"pick\":0}", false).unwrap(),
+            _ => a.pick(seat, id, 0).unwrap(),
+        }
+    }
+    let save = a.snapshot();
+    assert_eq!(save.picks.len(), 2);
+    assert!(save.deal.is_some(), "the deal is recorded");
+
+    // Pack 3's rare, which no pick of pack 1 has seen, is another card.
+    let other = packs[0][0].commons[0].clone();
+    let (mut b, _) = lobby_dealt(seats(), None, None, None, |p| p[1][2].rare.clone_from(&other));
+    let err = b.restore(&save).expect_err("other packs, refused");
+    assert!(err.contains("the packs dealt now are not the ones the table drafted"), "{err}");
+
+    let (mut c, _) = lobby(seats());
+    assert!(c.restore(&save).is_ok(), "the same deal carries on");
+    let mut old = save;
+    old.deal = None;
+    let (mut d, _) = lobby_dealt(seats(), None, None, None, |p| p[1][2].rare.clone_from(&other));
+    assert!(d.restore(&old).is_ok(), "a snapshot with no deal is checked by its taken cards alone");
 }
 
 /// The hosted table's snapshot: a server that stops, mid-draft or
