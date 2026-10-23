@@ -37,8 +37,8 @@ fn without_game_logs(mut result: MatchResult) -> MatchResult {
 type PickInput = (usize, Vec<String>, Vec<String>);
 
 /// A file each pick of the run is appended to as one JSON line — the seat,
-/// the pick's place, the pack, the pool, the notes the seat carried in and
-/// what it chose — so the pick can be asked again under another build or
+/// the pick's place, the pack, the pool, the notes the seat carried in, its
+/// guide, the history it kept and what it chose — so the pick can be asked again under another build or
 /// model (`mtg-draft-replay`, `scripts/decision-eval/`). Unset, nothing is
 /// kept.
 const POSITIONS_ENV: &str = "MTG_DRAFT_POSITIONS";
@@ -1251,6 +1251,10 @@ substituting {} (the first card). Response: {}",
                         "pack_number": round + 1, "pick_index": pick_num + 1,
                         "available": available, "pool": draft.players[seat].pool,
                         "notes": notes_before[seat], "chosen": chosen, "substituted": substituted,
+                        // The rest of what the seat was shown, in its system
+                        // prompt: a guided seat's picks replayed without
+                        // its guide were another question (#920).
+                        "guide": args.guides[seat], "history": mtg_player::llm::history_exchanges(),
                     }));
                 }
 

@@ -20,7 +20,7 @@ commits what is here.
 | `nights/DATE-lessons.json` | Each seat's lessons, with its record and whether it had the guide. |
 | `nights/DATE-curate.json` | The guide's rewrite: the model, its length, and whether it was taken. |
 | `nights/DATE.md` | The night, for reading: standings, guided and unguided records, lessons, the guide's fate, what it spent. |
-| `nights/DATE-positions.jsonl.xz` | Every pick a seat was asked, as `MTG_DRAFT_POSITIONS` keeps it: the pick eval's input (`scripts/decision-eval/draft-replay.py`). |
+| `nights/DATE-positions.jsonl.xz` | Every pick a seat was asked, as `MTG_DRAFT_POSITIONS` keeps it, each with its seat's guide: the pick eval's input (`scripts/decision-eval/draft-replay.py`). |
 
 ## How a night runs
 

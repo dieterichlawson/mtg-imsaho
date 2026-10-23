@@ -70,3 +70,68 @@ fn every_kept_pick_replays_as_the_pick_it_was_live() {
     assert!(!metered.status.success() && String::from_utf8_lossy(&metered.stderr).contains("--metered"));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// #920: a guided seat's position records its guide and is asked under
+/// it again; `--guide` asks every position under one file instead.
+#[test]
+fn a_guided_seats_pick_replays_under_its_guide() {
+    if !Command::new("python3").arg("--version").output().is_ok_and(|o| o.status.success()) {
+        eprintln!("skipping: no python3 to run the prompt stub with");
+        return;
+    }
+    let dir = std::env::temp_dir().join(format!("mtg-kept-guided-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let positions = dir.join("picks.jsonl");
+    let guide = dir.join("guide.md");
+    std::fs::write(&guide, "Take removal first.\n").unwrap();
+    let stub = repo_root().join("scripts/llm-prompt-stub.py");
+
+    let draft = Command::new(env!("CARGO_BIN_EXE_mtg-draft-runner"))
+        .current_dir(repo_root())
+        .env("CLAUDE_CODE_BIN", &stub)
+        .env("STUB_CALLS", "/dev/null")
+        .env("MTG_DRAFT_POSITIONS", &positions)
+        .args(["--model", "cc", "--players", "2", "--best-of", "1", "--seed", "8", "-q"])
+        .args(["--guide-0", guide.to_str().unwrap()])
+        .args(["--log", dir.join("draft.log").to_str().unwrap()])
+        .output()
+        .expect("the draft runs");
+    assert!(draft.status.success(), "{}", String::from_utf8_lossy(&draft.stderr));
+    let kept: Vec<serde_json::Value> = std::fs::read_to_string(&positions).expect("positions were kept")
+        .lines().map(|l| serde_json::from_str(l).unwrap()).collect();
+    for p in &kept {
+        let want = if p["seat"] == 0 { serde_json::json!("Take removal first.\n") } else { serde_json::Value::Null };
+        assert_eq!(p["guide"], want, "the seat's guide is kept with its pick: {p}");
+        assert_eq!(p["history"], 0);
+    }
+
+    let replay = |extra: &[&str]| -> Vec<serde_json::Value> {
+        let out = Command::new(env!("CARGO_BIN_EXE_mtg-draft-replay"))
+            .current_dir(repo_root())
+            .env("CLAUDE_CODE_BIN", &stub)
+            .env("STUB_CALLS", "/dev/null")
+            .args(["--positions", positions.to_str().unwrap(), "--model", "cc"])
+            .args(extra)
+            .output()
+            .expect("the replay runs");
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        assert!(out.stderr.is_empty(), "nothing to warn of: {}", String::from_utf8_lossy(&out.stderr));
+        String::from_utf8_lossy(&out.stdout).lines().map(|l| serde_json::from_str(l).unwrap()).collect()
+    };
+    let system = |rows: &[serde_json::Value], seat: u64| -> Vec<u64> {
+        let mut sizes: Vec<u64> = rows.iter().filter(|r| r["seat"] == seat)
+            .map(|r| r["system_bytes"].as_u64().unwrap()).collect();
+        sizes.dedup();
+        sizes
+    };
+    let section = "\n## Draft Guide\n\nTake removal first.\n\n".len() as u64;
+    let rows = replay(&[]);
+    let (guided, plain) = (system(&rows, 0), system(&rows, 1));
+    assert_eq!((guided.len(), plain.len()), (1, 1), "one system prompt a seat: {guided:?} {plain:?}");
+    assert_eq!(guided[0], plain[0] + section, "seat 0 is asked with its guide, seat 1 without");
+
+    let rows = replay(&["--guide", guide.to_str().unwrap()]);
+    assert_eq!(system(&rows, 1), guided, "--guide asks every seat under the one file");
+    let _ = std::fs::remove_dir_all(&dir);
+}
