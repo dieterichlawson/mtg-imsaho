@@ -82,6 +82,9 @@ pub struct Shared {
     /// The last snapshot write failed: said once, and again when one
     /// succeeds (#891).
     snapshot_failing: AtomicBool,
+    /// Held from taking a snapshot to its rename: every draft and match
+    /// thread writes one, through the same `.tmp` (#917).
+    snapshot_write: Mutex<()>,
 }
 
 /// A person's game page in a running match.
@@ -126,6 +129,7 @@ impl Shared {
             set_name,
             quit: AtomicBool::new(false),
             snapshot_failing: AtomicBool::new(false),
+            snapshot_write: Mutex::new(()),
             stop_reason: Mutex::new(None),
             in_game: Mutex::new(Vec::new()),
             next_game_port: Mutex::new(None),
@@ -250,9 +254,23 @@ impl Shared {
     /// Write the table's snapshot, whole, to a file beside it and then over
     /// it, so a server that dies mid-write leaves the last good one.
     ///
+    /// One writer at a time, taking the snapshot in its turn: threads that
+    /// shared the `.tmp` found it renamed away under them (a WARN for a
+    /// write that had not failed), and one that took its snapshot first
+    /// could rename last, leaving the file older than the table (#917).
+    ///
     /// # Errors
     /// The snapshot could not be written, and why.
     pub fn write_snapshot(&self) -> Result<(), String> {
+        let _turn = self.snapshot_turn();
+        self.write_snapshot_in_turn()
+    }
+
+    fn snapshot_turn(&self) -> MutexGuard<'_, ()> {
+        self.snapshot_write.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    fn write_snapshot_in_turn(&self) -> Result<(), String> {
         let Some(path) = &self.config.save else { return Ok(()) };
         let json = serde_json::to_string(&self.lobby().snapshot()).map_err(|e| e.to_string())?;
         let tmp = path.with_extension("tmp");
@@ -265,7 +283,10 @@ impl Shared {
     /// again: both errors were dropped, and a host told where the snapshot
     /// was found nothing to resume from (#891).
     fn keep_snapshot(&self) {
-        let written = self.write_snapshot();
+        // The turn is held through the report, so the WARN and the NOTE
+        // are said in the order the writes were made.
+        let _turn = self.snapshot_turn();
+        let written = self.write_snapshot_in_turn();
         let was_failing = self.snapshot_failing.swap(written.is_err(), Ordering::SeqCst);
         let line = match (&written, was_failing) {
             (Err(e), false) => format!("WARN {e}; if the server stops now, --resume has nothing newer to carry on from"),
