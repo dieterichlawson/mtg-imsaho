@@ -31,6 +31,9 @@ import sys
 import runstamp
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# What mtg-runner --resume says of a position whose system prompt it cannot
+# make as it was live; mtg-draft-replay says the same of a pick.
+UNLIKE = ": its system prompt is not the live one: "
 
 
 def prompt_bodies(log):
@@ -81,8 +84,11 @@ def run_one(args, position, sample, logdir):
     try:
         out = subprocess.run(cmd, cwd=ROOT, env=env, capture_output=True, text=True, timeout=args.timeout)
         stdout, rc = out.stdout, out.returncode
+        # A position resumed under another system prompt than the live one
+        # (#920's game twin): said with exit 0, and kept in the row.
+        unlike = [l.split(UNLIKE, 1)[1] for l in out.stderr.splitlines() if UNLIKE in l]
     except subprocess.TimeoutExpired:
-        stdout, rc = "", "timeout"
+        stdout, rc, unlike = "", "timeout", []
     m = re.search(r"^DECISION 1 p(\d) (.*)$", stdout, re.M)
     text = open(log, encoding="utf-8", errors="replace").read() if os.path.exists(log) else ""
     prompts = prompt_bodies(text)
@@ -96,6 +102,7 @@ def run_one(args, position, sample, logdir):
         "prompt_bytes": len(prompts[0].encode()) if prompts else None,
         "prompts": len(prompts),
         "fallback": bool(re.search(r"\t(MALFORMED|VALIDATION|BLOCKER_VALIDATION|API_ERROR)", text)),
+        **({"unlike_live": unlike} if unlike else {}),
     }
 
 
@@ -139,12 +146,21 @@ def main():
     print(f"{args.name}: {len(todo)} decisions to replay ({len(done)} already done)", file=sys.stderr)
     with cf.ThreadPoolExecutor(args.jobs) as pool, open(result_path, "a") as out:
         futures = [pool.submit(run_one, args, p, s, logdir) for p, s in todo]
+        unlike = {}
         for n, f in enumerate(cf.as_completed(futures), 1):
             r = f.result()
+            for why in r.get("unlike_live", []):
+                if why not in unlike:
+                    print(f"{args.name}: WARN position {r['position']}'s system prompt is not the live one: {why}",
+                          file=sys.stderr)
+                unlike[why] = unlike.get(why, 0) + 1
             out.write(json.dumps(r) + "\n")
             out.flush()
             if n % 10 == 0 or n == len(futures):
                 print(f"{args.name}: {n}/{len(futures)}", file=sys.stderr)
+    for why, count in unlike.items():
+        print(f"{args.name}: WARN {count} decisions were asked under another system prompt than the live one: {why}",
+              file=sys.stderr)
 
 
 if __name__ == "__main__":

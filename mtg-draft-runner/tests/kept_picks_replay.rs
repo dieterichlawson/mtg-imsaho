@@ -104,20 +104,27 @@ fn a_guided_seats_pick_replays_under_its_guide() {
         let want = if p["seat"] == 0 { serde_json::json!("Take removal first.\n") } else { serde_json::Value::Null };
         assert_eq!(p["guide"], want, "the seat's guide is kept with its pick: {p}");
         assert_eq!(p["history"], 0);
+        assert_eq!(p["text_answers"], false, "a cc seat asked in the schema");
     }
 
-    let replay = |extra: &[&str]| -> Vec<serde_json::Value> {
+    let replay_under = |extra: &[&str], env: &[(&str, &str)]| -> (Vec<serde_json::Value>, String) {
         let out = Command::new(env!("CARGO_BIN_EXE_mtg-draft-replay"))
             .current_dir(repo_root())
             .env("CLAUDE_CODE_BIN", &stub)
             .env("STUB_CALLS", "/dev/null")
+            .envs(env.iter().copied())
             .args(["--positions", positions.to_str().unwrap(), "--model", "cc"])
             .args(extra)
             .output()
             .expect("the replay runs");
         assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
-        assert!(out.stderr.is_empty(), "nothing to warn of: {}", String::from_utf8_lossy(&out.stderr));
-        String::from_utf8_lossy(&out.stdout).lines().map(|l| serde_json::from_str(l).unwrap()).collect()
+        (String::from_utf8_lossy(&out.stdout).lines().map(|l| serde_json::from_str(l).unwrap()).collect(),
+         String::from_utf8_lossy(&out.stderr).into_owned())
+    };
+    let replay = |extra: &[&str]| {
+        let (rows, stderr) = replay_under(extra, &[]);
+        assert!(stderr.is_empty(), "nothing to warn of: {stderr}");
+        rows
     };
     let system = |rows: &[serde_json::Value], seat: u64| -> Vec<u64> {
         let mut sizes: Vec<u64> = rows.iter().filter(|r| r["seat"] == seat)
@@ -133,5 +140,13 @@ fn a_guided_seats_pick_replays_under_its_guide() {
 
     let rows = replay(&["--guide", guide.to_str().unwrap()]);
     assert_eq!(system(&rows, 1), guided, "--guide asks every seat under the one file");
+
+    // Asked in text where the live seat was asked in the schema, or under
+    // another history: said once each, in the words draft-replay.py reads.
+    let (_, stderr) = replay_under(&[], &[("MTG_CLAUDE_CODE_DRAFT_ANSWERS", "text"), ("MTG_LLM_HISTORY", "2")]);
+    let unlike: Vec<&str> = stderr.lines().filter(|l| l.contains(": its system prompt is not the live one: ")).collect();
+    assert_eq!(unlike.len(), 2, "{stderr}");
+    assert!(unlike.iter().any(|l| l.contains("MTG_CLAUDE_CODE_DRAFT_ANSWERS=schema")), "{stderr}");
+    assert!(unlike.iter().any(|l| l.contains("MTG_LLM_HISTORY=0")), "{stderr}");
     let _ = std::fs::remove_dir_all(&dir);
 }

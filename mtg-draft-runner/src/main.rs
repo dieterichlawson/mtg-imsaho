@@ -1300,7 +1300,9 @@ substituting {} (the first card). Response: {}",
                         // prompt: a guided seat's picks replayed without
                         // its guide were another question (#920).
                         "guide": args.guides[seat], "history": mtg_player::llm::history_exchanges(),
-                        "text_answers": llm_client::draft_text_answers(),
+                        // Only a `claude -p` seat's prompt says how it answers.
+                        "text_answers": matches!(args.models[seat].split(':').next(), Some("cc" | "claude-code"))
+                            .then(llm_client::draft_text_answers),
                     }));
                 }
 

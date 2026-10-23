@@ -58,6 +58,14 @@ struct SaveData {
     /// `seats`.
     #[serde(default)]
     seat_memory: Vec<Option<mtg_player::llm::SeatMemory>>,
+    /// The two settings that change what an LLM seat's system prompt says
+    /// (`MTG_LLM_HISTORY`, `MTG_CLAUDE_CODE_ANSWERS`): a position resumed
+    /// under others is not asked as it was live, which `--resume` says
+    /// (#920's game twin). `None` in a save written before them.
+    #[serde(default)]
+    history: Option<usize>,
+    #[serde(default)]
+    text_answers: Option<bool>,
 }
 
 enum PlayerKind {
@@ -610,6 +618,21 @@ flags: p0={p1_spec}, p1={p2_spec} — pass --p1/--p2 if that is not the lineup y
             mtg_player::stderr_line!("note: --resume without --save; this game is not being saved and '{path}' \
 stops here — pass --save {path} to keep writing it");
         }
+        // In the words scripts/decision-eval reads, as mtg-draft-replay says them.
+        let specs = [&p1_spec, &p2_spec];
+        let (history, text) = (mtg_player::llm::history_exchanges(), mtg_player::llm::answer_text::text_answers());
+        let unlike = [
+            (specs.iter().any(|s| !seat_is_local(s)) && save.history.is_some_and(|h| h != history),
+                format!("it was saved under MTG_LLM_HISTORY={}, and is resumed under {history}",
+                    save.history.unwrap_or_default())),
+            (specs.iter().any(|s| matches!(s.split(':').next(), Some("cc" | "claude-code")))
+                && save.text_answers.is_some_and(|t| t != text),
+                format!("it was saved under {}={}, and is resumed asking {}", mtg_player::llm::answer_text::ANSWERS_ENV,
+                    if text { "schema" } else { "text" }, if text { "in text" } else { "in the schema" })),
+        ];
+        for (_, why) in unlike.iter().filter(|(differs, _)| *differs) {
+            mtg_player::stderr_line!("note: --resume {path}: its system prompt is not the live one: {why}");
+        }
         banner = format!("MTG Engine — resuming from {} (turn {}, {} vs {}) — p0: {}, p1: {}",
             path, save.state.turn_number, save.player_names[0], save.player_names[1],
             p1_spec, p2_spec);
@@ -1081,6 +1104,8 @@ stops here — pass --save {path} to keep writing it");
                 seat_notes: seat_notes(),
                 seat_rng: seat_rng(),
                 seat_memory: seat_memory(),
+                history: Some(mtg_player::llm::history_exchanges()),
+                text_answers: Some(mtg_player::llm::answer_text::text_answers()),
             };
             let json = serde_json::to_string(&save).expect("Failed to serialize game state");
             // The hot-reload snapshot, so `rr` works without --save. Nobody
@@ -1198,6 +1223,8 @@ use --save if you need a resumable file.");
             seat_notes: seat_notes(),
             seat_rng: seat_rng(),
             seat_memory: seat_memory(),
+            history: Some(mtg_player::llm::history_exchanges()),
+            text_answers: Some(mtg_player::llm::answer_text::text_answers()),
         };
         match serde_json::to_string(&save) {
             Ok(json) => {

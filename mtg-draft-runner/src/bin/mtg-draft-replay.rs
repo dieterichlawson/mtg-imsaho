@@ -101,7 +101,8 @@ fn main() {
 
         let unlike: [(&str, bool, String); 3] = [
             ("guide", override_guide.is_none() && p.get("guide").is_none(),
-                "it records no guide (kept before #920), and is asked with none, which a guided seat was not".into()),
+                "it records no guide (kept before #920) and is asked with none: if its seat drafted with one, \
+                 this is another question".into()),
             ("history", p["history"].as_u64().is_some_and(|h| h != history as u64),
                 format!("it was kept under MTG_LLM_HISTORY={}, and this replay runs under {history}", p["history"])),
             ("answers", asks_in_text && p["text_answers"].as_bool().is_some_and(|t| t != text_answers),

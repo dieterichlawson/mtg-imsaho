@@ -440,3 +440,39 @@ fn a_capture_that_cannot_keep_positions_is_refused_before_the_game() {
     assert!(stderr.contains("not runnable"), "{stderr}");
     assert!(!String::from_utf8_lossy(&out.stdout).contains("DECISION"), "no decision was asked");
 }
+
+/// #920's game twin: a save records the history and the answer format an
+/// LLM seat's system prompt was made under, and a resume under others says
+/// so in the words `replay.py` reads; one under the same says nothing.
+#[test]
+fn a_position_resumed_under_other_prompt_settings_says_so() {
+    let scratch = Scratch::new("unlike-live");
+    let save = scratch.path("live.json");
+    let run = |args: &[&str], env: &[(&str, &str)]| {
+        runner()
+            .current_dir(repo_root())
+            .env("TMPDIR", &scratch.dir)
+            .env("CLAUDE_CODE_BIN", repo_root().join("scripts/llm-prompt-stub.py"))
+            .env("STUB_CALLS", "/dev/null")
+            .env_remove("MTG_LLM_HISTORY")
+            .env_remove("MTG_CLAUDE_CODE_ANSWERS")
+            .envs(env.iter().copied())
+            .args(args)
+            .output()
+            .expect("the runner runs")
+    };
+    let live = run(&["--p1", "cc", "--p2", "random", "--seed", "3", "--quiet", "--save", &save, "--stop-after", "4"], &[]);
+    assert!(live.status.success(), "{}", String::from_utf8_lossy(&live.stderr));
+    let saved: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&save).unwrap()).unwrap();
+    assert_eq!((&saved["history"], &saved["text_answers"]), (&serde_json::json!(0), &serde_json::json!(true)));
+
+    let resume = ["--resume", save.as_str(), "--p1", "cc", "--p2", "random", "--quiet", "--stop-after", "1"];
+    let same = run(&resume, &[]);
+    assert!(!String::from_utf8_lossy(&same.stderr).contains("not the live one"), "{}", String::from_utf8_lossy(&same.stderr));
+    let other = run(&resume, &[("MTG_LLM_HISTORY", "2"), ("MTG_CLAUDE_CODE_ANSWERS", "schema")]);
+    let stderr = String::from_utf8_lossy(&other.stderr);
+    let unlike: Vec<&str> = stderr.lines().filter(|l| l.contains(": its system prompt is not the live one: ")).collect();
+    assert_eq!(unlike.len(), 2, "{stderr}");
+    assert!(unlike.iter().any(|l| l.contains("MTG_LLM_HISTORY=0")) && unlike.iter().any(|l| l.contains("MTG_CLAUDE_CODE_ANSWERS=text")),
+        "{stderr}");
+}
