@@ -882,6 +882,7 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   Verify pairings, standings, seat statuses and the waiting line agree at
   every step, and the bye seat and an early finisher are each told what
   they are waiting for.
+  — **played 2026-10-23: agree.** On a 7-seat table, pairings, statuses, standings and `standings_after` were identical across every seat's view, the page, the client and `status` at all four snapshots. The client tells neither the bye nor an early finisher what it waits for (#927). An all-stub AI match ends before "paired", so slow the stub (D36's) to catch one in progress
 - D38 [proposed 2026-10-13, from D35/#821/#822] a seat that leaves between
   games: `--seats human,human,ai,ai --best-of 3`. Play game 1 out, close
   one human's game tab before game 2 is dealt, and separately kill a
@@ -936,6 +937,7 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   first prompt; and that `--resume` from a snapshot cut on either side of
   a fourteenth pick replays it without a call. Then the human: does the
   page still show a one-card pack, and does the timer still auto-pick it?
+  — **played 2026-10-23: holds.** 39 asked picks per seat, the 14th in pool, snapshot and both reviews, and pick-13 notes open the next pack, in both copies and across resumes either side of a 14th. Side effect: the loop's taken/seen counts a 14th as taken, never seen (#923)
 - D42 [proposed 2026-10-20, same source] kept picks are the eval's ground
   truth: `MTG_DRAFT_POSITIONS` writes one line per asked pick, and
   `mtg-draft-replay` asks it again. Under the stub, keep a draft's picks,
@@ -947,6 +949,7 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   stub chooses `live` on every line (`kept_picks_replay.rs` checks one
   clean draft; the resumed and the substituted ones are unchecked). A
   metered `--model` must be refused before anything is read.
+  — **played 2026-10-23: the listed checks hold, the contract does not.** The guide is not in a position, so guided seats replay under another system prompt (#920). An unwritable path is warned per pick, not refused (#921). `llm-prompt-stub.py` hashes only stdin, so a replay check needs a stub that hashes `--system-prompt` too
 - D43 [proposed 2026-10-21, from the sideboarding change (`lobby.rs`
   `open_between`/`take_between`, `server.rs` `between_games`, `game.rs`
   `play_match`)] the time between games, at the hosted table: host
@@ -1084,6 +1087,7 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   that the game-N chooser chooses again, the game page and the AI's system
   prompt say "game N was a draw", the standings count the game as drawn in
   GW%, and the announcement names who actually chose
+  — **played 2026-10-23: no live draw is reachable in ISD.** No implemented card kills or decks both players at one check, and the cap has no knob. Doctor `winner: null` games into `table.save.json` and resume (give a seat a human key to read its view and page), and call `build_sideboard_prompt`/`Tournament` from a scratch crate. Draw arithmetic held; an abandoned game is called a draw on three surfaces (#918), and in the AI prompt (#913)
 - D54 [proposed 2026-10-22, from #884 and #890] resume across a rebuild:
   stop a hosted table mid-draft, change the card pool the build deals from
   (implement or unimplement one ISD card, rebuild) and `--resume`; the
@@ -1093,21 +1097,25 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   D46: a Python loop that writes one doctored `table.save.json` at a time
   and resumes it on a spare port (exit code, `/api/view`, Ctrl-C) covers 30
   variants in two minutes with no table played after the first
+  — **played 2026-10-23: half refuses.** A taken card that changed is refused. A change to untaken cards is accepted (#924): collation keeps a cursor per run, so unregistering one rare moves only rare slots. Edit a rare and pick around it, or the check looks complete
 - D55 [proposed 2026-10-22, from #904] duplicates in the pool and the
   review: `--seats human,ai --seed 122` gives seat 0 two Shimmering Grotto
   in pack 1 (indexes 5 and 13). Take one at 1.1 and read the review on the
   client, the page and `/api/view`; then draft both and check the pool
   counts, the build listing's `add`/`drop` by index, the deck message and
   the sideboard panel all keep two
+  — **played 2026-10-23: holds.** Two copies survive everywhere. Found only that comma-joined lists split "Grimgrin, Corpse-Born" (#925)
 - D56 [proposed 2026-10-22, from #872] whose game page is it: with two
   people in one match (or one each in two), open the other person's
   `/game/<port>/` from your own browser and from a key-less WebSocket.
   A game page must refuse a socket that does not hold that seat's key,
   and a second tab of the right seat must still work. The probes that
   matter for the one-port proxy are the ones *to* a live port
+  — **played 2026-10-23: #872 holds** against about 60 key, socket and path probes. What it found was the moment before anyone opens a page, which is reported as "closed" (#926)
 - D57 [proposed 2026-10-22, from #900 and #878] the record of a match
   that sideboarded: the hosted table records no person's sideboarded deck
   and the draft loop's `nights/DATE.json` and `stats.json` keep none.
   Compare every `SIDEBOARD` line in a run's log with what the night record,
   the card statistics and the hosted table's log say each game was played
   with, card by card
+  — **played 2026-10-23: the games are right, the records are not.** Each game's `SYSTEM [SeatN]` "## Your decklist" is the ground truth, and diffing it against registered + SIDEBOARD lines is exact on both runners (34/34). Stats and the hosted log still keep the registered deck (#901, #878)
