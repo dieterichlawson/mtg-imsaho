@@ -466,15 +466,20 @@ fn main() {
     }
     // The decision stats are written once, when the game ends: an
     // unwritable path played the whole game, LLM seats and all, and then
-    // kept nothing for `fuzz_reach.py` (#921's twin). Probed as the save is.
+    // kept nothing for `fuzz_reach.py` (#921's twin). The stats are
+    // written straight to the path: one already there is opened for
+    // writing, not truncated, and a new one is probed beside it.
     if let Some(path) = &decision_stats_file {
-        if fs::metadata(path).is_ok_and(|m| m.is_dir()) {
-            die(&format!("cannot write --decision-stats '{path}': Is a directory"));
+        let refused = |e: &dyn std::fmt::Display| -> ! { die(&format!("cannot write --decision-stats '{path}': {e}")) };
+        match fs::metadata(path) {
+            Ok(m) if m.is_dir() => refused(&"Is a directory"),
+            Ok(_) => if let Err(e) = fs::OpenOptions::new().write(true).open(path) { refused(&e) },
+            Err(_) => {
+                let probe = format!("{}.{}.tmp", path, std::process::id());
+                if let Err(e) = fs::write(&probe, b"") { refused(&e) }
+                let _ = fs::remove_file(&probe);
+            }
         }
-        let probe = format!("{}.{}.tmp", path, std::process::id());
-        fs::write(&probe, b"")
-            .unwrap_or_else(|e| die(&format!("cannot write --decision-stats '{path}': {e}")));
-        let _ = fs::remove_file(&probe);
     }
 
     let banner: String;

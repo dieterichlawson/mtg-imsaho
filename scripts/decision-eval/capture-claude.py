@@ -31,6 +31,13 @@ if args and args[0] == "--version":
     # is refused here, before the game, rather than warned of at every call
     # while the calls are spent and nothing is kept (#921's twin).
     out = os.environ.get("EVAL_POSITIONS", "")
+    save = os.environ.get("EVAL_SAVE", "")
+    if not save or not os.path.isdir(os.path.dirname(os.path.abspath(save))):
+        # Every call reads the save the runner writes; without it each one
+        # failed while the call was spent.
+        print(f"capture-claude: EVAL_SAVE {save!r} is not a path the runner can write its --save to",
+              file=sys.stderr)
+        sys.exit(1)
     try:
         os.makedirs(out, exist_ok=True)
         probe = os.path.join(out, f".probe-{os.getpid()}")

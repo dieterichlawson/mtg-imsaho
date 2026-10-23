@@ -437,7 +437,8 @@ fn a_capture_that_cannot_keep_positions_is_refused_before_the_game() {
         .expect("the runner runs");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert_eq!(out.status.code(), Some(1), "refused before the game: {stderr}");
-    assert!(stderr.contains("not runnable"), "{stderr}");
+    assert!(stderr.contains("not runnable") && stderr.contains("EVAL_POSITIONS '/dev/null/positions' cannot be written"),
+        "the capture's own reason reaches the operator: {stderr}");
     assert!(!String::from_utf8_lossy(&out.stdout).contains("DECISION"), "no decision was asked");
 }
 

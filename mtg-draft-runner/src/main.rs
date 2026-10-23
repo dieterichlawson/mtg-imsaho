@@ -59,13 +59,20 @@ fn append_position(path: &str, position: &serde_json::Value) {
 /// beside it, under this process's own name, as `mtg-runner` probes its
 /// save: not at the save, which may be the one being resumed, nor at the
 /// `.tmp` it is written through, which may hold the only copy of one. A
-/// directory is refused by name, since only its rename would fail. The
+/// directory is refused by name, since only its rename would fail, and a
+/// `.tmp` already there is opened for writing without being truncated. The
 /// positions file is only ever appended to.
 fn check_kept_files(save: Option<&str>, positions: Option<&str>) -> Result<(), String> {
     if let Some(path) = save {
         let refused = |e: &dyn std::fmt::Display| format!("--save: the draft snapshot cannot be written to {path}: {e}");
-        if fs::metadata(path).is_ok_and(|m| m.is_dir()) {
-            return Err(refused(&"it is a directory"));
+        let tmp = format!("{path}.tmp");
+        for p in [path, tmp.as_str()] {
+            if fs::metadata(p).is_ok_and(|m| m.is_dir()) {
+                return Err(refused(&format!("{p} is a directory")));
+            }
+        }
+        if fs::metadata(&tmp).is_ok() {
+            fs::OpenOptions::new().write(true).open(&tmp).map_err(|e| refused(&e))?;
         }
         let probe = format!("{path}.{}.probe", std::process::id());
         fs::write(&probe, "").and_then(|()| fs::remove_file(&probe)).map_err(|e| refused(&e))?;

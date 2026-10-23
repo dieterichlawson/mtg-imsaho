@@ -239,10 +239,18 @@ fn probe_timeout() -> Duration {
 pub fn available() -> bool {
     let binary = binary();
     let mut cmd = Command::new(&binary);
+    // Its stderr to a file, not a pipe, so a probe that writes a lot cannot
+    // block on it: a wrapper that refuses (`capture-claude.py` with nowhere
+    // to keep its positions) says why there, and the reason was dropped,
+    // leaving only "is not runnable" pointing at the wrong variable.
+    static PROBES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = PROBES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let err_path = std::env::temp_dir().join(format!("mtg-claude-probe-{}-{n}.err", std::process::id()));
+    let err_file = std::fs::File::create(&err_path).ok();
     cmd.arg("--version")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null());
+        .stderr(err_file.map_or_else(Stdio::null, Stdio::from));
 
     // Its own process group, so the deadline below and the signal handler
     // reach everything it spawns and not just the wrapper we launched.
@@ -279,6 +287,13 @@ pub fn available() -> bool {
     // Nothing in this group is wanted now, whether it answered or hung.
     kill_group(pgid);
     drop(group);
+    let said = std::fs::read_to_string(&err_path).unwrap_or_default();
+    let _ = std::fs::remove_file(&err_path);
+    if !runnable {
+        if let Some(line) = said.lines().rev().map(str::trim).find(|l| !l.is_empty()) {
+            crate::stderr_line!("`{binary} --version` said: {}", line.chars().take(300).collect::<String>());
+        }
+    }
     runnable
 }
 

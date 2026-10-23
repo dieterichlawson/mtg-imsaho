@@ -934,22 +934,41 @@ fn an_unwritable_save_or_positions_file_is_refused_before_drafting() {
         .arg("--save").arg(&dir)
         .output().expect("failed to run");
     assert_clean_refusal(&out, "a --save that is a directory");
-    assert!(stderr(&out).contains("it is a directory"), "{}", stderr(&out));
+    assert!(stderr(&out).contains(&format!("{} is a directory", dir.display())), "{}", stderr(&out));
     // The probe touches neither the save nor the `.tmp` it is written
-    // through, which may hold the only copy of a snapshot being resumed.
+    // through, which may hold the only copy of a snapshot being resumed:
+    // a real snapshot at X.tmp, resumed with --save X by a run the log
+    // then refuses (after the probe), is left as it was.
     std::fs::create_dir_all(&dir).unwrap();
     let save = dir.join("t.json");
     let tmp = dir.join("t.json.tmp");
-    std::fs::write(&tmp, "kept").unwrap();
-    let mut cmd = runner();
-    let out = cmd.current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
-        .env("CLAUDE_CODE_BIN", stub).env("STUB_CALLS", "/dev/null").env_remove("MTG_DRAFT_POSITIONS")
-        .args(["--model", "cc", "--players", "2", "--best-of", "1", "--seed", "4105", "-q", "--log", "/dev/null"])
-        .arg("--save").arg(&save).arg("--resume").arg(&tmp)
-        .output().expect("failed to run");
-    assert!(!out.status.success(), "'kept' is no snapshot: {}", stderr(&out));
-    assert_eq!(std::fs::read_to_string(&tmp).unwrap(), "kept", "the resume's source is left as it was");
-    assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1, "and nothing else is left beside it");
+    let draft = |extra: &[&std::ffi::OsStr]| {
+        let mut cmd = runner();
+        cmd.current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
+            .env("CLAUDE_CODE_BIN", stub).env("STUB_CALLS", "/dev/null").env_remove("MTG_DRAFT_POSITIONS")
+            .args(["--model", "cc", "--players", "2", "--best-of", "1", "--seed", "4105", "-q"])
+            .args(extra)
+            .output().expect("failed to run")
+    };
+    let first = draft(&[ "--save".as_ref(), save.as_os_str(), "--log".as_ref(), dir.join("first.log").as_os_str()]);
+    assert!(first.status.success(), "{}", stderr(&first));
+    std::fs::rename(&save, &tmp).unwrap();
+    let kept = std::fs::read_to_string(&tmp).unwrap();
+    let missing_log = dir.join("no").join("such").join("x.log");
+    let out = draft(&["--save".as_ref(), save.as_os_str(), "--resume".as_ref(), tmp.as_os_str(),
+                      "--log".as_ref(), missing_log.as_os_str()]);
+    assert!(!out.status.success(), "the log cannot be opened: {}", stderr(&out));
+    assert_eq!(std::fs::read_to_string(&tmp).unwrap(), kept, "the resume's source is left as it was");
+    assert!(!save.exists(), "nothing is written in its place");
+    let left: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name()).collect();
+    assert_eq!(left.len(), 2, "no probe is left beside them: {left:?}");
+
+    // A `.tmp` that is a directory fails every write through it.
+    let blocked = dir.join("u.json");
+    std::fs::create_dir_all(dir.join("u.json.tmp")).unwrap();
+    let out = draft(&["--save".as_ref(), blocked.as_os_str(), "--log".as_ref(), "/dev/null".as_ref()]);
+    assert_clean_refusal(&out, "a --save whose .tmp is a directory");
+    assert!(stderr(&out).contains("u.json.tmp is a directory"), "{}", stderr(&out));
     let _ = std::fs::remove_dir_all(&dir);
     let out = run(false);
     assert_clean_refusal(&out, "an unwritable MTG_DRAFT_POSITIONS");
