@@ -1119,3 +1119,15 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   the card statistics and the hosted table's log say each game was played
   with, card by card
   — **played 2026-10-23: the games are right, the records are not.** Each game's `SYSTEM [SeatN]` "## Your decklist" is the ground truth, and diffing it against registered + SIDEBOARD lines is exact on both runners (34/34). Stats and the hosted log still keep the registered deck (#901, #878)
+- D58 [proposed 2026-10-23, from #924, #920 and #579] everything a
+  replay or a resume assumes is the same, checked one input at a time.
+  A snapshot and a kept position each say "the same seed gives the same
+  question", and tonight two inputs were found that are not in either
+  record: untaken cards in the deal (#924) and the seat's guide (#920).
+  List every input a pick's prompt and a table's deal depend on: the card
+  pool, the set, the seed, the guide, `MTG_LLM_HISTORY`, the draft rules
+  text, the seat's model. Then, for each one, change only that input
+  between a run and its `--resume`, and between keeping positions and
+  `mtg-draft-replay`. Do this on the hosted table and in the batch
+  runner. Each change must be refused or recorded. Use a stub that hashes
+  `--system-prompt` and stdin, so that a drift changes the pick.
