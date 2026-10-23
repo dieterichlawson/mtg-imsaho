@@ -898,3 +898,34 @@ fn a_resume_under_a_different_guide_is_not_silent() {
         "the header should name both guides.\nlog: {logged}"
     );
 }
+
+/// #921: a snapshot or a positions file that cannot be written is refused
+/// before the draft starts, as the server refuses its snapshot (#891): the
+/// run used to go to the end warning at every pick and keep nothing.
+#[test]
+fn an_unwritable_save_or_positions_file_is_refused_before_drafting() {
+    let stub = concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/llm-prompt-stub.py");
+    let missing = std::env::temp_dir().join(format!("mtg-no-such-dir-{}", std::process::id())).join("x");
+    let missing = missing.to_str().unwrap();
+    let run = |save: bool| {
+        let mut cmd = runner();
+        cmd.current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
+            .env("CLAUDE_CODE_BIN", stub)
+            .env("STUB_CALLS", "/dev/null")
+            .args(["--model", "cc", "--players", "2", "--best-of", "1", "--seed", "4105", "-q"])
+            .args(["--log", "/dev/null"]);
+        if save {
+            cmd.args(["--save", missing]).env_remove("MTG_DRAFT_POSITIONS");
+        } else {
+            cmd.env("MTG_DRAFT_POSITIONS", missing);
+        }
+        cmd.output().expect("failed to run")
+    };
+    let out = run(true);
+    assert_clean_refusal(&out, "an unwritable --save");
+    assert!(stderr(&out).contains(&format!("--save: the draft snapshot cannot be written to {missing}")), "{}", stderr(&out));
+    let out = run(false);
+    assert_clean_refusal(&out, "an unwritable MTG_DRAFT_POSITIONS");
+    assert!(stderr(&out).contains(&format!("MTG_DRAFT_POSITIONS: the pick positions cannot be kept in {missing}")),
+        "{}", stderr(&out));
+}

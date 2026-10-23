@@ -52,6 +52,25 @@ fn append_position(path: &str, position: &serde_json::Value) {
     }
 }
 
+/// Whether the snapshot and the positions file can be written, asked
+/// before the run spends anything. A run with neither ran to the end
+/// warning at every pick and kept nothing to resume or replay from (#921),
+/// where the server refuses at start-up (#891). The snapshot is probed at
+/// the `.tmp` it is written through, so a save being resumed from is left
+/// as it is; the positions file is only ever appended to.
+fn check_kept_files(save: Option<&str>, positions: Option<&str>) -> Result<(), String> {
+    if let Some(path) = save {
+        let tmp = format!("{path}.tmp");
+        fs::write(&tmp, "").and_then(|()| fs::remove_file(&tmp))
+            .map_err(|e| format!("--save: the draft snapshot cannot be written to {path}: {e}"))?;
+    }
+    if let Some(path) = positions {
+        fs::OpenOptions::new().create(true).append(true).open(path)
+            .map_err(|e| format!("{POSITIONS_ENV}: the pick positions cannot be kept in {path}: {e}"))?;
+    }
+    Ok(())
+}
+
 // ─── CLI Argument Parsing ────────────────────────────────────────────
 
 const USAGE: &str = "\
@@ -758,6 +777,9 @@ fn main() {
     install_panic_hook();
     let mut args = parse_args();
     validate_model_specs(&args.models);
+    if let Err(e) = check_kept_files(args.save.as_deref(), env::var(POSITIONS_ENV).ok().as_deref()) {
+        die(&e);
+    }
 
     // A snapshot decides the seed, the set and the seat count: they are what
     // the recorded picks were made against, so a flag that disagreed would
