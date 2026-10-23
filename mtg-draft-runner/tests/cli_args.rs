@@ -957,7 +957,8 @@ fn an_unwritable_save_or_positions_file_is_refused_before_drafting() {
     let missing_log = dir.join("no").join("such").join("x.log");
     let out = draft(&["--save".as_ref(), save.as_os_str(), "--resume".as_ref(), tmp.as_os_str(),
                       "--log".as_ref(), missing_log.as_os_str()]);
-    assert!(!out.status.success(), "the log cannot be opened: {}", stderr(&out));
+    assert!(!out.status.success() && stderr(&out).contains("failed to open draft log"),
+        "refused by the log, after the probe: {}", stderr(&out));
     assert_eq!(std::fs::read_to_string(&tmp).unwrap(), kept, "the resume's source is left as it was");
     assert!(!save.exists(), "nothing is written in its place");
     let left: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name()).collect();

@@ -247,6 +247,7 @@ pub fn available() -> bool {
     let n = PROBES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let err_path = std::env::temp_dir().join(format!("mtg-claude-probe-{}-{n}.err", std::process::id()));
     let err_file = std::fs::File::create(&err_path).ok();
+    let made = err_file.is_some();
     cmd.arg("--version")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -256,7 +257,12 @@ pub fn available() -> bool {
     // reach everything it spawns and not just the wrapper we launched.
     own_group_tied_to_us(&mut cmd);
 
-    let Ok(mut child) = cmd.spawn() else { return false };
+    let Ok(mut child) = cmd.spawn() else {
+        if made {
+            let _ = std::fs::remove_file(&err_path);
+        }
+        return false;
+    };
     let pgid = i32::try_from(child.id()).unwrap_or(0);
     let group = LiveGroup::register(pgid);
 
@@ -287,8 +293,10 @@ pub fn available() -> bool {
     // Nothing in this group is wanted now, whether it answered or hung.
     kill_group(pgid);
     drop(group);
-    let said = std::fs::read_to_string(&err_path).unwrap_or_default();
-    let _ = std::fs::remove_file(&err_path);
+    let said = if made { std::fs::read_to_string(&err_path).unwrap_or_default() } else { String::new() };
+    if made {
+        let _ = std::fs::remove_file(&err_path);
+    }
     if !runnable {
         if let Some(line) = said.lines().rev().map(str::trim).find(|l| !l.is_empty()) {
             crate::stderr_line!("`{binary} --version` said: {}", line.chars().take(300).collect::<String>());
