@@ -101,7 +101,8 @@ Options:
                          in progress, and --resume carries on from there
   --resume <path>        Replay a snapshot and carry on from it. Its seed, set,
                          seat count and match length win over the flags — the packs are
-                         re-dealt from the seed, so the position is exact.
+                         re-dealt from the seed, so the position is exact; a build
+                         that deals other packs from it is refused.
                          Its decks are used as built, and its finished matches
                          are counted, not replayed: the standings mark them
   --log <path>           Write the run log here  (default draft.log)
@@ -213,7 +214,8 @@ struct Args {
     save: Option<String>,
     /// A snapshot to replay before drafting resumes. The packs come from the
     /// save's seed, so replaying the recorded picks reproduces the position
-    /// exactly, without spending anything.
+    /// exactly, without spending anything; a build that deals other packs
+    /// from it is refused by the snapshot's `deal` (#924).
     resume: Option<String>,
     /// The ingredients the per-seat vectors above are built from, kept so
     /// that they can be rebuilt once the seat count is final.
@@ -496,8 +498,8 @@ fn seat_notes(clients: &[llm_client::DraftLlmClient]) -> Vec<Option<String>> {
     clients.iter().map(|c| c.notes().map(str::to_string)).collect()
 }
 
-/// A draft in progress: enough to deal the same packs again and replay every
-/// pick that has been made.
+/// A draft in progress: enough to deal the same packs again, check they are
+/// the same (`deal`), and replay every pick that has been made.
 #[derive(serde::Serialize, serde::Deserialize)]
 struct DraftSave {
     seed: u64,

@@ -481,8 +481,9 @@ pub enum Request {
 /// Everything a table needs to carry on after the server stops: the seats
 /// (their keys, so every join link still works), every pick in the order
 /// it was made, the decks, the finished matches and the AI seats' notes.
-/// The packs are not in it: they are dealt again from the seed, and the
-/// picks replayed onto them land the table where it was. A match in
+/// The packs are not in it: they are dealt again from the seed, checked
+/// against the digest of the deal it records, and the picks replayed onto
+/// them land the table where it was. A match in
 /// progress when the server stopped is played again from its first game.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TableSave {
@@ -2012,9 +2013,9 @@ for the seat from here, and its games are forfeit"), ""));
     /// still to play when the tournament had begun.
     ///
     /// # Errors
-    /// The snapshot is not this table's: another pod, a pick that is not
-    /// the pack in front of its seat, a deck the pool cannot make, a match
-    /// the pairings do not have.
+    /// The snapshot is not this table's: another pod, another deal (#924),
+    /// a pick that is not the pack in front of its seat, a deck the pool
+    /// cannot make, a match the pairings do not have.
     pub fn restore(&mut self, save: &TableSave) -> Result<Vec<(usize, usize, usize)>, String> {
         if save.version != TABLE_SAVE_VERSION {
             return Err(format!("snapshot version {} (this build reads {TABLE_SAVE_VERSION})", save.version));

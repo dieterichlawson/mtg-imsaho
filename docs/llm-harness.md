@@ -519,7 +519,8 @@ the usage summary counts it under `Draft`.
 logs the seed it drew. `--save <path>` snapshots the run after every pick
 round, the deck builds and every match, and `--resume <path>` carries on
 from one: the recorded picks are replayed without a model call, the decks
-are used as built and the finished matches are counted.
+are used as built and the finished matches are counted. A build that deals
+other packs from the snapshot's seed (its card pool changed) is refused.
 
 `scripts/draft-loop/night.sh` is this run as a nightly routine plays it:
 eight `cc:claude-haiku-5-5` seats, best-of-3, the date as the seed, the
