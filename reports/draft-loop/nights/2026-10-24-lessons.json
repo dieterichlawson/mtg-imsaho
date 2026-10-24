@@ -1,0 +1,365 @@
+{
+ "night": "2026-10-24",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "colors": "RG",
+   "record": "1-2-0",
+   "lessons": [
+    "Take fliers before a third ground two-drop: my RG deck had almost no evasive finishers, and WR's fliers Chapel Geist and Gallows Warden were among the threats that beat me 0-2.",
+    "Tonight contradicted the guide: RG went 1-2 on 17 lands (9 Forest, 8 Mountain), not the 2-1 anecdote, and the extra land did not stop the losses."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5188,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2685,
+    "output_tokens_details": {
+     "thinking_tokens": 2538
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5188
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2685,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5188,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5188,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "colors": "WB",
+   "record": "0-3-0",
+   "lessons": [
+    "Don't cut Army of the Damned and Endless Ranks of the Dead for a low curve; my games ran 25 to 41 turns, and my WB deck had too few late-game threats to close them out.",
+    "Value flyers and answers to flyers highly: Moon Heron and Stitched Drake were central to the UG deck that beat me 0-2 in round 3.",
+    "Prioritise removal like Claustrophobia over Liliana of the Veil; I lost 1-6 in games with a WB deck that had little answer to the threats I faced."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3201,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2157,
+    "output_tokens_details": {
+     "thinking_tokens": 1971
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3201
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2157,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3201,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3201,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": true,
+   "colors": "BR",
+   "record": "2-1-0",
+   "lessons": [
+    "The guide's claim that ground decks stall was wrong for my BR: Dead Weight, Corpse Lunge and Stromkirk Patrol won 4 straight games against WR and RG, and only UR's fliers beat me.",
+    "Lost 0-2 to UR's Murder of Crows, Falkenrath Marauders and Invisible Stalker; my BR had only Vampire Interloper and Falkenrath Noble in the air, so take two more fliers before a third ground two-drop.",
+    "The guide's 16-land rule held: my 17-land BR stalled into a 33-turn win and a 24-turn loss, so with this low-curve small-creature list, play 16 lands, cutting a Swamp."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5121,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3991,
+    "output_tokens_details": {
+     "thinking_tokens": 3748
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5121
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3991,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5121,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5121,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "colors": "WR",
+   "record": "2-1-0",
+   "lessons": [
+    "Count pips before cutting lands: my 10 Plains/7 Mountains left double-red Vampiric Fury and Into the Maw of Hell hard to cast; split red-heavy top-end evenly or cut it.",
+    "Games stalled: 33 and 41 turns in my long matches, so prioritise cheap evasive threats like Chapel Geist over slow top-end such as Galvanic Juggernaut.",
+    "Curse of Death's Hold (pick 1) and Mask of Avacyn (pick 8) went unplayed; from pick 1, prefer on-colour playables to speculative picks."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3243,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3380,
+    "output_tokens_details": {
+     "thinking_tokens": 3171
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3243
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3380,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3243,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3243,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "colors": "UG",
+   "record": "1-2-0",
+   "lessons": [
+    "Once you take Victim of Night or Morkrut Banshee, stay black: I took Victim of Night first in pack 3, cut black for UG, and went 1-2 while the guide's black decks held up.",
+    "Tonight contradicted the guide's flier-first advice: my UG fliers (three Moon Heron, Stitched Drake) lost to WG's Smite the Monstrous and BG's Victim of Night, so take removal for fliers early.",
+    "My UG deck ran 17 lands and lost 25- and 28-turn games, so try 16 lands with a curve like this, though the guide's 16-land advice was not tested tonight."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5086,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3247,
+    "output_tokens_details": {
+     "thinking_tokens": 3029
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5086
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3247,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5086,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5086,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "colors": "WG",
+   "record": "1-2-0",
+   "lessons": [
+    "Value evasive finishers over ground filler: my WG deck (8 Forest, 9 Plains) lost 21- and 20-turn games to BG and a 22-turn game to UR, stalling before Unburial Rites and Makeshift Mauler took over.",
+    "Don't overvalue pump tricks like Moment of Heroism and Ranger's Guile in a low-curve aggro deck; they won no games I can cite when my threats were stonewalled.",
+    "Keep removal like Smite the Monstrous and Bonds of Faith, but prioritize two-drop threats and card-advantage creatures in pack 2 to avoid long grinds."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3173,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1803,
+    "output_tokens_details": {
+     "thinking_tokens": 1582
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3173
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1803,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3173,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3173,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": true,
+   "colors": "BG",
+   "record": "2-1-0",
+   "lessons": [
+    "Contradicting the guide, my BG deck ran 17 lands with two Walking Corpse and two Woodland Sleuth; try 16, since my 28-turn games suggest stalls.",
+    "My BG deck with Geistcatcher's Rig went 2-1 against UG's three Moon Herons, but UR's fliers and two Claustrophobia beat me 0-2, so keep two flier answers.",
+    "Stop taking off-colour fliers: I took Stitched Drake second in pack 2 and never played it, so favour on-colour evasion like Screeching Bat over blue speculation."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5059,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 4693,
+    "output_tokens_details": {
+     "thinking_tokens": 4489
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5059
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4693,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5059,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5059,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "colors": "UR",
+   "record": "3-0-0",
+   "lessons": [
+    "Blue removal was open late in pack 3: the second Claustrophobia came third pick, so take early removal and expect a second copy of Claustrophobia or Sensory Deprivation to wheel.",
+    "Three Makeshift Maulers, Murder of Crows, and Geistflame carried this 3-0 UR tempo deck, so prioritise efficient two- to four-drop bodies and cheap red burn in Innistrad.",
+    "The UR deck won 6-1 in games on 17 lands split 9 Island and 8 Mountain, so a two-colour tempo build with that split held up across three opponents."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3212,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1229,
+    "output_tokens_details": {
+     "thinking_tokens": 1021
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3212
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1229,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3212,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3212,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}
