@@ -1164,10 +1164,11 @@ say what your stub says.
   reply
 - H39 [proposed 2026-10-22, from #897 and #896] every field the format
   line leaves out, and every brace around the answer: for each field
-  `answer_format` filters (`x-unread`, `maxItems: 0`), check the answer
-  check does not then require it, and stage each with zero options (X
-  funding with every source tapped, an "up to N" set with nothing
-  eligible, an ordering of nothing) under a stand-in that answers only
+  `answer_format` filters (`x-unread`, `maxItems: 0`, `x-only-value`, an
+  object of nothing but those), check the answer check does not then
+  require it, and stage each with zero options (X funding with every
+  source tapped, with an empty pool and with one colour floating (#930),
+  an "up to N" set with nothing eligible, an ordering of nothing) under a stand-in that answers only
   from the `Answer with only this JSON object:` line; count REASK lines.
   Then send replies that wrap a correct object in prose holding a mana
   symbol, a second object, or a trailing `}`: each must be read. Record
