@@ -5519,7 +5519,15 @@ impl CliPlayer {
             let _ = execute!(out, Print(format!("  Effective P/T: {p}/{t}\n")));
         }
         if perm.damage_marked > 0 {
-            let _ = execute!(out, Print(format!("  Damage marked: {}\n", perm.damage_marked)));
+            // And what on the battlefield dealt it: Abattoir Ghoul's
+            // trigger reads it for the rest of the turn (#932).
+            let from: Vec<String> = perm.damaged_by.iter()
+                .filter_map(|id| view.battlefield.iter().find(|p| p.object_id == *id))
+                .map(|p| format!("{} (#{})", p.name, p.object_id.0)).collect();
+            let by = if from.is_empty() { String::new() } else { format!(", dealt by {}", from.join(" and ")) };
+            for line in Self::wrap_indented(&format!("  Damage marked: {}{by}", perm.damage_marked), Self::term_width().saturating_sub(1)) {
+                let _ = execute!(out, Print(format!("{line}\n")));
+            }
         }
         if perm.card_types.contains(&CardType::Planeswalker) {
             let l = perm.counters.get(&mtg_engine::types::CounterType::Loyalty)
@@ -11846,6 +11854,7 @@ Mark 1 of the 1 cards below to exile.");
             effective_power: None,
             effective_toughness: None,
             damage_marked: 0,
+            damaged_by: Vec::new(),
             regeneration_shields: 0,
             affected_by_summoning_sickness: false,
             attached_to: None,
@@ -11958,6 +11967,7 @@ Mark 1 of the 1 cards below to exile.");
             effective_power: Some(2),
             effective_toughness: Some(2),
             damage_marked: 0,
+            damaged_by: Vec::new(),
             regeneration_shields: 0,
             affected_by_summoning_sickness: false,
             attached_to: None,
@@ -12401,6 +12411,27 @@ Mark 1 of the 1 cards below to exile.");
     /// the one that changes what the player may legally do this turn. A
     /// Bonds of Faith on a non-Human removes the creature from the legal
     /// attacker and blocker sets, correctly and silently.
+    /// #932: the detail page says what on the battlefield dealt a
+    /// creature its damage this turn (Abattoir Ghoul's trigger reads it).
+    #[test]
+    fn the_detail_page_says_what_dealt_the_damage() {
+        let ghoul = creature(6, "Abattoir Ghoul", 0);
+        let mut crab = creature(44, "Fortress Crab", 1);
+        crab.damage_marked = 3;
+        crab.damaged_by = vec![ObjectId(6), ObjectId(90)];
+        let mut v = view(Step::PostcombatMain, 7, true);
+        v.battlefield = vec![ghoul, crab.clone()];
+        let mut buf: Vec<u8> = Vec::new();
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &crab);
+        let text = String::from_utf8_lossy(&buf).to_string();
+        assert!(text.contains("Damage marked: 3, dealt by Abattoir Ghoul (#6)\r\n"), "{text}");
+        // A source gone from the battlefield (a spell) is not named.
+        crab.damaged_by = vec![ObjectId(90)];
+        let mut buf: Vec<u8> = Vec::new();
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &crab);
+        assert!(String::from_utf8_lossy(&buf).contains("Damage marked: 3\r\n"));
+    }
+
     #[test]
     fn a_restriction_is_on_the_row_the_combat_list_and_the_detail_page() {
         let mut rider = creature(22, "Spectral Rider", 0);

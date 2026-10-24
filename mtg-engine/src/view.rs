@@ -181,6 +181,12 @@ pub struct PermanentView {
     pub effective_power: Option<i32>,
     pub effective_toughness: Option<i32>,
     pub damage_marked: u32,
+    /// What has dealt this permanent damage this turn, each once, in the
+    /// order it was dealt (the object's `damaged_by`). Abattoir Ghoul's
+    /// trigger reads it when the creature dies, so it decides a removal
+    /// spell for the rest of the turn; no surface could say it after the
+    /// damage line left the recent events (issue #932).
+    pub damaged_by: Vec<ObjectId>,
     /// Regeneration shields waiting to be spent (CR 701.15a). Public
     /// information that decides whether removal is worth casting and whether
     /// an attack trades, and no surface could read it — the field existed on
@@ -508,6 +514,7 @@ impl GameView {
                     effective_power: state.effective_power(obj.id, registry),
                     effective_toughness: state.effective_toughness(obj.id, registry),
                     damage_marked: obj.damage_marked,
+                    damaged_by: obj.damaged_by.clone(),
                     regeneration_shields: obj.regeneration_shields,
                     affected_by_summoning_sickness:
                         state.has_summoning_sickness(obj.id, registry),

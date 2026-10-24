@@ -80,6 +80,11 @@ export interface PermanentView {
   effective_power: number | null;
   effective_toughness: number | null;
   damage_marked: number;
+  /**
+   * What has dealt this permanent damage this turn, each once (#932):
+   * Abattoir Ghoul's trigger reads it when the creature dies.
+   */
+  damaged_by: ObjectId[];
   regeneration_shields: number;
   /**
    * Whether summoning sickness is stopping this permanent doing anything

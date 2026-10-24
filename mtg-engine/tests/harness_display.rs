@@ -1193,3 +1193,26 @@ fn every_watchers_that_creature_is_named_on_the_stack() {
     assert!(checked >= 6, "the sweep found the watchers it is about ({checked})");
     assert!(offenders.is_empty(), "a stack row that does not say which creature:\n{}", offenders.join("\n"));
 }
+
+/// Issue #932: Abattoir Ghoul's trigger reads which creatures dealt the
+/// dying one damage this turn, so a removal spell cast after combat turns
+/// on it. The view carried the damage and not who dealt it, so no surface
+/// could say it once the damage line had left the recent events.
+#[test]
+fn the_view_says_what_dealt_a_permanent_its_damage_this_turn() {
+    use mtg_engine::damage::{deal_damage, DamageKind};
+    use mtg_engine::events::DamageTarget;
+    let reg = registry();
+    let mut state = game_at_step(Step::PostcombatMain, P0);
+    let ghoul = named_permanent(&mut state, &reg, "Abattoir Ghoul", P0);
+    let other = ready_creature(&mut state, P0, 1, 1);
+    let crab = ready_creature(&mut state, P1, 1, 6);
+    deal_damage(&mut state, ghoul, DamageTarget::Object(crab), 3, DamageKind::Combat, &reg);
+    deal_damage(&mut state, other, DamageTarget::Object(crab), 1, DamageKind::Combat, &reg);
+    deal_damage(&mut state, ghoul, DamageTarget::Object(crab), 1, DamageKind::Combat, &reg);
+
+    let view = mtg_engine::view::GameView::for_player(&state, P0, &reg);
+    let shown = view.battlefield.iter().find(|p| p.object_id == crab).expect("on the battlefield");
+    assert_eq!(shown.damage_marked, 5);
+    assert_eq!(shown.damaged_by, vec![ghoul, other], "each source once, in the order it dealt damage");
+}

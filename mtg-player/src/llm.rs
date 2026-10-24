@@ -1628,7 +1628,7 @@ Every prompt restates the whole position, in this order:
 - `Opp's cards in view:` rules text for the opponent's cards on the battlefield, on the stack, in exile or revealed, and for a graveyard card that works from there (flashback; cast or returned from a graveyard) or that the question or a stack object points at. You learn them as they come into view, never before. `(×N)` ends a line repeated N times; `3x` is three of a card.
 - A context line (`[MAIN PHASE 1]`, `[RESPOND TO opp's <spell>]`, `[AFTER BLOCKERS DECLARED]`, ...) and the question.
 
-Boards group lands (`2x Forest (1 tapped)`); any other permanent is `Name (#id) P/T keywords [flags]`. The `#id` tells apart permanents of one name. P/T is current, bonuses included, and a creature has exactly the keywords printed after it. Status flags after a permanent, in one bracket: `T` tapped; `S` summoning sick (no attacking or {T} abilities until its controller's next turn; it can block); `attacking you`/`attacking Opp`/`attacking <planeswalker> (#id)`; `blocking <attacker> (#id)`; `blocked by <blocker> (#id)`; `blocked (no blockers left)` (deals no combat damage unless it has trample); `Ndmg` damage marked; `regen shield`/`N regen shields`; `token`; `copy`; `owned by opponent`/`owned by you` (it returns to its owner when the control effect ends, and goes to its owner's graveyard); `+1+1xN`, `-1-1xN`, `LOYxN` or another counter by kind (`Slimex2`); `names: <card>`; `enchanting you`/`enchanting opponent` (a Curse's player); `legendary` (CR 704.5j: of two with one name under your control, you keep one). Elsewhere an object carries its id and whose it is: `(your)`, `(opponent's)`, `(in your graveyard)`, `(in opponent's exile)`.
+Boards group lands (`2x Forest (1 tapped)`); any other permanent is `Name (#id) P/T keywords [flags]`. The `#id` tells apart permanents of one name. P/T is current, bonuses included, and a creature has exactly the keywords printed after it. Status flags after a permanent, in one bracket: `T` tapped; `S` summoning sick (no attacking or {T} abilities until its controller's next turn; it can block); `attacking you`/`attacking Opp`/`attacking <planeswalker> (#id)`; `blocking <attacker> (#id)`; `blocked by <blocker> (#id)`; `blocked (no blockers left)` (deals no combat damage unless it has trample); `Ndmg` damage marked (`Ndmg from <permanent> (#id)`: which permanents on the battlefield dealt it this turn); `regen shield`/`N regen shields`; `token`; `copy`; `owned by opponent`/`owned by you` (it returns to its owner when the control effect ends, and goes to its owner's graveyard); `+1+1xN`, `-1-1xN`, `LOYxN` or another counter by kind (`Slimex2`); `names: <card>`; `enchanting you`/`enchanting opponent` (a Curse's player); `legendary` (CR 704.5j: of two with one name under your control, you keep one). Elsewhere an object carries its id and whose it is: `(your)`, `(opponent's)`, `(in your graveyard)`, `(in opponent's exile)`.
 
 ## Answering
 
@@ -3670,7 +3670,20 @@ impl LlmPlayer {
                 // deals no combat damage, and read as unblocked (#725).
                 flag_parts.push("blocked (no blockers left)".into());
             }
-            if c.damage_marked > 0 { flag_parts.push(format!("{}dmg", c.damage_marked)); }
+            if c.damage_marked > 0 {
+                // Which permanents dealt it, while it is marked: Abattoir
+                // Ghoul's trigger looks back over the whole turn, and the
+                // damage line was in one prompt's recent events (#932). A
+                // spell that dealt it is gone, and is not named.
+                let from: Vec<String> = c.damaged_by.iter()
+                    .filter(|id| all_perms.iter().any(|p| p.object_id == **id))
+                    .map(|id| named(*id)).collect();
+                if from.is_empty() {
+                    flag_parts.push(format!("{}dmg", c.damage_marked));
+                } else {
+                    flag_parts.push(format!("{}dmg from {}", c.damage_marked, from.join(" and ")));
+                }
+            }
             // A live regeneration shield (CR 701.15a), which decides whether
             // removal is worth casting and whether an attack trades. The seat
             // could not find it anywhere: not here, not in the log, which
@@ -9766,6 +9779,7 @@ pub(crate) mod tests {
             effective_power: Some(power),
             effective_toughness: Some(toughness),
             damage_marked: 0,
+            damaged_by: Vec::new(),
             regeneration_shields: 0,
             affected_by_summoning_sickness: false,
             attached_to: None,
@@ -10099,6 +10113,28 @@ this Aura deals 1 damage to that player.";
         assert!(seen_by_owner.contains("[owned by you]"), "{seen_by_owner}");
     }
 
+    /// Issue #932: after combat the board said `[3dmg]` and not that an
+    /// Abattoir Ghoul still on the battlefield dealt it, which decides
+    /// whether killing the creature gains life; that lived only in the
+    /// one prompt whose recent events held the damage line.
+    #[test]
+    fn the_board_names_the_permanents_that_dealt_a_creature_its_damage() {
+        let (you, opp) = (PlayerId(0), PlayerId(1));
+        let ghoul = perm(6, "Abattoir Ghoul", 3, 2, you);
+        let mut crab = perm(44, "Fortress Crab", 1, 6, opp);
+        crab.damage_marked = 3;
+        // #90 was a spell, gone from the battlefield: not named.
+        crab.damaged_by = vec![ObjectId(6), ObjectId(90)];
+        let mut burnt = perm(45, "Fortress Crab", 1, 6, opp);
+        burnt.damage_marked = 2;
+        burnt.damaged_by = vec![ObjectId(90)];
+        let owned = vec![ghoul, crab, burnt];
+        let all: Vec<&PermanentView> = owned.iter().collect();
+        let board = LlmPlayer::format_perms_compact(&all, &all, you);
+        assert!(board.contains("Fortress Crab (#44) 1/6 colorless [3dmg from Abattoir Ghoul (#6)]"), "{board}");
+        assert!(board.contains("Fortress Crab (#45) 1/6 colorless [2dmg]"), "{board}");
+    }
+
     /// Issue #726: every flag the board prints is one the legend defines,
     /// in the spelling it prints — the legend documented counters as
     /// `+1/+1:N` while the board printed `+1+1xN`, and never mentioned
@@ -10113,6 +10149,7 @@ this Aura deals 1 damage to that player.";
         a.attacking = Some(AttackTarget::Player(opp));
         a.blocked_by = vec![ObjectId(45)];
         a.damage_marked = 2;
+        a.damaged_by = vec![ObjectId(45)];
         a.regeneration_shields = 1;
         a.counters.insert(CounterType::PlusOnePlusOne, 1);
         a.counters.insert(CounterType::MinusOneMinusOne, 1);
@@ -10165,6 +10202,7 @@ this Aura deals 1 damage to that player.";
                     f if f.starts_with("blocked by") => "`blocked by",
                     f if f.starts_with("names:") => "`names:",
                     f if f.ends_with("dmg") => "`Ndmg`",
+                    f if f.contains("dmg from ") => "`Ndmg from",
                     f if f.ends_with("regen shields") => "`N regen shields`",
                     f if f.starts_with("+1+1x") => "`+1+1xN`",
                     f if f.starts_with("-1-1x") => "`-1-1xN`",
@@ -10224,6 +10262,7 @@ this Aura deals 1 damage to that player.";
             effective_power: None,
             effective_toughness: None,
             damage_marked: 0,
+            damaged_by: Vec::new(),
             regeneration_shields: 0,
             affected_by_summoning_sickness: false,
             attached_to: Some(ObjectId(attached_to)),

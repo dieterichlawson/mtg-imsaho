@@ -932,6 +932,11 @@ export function inspectorFacts(state: LiveState, e: IndexEntry): string[] {
   // `drawPerm` slices to three, so it is often not on screen at all
   // (issue #525, #468 on the fourth surface).
   if (o.regeneration_shields) out.push(`${o.regeneration_shields} regeneration shield${o.regeneration_shields > 1 ? "s" : ""}`);
+  // What on the battlefield dealt its damage this turn, which Abattoir
+  // Ghoul's trigger reads when it dies (#932); a spell that dealt it is gone.
+  const dealtBy = (o.damage_marked ? o.damaged_by || [] : [])
+    .filter(id => state.view.battlefield.some(p => p.object_id === id)).map(id => nameOf(state, id));
+  if (dealtBy.length) out.push(`Damage dealt by ${dealtBy.join(" and ")}`);
   if (o.attached_to !== undefined && o.attached_to !== null) out.push(`Attached to ${nameOf(state, o.attached_to)}`);
   // And the other direction, which is the one #83 is about: hovering the
   // Equipment said "Attached to Sturmgeist" while hovering the Sturmgeist

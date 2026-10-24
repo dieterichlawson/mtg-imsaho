@@ -147,6 +147,7 @@ fn perm(id: u64, name: &str, controller: PlayerId) -> PermanentView {
         effective_power: Some(2),
         effective_toughness: Some(2),
         damage_marked: 0,
+        damaged_by: Vec::new(),
         regeneration_shields: 0,
         affected_by_summoning_sickness: false,
         attached_to: None,
