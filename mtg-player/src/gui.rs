@@ -618,15 +618,34 @@ fn serve_connection(mut stream: TcpStream, shared: &Shared) {
             return;
         }
     };
-    if head.to_ascii_lowercase().contains("upgrade: websocket") {
+    if is_websocket_upgrade(&head) {
         serve_websocket(stream, shared);
     } else {
         serve_http(&mut stream, &shared.web_dir, &path);
     }
 }
 
+/// The longest request head either server reads: past it a head is taken
+/// as what has arrived. A browser sends every cookie it holds for
+/// `127.0.0.1` whatever the port, and a head of a few KiB is ordinary.
+pub const HEAD_LIMIT: usize = 16 * 1024;
+
+/// Whether a request head asks for a WebSocket: an `Upgrade` header, in
+/// any case and spacing, one of whose tokens is `websocket` (RFC 6455
+/// 4.2.1). A search for `upgrade: websocket` in the first 2 KiB missed
+/// one sent after a long Cookie header, as Firefox orders them, and
+/// `Upgrade:websocket`, and served the page in its place (#933).
+#[must_use]
+pub fn is_websocket_upgrade(head: &str) -> bool {
+    head.split("\r\n").skip(1).take_while(|l| !l.is_empty())
+        .filter_map(|l| l.split_once(':'))
+        .any(|(name, value)| name.trim().eq_ignore_ascii_case("upgrade")
+            && value.split(',').any(|t| t.trim().eq_ignore_ascii_case("websocket")))
+}
+
 /// The request head, left on the socket for whoever reads it next: up to
-/// its blank line, or what arrived in five seconds, or the first 2 KiB.
+/// its blank line, or what arrived in five seconds, or the first
+/// [`HEAD_LIMIT`] bytes.
 ///
 /// One peek returns whatever has arrived, and a client may send the head
 /// in pieces (a `write!` to a `TcpStream` sends `GET `, the path and the
@@ -634,7 +653,7 @@ fn serve_connection(mut stream: TcpStream, shared: &Shared) {
 /// page refuses, so its own link was a 404 now and then.
 #[must_use]
 pub fn peek_head(stream: &TcpStream) -> Option<String> {
-    let mut head = [0u8; 2048];
+    let mut head = vec![0u8; HEAD_LIMIT];
     let until = std::time::Instant::now() + Duration::from_secs(5);
     loop {
         let n = stream.peek(&mut head).ok()?;
@@ -675,7 +694,7 @@ fn read_head(stream: &mut TcpStream) {
         match stream.read(&mut chunk) {
             Ok(n) if n > 0 => {
                 buf.extend_from_slice(&chunk[..n]);
-                if buf.windows(4).any(|w| w == b"\r\n\r\n") || buf.len() > 16 * 1024 {
+                if buf.windows(4).any(|w| w == b"\r\n\r\n") || buf.len() > HEAD_LIMIT {
                     break;
                 }
             }
@@ -901,6 +920,38 @@ mod tests {
         let mut left = [0u8; 4];
         assert_eq!(stream.peek(&mut left).unwrap(), 4, "the head is still on the socket");
         drop(client.join());
+    }
+
+    /// #933: a head over 2 KiB whose `Upgrade` comes after a long Cookie
+    /// header is a WebSocket, peeked whole; so is `Upgrade:websocket`.
+    #[test]
+    fn a_long_head_with_its_upgrade_last_is_a_websocket() {
+        let cookie = "x".repeat(4000);
+        let head = format!("GET /ws HTTP/1.1\r\nHost: x\r\nSec-WebSocket-Version: 13\r\n\
+            Connection: keep-alive, Upgrade\r\nCookie: a={cookie}\r\nUpgrade: websocket\r\n\r\n");
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let sent = head.clone();
+        let client = thread::spawn(move || {
+            let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            s.write_all(sent.as_bytes()).unwrap();
+            s
+        });
+        let (stream, _) = listener.accept().unwrap();
+        let peeked = peek_head(&stream).expect("a head");
+        assert_eq!(peeked, head, "the whole head is peeked");
+        assert!(is_websocket_upgrade(&peeked));
+        drop(client.join());
+
+        for yes in ["GET / HTTP/1.1\r\nUpgrade:websocket\r\n\r\n", "GET / HTTP/1.1\r\nupgrade:  WebSocket \r\n\r\n",
+                    "GET / HTTP/1.1\r\nUpgrade: h2c, websocket\r\n\r\n"] {
+            assert!(is_websocket_upgrade(yes), "{yes:?}");
+        }
+        for no in ["GET / HTTP/1.1\r\nHost: x\r\n\r\n", "GET /upgrade: websocket HTTP/1.1\r\n\r\n",
+                   "GET / HTTP/1.1\r\nX-Note: upgrade: websocket\r\n\r\n",
+                   "GET / HTTP/1.1\r\nHost: x\r\n\r\nUpgrade: websocket\r\n"] {
+            assert!(!is_websocket_upgrade(no), "{no:?}");
+        }
     }
 
     /// #872: under a key, the page and its socket are reached only through

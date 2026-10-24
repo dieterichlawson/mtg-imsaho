@@ -1078,7 +1078,6 @@ fn write_game_log(out_dir: Option<&Path>, round: usize, a: usize, b: usize, game
 fn serve_connection(mut stream: TcpStream, shared: &Arc<Shared>) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
     let Some(head) = mtg_player::gui::peek_head(&stream) else { return };
-    let lower = head.to_ascii_lowercase();
     let path = head.lines().next()
         .and_then(|l| l.split_whitespace().nth(1))
         .unwrap_or("/")
@@ -1098,7 +1097,7 @@ fn serve_connection(mut stream: TcpStream, shared: &Arc<Shared>) {
                 http_response(&mut stream, "404 Not Found", "text/plain", b"not found");
             }
         }
-    } else if lower.contains("upgrade: websocket") {
+    } else if mtg_player::gui::is_websocket_upgrade(&head) {
         serve_websocket(stream, shared, &path);
     } else {
         serve_http(&mut stream, shared, &path);
@@ -1114,7 +1113,7 @@ fn drain_head(stream: &mut TcpStream) -> Vec<u8> {
         match stream.read(&mut chunk) {
             Ok(n) if n > 0 => {
                 buf.extend_from_slice(&chunk[..n]);
-                if buf.windows(4).any(|w| w == b"\r\n\r\n") || buf.len() > 16 * 1024 {
+                if buf.windows(4).any(|w| w == b"\r\n\r\n") || buf.len() > mtg_player::gui::HEAD_LIMIT {
                     break;
                 }
             }
