@@ -18,7 +18,7 @@
 
 use serde_json::Value;
 
-use super::{ASK_AGAIN_DESCRIPTION, ATTACK_DESCRIPTION, PLAN_DESCRIPTION, THOUGHTS_DESCRIPTION, UNREAD};
+use super::{ASK_AGAIN_DESCRIPTION, ATTACK_DESCRIPTION, ONLY_VALUE, PLAN_DESCRIPTION, THOUGHTS_DESCRIPTION, UNREAD};
 
 /// `MTG_CLAUDE_CODE_ANSWERS`: `text` (the default) asks a `claude -p` seat
 /// for its JSON in the prompt; `schema` sends `--json-schema` as before.
@@ -63,14 +63,32 @@ a question asks for them:\n");
 }
 
 /// Whether a field is one this question does not ask for: one it does not
-/// read ([`UNREAD`]), or a list nothing may go in (`maxItems` 0: no
-/// planeswalker to attack, no untapped source to fund X with). The format
-/// line leaves it out, and [`super::schema_violation`] does not require it:
-/// the line once left out a required `sources` the check then asked for,
-/// and every such answer was asked again (#897).
+/// read ([`UNREAD`]), a list nothing may go in (`maxItems` 0: no
+/// planeswalker to attack, no untapped source to fund X with), a field
+/// with only one value it may take ([`ONLY_VALUE`]: a colour nothing is
+/// floating in), or an object of nothing but such fields (an empty pool).
+/// The format line leaves it out, and [`super::schema_violation`] does not
+/// require it: the line once left out a required `sources` the check then
+/// asked for, and every such answer was asked again (#897); it once asked
+/// for six pool colours an empty pool could only fill with 0, and an
+/// answer naming none of them was asked again (#930).
 #[must_use]
 pub fn not_asked(spec: &Value) -> bool {
-    spec.get(UNREAD).is_some() || spec.get("maxItems").and_then(Value::as_u64) == Some(0)
+    spec.get(UNREAD).is_some() || spec.get(ONLY_VALUE).is_some()
+        || spec.get("maxItems").and_then(Value::as_u64) == Some(0)
+        || spec.get("properties").and_then(Value::as_object)
+            .is_some_and(|p| !p.is_empty() && p.values().all(not_asked))
+}
+
+/// An `enum`'s values as the whole numbers they are, when every one is a
+/// number or a string of one: the X funding's amounts are strings ("0",
+/// "1") that the prompt shows, and the reader takes, as numbers.
+#[must_use]
+pub fn numeric_enum(values: &[Value]) -> Option<Vec<i64>> {
+    let ints: Option<Vec<i64>> = values.iter()
+        .map(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok())))
+        .collect();
+    ints.filter(|v| !v.is_empty())
 }
 
 /// The end of a prompt for a seat that answers in text: the object's
@@ -118,8 +136,7 @@ pub fn answer_format(schema: &Value) -> String {
 /// `[integer]`, `{"blocker": integer, "attacker": integer}`.
 fn type_of(spec: &Value) -> String {
     if let Some(values) = spec.get("enum").and_then(Value::as_array) {
-        let ints: Option<Vec<i64>> = values.iter().map(Value::as_i64).collect();
-        if let Some(ints) = ints.filter(|v| !v.is_empty()) {
+        if let Some(ints) = numeric_enum(values) {
             let (lo, hi) = (ints.iter().min().copied().unwrap_or(0), ints.iter().max().copied().unwrap_or(0));
             if usize::try_from(hi - lo + 1).ok() == Some(ints.len()) {
                 return if lo == hi { lo.to_string() } else { format!("integer {lo} to {hi}") };
@@ -131,11 +148,22 @@ fn type_of(spec: &Value) -> String {
     }
     match spec.get("type").and_then(Value::as_str) {
         Some("array") => {
-            let item = spec.get("items").map_or_else(|| "value".to_string(), type_of);
+            // Entries held each to its own amounts (`prefixItems`) that are
+            // all whole numbers are said as such, not as the `items` type
+            // the request carries.
+            let prefix_numeric = spec.get("prefixItems").and_then(Value::as_array)
+                .filter(|p| !p.is_empty())
+                .is_some_and(|p| p.iter().all(|s| s.get("enum").and_then(Value::as_array)
+                    .and_then(|v| numeric_enum(v)).is_some()));
+            let item = if prefix_numeric {
+                "integer".to_string()
+            } else {
+                spec.get("items").map_or_else(|| "value".to_string(), type_of)
+            };
             format!("[{item}]")
         }
         Some("object") => match spec.get("properties").and_then(Value::as_object) {
-            Some(p) if !p.is_empty() => format!("{{{}}}", p.iter()
+            Some(p) if !p.is_empty() => format!("{{{}}}", p.iter().filter(|(_, v)| !not_asked(v))
                 .map(|(k, v)| format!("\"{k}\": {}", type_of(v))).collect::<Vec<_>>().join(", ")),
             _ => "{}".to_string(),
         },

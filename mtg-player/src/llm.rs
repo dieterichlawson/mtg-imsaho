@@ -211,7 +211,7 @@ pub fn sanitize_schema_for_gemini(value: &serde_json::Value) -> serde_json::Valu
     for (key, val) in map {
         // `prefixItems` is not in the subset either provider documents; the
         // answer is held to it client-side (`schema_violation`).
-        if (bounds.is_some() && key == "enum") || key == UNREAD || key == "prefixItems" {
+        if (bounds.is_some() && key == "enum") || key == UNREAD || key == ONLY_VALUE || key == "prefixItems" {
             continue;
         }
         out.insert(key.clone(), sanitize_schema_for_gemini(val));
@@ -224,9 +224,9 @@ pub fn sanitize_schema_for_gemini(value: &serde_json::Value) -> serde_json::Valu
 }
 
 /// The constraints [`cache_stable_schema`] leaves out of a request, and
-/// [`UNREAD`].
-const PER_CALL_CONSTRAINTS: [&str; 7] = [
-    "enum", "minItems", "maxItems", "minimum", "maximum", "prefixItems", UNREAD,
+/// the markers [`UNREAD`] and [`ONLY_VALUE`].
+const PER_CALL_CONSTRAINTS: [&str; 8] = [
+    "enum", "minItems", "maxItems", "minimum", "maximum", "prefixItems", UNREAD, ONLY_VALUE,
 ];
 
 /// A field this question asks for only so that its schema is the same as
@@ -234,6 +234,14 @@ const PER_CALL_CONSTRAINTS: [&str; 7] = [
 /// opponent's turn. The answer is not held to it, and no request carries
 /// the marker.
 pub const UNREAD: &str = "x-unread";
+
+/// A field with one legal value this time, which its question reads as
+/// that value when it is left out: a pool colour nothing is floating in,
+/// whose amount can only be 0 (#930). The format line does not offer it
+/// and the check does not require it; a value written for it is still
+/// held to its `enum`. It changes from call to call, so no request
+/// carries the marker.
+pub const ONLY_VALUE: &str = "x-only-value";
 
 /// The schema a request to Anthropic carries: `schema` without the
 /// constraints that change from one call to the next — every `enum` (a
@@ -363,11 +371,16 @@ pub fn with_empty_lists(schema: &serde_json::Value, answer: serde_json::Value) -
 #[must_use]
 pub fn schema_violation(schema: &serde_json::Value, answer: &serde_json::Value) -> Option<String> {
     fn listed(values: &[serde_json::Value]) -> String {
-        let ints: Option<Vec<i64>> = values.iter().map(serde_json::Value::as_i64).collect();
-        if let Some(ints) = ints.filter(|v| v.len() > 2) {
+        if let Some(ints) = answer_text::numeric_enum(values) {
             let (lo, hi) = (ints.iter().min().copied().unwrap_or(0), ints.iter().max().copied().unwrap_or(0));
-            if usize::try_from(hi - lo + 1).ok() == Some(ints.len()) {
+            if ints.len() == 1 {
+                return lo.to_string();
+            }
+            if ints.len() > 2 && usize::try_from(hi - lo + 1).ok() == Some(ints.len()) {
                 return format!("{lo} to {hi}");
+            }
+            if ints.len() <= 12 {
+                return format!("one of {}", ints.iter().map(ToString::to_string).collect::<Vec<_>>().join(", "));
             }
         }
         let shown: Vec<String> = values.iter().take(12).map(ToString::to_string).collect();
@@ -376,6 +389,14 @@ pub fn schema_violation(schema: &serde_json::Value, answer: &serde_json::Value) 
     }
     fn at(schema: &serde_json::Value, value: &serde_json::Value, path: &str) -> Option<String> {
         if let Some(allowed) = schema.get("enum").and_then(serde_json::Value::as_array) {
+            // A number whose digits a string enum holds is the amount the
+            // question offers, and its reader takes it as one (an X
+            // funding's amounts, #596): `0` was asked again for not being
+            // `"0"` on every X spell a seat answered in numbers (#930).
+            let as_digits = value.is_number() && allowed.contains(&serde_json::json!(value.to_string()));
+            if as_digits {
+                return None;
+            }
             if !allowed.contains(value) {
                 return Some(format!("`{path}` is {value}; it must be {}", listed(allowed)));
             }
@@ -397,7 +418,8 @@ pub fn schema_violation(schema: &serde_json::Value, answer: &serde_json::Value) 
                 let required = schema.get("required").and_then(serde_json::Value::as_array);
                 for key in required.into_iter().flatten().filter_map(serde_json::Value::as_str) {
                     if key != "thoughts" && !not_asked(key) && !object.contains_key(key) {
-                        return Some(format!("`{key}` is missing"));
+                        let inner = if path.is_empty() { key.to_string() } else { format!("{path}.{key}") };
+                        return Some(format!("`{inner}` is missing"));
                     }
                 }
                 properties.into_iter().flatten().filter(|(key, _)| !unread(key)).find_map(|(key, sub)| {
@@ -5040,7 +5062,14 @@ impl LlmPlayer {
         let mut pool_lines = Vec::new();
         for mt in colors {
             let available = options.pool.get(&mt).copied().unwrap_or(0);
-            floating_props.insert(mt_key(mt).to_string(), int_enum_str((0..=available).collect()));
+            let mut amounts = int_enum_str((0..=available).collect());
+            if available == 0 {
+                // Nothing of this colour floats, so its amount can only be
+                // 0: an answer may leave it out, and the format line does
+                // not ask for it (#930). The field stays in the schema.
+                amounts[ONLY_VALUE] = serde_json::json!(true);
+            }
+            floating_props.insert(mt_key(mt).to_string(), amounts);
             floating_required.push(mt_key(mt).to_string());
             if available > 0 {
                 pool_lines.push(format!("  {}: 0 to {available}", mt_key(mt)));
@@ -8572,6 +8601,55 @@ pub(crate) mod tests {
             "floating": floating, "sources": []})).is_some(), "every listed source is answered");
     }
 
+    /// #930: the amounts are string enums on the wire, and the prompt shows
+    /// them as numbers, which is how the reader takes them too (#596). The
+    /// check took only the strings, so an X funding answered in numbers
+    /// was asked again every time; and it required all six pool colours,
+    /// five of which an empty pool can only fill with 0.
+    #[test]
+    fn an_x_funding_is_answered_in_numbers_and_with_only_the_colours_that_float() {
+        use mtg_engine::types::ManaType;
+        let schema_for = |seat: &str, legal: &mtg_engine::engine::LegalActions| {
+            let recorded = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+            let mut p = LlmPlayer::for_prompt_tests(seat).with_pass_until(false);
+            p.backend = Box::new(SchemaRecorder { reply: serde_json::json!({}), schemas: recorded.clone() });
+            let _ = p.choose_action(&empty_view(), legal);
+            let s = recorded.borrow()[0].clone();
+            s
+        };
+        let empty = schema_for("Seat-930-empty", &x_funding_offer());
+        let six = serde_json::json!({"white": 0, "blue": 0, "black": 0, "red": 0, "green": 0, "colorless": 0});
+        let answer = |floating: serde_json::Value, sources: serde_json::Value| serde_json::json!(
+            {"thoughts": "t", "cancel": false, "floating": floating, "sources": sources});
+        assert_eq!(schema_violation(&empty, &answer(six.clone(), serde_json::json!([4]))), None,
+            "numbers are the amounts the prompt shows");
+        assert_eq!(schema_violation(&empty, &answer(serde_json::json!({}), serde_json::json!(["2"]))), None,
+            "nothing floats, so no colour is required");
+        assert_eq!(schema_violation(&empty, &serde_json::json!({"thoughts": "t", "cancel": false, "sources": [0]})), None);
+        // A number is still held to the amounts, and to what floats.
+        assert_eq!(schema_violation(&empty, &answer(six.clone(), serde_json::json!([3]))).as_deref(),
+            Some("`sources[0]` is 3; it must be one of 0, 2, 4"));
+        assert_eq!(schema_violation(&empty, &answer(serde_json::json!({"red": 1}), serde_json::json!([0]))).as_deref(),
+            Some("`floating.red` is 1; it must be 0"));
+        assert!(schema_violation(&empty, &answer(six, serde_json::json!([2.0]))).is_some(), "2.0 is not an amount");
+        let line = answer_text::answer_format(&empty);
+        assert!(line.contains(r#""sources": [integer]"#) && !line.contains("floating"), "{line}");
+
+        // Two red floating: red is asked, as a number, and required; the
+        // other five are not.
+        let red = schema_for("Seat-930-red",
+            &x_funding_offer_with_pool(std::collections::BTreeMap::from([(ManaType::Red, 2)])));
+        let line = answer_text::answer_format(&red);
+        assert!(line.contains(r#""floating": {"red": integer 0 to 2}"#), "{line}");
+        assert_eq!(schema_violation(&red, &answer(serde_json::json!({"red": 2}), serde_json::json!([0]))), None);
+        assert_eq!(schema_violation(&red, &answer(serde_json::json!({}), serde_json::json!([0]))).as_deref(),
+            Some("`floating.red` is missing"));
+        // The request is the same whatever floats: the marker is not sent.
+        assert_eq!(cache_stable_schema(&empty), cache_stable_schema(&red));
+        assert!(!cache_stable_schema(&empty).to_string().contains(ONLY_VALUE));
+        assert!(!sanitize_schema_for_gemini(&empty).to_string().contains(ONLY_VALUE));
+    }
+
     /// A backend that answers one fixed object, whatever it is asked.
     struct FixedBackend {
         model: &'static str,
@@ -8599,9 +8677,16 @@ pub(crate) mod tests {
     /// Two untapped Sol Rings and nothing else: the only allocations are
     /// 0, 2 and 4, and the schema offers them as the strings "0", "2", "4".
     fn x_funding_offer() -> mtg_engine::engine::LegalActions {
+        x_funding_offer_with_pool(std::collections::BTreeMap::new())
+    }
+
+    /// [`x_funding_offer`] with `pool` floating.
+    fn x_funding_offer_with_pool(
+        pool: std::collections::BTreeMap<mtg_engine::types::ManaType, u32>,
+    ) -> mtg_engine::engine::LegalActions {
         use mtg_engine::funding::{FundingCategory, FundingGroup, FundingOptions};
         let options = FundingOptions {
-            pool: std::collections::BTreeMap::new(),
+            pool,
             groups: vec![FundingGroup {
                 name: "Sol Ring".to_string(),
                 category: FundingCategory::Rocks,
