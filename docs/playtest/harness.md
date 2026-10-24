@@ -1176,7 +1176,7 @@ say what your stub says.
   — **played 2026-10-24: the reader holds, the check does not agree with
   the parser.** A stand-in that parses only the format line (a small
   recursive-descent reader of `integer A to B`, `one of …`, `[T]`, `{…}`)
-  over 39 games: prose with `{G}{G}` around the answer, a draft object
+  over 40 games: prose with `{G}{G}` around the answer, a draft object
   before the final one, a trailing `}` and a code fence were all read
   (0 UNREADABLE in ~2,800 calls). But X funding's amounts are string enums
   (`int_enum_str`) and the line types them `string`: an answer in numbers,
