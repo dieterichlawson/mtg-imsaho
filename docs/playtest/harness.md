@@ -1096,6 +1096,17 @@ say what your stub says.
   CLI's browser and the page's inspector), Abattoir Ghoul's damaged
   creatures. A fact `GameView` carries that one surface drops is the same
   bug on that surface
+  — **played 2026-10-24.** The opponent's floating mana is on every
+  surface now (`cli.rs` reads `opp.mana_pool`, the LLM prints `Opp mana
+  pool:`). Abattoir Ghoul's damaged creatures are on none: `GameView` has
+  no `damaged_by`, so after the first prompt past combat damage the
+  seat's board says `[3dmg]` with no source, and a stub game cast Victim
+  of Night on a Crab the Ghoul had hit for a 6-life gain the prompt never
+  explained (#932). `14 Abattoir Ghoul/8 Victim of Night/18 Swamp`
+  against `20 Fortress Crab/20 Island` reaches it in a few seeds: the
+  Crab survives the Ghoul and the Ghoul survives the Crab. Against
+  Somberwald Spiders the Ghoul usually dies, which takes its trigger
+  with it. The targeted graveyard card's text was not re-checked
 - H35 [proposed 2026-10-21, from `mtg-player/src/llm/answer_text.rs`] the
   answer in text: a `claude -p` game seat is no longer sent
   `--json-schema`; the question's fields end the prompt and the answer is
@@ -1162,3 +1173,20 @@ say what your stub says.
   symbol, a second object, or a trailing `}`: each must be read. Record
   the stand-in's stdin — the `--log` PROMPT record does not hold the
   format line (#910)
+  — **played 2026-10-24: the reader holds, the check does not agree with
+  the parser.** A stand-in that parses only the format line (a small
+  recursive-descent reader of `integer A to B`, `one of …`, `[T]`, `{…}`)
+  over 39 games: prose with `{G}{G}` around the answer, a draft object
+  before the final one, a trailing `}` and a code fence were all read
+  (0 UNREADABLE in ~2,800 calls). But X funding's amounts are string enums
+  (`int_enum_str`) and the line types them `string`: an answer in numbers,
+  which the parser was written to accept (#596), is re-asked every time
+  ("`floating.black` is 0; it must be one of \"0\""), and leaving out the
+  pool colours that are not floating is re-asked too (`white` is missing),
+  because the line asks for six colours an empty pool can only fill with
+  "0" (#930). Next time, answer every question in the type the prompt
+  *shows* (numbers where it prints numbers) rather than the type the line
+  names, and count REASKs per kind: a field the check refuses in the shape
+  the parser takes is the same bug in another prompt. The stand-in's
+  array lengths cannot be read off the line ("as many as the prompt
+  says"), so ignore `card_indices`/`order` count REASKs from it
