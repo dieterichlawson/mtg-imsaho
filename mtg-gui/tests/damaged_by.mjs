@@ -22,14 +22,17 @@ const creature = (id, name, controller, damage, damaged_by) => ({ object_id: id,
 const ghoul = creature(6, "Abattoir Ghoul", 0, 0, []);
 const crab = creature(44, "Fortress Crab", 1, 3, [6, 90]);
 const burnt = creature(45, "Fortress Crab", 1, 2, [90]);
-const view = { you: 0, opponents: [{ id: 1 }], battlefield: [ghoul, crab, burnt], your_hand: [], stack: [], exile: [],
+// Regenerated: no damage marked, and the Ghoul still triggers when it dies.
+const regenerated = creature(46, "Fortress Crab", 1, 0, [6]);
+const view = { you: 0, opponents: [{ id: 1 }], battlefield: [ghoul, crab, burnt, regenerated], your_hand: [], stack: [], exile: [],
   graveyards: [], your_library_cards: [], revealed_names: {} };
 const state = { view, index: P.indexView(view), overlay: null };
 const facts = id => R.inspectorFacts(state, state.index.get(id));
 
-if (!facts(44).includes("Damage dealt by Abattoir Ghoul")) fail(`the Ghoul is named: ${JSON.stringify(facts(44))}`);
-if (facts(45).some(f => f.startsWith("Damage dealt by"))) fail(`a spell is not: ${JSON.stringify(facts(45))}`);
-if (facts(6).some(f => f.startsWith("Damage dealt by"))) fail(`nor anything undamaged: ${JSON.stringify(facts(6))}`);
+if (!facts(44).includes("Damaged this turn by Abattoir Ghoul")) fail(`the Ghoul is named: ${JSON.stringify(facts(44))}`);
+if (!facts(46).includes("Damaged this turn by Abattoir Ghoul")) fail(`and after a regeneration: ${JSON.stringify(facts(46))}`);
+if (facts(45).some(f => f.startsWith("Damaged this turn"))) fail(`a spell is not: ${JSON.stringify(facts(45))}`);
+if (facts(6).some(f => f.startsWith("Damaged this turn"))) fail(`nor anything undamaged: ${JSON.stringify(facts(6))}`);
 
 if (failures) { console.error(`${failures} failure(s)`); process.exit(1); }
 console.log("ok: the inspector says what dealt a creature its damage");

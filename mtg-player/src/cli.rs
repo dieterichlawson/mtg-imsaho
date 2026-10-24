@@ -5519,13 +5519,16 @@ impl CliPlayer {
             let _ = execute!(out, Print(format!("  Effective P/T: {p}/{t}\n")));
         }
         if perm.damage_marked > 0 {
-            // And what on the battlefield dealt it: Abattoir Ghoul's
-            // trigger reads it for the rest of the turn (#932).
-            let from: Vec<String> = perm.damaged_by.iter()
-                .filter_map(|id| view.battlefield.iter().find(|p| p.object_id == *id))
-                .map(|p| format!("{} (#{})", p.name, p.object_id.0)).collect();
-            let by = if from.is_empty() { String::new() } else { format!(", dealt by {}", from.join(" and ")) };
-            for line in Self::wrap_indented(&format!("  Damage marked: {}{by}", perm.damage_marked), Self::term_width().saturating_sub(1)) {
+            let _ = execute!(out, Print(format!("  Damage marked: {}\n", perm.damage_marked)));
+        }
+        // What on the battlefield has dealt it damage this turn, marked or
+        // since regenerated away: Abattoir Ghoul's trigger reads it for the
+        // rest of the turn (#932).
+        let from: Vec<String> = perm.damaged_by.iter()
+            .filter_map(|id| view.battlefield.iter().find(|p| p.object_id == *id))
+            .map(|p| format!("{} (#{})", p.name, p.object_id.0)).collect();
+        if !from.is_empty() {
+            for line in Self::wrap_indented(&format!("  Damaged this turn by: {}", from.join(" and ")), Self::term_width().saturating_sub(1)) {
                 let _ = execute!(out, Print(format!("{line}\n")));
             }
         }
@@ -12424,12 +12427,19 @@ Mark 1 of the 1 cards below to exile.");
         let mut buf: Vec<u8> = Vec::new();
         CliPlayer::paint_permanent_detail(&mut buf, &v, &crab);
         let text = String::from_utf8_lossy(&buf).to_string();
-        assert!(text.contains("Damage marked: 3, dealt by Abattoir Ghoul (#6)\r\n"), "{text}");
+        assert!(text.contains("Damage marked: 3\r\n") && text.contains("Damaged this turn by: Abattoir Ghoul (#6)\r\n"), "{text}");
+        // Regenerated: no damage marked, and the Ghoul still counts.
+        let mut regenerated = crab.clone();
+        regenerated.damage_marked = 0;
+        let mut buf: Vec<u8> = Vec::new();
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &regenerated);
+        let text = String::from_utf8_lossy(&buf).to_string();
+        assert!(!text.contains("Damage marked") && text.contains("Damaged this turn by: Abattoir Ghoul (#6)"), "{text}");
         // A source gone from the battlefield (a spell) is not named.
         crab.damaged_by = vec![ObjectId(90)];
         let mut buf: Vec<u8> = Vec::new();
         CliPlayer::paint_permanent_detail(&mut buf, &v, &crab);
-        assert!(String::from_utf8_lossy(&buf).contains("Damage marked: 3\r\n"));
+        assert!(!String::from_utf8_lossy(&buf).contains("Damaged this turn"));
     }
 
     #[test]

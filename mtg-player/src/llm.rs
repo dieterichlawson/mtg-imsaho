@@ -1628,7 +1628,7 @@ Every prompt restates the whole position, in this order:
 - `Opp's cards in view:` rules text for the opponent's cards on the battlefield, on the stack, in exile or revealed, and for a graveyard card that works from there (flashback; cast or returned from a graveyard) or that the question or a stack object points at. You learn them as they come into view, never before. `(×N)` ends a line repeated N times; `3x` is three of a card.
 - A context line (`[MAIN PHASE 1]`, `[RESPOND TO opp's <spell>]`, `[AFTER BLOCKERS DECLARED]`, ...) and the question.
 
-Boards group lands (`2x Forest (1 tapped)`); any other permanent is `Name (#id) P/T keywords [flags]`. The `#id` tells apart permanents of one name. P/T is current, bonuses included, and a creature has exactly the keywords printed after it. Status flags after a permanent, in one bracket: `T` tapped; `S` summoning sick (no attacking or {T} abilities until its controller's next turn; it can block); `attacking you`/`attacking Opp`/`attacking <planeswalker> (#id)`; `blocking <attacker> (#id)`; `blocked by <blocker> (#id)`; `blocked (no blockers left)` (deals no combat damage unless it has trample); `Ndmg` damage marked (`Ndmg from <permanent> (#id)`: which permanents on the battlefield dealt it this turn); `regen shield`/`N regen shields`; `token`; `copy`; `owned by opponent`/`owned by you` (it returns to its owner when the control effect ends, and goes to its owner's graveyard); `+1+1xN`, `-1-1xN`, `LOYxN` or another counter by kind (`Slimex2`); `names: <card>`; `enchanting you`/`enchanting opponent` (a Curse's player); `legendary` (CR 704.5j: of two with one name under your control, you keep one). Elsewhere an object carries its id and whose it is: `(your)`, `(opponent's)`, `(in your graveyard)`, `(in opponent's exile)`.
+Boards group lands (`2x Forest (1 tapped)`); any other permanent is `Name (#id) P/T keywords [flags]`. The `#id` tells apart permanents of one name. P/T is current, bonuses included, and a creature has exactly the keywords printed after it. Status flags after a permanent, in one bracket: `T` tapped; `S` summoning sick (no attacking or {T} abilities until its controller's next turn; it can block); `attacking you`/`attacking Opp`/`attacking <planeswalker> (#id)`; `blocking <attacker> (#id)`; `blocked by <blocker> (#id)`; `blocked (no blockers left)` (deals no combat damage unless it has trample); `Ndmg` damage marked; `damaged this turn by <permanent> (#id)` (what on the battlefield has dealt it damage this turn, marked or since removed); `regen shield`/`N regen shields`; `token`; `copy`; `owned by opponent`/`owned by you` (it returns to its owner when the control effect ends, and goes to its owner's graveyard); `+1+1xN`, `-1-1xN`, `LOYxN` or another counter by kind (`Slimex2`); `names: <card>`; `enchanting you`/`enchanting opponent` (a Curse's player); `legendary` (CR 704.5j: of two with one name under your control, you keep one). Elsewhere an object carries its id and whose it is: `(your)`, `(opponent's)`, `(in your graveyard)`, `(in opponent's exile)`.
 
 ## Answering
 
@@ -3670,19 +3670,18 @@ impl LlmPlayer {
                 // deals no combat damage, and read as unblocked (#725).
                 flag_parts.push("blocked (no blockers left)".into());
             }
-            if c.damage_marked > 0 {
-                // Which permanents dealt it, while it is marked: Abattoir
-                // Ghoul's trigger looks back over the whole turn, and the
-                // damage line was in one prompt's recent events (#932). A
-                // spell that dealt it is gone, and is not named.
-                let from: Vec<String> = c.damaged_by.iter()
-                    .filter(|id| all_perms.iter().any(|p| p.object_id == **id))
-                    .map(|id| named(*id)).collect();
-                if from.is_empty() {
-                    flag_parts.push(format!("{}dmg", c.damage_marked));
-                } else {
-                    flag_parts.push(format!("{}dmg from {}", c.damage_marked, from.join(" and ")));
-                }
+            if c.damage_marked > 0 { flag_parts.push(format!("{}dmg", c.damage_marked)); }
+            // Which permanents dealt it damage this turn: Abattoir Ghoul's
+            // trigger looks back over the whole turn, and the damage line
+            // was in one prompt's recent events (#932). Its own fact, not
+            // the marked damage's: a regenerated creature keeps it with no
+            // damage marked. A spell that dealt damage is gone, and is not
+            // named.
+            let from: Vec<String> = c.damaged_by.iter()
+                .filter(|id| all_perms.iter().any(|p| p.object_id == **id))
+                .map(|id| named(*id)).collect();
+            if !from.is_empty() {
+                flag_parts.push(format!("damaged this turn by {}", from.join(" and ")));
             }
             // A live regeneration shield (CR 701.15a), which decides whether
             // removal is worth casting and whether an attack trades. The seat
@@ -10131,8 +10130,16 @@ this Aura deals 1 damage to that player.";
         let owned = vec![ghoul, crab, burnt];
         let all: Vec<&PermanentView> = owned.iter().collect();
         let board = LlmPlayer::format_perms_compact(&all, &all, you);
-        assert!(board.contains("Fortress Crab (#44) 1/6 colorless [3dmg from Abattoir Ghoul (#6)]"), "{board}");
+        assert!(board.contains("Fortress Crab (#44) 1/6 colorless [3dmg,damaged this turn by Abattoir Ghoul (#6)]"), "{board}");
         assert!(board.contains("Fortress Crab (#45) 1/6 colorless [2dmg]"), "{board}");
+        // Regenerated: the damage is gone, and the Ghoul still triggers
+        // when it dies this turn (destruction.rs `regenerate`).
+        let mut regenerated = owned[1].clone();
+        regenerated.damage_marked = 0;
+        let owned = vec![owned[0].clone(), regenerated];
+        let all: Vec<&PermanentView> = owned.iter().collect();
+        let board = LlmPlayer::format_perms_compact(&all, &all, you);
+        assert!(board.contains("Fortress Crab (#44) 1/6 colorless [damaged this turn by Abattoir Ghoul (#6)]"), "{board}");
     }
 
     /// Issue #726: every flag the board prints is one the legend defines,
@@ -10202,7 +10209,7 @@ this Aura deals 1 damage to that player.";
                     f if f.starts_with("blocked by") => "`blocked by",
                     f if f.starts_with("names:") => "`names:",
                     f if f.ends_with("dmg") => "`Ndmg`",
-                    f if f.contains("dmg from ") => "`Ndmg from",
+                    f if f.starts_with("damaged this turn by") => "`damaged this turn by",
                     f if f.ends_with("regen shields") => "`N regen shields`",
                     f if f.starts_with("+1+1x") => "`+1+1xN`",
                     f if f.starts_with("-1-1x") => "`-1-1xN`",

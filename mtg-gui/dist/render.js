@@ -1026,12 +1026,13 @@ export function inspectorFacts(state, e) {
     // (issue #525, #468 on the fourth surface).
     if (o.regeneration_shields)
         out.push(`${o.regeneration_shields} regeneration shield${o.regeneration_shields > 1 ? "s" : ""}`);
-    // What on the battlefield dealt its damage this turn, which Abattoir
-    // Ghoul's trigger reads when it dies (#932); a spell that dealt it is gone.
-    const dealtBy = (o.damage_marked ? o.damaged_by || [] : [])
+    // What on the battlefield has dealt it damage this turn, marked or since
+    // regenerated away: Abattoir Ghoul's trigger reads it when it dies (#932).
+    // A spell that dealt damage is gone, and is not named.
+    const dealtBy = (o.damaged_by || [])
         .filter(id => state.view.battlefield.some(p => p.object_id === id)).map(id => nameOf(state, id));
     if (dealtBy.length)
-        out.push(`Damage dealt by ${dealtBy.join(" and ")}`);
+        out.push(`Damaged this turn by ${dealtBy.join(" and ")}`);
     if (o.attached_to !== undefined && o.attached_to !== null)
         out.push(`Attached to ${nameOf(state, o.attached_to)}`);
     // And the other direction, which is the one #83 is about: hovering the
