@@ -431,8 +431,10 @@ same prompt, byte for byte, with the events since its last decision and no
 recap (`mtg-runner/tests/save_files.rs` pins it). A save written before the
 memory was kept resumes the seat the old way: a recap of the whole game log
 in its first prompt (logged as `RESUME`) and the notes the save holds. It
-records the `MTG_LLM_HISTORY` and `MTG_CLAUDE_CODE_ANSWERS` the seats'
-system prompts were made under, too, and a resume under others says on
+records the `MTG_LLM_HISTORY`, `MTG_CLAUDE_CODE_ANSWERS` and
+`MTG_LLM_PASS_UNTIL` the seats' system prompts were made under, too (the
+last also moves every priority menu's engine actions down a row), and a
+resume under others says on
 stderr that its system prompt is not the live one; `replay.py` keeps that
 in the row as `unlike_live` and counts it in a WARN at the end of the run.
 

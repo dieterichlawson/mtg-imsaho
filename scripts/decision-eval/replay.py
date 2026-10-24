@@ -16,8 +16,8 @@ calls), and the bytes of the system prompt and first prompt. A position
 already in the file is skipped, so an interrupted run picks up where it
 stopped. `compare.py` reads the files. A position the runner says it
 resumed under another system prompt than the live one (another
-MTG_LLM_HISTORY or MTG_CLAUDE_CODE_ANSWERS) carries `unlike_live` in its
-row, and the run ends with a WARN counting them.
+MTG_LLM_HISTORY, MTG_CLAUDE_CODE_ANSWERS or MTG_LLM_PASS_UNTIL) carries
+`unlike_live` in its row, and the run ends with a WARN counting them.
 
 Every call is a real model call when `--p1` names a real seat: on the
 `cc` seat that is plan quota, not an API bill. Never pass a `claude:` or

@@ -58,14 +58,20 @@ struct SaveData {
     /// `seats`.
     #[serde(default)]
     seat_memory: Vec<Option<mtg_player::llm::SeatMemory>>,
-    /// The two settings that change what an LLM seat's system prompt says
-    /// (`MTG_LLM_HISTORY`, `MTG_CLAUDE_CODE_ANSWERS`): a position resumed
-    /// under others is not asked as it was live, which `--resume` says
-    /// (#920's game twin). `None` in a save written before them.
+    /// The settings that change what an LLM seat's system prompt says
+    /// (`MTG_LLM_HISTORY`, `MTG_CLAUDE_CODE_ANSWERS`, `MTG_LLM_PASS_UNTIL`):
+    /// a position resumed under others is not asked as it was live, which
+    /// `--resume` says (#920's game twin). `None` in a save written before
+    /// them. Pass-until also moves every engine action on a priority menu
+    /// down a row, so a live answer kept without it indexes another menu
+    /// (#931). `MTG_LLM_THINKING` is not one: it changes the request, not
+    /// what the seat is told.
     #[serde(default)]
     history: Option<usize>,
     #[serde(default)]
     text_answers: Option<bool>,
+    #[serde(default)]
+    pass_until: Option<bool>,
 }
 
 enum PlayerKind {
@@ -626,6 +632,8 @@ stops here — pass --save {path} to keep writing it");
         // In the words scripts/decision-eval reads, as mtg-draft-replay says them.
         let specs = [&p1_spec, &p2_spec];
         let (history, text) = (mtg_player::llm::history_exchanges(), mtg_player::llm::answer_text::text_answers());
+        let pass_until = mtg_player::llm::pass_until_enabled();
+        let on_off = |on: bool| if on { "on" } else { "off" };
         let unlike = [
             (specs.iter().any(|s| !seat_is_local(s)) && save.history.is_some_and(|h| h != history),
                 format!("it was saved under MTG_LLM_HISTORY={}, and is resumed under {history}",
@@ -633,6 +641,9 @@ stops here — pass --save {path} to keep writing it");
             (specs.iter().any(|s| is_claude_code(s)) && save.text_answers.is_some_and(|t| t != text),
                 format!("it was saved under {}={}, and is resumed asking {}", mtg_player::llm::answer_text::ANSWERS_ENV,
                     if text { "schema" } else { "text" }, if text { "in text" } else { "in the schema" })),
+            (specs.iter().any(|s| !seat_is_local(s)) && save.pass_until.is_some_and(|p| p != pass_until),
+                format!("it was saved under {}={}, and is resumed with the pass-until row {}",
+                    mtg_player::llm::PASS_UNTIL_ENV, on_off(!pass_until), on_off(pass_until))),
         ];
         for (_, why) in unlike.iter().filter(|(differs, _)| *differs) {
             mtg_player::stderr_line!("note: --resume {path}: its system prompt is not the live one: {why}");
@@ -1108,8 +1119,9 @@ stops here — pass --save {path} to keep writing it");
                 seat_notes: seat_notes(),
                 seat_rng: seat_rng(),
                 seat_memory: seat_memory(),
-                history: prompt_settings(&seats_ref).0,
-                text_answers: prompt_settings(&seats_ref).1,
+                history: prompt_settings(&seats_ref).history,
+                text_answers: prompt_settings(&seats_ref).text_answers,
+                pass_until: prompt_settings(&seats_ref).pass_until,
             };
             let json = serde_json::to_string(&save).expect("Failed to serialize game state");
             // The hot-reload snapshot, so `rr` works without --save. Nobody
@@ -1227,8 +1239,9 @@ use --save if you need a resumable file.");
             seat_notes: seat_notes(),
             seat_rng: seat_rng(),
             seat_memory: seat_memory(),
-            history: prompt_settings(&[p1_spec.clone(), p2_spec.clone()]).0,
-            text_answers: prompt_settings(&[p1_spec.clone(), p2_spec.clone()]).1,
+            history: prompt_settings(&[p1_spec.clone(), p2_spec.clone()]).history,
+            text_answers: prompt_settings(&[p1_spec.clone(), p2_spec.clone()]).text_answers,
+            pass_until: prompt_settings(&[p1_spec.clone(), p2_spec.clone()]).pass_until,
         };
         match serde_json::to_string(&save) {
             Ok(json) => {
@@ -1354,12 +1367,22 @@ fn seat_is_metered(spec: &str) -> bool {
 /// Whether a seat spec names a backend that is nothing but this process —
 /// no model, no quota, no network.
 /// What a save records of the settings an LLM seat's system prompt is made
-/// under: the history for any LLM seat, the answer format for a `claude -p`
-/// one, whose prompt alone says how it answers; `None` where no seat's
-/// prompt carries it.
-fn prompt_settings(seats: &[String]) -> (Option<usize>, Option<bool>) {
-    (seats.iter().any(|s| !seat_is_local(s)).then(mtg_player::llm::history_exchanges),
-     seats.iter().any(|s| is_claude_code(s)).then(mtg_player::llm::answer_text::text_answers))
+/// under: the history and the pass-until row for any LLM seat, the answer
+/// format for a `claude -p` one, whose prompt alone says how it answers;
+/// `None` where no seat's prompt carries it.
+struct PromptSettings {
+    history: Option<usize>,
+    text_answers: Option<bool>,
+    pass_until: Option<bool>,
+}
+
+fn prompt_settings(seats: &[String]) -> PromptSettings {
+    let llm = seats.iter().any(|s| !seat_is_local(s));
+    PromptSettings {
+        history: llm.then(mtg_player::llm::history_exchanges),
+        text_answers: seats.iter().any(|s| is_claude_code(s)).then(mtg_player::llm::answer_text::text_answers),
+        pass_until: llm.then(mtg_player::llm::pass_until_enabled),
+    }
 }
 
 fn is_claude_code(spec: &str) -> bool {
