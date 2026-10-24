@@ -442,8 +442,9 @@ fn a_capture_that_cannot_keep_positions_is_refused_before_the_game() {
     assert!(!String::from_utf8_lossy(&out.stdout).contains("DECISION"), "no decision was asked");
 }
 
-/// #920's game twin: a save records the history and the answer format an
-/// LLM seat's system prompt was made under, and a resume under others says
+/// #920's game twin: a save records the history, the answer format and the
+/// pass-until row (#931) an LLM seat's system prompt was made under, and a
+/// resume under others says
 /// so in the words `replay.py` reads; one under the same says nothing.
 #[test]
 fn a_position_resumed_under_other_prompt_settings_says_so() {

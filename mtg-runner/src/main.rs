@@ -1364,8 +1364,6 @@ fn seat_is_metered(spec: &str) -> bool {
     matches!(kind, "ai" | "llm" | "claude" | "gemini")
 }
 
-/// Whether a seat spec names a backend that is nothing but this process —
-/// no model, no quota, no network.
 /// What a save records of the settings an LLM seat's system prompt is made
 /// under: the history and the pass-until row for any LLM seat, the answer
 /// format for a `claude -p` one, whose prompt alone says how it answers;
@@ -1376,6 +1374,7 @@ struct PromptSettings {
     pass_until: Option<bool>,
 }
 
+/// [`PromptSettings`] for a game played by `seats`.
 fn prompt_settings(seats: &[String]) -> PromptSettings {
     let llm = seats.iter().any(|s| !seat_is_local(s));
     PromptSettings {
@@ -1389,6 +1388,8 @@ fn is_claude_code(spec: &str) -> bool {
     matches!(spec.split(':').next(), Some("cc" | "claude-code"))
 }
 
+/// Whether a seat spec names a backend that is nothing but this process —
+/// no model, no quota, no network.
 fn seat_is_local(spec: &str) -> bool {
     let kind = spec.split_once(':').map_or(spec, |(k, _)| k);
     matches!(kind, "cli" | "gui" | "random")
