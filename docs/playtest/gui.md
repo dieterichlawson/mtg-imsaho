@@ -654,3 +654,18 @@ writing it up as the page's problem alone.
   `table.seats`, the review list), not the page — a full-page shot at 390
   is too small to read a wrapped cell. Then reload: the name box must
   still hold the name the table uses
+- G38 [proposed 2026-10-24, from 2b9f09a and #933] the request heads a
+  real browser sends, against how both servers route them. `peek_head`
+  (`mtg-player/src/gui.rs`) waits for the blank line but stops at 2 KiB,
+  and the game page and the lobby decide "page or WebSocket" by a
+  substring search for `upgrade: websocket` in what it peeked. Send each
+  URL a page fetch and a WebSocket upgrade from a raw socket with: a
+  Cookie header of 1.5, 2.1 and 4 KiB before and after `Upgrade`; the
+  head in one write and in five pieces with 100 ms between them;
+  `Upgrade:websocket` with no space and `UPGRADE: WebSocket`; a head
+  that never ends (the 5 s read timeout must free the connection
+  without stalling another page's load); 50 idle connections at once,
+  then a real page load. A 101 or the page is right; a 200 for an
+  upgrade, a 404 for the keyed path or a page that waits on someone
+  else's idle socket is the bug. Then the same through the lobby's one
+  port to a game page (D49), where the proxy routes a second time
