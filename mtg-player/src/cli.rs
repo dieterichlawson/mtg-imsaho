@@ -5523,8 +5523,10 @@ impl CliPlayer {
         }
         // What on the battlefield has dealt it damage this turn, marked or
         // since regenerated away: Abattoir Ghoul's trigger reads it for the
-        // rest of the turn (#932).
-        let from: Vec<String> = perm.damaged_by.iter()
+        // rest of the turn (#932). A creature's, as the LLM board says it:
+        // damage to a planeswalker is recorded too, and nothing reads it.
+        let creature = perm.card_types.contains(&CardType::Creature);
+        let from: Vec<String> = perm.damaged_by.iter().filter(|_| creature)
             .filter_map(|id| view.battlefield.iter().find(|p| p.object_id == *id))
             .map(|p| format!("{} (#{})", p.name, p.object_id.0)).collect();
         if !from.is_empty() {
@@ -12439,6 +12441,13 @@ Mark 1 of the 1 cards below to exile.");
         crab.damaged_by = vec![ObjectId(90)];
         let mut buf: Vec<u8> = Vec::new();
         CliPlayer::paint_permanent_detail(&mut buf, &v, &crab);
+        assert!(!String::from_utf8_lossy(&buf).contains("Damaged this turn"));
+        // A planeswalker records its sources too; no surface names them.
+        let mut walker = creature(45, "Garruk Relentless", 0);
+        walker.card_types = vec![CardType::Planeswalker];
+        walker.damaged_by = vec![ObjectId(6)];
+        let mut buf: Vec<u8> = Vec::new();
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &walker);
         assert!(!String::from_utf8_lossy(&buf).contains("Damaged this turn"));
     }
 

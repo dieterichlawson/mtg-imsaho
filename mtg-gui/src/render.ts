@@ -934,8 +934,9 @@ export function inspectorFacts(state: LiveState, e: IndexEntry): string[] {
   if (o.regeneration_shields) out.push(`${o.regeneration_shields} regeneration shield${o.regeneration_shields > 1 ? "s" : ""}`);
   // What on the battlefield has dealt it damage this turn, marked or since
   // regenerated away: Abattoir Ghoul's trigger reads it when it dies (#932).
-  // A spell that dealt damage is gone, and is not named.
-  const dealtBy = (o.damaged_by || [])
+  // A spell that dealt damage is gone, and is not named; a planeswalker's
+  // sources are recorded too, and nothing reads them.
+  const dealtBy = ((o.card_types || []).includes("Creature") ? o.damaged_by || [] : [])
     .filter(id => state.view.battlefield.some(p => p.object_id === id)).map(id => nameOf(state, id));
   if (dealtBy.length) out.push(`Damaged this turn by ${dealtBy.join(" and ")}`);
   if (o.attached_to !== undefined && o.attached_to !== null) out.push(`Attached to ${nameOf(state, o.attached_to)}`);
