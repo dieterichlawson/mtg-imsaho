@@ -763,9 +763,7 @@ pub fn within_reach(cost: &ManaCost, pool: &ManaPool, sources: &[ManaSource]) ->
 /// Check if a mana pool can pay a given cost.
 #[must_use]
 pub fn can_pay(pool: &ManaPool, cost: &ManaCost) -> bool {
-    // Clone pool to simulate payment.
-    let mut sim = pool.clone();
-    try_auto_pay(&mut sim, cost).is_ok()
+    pay_fixed(amounts_of(pool), &pips_of(cost)).is_some()
 }
 
 /// Automatically pay a mana cost from a pool.
@@ -775,9 +773,10 @@ pub fn can_pay(pool: &ManaPool, cost: &ManaCost) -> bool {
 /// then generic from whatever remains.
 ///
 /// # Errors
-/// Returns [`ManaError`] if the pool doesn't have enough mana to pay `cost`.
+/// Returns [`ManaError`] if the pool doesn't have enough mana to pay `cost`,
+/// and then the pool is as it was.
 pub fn auto_pay(pool: &mut ManaPool, cost: &ManaCost) -> Result<(), ManaError> {
-    try_auto_pay(pool, cost)
+    pay_with(pool, |have| pay_fixed(have, &pips_of(cost)))
 }
 
 /// Pay `cost` from `pool`, spending mana that `reserve` still needs only when
@@ -791,13 +790,14 @@ pub fn auto_pay(pool: &mut ManaPool, cost: &ManaCost) -> Result<(), ManaError> {
 /// what the rest of the cost does not need pays it from the Green.
 ///
 /// # Errors
-/// Returns [`ManaError`] if the pool doesn't have enough mana to pay `cost`.
+/// Returns [`ManaError`] if the pool doesn't have enough mana to pay `cost`,
+/// and then the pool is as it was.
 pub fn auto_pay_reserving(
     pool: &mut ManaPool,
     cost: &ManaCost,
     reserve: &ManaCost,
 ) -> Result<(), ManaError> {
-    try_auto_pay_with_order(pool, cost, &generic_payment_order(pool, reserve))
+    pay_with(pool, |have| pay_around(have, &pips_of(cost), &pips_of(reserve).specific))
 }
 
 /// The fixed order generic costs are paid in when nothing is being reserved.
@@ -807,84 +807,129 @@ const GENERIC_ORDER: [ManaType; 6] = [
     ManaType::Red, ManaType::Green,
 ];
 
+/// [`GENERIC_ORDER`] as slots of [`Amounts`].
+const FIXED_ORDER: [usize; 6] = [0, 1, 2, 3, 4, 5];
+
+/// A pool's contents as six counts, one slot per type in [`GENERIC_ORDER`].
+///
+/// A payment is worked out in this shape, over a cost's [`Pips`], and only
+/// then written back to the pool, so a payment that fails has touched
+/// nothing.
+type Amounts = [u32; 6];
+
+fn slot_of(mana_type: ManaType) -> usize {
+    match mana_type {
+        ManaType::Colorless => 0,
+        ManaType::White => 1,
+        ManaType::Blue => 2,
+        ManaType::Black => 3,
+        ManaType::Red => 4,
+        ManaType::Green => 5,
+    }
+}
+
+fn amounts_of(pool: &ManaPool) -> Amounts {
+    GENERIC_ORDER.map(|mt| pool.get(mt))
+}
+
+/// Write `left` into `pool`, whose contents were `have`. Only the types that
+/// changed are written, so a type nothing was spent from keeps whatever entry
+/// it had (or had not).
+fn write_amounts(pool: &mut ManaPool, have: &Amounts, left: &Amounts) {
+    for (slot, &mana_type) in GENERIC_ORDER.iter().enumerate() {
+        if left[slot] != have[slot] {
+            pool.mana.insert(mana_type, left[slot]);
+        }
+    }
+}
+
+/// Run a payment over `pool`'s amounts and write back what it leaves, or
+/// leave `pool` alone when it cannot be paid.
+fn pay_with(pool: &mut ManaPool, pay: impl FnOnce(Amounts) -> Option<Amounts>) -> Result<(), ManaError> {
+    let have = amounts_of(pool);
+    let left = pay(have).ok_or(ManaError::InsufficientMana)?;
+    write_amounts(pool, &have, &left);
+    Ok(())
+}
+
+/// A cost as payment sees it: what it asks of each type in particular (one
+/// of its colour per coloured pip, and its `{C}`), and how much generic mana
+/// on top, which any type pays. X is not a cost yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Pips {
+    specific: Amounts,
+    generic: u32,
+}
+
+fn pips_of(cost: &ManaCost) -> Pips {
+    let mut pips = Pips { specific: [0; 6], generic: 0 };
+    for sym in &cost.symbols {
+        match sym {
+            ManaSymbol::Colored(color) => pips.specific[slot_of(ManaType::from(*color))] += 1,
+            ManaSymbol::Colorless(n) => pips.specific[slot_of(ManaType::Colorless)] += n,
+            ManaSymbol::Generic(n) => pips.generic += n,
+            ManaSymbol::X => {}
+        }
+    }
+    pips
+}
+
 /// Which mana to spend on a generic cost first, given what `reserve` still
 /// needs from the same pool: the biggest surplus first, so mana another cost
 /// depends on is spent last. Ties keep [`GENERIC_ORDER`], so a plan stays
 /// deterministic.
 #[must_use]
 pub fn generic_payment_order(pool: &ManaPool, reserve: &ManaCost) -> Vec<ManaType> {
-    let mut needed: std::collections::BTreeMap<ManaType, u32> = std::collections::BTreeMap::new();
-    for sym in &reserve.symbols {
-        match sym {
-            ManaSymbol::Colored(color) => *needed.entry(ManaType::from(*color)).or_default() += 1,
-            ManaSymbol::Colorless(n) => *needed.entry(ManaType::Colorless).or_default() += n,
-            // Generic can be paid with anything, so it plays no part in
-            // deciding which mana is precious; X is not a cost yet.
-            ManaSymbol::Generic(_) | ManaSymbol::X => {}
-        }
-    }
-    let mut order = GENERIC_ORDER.to_vec();
-    order.sort_by_key(|mt| {
-        let surplus = i64::from(pool.get(*mt)) - i64::from(needed.get(mt).copied().unwrap_or(0));
-        std::cmp::Reverse(surplus)
-    });
+    surplus_order(&amounts_of(pool), &pips_of(reserve).specific)
+        .iter()
+        .map(|&slot| GENERIC_ORDER[slot])
+        .collect()
+}
+
+/// The slots of `have`, biggest surplus over `keep` first, ties in slot order.
+fn surplus_order(have: &Amounts, keep: &Amounts) -> [usize; 6] {
+    let mut order = FIXED_ORDER;
+    order.sort_by_key(|&slot| std::cmp::Reverse(i64::from(have[slot]) - i64::from(keep[slot])));
     order
 }
 
-fn try_auto_pay(pool: &mut ManaPool, cost: &ManaCost) -> Result<(), ManaError> {
-    try_auto_pay_with_order(pool, cost, &GENERIC_ORDER)
+/// Pay `cost` out of `have` with the generic part in [`GENERIC_ORDER`]: what
+/// is left, or None when the cost cannot be paid.
+fn pay_fixed(have: Amounts, cost: &Pips) -> Option<Amounts> {
+    let mut have = pay_specific(have, cost)?;
+    let mut remaining = cost.generic;
+    spend_generic(&mut have, &mut remaining, &FIXED_ORDER, &[0; 6]);
+    (remaining == 0).then_some(have)
 }
 
-fn try_auto_pay_with_order(
-    pool: &mut ManaPool,
-    cost: &ManaCost,
-    generic_order: &[ManaType],
-) -> Result<(), ManaError> {
-    // 1. Pay colored requirements.
-    for sym in &cost.symbols {
-        if let ManaSymbol::Colored(color) = sym {
-            let mana_type = ManaType::from(*color);
-            let available = pool.get(mana_type);
-            if available == 0 {
-                return Err(ManaError::InsufficientMana);
-            }
-            pool.mana.insert(mana_type, available - 1);
-        }
-    }
+/// Pay `cost` out of `have` with the generic part spent around `keep`, what
+/// another cost needs of each type ([`auto_pay_reserving`]): what is left,
+/// or None when the cost cannot be paid.
+fn pay_around(have: Amounts, cost: &Pips, keep: &Amounts) -> Option<Amounts> {
+    let order = surplus_order(&have, keep);
+    let mut have = pay_specific(have, cost)?;
+    let mut remaining = cost.generic;
+    spend_generic(&mut have, &mut remaining, &order, &[0; 6]);
+    (remaining == 0).then_some(have)
+}
 
-    // 2. Pay specifically colorless requirements.
-    let colorless_needed = cost.colorless_amount();
-    if colorless_needed > 0 {
-        let available = pool.get(ManaType::Colorless);
-        if available < colorless_needed {
-            return Err(ManaError::InsufficientMana);
-        }
-        pool.mana.insert(ManaType::Colorless, available - colorless_needed);
+/// Each type's own pips from that type: what is left, or None when some type
+/// is short.
+fn pay_specific(mut have: Amounts, cost: &Pips) -> Option<Amounts> {
+    for (amount, &needed) in have.iter_mut().zip(&cost.specific) {
+        *amount = amount.checked_sub(needed)?;
     }
+    Some(have)
+}
 
-    // 3. Pay generic costs from whatever is left.
-    let generic_needed = cost.generic_amount();
-    if generic_needed > 0 {
-        let total_remaining = pool.total();
-        if total_remaining < generic_needed {
-            return Err(ManaError::InsufficientMana);
-        }
-        let mut remaining = generic_needed;
-        for &mt in generic_order {
-            if remaining == 0 { break; }
-            let available = pool.get(mt);
-            let to_use = available.min(remaining);
-            if to_use > 0 {
-                pool.mana.insert(mt, available - to_use);
-                remaining -= to_use;
-            }
-        }
-        if remaining > 0 {
-            return Err(ManaError::InsufficientMana);
-        }
+/// Take up to `remaining` of generic mana out of `have`, slot by slot in
+/// `order`, never taking a slot below `floor`.
+fn spend_generic(have: &mut Amounts, remaining: &mut u32, order: &[usize; 6], floor: &Amounts) {
+    for &slot in order {
+        let take = have[slot].saturating_sub(floor[slot]).min(*remaining);
+        have[slot] -= take;
+        *remaining -= take;
     }
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -1134,6 +1179,38 @@ mod tests {
         assert!(auto_pay_reserving(&mut pool, &one, &ManaCost::new(vec![ManaSymbol::Generic(1)])).is_ok());
         assert_eq!(residue(&pool), vec![(ManaType::Green, 1)],
             "the fixed order, unchanged: white is spent before green");
+    }
+
+    /// A payment that fails spends nothing. {W}{W} out of a lone {W} used to
+    /// pay the first pip, find no White for the second, and return the error
+    /// with the first White gone — and a mana ability whose cost could not be
+    /// paid returned with its controller's mana missing.
+    #[test]
+    fn a_failed_payment_spends_nothing() {
+        let mut pool = pool_of(&[(ManaType::White, 1)]);
+        let two_white = ManaCost::new(vec![
+            ManaSymbol::Colored(Color::White),
+            ManaSymbol::Colored(Color::White),
+        ]);
+        assert!(auto_pay(&mut pool, &two_white).is_err());
+        assert_eq!(residue(&pool), vec![(ManaType::White, 1)]);
+        assert!(auto_pay_reserving(&mut pool, &two_white, &ManaCost::free()).is_err());
+        assert_eq!(residue(&pool), vec![(ManaType::White, 1)]);
+    }
+
+    /// Writing a payment back touches only the types it spent from: a type
+    /// listed at zero stays listed, a type never listed stays unlisted.
+    #[test]
+    fn writing_a_payment_back_touches_only_what_it_spent() {
+        let mut pool = pool_of(&[(ManaType::White, 2), (ManaType::Green, 0)]);
+        let have = amounts_of(&pool);
+        let mut left = have;
+        left[slot_of(ManaType::White)] = 1;
+        write_amounts(&mut pool, &have, &left);
+        assert_eq!(amounts_of(&pool), left);
+        assert_eq!(pool.mana.get(&ManaType::White), Some(&1));
+        assert_eq!(pool.mana.get(&ManaType::Green), Some(&0), "a listed zero stays listed");
+        assert_eq!(pool.mana.get(&ManaType::Blue), None, "an unlisted type stays unlisted");
     }
 
     // ---- how a source is scored ----
