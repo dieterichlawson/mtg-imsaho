@@ -233,6 +233,30 @@ pub fn log_sideboard(seat: usize, game: usize, before: &DraftDeck, decision: &Si
     w(&format!("[Seat {seat}] SIDEBOARD before game {game}: {change}{choice}"), "");
 }
 
+/// The log's record of what a seat no model answered for went into a game
+/// with: a person, an AI seat before game 1 or one the table plays for, or
+/// one whose model gave no answer. `after` is the deck it changed to, `None`
+/// for none; `kept` says why a seat that could not choose kept its deck;
+/// and its play/draw choice when it had one. Only the AI seats' answers were
+/// logged, so a night's draft.log could not say which cards a person played
+/// in games 2 and 3 (#878).
+pub fn log_between(seat: usize, game: usize, before: &DraftDeck, after: Option<&DraftDeck>,
+                   kept: Option<&str>, chooses: bool, play_first: Option<bool>) {
+    let change = match (after, kept) {
+        (Some(deck), _) => deck_change(before, deck),
+        (None, Some(why)) => format!("kept the deck ({why})"),
+        (None, None) => "no change".to_string(),
+    };
+    let choice = match (chooses, play_first) {
+        (false, _) => "",
+        (true, Some(true)) => "; plays first",
+        (true, Some(false)) => "; draws first",
+        (true, None) => "; plays first (no choice was made)",
+    };
+    mtg_player::game_log::write(file!(), line!(),
+        &format!("[Seat {seat}] SIDEBOARD before game {game}: {change}{choice}"), "");
+}
+
 /// Two decks with the same cards and lands, in any order.
 #[must_use]
 pub fn same_deck(a: &DraftDeck, b: &DraftDeck) -> bool {

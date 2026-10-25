@@ -10,7 +10,7 @@ use std::process::{Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use lobby_support::Server;
+use lobby_support::{Server, WsClient};
 
 fn wait_for(buf: &Arc<Mutex<String>>, needle: &str, timeout: Duration) -> String {
     let deadline = Instant::now() + timeout;
@@ -183,7 +183,7 @@ fn the_coin_flips_winner_chooses_from_the_client() {
     }
     // The timers draft and build for the person; seed 11 gives seat 0 the flip.
     let server = Server::start("client-flip", "human,ai",
-        &["--pick-seconds", "1", "--build-seconds", "2", "--sideboard-seconds", "600"]);
+        &["--pick-seconds", "1", "--build-seconds", "2", "--sideboard-seconds", "600", "--best-of", "3"]);
     let mut child = Command::new(env!("CARGO_BIN_EXE_mtg-draft-client"))
         .arg(server.ws_url(0, server.key(0)))
         .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
@@ -213,6 +213,40 @@ fn the_coin_flips_winner_chooses_from_the_client() {
     writeln!(stdin, "ready").unwrap();
     let terminal = server.wait_for_stderr("seat 0: no browser at http://", Duration::from_secs(30));
     assert!(terminal.contains("round 1: game 1: seat 0 chose to draw first"), "{terminal}");
+    // The log records a person's choice as it does an AI seat's (#878): it
+    // was a line on the host's terminal and nowhere else.
+    server.wait_for_log("[Seat 0] SIDEBOARD before game 1: no change; draws first", Duration::from_secs(10));
+
+    // Game 1 conceded on the game page; before game 2 the person swaps a
+    // card from the client, and the log says which.
+    let url = terminal.split("seat 0: no browser at ").nth(1).and_then(|t| t.split_whitespace().next())
+        .expect("the game page's link").to_string();
+    let mut page = WsClient::connect(&format!("{}ws", url.replacen("http://", "ws://", 1)));
+    page.send(serde_json::json!({"type": "hello"}));
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while !out.lock().unwrap().contains("Before game 2 vs seat 1") {
+        assert!(Instant::now() < deadline, "game 1 never ended:\n{}", server.stderr());
+        if let Some(m) = page.next_message(Duration::from_millis(200)) {
+            if m["type"] == "decision" {
+                page.send(serde_json::json!({"type": "action", "seq": m["seq"], "action": "Concede"}));
+            }
+        }
+    }
+    let text = wait_for(&out, "spells + 17 lands = 40 cards", Duration::from_secs(30));
+    let screen = &text[text.rfind("Before game 2 vs seat 1").unwrap()..];
+    let row = |tag: &str| screen.lines().find_map(|l| {
+        let (n, rest) = l.trim_start().split_once(' ')?;
+        let name = rest.strip_prefix(tag)?.trim_start();
+        Some((n.parse::<usize>().ok()?, name.split(" {").next()?.split(" —").next()?.trim().to_string()))
+    }).unwrap_or_else(|| panic!("a {tag} row:\n{screen}"));
+    let ((out_n, out_name), (in_n, in_name)) = (row("[MAIN]"), row("[side]"));
+    writeln!(stdin, "drop {out_n}").unwrap();
+    writeln!(stdin, "add {in_n}").unwrap();
+    writeln!(stdin, "ready").unwrap();
+    let log = server.wait_for_log("[Seat 0] SIDEBOARD before game 2:", Duration::from_secs(30));
+    let line = log.lines().find(|l| l.contains("[Seat 0] SIDEBOARD before game 2:")).unwrap();
+    assert!(line.contains(&format!("in: {in_name}")) && line.contains(&format!("out: {out_name}")), "{line}");
+    assert!(line.ends_with("; plays first (no choice was made)"), "seat 0 lost and chose nothing: {line}");
     writeln!(stdin, "quit").unwrap();
     assert!(child.wait().unwrap().success());
 }

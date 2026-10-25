@@ -229,7 +229,11 @@ with something to do. The next game starts when both are ready, or when
 who never chose plays. An AI seat answers in one call (its notes, the
 score and what its opponent showed); a seat the table plays for keeps its
 deck and plays. The host's terminal says who sideboarded and who chose
-what, and the log has each AI seat's prompt and answer.
+what. The log has each AI seat's prompt and answer, and for every seat one
+`[Seat N] SIDEBOARD before game G:` line once both are ready: the cards in
+and out (or `no change`, or `kept the deck (<why>)` for a seat that could
+not choose), and the chooser's `; plays first`, `; draws first` or `; plays
+first (no choice was made)`; before game 1 only the chooser's.
 
 ## The log and the files
 

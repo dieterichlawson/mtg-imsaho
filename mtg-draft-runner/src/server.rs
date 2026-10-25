@@ -918,9 +918,18 @@ fn between_games(
     clients: &mut [Option<DraftLlmClient>; 2], bg: &BeforeGame,
 ) -> GameSetup {
     let mut decided: [Option<(Option<mtg_draft::deckbuilding::DraftDeck>, Option<bool>)>; 2] = [None, None];
+    // The decks each seat goes into the between with, for the log's record
+    // of what it changed; a seat whose model answered is logged with its answer.
+    let before = [a, b].map(|seat| shared.lobby().match_deck(round, a, b, seat).unwrap_or_default());
+    let mut logged = [false; 2];
+    // Why an AI seat kept its deck without being asked.
+    let mut kept: [Option<&str>; 2] = [None, None];
     for (i, seat) in [a, b].into_iter().enumerate() {
         let SeatKind::Ai(model) = &kinds[i] else { continue };
         if bg.game == 1 || shared.lobby().is_auto(seat) {
+            if bg.game > 1 {
+                kept[i] = Some("the table plays for the seat");
+            }
             decided[i] = Some((None, None));
             continue;
         }
@@ -942,11 +951,15 @@ fn between_games(
         decided[i] = Some(match decision {
             Ok(d) => {
                 crate::deck::log_sideboard(seat, bg.game, &current, &d, situation.chooses);
+                logged[i] = true;
                 (d.deck, d.play_first)
             }
             // A seat whose backend gave up keeps its deck and plays; its
             // games go on, and the game loop deals with a dead seat.
-            Err(_) => (None, None),
+            Err(_) => {
+                kept[i] = Some("the seat's model gave no answer");
+                (None, None)
+            }
         });
     }
     shared.lobby().open_between(round, a, b, bg.game, bg.chooser, bg.shown.clone(), decided);
@@ -970,6 +983,15 @@ fn between_games(
         let outcome = shared.lobby().take_between(round, a, b);
         if let Some(out) = outcome {
             shared.notify();
+            for (i, seat) in [a, b].into_iter().enumerate() {
+                let chooses = bg.chooser == seat;
+                if !logged[i] && (bg.game > 1 || chooses) {
+                    // A person the table plays for (kicked, or away) keeps theirs too.
+                    let why = kept[i].or_else(|| (bg.game > 1 && shared.lobby().is_auto(seat))
+                        .then_some("the table plays for the seat"));
+                    crate::deck::log_between(seat, bg.game, &before[i], out.decks[i].as_ref(), why, chooses, out.chooser_plays);
+                }
+            }
             let [da, db] = out.decks;
             let list = |d: mtg_draft::deckbuilding::DraftDeck| mtg_engine::engine::Decklist {
                 entries: mtg_draft::deckbuilding::to_decklist(&d),
