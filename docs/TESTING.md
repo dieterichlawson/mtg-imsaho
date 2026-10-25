@@ -161,3 +161,13 @@ The key can be anything; without it the six `llm_conversation` tests in
 Check the exit code, not a grep of the output — a test binary that fails to
 compile reports zero failures because its tests never ran. See the "Verifying
 test results" section of `CLAUDE.md`.
+
+## Proofs
+
+A test checks the inputs someone wrote down. Some properties are also
+proved, for every input within stated bounds, with the Kani model checker:
+`mtg-engine/src/proofs/`, run by `scripts/prove.sh` and the `proofs`
+workflow. They are not part of `cargo test`. What each one proves, and what
+it does not, is in `docs/plans/formal-verification.md`. A defect a proof
+finds gets an ordinary test here as well, so the suite guards it on a
+machine without Kani.
