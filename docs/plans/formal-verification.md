@@ -24,11 +24,11 @@ The engine is about 50,000 lines of Rust covering about 270 cards, and
 Magic's rules are rich enough that the general game is Turing-complete
 (Churchill, Biderman and Herrick, "Magic: The Gathering is Turing
 Complete", 2019). An end-to-end refinement proof of the whole engine against
-a full model of the CR would be a project on the scale of seL4 or CompCert:
-many person-years. What can be built, starting now, is a growing set of
-proved properties. Each one rules out a class of bug for good, and the
-tests, the fuzzer, mutation testing and the playtests keep covering
-everything the proofs do not reach yet.
+a full model of the CR would be a project on the scale of seL4 or CompCert.
+What can be built, starting now, is a growing set of proved properties. Each
+one rules out a class of bug for good, and the tests, the fuzzer, mutation
+testing and the playtests keep covering everything the proofs do not reach
+yet.
 
 ### What already exists, and what proofs add
 
@@ -42,213 +42,264 @@ everything the proofs do not reach yet.
 
 All of these find bugs; none can show that a bug is absent. A proof covers
 every input in its space, including the ones nobody thought of and the
-fuzzer never reached. The first spec written for this effort turned up
-three defects in code all of the above had passed (see
-[mana payment](#mana-payment)).
+fuzzer never reached. The first three specs written for this effort found
+five defects in code all of the above had passed (see
+[defects found](#defects-found)).
 
 ## Tools, and what they turned out to be able to do
 
-**Kani** (bounded model checking of the real Rust, through CBMC) is the
-tool in use. It checks the code as compiled, so there is no second copy of
-the engine to keep in step. A Kani proof is a theorem over every value of
-its symbolic inputs, within stated bounds. Measured on this codebase, on
-the first day:
+**Verus** is the main tool. It proves Rust annotated with contracts
+(`requires`, `ensures`, loop invariants) using the Z3 SMT solver, which
+reasons about integers rather than bits, so a proof holds for every amount.
+The proved code lives in the `mtg-kernel` crate, inside `verus!` blocks.
+`cargo build` erases the contracts and compiles the rest as ordinary Rust,
+so the engine runs the code that was proved, not a copy of it. Only
+`mtg-kernel` depends on `vstd`. Both kernels verify in about a second, once
+`vstd` is built. Verus has no specification for some of `std` (it rejected
+`slice::swap` and `sort_by_key`); the kernels write those few lines out.
 
-- **Small pure functions over small values: fast.** The payment kernel's
-  proofs take from under a second to three minutes each.
+**Kani** (bounded model checking of the compiled Rust, through CBMC) proves
+what Verus cannot see: the engine-side glue that turns a `ManaCost` into
+what the kernel takes (`mtg-engine/src/proofs/`). Measured on this
+codebase:
+
+- **Small pure functions over small values: fast.**
 - **Sums of many numbers: the cost grows steeply with the values allowed.**
-  CBMC reasons bit by bit. The reserve proof finishes in 40 seconds with at
-  most 3 of each type of mana, and did not finish in nine minutes with at
-  most 5. So a Kani proof over arithmetic is a proof for small amounts.
+  CBMC reasons bit by bit. The payment reserve proof finished in 40 seconds
+  with at most 3 of each type of mana and did not finish in nine minutes
+  with at most 5. Verus proves the same property for every amount in about
+  a second; that measurement is why payment moved to Verus.
 - **`BTreeMap`: out of reach.** One insert and lookup proves in five
-  seconds; six inserts did not finish in five minutes. `GameState`,
-  `ManaPool`, `CombatState` and most of the engine's state are
-  `BTreeMap`s, so Kani cannot reason about them directly.
-- **CBMC's SMT backend** (`--z3`), which would reason about integers
-  rather than bits, crashes on Kani's output (`map::at`) as of Kani 0.68.
+  seconds; six inserts did not finish in five minutes. Most of the engine's
+  state (`GameState`, `ManaPool`, `CombatState`) is `BTreeMap`s.
+- **CBMC's SMT backend** (`--z3`) crashes on Kani's output (`map::at`) as
+  of Kani 0.68.
 
-The pattern that follows, and that the payment proofs use: pull a rule out
-of the state into a function over plain values (arrays and small structs),
-prove that function, and keep the layer that reads the state into it and
-writes the result back as small as possible, covered by unit tests.
-
-**For unbounded amounts**, a deductive verifier that hands integer
-arithmetic to an SMT solver is the right tool: Creusot (contracts as
-attributes on the real Rust, which compile away under `rustc`) or Verus.
-Either would prove the payment kernel for every amount. Evaluating one on
-that kernel is the next tooling step.
-
-**For whole games**, the plan is a formal model of the rules in Lean 4,
-with the engine checked against it by differential testing, the way AWS
-built Cedar: a Lean model with proofs about it, and the Rust implementation
-tested against the model on millions of generated inputs. See tier 4.
+The pattern every proof so far follows: pull a rule out of the state into a
+function over plain values (arrays, slices, small structs), prove that
+function in `mtg-kernel`, and keep the layer that reads the state into it
+and writes the result back small, with unit tests on it.
 
 ### Running the proofs
 
-    scripts/prove.sh                 # every proof, about six minutes
-    scripts/prove.sh <harness>...    # by name
+    scripts/prove.sh                   # Verus, then Kani: about four minutes
+    scripts/prove.sh verus             # mtg-kernel only: seconds once vstd is built
+    scripts/prove.sh kani [HARNESS...] # the Kani proofs, or the named ones
+    scripts/kernel-mutants.py          # what the proofs and the tests each catch
 
-The proofs live in `mtg-engine/src/proofs/` and compile only under
-`cfg(kani)`, so `cargo build` and `cargo test` never see them. The
-`proofs` workflow runs them on every push to master and every pull
-request. Kani is pinned at 0.68.0; `scripts/prove.sh` prints the install
-commands when it is missing. Run the proofs one at a time, as the script
-does: four at once ran a 15 GB machine out of memory.
+The `proofs` workflow runs both provers on every push to master and every
+pull request. The Verus release (0.2026.10.04), its Rust toolchain and the
+Kani version (0.68.0) are pinned in `scripts/prove.sh`, and `vstd` in
+`mtg-kernel/Cargo.toml` must match the Verus release. Run the Kani proofs
+one at a time, as the script does: four at once ran a 15 GB machine out of
+memory.
+
+### What is trusted
+
+A proof is a proof relative to what it assumes. Here that is:
+
+- the **specification functions** (`pub open spec fn` in `mtg-kernel`, and
+  the specs in `mtg-engine/src/proofs/`). These are what a person reviews
+  against the CR; everything else is checked by machine;
+- **Verus, Z3 and Kani/CBMC**, and `vstd`'s specifications of the `std`
+  functions the kernels call (`min`, `clamp`, `saturating_sub`, `Vec::push`);
+- **rustc**, compiling the same source for the game that Verus checked;
+- the **glue** that is not proved: reading `ManaPool`'s `BTreeMap` into six
+  counts and writing the result back, and mapping blockers' ids to
+  positions. Each is a few lines with unit tests, and the combat mapping is
+  also covered by the exhaustive division test.
 
 ## The tiers
 
 ### Tier 1: pure kernels against rules-derived specs
 
 Pieces of the engine that are arithmetic or combinatorics over a few
-values: where a model checker is complete and fast. Each gets a spec
-written from the CR, proved for every input in the space.
+values. Each gets a spec written from the CR, proved for every input.
 
 | target | spec (CR) | status |
 |---|---|---|
-| paying a cost from the pool: `can_pay`, `auto_pay`, `auto_pay_reserving` | 107.4, 601.2h | **done**, three defects fixed |
-| combat damage division, `combat::divide_combat_damage` (already pure) | 510.1c-d: the amounts sum to the power; nothing reaches a later blocker, or tramples over, before every earlier blocker has lethal; the last blocker of a non-trampler takes the rest | next |
-| X funding from the pool, `funding::allocate_for_x` | 107.3, 601.2f, and that floating mana spent on X leaves the rest of the hand payable | next. Its pool step takes all of one type before the next, in the order `generic_payment_order` gives, which is the pattern defect 2 below was; whether that costs a hand its spell is the first thing this proof would settle |
-| autotap planner soundness: a plan it returns pays the cost | 601.2g-h, 605.3 | planned; `autotap_brute_force.rs` is the sampled version |
-| autotap planner completeness: if some set of sources can pay, it finds one | 601.2g | planned |
+| paying a cost from the pool: `can_pay`, `auto_pay`, `auto_pay_reserving` | 107.4, 601.2h | **proved**, three defects fixed |
+| combat damage division, `divide_combat_damage` | 510.1c-d, 702.19b, with 509.2's order | **proved** sound and complete, one defect fixed |
+| X funding from floating mana, `allocate_for_x`'s pool step | 107.3, and the reserve property of payment | **proved** by reuse of `pay_around`, one defect fixed |
+| autotap planner soundness: a plan it returns pays the cost | 601.2g-h, 605.3 | next; `autotap_brute_force.rs` is the sampled version |
+| autotap planner completeness: if some set of sources can pay, it finds one | 601.2g | next |
 | power and toughness from counters and effects (layer 7) | 613.4, 704.5q | planned; needs extracting from `state.rs` |
-| lethal damage, deathtouch, and what is destroyed | 704.5g-h, 702.2b | planned |
-| the turn's step sequence and who gets priority | 500.1, 117.3 | planned |
+| lethal damage, deathtouch, and what state-based actions destroy | 704.5f-h, 702.2b | planned |
+| the turn's step sequence and who gets priority | 500.1, 117.3-4 | planned |
 
-### Tier 2: engine invariants as theorems
+### Tier 2: the whole engine, through the fuzz oracle
 
-The fuzz oracle's properties (`check_core`, `check_settled`) are already a
-formal statement of what a coherent game state is. Tier 2 proves that each
-primitive that changes the state preserves them: moving an object between
-zones keeps every card in exactly one zone (CR 400.1) and `library_order`
-consistent with the library zone (CR 401.2); tapping, counters, damage and
-a pass of state-based actions keep the rest.
+The fuzz oracle's properties (`check_core`, `check_settled`,
+`check_transition`, `check_legal`) are already a formal statement of what a
+coherent game is, reviewed and maintained. The Anthropic post on LLM-driven
+verification (2026-10-22) turned each existing fuzz harness into a spec ("this
+test always passes") rather than writing specs by hand. The same move here
+gives the whole-engine theorem: **from any state a game can reach, no legal
+action makes the engine panic or break an invariant.**
 
-The `BTreeMap` measurement above says this cannot be done by pointing Kani
-at `GameState`. The ways forward, in order of preference:
+1. Write it as a coverage-guided fuzz target (`cargo fuzz`) to the rules of
+   Theorem's verification skill. The input bytes decode, totally, to a
+   sequence of choices. Every property aborts when it fails. Seed inputs
+   reach every check, and each check is shown to fail under a one-line
+   mutation. Counts and recursion taken from the input are bounded, and the
+   input is the only source of randomness. This is useful the day it
+   exists: the random seats do no coverage guidance.
+2. That target is the shape Theorem's pipeline proves things about (Rust is
+   supported, and they have offered to run it for open-source projects). The
+   largest program in their report had about 51,000 lines linked in, so a
+   proof of this engine is a stretch; their experience is that attempts
+   find bugs before they finish.
+3. Meanwhile, extract the bookkeeping each invariant is about (zones and
+   library order, the attachment graph, combat's maps) into kernels in
+   `mtg-kernel`, the way payment and combat were, and prove the kernels.
 
-1. Extract the bookkeeping each invariant is about (zones and library
-   order; the attachment graph; combat's maps) into kernels over fixed-size
-   arrays of a few objects, which the state calls. Prove the kernels.
-2. Prove the invariants of a Lean model of those primitives (tier 4) and
-   test the engine against the model.
+Release builds now check for integer overflow (`Cargo.toml`), so an
+overflow the fuzz reaches is a panic and a finding rather than a wrapped
+number, the Rust form of the skill's rule that a check must not be compiled
+out.
 
 ### Tier 3: the cards
 
 "Does this card do what its Oracle text says" needs a formal reading of the
-Oracle text. The plan:
+Oracle text. The post's closest case to this engine was a Python
+interpreter written in Rust, proved with Verus against a formal semantics of
+Python, with the semantics checked against CPython on 1.7 million programs.
+This engine is an interpreter of the rules, and the same split applies:
 
 1. **A card-spec language.** A small, typed language of effects in which
    each card's Oracle text is transcribed: "deals 3 damage to any target",
    "target creature gets +3/+3 until end of turn", "when this enters,
    create a 1/1 white Spirit creature token with flying". The transcription
-   is the reviewed artifact, checked against the Oracle text by reading,
-   as acceptance tests are now. It is deliberately not the engine's
-   `CardBehavior` code: it is an independent statement of what the card
-   means.
-2. **A reference interpreter** for that language, written from the CR and
-   sharing no code with `src/cards/`.
-3. **Refinement checks**: for each card, on small boards, the engine and the
-   reference interpreter agree. On the engine's real state that is a
-   differential test over the states the fuzzer reaches: weaker than a
-   proof, but with the same independent oracle. Where a card's effect is a
-   kernel in the tier 1 sense, it can be proved.
+   is the reviewed artifact, checked against the Oracle text by reading. It
+   is deliberately not the engine's `CardBehavior` code: it is an
+   independent statement of what the card means. The post's agents wrote
+   specs a hundredth the size of the programs they described; a card's spec
+   should be a line or two.
+2. **A reference semantics** for that language, written from the CR, in
+   Verus spec functions, sharing no code with `src/cards/`.
+3. **Refinement**: each card's behaviour agrees with its spec. Most cards
+   are thin calls into `cards/helpers.rs` and the damage and zone
+   primitives, so the shared helpers are proved once (the post's point
+   about dependencies following a power law) and each card's obligation is
+   "calls the right helper with the right numbers". Where the engine state
+   is in the way, the check is a differential test over the states the
+   fuzzer reaches: weaker than a proof, with the same independent oracle.
+4. **Whether the semantics is the real game** is checked empirically, as
+   the post checked its semantics against CPython: against the acceptance
+   tests, and, if it becomes worth it, against XMage or Forge (both
+   implement Innistrad) on the same games.
 
-The order, cheapest first:
+Cheapest first: vanilla and keyword-only creatures (all engine, data
+already checked against Scryfall), then the core cards in `src/cards/*.rs`,
+then Innistrad by mechanic, in the groups the `cards_*.rs` files use.
 
-- vanilla and keyword-only creatures, whose behaviour is all engine and
-  whose data is already checked against Scryfall: the spec is the data;
-- the core cards in `src/cards/*.rs` (Lightning Bolt, Giant Growth, Doom
-  Blade and the rest), one effect each;
-- Innistrad by mechanic, in the groups the `cards_*.rs` files already use.
+### Tier 4: whole-game properties
 
-### Tier 4: a model of the rules
-
-A Lean 4 model of the turn, priority and stack machine (CR 500-514, 117,
-405, 608), to prove things about whole games rather than single steps:
-that priority passing ends (CR 117.4), that the stack resolves last in,
+That priority passing ends (CR 117.4), that the stack resolves last in,
 first out (CR 405.5), that state-based actions reach a fixed point (CR
-704.3). The engine would be checked against the model by running both on
-the same action traces, which the fuzzer already generates. This is the
-largest piece and comes last, once tiers 1 to 3 have shown which parts of
-the engine's structure the model should mirror.
+704.3). The first plan was a Lean model of the turn and stack machine. The
+post argues for proving the code that runs rather than a translation of it
+(a model can disagree with the code), and Verus has now proved real engine
+code here, so the preference is: extract the turn-step and priority
+functions into `mtg-kernel` and prove them there; a Lean model only for what
+no extraction can reach, checked against the engine on fuzz traces.
 
 ## Proved so far
 
 ### Mana payment
 
-`mtg-engine/src/proofs/mana_payment.rs`, over the kernel in
-`mtg-engine/src/mana.rs`. Every public payment function is one line over
-three pieces: `pips_of` (a cost as per-type and generic counts),
-`pay_fixed` / `pay_around` (paying those counts out of six per-type
-amounts), and `amounts_of` / `write_amounts` (reading the pool and writing
-the result back).
+`mtg-kernel/src/mana.rs`, called by `mtg-engine/src/mana.rs`. The spec: a
+coloured pip is paid only with its colour, `{C}` only with colorless,
+generic with anything, and `{X}` is zero (CR 107.4, 107.3e, 601.2h). So a
+pool can pay a cost exactly when it has enough of each type for that type's
+own pips and enough in all (`payable`; Hall's condition for the matching).
+Proved for every pool, every cost and every reserve:
 
-The spec: a coloured pip is paid only with its colour, `{C}` only with
-colorless, generic with anything, and `{X}` is zero (CR 107.4, 107.3e,
-601.2h). So a pool can pay a cost exactly when it has enough of each type
-for that type's own pips, and enough in all (`spec_payable`; this is Hall's
-condition for the matching).
+- `pay_fixed` (`can_pay`, `auto_pay`) and `pay_around`
+  (`auto_pay_reserving`) succeed exactly when the pool can pay, and a
+  success spends exactly the cost, each pip from its own type
+  (`paid_exactly`);
+- `pay_around` leaves the reserve payable whenever the cost and the reserve
+  were payable together (`payable_together`, `reserve_payable`): the
+  promise of #252, #678 and #840;
+- `surplus_order` names every slot exactly once. Which spare goes first is a
+  preference the proof leaves open, and a unit test holds it to the
+  `sort_by_key` it replaced over 531,441 pools.
 
-| proof | property | bounds | time |
+Kani proves the engine-side step from `ManaCost` to the kernel's counts
+(`each_type_has_its_own_slot`, and `counting_a_cost_counts_every_pip` for
+costs of up to four symbols: every printed cost).
+
+### Combat damage division
+
+`mtg-kernel/src/combat.rs`, called by `divide_combat_damage`. The spec,
+`legal_division`, from CR 510.1c-d and 702.19b with the damage assignment
+order of CR 509.2: every point of damage is assigned (none at all with no
+blocker left and no trample); a blocker gets damage only once every blocker
+before it in the order has lethal; only a trampler sends any past its
+blockers, and only once all of them have lethal. Proved for every power,
+every number of blockers and every lethal amount:
+
+- **sound**: whatever the attacking player answers, the division is legal;
+- **no empty questions**: every open blocker offers at least two amounts;
+- **complete, question by question**: for any legal division, while the
+  answers given agree with it, either nothing is left to ask and the result
+  is that division, or the next question is about the first blocker still
+  open, its range contains that division's amount, and everything before it
+  already matches. So every legal division can be reached by answering, and
+  no answer already given is ever overridden.
+
+A rules-version note for whoever owns the spec. The engine follows damage
+assignment order, which is the rule of Innistrad's time. The current rules
+dropped it in the Foundations update (November 2024): the attacking player
+now divides damage among blockers freely, and lethal matters only for what
+tramples over. The proof is stated against the rule the engine implements;
+moving to the current rule would change `legal_division` and the prompt
+together.
+
+### X funding from floating mana
+
+`allocate_for_x`'s pool step is `pay_around` with an all-generic cost, so it
+carries that proof: it spends exactly what X asks of the pool, and leaves
+what the rest of the hand needs whenever the pool could pay both. The page
+has its own copy of the allocator, held to the engine's answers by
+`x-funding-cases.jsonl` (1,542 checks over 168 boards).
+
+### Defects found
+
+| # | defect | how it was found | reach |
 |---|---|---|---|
-| `each_type_has_its_own_slot` | the six slots are the six types of mana, each once | none | < 1 s |
-| `counting_a_cost_counts_every_pip` | `pips_of` counts each type's own pips and the generic, and they sum to the mana value | costs of up to 4 symbols, which is every printed cost | 3 min |
-| `paying_succeeds_exactly_when_the_rules_allow_and_spends_the_cost` | `can_pay` and `auto_pay` succeed exactly when `spec_payable` holds, and a success spends exactly the cost, each pip from its own type | a cost of any length asking at most 3 of each type and 3 generic; a pool of at most 3 of each type | 7 s |
-| `reserving_succeeds_exactly_when_the_rules_allow_and_spends_the_cost` | the same for `auto_pay_reserving`, around any reserve | as above, and a reserve of the same size | 2 min |
-| `reserving_leaves_the_reserve_payable` | when the pool can pay the cost and the reserve together, paying the cost leaves the reserve payable: the promise of #252, #678 and #840 | as above | 40 s |
+| 1 | a payment that failed still spent mana: `{W}{W}` out of a lone `{W}` emptied the pool | writing the payment spec | latent: the only costed mana ability is generic |
+| 2 | paying around a reserve took all of one type before the next, spending the hand's `{W}` beside a spare `{U}` | writing the spec; Kani found a counterexample on its own in 13 s | whenever mana floats before a payment, and in the autotap planner's judgement of plans |
+| 3 | the spare was counted before the cost paid its own pips | writing the spec | as 2 |
+| 4 | combat damage was divided silently whenever the power did not exceed the blockers' total lethal, though 4 power on two 2-toughness blockers may go 2-2, 3-1 or 4-0 | the completeness property; restoring the old rule makes the proof fail | over the same 608 seeded fuzz games the question came up 273 times, where it had come up 143 |
+| 5 | X paid from floating mana took all of one type first, the same as 2 | proving the allocator by reuse | every seat's X answer: CLI, fuzzer, page |
 
-Not proved: `amounts_of` and `write_amounts`, which go through the pool's
-`BTreeMap` (see the tools section). They are a few lines each, and the
-unit tests in `mana.rs` cover them, including that a write touches only
-the types it spent from. Storing `ManaPool` as six counts instead of a map,
-with a serde form that keeps the save format, would remove this layer and
-make the whole of payment provable; it is worth doing when the pool is next
-touched.
+Each has a regression test that fails without its fix.
 
-Also not covered: a cost asking more than 3 of a type or more than 3
-generic (Army of the Damned's flashback is `{7}{B}{B}{B}`), and the
-counting lemma for costs longer than 4 symbols (a reserve built from a
-whole hand's pips can be). Both are limits of the checker, and are what an
-SMT-based verifier would remove.
+### What the proofs catch that the tests do not
 
-**Checked against mutation**: with defect 2 put back, the reserve proof
-fails; with `pay_specific` changed to let a type run short, the payment
-proof fails. A proof that cannot fail would pass both.
-
-**Defects fixed** (each has a unit test in `mana.rs`):
-
-1. *A failed payment spent mana.* `auto_pay` paid coloured pips one at a time
-   and returned the error with the earlier ones gone: `{W}{W}` out of a
-   lone `{W}` left the pool empty. Latent: the only mana ability with a
-   cost is Shimmering Grotto's `{1}`, and a generic-only shortfall was
-   caught before anything was spent. But `activate_mana_source_reserving`
-   returns on that error as if nothing had happened, and
-   `pay_cost_with_sources` documents that a failed payment "leaves the game
-   state untouched".
-2. *Reserving took more than the surplus.* `auto_pay_reserving` ordered the
-   types by surplus and then took *all* of the first type before the next:
-   `{2}` out of a floating `{W}{W}{U}` beside a `{W}` spell in hand spent
-   both Whites (tied with Blue at one spare each, White sorts first) and
-   left the Blue.
-3. *The surplus was counted before the cost paid its own pips.* `{1}{W}` out
-   of the same pool beside the same spell: both Whites looked one spare, so
-   after the cost's own `{W}` the `{1}` took the White the hand needed.
-
-All three were found while writing the spec down, before any proof ran.
-Kani then found a counterexample to `reserving_leaves_the_reserve_payable`
-on the unfixed kernel by itself, in 13 seconds (a pool of 3/1/2/3/2/2 of
-C/W/U/B/R/G). Defects 2 and 3 are reachable whenever mana is floating
-when a payment is made, and the autotap planner judges whether a plan
-keeps the hand castable with the same function.
+`reports/verification-mutants.md`: 29 mutants of the two kernels. The proofs
+caught 24 and the tests 26, and each caught mutants the other missed. The
+proofs alone caught a combat change that asks about blockers out of order
+and silently cuts an answer already given, which the exhaustive test cannot
+see because the set of reachable divisions does not change. The tests alone
+caught changes to which spare mana is spent first, a preference the proof
+deliberately leaves open.
 
 ## Conventions
 
 - A proof is named for its property, in words, like a test.
-- A spec lives in the proof's file, is written from the CR or the Oracle
-  text, and never calls the function under proof.
-- Every bound is stated in the proof's module doc and in the table above,
-  with the reason for it.
-- A new proof is checked against at least one mutation of the code it is
-  about, as above: it has to be able to fail.
-- A defect a proof finds also gets an ordinary unit test, so `cargo test`
-  keeps guarding it on a machine without Kani.
+- A spec is written from the CR or the Oracle text, never by calling the
+  function under proof, and its CR references are in its doc.
+- Every bound is stated in the proof's doc and in this file, with the
+  reason for it.
+- A new proof is shown able to fail: at least one mutation of the code it
+  covers must make it fail (and `kani::cover!` shows a Kani proof's
+  interesting cases are reached).
+- A defect a proof finds gets an ordinary regression test, and its fix goes
+  in its own commit, ahead of the proof. That keeps the fix reviewable on
+  its own, and keeps "make the proof pass" from quietly changing what the
+  engine does, the reward hack the post warns about.
+- A change to a spec function is a change to what "correct" means, and is
+  reviewed as one.
