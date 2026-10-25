@@ -1,0 +1,17 @@
+[package]
+name = "mtg-kernel"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Verus's standard library, pinned to the Verus release that checks this
+# crate (0.2026.10.04.426d8b0): the verifier reads a vstd built alongside
+# it, so the two move together, with scripts/prove.sh and the proofs
+# workflow beside this line.
+vstd = "=0.0.0-2026-10-04-0306"
+
+[package.metadata.verus]
+verify = true
+
+[lints]
+workspace = true
