@@ -19,4 +19,5 @@
 //!
 //! [Verus]: https://github.com/verus-lang/verus
 
+pub mod combat;
 pub mod mana;
