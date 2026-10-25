@@ -3,11 +3,11 @@
 //! the pick and build timers, the tournament, and the host's keyboard.
 //!
 //! The network half is the game page's (`mtg-player/src/gui.rs`): a raw
-//! `TcpListener`, a thread per connection that peeks the request head and
-//! either serves a file or upgrades to a WebSocket, and whole-state
+//! `TcpListener`, a thread per connection that reads the request head
+//! whole and either serves a file or upgrades to a WebSocket, and whole-state
 //! messages so a page that reconnects is simply sent the state again.
 
-use std::io::{BufRead, Read, Write};
+use std::io::{BufRead, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 
 use mtg_draft::tournament::GameOutcome;
 use mtg_engine::cards::CardRegistry;
-use mtg_player::gui::{GuiPlayer, PageHandle, Withdraw};
+use mtg_player::gui::{GuiPlayer, PageHandle, RequestHead, Withdraw};
 
 use crate::card_lines::CardLines;
 use crate::deck::build_deck_with_llm;
@@ -1076,51 +1076,25 @@ fn write_game_log(out_dir: Option<&Path>, round: usize, a: usize, b: usize, game
 
 /// One TCP connection: a page fetch, the view API, or a WebSocket.
 fn serve_connection(mut stream: TcpStream, shared: &Arc<Shared>) {
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
-    let Some(head) = mtg_player::gui::peek_head(&stream) else { return };
-    let path = head.lines().next()
-        .and_then(|l| l.split_whitespace().nth(1))
-        .unwrap_or("/")
-        .to_string();
+    let head = match mtg_player::gui::read_request_head(&mut stream) {
+        Ok(head) => head,
+        Err(e) => return mtg_player::gui::refuse_head(&mut stream, &e),
+    };
+    let path = head.path().to_string();
     if let Some(rest) = path.strip_prefix("/game/") {
         let (port, tail) = rest.split_once('/').map_or((rest, None), |(p, t)| (p, Some(t)));
         match (port.parse::<u16>(), tail) {
-            (Ok(port), Some(tail)) => proxy_game_page(stream, shared, port, &format!("/{tail}")),
+            (Ok(port), Some(tail)) => proxy_game_page(stream, &head, shared, port, &format!("/{tail}")),
             // The page's own links are relative: `/game/8803` would put
             // its socket at `/game/ws`.
-            (Ok(port), None) => {
-                drain_head(&mut stream);
-                redirect(&mut stream, &format!("/game/{port}/"));
-            }
-            (Err(_), _) => {
-                drain_head(&mut stream);
-                http_response(&mut stream, "404 Not Found", "text/plain", b"not found");
-            }
+            (Ok(port), None) => redirect(&mut stream, &format!("/game/{port}/")),
+            (Err(_), _) => http_response(&mut stream, "404 Not Found", "text/plain", b"not found"),
         }
-    } else if mtg_player::gui::is_websocket_upgrade(&head) {
-        serve_websocket(stream, shared, &path);
+    } else if mtg_player::gui::is_websocket_upgrade(&head.text) {
+        serve_websocket(stream, &head, shared, &path);
     } else {
         serve_http(&mut stream, shared, &path);
     }
-}
-
-/// The request head off the socket, and whatever followed it in the same
-/// reads.
-fn drain_head(stream: &mut TcpStream) -> Vec<u8> {
-    let mut buf = Vec::new();
-    let mut chunk = [0u8; 1024];
-    loop {
-        match stream.read(&mut chunk) {
-            Ok(n) if n > 0 => {
-                buf.extend_from_slice(&chunk[..n]);
-                if buf.windows(4).any(|w| w == b"\r\n\r\n") || buf.len() > mtg_player::gui::HEAD_LIMIT {
-                    break;
-                }
-            }
-            Ok(_) | Err(_) => break,
-        }
-    }
-    buf
 }
 
 fn redirect(stream: &mut TcpStream, to: &str) {
@@ -1136,8 +1110,8 @@ fn redirect(stream: &mut TcpStream, to: &str) {
 /// request goes on with the prefix taken off, its bytes then passed both
 /// ways as they come, so the page's socket works through it as its fetches
 /// do.
-fn proxy_game_page(mut client: TcpStream, shared: &Shared, port: u16, rest: &str) {
-    let head = drain_head(&mut client);
+fn proxy_game_page(mut client: TcpStream, head: &RequestHead, shared: &Shared, port: u16, rest: &str) {
+    let head = &head.bytes;
     let addr = shared.in_game.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
         .iter().map(|g| g.addr).find(|a| a.port() == port);
     let Some(mut addr) = addr else {
@@ -1210,7 +1184,6 @@ fn http_response(stream: &mut TcpStream, status: &str, ctype: &str, body: &[u8])
 /// `GET /` is the draft page, `/dist/*` and `/assets/*` its files,
 /// `/api/view?seat=N&key=K` the seat's view as JSON.
 fn serve_http(stream: &mut TcpStream, shared: &Shared, path: &str) {
-    drain_head(stream);
     let bare = path.split('?').next().unwrap_or("/");
     if bare == "/api/view" {
         return match check_join(shared, path) {
@@ -1255,8 +1228,8 @@ fn refused(reason: &str, echo: serde_json::Value) -> String {
 
 /// One client's WebSocket: the seat's view on connect and after every
 /// change, its requests in, refusals back to it alone.
-fn serve_websocket(stream: TcpStream, shared: &Arc<Shared>, path: &str) {
-    let Ok(mut ws) = tungstenite::accept(stream) else { return };
+fn serve_websocket(stream: TcpStream, head: &RequestHead, shared: &Arc<Shared>, path: &str) {
+    let Some(mut ws) = mtg_player::gui::accept_websocket(stream, head) else { return };
     let seat = match check_join(shared, path) {
         Ok(seat) => seat,
         Err(e) => {

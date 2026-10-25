@@ -28,6 +28,24 @@ fn match_url(server: &Server) -> String {
     }
 }
 
+/// `head` sent in one write to `port`, and everything that comes back
+/// until the server closes or goes quiet for two seconds.
+fn raw_head(port: u16, head: &str) -> Vec<u8> {
+    use std::io::{Read, Write};
+    let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).expect("the lobby's port");
+    s.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    s.write_all(head.as_bytes()).unwrap();
+    let mut out = Vec::new();
+    let mut chunk = [0u8; 65_536];
+    while let Ok(n) = s.read(&mut chunk) {
+        if n == 0 {
+            break;
+        }
+        out.extend_from_slice(&chunk[..n]);
+    }
+    out
+}
+
 #[test]
 fn the_game_page_and_its_socket_come_through_the_lobbys_port() {
     if !lobby_support::python3_available() {
@@ -73,6 +91,32 @@ fn the_game_page_and_its_socket_come_through_the_lobbys_port() {
         }
         assert!(Instant::now() < deadline, "the game page's socket said nothing through the lobby");
     }
+
+    // A browser holding tens of KB of cookies for the host (#935, #936).
+    // The heads were read to 16 KiB: an `Upgrade` after a long Cookie was
+    // not seen and the socket was answered 404, and the unread rest of a
+    // page fetch's head reset the connection, cutting render.js (81 KB)
+    // at 64 KiB through the proxy. Past 64 KiB a head is refused 431.
+    let lobby = server.port;
+    let lobby_ws = format!("/ws?seat=0&key={}", server.key(0));
+    for (path, cookie) in [(format!("{page_path}ws"), 16_500), (format!("{page_path}ws"), 40_000), (lobby_ws.clone(), 40_000)] {
+        let reply = raw_head(lobby, &format!("GET {path} HTTP/1.1\r\nHost: x\r\nSec-WebSocket-Version: 13\r\n\
+            Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nConnection: keep-alive, Upgrade\r\n\
+            Cookie: a={}\r\nUpgrade: websocket\r\n\r\n", "v".repeat(cookie)));
+        assert!(reply.starts_with(b"HTTP/1.1 101"), "{path} with a {cookie}-byte cookie: {}",
+            String::from_utf8_lossy(&reply[..reply.len().min(200)]));
+    }
+    let script = std::fs::read(lobby_support::repo_root().join("mtg-gui/dist/render.js")).expect("the page's script");
+    assert!(script.len() > 65_536, "a script longer than one 64 KiB read");
+    for _ in 0..5 {
+        let reply = raw_head(lobby, &format!("GET {page_path}dist/render.js HTTP/1.1\r\nHost: x\r\n\
+            Cookie: a={}\r\nConnection: close\r\n\r\n", "v".repeat(40_000)));
+        let at = reply.windows(4).position(|w| w == b"\r\n\r\n").expect("a response head") + 4;
+        assert!(reply.starts_with(b"HTTP/1.1 200"), "{}", String::from_utf8_lossy(&reply[..at]));
+        assert_eq!(reply.len() - at, script.len(), "the whole script comes through the proxy");
+    }
+    let reply = raw_head(lobby, &format!("GET {page_path} HTTP/1.1\r\nHost: x\r\nCookie: a={}\r\n\r\n", "v".repeat(70_000)));
+    assert!(reply.starts_with(b"HTTP/1.1 431"), "{}", String::from_utf8_lossy(&reply[..reply.len().min(200)]));
 
     // Nothing else on the machine: not the lobby itself, not a port no
     // page of this table is on.

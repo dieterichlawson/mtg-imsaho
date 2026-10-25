@@ -599,36 +599,41 @@ impl Player for GuiPlayer {
 
 /// One TCP connection: a page fetch, or a WebSocket for the game.
 fn serve_connection(mut stream: TcpStream, shared: &Shared) {
-    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
-    let Some(head) = peek_head(&stream) else { return };
-    let path = head.lines().next()
-        .and_then(|l| l.split_whitespace().nth(1))
-        .unwrap_or("/");
-    let path = path.split('?').next().unwrap_or("/");
+    let head = match read_request_head(&mut stream) {
+        Ok(head) => head,
+        Err(e) => return refuse_head(&mut stream, &e),
+    };
+    let path = head.path().split('?').next().unwrap_or("/");
     let path = match keyed_path(path, shared.path_key.as_deref()) {
         Keyed::Page(p) => p.to_string(),
         Keyed::Directory(to) => {
-            read_head(&mut stream);
             respond(&mut stream, "301 Moved Permanently", &format!("Location: {to}\r\n"), "text/plain", b"");
             return;
         }
         Keyed::Refused => {
-            read_head(&mut stream);
             respond(&mut stream, "404 Not Found", "", "text/plain", b"not found");
             return;
         }
     };
-    if is_websocket_upgrade(&head) {
-        serve_websocket(stream, shared);
+    if is_websocket_upgrade(&head.text) {
+        serve_websocket(stream, &head, shared);
     } else {
         serve_http(&mut stream, &shared.web_dir, &path);
     }
 }
 
-/// The longest request head either server reads: past it a head is taken
-/// as what has arrived. A browser sends every cookie it holds for
-/// `127.0.0.1` whatever the port, and a head of a few KiB is ordinary.
-pub const HEAD_LIMIT: usize = 16 * 1024;
+/// The longest request head either server takes; a longer one is
+/// answered 431 and nothing else. A browser sends every cookie it holds
+/// for `127.0.0.1` whatever the port, and tens of KB of them is not
+/// unheard of on a shared host. The head was peeked to 16 KiB and taken
+/// as whatever had arrived: an `Upgrade` past that point was not seen and
+/// the socket was served as a page (#935), and the unread rest of the head
+/// turned the server's close into a reset that cut the response short
+/// (#936).
+pub const HEAD_LIMIT: usize = 64 * 1024;
+
+/// How long a client has to send its whole head.
+const HEAD_DEADLINE: Duration = Duration::from_secs(5);
 
 /// Whether a request head asks for a WebSocket: an `Upgrade` header, in
 /// any case and spacing, one of whose tokens is `websocket` (RFC 6455
@@ -637,32 +642,163 @@ pub const HEAD_LIMIT: usize = 16 * 1024;
 /// `Upgrade:websocket`, and served the page in its place (#933).
 #[must_use]
 pub fn is_websocket_upgrade(head: &str) -> bool {
-    head.split("\r\n").skip(1).take_while(|l| !l.is_empty())
-        .filter_map(|l| l.split_once(':'))
-        .any(|(name, value)| name.trim().eq_ignore_ascii_case("upgrade")
-            && value.split(',').any(|t| t.trim().eq_ignore_ascii_case("websocket")))
+    header_values(head, "upgrade").any(|v| has_token(v, "websocket"))
 }
 
-/// The request head, left on the socket for whoever reads it next: up to
-/// its blank line, or what arrived in five seconds, or the first
-/// [`HEAD_LIMIT`] bytes.
-///
-/// One peek returns whatever has arrived, and a client may send the head
-/// in pieces (a `write!` to a `TcpStream` sends `GET `, the path and the
-/// rest separately): a path read from `GET ` alone was `/`, which a keyed
-/// page refuses, so its own link was a 404 now and then.
-#[must_use]
-pub fn peek_head(stream: &TcpStream) -> Option<String> {
-    let mut head = vec![0u8; HEAD_LIMIT];
-    let until = std::time::Instant::now() + Duration::from_secs(5);
-    loop {
-        let n = stream.peek(&mut head).ok()?;
-        let done = n == 0 || n == head.len() || head[..n].windows(4).any(|w| w == b"\r\n\r\n");
-        if done || std::time::Instant::now() >= until {
-            return Some(String::from_utf8_lossy(&head[..n]).into_owned());
-        }
-        thread::sleep(Duration::from_millis(5));
+/// Every value of the header `name` in `head`, in order.
+fn header_values<'a>(head: &'a str, name: &'a str) -> impl Iterator<Item = &'a str> + 'a {
+    head.split("\r\n").skip(1).take_while(|l| !l.is_empty())
+        .filter_map(|l| l.split_once(':'))
+        .filter(move |(n, _)| n.trim().eq_ignore_ascii_case(name))
+        .map(|(_, v)| v.trim())
+}
+
+fn has_token(value: &str, token: &str) -> bool {
+    value.split(',').any(|t| t.trim().eq_ignore_ascii_case(token))
+}
+
+/// A request head read off the socket whole.
+#[derive(Debug)]
+pub struct RequestHead {
+    /// The head, request line to blank line.
+    pub text: String,
+    /// Everything read: the head and whatever followed it in the same
+    /// reads, which a proxy passes on and a WebSocket starts from.
+    pub bytes: Vec<u8>,
+    /// The head's length in `bytes`.
+    len: usize,
+}
+
+impl RequestHead {
+    /// The request line's target, query and all.
+    #[must_use]
+    pub fn path(&self) -> &str {
+        self.text.lines().next().and_then(|l| l.split_whitespace().nth(1)).unwrap_or("/")
     }
+
+    /// What followed the head.
+    fn rest(&self) -> &[u8] {
+        &self.bytes[self.len..]
+    }
+}
+
+/// Why no head was read.
+#[derive(Debug, PartialEq, Eq)]
+pub enum HeadError {
+    /// The client went before a byte of it.
+    Closed,
+    /// Its blank line had not come in [`HEAD_DEADLINE`].
+    TimedOut,
+    /// Longer than [`HEAD_LIMIT`].
+    TooLarge,
+}
+
+/// The request head off the socket: read up to its blank line, which may
+/// come in pieces (a `write!` to a `TcpStream` sends `GET `, the path and
+/// the rest separately). A head is never taken as what has arrived: a
+/// path read from `GET ` alone was `/`, which a keyed page refuses, and an
+/// `Upgrade` past a peek's end served a socket as a page (#935).
+///
+/// # Errors
+/// The client closed first, took too long, or sent more than
+/// [`HEAD_LIMIT`].
+pub fn read_request_head(stream: &mut TcpStream) -> Result<RequestHead, HeadError> {
+    let until = std::time::Instant::now() + HEAD_DEADLINE;
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 4096];
+    loop {
+        let left = until.saturating_duration_since(std::time::Instant::now());
+        if left.is_zero() {
+            return Err(HeadError::TimedOut);
+        }
+        let _ = stream.set_read_timeout(Some(left));
+        let n = match stream.read(&mut chunk) {
+            Ok(0) if buf.is_empty() => return Err(HeadError::Closed),
+            Ok(0) => return Err(HeadError::TimedOut),
+            Ok(n) => n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(_) if buf.is_empty() => return Err(HeadError::Closed),
+            Err(_) => return Err(HeadError::TimedOut),
+        };
+        // The blank line may straddle two reads.
+        let from = buf.len().saturating_sub(3);
+        buf.extend_from_slice(&chunk[..n]);
+        if let Some(end) = head_end(&buf, from) {
+            if end > HEAD_LIMIT {
+                return Err(HeadError::TooLarge);
+            }
+            let _ = stream.set_read_timeout(Some(HEAD_DEADLINE));
+            let text = String::from_utf8_lossy(&buf[..end]).into_owned();
+            return Ok(RequestHead { text, bytes: buf, len: end });
+        }
+        if buf.len() > HEAD_LIMIT {
+            return Err(HeadError::TooLarge);
+        }
+    }
+}
+
+/// Where the head in `buf` ends, its blank line searched for from `from`:
+/// `\r\n\r\n`, or the bare `\n\n` a hand-typed request sends (RFC 9112
+/// 2.2 lets a server take a lone LF as a line's end).
+fn head_end(buf: &[u8], from: usize) -> Option<usize> {
+    (from..buf.len()).find_map(|i| {
+        if buf[i..].starts_with(b"\r\n\r\n") {
+            Some(i + 4)
+        } else if buf[i..].starts_with(b"\n\n") {
+            Some(i + 2)
+        } else {
+            None
+        }
+    })
+}
+
+/// Answer a head that was not read: 431 for one too long, 408 for one
+/// that did not finish. The rest of what the client sends is read and
+/// dropped for a moment before the socket closes, or the unread bytes turn
+/// the close into a reset that can take the answer with it (#936).
+pub fn refuse_head(stream: &mut TcpStream, why: &HeadError) {
+    let (status, body): (&str, &[u8]) = match why {
+        HeadError::Closed => return,
+        HeadError::TimedOut => ("408 Request Timeout", b"the request did not finish arriving"),
+        HeadError::TooLarge => ("431 Request Header Fields Too Large",
+            b"the request's headers are over 64 KiB: clear this site's cookies and load the page again"),
+    };
+    respond(stream, status, "", "text/plain", body);
+    let _ = stream.shutdown(std::net::Shutdown::Write);
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
+    let mut sink = [0u8; 4096];
+    let mut left = 4 * HEAD_LIMIT;
+    while left > 0 {
+        match stream.read(&mut sink) {
+            Ok(n) if n > 0 => left = left.saturating_sub(n),
+            _ => break,
+        }
+    }
+}
+
+/// The server's half of the WebSocket handshake (RFC 6455 4.2), on the
+/// head already read: `tungstenite::accept` reads the head again from
+/// the socket, which only a peek could leave there. A request that is not
+/// a handshake is answered 400; it was closed with no status at all.
+#[must_use]
+pub fn accept_websocket(mut stream: TcpStream, head: &RequestHead) -> Option<tungstenite::WebSocket<TcpStream>> {
+    // GET, and HTTP/1.1 or later (RFC 6455 4.1).
+    let get = head.text.lines().next().is_some_and(|l| l.starts_with("GET ") && !l.trim_end().ends_with("HTTP/1.0"));
+    let upgrade = header_values(&head.text, "connection").any(|v| has_token(v, "upgrade"));
+    let version = header_values(&head.text, "sec-websocket-version").any(|v| v == "13");
+    let key = header_values(&head.text, "sec-websocket-key").next().filter(|k| !k.is_empty());
+    let (true, true, true, true, Some(key)) = (get, upgrade, version, is_websocket_upgrade(&head.text), key) else {
+        respond(&mut stream, "400 Bad Request", "Sec-WebSocket-Version: 13\r\n", "text/plain",
+            b"not a WebSocket handshake");
+        return None;
+    };
+    let accept = tungstenite::handshake::derive_accept_key(key.as_bytes());
+    let reply = format!("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\n\
+        Upgrade: websocket\r\nSec-WebSocket-Accept: {accept}\r\n\r\n");
+    stream.write_all(reply.as_bytes()).ok()?;
+    stream.flush().ok()?;
+    Some(tungstenite::WebSocket::from_partially_read(
+        stream, head.rest().to_vec(), tungstenite::protocol::Role::Server, None))
 }
 
 /// What a request path reaches on a page served under a key.
@@ -686,23 +822,6 @@ fn keyed_path<'a>(path: &'a str, key: Option<&str>) -> Keyed<'a> {
     }
 }
 
-/// The request head off the socket.
-fn read_head(stream: &mut TcpStream) {
-    let mut buf = Vec::new();
-    let mut chunk = [0u8; 1024];
-    loop {
-        match stream.read(&mut chunk) {
-            Ok(n) if n > 0 => {
-                buf.extend_from_slice(&chunk[..n]);
-                if buf.windows(4).any(|w| w == b"\r\n\r\n") || buf.len() > HEAD_LIMIT {
-                    break;
-                }
-            }
-            Ok(_) | Err(_) => break,
-        }
-    }
-}
-
 fn respond(stream: &mut TcpStream, status: &str, extra: &str, ctype: &str, body: &[u8]) {
     let header = format!(
         "HTTP/1.1 {status}\r\n{extra}Content-Type: {ctype}\r\nContent-Length: {}\r\n\
@@ -715,7 +834,6 @@ fn respond(stream: &mut TcpStream, status: &str, extra: &str, ctype: &str, body:
 /// Serve one static file and close. Only files under the page directory,
 /// only by a path with no `..` in it.
 fn serve_http(stream: &mut TcpStream, web_dir: &Path, path: &str) {
-    read_head(stream);
     let rel = if path == "/" { "index.html" } else { path.trim_start_matches('/') };
     let safe = !rel.split('/').any(|seg| seg == ".." || seg.is_empty());
     let file = web_dir.join(rel);
@@ -741,8 +859,8 @@ fn content_type(path: &str) -> &'static str {
 
 /// One page's WebSocket: forward its answers in, and everything the seat
 /// broadcasts out, until it closes.
-fn serve_websocket(stream: TcpStream, shared: &Shared) {
-    let Ok(mut ws) = tungstenite::accept(stream) else { return };
+fn serve_websocket(stream: TcpStream, head: &RequestHead, shared: &Shared) {
+    let Some(mut ws) = accept_websocket(stream, head) else { return };
     // Polled: the one thread both reads the page and writes to it, so
     // neither side can starve the other.
     let _ = ws.get_ref().set_read_timeout(Some(Duration::from_millis(50)));
@@ -902,7 +1020,7 @@ mod tests {
     /// A head sent in pieces is read whole before its path is: a keyed
     /// page's own link answered 404 when the peek saw only `GET `.
     #[test]
-    fn a_request_head_sent_in_pieces_is_peeked_whole() {
+    fn a_request_head_sent_in_pieces_is_read_whole() {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
         let client = thread::spawn(move || {
@@ -914,34 +1032,45 @@ mod tests {
             }
             s
         });
-        let (stream, _) = listener.accept().unwrap();
-        let head = peek_head(&stream).expect("a head");
-        assert_eq!(head, "GET /k3y/ HTTP/1.1\r\nHost: x\r\n\r\n");
-        let mut left = [0u8; 4];
-        assert_eq!(stream.peek(&mut left).unwrap(), 4, "the head is still on the socket");
+        let (mut stream, _) = listener.accept().unwrap();
+        let head = read_request_head(&mut stream).expect("a head");
+        assert_eq!(head.text, "GET /k3y/ HTTP/1.1\r\nHost: x\r\n\r\n");
+        assert_eq!(head.path(), "/k3y/");
+        assert!(head.rest().is_empty());
         drop(client.join());
     }
 
-    /// #933: a head over 2 KiB whose `Upgrade` comes after a long Cookie
-    /// header is a WebSocket, peeked whole; so is `Upgrade:websocket`.
-    #[test]
-    fn a_long_head_with_its_upgrade_last_is_a_websocket() {
-        let cookie = "x".repeat(4000);
-        let head = format!("GET /ws HTTP/1.1\r\nHost: x\r\nSec-WebSocket-Version: 13\r\n\
-            Connection: keep-alive, Upgrade\r\nCookie: a={cookie}\r\nUpgrade: websocket\r\n\r\n");
+    /// The head as a client sends it, one write, and what the server
+    /// read of it.
+    fn head_sent(head: &str) -> (Result<RequestHead, HeadError>, TcpStream) {
         let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
-        let sent = head.clone();
+        let sent = head.to_string();
         let client = thread::spawn(move || {
             let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
             s.write_all(sent.as_bytes()).unwrap();
             s
         });
-        let (stream, _) = listener.accept().unwrap();
-        let peeked = peek_head(&stream).expect("a head");
-        assert_eq!(peeked, head, "the whole head is peeked");
-        assert!(is_websocket_upgrade(&peeked));
-        drop(client.join());
+        let (mut stream, _) = listener.accept().unwrap();
+        (read_request_head(&mut stream), client.join().unwrap())
+    }
+
+    /// #933, #935: a head whose `Upgrade` comes after a long Cookie header
+    /// is a WebSocket, read whole, however far past 16 KiB the Upgrade is
+    /// (the peek stopped there and served the socket as a page); so is
+    /// `Upgrade:websocket`. Past `HEAD_LIMIT` it is no request at all.
+    #[test]
+    fn a_long_head_with_its_upgrade_last_is_a_websocket() {
+        for cookie in [4000, 16_500, 40_000, 60_000] {
+            let head = format!("GET /ws HTTP/1.1\r\nHost: x\r\nSec-WebSocket-Version: 13\r\n\
+                Connection: keep-alive, Upgrade\r\nCookie: a={}\r\nUpgrade: websocket\r\n\r\n", "x".repeat(cookie));
+            let (read, _client) = head_sent(&head);
+            let read = read.expect("a head");
+            assert_eq!(read.text, head, "the whole head is read at a {cookie}-byte cookie");
+            assert!(is_websocket_upgrade(&read.text));
+        }
+        let head = format!("GET / HTTP/1.1\r\nCookie: a={}\r\n\r\n", "x".repeat(HEAD_LIMIT));
+        assert_eq!(head_sent(&head).0.unwrap_err(), HeadError::TooLarge);
 
         for yes in ["GET / HTTP/1.1\r\nUpgrade:websocket\r\n\r\n", "GET / HTTP/1.1\r\nupgrade:  WebSocket \r\n\r\n",
                     "GET / HTTP/1.1\r\nUpgrade: h2c, websocket\r\n\r\n"] {
@@ -952,6 +1081,54 @@ mod tests {
                    "GET / HTTP/1.1\r\nHost: x\r\n\r\nUpgrade: websocket\r\n"] {
             assert!(!is_websocket_upgrade(no), "{no:?}");
         }
+    }
+
+    /// The status line `accept_websocket` answers `head` with.
+    fn handshake_status(head: &str) -> String {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let sent = head.to_string();
+        let client_side = thread::spawn(move || {
+            let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            s.write_all(sent.as_bytes()).unwrap();
+            let mut line = Vec::new();
+            let mut byte = [0u8; 1];
+            while s.read(&mut byte).map_or(false, |n| n == 1) && byte[0] != b'\n' {
+                line.push(byte[0]);
+            }
+            String::from_utf8_lossy(&line).trim_end().to_string()
+        });
+        let (mut stream, _) = listener.accept().unwrap();
+        let head = read_request_head(&mut stream).expect("a head");
+        drop(accept_websocket(stream, &head));
+        client_side.join().unwrap()
+    }
+
+    /// A handshake is answered from the head already read: 101 for any
+    /// `Upgrade` list with `websocket` in it (#935: `websocket, h2c` was
+    /// closed with no status at all), 400 for a request that is not one.
+    #[test]
+    fn a_handshake_is_answered_101_or_400_never_silence() {
+        let hs = |upgrade: &str, extra: &str| format!("GET /ws HTTP/1.1\r\nHost: x\r\nSec-WebSocket-Version: 13\r\n\
+            Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nConnection: Upgrade\r\nUpgrade: {upgrade}\r\n{extra}\r\n");
+        for up in ["websocket", "websocket, h2c", "h2c, websocket"] {
+            assert_eq!(handshake_status(&hs(up, "")), "HTTP/1.1 101 Switching Protocols", "{up}");
+        }
+        let cookie = format!("Cookie: a={}\r\n", "v".repeat(40_000));
+        assert_eq!(handshake_status(&hs("websocket", &cookie)), "HTTP/1.1 101 Switching Protocols");
+        let no_key = "GET /ws HTTP/1.1\r\nSec-WebSocket-Version: 13\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n";
+        let old = hs("websocket", "").replace("HTTP/1.1\r\n", "HTTP/1.0\r\n");
+        for bad in [no_key.to_string(), hs("websocket", "").replace("Version: 13", "Version: 8"), old] {
+            assert_eq!(handshake_status(&bad), "HTTP/1.1 400 Bad Request", "{bad:?}");
+        }
+    }
+
+    /// A head ending in a bare `\n\n` is read as soon as it ends, not
+    /// after the five seconds a head that never ends is given.
+    #[test]
+    fn a_head_of_bare_line_feeds_ends_at_its_blank_line() {
+        let (read, _client) = head_sent("GET /k3y/ HTTP/1.1\nHost: x\n\n");
+        assert_eq!(read.expect("a head").path(), "/k3y/");
     }
 
     /// #872: under a key, the page and its socket are reached only through

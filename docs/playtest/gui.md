@@ -675,10 +675,12 @@ writing it up as the page's problem alone.
   `Range.getClientRects` rather than by eye. "(seat" / "N)" splits in the
   pairings and matches (#934).
 - G38 [proposed 2026-10-24, from 2b9f09a and #933] the request heads a
-  real browser sends, against how both servers route them. `peek_head`
-  (`mtg-player/src/gui.rs`) waits for the blank line but stops at 2 KiB,
-  and the game page and the lobby decide "page or WebSocket" by a
-  substring search for `upgrade: websocket` in what it peeked. Send each
+  real browser sends, against how both servers route them.
+  `read_request_head` (`mtg-player/src/gui.rs`) reads the head off the
+  socket to its blank line, up to `HEAD_LIMIT` (64 KiB; 431 past it, 408
+  for one not finished in 5 s), and the game page and the lobby decide
+  "page or WebSocket" by its `Upgrade` header; `accept_websocket` answers
+  the handshake from that head (101, or 400 for one that is not). Send each
   URL a page fetch and a WebSocket upgrade from a raw socket with: a
   Cookie header of 1.5, 2.1 and 4 KiB before and after `Upgrade`; the
   head in one write and in five pieces with 100 ms between them;
@@ -696,3 +698,7 @@ writing it up as the page's problem alone.
   count body bytes against Content-Length: unread head bytes end in RST,
   which cut proxied scripts at 65,536 bytes and left the page black
   (#936). Ten 4 KB `context.addCookies` entries reproduce it in Chromium.
+  [fix for #935/#936] Heads are read whole, not peeked: probe 60 KB of
+  cookies (101 and the whole body expected), 70 KB (431 on every URL, the
+  status line read before the close), `Upgrade: websocket, h2c` (101) and
+  a handshake with no key (400, not a silent close).
