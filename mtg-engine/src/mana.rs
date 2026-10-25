@@ -905,10 +905,18 @@ fn pay_fixed(have: Amounts, cost: &Pips) -> Option<Amounts> {
 /// Pay `cost` out of `have` with the generic part spent around `keep`, what
 /// another cost needs of each type ([`auto_pay_reserving`]): what is left,
 /// or None when the cost cannot be paid.
+///
+/// The spare is counted after the cost has paid its own pips, since those
+/// come out first whatever the order: `{1}{W}` out of `{W}{W}{U}` beside a
+/// `{W}` in hand pays its `{W}`, and then the other White is the hand's, not
+/// spare. And generic takes only what is spare until nothing spare is left:
+/// `{2}` out of the same pool takes one White and the Blue, where taking
+/// every White first left the hand nothing to cast with.
 fn pay_around(have: Amounts, cost: &Pips, keep: &Amounts) -> Option<Amounts> {
-    let order = surplus_order(&have, keep);
     let mut have = pay_specific(have, cost)?;
+    let order = surplus_order(&have, keep);
     let mut remaining = cost.generic;
+    spend_generic(&mut have, &mut remaining, &order, keep);
     spend_generic(&mut have, &mut remaining, &order, &[0; 6]);
     (remaining == 0).then_some(have)
 }
@@ -1179,6 +1187,35 @@ mod tests {
         assert!(auto_pay_reserving(&mut pool, &one, &ManaCost::new(vec![ManaSymbol::Generic(1)])).is_ok());
         assert_eq!(residue(&pool), vec![(ManaType::Green, 1)],
             "the fixed order, unchanged: white is spent before green");
+    }
+
+    /// A generic cost bigger than one type's surplus takes only the surplus
+    /// from it. With {W}{W}{U} floating and a {W} spell in hand, a {2} is
+    /// paid with one White and the Blue: White and Blue are both one spare,
+    /// and taking both Whites because White sorts first leaves the Blue,
+    /// which pays for nothing the hand holds.
+    #[test]
+    fn a_generic_cost_takes_no_more_of_a_type_than_it_has_spare() {
+        let mut pool = pool_of(&[(ManaType::White, 2), (ManaType::Blue, 1)]);
+        let two = ManaCost::new(vec![ManaSymbol::Generic(2)]);
+        let reserve_white = ManaCost::new(vec![ManaSymbol::Colored(Color::White)]);
+        assert!(auto_pay_reserving(&mut pool, &two, &reserve_white).is_ok());
+        assert!(can_pay(&pool, &reserve_white),
+            "the {{W}} the hand needs is still floating: {:?}", residue(&pool));
+    }
+
+    /// The spare is counted after the cost's own coloured pips are paid, not
+    /// before. With {W}{W}{U} floating and a {W} spell in hand, a {1}{W}
+    /// spell pays its {W} first; the White it leaves is the hand's, so the
+    /// {1} is the Blue.
+    #[test]
+    fn the_spare_is_what_is_left_after_the_cost_pays_its_own_pips() {
+        let mut pool = pool_of(&[(ManaType::White, 2), (ManaType::Blue, 1)]);
+        let one_white = ManaCost::new(vec![ManaSymbol::Generic(1), ManaSymbol::Colored(Color::White)]);
+        let reserve_white = ManaCost::new(vec![ManaSymbol::Colored(Color::White)]);
+        assert!(auto_pay_reserving(&mut pool, &one_white, &reserve_white).is_ok());
+        assert!(can_pay(&pool, &reserve_white),
+            "the {{W}} the hand needs is still floating: {:?}", residue(&pool));
     }
 
     /// A payment that fails spends nothing. {W}{W} out of a lone {W} used to
