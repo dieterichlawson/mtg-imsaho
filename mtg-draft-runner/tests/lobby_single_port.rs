@@ -115,6 +115,12 @@ fn the_game_page_and_its_socket_come_through_the_lobbys_port() {
         assert!(reply.starts_with(b"HTTP/1.1 200"), "{}", String::from_utf8_lossy(&reply[..at]));
         assert_eq!(reply.len() - at, script.len(), "the whole script comes through the proxy");
     }
+    // A head of bare line feeds is a WebSocket through the proxy too: its
+    // request line was looked for by CRLF, and the game page was sent the
+    // line alone and answered 408 five seconds later.
+    let reply = raw_head(lobby, &format!("GET {page_path}ws HTTP/1.1\nHost: x\nSec-WebSocket-Version: 13\n\
+        Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\nConnection: Upgrade\nUpgrade: websocket\n\n"));
+    assert!(reply.starts_with(b"HTTP/1.1 101"), "an LF head through the proxy: {}", String::from_utf8_lossy(&reply[..reply.len().min(200)]));
     let reply = raw_head(lobby, &format!("GET {page_path} HTTP/1.1\r\nHost: x\r\nCookie: a={}\r\n\r\n", "v".repeat(70_000)));
     assert!(reply.starts_with(b"HTTP/1.1 431"), "{}", String::from_utf8_lossy(&reply[..reply.len().min(200)]));
 

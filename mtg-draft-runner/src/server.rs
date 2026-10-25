@@ -1127,7 +1127,10 @@ fn proxy_game_page(mut client: TcpStream, head: &RequestHead, shared: &Shared, p
         return;
     };
     // The request line with the prefix off, the rest as it came.
-    let line_end = head.windows(2).position(|w| w == b"\r\n").unwrap_or(head.len());
+    // The line ends at its LF, with or without a CR, as the head's reader
+    // takes it; the line ending and the headers go on as they came.
+    let line_end = head.iter().position(|b| *b == b'\n')
+        .map_or(head.len(), |nl| if nl > 0 && head[nl - 1] == b'\r' { nl - 1 } else { nl });
     let line = String::from_utf8_lossy(&head[..line_end]).to_string();
     let mut words = line.split_whitespace();
     let (method, _, version) = (words.next().unwrap_or("GET"), words.next(), words.next().unwrap_or("HTTP/1.1"));

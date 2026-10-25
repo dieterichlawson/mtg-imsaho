@@ -647,7 +647,9 @@ pub fn is_websocket_upgrade(head: &str) -> bool {
 
 /// Every value of the header `name` in `head`, in order.
 fn header_values<'a>(head: &'a str, name: &'a str) -> impl Iterator<Item = &'a str> + 'a {
-    head.split("\r\n").skip(1).take_while(|l| !l.is_empty())
+    // `lines`: a line ends at LF, with or without the CR, as
+    // `read_request_head` takes a head's end.
+    head.lines().skip(1).take_while(|l| !l.is_empty())
         .filter_map(|l| l.split_once(':'))
         .filter(move |(n, _)| n.trim().eq_ignore_ascii_case(name))
         .map(|(_, v)| v.trim())
@@ -1123,12 +1125,17 @@ mod tests {
         }
     }
 
-    /// A head ending in a bare `\n\n` is read as soon as it ends, not
-    /// after the five seconds a head that never ends is given.
+    /// A head of bare line feeds is read as soon as its blank line comes,
+    /// not after the five seconds a head that never ends is given, and its
+    /// headers are read as a CRLF head's are: an upgrade is a WebSocket.
     #[test]
     fn a_head_of_bare_line_feeds_ends_at_its_blank_line() {
         let (read, _client) = head_sent("GET /k3y/ HTTP/1.1\nHost: x\n\n");
         assert_eq!(read.expect("a head").path(), "/k3y/");
+        let lf = "GET /ws HTTP/1.1\nHost: x\nSec-WebSocket-Version: 13\n\
+            Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\nConnection: Upgrade\nUpgrade: websocket\n\n";
+        assert!(is_websocket_upgrade(lf));
+        assert_eq!(handshake_status(lf), "HTTP/1.1 101 Switching Protocols");
     }
 
     /// #872: under a key, the page and its socket are reached only through
