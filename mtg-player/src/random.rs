@@ -852,6 +852,7 @@ mod rolls {
                 max_x: 0,
                 x_discount: 0,
                 pool_order: vec![],
+                pool_keep: std::collections::BTreeMap::new(),
             },
             source_id: ObjectId(99),
             is_ability,
@@ -873,6 +874,7 @@ mod rolls {
             max_x: 0,
             x_discount,
             pool_order: vec![],
+            pool_keep: std::collections::BTreeMap::new(),
         };
         if pool > 0 {
             options.pool.insert(ManaType::Red, pool);

@@ -1126,13 +1126,22 @@ export function allocateForX(opts, x) {
         const rank = (mt) => { const i = order.indexOf(mt); return i < 0 ? order.length : i; };
         poolSorted.sort((a, b) => rank(a[0]) - rank(b[0]));
     }
-    for (const [mt, avail] of poolSorted) {
-        if (remaining === 0)
-            break;
-        const take = Math.min(avail, remaining);
-        if (take > 0) {
-            response.pool[mt] = take;
-            remaining -= take;
+    // What the hand keeps back (`pool_keep`) is spent only once nothing
+    // spare is left: a pass over what is spare, then a pass over the rest,
+    // as the engine's proved `pay_around` does. Without `pool_keep` the first
+    // pass takes everything and the second has nothing to do.
+    const keep = opts.pool_keep || {};
+    for (const spareOnly of [true, false]) {
+        for (const [mt, avail] of poolSorted) {
+            if (remaining === 0)
+                break;
+            const taken = response.pool[mt] || 0;
+            const floor = spareOnly ? (keep[mt] || 0) : 0;
+            const take = Math.min(Math.max(0, avail - taken - floor), remaining);
+            if (take > 0) {
+                response.pool[mt] = taken + take;
+                remaining -= take;
+            }
         }
     }
     let left = tapSum;
