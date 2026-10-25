@@ -23,21 +23,27 @@ impl Drop for KillOnDrop {
     }
 }
 
-fn free_port() -> u16 {
-    std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
+/// The page's URL as the runner prints it, from its stderr. The seat is on
+/// `gui:0`: a port found free and then handed to the runner could be taken
+/// in between, and the test would drive whatever took it (#941's shape).
+fn page_url(stderr: std::process::ChildStderr) -> String {
+    use std::io::BufRead;
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for line in std::io::BufReader::new(stderr).lines().map_while(Result::ok) {
+            if let Some(url) = line.strip_prefix("--p1 gui: open ") {
+                let _ = tx.send(url.trim().to_string());
+            }
+        }
+    });
+    rx.recv_timeout(Duration::from_secs(60)).expect("the runner named its page")
 }
 
-fn connect(port: u16) -> WebSocket<tungstenite::stream::MaybeTlsStream<TcpStream>> {
-    let deadline = Instant::now() + Duration::from_secs(60);
-    loop {
-        match tungstenite::connect(format!("ws://127.0.0.1:{port}/ws")) {
-            Ok((ws, _)) => return ws,
-            Err(e) if Instant::now() < deadline => {
-                let _ = e;
-                std::thread::sleep(Duration::from_millis(100));
-            }
-            Err(e) => panic!("the gui seat never accepted a connection on {port}: {e}"),
-        }
+fn connect(url: &str) -> WebSocket<tungstenite::stream::MaybeTlsStream<TcpStream>> {
+    let ws_url = format!("{}ws", url.replacen("http://", "ws://", 1));
+    match tungstenite::connect(&ws_url) {
+        Ok((ws, _)) => ws,
+        Err(e) => panic!("the gui seat did not accept a connection at {ws_url}: {e}"),
     }
 }
 
@@ -54,19 +60,19 @@ fn a_gui_seat_is_asked_at_priorities_where_it_can_only_pass() {
     let deck = dir.join("deck.txt");
     std::fs::write(&deck, "60 Mountain\n").unwrap();
 
-    let port = free_port();
-    let child = Command::new(env!("CARGO_BIN_EXE_mtg-runner"))
-        .args(["--p1", &format!("gui:{port}"), "--p2", "random", "--seed", "11", "-q"])
+    let mut child = Command::new(env!("CARGO_BIN_EXE_mtg-runner"))
+        .args(["--p1", "gui:0", "--p2", "random", "--seed", "11", "-q"])
         .args(["--deck1", deck.to_str().unwrap(), "--deck2", deck.to_str().unwrap()])
         .env("MTG_GUI_DIR", concat!(env!("CARGO_MANIFEST_DIR"), "/../mtg-gui"))
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .spawn()
         .expect("spawn mtg-runner");
+    let stderr = child.stderr.take().expect("the runner's stderr");
     let _child = KillOnDrop(child);
 
-    let mut ws = connect(port);
+    let mut ws = connect(&page_url(stderr));
     ws.send(Message::Text(json!({"type": "hello"}).to_string().into())).unwrap();
 
     let mut decisions = 0;
