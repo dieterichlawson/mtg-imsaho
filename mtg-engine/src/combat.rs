@@ -708,6 +708,11 @@ pub struct DamageDivision {
 /// divided 2-2, 3-1 or 4-0, and only asking every time lets the player pick
 /// 3-1 or 4-0. Otherwise, and for any blocker not yet chosen, each blocker
 /// gets exactly lethal and the rest goes forward.
+///
+/// The arithmetic is `mtg_kernel::combat::divide`, proved with Verus for
+/// every power, number of blockers and lethal amount: whatever the player
+/// answers the division is legal, every question offers at least two
+/// amounts, and every legal division can be reached by answering.
 #[must_use]
 pub fn divide_combat_damage(
     power: u32,
@@ -715,28 +720,15 @@ pub fn divide_combat_damage(
     trample: bool,
     chosen: &[(ObjectId, u32)],
 ) -> DamageDivision {
-    let mut remaining = power;
-    let mut open = None;
-    let mut to_blockers = Vec::with_capacity(blockers.len());
-    for (i, &(blocker, lethal)) in blockers.iter().enumerate() {
-        let least = remaining.min(lethal);
-        let amount = if i + 1 == blockers.len() && !trample {
-            remaining
-        } else if remaining == least {
-            least
-        } else if let Some(&(_, a)) = chosen.iter().find(|&&(b, _)| b == blocker) {
-            a.clamp(least, remaining)
-        } else {
-            open.get_or_insert((blocker, least, remaining));
-            least
-        };
-        to_blockers.push((blocker, amount));
-        remaining -= amount;
-    }
+    let lethal: Vec<u32> = blockers.iter().map(|&(_, l)| l).collect();
+    let answers: Vec<Option<u32>> = blockers.iter()
+        .map(|&(b, _)| chosen.iter().find(|&&(c, _)| c == b).map(|&(_, a)| a))
+        .collect();
+    let division = mtg_kernel::combat::divide(power, &lethal, trample, &answers);
     DamageDivision {
-        to_blockers,
-        overflow: if trample { remaining } else { 0 },
-        open,
+        to_blockers: blockers.iter().map(|&(b, _)| b).zip(division.amounts).collect(),
+        overflow: division.overflow,
+        open: division.open.map(|(k, least, most)| (blockers[k].0, least, most)),
     }
 }
 

@@ -123,9 +123,8 @@ fn the_default_answer_is_exactly_lethal_then_forward() {
 /// more than the blockers' total lethal. 4 power against two 2-toughness
 /// blockers may go 2-2, 3-1 or 4-0 (CR 510.1c: the second blocker may be
 /// assigned damage once the first has lethal, and need not be); the engine
-/// used to assign 2-2 silently, as if it were the only division; writing
-/// down "every legal division can be chosen" as a property to prove found
-/// the two it never offered.
+/// used to assign 2-2 silently, as if it were the only division, and the
+/// completeness proof in `mtg-kernel` found the two it never offered.
 #[test]
 fn more_than_the_first_blockers_lethal_is_a_question_even_short_of_the_total() {
     let reg = registry();
@@ -234,7 +233,8 @@ fn the_regular_step_measures_lethal_against_damage_already_marked() {
 /// earlier one is short of lethal, all the power is assigned somewhere,
 /// and only a trampler sends any past its blockers — and every division
 /// the rules allow is one the player can choose. With nothing chosen, the
-/// division is exactly lethal and forward.
+/// division is exactly lethal and forward. (`mtg-kernel` proves all of this
+/// for every size; this checks the engine's call into it.)
 #[test]
 fn every_division_obeys_cr_510_1c() {
     let ids: Vec<ObjectId> = (1..=3).map(ObjectId).collect();
