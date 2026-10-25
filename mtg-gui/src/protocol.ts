@@ -303,6 +303,9 @@ export interface FundingOptions {
   x_discount?: number;
   /** The order floating mana is spent on X in; absent: largest first. */
   pool_order?: ManaType[];
+  /** What the rest of the hand needs of each type: spent on X only once
+   *  nothing spare is left. Absent: nothing is kept back. */
+  pool_keep?: Partial<Record<ManaType, number>>;
 }
 
 /**

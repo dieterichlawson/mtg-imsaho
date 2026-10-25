@@ -212,22 +212,38 @@ fn the_page_is_given_the_engines_x_funding_answers() {
 
     let mut cases = Vec::new();
     for (name, groups) in boards {
-        for (pool_red, pool_white) in [(0, 0), (1, 0), (2, 1)] {
-            // A floating-mana order from the engine (`pool_order`, spending
-            // around what the hand needs) against none (largest bucket first).
-            for (order_name, pool_order) in [("", vec![]), ("/spend-W-first", vec![ManaType::White, ManaType::Red])] {
+        for (pool_red, pool_white) in [(0, 0), (1, 0), (2, 1), (1, 2)] {
+            let mut pool = std::collections::BTreeMap::new();
+            if pool_red > 0 {
+                pool.insert(ManaType::Red, pool_red);
+            }
+            if pool_white > 0 {
+                pool.insert(ManaType::White, pool_white);
+            }
+            // A floating-mana order from the engine (`pool_order`) against
+            // none (largest bucket first), and the engine's order with what a
+            // {W} spell in hand keeps back (`pool_keep`), built as
+            // `order_around_demands` builds them.
+            let in_hand = mtg_engine::types::ManaCost::new(vec![
+                mtg_engine::types::ManaSymbol::Colored(mtg_engine::types::Color::White),
+            ]);
+            let floating = mtg_engine::types::ManaPool { mana: pool.clone() };
+            let around_hand = (
+                "/around-a-W-in-hand",
+                mtg_engine::mana::generic_payment_order(&floating, &in_hand),
+                std::collections::BTreeMap::from([(ManaType::White, 1)]),
+            );
+            for (order_name, pool_order, pool_keep) in [
+                ("", vec![], std::collections::BTreeMap::new()),
+                ("/spend-W-first", vec![ManaType::White, ManaType::Red], std::collections::BTreeMap::new()),
+                around_hand,
+            ] {
             for x_discount in [0, 2] {
-                let mut pool = std::collections::BTreeMap::new();
-                if pool_red > 0 {
-                    pool.insert(ManaType::Red, pool_red);
-                }
-                if pool_white > 0 {
-                    pool.insert(ManaType::White, pool_white);
-                }
                 let max_x = pool_red + pool_white
                     + groups.iter().map(FundingGroup::max_contribution).sum::<u32>();
                 let options = FundingOptions {
-                    pool, groups: groups.clone(), max_x, x_discount, pool_order: pool_order.clone(),
+                    pool: pool.clone(), groups: groups.clone(), max_x, x_discount,
+                    pool_order: pool_order.clone(), pool_keep: pool_keep.clone(),
                 };
                 let allocations: Vec<serde_json::Value> = (0..=options.max_announceable_x())
                     .map(|x| {

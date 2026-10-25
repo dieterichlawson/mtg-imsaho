@@ -869,6 +869,38 @@ pub(crate) fn pips_of(cost: &ManaCost) -> Pips {
     pips
 }
 
+/// What `cost` asks of each type in particular, by type: its coloured pips
+/// and its `{C}`. Types it asks nothing of are left out.
+pub(crate) fn specific_by_type(cost: &ManaCost) -> std::collections::BTreeMap<ManaType, u32> {
+    let pips = pips_of(cost);
+    GENERIC_ORDER.iter().enumerate()
+        .filter(|&(slot, _)| pips.specific[slot] > 0)
+        .map(|(slot, &mt)| (mt, pips.specific[slot]))
+        .collect()
+}
+
+/// Spend `amount` of floating mana from `pool` on something generic (X),
+/// around `keep`: what is spare beyond `keep` first, biggest surplus first,
+/// and what `keep` claims only once nothing spare is left. What is spent of
+/// each type, or None when the pool holds less than `amount`.
+///
+/// This is `pay_around` with a cost that is all generic, so it carries that
+/// proof: it spends exactly `amount`, and whenever the pool could pay
+/// `amount` and `keep` together, it leaves `keep`.
+pub(crate) fn spend_floating_around(
+    pool: &std::collections::BTreeMap<ManaType, u32>,
+    amount: u32,
+    keep: &std::collections::BTreeMap<ManaType, u32>,
+) -> Option<std::collections::BTreeMap<ManaType, u32>> {
+    let have = GENERIC_ORDER.map(|mt| pool.get(&mt).copied().unwrap_or(0));
+    let keep = GENERIC_ORDER.map(|mt| keep.get(&mt).copied().unwrap_or(0));
+    let left = pay_around(have, &Pips { specific: [0; 6], generic: amount }, &keep)?;
+    Some(GENERIC_ORDER.iter().enumerate()
+        .filter(|&(slot, _)| have[slot] > left[slot])
+        .map(|(slot, &mt)| (mt, have[slot] - left[slot]))
+        .collect())
+}
+
 /// Which mana to spend on a generic cost first, given what `reserve` still
 /// needs from the same pool: the biggest surplus first, so mana another cost
 /// depends on is spent last. Ties keep [`GENERIC_ORDER`], so a plan stays

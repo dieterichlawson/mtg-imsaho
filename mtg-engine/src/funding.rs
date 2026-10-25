@@ -104,6 +104,12 @@ pub struct FundingOptions {
     /// Empty — a board built without one — spends the largest bucket first.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub pool_order: Vec<ManaType>,
+    /// What the rest of what the player could pay for needs of each type of
+    /// floating mana in particular (`order_around_demands`): the allocator
+    /// spends what is spare beyond this first, and this only when nothing
+    /// spare is left. Empty: nothing is kept back.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub pool_keep: BTreeMap<ManaType, u32>,
 }
 
 impl FundingOptions {
@@ -287,9 +293,19 @@ pub fn allocate_for_x(options: &FundingOptions, x: u32) -> (FundingResponse, u32
             .unwrap_or(0)
     });
 
-    // Pool: in `pool_order` when the engine gave one, so mana another cost
-    // needs is spent last; otherwise largest buckets first.
+    // Pool: around `pool_keep` when the engine gave it, through the proved
+    // `pay_around`: what is spare first, in `pool_order`, and what the rest
+    // of the hand needs only once nothing spare is left. Taking all of one
+    // type before the next spent a floating {W} a spell in hand needed while
+    // a spare {U} sat beside it, as payment once did (#252). Otherwise in
+    // `pool_order` when there is one, or largest buckets first.
     let mut remaining = target - tap_sum;
+    if !options.pool_keep.is_empty() {
+        if let Some(drained) = crate::mana::spend_floating_around(&options.pool, remaining, &options.pool_keep) {
+            response.pool = drained;
+            remaining = 0;
+        }
+    }
     let mut pool_sorted: Vec<(ManaType, u32)> =
         options.pool.iter().map(|(k, v)| (*k, *v)).collect();
     pool_sorted.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
@@ -627,6 +643,7 @@ pub fn build_options(
         // Set by the caster, which is where the spell's cost is known.
         x_discount: 0,
         pool_order: Vec::new(),
+        pool_keep: BTreeMap::new(),
     }
 }
 
@@ -679,6 +696,7 @@ pub fn order_around_demands(
     // four mana floating made the {U} Think Twice needs look spare (#843).
     let reserve = crate::mana::hand_reserve(&payable.iter().map(|d| d.cost.clone()).collect::<Vec<_>>());
     options.pool_order = crate::mana::generic_payment_order(&state.get_player(player).mana_pool, &reserve);
+    options.pool_keep = crate::mana::specific_by_type(&reserve);
 }
 
 /// Apply a validated funding response to the game state: drain the player's
@@ -775,6 +793,39 @@ mod tests {
         }
     }
 
+    /// X out of floating mana spends what the hand does not need first.
+    /// {W}{W}{U} floating and a {W} spell in hand: X = 2 is one White and the
+    /// Blue. Taking every White first, because White and Blue were one spare
+    /// each and White sorts first, left the hand a Blue it could not cast
+    /// with: the defect `auto_pay_reserving` had (#252), in the allocator
+    /// every seat's X answer goes through. Now the pool step is that proved
+    /// payment.
+    #[test]
+    fn x_from_the_pool_spends_what_the_hand_does_not_need_first() {
+        let pool = BTreeMap::from([(ManaType::White, 2), (ManaType::Blue, 1)]);
+        let in_hand = crate::types::ManaCost::new(vec![
+            crate::types::ManaSymbol::Colored(crate::types::Color::White),
+        ]);
+        let options = FundingOptions {
+            pool: pool.clone(),
+            groups: vec![],
+            max_x: 3,
+            x_discount: 0,
+            pool_order: crate::mana::generic_payment_order(
+                &crate::types::ManaPool { mana: pool }, &in_hand),
+            pool_keep: crate::mana::specific_by_type(&in_hand),
+        };
+        let (response, shortfall) = allocate_for_x(&options, 2);
+        assert_eq!(shortfall, 0);
+        assert_eq!(response.pool, BTreeMap::from([(ManaType::White, 1), (ManaType::Blue, 1)]),
+            "one White stays floating for the spell in hand");
+
+        // Every last point of it, when X asks for all of it.
+        let (response, shortfall) = allocate_for_x(&options, 3);
+        assert_eq!(shortfall, 0);
+        assert_eq!(response.pool, BTreeMap::from([(ManaType::White, 2), (ManaType::Blue, 1)]));
+    }
+
     #[test]
     fn validate_accepts_empty_response() {
         let options = FundingOptions {
@@ -783,6 +834,7 @@ mod tests {
             max_x: 3,
             x_discount: 0,
             pool_order: Vec::new(),
+            pool_keep: BTreeMap::new(),
         };
         let response = FundingResponse::default();
         assert_eq!(validate(&response, &options), Ok(()));
@@ -797,6 +849,7 @@ mod tests {
             max_x: 2,
             x_discount: 0,
             pool_order: Vec::new(),
+            pool_keep: BTreeMap::new(),
         };
         let mut response = FundingResponse::default();
         response.taps.insert("Forest".into(), 1);
@@ -814,6 +867,7 @@ mod tests {
             max_x: 2,
             x_discount: 0,
             pool_order: Vec::new(),
+            pool_keep: BTreeMap::new(),
         };
         let mut response = FundingResponse::default();
         response.taps.insert("Sol Ring".into(), 1);
@@ -835,6 +889,7 @@ mod tests {
             max_x: 2,
             x_discount: 0,
             pool_order: Vec::new(),
+            pool_keep: BTreeMap::new(),
         };
         let mut response = FundingResponse::default();
         response.taps.insert("Swamp".into(), 3);
@@ -858,6 +913,7 @@ mod tests {
             max_x: 1,
             x_discount: 0,
             pool_order: Vec::new(),
+            pool_keep: BTreeMap::new(),
         };
         let mut response = FundingResponse::default();
         response.pool.insert(ManaType::Black, 2);
@@ -882,6 +938,7 @@ mod tests {
             max_x: 1, // artificially low
             x_discount: 0,
             pool_order: Vec::new(),
+            pool_keep: BTreeMap::new(),
         };
         let mut response = FundingResponse::default();
         response.pool.insert(ManaType::Black, 2);
@@ -924,6 +981,7 @@ mod tests {
             max_x: 3,
             x_discount: 0,
             pool_order: Vec::new(),
+            pool_keep: BTreeMap::new(),
         };
         for x in 0..=3 {
             let (response, shortfall) = allocate_for_x(&options, x);
@@ -956,6 +1014,7 @@ mod tests {
             max_x: 4,
             x_discount: 0,
             pool_order: Vec::new(),
+            pool_keep: BTreeMap::new(),
         };
         for x in 0..=4 {
             let (response, shortfall) = allocate_for_x(&options, x);
@@ -979,6 +1038,7 @@ mod tests {
             max_x: 2,
             x_discount: 0,
             pool_order: Vec::new(),
+            pool_keep: BTreeMap::new(),
         };
         let (response, shortfall) = allocate_for_x(&options, 1);
         assert_eq!(shortfall, 1);
@@ -998,6 +1058,7 @@ mod tests {
             max_x: 4,
             x_discount: 0,
             pool_order: Vec::new(),
+            pool_keep: BTreeMap::new(),
         };
         let (response, shortfall) = allocate_for_x(&options, 2);
         assert_eq!(shortfall, 0);
@@ -1016,6 +1077,7 @@ mod tests {
             max_x: 3,
             x_discount: 0,
             pool_order: Vec::new(),
+            pool_keep: BTreeMap::new(),
         };
         let (response, shortfall) = allocate_for_x(&options, 2);
         assert_eq!(shortfall, 0);
@@ -1057,6 +1119,7 @@ mod tests {
                         max_x,
                         x_discount: discount,
                         pool_order: Vec::new(),
+                        pool_keep: BTreeMap::new(),
                     };
                     let fundable = fundable_x_values(&options);
                     for x in 0..=options.max_announceable_x() {
@@ -1151,6 +1214,7 @@ mod tests {
                         max_x: pool_total + tappable,
                         x_discount: discount,
                         pool_order: Vec::new(),
+                        pool_keep: BTreeMap::new(),
                     };
                     for x in 0..=options.max_announceable_x() {
                         let target = options.mana_for_x(x);
@@ -1201,6 +1265,7 @@ mod tests {
             max_x: 7,
             x_discount: 0,
             pool_order: Vec::new(),
+            pool_keep: BTreeMap::new(),
         };
         assert_eq!(describe_x_plan(&options, 0).as_deref(), Some("X = 0: nothing is spent"));
         assert_eq!(describe_x_plan(&options, 1).as_deref(), Some("X = 1: 1 Red from the pool"));
@@ -1216,6 +1281,7 @@ mod tests {
             max_x: 2,
             x_discount: 0,
             pool_order: Vec::new(),
+            pool_keep: BTreeMap::new(),
         };
         assert_eq!(describe_x_plan(&rock, 1), None);
         assert_eq!(describe_x_plan(&rock, 2).as_deref(), Some("X = 2: tap Sol Ring"));

@@ -8577,7 +8577,7 @@ pub(crate) mod tests {
             let mut legal = x_funding_offer();
             if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseXFunding { options, .. }) =
                 legal.resolution_prompt.as_mut() {
-                *options = FundingOptions { pool, groups, max_x: 6, x_discount: 0, pool_order: vec![] };
+                *options = FundingOptions { pool, groups, max_x: 6, x_discount: 0, pool_order: vec![], pool_keep: std::collections::BTreeMap::new() };
             }
             let recorded = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
             let mut p = LlmPlayer::for_prompt_tests("Seat-857").with_pass_until(false);
@@ -8709,6 +8709,7 @@ pub(crate) mod tests {
             max_x: 4,
             x_discount: 0,
             pool_order: vec![],
+            pool_keep: std::collections::BTreeMap::new(),
         };
         mtg_engine::engine::LegalActions {
             actions: Vec::new(),
