@@ -23,7 +23,7 @@
 // that never ended. The server's terminal and log stay in `--out`.
 
 const { chromium } = require("playwright");
-const { spawn } = require("child_process");
+const { spawnOwned, finish } = require("./children.js");
 const path = require("path");
 const fs = require("fs");
 const { step, snapshot } = require("./autoplay.js");
@@ -42,6 +42,13 @@ const deadlineMs = Number(arg("--hours", "4")) * 3600 * 1000;
 
 let failures = 0;
 function fail(msg) { console.error("FAIL: " + msg); failures++; }
+// Set when the table can no longer finish (a deadline, a game page stuck
+// and closed, the table closed): every loop below stops on it, or a match
+// that cannot end kept node waiting on it forever after its FAIL (#942).
+let stopped = null;
+const stop = (why) => { if (!stopped) stopped = why; };
+const startedAt = Date.now();
+const pastDeadline = () => Date.now() - startedAt > deadlineMs;
 function log(msg) { console.log(`[${new Date().toISOString().slice(11, 19)}] ${msg}`); }
 
 let rng = seed * 2654435761 >>> 0;
@@ -57,13 +64,16 @@ async function main() {
     "--pick-seconds", pickSeconds, "--build-seconds", "900", "--sideboard-seconds", "300"];
   if (ai === "stub") env.CLAUDE_CODE_BIN = path.join(root, "scripts", "llm-prompt-stub.py");
   else args.push("--ai", ai);
-  const server = spawn(path.join(root, "target", "debug", "mtg-draft-server"), args,
+  const server = spawnOwned(path.join(root, "target", "debug", "mtg-draft-server"), args,
     { cwd: root, env, stdio: ["pipe", "pipe", "pipe"] });
   let terminal = "";
   server.stderr.on("data", d => { terminal += d; fs.appendFileSync(path.join(out, "terminal.txt"), d); });
   server.stdout.on("data", d => fs.appendFileSync(path.join(out, "terminal.txt"), d));
+  let exited = null;
+  server.on("exit", (code, sig) => { exited = sig || code; });
   const began = Date.now();
   while (!/the draft starts when/.test(terminal)) {
+    if (exited !== null) { fail(`the server exited (${exited}) before printing its join lines:\n` + terminal); return; }
     if (Date.now() - began > 60000) { fail("the server never printed its join lines:\n" + terminal); server.kill(); return; }
     await new Promise(r => setTimeout(r, 100));
   }
@@ -71,7 +81,7 @@ async function main() {
   log(`table on :${port}, seed ${seed}, ${seats}, best-of-${bestOf}, AI ${ai}; ${links.length} join links`);
 
   const browser = await chromium.launch();
-  const tally = { picks: 0, decisions: 0, games: 0, refusals: [] };
+  const tally = { picks: 0, decisions: 0, games: 0, refusals: [], played: new Map() };
   try {
     await Promise.all(links.map(l => person(browser, l, tally)));
   } finally {
@@ -82,6 +92,14 @@ async function main() {
   }
   const logText = fs.existsSync(path.join(out, "draft.log")) ? fs.readFileSync(path.join(out, "draft.log"), "utf8") : "";
   if (!/FINAL STANDINGS/.test(logText)) fail("the log has no final standings");
+  // A table whose people played no game is no rehearsal: a person's match
+  // with no game page (its port held by something else) is forfeited, and
+  // the standings are written all the same (#941).
+  for (const l of players > 1 ? links : []) {
+    const n = tally.played.get(l.seat) || 0;
+    if (!n) fail(`seat ${l.seat} answered no decision on a game page: its matches were not played`);
+  }
+  for (const m of terminal.matchAll(/^.*no game page for .*forfeits the match.*$/gm)) fail(`a person forfeited for want of a game page: ${m[0]}`);
   if (/panicked|INVARIANT/.test(terminal + logText)) fail("a panic or an invariant in the run:\n" + terminal.slice(-2000));
   log(`${tally.picks} picks clicked, ${tally.games} game pages, ${tally.decisions} game decisions clicked; ${(Date.now() - began) / 60000 | 0} min`);
   if (tally.refusals.length) log(`refusals the pages showed: ${JSON.stringify(tally.refusals.slice(0, 10))}`);
@@ -97,10 +115,10 @@ async function person(browser, link, tally) {
   await page.fill("#name", `Person ${link.seat}`);
   await page.press("#name", "Enter");
   const games = new Map(); // round -> promise playing that match's game page
-  const began = Date.now();
   let lastRefusal = null;
   for (;;) {
-    if (Date.now() - began > deadlineMs) { fail(`seat ${link.seat}: the table never finished`); break; }
+    if (stopped) break;
+    if (pastDeadline()) { fail(`seat ${link.seat}: the table never finished`); stop("the deadline"); break; }
     const v = await page.evaluate(() => window.mtgDraft && window.mtgDraft.view);
     const st = await page.evaluate(() => ({ refusal: window.mtgDraft.state.refusal, closed: window.mtgDraft.state.closed,
       pending: !!window.mtgDraft.state.pendingPick, readySent: window.mtgDraft.state.readySent }));
@@ -108,7 +126,7 @@ async function person(browser, link, tally) {
       lastRefusal = JSON.stringify(st.refusal);
       tally.refusals.push({ seat: link.seat, reason: st.refusal.reason });
     }
-    if (st.closed) { fail(`seat ${link.seat}: the table closed under it: ${st.closed}`); break; }
+    if (st.closed) { fail(`seat ${link.seat}: the table closed under it: ${st.closed}`); stop("the table closed"); break; }
     if (!v) { await page.waitForTimeout(200); continue; }
     if (v.phase === "done") break;
     if (v.phase === "drafting" && v.pack && !st.pending) {
@@ -181,14 +199,21 @@ async function playMatch(browser, seat, m, draftPage, tally) {
         return !mm || mm.status === "done";
       }, m.round);
       if (done) break;
+      if (stopped) { log(`${label}: left unfinished: ${stopped}`); break; }
+      if (pastDeadline()) { fail(`${label}: the match never ended`); stop("the deadline"); break; }
       const ready = await page.waitForFunction(() => window.mtg && window.mtg.decision && !window.mtg.gameOver, null, { timeout: 5000 }).catch(() => null);
       if (!ready) continue;
       const snap = await snapshot(page);
       if (snap.over) continue;
-      if (snap.seq === lastSeq) { if (committed) stuck++; } else { stuck = 0; lastSeq = snap.seq; tally.decisions++; }
+      if (snap.seq === lastSeq) { if (committed) stuck++; } else {
+        stuck = 0; lastSeq = snap.seq; tally.decisions++;
+        tally.played.set(seat, (tally.played.get(seat) || 0) + 1);
+      }
       if (stuck >= 5) {
         fail(`${label}: stuck (${snap.kind}, widget ${snap.mode}): ${JSON.stringify({ title: snap.title, buttons: snap.buttons.map(b => b.label), notice: snap.notice })}`);
         await page.screenshot({ path: path.join(out, `stuck-${seat}-r${m.round}.png`) });
+        // Its game now waits for a page that is not coming back.
+        stop(`${label} was stuck`);
         break;
       }
       committed = await step(page, snap);
@@ -196,6 +221,7 @@ async function playMatch(browser, seat, m, draftPage, tally) {
     }
   } catch (e) {
     fail(`${label}: ${e.stack || e}`);
+    stop(`${label} failed`);
   } finally {
     if (errors.length) fail(`${label}: game page errors:\n  ${errors.join("\n  ")}`);
     await page.close();
@@ -203,5 +229,6 @@ async function playMatch(browser, seat, m, draftPage, tally) {
   log(`${label}: match over`);
 }
 
-// The exit code is set here, after every return in main(), so an early FAIL is a failure.
-main().catch(e => fail(e.stack || String(e))).finally(() => { process.exitCode = failures ? 1 : 0; });
+// The exit code is read after every return in main(), so an early FAIL is a
+// failure, and the process ends then, the server with it.
+finish(main, () => failures ? 1 : (process.exitCode || 0));
