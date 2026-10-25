@@ -701,10 +701,13 @@ pub struct DamageDivision {
 /// blocker of an attacker without trample takes everything left; with
 /// trample, everything left after the last blocker is overflow.
 ///
-/// The player is asked only when there is a choice: the power exceeds the
-/// total lethal damage, and there is somewhere else for a surplus to go —
-/// a second blocker, or trample. Otherwise, and for any blocker not yet
-/// chosen, each blocker gets exactly lethal and the rest goes forward.
+/// The player is asked about a blocker whenever there is a choice: what is
+/// left is more than its lethal damage, and it is not the last blocker of
+/// an attacker without trample. That includes a power no bigger than the
+/// blockers' total lethal: 4 power against two 2-toughness blockers may be
+/// divided 2-2, 3-1 or 4-0, and only asking every time lets the player pick
+/// 3-1 or 4-0. Otherwise, and for any blocker not yet chosen, each blocker
+/// gets exactly lethal and the rest goes forward.
 #[must_use]
 pub fn divide_combat_damage(
     power: u32,
@@ -712,8 +715,6 @@ pub fn divide_combat_damage(
     trample: bool,
     chosen: &[(ObjectId, u32)],
 ) -> DamageDivision {
-    let total_lethal = blockers.iter().fold(0u32, |sum, &(_, l)| sum.saturating_add(l));
-    let choice = power > total_lethal && (trample || blockers.len() >= 2);
     let mut remaining = power;
     let mut open = None;
     let mut to_blockers = Vec::with_capacity(blockers.len());
@@ -721,7 +722,7 @@ pub fn divide_combat_damage(
         let least = remaining.min(lethal);
         let amount = if i + 1 == blockers.len() && !trample {
             remaining
-        } else if !choice || remaining == least {
+        } else if remaining == least {
             least
         } else if let Some(&(_, a)) = chosen.iter().find(|&&(b, _)| b == blocker) {
             a.clamp(least, remaining)

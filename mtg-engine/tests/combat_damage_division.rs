@@ -119,17 +119,37 @@ fn the_default_answer_is_exactly_lethal_then_forward() {
     assert_eq!((marked(&state, blockers[0]), marked(&state, blockers[1])), (2, 3));
 }
 
-/// No surplus, no question: exactly lethal to each is the only division
-/// that reaches the second blocker, and the engine makes it silently.
+/// More than lethal for the first blocker is a question even when it is no
+/// more than the blockers' total lethal. 4 power against two 2-toughness
+/// blockers may go 2-2, 3-1 or 4-0 (CR 510.1c: the second blocker may be
+/// assigned damage once the first has lethal, and need not be); the engine
+/// used to assign 2-2 silently, as if it were the only division; writing
+/// down "every legal division can be chosen" as a property to prove found
+/// the two it never offered.
 #[test]
-fn no_surplus_is_no_question() {
+fn more_than_the_first_blockers_lethal_is_a_question_even_short_of_the_total() {
     let reg = registry();
-    let (mut state, _, blockers) = blocked(4, &[2, 2], &[], &reg);
-    enter_damage_step(&mut state, &reg);
-    assert!(division_prompt(&state).is_none());
-    assert_eq!((marked(&state, blockers[0]), marked(&state, blockers[1])), (2, 2));
+    for (answer, want) in [(2, (2, 2)), (3, (3, 1)), (4, (4, 0))] {
+        let (mut state, _, blockers) = blocked(4, &[2, 2], &[], &reg);
+        enter_damage_step(&mut state, &reg);
+        let (_, blocker, min, max, _, _) = division_prompt(&state).expect("4 power over a lethal of 2 is a choice");
+        assert_eq!((blocker, min, max), (blockers[0], 2, 4));
+        let state = assign(&state, answer, &reg);
+        assert!(division_prompt(&state).is_none(), "the last blocker without trample takes the rest");
+        assert_eq!((marked(&state, blockers[0]), marked(&state, blockers[1])), want);
+    }
+}
 
-    // One blocker and no trample: everything goes to it.
+/// No choice, no question: nothing left over after the first blocker's
+/// lethal, or a lone blocker without trample, which takes everything.
+#[test]
+fn no_choice_is_no_question() {
+    let reg = registry();
+    let (mut state, _, blockers) = blocked(2, &[2, 2], &[], &reg);
+    enter_damage_step(&mut state, &reg);
+    assert!(division_prompt(&state).is_none(), "exactly lethal for the first and nothing left");
+    assert_eq!((marked(&state, blockers[0]), marked(&state, blockers[1])), (2, 0));
+
     let (mut state, _, blockers) = blocked(5, &[2], &[], &reg);
     enter_damage_step(&mut state, &reg);
     assert!(division_prompt(&state).is_none(), "a lone blocker without trample is no choice");
@@ -212,8 +232,9 @@ fn the_regular_step_measures_lethal_against_damage_already_marked() {
 /// The division, over every small board: whatever the attacking player
 /// chooses, CR 510.1c holds — no blocker is assigned damage while an
 /// earlier one is short of lethal, all the power is assigned somewhere,
-/// and only a trampler sends any past its blockers. With nothing chosen,
-/// the division is exactly lethal and forward.
+/// and only a trampler sends any past its blockers — and every division
+/// the rules allow is one the player can choose. With nothing chosen, the
+/// division is exactly lethal and forward.
 #[test]
 fn every_division_obeys_cr_510_1c() {
     let ids: Vec<ObjectId> = (1..=3).map(ObjectId).collect();
@@ -230,10 +251,19 @@ fn every_division_obeys_cr_510_1c() {
     }
 }
 
+/// CR 510.1c-d, stated directly: is `amounts` (with `overflow` past the
+/// blockers) a legal division of `power`?
+fn is_legal(power: u32, blockers: &[(ObjectId, u32)], trample: bool, amounts: &[u32], overflow: u32) -> bool {
+    let assigned: u32 = amounts.iter().sum();
+    let total_ok = if blockers.is_empty() && !trample { assigned + overflow == 0 } else { assigned + overflow == power };
+    let order_ok = (0..amounts.len()).all(|k| amounts[k] == 0 || (0..k).all(|j| amounts[j] >= blockers[j].1));
+    let overflow_ok = overflow == 0 || (trample && amounts.iter().zip(blockers).all(|(&a, &(_, l))| a >= l));
+    total_ok && order_ok && overflow_ok
+}
+
 fn check_division(power: u32, blockers: &[(ObjectId, u32)], trample: bool) {
     let what = format!("power {power}, lethals {blockers:?}, trample {trample}");
-    let total_lethal: u32 = blockers.iter().map(|b| b.1).sum();
-    let choice = !blockers.is_empty() && power > total_lethal && (trample || blockers.len() >= 2);
+    let choice = !blockers.is_empty() && (trample || blockers.len() >= 2) && power > blockers[0].1;
 
     // The default: exactly lethal, the rest forward.
     let d = divide_combat_damage(power, blockers, trample, &[]);
@@ -246,30 +276,15 @@ fn check_division(power: u32, blockers: &[(ObjectId, u32)], trample: bool) {
     }
     assert_eq!(d.open.is_some(), choice, "asked iff there is a choice: {what}");
 
-    // Every walk of answers the prompts allow.
+    // Every walk of answers the prompts allow: each ends legal, and between
+    // them they reach every legal division.
+    let mut reached = std::collections::BTreeSet::new();
     let mut stack: Vec<Vec<(ObjectId, u32)>> = vec![vec![]];
     while let Some(chosen) = stack.pop() {
         let d = divide_combat_damage(power, blockers, trample, &chosen);
-        let assigned: u32 = d.to_blockers.iter().map(|b| b.1).sum();
-        if blockers.is_empty() && !trample {
-            assert_eq!(assigned + d.overflow, 0, "{what}");
-        } else {
-            assert_eq!(assigned + d.overflow, power, "all the damage is assigned: {what} {chosen:?}");
-        }
-        if !trample {
-            assert_eq!(d.overflow, 0, "{what}");
-        }
-        for k in 1..d.to_blockers.len() {
-            if d.to_blockers[k].1 > 0 {
-                let earlier_short = d.to_blockers[..k].iter().zip(blockers)
-                    .any(|(&(_, a), &(_, lethal))| a < lethal);
-                assert!(!earlier_short, "a later blocker assigned damage past a short one: {what} {d:?}");
-            }
-        }
-        if d.overflow > 0 {
-            assert!(d.to_blockers.iter().zip(blockers).all(|(&(_, a), &(_, l))| a >= l),
-                "trampled over a blocker short of lethal: {what} {d:?}");
-        }
+        let amounts: Vec<u32> = d.to_blockers.iter().map(|b| b.1).collect();
+        assert!(is_legal(power, blockers, trample, &amounts, d.overflow),
+            "an illegal division: {what} {chosen:?} {d:?}");
         if let Some((b, min, max)) = d.open {
             assert!(min < max, "an open division is a choice: {what}");
             for a in min..=max {
@@ -277,6 +292,21 @@ fn check_division(power: u32, blockers: &[(ObjectId, u32)], trample: bool) {
                 next.push((b, a));
                 stack.push(next);
             }
+        } else {
+            reached.insert((amounts, d.overflow));
         }
     }
+    let mut legal = std::collections::BTreeSet::new();
+    for code in 0..(power + 1).pow(blockers.len() as u32) {
+        let amounts: Vec<u32> = (0..blockers.len()).map(|i| (code / (power + 1).pow(i as u32)) % (power + 1)).collect();
+        let assigned: u32 = amounts.iter().sum();
+        if assigned > power {
+            continue;
+        }
+        let overflow = if trample { power - assigned } else { 0 };
+        if is_legal(power, blockers, trample, &amounts, overflow) {
+            legal.insert((amounts, overflow));
+        }
+    }
+    assert_eq!(reached, legal, "the divisions the prompts reach are the legal ones: {what}");
 }
