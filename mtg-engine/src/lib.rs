@@ -17,3 +17,5 @@ pub mod destruction;
 pub mod invariants;
 pub mod replacement;
 pub mod attachment;
+#[cfg(kani)]
+mod proofs;

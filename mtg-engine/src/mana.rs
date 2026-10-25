@@ -814,10 +814,13 @@ const FIXED_ORDER: [usize; 6] = [0, 1, 2, 3, 4, 5];
 ///
 /// A payment is worked out in this shape, over a cost's [`Pips`], and only
 /// then written back to the pool, so a payment that fails has touched
-/// nothing.
-type Amounts = [u32; 6];
+/// nothing. It is also small enough to prove things about:
+/// `src/proofs/mana_payment.rs` proves [`pay_fixed`] and [`pay_around`]
+/// against the rules for every pool, cost and reserve within its bounds,
+/// and [`pips_of`] a faithful count.
+pub(crate) type Amounts = [u32; 6];
 
-fn slot_of(mana_type: ManaType) -> usize {
+pub(crate) fn slot_of(mana_type: ManaType) -> usize {
     match mana_type {
         ManaType::Colorless => 0,
         ManaType::White => 1,
@@ -856,12 +859,12 @@ fn pay_with(pool: &mut ManaPool, pay: impl FnOnce(Amounts) -> Option<Amounts>) -
 /// of its colour per coloured pip, and its `{C}`), and how much generic mana
 /// on top, which any type pays. X is not a cost yet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Pips {
-    specific: Amounts,
-    generic: u32,
+pub(crate) struct Pips {
+    pub(crate) specific: Amounts,
+    pub(crate) generic: u32,
 }
 
-fn pips_of(cost: &ManaCost) -> Pips {
+pub(crate) fn pips_of(cost: &ManaCost) -> Pips {
     let mut pips = Pips { specific: [0; 6], generic: 0 };
     for sym in &cost.symbols {
         match sym {
@@ -895,7 +898,7 @@ fn surplus_order(have: &Amounts, keep: &Amounts) -> [usize; 6] {
 
 /// Pay `cost` out of `have` with the generic part in [`GENERIC_ORDER`]: what
 /// is left, or None when the cost cannot be paid.
-fn pay_fixed(have: Amounts, cost: &Pips) -> Option<Amounts> {
+pub(crate) fn pay_fixed(have: Amounts, cost: &Pips) -> Option<Amounts> {
     let mut have = pay_specific(have, cost)?;
     let mut remaining = cost.generic;
     spend_generic(&mut have, &mut remaining, &FIXED_ORDER, &[0; 6]);
@@ -912,7 +915,7 @@ fn pay_fixed(have: Amounts, cost: &Pips) -> Option<Amounts> {
 /// spare. And generic takes only what is spare until nothing spare is left:
 /// `{2}` out of the same pool takes one White and the Blue, where taking
 /// every White first left the hand nothing to cast with.
-fn pay_around(have: Amounts, cost: &Pips, keep: &Amounts) -> Option<Amounts> {
+pub(crate) fn pay_around(have: Amounts, cost: &Pips, keep: &Amounts) -> Option<Amounts> {
     let mut have = pay_specific(have, cost)?;
     let order = surplus_order(&have, keep);
     let mut remaining = cost.generic;
@@ -1193,7 +1196,9 @@ mod tests {
     /// from it. With {W}{W}{U} floating and a {W} spell in hand, a {2} is
     /// paid with one White and the Blue: White and Blue are both one spare,
     /// and taking both Whites because White sorts first leaves the Blue,
-    /// which pays for nothing the hand holds.
+    /// which pays for nothing the hand holds. The Kani proof
+    /// `reserving_leaves_the_reserve_payable` (`src/proofs/mana_payment.rs`)
+    /// holds this for every pool, cost and reserve within its bounds.
     #[test]
     fn a_generic_cost_takes_no_more_of_a_type_than_it_has_spare() {
         let mut pool = pool_of(&[(ManaType::White, 2), (ManaType::Blue, 1)]);
@@ -1207,7 +1212,7 @@ mod tests {
     /// The spare is counted after the cost's own coloured pips are paid, not
     /// before. With {W}{W}{U} floating and a {W} spell in hand, a {1}{W}
     /// spell pays its {W} first; the White it leaves is the hand's, so the
-    /// {1} is the Blue.
+    /// {1} is the Blue. The same proof covers it.
     #[test]
     fn the_spare_is_what_is_left_after_the_cost_pays_its_own_pips() {
         let mut pool = pool_of(&[(ManaType::White, 2), (ManaType::Blue, 1)]);
@@ -1236,7 +1241,9 @@ mod tests {
     }
 
     /// Writing a payment back touches only the types it spent from: a type
-    /// listed at zero stays listed, a type never listed stays unlisted.
+    /// listed at zero stays listed, a type never listed stays unlisted. The
+    /// payment arithmetic is proved over six amounts; this is the part that
+    /// is not, because it goes through the pool's `BTreeMap`.
     #[test]
     fn writing_a_payment_back_touches_only_what_it_spent() {
         let mut pool = pool_of(&[(ManaType::White, 2), (ManaType::Green, 0)]);
