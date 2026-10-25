@@ -14,11 +14,10 @@
 // is counted, so a run's summary says what was exercised.
 
 const { chromium } = require("playwright");
-const { spawn } = require("child_process");
+const { startRunner, finish } = require("./children.js");
 const path = require("path");
 const fs = require("fs");
 
-const root = path.resolve(__dirname, "..", "..");
 const arg = (name, def) => { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] : def; };
 const games = Number(arg("--games", "1"));
 const seed0 = Number(arg("--seed", String(Math.floor(Math.random() * 100000))));
@@ -36,25 +35,22 @@ function pick(arr) { return arr[Math.floor(rnd() * arr.length)]; }
 function fail(msg) { console.error("FAIL: " + msg); process.exitCode = 1; }
 
 async function playOne(browser, seed, deck1, deck2, kinds) {
-  const port = 8800 + Math.floor(rnd() * 90);
-  const runner = spawn(path.join(root, "target", "debug", "mtg-runner"),
-    ["--p1", `gui:${port}`, "--p2", "random", "--seed", String(seed), "--deck1", deck1, "--deck2", deck2, "-q", "--check-invariants"],
-    { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
-  let runnerOut = "";
-  runner.stdout.on("data", d => { runnerOut += d; });
-  runner.stderr.on("data", d => { runnerOut += d; });
-  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  // The draw that once chose the port, kept so a seed plays the clicks and
+  // decks it always did.
+  rnd();
+  const { runner, urls, output } = await startRunner(
+    ["--p1", "gui:0", "--p2", "random", "--seed", String(seed), "--deck1", deck1, "--deck2", deck2, "-q", "--check-invariants"]);
+  let page = null;
   const errors = [];
-  page.on("pageerror", e => errors.push("pageerror: " + e.message));
-  page.on("console", m => { if (m.type() === "error" && !/404/.test(m.text())) errors.push("console: " + m.text()); });
+  const shot = async (name) => { if (shotsDir && page) { fs.mkdirSync(shotsDir, { recursive: true }); await page.screenshot({ path: path.join(shotsDir, `${seed}-${name}.png`) }); } };
   const label = `seed ${seed} ${deck1} vs ${deck2}`;
-  const shot = async (name) => { if (shotsDir) { fs.mkdirSync(shotsDir, { recursive: true }); await page.screenshot({ path: path.join(shotsDir, `${seed}-${name}.png`) }); } };
   let decisions = 0;
   let outcome = "unfinished";
   try {
-    for (let i = 0; i < 40; i++) {
-      try { await page.goto(`http://127.0.0.1:${port}/`); break; } catch (e) { await page.waitForTimeout(250); }
-    }
+    page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+    page.on("pageerror", e => errors.push("pageerror: " + e.message));
+    page.on("console", m => { if (m.type() === "error" && !/404/.test(m.text())) errors.push("console: " + m.text()); });
+    await page.goto(urls["--p1"]);
     let lastSeq = -1, stuck = 0, committed = false;
     while (decisions < maxDecisions) {
       const ready = await page.waitForFunction(() => window.mtg && (window.mtg.decision || window.mtg.gameOver), null, { timeout: 60000 }).catch(() => null);
@@ -72,9 +68,9 @@ async function playOne(browser, seed, deck1, deck2, kinds) {
       await page.waitForTimeout(40);
     }
     if (errors.length) fail(`${label}: page errors:\n` + errors.join("\n"));
-    if (/INVARIANT|panicked/.test(runnerOut)) fail(`${label}: runner:\n` + runnerOut.slice(-1500));
+    if (/INVARIANT|panicked/.test(output())) fail(`${label}: runner:\n` + output().slice(-1500));
   } finally {
-    await page.close();
+    if (page) await page.close();
     runner.kill("SIGTERM");
   }
   console.log(`${label}: ${decisions} decisions, ${outcome}`);
@@ -206,5 +202,5 @@ async function main() {
 
 // Run as a script it plays its own games; required, it lends its step to
 // another driver (`table_rehearsal.js` plays a hosted table's game pages).
-if (require.main === module) main().catch(e => { fail(e.stack || String(e)); });
+if (require.main === module) finish(main);
 module.exports = { step, snapshot };

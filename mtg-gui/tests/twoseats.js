@@ -6,31 +6,24 @@
 // Both pages keep their opening hands, then whichever page is asked
 // answers (a land if it can, else a pass) for a few dozen decisions.
 // Checks: each page is asked in turn and never both at once; a page only
-// ever sees its own hand; the seats took consecutive ports.
+// ever sees its own hand. Each seat is on a port of the system's choosing
+// (`gui:0`), opened at the URL the runner prints for it.
 
 const { chromium } = require("playwright");
-const { spawn } = require("child_process");
-const path = require("path");
+const { startRunner, finish } = require("./children.js");
 
-const root = path.resolve(__dirname, "..", "..");
 function fail(msg) { console.error("FAIL: " + msg); process.exitCode = 1; }
 
 async function main() {
-  const port = 8600 + Math.floor(Math.random() * 90);
-  const runner = spawn(path.join(root, "target", "debug", "mtg-runner"),
-    ["--p1", `gui:${port}`, "--p2", `gui:${port + 1}`, "--seed", "21", "--deck1", "red-green", "--deck2", "blue-white", "-q"],
-    { cwd: root, stdio: ["ignore", "ignore", "pipe"] });
-  let err = "";
-  runner.stderr.on("data", d => { err += d; });
+  const { runner, urls, output } = await startRunner(
+    ["--p1", "gui:0", "--p2", "gui:0", "--seed", "21", "--deck1", "red-green", "--deck2", "blue-white", "-q"]);
   const browser = await chromium.launch();
   try {
     const pages = [];
-    for (const p of [port, port + 1]) {
+    for (const p of [urls["--p1"], urls["--p2"]]) {
       const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
       page.on("pageerror", e => fail(`page ${p}: ${e.message}`));
-      for (let i = 0; i < 40; i++) {
-        try { await page.goto(`http://127.0.0.1:${p}/`); break; } catch (e) { await page.waitForTimeout(250); }
-      }
+      await page.goto(p);
       pages.push(page);
     }
     const asked = async (page) => page.evaluate(() => !!(window.mtg && window.mtg.decision));
@@ -74,12 +67,12 @@ async function main() {
       await page.waitForTimeout(50);
     }
     if (answeredBy[0] === 0 || answeredBy[1] === 0) fail(`answers by seat: ${answeredBy.join("/")}`);
-    console.log(process.exitCode ? "twoseats: FAILED" : `twoseats: ok (${answeredBy[0]} + ${answeredBy[1]} decisions on ports ${port} and ${port + 1})`);
+    console.log(process.exitCode ? "twoseats: FAILED" : `twoseats: ok (${answeredBy[0]} + ${answeredBy[1]} decisions on ${urls["--p1"]} and ${urls["--p2"]})`);
   } finally {
     await browser.close();
     runner.kill("SIGTERM");
-    if (/panicked/.test(err)) fail("runner panicked:\n" + err);
+    if (/panicked/.test(output())) fail("runner panicked:\n" + output());
   }
 }
 
-main().catch(e => { fail(e.stack || String(e)); });
+finish(main);

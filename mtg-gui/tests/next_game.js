@@ -15,30 +15,22 @@
 // because `mtg-runner` plays one game and the box is the page's to clear.
 
 const { chromium } = require("playwright");
-const { spawn } = require("child_process");
-const path = require("path");
+const { startRunner, finish } = require("./children.js");
 
-const root = path.resolve(__dirname, "..", "..");
-const port = 8740 + Math.floor(Math.random() * 40);
 let failures = 0;
 const fail = (m) => { console.error("FAIL: " + m); failures++; };
 const ok = (m) => console.log("ok: " + m);
 const check = (c, m) => { if (c) ok(m); else fail(m); };
 
 async function main() {
-  const runner = spawn(path.join(root, "target", "debug", "mtg-runner"),
-    ["--p1", `gui:${port}`, "--p2", "random", "--seed", "5", "--deck1", "red-green", "--deck2", "white-black", "-q"],
-    { cwd: root, stdio: ["ignore", "ignore", "pipe"] });
-  let err = "";
-  runner.stderr.on("data", d => { err += d; });
+  const { runner, urls, output } = await startRunner(
+    ["--p1", "gui:0", "--p2", "random", "--seed", "5", "--deck1", "red-green", "--deck2", "white-black", "-q"]);
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     const errors = [];
     page.on("pageerror", e => errors.push("pageerror: " + e.message));
-    for (let i = 0; i < 40; i++) {
-      try { await page.goto(`http://127.0.0.1:${port}/`); break; } catch (e) { await page.waitForTimeout(250); }
-    }
+    await page.goto(urls["--p1"]);
     await page.waitForFunction(() => window.mtg && window.mtg.decision, null, { timeout: 30000 });
 
     // Game 1 ends: the box is up and the panel says who won.
@@ -148,9 +140,9 @@ async function main() {
     await browser.close();
     runner.kill("SIGTERM");
   }
-  if (/panicked/.test(err)) fail(`runner: ${err.slice(-500)}`);
-  if (failures) { console.error(`${failures} failure(s)`); process.exit(1); }
+  if (/panicked/.test(output())) fail(`runner: ${output().slice(-500)}`);
+  if (failures) { console.error(`${failures} failure(s)`); process.exitCode = 1; return; }
   console.log("next game: all checks passed");
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+finish(main);

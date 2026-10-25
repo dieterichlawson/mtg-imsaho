@@ -11,30 +11,26 @@
 // list of the offered actions.
 
 const { chromium } = require("playwright");
-const { spawn } = require("child_process");
+const { startRunner, finish } = require("./children.js");
 const path = require("path");
 const fs = require("fs");
 
 const root = path.resolve(__dirname, "..", "..");
 const shotsDir = process.argv.includes("--shots") ? process.argv[process.argv.indexOf("--shots") + 1] : null;
-const port = 8900 + Math.floor(Math.random() * 90);
 let failures = 0;
 function fail(msg) { console.error("FAIL: " + msg); failures++; }
 function ok(msg) { console.log("ok: " + msg); }
 
 async function main() {
-  const runner = spawn(path.join(root, "target", "debug", "mtg-runner"),
-    ["--p1", `gui:${port}`, "--p2", "random", "--seed", "11", "--deck1", "red-green", "--deck2", "white-black", "-q"],
-    { cwd: root, stdio: ["ignore", "ignore", "pipe"] });
+  const { runner, urls } = await startRunner(
+    ["--p1", "gui:0", "--p2", "random", "--seed", "11", "--deck1", "red-green", "--deck2", "white-black", "-q"]);
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     const errors = [];
     page.on("pageerror", e => errors.push("pageerror: " + e.message));
     page.on("console", m => { if (m.type() === "error" && !/404/.test(m.text())) errors.push("console: " + m.text()); });
-    for (let i = 0; i < 30; i++) {
-      try { await page.goto(`http://127.0.0.1:${port}/`); break; } catch (e) { await page.waitForTimeout(200); }
-    }
+    await page.goto(urls["--p1"]);
     await page.waitForFunction(() => window.mtg && window.mtg.decision, null, { timeout: 30000 });
     // Keep, play through to a board with lands and a creature or two, then cut the socket.
     await page.evaluate(() => window.mtgSend("MulliganKeep"));
@@ -1549,4 +1545,4 @@ async function main() {
   process.exitCode = failures ? 1 : 0;
 }
 
-main().catch(e => { fail(e.stack || String(e)); process.exitCode = 1; });
+finish(main);

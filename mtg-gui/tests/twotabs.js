@@ -18,20 +18,16 @@
 //     kept and have the click read as accepted (issue #516).
 
 const { chromium } = require("playwright");
-const { spawn } = require("child_process");
-const path = require("path");
+const { startRunner, finish } = require("./children.js");
 
-const root = path.resolve(__dirname, "..", "..");
 let failures = 0;
 function fail(msg) { console.error("FAIL: " + msg); failures++; }
 function ok(msg) { console.log("ok: " + msg); }
 
-async function openTab(browser, port) {
+async function openTab(browser, url) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   page.on("pageerror", e => fail(`page error: ${e.message}`));
-  for (let i = 0; i < 60; i++) {
-    try { await page.goto(`http://127.0.0.1:${port}/`); break; } catch (e) { await page.waitForTimeout(250); }
-  }
+  await page.goto(url);
   await page.waitForFunction(() => window.mtg && window.mtg.connected, null, { timeout: 20000 });
   return page;
 }
@@ -45,20 +41,19 @@ const snap = (p) => p.evaluate(() => ({
 }));
 
 async function main() {
-  const port = 8700 + Math.floor(Math.random() * 80);
-  const runner = spawn(path.join(root, "target", "debug", "mtg-runner"),
-    ["--p1", `gui:${port}`, "--p2", "random", "--seed", "4401",
-     "--deck1", "decks/gw-humans.txt", "--deck2", "decks/ub-zombies.txt", "--check-invariants", "-q"],
-    { cwd: root, stdio: ["ignore", "ignore", "pipe"] });
+  const { runner, urls } = await startRunner(
+    ["--p1", "gui:0", "--p2", "random", "--seed", "4401",
+     "--deck1", "decks/gw-humans.txt", "--deck2", "decks/ub-zombies.txt", "--check-invariants", "-q"]);
+  const url = urls["--p1"];
   const browser = await chromium.launch();
   try {
-    const A = await openTab(browser, port);
+    const A = await openTab(browser, url);
     await A.waitForFunction(() => window.mtg && window.mtg.decision, null, { timeout: 30000 });
 
     // ---- #515: `s` belongs to the seat, not to a page ----
     await A.keyboard.press("s");
     await A.waitForTimeout(200);
-    const B = await openTab(browser, port);
+    const B = await openTab(browser, url);
     await B.waitForFunction(() => window.mtg && window.mtg.decision, null, { timeout: 30000 });
     await B.waitForTimeout(300);
     const bStops = await B.evaluate(() => !!window.mtg.stopAtPass);
@@ -118,4 +113,4 @@ async function main() {
   process.exitCode = failures ? 1 : 0;
 }
 
-main().catch(e => { fail(e.stack || String(e)); process.exitCode = 1; });
+finish(main);
