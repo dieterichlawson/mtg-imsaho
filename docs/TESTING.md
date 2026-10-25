@@ -165,9 +165,10 @@ test results" section of `CLAUDE.md`.
 ## Proofs
 
 A test checks the inputs someone wrote down. Some properties are also
-proved, for every input within stated bounds, with the Kani model checker:
-`mtg-engine/src/proofs/`, run by `scripts/prove.sh` and the `proofs`
-workflow. They are not part of `cargo test`. What each one proves, and what
-it does not, is in `docs/plans/formal-verification.md`. A defect a proof
-finds gets an ordinary test here as well, so the suite guards it on a
-machine without Kani.
+proved, for every input: the rules arithmetic in the `mtg-kernel` crate with
+Verus, and the engine-side glue around it in `mtg-engine/src/proofs/` with
+the Kani model checker. `scripts/prove.sh` and the `proofs` workflow run
+both; they are not part of `cargo test`. What each proof covers, and what it
+does not, is in `docs/plans/formal-verification.md`. A defect a proof finds
+gets an ordinary test here as well, so the suite guards it on a machine
+without the provers.
