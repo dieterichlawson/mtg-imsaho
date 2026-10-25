@@ -807,18 +807,16 @@ const GENERIC_ORDER: [ManaType; 6] = [
     ManaType::Red, ManaType::Green,
 ];
 
-/// [`GENERIC_ORDER`] as slots of [`Amounts`].
-const FIXED_ORDER: [usize; 6] = [0, 1, 2, 3, 4, 5];
-
-/// A pool's contents as six counts, one slot per type in [`GENERIC_ORDER`].
-///
-/// A payment is worked out in this shape, over a cost's [`Pips`], and only
-/// then written back to the pool, so a payment that fails has touched
-/// nothing. It is also small enough to prove things about:
-/// `src/proofs/mana_payment.rs` proves [`pay_fixed`] and [`pay_around`]
-/// against the rules for every pool, cost and reserve within its bounds,
-/// and [`pips_of`] a faithful count.
-pub(crate) type Amounts = [u32; 6];
+// A payment is worked out over the pool as six counts (`Amounts`, one slot
+// per type in `GENERIC_ORDER`) and the cost as `Pips`, by the `mtg-kernel`
+// crate, and only then written back to the pool, so a payment that fails
+// has touched nothing. `mtg-kernel` proves that arithmetic against the rules
+// with Verus, for every pool, cost and reserve: `pay_fixed` and `pay_around`
+// succeed exactly when the pool can pay, spend exactly the cost, and, paying
+// around a reserve, leave the reserve payable whenever both were. What is
+// left here is reading the pool in and writing it back, and turning a cost
+// into `Pips` (`src/proofs/mana_payment.rs` proves the last with Kani).
+pub(crate) use mtg_kernel::mana::{pay_around, pay_fixed, surplus_order, Amounts, Pips};
 
 pub(crate) fn slot_of(mana_type: ManaType) -> usize {
     match mana_type {
@@ -855,15 +853,9 @@ fn pay_with(pool: &mut ManaPool, pay: impl FnOnce(Amounts) -> Option<Amounts>) -
     Ok(())
 }
 
-/// A cost as payment sees it: what it asks of each type in particular (one
-/// of its colour per coloured pip, and its `{C}`), and how much generic mana
-/// on top, which any type pays. X is not a cost yet.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Pips {
-    pub(crate) specific: Amounts,
-    pub(crate) generic: u32,
-}
-
+/// What `cost` asks of each type in particular (one of its colour per
+/// coloured pip, and its `{C}`), and how much generic mana on top, which
+/// any type pays. X is not a cost yet.
 pub(crate) fn pips_of(cost: &ManaCost) -> Pips {
     let mut pips = Pips { specific: [0; 6], generic: 0 };
     for sym in &cost.symbols {
@@ -887,60 +879,6 @@ pub fn generic_payment_order(pool: &ManaPool, reserve: &ManaCost) -> Vec<ManaTyp
         .iter()
         .map(|&slot| GENERIC_ORDER[slot])
         .collect()
-}
-
-/// The slots of `have`, biggest surplus over `keep` first, ties in slot order.
-fn surplus_order(have: &Amounts, keep: &Amounts) -> [usize; 6] {
-    let mut order = FIXED_ORDER;
-    order.sort_by_key(|&slot| std::cmp::Reverse(i64::from(have[slot]) - i64::from(keep[slot])));
-    order
-}
-
-/// Pay `cost` out of `have` with the generic part in [`GENERIC_ORDER`]: what
-/// is left, or None when the cost cannot be paid.
-pub(crate) fn pay_fixed(have: Amounts, cost: &Pips) -> Option<Amounts> {
-    let mut have = pay_specific(have, cost)?;
-    let mut remaining = cost.generic;
-    spend_generic(&mut have, &mut remaining, &FIXED_ORDER, &[0; 6]);
-    (remaining == 0).then_some(have)
-}
-
-/// Pay `cost` out of `have` with the generic part spent around `keep`, what
-/// another cost needs of each type ([`auto_pay_reserving`]): what is left,
-/// or None when the cost cannot be paid.
-///
-/// The spare is counted after the cost has paid its own pips, since those
-/// come out first whatever the order: `{1}{W}` out of `{W}{W}{U}` beside a
-/// `{W}` in hand pays its `{W}`, and then the other White is the hand's, not
-/// spare. And generic takes only what is spare until nothing spare is left:
-/// `{2}` out of the same pool takes one White and the Blue, where taking
-/// every White first left the hand nothing to cast with.
-pub(crate) fn pay_around(have: Amounts, cost: &Pips, keep: &Amounts) -> Option<Amounts> {
-    let mut have = pay_specific(have, cost)?;
-    let order = surplus_order(&have, keep);
-    let mut remaining = cost.generic;
-    spend_generic(&mut have, &mut remaining, &order, keep);
-    spend_generic(&mut have, &mut remaining, &order, &[0; 6]);
-    (remaining == 0).then_some(have)
-}
-
-/// Each type's own pips from that type: what is left, or None when some type
-/// is short.
-fn pay_specific(mut have: Amounts, cost: &Pips) -> Option<Amounts> {
-    for (amount, &needed) in have.iter_mut().zip(&cost.specific) {
-        *amount = amount.checked_sub(needed)?;
-    }
-    Some(have)
-}
-
-/// Take up to `remaining` of generic mana out of `have`, slot by slot in
-/// `order`, never taking a slot below `floor`.
-fn spend_generic(have: &mut Amounts, remaining: &mut u32, order: &[usize; 6], floor: &Amounts) {
-    for &slot in order {
-        let take = have[slot].saturating_sub(floor[slot]).min(*remaining);
-        have[slot] -= take;
-        *remaining -= take;
-    }
 }
 
 #[cfg(test)]

@@ -1,12 +1,13 @@
 [workspace]
-members = ["mtg-engine", "mtg-player", "mtg-runner", "mtg-draft", "mtg-draft-runner"]
+members = ["mtg-kernel", "mtg-engine", "mtg-player", "mtg-runner", "mtg-draft", "mtg-draft-runner"]
 resolver = "2"
 
 [workspace.lints.rust]
 warnings = "deny" # Treat all compiler warnings as errors
 # `cfg(kani)` gates the proofs in mtg-engine/src/proofs, which only the Kani
-# verifier compiles (scripts/prove.sh).
-unexpected_cfgs = { level = "deny", check-cfg = ["cfg(kani)"] }
+# verifier compiles; Verus sets `cfg(verus_only)` while it checks
+# mtg-kernel (both run by scripts/prove.sh).
+unexpected_cfgs = { level = "deny", check-cfg = ["cfg(kani)", "cfg(verus_only)"] }
 
 [workspace.lints.clippy]
 all = { level = "deny", priority = -1 }

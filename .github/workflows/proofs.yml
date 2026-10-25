@@ -1,14 +1,16 @@
-# The engine's Kani proofs (mtg-engine/src/proofs/; the plan and the list
-# of what each proves is docs/plans/formal-verification.md).
+# The engine's proofs: Verus over mtg-kernel, Kani over
+# mtg-engine/src/proofs/. The plan, and the list of what each proves and
+# within what bounds, is docs/plans/formal-verification.md.
 #
-# A proof is a theorem over every input inside its stated bounds, not a
-# sample, so GREEN means no input in that space breaks any of the
-# properties, and RED means a change broke one: the log names the property,
-# and scripts/prove.sh says how to get the counterexample as a unit test.
+# A proof is a theorem over every input it quantifies over, not a sample,
+# so GREEN means no input breaks any of the properties, and RED means a
+# change broke one: the log names the property, and scripts/prove.sh says
+# how to get the details.
 #
-# Its own workflow rather than a step in tests.yml: Kani brings its own
-# toolchain, and the proofs run one at a time (each takes a few GB) for
-# about six minutes.
+# Its own workflow rather than a step in tests.yml: each prover brings its
+# own toolchain. The versions are pinned in scripts/prove.sh (and vstd's in
+# mtg-kernel/Cargo.toml) and bumped there deliberately, since a new prover
+# can change what proves and how long it takes.
 name: proofs
 
 on:
@@ -21,18 +23,34 @@ permissions:
   contents: read
 
 jobs:
+  verus:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Verus
+        run: |
+          release=$(sed -n 's/^VERUS_RELEASE=//p' scripts/prove.sh)
+          toolchain=$(sed -n 's/^VERUS_TOOLCHAIN=//p' scripts/prove.sh)
+          curl -sSLO "https://github.com/verus-lang/verus/releases/download/release/$release/verus-$release-x86-linux.zip"
+          unzip -q "verus-$release-x86-linux.zip" -d "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/verus-x86-linux" >> "$GITHUB_PATH"
+          rustup install "$toolchain" --profile minimal
+
+      - name: Prove
+        run: scripts/prove.sh verus
+
   kani:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
-      # Pinned: a new Kani can change what proves and how long it takes, so
-      # it is bumped deliberately, with scripts/prove.sh's version beside it.
       - name: Install Kani
         run: |
-          cargo install --locked kani-verifier --version 0.68.0
+          cargo install --locked kani-verifier --version "$(sed -n 's/^KANI_VERSION=//p' scripts/prove.sh)"
           cargo kani setup
 
       - name: Prove
-        run: scripts/prove.sh
+        run: scripts/prove.sh kani
