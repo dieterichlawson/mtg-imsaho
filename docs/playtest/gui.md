@@ -590,6 +590,14 @@ random game happened to reach.
   page and the CLI, and check that the plan for the answer being typed or
   clicked is on screen before it is sent. Measure it with the `fillText` hook
   rather than by eye, then read the `--log` taps against what was shown.
+  [2026-10-25] **The taps always match the plan; the screen shows less of
+  it.** Measure the modal and the panel separately: the modal's two-line
+  PressStart title and one-line X row cut exactly the tail, which is where
+  the engine puts "(Pay: tap …)" (#939) and where the allocator puts
+  creatures (#938), while the panel prints the title whole. The X row
+  names only X's share ("X = 0: nothing is spent" with {R}{R}{R} about to
+  tap, #937). Cheap setup: a `40 Plains` random opponent, and Frightful
+  Delusion cast at your own spell to bring a PayOrNot to your seat.
 
 
 ## Filing
@@ -647,6 +655,13 @@ writing it up as the page's problem alone.
   a server that refuses their arguments, a port already taken, and a page
   that never loads, and check `echo $?` is non-zero every time FAIL is
   printed — the all-human rehearsal printed FAIL and exited 0
+  [2026-10-25] #871 holds, but an exit code is not the whole contract:
+  check that the driver exits at all (FAIL then a hang, #942) and that it
+  played its own game. Hold its port with another **real runner**, not
+  only a dummy listener, which turns a failure into "ok" (#941); hold the
+  rehearsal's game ports and read its tally ("0 game pages … ok"). The
+  drivers take no port flag, so sed a fixed port into a copy, and target
+  your processes with `[m]tg-runner` so `pkill -f` misses your own shell.
 - G37 [proposed 2026-10-22, from #881 and #892] every table on the draft
   page at 390 wide with seat names of 1, 8, 16 and 24 letters: no word of
   8 letters or fewer may break, no tag ("[1 bye]") or percentage may
@@ -654,6 +669,11 @@ writing it up as the page's problem alone.
   `table.seats`, the review list), not the page — a full-page shot at 390
   is too small to read a wrapped cell. Then reload: the name box must
   still hold the name the table uses
+  [2026-10-25] #892 holds. #881 does not, and needs no custom names: the
+  stock `done` fixture in `draft-view-fixtures.json` already shows all
+  three symptoms at 390. Measure breaks per character with
+  `Range.getClientRects` rather than by eye. "(seat" / "N)" splits in the
+  pairings and matches (#934).
 - G38 [proposed 2026-10-24, from 2b9f09a and #933] the request heads a
   real browser sends, against how both servers route them. `peek_head`
   (`mtg-player/src/gui.rs`) waits for the blank line but stops at 2 KiB,
@@ -669,3 +689,10 @@ writing it up as the page's problem alone.
   upgrade, a 404 for the keyed path or a page that waits on someone
   else's idle socket is the bug. Then the same through the lobby's one
   port to a game page (D49), where the proxy routes a second time
+  [2026-10-25] #933 holds up to 16 KiB; the fix moved the cliff to
+  `HEAD_LIMIT` rather than removing it. Probe past it (20-60 KB of
+  cookies) and in Firefox's order (`Upgrade` after `Cookie`; Chromium puts
+  it first): a 404 for the upgrade again (#935). Through `/game/<port>/`
+  count body bytes against Content-Length: unread head bytes end in RST,
+  which cut proxied scripts at 65,536 bytes and left the page black
+  (#936). Ten 4 KB `context.addCookies` entries reproduce it in Chromium.
