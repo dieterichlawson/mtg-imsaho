@@ -21,3 +21,12 @@ struct_excessive_bools = "allow"
 # remain (collect_triggers, check_state_based_actions); re-check whether it can
 # be denied outright once those are done.
 too_many_lines = "allow"
+
+# A number that wraps is a wrong game, and in a rules engine a silent one:
+# 0 - 1 life, counters or mana as a u32 is four billion, and play carries on.
+# Rust only checks for it in debug builds by default, and the nightly fuzz,
+# the runners and the servers are all release builds, so an overflow the
+# tests would stop on went by unseen everywhere the engine actually runs.
+# Checked here it panics, which the fuzz files as a finding.
+[profile.release]
+overflow-checks = true
