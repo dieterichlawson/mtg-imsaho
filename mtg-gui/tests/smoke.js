@@ -3,7 +3,7 @@
 //   cargo build -p mtg-runner
 //   NODE_PATH=$(npm root -g) node mtg-gui/tests/smoke.js [--shots DIR]
 //
-// Starts `mtg-runner --p1 gui --p2 random --seed 5`, opens the page in
+// Starts `mtg-runner --p1 gui:0 --p2 random --seed 5`, opens the page in
 // the Playwright Chromium, keeps the opening hand, plays a land through the
 // card popover, passes, and checks that every step produced the decision
 // the engine asks next and that the page logged no error. With --shots it
