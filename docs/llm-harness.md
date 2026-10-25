@@ -517,7 +517,13 @@ with no retry. The log has `[Seat N] SIDEBOARD_PROMPT before game G`, its
 `_RESPONSE`, and one `[Seat N] SIDEBOARD before game G: in: ...; out: ...`
 line (or `no change`) with `; plays first` or `; draws first` for the
 chooser. Game 1's player on the play is a coin flip's winner, who plays —
-no seat is asked before game 1. The question is one cached schema for every
+no seat is asked before game 1. The hosted table (`mtg-draft-server`) writes
+the same line for a seat no model answered, with no prompt or response
+before it: a person's sideboarding and choice, `kept the deck (<why>)` for a
+seat the table plays for (AI or person) or an AI seat whose model gave no
+answer, `; plays first
+(no choice was made)` when the clock chose, and a game-1 line for the coin
+flip's winner. The question is one cached schema for every
 pool, like the deck build's, and costs at most two calls a seat a match;
 the usage summary counts it under `Draft`.
 

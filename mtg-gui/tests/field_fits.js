@@ -9,24 +9,17 @@
 // first summary line of the damage division.
 
 const { chromium } = require("playwright");
-const { spawn } = require("child_process");
-const path = require("path");
+const { startRunner, finish } = require("./children.js");
 
-const root = path.resolve(__dirname, "..", "..");
-const port = 8900 + Math.floor(Math.random() * 90);
 let failures = 0;
 function fail(msg) { console.error("FAIL: " + msg); failures++; }
 
 async function main() {
-  const runner = spawn(path.join(root, "target", "debug", "mtg-runner"),
-    ["--p1", `gui:${port}`, "--p2", "random", "--seed", "11", "-q"],
-    { cwd: root, stdio: ["ignore", "ignore", "pipe"] });
+  const { runner, urls } = await startRunner(["--p1", "gui:0", "--p2", "random", "--seed", "11", "-q"]);
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
-    for (let i = 0; i < 30; i++) {
-      try { await page.goto(`http://127.0.0.1:${port}/`); break; } catch (e) { await page.waitForTimeout(200); }
-    }
+    await page.goto(urls["--p1"]);
     await page.waitForFunction(() => window.mtg && window.mtg.decision, null, { timeout: 30000 });
     await page.evaluate(() => { const m = window.mtg; m.ws.onclose = () => {}; m.ws.close(); });
     const ids = await page.evaluate(() => [window.mtg.view.your_hand[0].object_id, window.mtg.view.your_hand[1].object_id]);
@@ -64,7 +57,7 @@ async function main() {
     await browser.close();
     runner.kill();
   }
-  if (failures) { console.error(`${failures} failure(s)`); process.exit(1); }
+  if (failures) { console.error(`${failures} failure(s)`); process.exitCode = 1; }
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+finish(main);

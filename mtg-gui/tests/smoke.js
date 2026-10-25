@@ -3,40 +3,31 @@
 //   cargo build -p mtg-runner
 //   NODE_PATH=$(npm root -g) node mtg-gui/tests/smoke.js [--shots DIR]
 //
-// Starts `mtg-runner --p1 gui --p2 random --seed 5`, opens the page in
+// Starts `mtg-runner --p1 gui:0 --p2 random --seed 5`, opens the page in
 // the Playwright Chromium, keeps the opening hand, plays a land through the
 // card popover, passes, and checks that every step produced the decision
 // the engine asks next and that the page logged no error. With --shots it
 // writes a screenshot per step, which is how the layout is reviewed.
 
 const { chromium } = require("playwright");
-const { spawn } = require("child_process");
+const { startRunner, finish } = require("./children.js");
 const path = require("path");
 const fs = require("fs");
 
-const root = path.resolve(__dirname, "..", "..");
 const shotsDir = process.argv.includes("--shots") ? process.argv[process.argv.indexOf("--shots") + 1] : null;
-const port = 8700 + Math.floor(Math.random() * 200);
 
 function fail(msg) { console.error("FAIL: " + msg); process.exitCode = 1; }
 
 async function main() {
-  const runner = spawn(path.join(root, "target", "debug", "mtg-runner"),
-    ["--p1", `gui:${port}`, "--p2", "random", "--seed", "5", "--deck1", "red-green", "--deck2", "white-black", "-q"],
-    { cwd: root, stdio: ["ignore", "pipe", "pipe"] });
-  let runnerErr = "";
-  runner.stderr.on("data", d => { runnerErr += d; });
-  runner.stdout.on("data", () => {});
+  const { runner, urls, output } = await startRunner(
+    ["--p1", "gui:0", "--p2", "random", "--seed", "5", "--deck1", "red-green", "--deck2", "white-black", "-q"]);
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     const errors = [];
     page.on("pageerror", e => errors.push("pageerror: " + e.message));
     page.on("console", m => { if (m.type() === "error" && !/404/.test(m.text())) errors.push("console: " + m.text()); });
-    // The runner binds before it prints; retry the first load briefly.
-    for (let i = 0; i < 30; i++) {
-      try { await page.goto(`http://127.0.0.1:${port}/`); break; } catch (e) { await page.waitForTimeout(200); }
-    }
+    await page.goto(urls["--p1"]);
     const waitDecision = () => page.waitForFunction(() => window.mtg && (window.mtg.decision || window.mtg.gameOver), null, { timeout: 30000 });
     const info = () => page.evaluate(() => ({
       mode: window.mtg.ui && window.mtg.ui.mode, context: window.mtg.decision && window.mtg.decision.legal.context,
@@ -102,8 +93,8 @@ async function main() {
   } finally {
     await browser.close();
     runner.kill("SIGTERM");
-    if (/panicked/.test(runnerErr)) fail("runner panicked:\n" + runnerErr);
+    if (/panicked/.test(output())) fail("runner panicked:\n" + output());
   }
 }
 
-main().catch(e => { fail(e.stack || String(e)); });
+finish(main);

@@ -644,10 +644,12 @@ writing it up as the page's problem alone.
   rehearsal prints is a lead, and a stuck page leaves its screenshot in
   `--out`; read the server's terminal there too. Then run `autoplay.js`
   on its own (`--games 1`): it lent the rehearsal its step and must still
-  play its own games. Tried 2026-10-22 (#871): neither script takes a port —
-  `table_rehearsal.js` draws its lobby from 18900-18949 with game ports at
-  +100..+140, `autoplay.js` from 8800-8889 — so a crew with a port range
-  runs a copy with the port patched. `window.mtgSend("Concede")` on the
+  play its own games. Tried 2026-10-22 (#871): `table_rehearsal.js` takes
+  no port — it draws its lobby from 18900-18949 with game ports at
+  +100..+140 — so a crew with a port range runs a copy with it patched.
+  The game drivers (`autoplay.js` and the rest) need no patch since #941:
+  their runners are on `gui:0` and a copy patched to a fixed port refuses
+  to start. `window.mtgSend("Concede")` on the
   game page reaches game 2 in seconds, but game 1 also waits on "Ready for
   game 1" on the draft page or the sideboard clock runs out first
 - G36 [proposed 2026-10-22, from #871] every driver failure has an exit
@@ -662,6 +664,15 @@ writing it up as the page's problem alone.
   rehearsal's game ports and read its tally ("0 game pages … ok"). The
   drivers take no port flag, so sed a fixed port into a copy, and target
   your processes with `[m]tg-runner` so `pkill -f` misses your own shell.
+  [fix for #941/#942] The game drivers start their runner on `gui:0` and
+  open only the URL it prints (`children.js`), so a held port cannot be
+  driven and a copy patched to one refuses to start; a runner that dies
+  first is the driver's FAIL. Every driver exits once `main` settles and
+  kills what it spawned however it ends (FAIL, Ctrl-C, no Chromium). The
+  rehearsal fails a seat that answered no game-page decision or forfeited
+  for want of a page, and stops every match loop at its deadline or the
+  first stuck page. Probe what is left: the rehearsal's lobby band, and
+  `draft_page.js`.
 - G37 [proposed 2026-10-22, from #881 and #892] every table on the draft
   page at 390 wide with seat names of 1, 8, 16 and 24 letters: no word of
   8 letters or fewer may break, no tag ("[1 bye]") or percentage may
@@ -675,10 +686,12 @@ writing it up as the page's problem alone.
   `Range.getClientRects` rather than by eye. "(seat" / "N)" splits in the
   pairings and matches (#934).
 - G38 [proposed 2026-10-24, from 2b9f09a and #933] the request heads a
-  real browser sends, against how both servers route them. `peek_head`
-  (`mtg-player/src/gui.rs`) waits for the blank line but stops at 2 KiB,
-  and the game page and the lobby decide "page or WebSocket" by a
-  substring search for `upgrade: websocket` in what it peeked. Send each
+  real browser sends, against how both servers route them.
+  `read_request_head` (`mtg-player/src/gui.rs`) reads the head off the
+  socket to its blank line, up to `HEAD_LIMIT` (64 KiB; 431 past it, 408
+  for one not finished in 5 s), and the game page and the lobby decide
+  "page or WebSocket" by its `Upgrade` header; `accept_websocket` answers
+  the handshake from that head (101, or 400 for one that is not). Send each
   URL a page fetch and a WebSocket upgrade from a raw socket with: a
   Cookie header of 1.5, 2.1 and 4 KiB before and after `Upgrade`; the
   head in one write and in five pieces with 100 ms between them;
@@ -696,3 +709,7 @@ writing it up as the page's problem alone.
   count body bytes against Content-Length: unread head bytes end in RST,
   which cut proxied scripts at 65,536 bytes and left the page black
   (#936). Ten 4 KB `context.addCookies` entries reproduce it in Chromium.
+  [fix for #935/#936] Heads are read whole, not peeked: probe 60 KB of
+  cookies (101 and the whole body expected), 70 KB (431 on every URL, the
+  status line read before the close), `Upgrade: websocket, h2c` (101) and
+  a handshake with no key (400, not a silent close).
