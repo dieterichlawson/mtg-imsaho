@@ -1,0 +1,366 @@
+{
+ "night": "2026-10-25",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "colors": "UB",
+   "record": "0-3-0",
+   "lessons": [
+    "Keep Spider Spawning in the deck: I took it pack 3 pick 3 and cut it for blue, yet the only undefeated seat (seat 2) was BG, and the guide rates Spider Spawning at 74%.",
+    "My 16-land UB deck stalled 22 to 26 turns in all three losses, contradicting the guide's claim that 16 lands fixes stalls; draft more evasive finishers than Lost in the Mist and Vampire Interloper.",
+    "Red was wasted: I took Brimstone Volley pick 2 and Harvest Pyre pick 5, then cut both; commit to a pair by pick 5 and don't take off-colour removal once black is set."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5031,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3784,
+    "output_tokens_details": {
+     "thinking_tokens": 3548
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5031
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3784,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5031,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5031,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "colors": "WU",
+   "record": "2-1-0",
+   "lessons": [
+    "Blue-white fliers backed by Claustrophobia, Grasp of Phantoms, and Smite the Monstrous went 2-0 against UB and WR, so the cheap-creature, cheap-removal shell is worth drafting again.",
+    "Round 2's BG deck, with two Festerhide Boar, Moldgraf Monstrosity, and two Villagers of Estwald, outlasted my WU in 17- and 28-turn games, so draft a bigger finisher or save removal for green fatties.",
+    "Keep one flexible answer main against green ground decks: I sided out Urgent Exorcism, then lost 0-2 to BG's big bodies in long games."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3223,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2460,
+    "output_tokens_details": {
+     "thinking_tokens": 2230
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3223
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2460,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3223,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3223,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": true,
+   "colors": "BG",
+   "record": "3-0-0",
+   "lessons": [
+    "The guide's 17-land BG stall did not hold for my deck: 16 lands (Woodland Cemetery plus 15 basics) with a low curve went 6-0 in games, winning in 17 to 30 turns, shorter than the guide's 20-40 turn stalls.",
+    "Keep black removal ahead of ground bodies: my BG went 6-0 in games with Victim of Night, Corpse Lunge, Tribute to Hunger and Prey Upon as its answers.",
+    "Cut pump and equipment for on-colour bodies; my 3-0 BG used Vampire Interloper and Falkenrath Noble as evasive finishers, meeting the guide's two-evasive-threats rule."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5048,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2644,
+    "output_tokens_details": {
+     "thinking_tokens": 2402
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5048
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2644,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5048,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5048,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "colors": "WR",
+   "record": "1-2-0",
+   "lessons": [
+    "Removal was the bottleneck: my Claustrophobia-less white deck had Rebuke and Geistflame but lost to Claustrophobia, Smite the Monstrous and Grasp of Phantoms, so take a removal spell over Geistcatcher's Rig, which I never played.",
+    "Tonight's 0-2 losses to BG and WU went 26, 30, 20 and 18 turns, so my fliers and tricks were not closing fast. Prioritise cheap two-drops and evasive threats over Thraben Purebloods-style bodies.",
+    "The 3-0 BG seat and the 2-1 BG seat show black was deep, yet I cut all black cards. Stay flexible on black removal like Victim of Night before committing to a two-colour white deck."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3222,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1225,
+    "output_tokens_details": {
+     "thinking_tokens": 963
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3222
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1225,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3222,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3222,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "colors": "UG",
+   "record": "0-3-0",
+   "lessons": [
+    "Take Rebuke over Stitched Drake at pack 2 pick 2; passing removal left my UG with Sensory Deprivation, Silent Departure and Blazing Torch as answers, and I went 0-3.",
+    "The guide's 16-land UG advice failed here: my 16-land deck with 13 creatures stalled into 14 to 23 turn games, so 16 lands needs a genuinely low curve, not midrange.",
+    "Keep Naturalize and Moonmist main: with Sensory Deprivation and Silent Departure as my only flier answers, the guide's two-answer minimum was barely met and I lost 1-2 to UR."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5018,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2839,
+    "output_tokens_details": {
+     "thinking_tokens": 2616
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5018
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2839,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5018,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5018,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "colors": "WR",
+   "record": "2-1-0",
+   "lessons": [
+    "Against the BG grind decks, my losses ran 19 and 20 turns, so take late-game power like Slayer of the Wicked and evasive finishers over extra cheap bodies such as the second Unruly Mob or Doomed Traveler.",
+    "Cheap instant-speed removal carried the WR deck: Brimstone Volley, Geistflame, Smite the Monstrous and Fiend Hunter won the 2-0 sweep over UG, so prioritise these early over marginal creatures.",
+    "I drafted without a guide, so nothing tonight contradicted one, and the next drafter should check each pick against the actual pool rather than a fixed plan."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3264,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1648,
+    "output_tokens_details": {
+     "thinking_tokens": 1423
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3264
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1648,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3264,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3264,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": true,
+   "colors": "BG",
+   "record": "2-1-0",
+   "lessons": [
+    "The guide says tonight's BG went 2-1 on 17 lands, but my 16-land BG also went 2-1 (5-3 in games) with a low curve, so keep 16 lands unless the deck has expensive cards.",
+    "Round 2's WR deck (Abbey Griffin, Manor Gargoyle, Voiceless Spirit, Smite the Monstrous) beat my ground-heavy BG 1-2, so take a second flier answer or evasive finisher before pick 10.",
+    "My pick-5 Mask of Avacyn never made the deck, so take an on-colour playable such as Villagers of Estwald or Somberwald Spider over a speculative pick."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5062,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3324,
+    "output_tokens_details": {
+     "thinking_tokens": 3092
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5062
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3324,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5062,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5062,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "colors": "UR",
+   "record": "2-1-0",
+   "lessons": [
+    "Take cheap removal over filler: my only answers were Sensory Deprivation, Into the Maw of Hell and Harvest Pyre, and I lost round 1 0-2 to BG in 21- and 18-turn games.",
+    "Pick playables, not speculative 3-drops: I took Charmbreaker Devils second in pack 3 and never played it, while Pitchburn Devils and Stitched Drake anchored my main deck.",
+    "Count pips before splitting basics: my 9 Island/8 Mountain build with Stitched Drake's UU and several RR cards was a stretch on 17 lands."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3299,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3607,
+    "output_tokens_details": {
+     "thinking_tokens": 3398
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3299
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3607,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3299,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3299,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}

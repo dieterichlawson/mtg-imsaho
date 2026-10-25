@@ -1,56 +1,56 @@
 # Innistrad draft guide
 
-_Written by the nightly draft loop (`scripts/draft-loop/`) from 2026-10-24's lessons and every night's statistics. Drafters read it at every pick._
+_Written by the nightly draft loop (`scripts/draft-loop/`) from 2026-10-25's lessons and every night's statistics. Drafters read it at every pick._
 
 ## Colours and archetypes
 
-Four nights: 32 decks, 119 games. Guided seats are 25-29 in games (46%, 54 games) against 51% unguided (184 games). The guide is not proven; judge by the card numbers.
+Five nights: 40 decks, 146 games. Guided seats are 38-44 in games (46%, 82 games) against 51% unguided (210 games). The guide is not proven; judge by the card numbers.
 
-- BG is best: 10-2 in matches, 70% of games (30 games, 4 decks). Tonight's BG went 2-1 on 17 lands, losing to UR fliers.
-- BR 52% (29 games), UR 52% (23 games), UB 50% (32 games), WR 50% (22 games), RG 50% (14 games), WU 46% (24 games), WG 43% (35 games, 5 decks, the worst common pair).
-- WB went 0-3 (7 games, anecdote). UG went 1-2 (8 games, anecdote). UR went 3-0 tonight (anecdote) on three Makeshift Mauler, Murder of Crows and Geistflame.
-- Games stall at 20 to 40 turns. Fliers and removal break the stalls; plain ground decks stall, though tonight's BR won 4 straight games on removal.
-- Lean green or black first. Choose a main colour by about pick 5 and a pair before pack 3. Once you take Victim of Night or Morkrut Banshee, stay black. Do not splash.
+- BG is clearly best: 15-3 in matches, 73% of games (44 games, 6 decks). Tonight's two BG decks went 3-0 and 2-1, both on 16 lands.
+- UR 53% (30 games), BR 52% (29 games), RG 50% (14 games), WU 50% (30 games), WR 49% (35 games).
+- Worst: WG 43% (35 games, 5 decks), UB 42% (38 games, 5 decks), UG 38% (16 games, 2 decks).
+- WB went 0-3 (7 games, anecdote).
+- Games stall for 17 to 30 turns. Removal and fliers break stalls, and big green ground bodies beat decks without answers.
+- Lean black or green first. Pick a main colour by about pick 5 and a pair before pack 3. Once black is set, do not take off-colour removal. Do not splash.
 
 ## Commons that win
 
 Deck game win rate for decks running the card.
 
-- Green: Villagers of Estwald (31 games, 71%), Prey Upon (29 games, 69%), Somberwald Spider (46 games, 63%), Orchard Spirit (45 games, 58%). Woodland Sleuth (22 games, 73%) is a late pick.
-- Black: Ghoulcaller's Chant (29 games, 66%), Victim of Night (39 games, 62%), Brain Weevil (36 games, 61%), Typhoid Rats (44 games, 59%).
-- Blue: Silent Departure (16 games, 69%), Selhoff Occultist (37 games, 59%).
-- Red: Geistflame (58 games, 57%), taken about pick 1.7.
-- Claustrophobia, Stitched Drake, Chapel Geist, Rebuke and Smite the Monstrous go early. Lessons credit them, but I have no deck numbers (anecdote).
+- Green: Villagers of Estwald (45 games, 73%), Prey Upon (43 games, 72%), Woodland Sleuth (36 games, 75%, a late pick at about 7), Kindercatch (41 games, 61%), Festerhide Boar (57 games, 60%), Somberwald Spider (62 games, 58%).
+- Black: Typhoid Rats (58 games, 64%), Ghoulcaller's Chant (41 games, 61%), Bump in the Night (36 games, 61%), Corpse Lunge (50 games, 60%), Victim of Night (51 games, 59%).
+- Red: Geistflame (71 games, 55%).
+- Blue and white commons have no strong numbers. Claustrophobia, Rebuke, Smite the Monstrous and Chapel Geist are credited by lessons (anecdote).
 
 ## Uncommons and rares
 
-- Green: Spider Spawning and Gatstaf Shepherd (23 games, 74% each), Hamlet Captain (24 games, 62%), Lumberknot (37 games, 62%), Boneyard Wurm (37 games, 57%).
-- Black: Sever the Bloodline (15 games, 73%), Morkrut Banshee (29 games, 66%), Disciple of Griselbrand (30 games, 60%).
-- Red: Falkenrath Marauders (22 games, 68%), Kruin Outlaw and Heretic's Punishment (15 games, 60% each).
-- Murder of Crows is taken about pick 1.5 and carried the 3-0 UR deck (anecdote).
+- Green: Spider Spawning (29 games, 79%), Gatstaf Shepherd (45 games, 67%), Hamlet Captain (32 games, 62%), Hollowhenge Scavenger and Lumberknot (43 and 45 games, 56%).
+- Black: Falkenrath Noble (12 games, 83%, small sample), Sever the Bloodline (15 games, 73%), Morkrut Banshee (29 games, 66%), Disciple of Griselbrand (38 games, 61%).
+- Red: Falkenrath Marauders (22 games, 68%), Heretic's Punishment (15 games, 60%).
+- Slayer of the Wicked (26 games, 58%) is taken at about pick 1.
+- Murder of Crows is taken early, but I have no deck numbers on it.
 
 ## Pick order
 
-1. Cheap removal: Victim of Night, Prey Upon, Dead Weight, Claustrophobia, Rebuke, Geistflame, Brimstone Volley, Corpse Lunge.
-2. Strong uncommons and rares: Morkrut Banshee, Sever the Bloodline, Murder of Crows, Spider Spawning, Falkenrath Marauders.
-3. On-colour evasive threats: Chapel Geist, Stitched Drake, Screeching Bat. Take two before a third ground two-drop, but never an off-colour flier you will not play.
-4. Good green commons: Villagers of Estwald, Somberwald Spider, Orchard Spirit.
-5. Two-drops such as Typhoid Rats.
+1. Cheap removal: Victim of Night, Prey Upon, Dead Weight, Corpse Lunge, Geistflame, Brimstone Volley, Claustrophobia, Rebuke.
+2. Strong uncommons and rares: Morkrut Banshee, Sever the Bloodline, Falkenrath Noble, Spider Spawning, Falkenrath Marauders.
+3. Good green commons: Villagers of Estwald, Somberwald Spider, Festerhide Boar. Take Typhoid Rats as the black two-drop.
+4. On-colour evasive threats: Chapel Geist, Stitched Drake, Falkenrath Noble. Never take an off-colour flier you will not play.
 
-Take removal and flier answers before pick 10. From pick 1, prefer on-colour playables to speculation. Pass pump tricks (Moment of Heroism, Ranger's Guile) and unplayed rares. A second Claustrophobia can come late (anecdote).
+Take removal over equipment (Geistcatcher's Rig went unplayed) and over speculative 3-drops. Take Rebuke over Stitched Drake. Pass pump tricks and unplayed rares. Take on-colour playables over speculation (Mask of Avacyn, Charmbreaker Devils never made decks).
 
 ## Building
 
-- Play 16 lands with a low curve of small creatures. The 17-land decks tonight (BR, UG, BG, RG) stalled in 24 to 33 turn games (anecdote). The 17-land UR went 6-1 in games, so keep 17 only with expensive cards.
-- Split basics by colour weight and count pips. Cut double-pip cards in the lighter colour; 10/7 splits struggled with double red.
-- Play 5 or more two-drops.
-- Include at least two evasive finishers and two answers to fliers.
-- Keep a few late-game threats; a WB deck that cut them lost 0-3 (anecdote).
+- Play 16 lands with a genuinely low curve; the 3-0 BG and 2-1 BG both did. A midrange 16-land UG went 0-3 (anecdote), so keep 17 only with expensive cards.
+- Count pips before splitting basics. Cut double-pip cards in the lighter colour.
+- Play 5 or more two-drops, at least two evasive finishers, and at least two answers to fliers.
+- Keep one or two late-game threats; cheap bodies alone lose long games.
+- Keep one flexible answer, such as Naturalize or Urgent Exorcism, main against green fatties.
 
 ## Playing
 
-- Trade early and hold removal for fliers and big blockers. Do not race a deck that cannot finish.
-- Break stalled boards with fliers or removal, not more ground bodies.
-- Rebuke kills any attacker, and Smite the Monstrous kills power 4 or more, so spread threats rather than rely on one big attacker. Both killed fliers tonight.
-- Keep removal for UR and WU fliers (Murder of Crows, Invisible Stalker, Moon Heron).
+- Trade early and hold removal for fliers and big blockers (Moldgraf Monstrosity, Festerhide Boar).
+- Break stalls with fliers or removal, not more ground bodies.
+- Spread threats, since Rebuke and Smite the Monstrous kill attackers.
+- Keep removal for UR and WU fliers such as Murder of Crows.
 - Respect Victim of Night from black decks.
