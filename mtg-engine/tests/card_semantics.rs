@@ -342,6 +342,15 @@ enum Effect {
     DamageX { slot: usize },
     /// "Regenerate this creature": a shield (CR 701.19a).
     Regenerate { slot: usize },
+    /// "discard N cards at random" (CR 701.9b): the cards in
+    /// `World::discarded`.
+    DiscardAtRandom { n: usize },
+    /// "Return N <filter> cards at random from your graveyard to your hand"
+    /// or "to the battlefield": the cards in `World::chosen`.
+    ReturnAtRandom { n: usize, filter: Option<Filter>, to_battlefield: bool },
+    /// A dies trigger's "exile it": the card the creature became, from its
+    /// owner's graveyard (CR 400.7, 608.2h).
+    ExileItFromGraveyard,
     /// "<player slot> sacrifices a creature of their choice" (CR 701.21a):
     /// the creature in `World::chosen`.
     SacrificeOfTheirChoice { slot: usize },
@@ -998,6 +1007,35 @@ impl Spec {
                 self.effects.push(Effect::Pump { slot, power, toughness, gains });
                 return Some(());
             }
+        }
+        if let Some((first, then)) = s.split_once(", then ") {
+            self.sentence(&format!("{first}."))?;
+            let mut chars = then.chars();
+            let then: String = chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default();
+            return self.sentence(&format!("{then}."));
+        }
+        if let Some(n) = s.strip_prefix("Discard ").and_then(|r| r.strip_suffix(" at random")) {
+            let n = number(n.strip_suffix(" cards").or_else(|| n.strip_suffix(" card"))?)? as usize;
+            self.effects.push(Effect::DiscardAtRandom { n });
+            return Some(());
+        }
+        if s == "Exile it" {
+            self.effects.push(Effect::ExileItFromGraveyard);
+            return Some(());
+        }
+        if let Some(rest) = s.strip_prefix("Return ").filter(|r| r.contains(" at random from your graveyard to ")) {
+            let (what, to) = rest.split_once(" at random from your graveyard to ")?;
+            let to_battlefield = match to {
+                "your hand" => false,
+                "the battlefield" => true,
+                _ => return None,
+            };
+            let (n, kind) = what.split_once(' ')?;
+            let n = number(n)? as usize;
+            let kind = kind.strip_suffix(" cards").or_else(|| kind.strip_suffix(" card")).or_else(|| (kind == "cards" || kind == "card").then_some(""))?;
+            let filter = if kind.is_empty() { None } else { Some(filter(kind)?) };
+            self.effects.push(Effect::ReturnAtRandom { n, filter, to_battlefield });
+            return Some(());
         }
         if s == "Each player chooses a creature they control" {
             self.effects.push(Effect::EachPlayerChoosesACreature);
@@ -2003,6 +2041,9 @@ struct World {
     /// creature of their choice", "each player chooses a creature"), one
     /// way of choosing; [`resolution_choices`] lists them all.
     chosen: Vec<ObjectId>,
+    /// The cards discarded at random, by name, one way it can go;
+    /// [`random_choices`] lists them all.
+    discarded: Vec<String>,
     /// The value of X for the spell or ability resolving: the one its
     /// controller announced (CR 107.3a, 601.2b), or the number of cards
     /// exiled for an "exile X cards" cost.
@@ -2359,6 +2400,7 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
         cost_exiled: Vec::new(),
         cost_sacrificed: None,
         chosen: Vec::new(),
+        discarded: Vec::new(),
         x: 0,
         tokens: Vec::new(),
         life: [20, 20],
@@ -2705,6 +2747,30 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     .collect();
                 destroyed = doomed.into_iter().filter(|id| w.destroy(*id)).count();
             }
+            Effect::DiscardAtRandom { .. } => {
+                for name in &world.discarded {
+                    let at = w.hand[c].iter().position(|h| h == name).expect("a card in hand");
+                    let card = w.hand[c].remove(at);
+                    w.graveyard[c].push(card);
+                }
+            }
+            Effect::ExileItFromGraveyard => {
+                if let Some(card) = w.source.and_then(|id| w.leave_yard(id)) {
+                    w.exile[card.owner.0 as usize].push(card.name.expect("a card"));
+                }
+            }
+            Effect::ReturnAtRandom { to_battlefield, .. } => {
+                for id in &world.chosen {
+                    let Some(mut card) = w.leave_yard(*id) else { continue };
+                    if *to_battlefield {
+                        // A new object under its owner's control (CR 110.2).
+                        card.controller = card.owner;
+                        w.permanents.insert(*id, card);
+                    } else {
+                        w.hand[card.owner.0 as usize].push(card.name.expect("a card"));
+                    }
+                }
+            }
             Effect::SacrificeOfTheirChoice { .. } => {
                 if let Some(&victim) = world.chosen.first() {
                     w.refresh();
@@ -3001,6 +3067,64 @@ fn pay(world: &World, payment: &Option<Payment>) -> World {
     w
 }
 
+/// Every way `spec`'s random effects can go on `world`, each as the world
+/// to resolve it on: which cards the discard takes (the hand as the draws
+/// before it leave it, told apart by name), and which cards come back from
+/// the graveyard (CR 701.9b: "at random" is every one of them equally
+/// likely). The world unchanged when it has none.
+fn random_choices(spec: &Spec, world: &World, caster: PlayerId) -> Vec<World> {
+    let c = caster.0 as usize;
+    let mut ways = vec![world.clone()];
+    let mut drawn = 0;
+    for effect in &spec.effects {
+        match effect {
+            Effect::Draw { n } => drawn += n,
+            Effect::DiscardAtRandom { n } => {
+                assert_eq!(*n, 1, "the reference discards one card at random");
+                let mut hand: Vec<String> = world.hand[c].iter().chain(world.library[c].iter().take(drawn)).cloned().collect();
+                hand.sort();
+                hand.dedup();
+                ways = ways.into_iter().flat_map(|w| hand.iter().map(move |h| World { discarded: vec![h.clone()], ..w.clone() })).collect();
+            }
+            Effect::ReturnAtRandom { n, filter, .. } => {
+                let exiled_first = spec.effects.iter().take_while(|e| *e != effect).any(|e| *e == Effect::ExileItFromGraveyard);
+                let cards: Vec<Target> = world.yard.iter()
+                    .filter(|(id, m)| m.owner == caster && filter.as_ref().is_none_or(|f| m.matches(f, caster))
+                        && !(exiled_first && world.source == Some(**id)))
+                    .map(|(id, _)| Target::Object(*id))
+                    .collect();
+                let k = (*n).min(cards.len());
+                let picks: Vec<Vec<ObjectId>> = subsets(&cards, k).into_iter()
+                    .filter(|p| p.len() == k)
+                    .map(|p| p.iter().map(|t| match t { Target::Object(id) => *id, _ => unreachable!() }).collect())
+                    .collect();
+                ways = ways.into_iter().flat_map(|w| picks.iter().map(move |p| World { chosen: p.clone(), ..w.clone() })).collect();
+            }
+            _ => {}
+        }
+    }
+    ways
+}
+
+/// Whether `spec` does something at random.
+fn is_random(spec: &Spec) -> bool {
+    spec.effects.iter().any(|e| matches!(e, Effect::DiscardAtRandom { .. } | Effect::ReturnAtRandom { .. }))
+}
+
+/// Every ending `play` reaches from `state` with each of 32 seeds for the
+/// engine's random choices; for a card that does something at random, the
+/// union is held to every way the text allows, so a way no seed reaches is
+/// a failure too. The seeds are fixed, so the check is too.
+fn over_seeds(state: &GameState, play: impl Fn(&GameState) -> Result<Vec<GameState>, String>) -> Result<Vec<GameState>, String> {
+    let mut all = Vec::new();
+    for seed in 0..32u64 {
+        let mut s = state.clone();
+        s.rng_state = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ 0xD1B5_4A32_D192_ED03;
+        all.extend(play(&s)?);
+    }
+    Ok(all)
+}
+
 /// Whether `spec` does what lasts the turn and should last no longer:
 /// damage, a pump, a tap, a shield (CR 514.2, 502.3). Its result is then
 /// also played into the opponent's turn.
@@ -3168,9 +3292,11 @@ fn trigger_outcomes(trigger: &Trigger, world: &World, caster: PlayerId) -> Vec<W
     }
     let mut out = Vec::new();
     for targets in sets {
-        let mut after = apply(&trigger.spec, world, &targets, caster);
-        after.state_based_actions();
-        out.push(after);
+        for way in random_choices(&trigger.spec, world, caster) {
+            let mut after = apply(&trigger.spec, &way, &targets, caster);
+            after.state_based_actions();
+            out.push(after);
+        }
         if trigger.optional {
             out.push(world.clone());
         }
@@ -3632,38 +3758,38 @@ const READ: &[&str] = &[
     "Coral Merfolk", "Corpse Lunge", "Counterspell", "Curse of Death's Hold",
     "Curse of Oblivion", "Curse of the Bloody Tome", "Curse of the Nightly Hunt",
     "Curse of the Pierced Heart", "Darkthicket Wolf", "Dead Weight", "Demonmail Hauberk",
-    "Deranged Assistant", "Devil's Play", "Diregraf Ghoul", "Disciple of Griselbrand",
-    "Dissipate", "Divination", "Divine Reckoning", "Doom Blade", "Doomed Traveler",
-    "Dream Twist", "Elite Inquisitor", "Falkenrath Marauders", "Falkenrath Noble",
-    "Feeling of Dread", "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab",
-    "Full Moon's Rise", "Furor of the Bitten", "Gallows Warden", "Gatstaf Shepherd",
-    "Gavony Township", "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame",
-    "Ghostly Possession", "Ghoulcaller's Bell", "Giant Growth", "Glorious Anthem",
-    "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms", "Grave Bramble",
+    "Deranged Assistant", "Desperate Ravings", "Devil's Play", "Diregraf Ghoul",
+    "Disciple of Griselbrand", "Dissipate", "Divination", "Divine Reckoning", "Doom Blade",
+    "Doomed Traveler", "Dream Twist", "Elite Inquisitor", "Falkenrath Marauders",
+    "Falkenrath Noble", "Feeling of Dread", "Feral Ridgewolf", "Festerhide Boar", "Forest",
+    "Fortress Crab", "Full Moon's Rise", "Furor of the Bitten", "Gallows Warden",
+    "Gatstaf Shepherd", "Gavony Township", "Geist-Honored Monk", "Geistcatcher's Rig",
+    "Geistflame", "Ghostly Possession", "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth",
+    "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms", "Grave Bramble",
     "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Harvest Pyre",
     "Hinterland Harbor", "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness",
     "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker", "Island",
     "Isolated Chapel", "Kalonian Tusker", "Kessig Wolf", "Kessig Wolf Run", "Kindercatch",
     "Lantern Spirit", "Lava Axe", "Lightning Bolt", "Lost in the Mist", "Lumberknot",
-    "Makeshift Mauler", "Manor Skeleton", "Markov Patrician", "Mask of Avacyn",
+    "Make a Wish", "Makeshift Mauler", "Manor Skeleton", "Markov Patrician", "Mask of Avacyn",
     "Mausoleum Guard", "Maw of the Mire", "Midnight Haunting", "Moan of the Unhallowed",
-    "Moment of Heroism", "Moon Heron", "Moorland Haunt", "Morkrut Banshee", "Mountain",
-    "Naturalize", "Nephalia Drownyard", "Night Revelers", "One-Eyed Scarecrow",
-    "Orchard Spirit", "Pacifism", "Paraselene", "Pitchburn Devils", "Plains", "Prey Upon",
-    "Purify the Grave", "Rage Thrower", "Rally the Peasants", "Ranger's Guile", "Rebuke",
-    "Reckless Waif", "Riot Devils", "Rolling Temblor", "Rotting Fensnake", "Runechanter's Pike",
-    "Savannah Lions", "Scourge of Geier Reach", "Selfless Cathar", "Selhoff Occultist",
-    "Sensory Deprivation", "Sharpened Pitchfork", "Shimmering Grotto", "Silent Departure",
-    "Silver-Inlaid Dagger", "Silverchase Fox", "Skaab Goliath", "Skirsdag Cultist",
-    "Slayer of the Wicked", "Smite the Monstrous", "Sol Ring", "Somberwald Spider",
-    "Spectral Flight", "Spectral Rider", "Spider Spawning", "Spidery Grasp", "Splinterfright",
-    "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist",
-    "Sulfur Falls", "Swamp", "Swords to Plowshares", "Think Twice", "Thraben Purebloods",
-    "Tormented Pariah", "Travel Preparations", "Tribute to Hunger", "Typhoid Rats",
-    "Unburial Rites", "Unruly Mob", "Urgent Exorcism", "Vampire Interloper", "Vampiric Fury",
-    "Victim of Night", "Village Bell-Ringer", "Village Cannibals", "Village Ironsmith",
-    "Villagers of Estwald", "Voiceless Spirit", "Walking Corpse", "Woodland Cemetery",
-    "Wreath of Geists",
+    "Moldgraf Monstrosity", "Moment of Heroism", "Moon Heron", "Moorland Haunt",
+    "Morkrut Banshee", "Mountain", "Naturalize", "Nephalia Drownyard", "Night Revelers",
+    "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism", "Paraselene", "Pitchburn Devils",
+    "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower", "Rally the Peasants",
+    "Ranger's Guile", "Rebuke", "Reckless Waif", "Riot Devils", "Rolling Temblor",
+    "Rotting Fensnake", "Runechanter's Pike", "Savannah Lions", "Scourge of Geier Reach",
+    "Selfless Cathar", "Selhoff Occultist", "Sensory Deprivation", "Sharpened Pitchfork",
+    "Shimmering Grotto", "Silent Departure", "Silver-Inlaid Dagger", "Silverchase Fox",
+    "Skaab Goliath", "Skirsdag Cultist", "Slayer of the Wicked", "Smite the Monstrous",
+    "Sol Ring", "Somberwald Spider", "Spectral Flight", "Spectral Rider", "Spider Spawning",
+    "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble",
+    "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp", "Swords to Plowshares",
+    "Think Twice", "Thraben Purebloods", "Tormented Pariah", "Travel Preparations",
+    "Tribute to Hunger", "Typhoid Rats", "Unburial Rites", "Unruly Mob", "Urgent Exorcism",
+    "Vampire Interloper", "Vampiric Fury", "Victim of Night", "Village Bell-Ringer",
+    "Village Cannibals", "Village Ironsmith", "Villagers of Estwald", "Voiceless Spirit",
+    "Walking Corpse", "Woodland Cemetery", "Woodland Sleuth", "Wreath of Geists",
 ];
 
 // ---- the properties ----
@@ -3756,13 +3882,19 @@ fn every_readable_card_does_what_its_text_says() {
                 let entering: Vec<World> = payable.iter()
                     .flat_map(|p| creature_outcomes(spec, &pay(&world, p), P0, card, spell))
                     .collect();
-                let endings = every_ending(&state, &registry, Some(spell));
+                let random = spec.etb.as_ref().is_some_and(|t| is_random(&t.spec)) || spec.dies.as_ref().is_some_and(|t| is_random(&t.spec));
+                let endings = if random {
+                    over_seeds(&state, |s| every_ending(s, &registry, Some(spell)))
+                } else {
+                    every_ending(&state, &registry, Some(spell))
+                };
                 if let Some(why) = disagreement(&entering, &endings, &registry) {
                     failures.push(format!("{name}: {why}"));
                     continue;
                 }
                 if spec.dies.is_some() || spec.watch.is_some() {
-                    let ([after_entering], Ok([entered])) = (entering.as_slice(), endings.as_deref()) else {
+                    // Seeds repeat the one way it entered.
+                    let ([after_entering], Ok([entered, ..])) = (entering.as_slice(), endings.as_deref()) else {
                         // One way of entering, so one creature to kill.
                         failures.push(format!("{name}: a death is checked from one way of entering"));
                         continue;
@@ -3795,13 +3927,18 @@ fn every_readable_card_does_what_its_text_says() {
                             dying.get_object_mut(e).expect("on the battlefield").damage_marked = u32::try_from(lethal).expect("positive");
                         }
                         let deaths = death_outcomes(spec, after_entering, P0, spell, &rs);
+                        let died = if random {
+                            over_seeds(&dying, |s| every_ending(s, &registry, None))
+                        } else {
+                            every_ending(&dying, &registry, None)
+                        };
                         let what = match rs.as_slice() {
                             [r] if *r == spell => "dying".to_string(),
                             _ => format!("seeing {} die", rs.iter()
                                 .map(|r| after_entering.permanents[r].name.as_deref().unwrap_or("a token"))
                                 .collect::<Vec<_>>().join(" and ")),
                         };
-                        if let Some(why) = disagreement(&deaths, &every_ending(&dying, &registry, None), &registry) {
+                        if let Some(why) = disagreement(&deaths, &died, &registry) {
                             failures.push(format!("{name} {what}: {why}"));
                         }
                     }
@@ -3851,6 +3988,20 @@ fn every_readable_card_does_what_its_text_says() {
                         }
                     }
                     if let Some(why) = disagreement(&want, &Ok(endings), &registry) {
+                        failures.push(format!("{name} at {targets:?}: {why}"));
+                    }
+                }
+                continue;
+            }
+            // A spell that does something at random: every way it can go,
+            // against every way the engine goes from 32 seeds.
+            if !spec.permanent && is_random(spec) {
+                for targets in expected_sets {
+                    casts += 1;
+                    let want: Vec<World> = random_choices(spec, &world, P0).iter()
+                        .map(|way| resolve(spec, way, &targets, P0, card, spell))
+                        .collect();
+                    if let Some(why) = disagreement(&want, &over_seeds(&state, |s| every_ending_at(s, &registry, spell, &targets)), &registry) {
                         failures.push(format!("{name} at {targets:?}: {why}"));
                     }
                 }
@@ -4424,6 +4575,7 @@ fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Opt
         cost_exiled: Vec::new(),
         cost_sacrificed: None,
         chosen: Vec::new(),
+        discarded: Vec::new(),
         x: 0,
         tokens: Vec::new(),
         life: [20, 20],
@@ -5149,7 +5301,11 @@ fn the_grammar_reads_its_templates() {
     assert_eq!((clauses[0].head.clone(), clauses[0].not_types.clone()), (None, vec!["creature".to_string()]));
 
     assert!(read(&card("X", "Counter target spell unless its controller pays {1}.")).is_err(), "a payment is not a template yet");
-    assert!(read(&card("X", "Draw two cards, then discard a card at random.")).is_err());
+    assert_eq!(read(&card("X", "Draw two cards, then discard a card at random.")).unwrap().effects,
+        vec![Effect::Draw { n: 2 }, Effect::DiscardAtRandom { n: 1 }]);
+    assert_eq!(read(&card("X", "Return two cards at random from your graveyard to your hand.")).unwrap().effects,
+        vec![Effect::ReturnAtRandom { n: 2, filter: None, to_battlefield: false }]);
+    assert!(read(&card("X", "Draw two cards, then discard a card.")).is_err(), "a discard of the player's choice is not read");
 }
 
 
