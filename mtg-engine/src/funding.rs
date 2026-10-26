@@ -264,6 +264,12 @@ pub fn allocate_for_x(options: &FundingOptions, x: u32) -> (FundingResponse, u32
         }
     }
 
+    // The drain is the engine's (it chooses which mana), the amounts are
+    // the kernel's, proved: what comes from the pool and what is short.
+    debug_assert_eq!(response.pool.values().sum::<u32>(), funding.from_pool,
+        "the pool step spends what the proved funding takes from the pool");
+    debug_assert_eq!(remaining, funding.shortfall, "and leaves the proved shortfall");
+
     // Taps, group by group in their given order (`order_around_demands`:
     // what nothing else needs first, creatures last): the kernel has each
     // group give the most it can among the allocations summing to
