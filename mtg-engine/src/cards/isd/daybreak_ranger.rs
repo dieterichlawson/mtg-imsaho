@@ -103,7 +103,9 @@ impl CardBehavior for DaybreakRanger {
     }
 
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
-        let is_transformed = state.get_object(object_id).is_some_and(|o| o.is_transformed);
+        // Both faces' abilities are index 0; which one this is is the face it
+        // was activated from, not the face up now (CR 113.7a).
+        let is_transformed = helpers::ability_from_back_face(state, object_id);
         if let Some(Target::Object(target_id)) = targets.first() {
             if is_transformed {
                 // Nightfall Predator: fight

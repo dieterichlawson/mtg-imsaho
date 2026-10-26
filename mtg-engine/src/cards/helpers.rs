@@ -898,6 +898,25 @@ pub fn enters_with_counters(
     Some(Replacement::Modified(ReplaceableEvent::EntersBattlefield(e)))
 }
 
+/// Whether the ability of `source` resolving now is its back face's: the face
+/// that was up as it went on the stack (CR 712.8d-e), which is not the face up
+/// now if the permanent transformed in response — the ability on the stack is
+/// its own object (CR 113.7a). With no ability of `source` resolving, the face
+/// up now.
+///
+/// A card whose two faces' abilities share an index reads this to know which
+/// one it is resolving. Daybreak Ranger read `is_transformed` instead, so
+/// Moonmist in response to "deal 2 damage to target creature with flying"
+/// made Nightfall Predator fight it.
+#[must_use]
+pub fn ability_from_back_face(state: &GameState, source: ObjectId) -> bool {
+    match &state.resolving_ability {
+        Some(crate::state::StackEntry::Ability { source_id, source_back_face, .. }) if *source_id == source => *source_back_face,
+        Some(crate::state::StackEntry::Trigger(t)) if t.source.id == source => t.source.from_back_face,
+        _ => state.get_object(source).is_some_and(|o| o.is_transformed),
+    }
+}
+
 pub fn werewolf_should_transform(state: &GameState, object_id: ObjectId) -> bool {
     // Which face's condition to test. Inside a trigger resolution it is the
     // face the ability triggered from (CR 603.4 re-checks *that* ability's

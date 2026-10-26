@@ -1208,6 +1208,31 @@ fn nightfall_predators_fight_does_nothing_if_the_predator_dies_in_response() {
         "neither creature fights, so the target takes nothing");
 }
 
+/// CR 113.7a: an ability on the stack is its own object, the ability of the
+/// face it was activated from. Daybreak Ranger's "{T}: This creature deals 2
+/// damage to target creature with flying", answered by Moonmist ("Transform all
+/// Humans" — the Ranger is one), resolves as itself on what is now Nightfall
+/// Predator: 2 damage to the flyer, and no fight. Both faces' abilities are
+/// index 0, and the card used to pick between them by the face up at
+/// resolution, so the Predator fought the flyer and killed it.
+#[test]
+fn daybreak_rangers_ability_is_still_its_own_after_a_transform_in_response() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let ranger = named_permanent(&mut state, &reg, "Daybreak Ranger", P0);
+    let geist = named_permanent(&mut state, &reg, "Chapel Geist", P1);
+
+    activate_via_hooks(&mut state, &reg, ranger, 0, &[Target::Object(geist)]);
+    // Moonmist, in response.
+    mtg_engine::cards::helpers::apply_transform(&mut state, ranger, &reg);
+    assert_eq!(state.name_of(ranger, &reg), "Nightfall Predator");
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_object(geist).unwrap().zone, Zone::Battlefield, "2 damage does not kill a 2/3");
+    assert_eq!(state.get_object(geist).unwrap().damage_marked, 2);
+    assert_eq!(state.get_object(ranger).unwrap().damage_marked, 0, "no fight, so nothing back");
+}
+
 /// The other half of the same rule: the *target* leaving does not let the
 /// fighter deal its damage into an empty seat either.
 #[test]

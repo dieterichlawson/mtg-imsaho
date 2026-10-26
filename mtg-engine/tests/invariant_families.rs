@@ -249,7 +249,7 @@ fn stack_entry_rules_are_checked() {
     s.stack.push(StackEntry::Ability {
         source_id: bear, ability_index: 0, behavior_card_id: s.get_object(bear).unwrap().card_id,
         targets: vec![Target::Object(bolt)], activator: P0, x_value: None, target_requirement: None,
-        sacrificed: None, sacrificed_toughness: Some(2), loyalty: false, source_transforms: 0,
+        sacrificed: None, sacrificed_toughness: Some(2), loyalty: false, source_transforms: 0, source_back_face: false,
     });
     flags_core(&s, &reg, "has targets but no requirement");
     flags_core(&s, &reg, "remembers a sacrificed creature's toughness but no sacrifice");
@@ -624,7 +624,7 @@ fn the_healthy_shapes_of_the_stack_are_not_flagged() {
         sacrificed: Some(bear),
         sacrificed_toughness: Some(2),
         x_value: None,
-        loyalty: false, source_transforms: 0,
+        loyalty: false, source_transforms: 0, source_back_face: false,
     });
     clean_core(&s, &reg);
 
@@ -2330,7 +2330,7 @@ fn the_costs_an_action_pays_are_checked_against_the_pool() {
         c.stack.push(StackEntry::Ability {
             source_id: cathar, ability_index: 0, behavior_card_id: card_id,
             targets: vec![], activator: P0, x_value: None, target_requirement: None,
-            sacrificed: Some(cathar), sacrificed_toughness: Some(1), loyalty: false, source_transforms: 0,
+            sacrificed: Some(cathar), sacrificed_toughness: Some(1), loyalty: false, source_transforms: 0, source_back_face: false,
         });
         for (t, n) in added {
             c.events.push(GameEvent::ManaAdded { player: P0, mana_type: *t, amount: *n });
@@ -4650,7 +4650,7 @@ fn the_target_arity_of_every_requirement_shape_is_checked() {
             source_id: source, ability_index: 0, behavior_card_id: card_id,
             targets: creatures[..n].iter().map(|id| Target::Object(*id)).collect(),
             activator: P0, x_value: None, target_requirement: Some(req),
-            sacrificed: None, sacrificed_toughness: None, loyalty: false, source_transforms: 0,
+            sacrificed: None, sacrificed_toughness: None, loyalty: false, source_transforms: 0, source_back_face: false,
         });
         s
     };

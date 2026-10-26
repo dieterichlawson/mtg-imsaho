@@ -1399,6 +1399,31 @@ fn back_face_homicidal_brute_has_end_step_trigger() {
         "Back-face Homicidal Brute should fire its end-step transform-back trigger");
 }
 
+/// CR 113.7a, 701.27f: Homicidal Brute's end-step ability, answered by
+/// Moonmist turning the Brute (a Human) back into Civilized Scholar, is still
+/// the Brute's: it taps the Scholar, and its "then transform it" is ignored,
+/// the permanent having transformed since the ability went on the stack. The
+/// card used to check the face up at resolution and do nothing at all.
+#[test]
+fn homicidal_brutes_end_step_ability_taps_it_after_a_transform_in_response() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::EndStep, P0);
+    let scholar = named_permanent(&mut state, &registry, "Civilized Scholar", P0);
+    helpers::apply_transform(&mut state, scholar, &registry);
+    state.events.push(GameEvent::StepStarted { step: Step::EndStep });
+    mtg_engine::triggers::collect_triggers(&mut state, &registry);
+    assert_eq!(state.stack.len(), 1, "the Brute's end-step trigger is on the stack");
+
+    // Moonmist, in response.
+    helpers::apply_transform(&mut state, scholar, &registry);
+    assert_eq!(state.name_of(scholar, &registry), "Civilized Scholar");
+    mtg_engine::triggers::resolve_next_trigger(&mut state, &registry);
+
+    let obj = state.get_object(scholar).unwrap();
+    assert!(obj.tapped, "the Brute's ability taps it, whichever face is up");
+    assert!(!obj.is_transformed, "and does not transform it back (CR 701.27f)");
+}
+
 // -------------------------------------------------------------------------
 // From the bug-audit files, re-filed by the rule each one exercises.
 // -------------------------------------------------------------------------

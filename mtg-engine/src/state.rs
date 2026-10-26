@@ -62,6 +62,14 @@ pub enum StackEntry {
         /// `put_on_stack` (CR 701.27f).
         #[serde(default)]
         source_transforms: u32,
+        /// Whether its source had its back face up as it went on the stack:
+        /// the face whose ability this is (CR 712.8d-e), which it stays if
+        /// the permanent transforms in response (CR 113.7a). Stamped by
+        /// `put_on_stack`, after the costs are paid; no double-faced card's
+        /// ability has a cost that moves its source, which would have turned
+        /// it front face up by then (CR 712.8a).
+        #[serde(default)]
+        source_back_face: bool,
     },
 }
 
@@ -564,12 +572,15 @@ impl GameState {
     pub fn put_on_stack(&mut self, mut entry: StackEntry) {
         // CR 701.27f: an ability that transforms its own source asks, as it
         // resolves, whether the source has transformed since now.
-        let count = entry.ability_source()
+        let (count, back) = entry.ability_source()
             .and_then(|id| self.get_object(id))
-            .map_or(0, |o| o.transforms);
+            .map_or((0, false), |o| (o.transforms, o.is_transformed));
         match &mut entry {
             StackEntry::Trigger(t) => t.source.transforms = count,
-            StackEntry::Ability { source_transforms, .. } => *source_transforms = count,
+            StackEntry::Ability { source_transforms, source_back_face, .. } => {
+                *source_transforms = count;
+                *source_back_face = back;
+            }
             StackEntry::Spell(_) => {}
         }
         let controller = match &entry {
