@@ -1112,7 +1112,7 @@ impl Spec {
             return Some(());
         }
         for this in ["This creature ", "This land ", "This artifact "] {
-            if let Some(rest) = s.strip_prefix(this) {
+            if let Some(rest) = s.strip_prefix(this).filter(|r| !r.starts_with("fights ")) {
                 if let Some(rest) = rest.strip_prefix("deals ") {
                     return self.sentence(&format!("~ deals {rest}."));
                 }
@@ -1299,9 +1299,13 @@ impl Spec {
             return Some(());
         }
         // CR 701.12a: "Target creature you control fights target creature
-        // you don't control".
+        // you don't control", "This creature fights target creature".
         if let Some((a, b)) = s.split_once(" fights ") {
-            let a = self.slot(Slot::Permanent(filter(a.strip_prefix("Target ")?)?));
+            let a = if a == "This creature" {
+                self.slot(Slot::This)
+            } else {
+                self.slot(Slot::Permanent(filter(a.strip_prefix("Target ")?)?))
+            };
             let b = self.slot(Slot::Permanent(filter(b.strip_prefix("target ")?)?));
             self.effects.push(Effect::Fight { a, b });
             return Some(());
@@ -1772,17 +1776,23 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
 }
 
 /// A double-faced card's back face, when its text is keywords, combat
-/// text and static abilities, and for a werewolf's the trigger that
-/// transforms it back, which sets `werewolf`: what the grammar reads of it
-/// (its keywords are its printed ones).
+/// text, static abilities and activated abilities, and for a werewolf's
+/// the trigger that transforms it back, which sets `werewolf`: what the
+/// grammar reads of it (its keywords are its printed ones). Its abilities
+/// are numbered from its own first, as the engine numbers them.
 fn back_face_reads(back: &Printed) -> Option<Spec> {
     let mut spec = Spec { permanent: true, ..Spec::default() };
     for line in without_reminders(&back.oracle_text).replace(&back.name, "~").lines().map(str::trim).filter(|l| !l.is_empty()) {
+        let index = spec.mana.iter().map(ManaAbility::indices).sum::<usize>() + spec.activated.len();
         if line == "At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature." {
             spec.werewolf = true;
         } else if line.split(',').map(str::trim).all(|w| keyword_named(w).is_some()) || spec.combat.read(line).is_some() {
         } else if let Some(st) = creature_static(line) {
             spec.statics.push(st);
+        } else if let Some(ability) = ManaAbility::read(line) {
+            spec.mana.push(ability);
+        } else if line.contains(": ") {
+            spec.activated.push(read_activated(line, index)?);
         } else {
             return None;
         }
@@ -3081,13 +3091,18 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
             Effect::Fight { a, b } => {
                 // Each deals damage equal to its power to the other, at
                 // once; a creature with lifelink gains its controller that
-                // much (CR 701.12a, 702.15b).
+                // much, and one with deathtouch makes it lethal (CR
+                // 701.12a, 702.15b, 702.2b). One that is gone and neither
+                // fights (701.12b).
                 let (Some(ia), Some(ib)) = (object(*a), object(*b)) else { continue };
-                let (ma, mb) = (w.permanents[&ia].clone(), w.permanents[&ib].clone());
+                let (Some(ma), Some(mb)) = (w.permanents.get(&ia).cloned(), w.permanents.get(&ib).cloned()) else { continue };
                 let (pa, pb) = (w.pt_of(&ma).0, w.pt_of(&mb).0);
                 let dealt = |p: Option<i32>| u32::try_from(p.unwrap_or(0).max(0)).expect("non-negative");
-                w.permanents.get_mut(&ib).expect("on the board").damage += dealt(pa);
-                w.permanents.get_mut(&ia).expect("on the board").damage += dealt(pb);
+                for (to, from, p) in [(ib, &ma, pa), (ia, &mb, pb)] {
+                    let m = w.permanents.get_mut(&to).expect("on the board");
+                    m.damage += dealt(p);
+                    m.deathtouched |= has(from, Keyword::Deathtouch) && dealt(p) > 0;
+                }
                 for (m, p) in [(&ma, pa), (&mb, pb)] {
                     if has(m, Keyword::Lifelink) {
                         w.life[m.controller.0 as usize] += dealt(p) as i32;
@@ -4317,10 +4332,10 @@ const READ: &[&str] = &[
     "Claustrophobia", "Clifftop Retreat", "Cobbled Wings", "Coral Merfolk", "Corpse Lunge",
     "Counterspell", "Curse of Death's Hold", "Curse of Oblivion", "Curse of Stalked Prey",
     "Curse of the Bloody Tome", "Curse of the Nightly Hunt", "Curse of the Pierced Heart",
-    "Darkthicket Wolf", "Dead Weight", "Demonmail Hauberk", "Deranged Assistant",
-    "Desperate Ravings", "Devil's Play", "Diregraf Ghoul", "Disciple of Griselbrand",
-    "Dissipate", "Divination", "Divine Reckoning", "Doom Blade", "Doomed Traveler",
-    "Dream Twist", "Elder Cathar", "Elder of Laurels", "Elite Inquisitor",
+    "Darkthicket Wolf", "Daybreak Ranger", "Dead Weight", "Demonmail Hauberk",
+    "Deranged Assistant", "Desperate Ravings", "Devil's Play", "Diregraf Ghoul",
+    "Disciple of Griselbrand", "Dissipate", "Divination", "Divine Reckoning", "Doom Blade",
+    "Doomed Traveler", "Dream Twist", "Elder Cathar", "Elder of Laurels", "Elite Inquisitor",
     "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread", "Feral Ridgewolf",
     "Festerhide Boar", "Forest", "Fortress Crab", "Full Moon's Rise", "Furor of the Bitten",
     "Gallows Warden", "Gatstaf Shepherd", "Gavony Township", "Geist of Saint Traft",
@@ -4351,10 +4366,11 @@ const READ: &[&str] = &[
     "Sulfur Falls", "Swamp", "Swords to Plowshares", "Think Twice", "Thraben Purebloods",
     "Thraben Sentry", "Tormented Pariah", "Traitorous Blood", "Travel Preparations",
     "Traveler's Amulet", "Tree of Redemption", "Tribute to Hunger", "Typhoid Rats",
-    "Unburial Rites", "Unruly Mob", "Urgent Exorcism", "Vampire Interloper", "Vampiric Fury",
-    "Victim of Night", "Village Bell-Ringer", "Village Cannibals", "Village Ironsmith",
-    "Villagers of Estwald", "Voiceless Spirit", "Walking Corpse", "Wooden Stake",
-    "Woodland Cemetery", "Woodland Sleuth", "Wreath of Geists",
+    "Ulvenwald Mystics", "Unburial Rites", "Unruly Mob", "Urgent Exorcism",
+    "Vampire Interloper", "Vampiric Fury", "Victim of Night", "Village Bell-Ringer",
+    "Village Cannibals", "Village Ironsmith", "Villagers of Estwald", "Voiceless Spirit",
+    "Walking Corpse", "Wooden Stake", "Woodland Cemetery", "Woodland Sleuth",
+    "Wreath of Geists",
 ];
 
 // ---- the properties ----
@@ -4655,13 +4671,32 @@ fn every_readable_activated_ability_does_what_its_text_says() {
     let (cards, _) = readable(&registry, &cache);
     let mut failures = Vec::new();
     let mut checked = 0;
-    for (card, spec) in &cards {
+    let backs = back_faces(&cards);
+    // Each permanent the grammar reads, either face up, with mana for
+    // anything: it offers no activated ability its text does not print
+    // (CR 602.1, 712.8d-e).
+    for (card, spec) in cards.iter().chain(&backs).filter(|(c, _)| !c.has_type("Instant") && !c.has_type("Sorcery")) {
+        let (mut state, mut world) = board(&registry, &cache);
+        let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
+        fund(&mut state, P0, &mana_cost("{3}{W}{W}{W}{U}{U}{U}{B}{B}{B}{R}{R}{R}{G}{G}{G}").expect("a cost"), 0);
+        let printed: Vec<usize> = spec.activated.iter().map(|a| a.index).collect();
+        let mut extra: Vec<usize> = engine::legal_actions(&state, &registry).actions.iter()
+            .filter_map(|a| match a {
+                Action::ActivateAbility { object_id, ability_index, .. } if *object_id == id && !printed.contains(ability_index) => Some(*ability_index),
+                _ => None,
+            })
+            .collect();
+        extra.dedup();
+        if !extra.is_empty() {
+            failures.push(format!("{}: offers abilities {extra:?}, and its text prints only {printed:?}", card.name));
+        }
+    }
+    for (card, spec) in cards.iter().chain(&backs) {
         for ability in &spec.activated {
             checked += 1;
             let name = format!("{}'s ability {}", card.name, ability.index);
             let (mut state, mut world) = board(&registry, &cache);
-            let id = named_permanent(&mut state, &registry, &card.name, P0);
-            world.permanents.insert(id, model_of(spec, card, P0));
+            let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
             world.source = Some(id);
             fund(&mut state, P0, &ability.mana, 0);
 
@@ -4750,27 +4785,50 @@ fn every_readable_activated_ability_does_what_its_text_says() {
                     ways = ways.iter().flat_map(|w| (0..=X_FLOAT).map(|x| World { x, pool: x_left(w, x), ..w.clone() })).collect();
                 }
                 ways = ways.iter().flat_map(|w| resolution_ways(&ability.spec, w, full, P0)).collect();
-                let want: Vec<World> = ways.into_iter()
-                    .map(|w| {
-                        // A target gone by the time it resolves: it does
-                        // nothing (CR 608.2b).
-                        let gone = !targets.is_empty() && full.iter().zip(&ability.spec.slots)
-                            .filter(|(_, slot)| !matches!(slot, Slot::This))
-                            .all(|(t, slot)| match (t, slot) {
-                                (Target::Object(o), Slot::GraveyardCard { .. }) => !w.yard.contains_key(o),
-                                (Target::Object(o), _) => !w.permanents.contains_key(o),
-                                _ => false,
-                            });
-                        let mut after = if gone { w } else { apply(&ability.spec, &w, full, P0) };
-                        after.state_based_actions();
-                        after
-                    })
-                    .collect();
+                let resolve = |w: World| {
+                    // A target gone by the time it resolves: it does
+                    // nothing (CR 608.2b).
+                    let gone = !targets.is_empty() && full.iter().zip(&ability.spec.slots)
+                        .filter(|(_, slot)| !matches!(slot, Slot::This))
+                        .all(|(t, slot)| match (t, slot) {
+                            (Target::Object(o), Slot::GraveyardCard { .. }) => !w.yard.contains_key(o),
+                            (Target::Object(o), _) => !w.permanents.contains_key(o),
+                            _ => false,
+                        });
+                    let mut after = if gone { w } else { apply(&ability.spec, &w, full, P0) };
+                    after.state_based_actions();
+                    after
+                };
+                let want: Vec<World> = ways.iter().cloned().map(resolve).collect();
                 let at = format!("{name} at {targets:?}{}", sac.map_or(String::new(), |v| format!(", sacrificing {v:?}")));
-                let endings = every_ending_from(&state, &registry, None, Some(act));
+                let endings = every_ending_from(&state, &registry, None, Some(act.clone()));
                 if let Some(why) = disagreement(&want, &endings, &registry) {
                     failures.push(format!("{at}: {why}"));
                     continue;
+                }
+                // A double-faced source transformed in response, as by
+                // Moonmist: the ability on the stack is the face's it was
+                // activated from, and resolves as that face's text says on
+                // the permanent as it now is (CR 113.7a, 112.7a); a
+                // transform of its own does nothing (701.27f).
+                if world.permanents[&id].other_face.is_some() && !ability.sacrifice_self {
+                    let answered: Vec<World> = ways.iter().cloned()
+                        .map(|mut w| {
+                            let m = w.permanents.get_mut(&id).expect("the source, still there");
+                            w.faces_put = BTreeMap::from([(id, m.transformed)]);
+                            m.transform();
+                            w.refresh();
+                            let mut after = resolve(w);
+                            after.faces_put.clear();
+                            after
+                        })
+                        .collect();
+                    let mut held = engine::submit_action(&state, &act, &registry);
+                    assert!(held.stack.len() == 1 && held.priority_player == Some(P0), "{at}: the ability is on the stack and its controller has priority");
+                    mtg_engine::cards::helpers::apply_transform(&mut held, id, &registry);
+                    if let Some(why) = disagreement(&answered, &every_ending(&held, &registry, None), &registry) {
+                        failures.push(format!("{at}, its source transformed in response: {why}"));
+                    }
                 }
                 // Played on into the opponent's turn, where what lasted
                 // this one is gone.
@@ -4866,7 +4924,9 @@ fn every_readable_werewolf_transforms_as_its_text_says() {
             }
             let drawn = world.library[0].remove(0);
             world.hand[0].push(drawn);
-            state = match play(&state, &registry, None, Vec::new(), &[]) {
+            // On to the main phase, whatever a face's ability gives its
+            // controller to do on the way.
+            state = match play_from(&state, &registry, None, Vec::new(), None, Scene::Until(Step::PrecombatMain), &[]) {
                 Ok(Played::Done(after)) => *after,
                 Ok(Played::Asks(options)) => {
                     failures.push(format!("{} {phase}: the engine asked a question the text does not, answerable {options:?}", card.name));
@@ -5229,6 +5289,26 @@ fn on_damage_to_player(w2: &mut World, a: ObjectId, attacker: &Model, dealt: u32
     }
 }
 
+/// `card`, read as `spec`, as a permanent of `owner`'s in the engine and in
+/// `world`; a back face is its front card, transformed (CR 712.8e).
+fn place_face(state: &mut GameState, world: &mut World, registry: &CardRegistry, card: &Printed, spec: &Spec, owner: PlayerId) -> ObjectId {
+    let front = registry.get_id_by_name(&card.name).is_none()
+        .then(|| cached_oracle().values().find(|f| f.back.as_ref().is_some_and(|b| b.name == card.name)))
+        .flatten();
+    let id = named_permanent(state, registry, front.map_or(&card.name, |f| &f.name), owner);
+    let m = match front {
+        None => model_of(spec, card, owner),
+        Some(f) => {
+            state.get_object_mut(id).expect("just placed").is_transformed = true;
+            let mut m = model_of(&read_creature(f).expect("a front face the grammar reads"), f, owner);
+            m.transform();
+            m
+        }
+    };
+    world.permanents.insert(id, m);
+    id
+}
+
 /// Two creatures, one each side, and nothing else but the caster's land in
 /// hand and both libraries: a combat between them, and the same in the
 /// reference.
@@ -5284,26 +5364,7 @@ fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Opt
         world.yard.insert(id, Model::printed(&cached_oracle()[name], P0));
         world.graveyard[0].push(name.to_string());
     }
-    let mut place = |state: &mut GameState, (card, spec): (&Printed, &Spec), owner: PlayerId| {
-        // A back face: its front card, transformed (CR 712.8e).
-        let front = registry.get_id_by_name(&card.name).is_none()
-            .then(|| cached_oracle().values().find(|f| f.back.as_ref().is_some_and(|b| b.name == card.name)))
-            .flatten();
-        let id = named_permanent(state, registry, front.map_or(&card.name, |f| &f.name), owner);
-        let mut m = Model {
-            combat: spec.combat.clone(),
-            counts_hand: spec.pt_is_cards_in_hand,
-            statics: spec.statics.clone(),
-            ..Model::printed(card, owner)
-        };
-        if let Some(f) = front {
-            state.get_object_mut(id).expect("just placed").is_transformed = true;
-            m.transformed = true;
-            m.other_face = Some(Box::new(Model::printed(f, owner)));
-        }
-        world.permanents.insert(id, m);
-        id
-    };
+    let mut place = |state: &mut GameState, (card, spec): (&Printed, &Spec), owner: PlayerId| place_face(state, &mut world, registry, card, spec, owner);
     let a = place(&mut state, attacker, P0);
     let b = blocker.map(|b| place(&mut state, b, P1));
     let s = standing.map(|(c, side)| (place(&mut state, c, side), c, side));
