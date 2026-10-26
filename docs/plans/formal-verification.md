@@ -401,8 +401,10 @@ shapes the pool has.
 text, as Scryfall prints it, into effects; a reference semantics written
 from the CR, sharing no code with `src/cards/`, says what those effects do
 to a board described by its cards' Oracle data, state-based actions
-included; and the engine is held to it on a board of fourteen permanents
-and four graveyard cards chosen for their differences.
+included; and the engine is held to it on a board of fifteen permanents
+and six graveyard cards chosen for their differences, and on variants of
+it: after a death, with a second permanent of a name, with one of the
+opponent's creatures tapped.
 
 - **Instants and sorceries**: damage to a target or to each of a group;
   pumps of a target or a group (subtype-qualified too); destroy, destroy
@@ -422,9 +424,15 @@ and four graveyard cards chosen for their differences.
   "another". A trigger asks its own questions, so the engine is replayed
   every way they can be answered, and the set of games that can result
   must be the set the text allows. Flash is held to the timing rule.
-- **Werewolves**, both faces: transformed at an upkeep after a turn with
-  no spells, and back after a turn of two, alongside the two werewolves
-  already on the board.
+- **Double-faced cards**, both faces, each read with its back face and
+  coloured by its colour indicator (CR 204.1, 712.8e): werewolves
+  transformed at an upkeep after a turn with no spells and back after a
+  turn of two, alongside the two already on the board; any other
+  "transform this creature", which does nothing if the permanent has
+  transformed since the ability went on the stack (701.27f); and every
+  activated ability of a double-faced permanent again with the permanent
+  transformed in response, as by Moonmist, where it must resolve as the
+  face it was activated from (113.7a).
 - **Static abilities**, applied continuously: an Aura's, an Equipment's
   and an anthem's change to the creature it is on or to a group, a lord's
   ("other Spirit creatures you control get +1/+0", "creatures with flying
@@ -443,9 +451,13 @@ and four graveyard cards chosen for their differences.
   mana, {T} and sacrificing the source, at every target the text allows,
   with "activate only once each turn"; and the timing rule for each: with
   the opponent's spell on the stack, an ability activated only as a
-  sorcery is not offered and any other is (CR 602.5d). **Equip** is one of
-  them, read as CR 702.6a defines it, onto every creature the caster
-  controls.
+  sorcery is not offered and any other is (CR 602.5d); "activate only if
+  you control five or more Vampires", on the board, one short and with
+  exactly enough (602.5b). **Equip** is one of them, read as CR 702.6a
+  defines it, onto every creature the caster controls. And every
+  permanent read, either face up, with mana for anything and what either
+  face's abilities ask its controller to control, offers no ability its
+  text does not print.
 - **Triggers on other deaths** ("whenever another creature you control
   dies"): once such a creature has entered, every creature on the board
   dies in turn and every two at once, it among them or not. The reference
@@ -459,6 +471,16 @@ and four graveyard cards chosen for their differences.
   only the active player's permanents untapped, the trigger resolved every
   way in the upkeep its text names and no other, and the draw (CR 514.2,
   502.3, 503.1a, 504.1).
+- **End-step triggers**, either face up, with intervening "if"s (morbid,
+  "didn't attack this turn"): from each player's postcombat main phase,
+  on the board and after a death, through the end step and cleanup into
+  the next turn's main phase, with the face up by then (513.1a, 603.4).
+  Both turn tests also count what the engine puts on the stack against
+  the triggers the text fires, so one that triggers when its "if" is false
+  and then does nothing is seen.
+- **"You may"**: besides every ending reached, the death checks play
+  every "may" taken and every one declined, since as a set of endings a
+  wrong answer to one can hide behind a right answer to another.
 - **What lasts the turn**: every spell and ability whose effect is
   damage, a pump, a tap or a shield is played on into the opponent's main
   phase, where "until end of turn" changes, damage and regeneration
@@ -494,21 +516,23 @@ and four graveyard cards chosen for their differences.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-188 of the pool's 268 instants, sorceries, creatures, enchantments, lands
+208 of the pool's 268 instants, sorceries, creatures, enchantments, lands
 and artifacts are read, and all agree. Every template has been shown to
 catch a deliberate bug in a card that uses it, and the engine code under
 it, from Lightning Bolt dealing 2 to the untap step untapping every
-player's permanents (`reports/verification-mutants.md` lists the two
-latest rounds: of 100 mutants, 98 caught, one missed for want of a change
-of control the grammar cannot yet cause, one equivalent), and the failure
-names the cast and the difference. Not yet read: copies, control change,
-transforms other than werewolves', triggers on spells being cast,
-replacement effects ("would deal combat damage, deals double"), counters
-other than +1/+1 and -1/-1, rule modifiers (cost reductions for others,
-"can't be activated"), granted activated abilities, and costs other than
-those above. Each is a template, or a board, to add; `READ` lists the
-cards read, and a change that stops reading any of them fails and names
-it.
+player's permanents (`reports/verification-mutants.md` lists the rounds:
+of the latest 145 mutants, 142 caught, one missed for want of a change of
+control between activation and resolution, two equivalent), and the
+failure names the cast and the difference. Every mutant that first
+survived became a check or a board: the "may" policies, the stack count,
+"nothing beyond its text", the opponent's Vampire. Not yet read: copies,
+triggers on spells being cast and on creatures entering, replacement
+effects ("would deal combat damage, deals double"), counters other than
++1/+1 and -1/-1, rule modifiers (cost reductions for others, "can't be
+activated"), granted activated abilities, looking at and revealing
+cards, and costs other than those above. Each is a template, or a board,
+to add; `READ` lists the cards read, and a change that stops reading any
+of them fails and names it.
 
 ### The whole engine under libFuzzer
 
@@ -528,6 +552,8 @@ so each night starts from everything the last one reached.
 | 4 | combat damage was divided silently whenever the power did not exceed the blockers' total lethal, though 4 power on two 2-toughness blockers may go 2-2, 3-1 or 4-0 | the completeness property; restoring the old rule makes the proof fail | over the same 608 seeded fuzz games the question came up 273 times, where it had come up 143 |
 | 5 | X paid from floating mana took all of one type first, the same as 2 | proving the allocator by reuse | every seat's X answer: CLI, fuzzer, page |
 | 6 | the autotap planner gave each coloured pip the best free source in turn and never revisited a choice, so three duals that pay `{W}{U}{B}` only in a cycle got no plan | the exhaustive small-board check, at three sources | latent: no card in the pool costs three colours |
+| 7 | an ability transformed its own source again after the source had transformed since it went on the stack (CR 701.27f): Moonmist in response to a werewolf's upkeep trigger was undone by the trigger, a second Bloodline Keeper activation held under the first turned Lord of Lineage back, and held Ludevic's Test Subject activations flipped the Abomination back. A test asserted the first | writing the reference's "transform this creature" for Thraben Sentry, from 701.27f | any response that transforms a permanent whose own transform ability is on the stack |
+| 8 | Daybreak Ranger chose between its faces' abilities, both index 0, by the face up at resolution, so Moonmist in response to "deal 2 damage to target creature with flying" made Nightfall Predator fight it; Homicidal Brute's end-step ability did nothing at all once turned back in response | the check of every double-faced ability with its source transformed in response | Moonmist, or any transform, in response to either |
 
 Each has a regression test that fails without its fix.
 

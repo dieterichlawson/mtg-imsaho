@@ -299,3 +299,72 @@ the creature it made its controller sacrifice. Each was a fix to the
 reference, made after reading the rule, and both are now regression
 cases in the fights and casts.
 
+
+## The cards: double-faced cards, end steps, and small templates — 2026-10-26
+
+The same method for the families since: 45 mutants, 44 caught and one
+equivalent.
+
+| family | mutant | caught by |
+|---|---|---|
+| small templates | Elder Cathar gives a Human one counter | the dies check |
+| | Elder of Laurels counts one more | the activated-ability test |
+| | Infernal Plunge adds {R}{R} | the cast test |
+| | Sever the Bloodline exiles only the target | **only** the board with two of a name |
+| | Graveyard Shovel gains 3 | the activated-ability test |
+| | Brain Weevil discards nothing | the activated-ability test |
+| | Cellar Door takes the top card | the activated-ability test |
+| | Tree of Redemption's toughness one more than the life it took | the activated-ability test |
+| werewolf back faces | Bane of Hanweir is not forced to attack | the fights |
+| | Wildblood Pack gives +2/+0 | the fights |
+| | Instigator Gang pumps creatures that are not attacking | the fights |
+| | Terror of Kruin Pass gives every creature menace | the fights |
+| control change | Traitorous Blood does not untap | **only** the board with a tapped creature |
+| | Olivia does not make it a Vampire | the activated-ability test |
+| | Olivia's counter goes on the target | the activated-ability test |
+| | the cleanup keeps control taken until end of turn | **only** the next-turn check |
+| any transform | Thraben Sentry watches every player's creatures | the dies check |
+| | Thraben Sentry never transforms | the dies check |
+| | a second Sentry trigger transforms it back | **only** every "may" taken |
+| | declining transforms it too | the dies check |
+| | Thraben Militia lacks trample | the dies check |
+| | Thraben Militia is 4/4 | the dies check |
+| back faces' abilities | Ulvenwald Primordials do not regenerate | the activated-ability test |
+| | Ulvenwald Mystics offer the Primordials' regeneration | **only** nothing beyond its text |
+| | the engine's fight is one-sided | the activated-ability test |
+| | Daybreak Ranger targets any creature | the activated-ability test |
+| | Nightfall Predator's fight is free | the activated-ability test |
+| | Daybreak Ranger reads the face up at resolution | **only** a flip in response |
+| end steps | Unholy Fiend loses 2 | the end-step test |
+| | Unholy Fiend's trigger on every end step | the end-step test |
+| | Reaper from the Abyss triggers with no death | **only** the stack count |
+| | Reaper's own check lets Demons in | **equivalent**: its target requirement says the same |
+| | Reaper's requirement and check both let Demons in | the end-step test |
+| | Cloistered Youth transforms when declined | the turn test |
+| Mayor of Avabruck | Howlpack Alpha leaves out Wolves | the end-step test, the fights |
+| | Howlpack Alpha pumps itself | the fights, the werewolf test |
+| | the Mayor pumps the opponent's Humans | the cast test |
+| | Howlpack Alpha's Wolf on every end step | the end-step test |
+| | the Wolf token is a Werewolf too | the end-step test |
+| Bloodline Keeper | four Vampires are enough | **only** one short of enough |
+| | every permanent counts as a Vampire | the activated-ability test |
+| | Lord of Lineage pumps itself | a flip in response |
+| | Lord of Lineage pumps the opponent's Vampires | **only** the opponent's Vampire on the board |
+| | Lord of Lineage offers the Keeper's transform | **only** nothing beyond its text, with either face's conditions met |
+| | the engine drops CR 701.27f | a flip in response |
+
+Six mutants survived when first run, and each became a check or a board
+that every card read now passes through: a "you may" taken every time and
+declined every time, since a set of endings can hide a wrong answer to one
+behind a right answer to another; the number of things put on the stack,
+since a trigger whose "if" is false must not trigger at all; each
+permanent offering nothing its text does not print, with what either
+face asks for met; an "if you control N" tried one short; and a Vampire
+on the opponent's side. None was written for its card.
+
+Two engine defects were found in the round, both by the reference
+reading a rule the engine did not: CR 701.27f, under which an ability
+does not transform its source if it has transformed since the ability
+went on the stack (a test asserted the opposite), and CR 113.7a, under
+which Daybreak Ranger's ability is the face's it was activated from.
+Both are fixed, with regression tests that fail without the fix.
