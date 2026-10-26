@@ -127,7 +127,10 @@ function presence(s: SeatInfo): string {
 
 /** The status word, with the table's hand named when it picks for the seat. */
 function statusWord(s: SeatInfo): string {
-  return s.auto ? `${s.status} (table${NBSP}picks)` : s.status;
+  // "(table picks)" may wrap between its words: held whole, with four
+  // seats the table picks for, it pushed the seats table 10px into the
+  // page's gutter at 390 (#934's review).
+  return s.auto ? `${s.status} (table picks)` : s.status;
 }
 
 function seatsTable(view: DraftView): HTMLElement {

@@ -525,12 +525,13 @@ async function main() {
         // A unit of several words holds together, and an ordinary word is
         // never broken inside: "STRANGE" / "R ZERO", "[1" / "BYE]", a tiebreak
         // line ending "/" (#881), "(seat" / "2)" and a line ending "—" (#934),
-        // "(table" / "picks)" and "G2" / "you" (#934's review).
+        // and "G2" / "you" (#934's review). "(table picks)" may wrap: held
+        // whole it pushed the seats table into the gutter, checked below.
         // Only a word too long for any column (the 24 letters of #789) breaks.
         for (const rot of [0, 1, 2, 3]) {
           const v = JSON.parse(JSON.stringify(byName.playing));
           const names = ["Margaret", "Wilhelmina Fitzgerald", "Bartholomewmaximilianjoe", "Stranger Zero"];
-          v.seats.forEach((st, i) => { st.name = names[(i + rot) % names.length]; st.auto = i === rot; });
+          v.seats.forEach((st, i) => { st.name = names[(i + rot) % names.length]; st.auto = true; st.status = i % 2 ? "building" : "picking"; });
           v.standings.forEach((r, i) => { r.tags = ["[1 bye]", "[substitute deck] [2 games forfeited]", "", "[1 bye]"][i % 4]; r.omw = 0.415; r.gw = 1; r.ogw = 0.5; });
           await stage(v);
           await page.waitForTimeout(50);
@@ -555,12 +556,21 @@ async function main() {
                 const tail = a.split(" ").pop(), head = c.split(" ")[0];
                 const midWord = /[A-Za-z0-9.]$/.test(a) && /^[A-Za-z0-9.]/.test(c) && !full.includes(`${tail} ${head}`)
                   && (full.split(" ").find(w => w.includes(tail + head)) || tail + head).replace(/[()[\]]/g, "").length < 15;
-                if (midWord || /\/$/.test(a) || /\((seat|table)$/i.test(a) || /\[\d+$/.test(a) || /—$/.test(a) || /^G\d+$/.test(tail)) bad.push(ls.join(" | "));
+                if (midWord || /\/$/.test(a) || /\(seat$/i.test(a) || /\[\d+$/.test(a) || /—$/.test(a) || /^G\d+$/.test(tail)) bad.push(ls.join(" | "));
               }
             }
             return bad;
           });
           check(split.length === 0, `${tag}: names, tags, tiebreaks and seat labels hold together, rotation ${rot} (${JSON.stringify(split.slice(0, 3))})`);
+          // Held together inside the page's gutter, not only short of a
+          // sideways scroll: the seats table ran 10px into it (#934's review).
+          const over = await page.evaluate(() => {
+            const app = document.querySelector("#app"); const cs = getComputedStyle(app);
+            const right = app.getBoundingClientRect().right - parseFloat(cs.paddingRight);
+            return [...document.querySelectorAll("#app table")].filter(t => t.getBoundingClientRect().right > right + 0.5)
+              .map(t => `${t.className} ${Math.round(t.getBoundingClientRect().right)} > ${Math.round(right)}`);
+          });
+          check(over.length === 0, `${tag}: every table stays inside the gutter, rotation ${rot} (${JSON.stringify(over)})`);
         }
         // A black pip is a disc on the panel, as the other colours are (#793).
         const pip = await page.evaluate(() => { const el = document.createElement("span"); el.className = "pip pip-B"; document.body.append(el); const c = getComputedStyle(el).backgroundColor; el.remove(); return c; });

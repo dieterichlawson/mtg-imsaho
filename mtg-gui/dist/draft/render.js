@@ -112,7 +112,10 @@ function presence(s) {
 }
 /** The status word, with the table's hand named when it picks for the seat. */
 function statusWord(s) {
-    return s.auto ? `${s.status} (table${NBSP}picks)` : s.status;
+    // "(table picks)" may wrap between its words: held whole, with four
+    // seats the table picks for, it pushed the seats table 10px into the
+    // page's gutter at 390 (#934's review).
+    return s.auto ? `${s.status} (table picks)` : s.status;
 }
 function seatsTable(view) {
     const rows = view.seats.map((s) => h("tr", { class: s.seat === view.seat ? "me" : "" }, h("td", { text: String(s.seat) }), h("td", { class: "name", text: s.name + (s.seat === view.seat ? " (you)" : "") }), h("td", { text: s.kind }), h("td", { text: presence(s) }), h("td", { text: statusWord(s) }), h("td", { class: "num", text: String(s.picks) })));
