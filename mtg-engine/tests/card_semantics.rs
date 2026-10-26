@@ -992,7 +992,7 @@ fn filter(text: &str) -> Option<Filter> {
         for q in quals {
             if *q == "another" || q.eq_ignore_ascii_case("other") {
                 clause.other = true;
-            } else if *q == "attacking" {
+            } else if q.eq_ignore_ascii_case("attacking") {
                 clause.attacking = true;
             } else if let Some(sub) = q.strip_prefix("non-") {
                 clause.not_types.push(sub.to_string());
@@ -1013,15 +1013,16 @@ fn filter(text: &str) -> Option<Filter> {
         // A card type may open the sentence ("Creatures you control"), and
         // is plural for a group; a subtype keeps its capital.
         let lower = head.to_lowercase();
-        let singular = lower.strip_suffix('s').unwrap_or(&lower);
-        let head = if CARD_TYPES.contains(&singular) || singular == "permanent" { singular } else { head };
+        let one = lower.strip_suffix('s').unwrap_or(&lower);
+        let head = if CARD_TYPES.contains(&one) || one == "permanent" { one } else { head };
         clause.head = match head {
             // What kind of object it is, the slot says; the words are
             // about its characteristics.
             "permanent" | "spell" => None,
             h if CARD_TYPES.contains(&h) => Some(h.to_string()),
-            // A subtype is capitalised in Oracle text.
-            h if h.chars().next().is_some_and(char::is_uppercase) => Some(h.to_string()),
+            // A subtype is capitalised in Oracle text, and plural for a
+            // group ("Werewolves you control").
+            h if h.chars().next().is_some_and(char::is_uppercase) => Some(singular(h)),
             _ => return None,
         };
         clauses.push(clause);
@@ -1716,18 +1717,23 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
     Ok(spec)
 }
 
-/// A werewolf's back face, when its text is keywords and the trigger that
-/// transforms it back: its keywords.
-fn back_face_reads(back: &Printed) -> Option<Vec<Keyword>> {
+/// A werewolf's back face, when its text is keywords, combat text and
+/// static abilities, and the trigger that transforms it back: what the
+/// grammar reads of it (its keywords are its printed ones).
+fn back_face_reads(back: &Printed) -> Option<Spec> {
     let mut back_turns = false;
-    for line in without_reminders(&back.oracle_text).lines().map(str::trim).filter(|l| !l.is_empty()) {
+    let mut spec = Spec { permanent: true, ..Spec::default() };
+    for line in without_reminders(&back.oracle_text).replace(&back.name, "~").lines().map(str::trim).filter(|l| !l.is_empty()) {
         if line == "At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature." {
             back_turns = true;
-        } else if !line.split(',').map(str::trim).all(|w| keyword_named(w).is_some()) {
+        } else if line.split(',').map(str::trim).all(|w| keyword_named(w).is_some()) || spec.combat.read(line).is_some() {
+        } else if let Some(st) = creature_static(line) {
+            spec.statics.push(st);
+        } else {
             return None;
         }
     }
-    back_turns.then(|| back.keywords())
+    back_turns.then_some(spec)
 }
 
 /// Read an artifact that is nothing but activated abilities the grammar
@@ -2160,10 +2166,14 @@ impl Model {
     /// here does not carry.
     fn printed_with_faces(p: &Printed, owner: PlayerId) -> Self {
         let mut m = Model::printed(p, owner);
-        if let Some(back) = p.back.as_ref().filter(|b| back_face_reads(b).is_some() && read_creature(p).is_ok_and(|s| s.werewolf)) {
-            let mut b = Model::printed(back, owner);
-            b.colors = m.colors.clone();
-            m.other_face = Some(Box::new(b));
+        if let (Some(back), Ok(front)) = (p.back.as_ref(), read_creature(p).as_ref().map(|s| s.werewolf.then_some(s))) {
+            if let (Some(front), Some(back_spec)) = (front, back_face_reads(back)) {
+                m.statics.clone_from(&front.statics);
+                m.combat = front.combat.clone();
+                let mut b = Model { statics: back_spec.statics, combat: back_spec.combat, ..Model::printed(back, owner) };
+                b.colors = m.colors.clone();
+                m.other_face = Some(Box::new(b));
+            }
         }
         m
     }
@@ -2178,6 +2188,8 @@ impl Model {
         std::mem::swap(&mut self.keywords, &mut other.keywords);
         std::mem::swap(&mut self.power, &mut other.power);
         std::mem::swap(&mut self.toughness, &mut other.toughness);
+        std::mem::swap(&mut self.statics, &mut other.statics);
+        std::mem::swap(&mut self.combat, &mut other.combat);
         self.other_face = Some(other);
         self.transformed = !self.transformed;
     }
@@ -2210,9 +2222,9 @@ impl Model {
                 && !(c.other && is_source)
                 && (!c.token || self.name.is_none())
                 && c.yours.is_none_or(|y| (self.controller == caster) == y)
-                // Nothing on the board is attacking: it is the precombat
-                // main phase.
-                && !c.attacking
+                // Only an attacking creature is (CR 506.4); the board is in
+                // the precombat main phase.
+                && (!c.attacking || self.attacking)
         })
     }
 }
@@ -2421,7 +2433,12 @@ impl World {
     /// A permanent leaves the battlefield for one of its owner's zones; a
     /// token leaves the game (CR 111.7, 704.5d).
     fn leave(&mut self, id: ObjectId, to: Dest) {
-        let Some(m) = self.permanents.remove(&id) else { return };
+        let Some(mut m) = self.permanents.remove(&id) else { return };
+        // Off the battlefield a double-faced card has only its front face
+        // (CR 712.8a).
+        if m.transformed {
+            m.transform();
+        }
         let Some(name) = m.name.clone() else { return };
         let owner = m.owner.0 as usize;
         match to {
@@ -2709,7 +2726,7 @@ fn observe(state: &GameState, registry: &CardRegistry) -> Observed {
                     o.counters.get(&CounterType::MinusOneMinusOne).copied().unwrap_or(0),
                 ),
                 regeneration_shields: o.regeneration_shields,
-                attached_to: o.attached_to.map(name_of)
+                attached_to: o.attached_to.map(|host| state.name_of(host, registry))
                     .or_else(|| o.attached_to_player.map(|p| format!("player {}", p.0))),
             }
         })
@@ -4179,10 +4196,11 @@ const READ: &[&str] = &[
     "Ghostly Possession", "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth",
     "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms", "Grave Bramble",
     "Graveyard Shovel", "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity",
-    "Harvest Pyre", "Hinterland Harbor", "Hollowhenge Scavenger", "Holy Strength",
-    "Hysterical Blindness", "Infernal Plunge", "Intangible Virtue", "Into the Maw of Hell",
-    "Invisible Stalker", "Island", "Isolated Chapel", "Kalonian Tusker", "Kessig Cagebreakers",
-    "Kessig Wolf", "Kessig Wolf Run", "Kindercatch", "Lantern Spirit", "Lava Axe",
+    "Hanweir Watchkeep", "Harvest Pyre", "Hinterland Harbor", "Hollowhenge Scavenger",
+    "Holy Strength", "Hysterical Blindness", "Infernal Plunge", "Instigator Gang",
+    "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker", "Island",
+    "Isolated Chapel", "Kalonian Tusker", "Kessig Cagebreakers", "Kessig Wolf",
+    "Kessig Wolf Run", "Kindercatch", "Kruin Outlaw", "Lantern Spirit", "Lava Axe",
     "Lightning Bolt", "Lost in the Mist", "Lumberknot", "Make a Wish", "Makeshift Mauler",
     "Manor Skeleton", "Markov Patrician", "Mask of Avacyn", "Mausoleum Guard",
     "Maw of the Mire", "Midnight Haunting", "Moan of the Unhallowed", "Moldgraf Monstrosity",
@@ -4846,6 +4864,8 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
     if !has(&w.permanents[&a], Keyword::Vigilance) {
         w.permanents.get_mut(&a).expect("the attacker").tapped = true;
     }
+    w.permanents.get_mut(&a).expect("the attacker").attacking = true;
+    w.refresh();
     // Its attack trigger: tokens that enter tapped and attacking, never
     // having been declared attackers (CR 508.4).
     if let Some(t) = w.permanents[&a].combat.on_attack_tokens.clone() {
@@ -4998,9 +5018,10 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
     // to exist (CR 511.1, 111.7).
     for w in &mut worlds {
         w.tokens.retain(|t| !t.exile_at_end_of_combat);
-        for t in &mut w.tokens {
+        for t in w.tokens.iter_mut().chain(w.permanents.values_mut()) {
             t.attacking = false;
         }
+        w.refresh();
     }
     worlds
 }
@@ -5119,13 +5140,25 @@ fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Opt
         world.graveyard[0].push(name.to_string());
     }
     let mut place = |state: &mut GameState, (card, spec): (&Printed, &Spec), owner: PlayerId| {
-        let id = named_permanent(state, registry, &card.name, owner);
-        world.permanents.insert(id, Model {
+        // A werewolf's back face: its front card, transformed, with its
+        // front's colour, which its colour indicator repeats (CR 712.8).
+        let front = registry.get_id_by_name(&card.name).is_none()
+            .then(|| cached_oracle().values().find(|f| f.back.as_ref().is_some_and(|b| b.name == card.name)))
+            .flatten();
+        let id = named_permanent(state, registry, front.map_or(&card.name, |f| &f.name), owner);
+        let mut m = Model {
             combat: spec.combat.clone(),
             counts_hand: spec.pt_is_cards_in_hand,
             statics: spec.statics.clone(),
             ..Model::printed(card, owner)
-        });
+        };
+        if let Some(f) = front {
+            state.get_object_mut(id).expect("just placed").is_transformed = true;
+            m.colors = f.colors();
+            m.transformed = true;
+            m.other_face = Some(Box::new(Model::printed(f, owner)));
+        }
+        world.permanents.insert(id, m);
         id
     };
     let a = place(&mut state, attacker, P0);
@@ -5210,12 +5243,25 @@ fn every_scene_ending(state: &GameState, registry: &CardRegistry, scene: Scene) 
     Ok(done)
 }
 
-/// The creatures the combat tests fight with: those the grammar reads whose
-/// text is keywords, combat text and static abilities.
-fn fighters(cards: &[(Printed, Spec)]) -> Vec<(&Printed, &Spec)> {
+/// Each werewolf's back face the grammar reads, as a card of its own, for
+/// what fights as it.
+fn back_faces(cards: &[(Printed, Spec)]) -> Vec<(Printed, Spec)> {
     cards.iter()
+        .filter(|(_, s)| s.werewolf)
+        .filter_map(|(c, _)| {
+            let back = c.back.as_ref()?;
+            Some(((**back).clone(), back_face_reads(back)?))
+        })
+        .collect()
+}
+
+/// The creatures the combat tests fight with: those the grammar reads whose
+/// text is keywords, combat text and static abilities, a werewolf's faces
+/// both, its back face in `backs`.
+fn fighters<'a>(cards: &'a [(Printed, Spec)], backs: &'a [(Printed, Spec)]) -> Vec<(&'a Printed, &'a Spec)> {
+    cards.iter().chain(backs)
         .filter(|(c, s)| c.has_type("Creature") && s.etb.is_none() && s.dies.is_none() && s.watch.is_none() && s.activated.is_empty()
-            && s.mana.is_empty() && !s.werewolf && !s.pt_is_creatures_you_control && !s.pt_is_creature_cards
+            && s.mana.is_empty() && !s.pt_is_creatures_you_control && !s.pt_is_creature_cards
             && !s.enters_tapped && (c.power.is_some() || s.pt_is_cards_in_hand))
         .map(|(c, s)| (c, s))
         .collect()
@@ -5307,7 +5353,8 @@ fn every_keyword_creature_fights_as_its_keywords_say() {
     let registry = registry();
     let cache = oracle_cache();
     let (cards, _) = readable(&registry, &cache);
-    let fighters = fighters(&cards);
+    let backs = back_faces(&cards);
+    let fighters = fighters(&cards, &backs);
     let mut failures = Vec::new();
     let mut combats = 0;
     for &attacker in &fighters {
@@ -5353,6 +5400,9 @@ fn standing_fights(registry: &CardRegistry, fighters: &[(&Printed, &Spec)], stan
 {
     let mut failures = Vec::new();
     let mut combats = 0;
+    // Unless every fight is asked for, one fighter of each kind.
+    let kinds = if std::env::var_os("CARD_SEMANTICS_EVERY_FIGHT").is_some() { fighters.to_vec() } else { kinds(fighters) };
+    let fighters = &kinds[..];
     for &by in standing {
         for side in [P0, P1] {
             let attackers = match probes { Some(p) if side == P1 => p, _ => fighters };
@@ -5394,6 +5444,24 @@ fn standing_fights(registry: &CardRegistry, fighters: &[(&Printed, &Spec)], stan
     (combats, failures)
 }
 
+/// One fighter of each kind: the first of those alike in keywords and in
+/// the subtypes the cards here name. The fighters with combat text or
+/// static abilities of their own are each a kind; the keyword test fights
+/// every one.
+fn kinds<'a>(fighters: &[(&'a Printed, &'a Spec)]) -> Vec<(&'a Printed, &'a Spec)> {
+    const NAMED: [&str; 6] = ["Human", "Vampire", "Werewolf", "Spirit", "Zombie", "Wolf"];
+    let mut seen = std::collections::BTreeSet::new();
+    fighters.iter().copied()
+        .filter(|(c, s)| {
+            let mut keywords: Vec<&str> = c.keywords().iter().map(|k| k.label()).collect();
+            keywords.sort_unstable();
+            let subtypes: Vec<String> = c.types().1.into_iter().filter(|t| NAMED.contains(&t.as_str())).collect();
+            let own = s.combat != CombatText::default() || !s.statics.is_empty();
+            own || seen.insert((keywords, subtypes))
+        })
+        .collect()
+}
+
 /// A vanilla fighter, and one with each keyword that changes how combat
 /// damage is dealt or who may block: the opponents an Equipment's or an
 /// Aura's creature fights unless CARD_SEMANTICS_EVERY_FIGHT is set
@@ -5423,7 +5491,8 @@ fn every_static_reaches_the_combats_it_changes() {
     let registry = registry();
     let cache = oracle_cache();
     let (cards, _) = readable(&registry, &cache);
-    let fighters = fighters(&cards);
+    let backs = back_faces(&cards);
+    let fighters = fighters(&cards, &backs);
     let mut standing: Vec<(&Printed, &Spec)> = fighters.iter().copied()
         .filter(|(_, s)| !s.statics.is_empty() || s.combat.counters_on_yours.is_some())
         .collect();
@@ -5450,7 +5519,8 @@ fn every_equipment_reaches_the_combats_it_is_in() {
     let registry = registry();
     let cache = oracle_cache();
     let (cards, _) = readable(&registry, &cache);
-    let fighters = fighters(&cards);
+    let backs = back_faces(&cards);
+    let fighters = fighters(&cards, &backs);
     let standing: Vec<(&Printed, &Spec)> = cards.iter()
         .filter(|(c, s)| c.type_line.contains("Equipment") && !s.statics.is_empty())
         .map(|(c, s)| (c, s))
@@ -5472,7 +5542,8 @@ fn every_aura_reaches_the_combats_it_is_in() {
     let registry = registry();
     let cache = oracle_cache();
     let (cards, _) = readable(&registry, &cache);
-    let fighters = fighters(&cards);
+    let backs = back_faces(&cards);
+    let fighters = fighters(&cards, &backs);
     let standing: Vec<(&Printed, &Spec)> = cards.iter()
         .filter(|(_, s)| s.enchants && (!s.statics.is_empty() || s.combat != CombatText::default()))
         .map(|(c, s)| (c, s))
@@ -5806,6 +5877,13 @@ fn the_grammar_reads_its_templates() {
     let laurels = read_activated("{3}{G}: Target creature gets +X/+X until end of turn, where X is the number of creatures you control.", 0).unwrap();
     assert!(matches!(&laurels.spec.effects[..], [Effect::PumpPerCount { power: 1, toughness: 1, .. }]));
     assert_eq!(read(&card("X", "Add {R}{R}{R}.")).unwrap().effects, vec![Effect::AddMana(vec![(ManaType::Red, 3)])]);
+
+    let Some(Static::Group { filter: Filter(clauses), has, .. }) = creature_static("Werewolves you control have menace.") else { panic!("a group static") };
+    assert_eq!((clauses[0].head.as_deref(), has), (Some("Werewolf"), vec![Keyword::Menace]), "a plural subtype is its singular");
+    let Some(Static::Group { filter: Filter(clauses), .. }) = creature_static("Attacking creatures you control get +1/+0.") else { panic!("a group static") };
+    assert!(clauses[0].attacking && clauses[0].subtypes.is_empty(), "\"Attacking\" qualifies; it is not a subtype");
+    let terror = Printed { name: "Terror of Kruin Pass".to_string(), oracle_text: "Double strike\nWerewolves you control have menace.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.".to_string(), ..slayer.clone() };
+    assert_eq!(back_face_reads(&terror).expect("a back face").statics.len(), 1);
 
     let mut tribute = Spec::default();
     for sentence in ["Target opponent sacrifices a creature of their choice. ", "You gain life equal to that creature's toughness."] {
