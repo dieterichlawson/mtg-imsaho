@@ -301,7 +301,10 @@
         "type_line": "Creature — Vampire",
         "oracle_text": "Flying\nOther Vampire creatures you control get +2/+2.\n{T}: Create a 2/2 black Vampire creature token with flying.",
         "power": "5",
-        "toughness": "5"
+        "toughness": "5",
+        "color_indicator": [
+          "B"
+        ]
       },
       "keywords": [
         "Flying",
@@ -501,7 +504,10 @@
         "type_line": "Creature — Human Mutant",
         "oracle_text": "At the beginning of your end step, if this creature didn't attack this turn, tap this creature, then transform it.",
         "power": "5",
-        "toughness": "1"
+        "toughness": "1",
+        "color_indicator": [
+          "R"
+        ]
       },
       "keywords": [
         "Transform"
@@ -547,7 +553,10 @@
         "type_line": "Creature — Horror",
         "oracle_text": "At the beginning of your end step, you lose 1 life.",
         "power": "3",
-        "toughness": "3"
+        "toughness": "3",
+        "color_indicator": [
+          "B"
+        ]
       },
       "keywords": [
         "Transform"
@@ -728,7 +737,10 @@
         "type_line": "Creature — Werewolf",
         "oracle_text": "{R}, {T}: This creature fights target creature. (Each deals damage equal to its power to the other.)\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.",
         "power": "4",
-        "toughness": "4"
+        "toughness": "4",
+        "color_indicator": [
+          "G"
+        ]
       },
       "keywords": [
         "Transform",
@@ -778,7 +790,10 @@
         "type_line": "Creature — Human Insect",
         "oracle_text": "Flying",
         "power": "3",
-        "toughness": "2"
+        "toughness": "2",
+        "color_indicator": [
+          "U"
+        ]
       },
       "keywords": [
         "Flying",
@@ -1180,7 +1195,11 @@
         "type_line": "Legendary Planeswalker — Garruk",
         "oracle_text": "+1: Create a 1/1 black Wolf creature token with deathtouch.\n−1: Sacrifice a creature. If you do, search your library for a creature card, reveal it, put it into your hand, then shuffle.\n−3: Creatures you control gain trample and get +X/+X until end of turn, where X is the number of creature cards in your graveyard.",
         "power": null,
-        "toughness": null
+        "toughness": null,
+        "color_indicator": [
+          "B",
+          "G"
+        ]
       },
       "keywords": [
         "Transform"
@@ -1201,7 +1220,10 @@
         "type_line": "Creature — Werewolf",
         "oracle_text": "Intimidate (This creature can't be blocked except by artifact creatures and/or creatures that share a color with it.)\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.",
         "power": "3",
-        "toughness": "3"
+        "toughness": "3",
+        "color_indicator": [
+          "G"
+        ]
       },
       "keywords": [
         "Transform",
@@ -1424,7 +1446,10 @@
         "type_line": "Creature — Werewolf",
         "oracle_text": "At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.",
         "power": "7",
-        "toughness": "7"
+        "toughness": "7",
+        "color_indicator": [
+          "G"
+        ]
       },
       "keywords": [
         "Transform"
@@ -1481,7 +1506,10 @@
         "type_line": "Creature — Werewolf",
         "oracle_text": "This creature attacks each combat if able.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.",
         "power": "5",
-        "toughness": "5"
+        "toughness": "5",
+        "color_indicator": [
+          "R"
+        ]
       },
       "keywords": [
         "Transform",
@@ -1600,7 +1628,10 @@
         "type_line": "Creature — Werewolf",
         "oracle_text": "Trample\nAttacking creatures you control get +3/+0.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.",
         "power": "5",
-        "toughness": "5"
+        "toughness": "5",
+        "color_indicator": [
+          "R"
+        ]
       },
       "keywords": [
         "Transform",
@@ -1724,7 +1755,10 @@
         "type_line": "Creature — Werewolf",
         "oracle_text": "Double strike\nWerewolves you control have menace. (A creature with menace can't be blocked except by two or more creatures.)\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.",
         "power": "3",
-        "toughness": "3"
+        "toughness": "3",
+        "color_indicator": [
+          "R"
+        ]
       },
       "keywords": [
         "Transform",
@@ -1794,7 +1828,10 @@
         "type_line": "Creature — Lizard Horror",
         "oracle_text": "Trample",
         "power": "13",
-        "toughness": "13"
+        "toughness": "13",
+        "color_indicator": [
+          "U"
+        ]
       },
       "keywords": [
         "Transform",
@@ -1931,7 +1968,10 @@
         "type_line": "Creature — Werewolf",
         "oracle_text": "Each other creature you control that's a Werewolf or a Wolf gets +1/+1.\nAt the beginning of your end step, create a 2/2 green Wolf creature token.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.",
         "power": "3",
-        "toughness": "3"
+        "toughness": "3",
+        "color_indicator": [
+          "G"
+        ]
       },
       "keywords": [
         "Transform"
@@ -2426,7 +2466,10 @@
         "type_line": "Creature — Werewolf",
         "oracle_text": "At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.",
         "power": "3",
-        "toughness": "2"
+        "toughness": "2",
+        "color_indicator": [
+          "R"
+        ]
       },
       "keywords": [
         "Transform"
@@ -2530,7 +2573,10 @@
         "type_line": "Creature — Vampire",
         "oracle_text": "At the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform this creature.",
         "power": "5",
-        "toughness": "5"
+        "toughness": "5",
+        "color_indicator": [
+          "B"
+        ]
       },
       "keywords": [
         "Flying",
@@ -2996,7 +3042,10 @@
         "type_line": "Creature — Human Soldier",
         "oracle_text": "Trample",
         "power": "5",
-        "toughness": "4"
+        "toughness": "4",
+        "color_indicator": [
+          "W"
+        ]
       },
       "keywords": [
         "Vigilance",
@@ -3019,7 +3068,10 @@
         "type_line": "Creature — Werewolf",
         "oracle_text": "At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.",
         "power": "6",
-        "toughness": "4"
+        "toughness": "4",
+        "color_indicator": [
+          "R"
+        ]
       },
       "keywords": [
         "Transform"
@@ -3129,7 +3181,10 @@
         "type_line": "Creature — Werewolf",
         "oracle_text": "{G}: Regenerate this creature.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.",
         "power": "5",
-        "toughness": "5"
+        "toughness": "5",
+        "color_indicator": [
+          "G"
+        ]
       },
       "keywords": [
         "Transform"
@@ -3272,7 +3327,10 @@
         "type_line": "Creature — Werewolf",
         "oracle_text": "First strike\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.",
         "power": "3",
-        "toughness": "1"
+        "toughness": "1",
+        "color_indicator": [
+          "R"
+        ]
       },
       "keywords": [
         "Transform",
@@ -3294,7 +3352,10 @@
         "type_line": "Creature — Werewolf",
         "oracle_text": "At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.",
         "power": "4",
-        "toughness": "6"
+        "toughness": "6",
+        "color_indicator": [
+          "G"
+        ]
       },
       "keywords": [
         "Transform"
