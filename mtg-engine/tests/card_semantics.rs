@@ -340,6 +340,9 @@ enum Effect {
     PlayerDraws { slot: usize, n: usize },
     /// "~ deals X damage to <slot>" (CR 107.3).
     DamageX { slot: usize },
+    /// "You gain life equal to the sacrificed creature's toughness": its
+    /// toughness as it last existed on the battlefield (CR 608.2h).
+    GainLifeEqualToSacrificedToughness,
     /// "<slot> gets +X/+0 [and gains K] until end of turn": `power` and
     /// `toughness` times X.
     PumpX { slot: usize, power: i32, toughness: i32, gains: Vec<Keyword> },
@@ -604,18 +607,37 @@ struct Activated {
     once_each_turn: bool,
     /// "Activate only as a sorcery", and equip (CR 602.5d, 702.6a).
     sorcery: bool,
+    /// "Sacrifice a creature" or "Sacrifice another creature" in the cost
+    /// (CR 602.2b, 601.2h).
+    sacrifice: Option<Sacrifice>,
+    /// "Exile a creature card from your graveyard" in the cost.
+    exile_creature_card: bool,
     spec: Spec,
+}
+
+/// Which creature a cost may sacrifice.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Sacrifice {
+    AnyCreature,
+    /// Not the source (CR 109.5).
+    AnotherCreature,
 }
 
 /// Read "<cost>: <effect>" when the cost is mana, {T} and sacrificing the
 /// source, and the effect is sentences the grammar reads.
 fn read_activated(line: &str, index: usize) -> Option<Activated> {
     let (cost, effect) = line.split_once(": ")?;
-    let mut ability = Activated { index, mana: ManaCost::free(), tap: false, sacrifice_self: false, once_each_turn: false, sorcery: false, spec: Spec::default() };
+    let mut ability = Activated {
+        index, mana: ManaCost::free(), tap: false, sacrifice_self: false, once_each_turn: false, sorcery: false,
+        sacrifice: None, exile_creature_card: false, spec: Spec::default(),
+    };
     for part in cost.split(", ") {
         match part {
             "{T}" => ability.tap = true,
             "Sacrifice this creature" | "Sacrifice this land" | "Sacrifice this artifact" => ability.sacrifice_self = true,
+            "Sacrifice a creature" => ability.sacrifice = Some(Sacrifice::AnyCreature),
+            "Sacrifice another creature" => ability.sacrifice = Some(Sacrifice::AnotherCreature),
+            "Exile a creature card from your graveyard" => ability.exile_creature_card = true,
             _ if part.starts_with('{') => ability.mana = mana_cost(part)?,
             _ => return None,
         }
@@ -965,6 +987,10 @@ impl Spec {
                 self.effects.push(Effect::Pump { slot, power, toughness, gains });
                 return Some(());
             }
+        }
+        if s == "You gain life equal to the sacrificed creature's toughness" {
+            self.effects.push(Effect::GainLifeEqualToSacrificedToughness);
+            return Some(());
         }
         if s == "Put a +1/+1 counter on this creature" {
             let slot = self.slot(Slot::This);
@@ -1449,13 +1475,18 @@ fn read_artifact(card: &Printed) -> Result<Spec, String> {
         } else if let Some((subtype, rest)) = body.strip_prefix("As long as equipped creature is a ").and_then(|r| r.split_once(", it ")) {
             let rest = rest.replace("gets an additional ", "gets ");
             spec.statics.push(attached_static(&rest, Some(subtype)).ok_or_else(|| format!("cannot read {line:?}"))?);
-        } else if let Some(cost) = line.strip_prefix("Equip ").and_then(mana_cost) {
+        } else if let Some((cost, sacrifice)) = line.strip_prefix("Equip ").and_then(mana_cost).map(|c| (c, None))
+            .or_else(|| (line == "Equip—Sacrifice a creature.").then(|| (ManaCost::free(), Some(Sacrifice::AnyCreature))))
+        {
             // CR 702.6a: "[Cost]: Attach this permanent to target creature
             // you control. Activate only as a sorcery." The engine numbers
             // it first among the Equipment's abilities.
             let slots = vec![Slot::Permanent(filter("creature you control").expect("a filter"))];
             let equip = Spec { slots, effects: vec![Effect::Attach { slot: 0 }], ..Spec::default() };
-            spec.activated.insert(0, Activated { index: 0, mana: cost, tap: false, sacrifice_self: false, once_each_turn: false, sorcery: true, spec: equip });
+            spec.activated.insert(0, Activated {
+                index: 0, mana: cost, tap: false, sacrifice_self: false, once_each_turn: false, sorcery: true,
+                sacrifice, exile_creature_card: false, spec: equip,
+            });
             for (i, a) in spec.activated.iter_mut().enumerate().skip(1) {
                 a.index = i;
             }
@@ -1913,6 +1944,8 @@ struct World {
     source: Option<ObjectId>,
     /// The cards exiled to pay the spell's additional cost.
     cost_exiled: Vec<Model>,
+    /// The creature sacrificed to pay an ability's cost, as it last was.
+    cost_sacrificed: Option<Model>,
     /// The value of X for the spell or ability resolving: the one its
     /// controller announced (CR 107.3a, 601.2b), or the number of cards
     /// exiled for an "exile X cards" cost.
@@ -2235,6 +2268,7 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
         stack: Vec::new(),
         source: None,
         cost_exiled: Vec::new(),
+        cost_sacrificed: None,
         x: 0,
         tokens: Vec::new(),
         life: [20, 20],
@@ -2654,6 +2688,11 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     if let Some(m) = w.permanents.get_mut(&src) {
                         m.attached = Some(Target::Object(to));
                     }
+                }
+            }
+            Effect::GainLifeEqualToSacrificedToughness => {
+                if let Some(m) = &world.cost_sacrificed {
+                    w.life[c] += world.pt_of(m).1.unwrap_or(0);
                 }
             }
             Effect::DamageX { slot } => {
@@ -3407,37 +3446,37 @@ const READ: &[&str] = &[
     "Butcher's Cleaver", "Chapel Geist", "Claustrophobia", "Clifftop Retreat", "Cobbled Wings",
     "Coral Merfolk", "Corpse Lunge", "Counterspell", "Curse of Death's Hold",
     "Curse of Oblivion", "Curse of the Bloody Tome", "Curse of the Nightly Hunt",
-    "Curse of the Pierced Heart", "Darkthicket Wolf", "Dead Weight", "Deranged Assistant",
-    "Devil's Play", "Diregraf Ghoul", "Dissipate", "Divination", "Doom Blade",
-    "Doomed Traveler", "Dream Twist", "Elite Inquisitor", "Falkenrath Marauders",
-    "Falkenrath Noble", "Feeling of Dread", "Feral Ridgewolf", "Festerhide Boar", "Forest",
-    "Fortress Crab", "Furor of the Bitten", "Gallows Warden", "Gatstaf Shepherd",
-    "Gavony Township", "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame",
-    "Ghostly Possession", "Ghoulcaller's Bell", "Giant Growth", "Glorious Anthem",
-    "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms", "Grave Bramble",
-    "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Harvest Pyre",
+    "Curse of the Pierced Heart", "Darkthicket Wolf", "Dead Weight", "Demonmail Hauberk",
+    "Deranged Assistant", "Devil's Play", "Diregraf Ghoul", "Disciple of Griselbrand",
+    "Dissipate", "Divination", "Doom Blade", "Doomed Traveler", "Dream Twist",
+    "Elite Inquisitor", "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread",
+    "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab", "Furor of the Bitten",
+    "Gallows Warden", "Gatstaf Shepherd", "Gavony Township", "Geist-Honored Monk",
+    "Geistcatcher's Rig", "Geistflame", "Ghostly Possession", "Ghoulcaller's Bell",
+    "Giant Growth", "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms",
+    "Grave Bramble", "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Harvest Pyre",
     "Hinterland Harbor", "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness",
     "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker", "Island",
     "Isolated Chapel", "Kalonian Tusker", "Kessig Wolf", "Kessig Wolf Run", "Kindercatch",
     "Lantern Spirit", "Lava Axe", "Lightning Bolt", "Lost in the Mist", "Lumberknot",
     "Makeshift Mauler", "Markov Patrician", "Mask of Avacyn", "Mausoleum Guard",
     "Maw of the Mire", "Midnight Haunting", "Moan of the Unhallowed", "Moment of Heroism",
-    "Moon Heron", "Morkrut Banshee", "Mountain", "Naturalize", "Nephalia Drownyard",
-    "Night Revelers", "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism", "Paraselene",
-    "Pitchburn Devils", "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower",
+    "Moon Heron", "Moorland Haunt", "Morkrut Banshee", "Mountain", "Naturalize",
+    "Nephalia Drownyard", "Night Revelers", "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism",
+    "Paraselene", "Pitchburn Devils", "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower",
     "Rally the Peasants", "Ranger's Guile", "Rebuke", "Reckless Waif", "Riot Devils",
     "Rolling Temblor", "Rotting Fensnake", "Runechanter's Pike", "Savannah Lions",
     "Scourge of Geier Reach", "Selfless Cathar", "Selhoff Occultist", "Sensory Deprivation",
     "Sharpened Pitchfork", "Shimmering Grotto", "Silent Departure", "Silver-Inlaid Dagger",
-    "Silverchase Fox", "Skaab Goliath", "Slayer of the Wicked", "Smite the Monstrous",
-    "Sol Ring", "Somberwald Spider", "Spectral Flight", "Spectral Rider", "Spider Spawning",
-    "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble",
-    "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp", "Swords to Plowshares",
-    "Think Twice", "Thraben Purebloods", "Tormented Pariah", "Travel Preparations",
-    "Typhoid Rats", "Unburial Rites", "Unruly Mob", "Urgent Exorcism", "Vampire Interloper",
-    "Vampiric Fury", "Victim of Night", "Village Bell-Ringer", "Village Cannibals",
-    "Village Ironsmith", "Villagers of Estwald", "Voiceless Spirit", "Walking Corpse",
-    "Woodland Cemetery", "Wreath of Geists",
+    "Silverchase Fox", "Skaab Goliath", "Skirsdag Cultist", "Slayer of the Wicked",
+    "Smite the Monstrous", "Sol Ring", "Somberwald Spider", "Spectral Flight", "Spectral Rider",
+    "Spider Spawning", "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake",
+    "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp",
+    "Swords to Plowshares", "Think Twice", "Thraben Purebloods", "Tormented Pariah",
+    "Travel Preparations", "Typhoid Rats", "Unburial Rites", "Unruly Mob", "Urgent Exorcism",
+    "Vampire Interloper", "Vampiric Fury", "Victim of Night", "Village Bell-Ringer",
+    "Village Cannibals", "Village Ironsmith", "Villagers of Estwald", "Voiceless Spirit",
+    "Walking Corpse", "Woodland Cemetery", "Wreath of Geists",
 ];
 
 // ---- the properties ----
@@ -3692,16 +3731,31 @@ fn every_readable_activated_ability_does_what_its_text_says() {
                     .collect()
             };
             let expected = target_sets(&ability.spec, &world, P0);
-            let mut expected_chosen: Vec<Vec<Target>> = expected.iter().map(|s| chosen(s)).collect();
-            expected_chosen.sort_by_key(|s| s.iter().map(target_key).collect::<Vec<_>>());
+            // What the cost may sacrifice: any creature its controller
+            // controls, or any but the source (CR 602.2b, 601.2h); one
+            // action is offered for each target and sacrifice.
+            let sacrifices: Vec<Option<ObjectId>> = match ability.sacrifice {
+                None => vec![None],
+                Some(which) => world.permanents.iter()
+                    .filter(|(c, m)| m.controller == P0 && m.is_creature() && !(which == Sacrifice::AnotherCreature && **c == id))
+                    .map(|(c, _)| Some(*c))
+                    .collect(),
+            };
+            let exilable = world.yard.values().any(|m| m.owner == P0 && m.is_creature());
+            let key = |(t, s): &(Vec<Target>, Option<ObjectId>)| (t.iter().map(target_key).collect::<Vec<_>>(), s.map(|i| i.0));
+            let mut expected_chosen: Vec<(Vec<Target>, Option<ObjectId>)> = expected.iter()
+                .filter(|_| !ability.exile_creature_card || exilable)
+                .flat_map(|set| sacrifices.iter().map(|sac| (chosen(set), *sac)))
+                .collect();
+            expected_chosen.sort_by_key(key);
             let offers: Vec<Action> = engine::legal_actions(&state, &registry).actions.into_iter()
                 .filter(|a| matches!(a, Action::ActivateAbility { object_id, ability_index, .. }
                     if *object_id == id && *ability_index == ability.index))
                 .collect();
-            let mut offered: Vec<Vec<Target>> = offers.iter()
-                .map(|a| match a { Action::ActivateAbility { targets, .. } => targets.clone(), _ => unreachable!() })
+            let mut offered: Vec<(Vec<Target>, Option<ObjectId>)> = offers.iter()
+                .map(|a| match a { Action::ActivateAbility { targets, sacrifice, .. } => (targets.clone(), *sacrifice), _ => unreachable!() })
                 .collect();
-            offered.sort_by_key(|s| s.iter().map(target_key).collect::<Vec<_>>());
+            offered.sort_by_key(key);
             if offered != expected_chosen {
                 failures.push(format!("{name}: offered at {offered:?}, the text allows {expected_chosen:?}"));
                 continue;
@@ -3717,55 +3771,74 @@ fn every_readable_activated_ability_does_what_its_text_says() {
                 failures.push(format!("{name}: offered with a spell on the stack {offered_busy}, and it is {}activated only as a sorcery",
                     if ability.sorcery { "" } else { "not " }));
             }
-            for full in &expected {
-                let targets = chosen(full);
+            for (targets, sac) in &expected_chosen {
+                let full = expected.iter().find(|set| chosen(set) == *targets).expect("a set it was chosen from");
                 let act = offers.iter()
-                    .find(|a| matches!(a, Action::ActivateAbility { targets: t, .. } if *t == targets))
+                    .find(|a| matches!(a, Action::ActivateAbility { targets: t, sacrifice: s, .. } if t == targets && s == sac))
                     .expect("offered, as just compared")
                     .clone();
-                let mut w = world.clone();
+                // The costs, paid as it is activated (CR 602.2b): the tap,
+                // the sacrifice, which is a death (700.4), the card exiled,
+                // whichever its controller chooses, and X.
+                let mut paid = world.clone();
                 if ability.tap {
-                    w.permanents.get_mut(&id).expect("the source").tapped = true;
+                    paid.permanents.get_mut(&id).expect("the source").tapped = true;
                 }
                 if ability.sacrifice_self {
-                    w.leave(id, Dest::Graveyard);
+                    paid.leave(id, Dest::Graveyard);
                 }
-                // An {X} cost: every X from nothing to what floats (CR
-                // 107.3a, 602.2b).
-                if ability.mana.symbols.contains(&ManaSymbol::X) {
-                    let want: Vec<World> = (0..=X_FLOAT)
-                        .map(|x| {
-                            let mut after = apply(&ability.spec, &World { x, pool: x_left(&w, x), ..w.clone() }, full, P0);
-                            after.state_based_actions();
-                            after
-                        })
+                if let Some(victim) = sac {
+                    paid.refresh();
+                    paid.cost_sacrificed = Some(paid.permanents[victim].clone());
+                    paid.leave(*victim, Dest::Graveyard);
+                    paid.a_creature_died = true;
+                }
+                let mut ways = vec![paid];
+                if ability.exile_creature_card {
+                    ways = ways.iter()
+                        .flat_map(|w| w.yard.iter().filter(|(_, m)| m.owner == P0 && m.is_creature()).map(|(c, _)| {
+                            let mut w = w.clone();
+                            let card = w.leave_yard(*c).expect("in the graveyard");
+                            w.exile[0].push(card.name.expect("a card"));
+                            w
+                        }).collect::<Vec<_>>())
                         .collect();
-                    if let Some(why) = disagreement(&want, &every_ending_from(&state, &registry, None, Some(act)), &registry) {
-                        failures.push(format!("{name} at {targets:?}: {why}"));
-                    }
+                }
+                if ability.mana.symbols.contains(&ManaSymbol::X) {
+                    ways = ways.iter().flat_map(|w| (0..=X_FLOAT).map(|x| World { x, pool: x_left(w, x), ..w.clone() })).collect();
+                }
+                let want: Vec<World> = ways.into_iter()
+                    .map(|w| {
+                        // A target gone by the time it resolves: it does
+                        // nothing (CR 608.2b).
+                        let gone = !targets.is_empty() && full.iter().zip(&ability.spec.slots)
+                            .filter(|(_, slot)| !matches!(slot, Slot::This))
+                            .all(|(t, slot)| match (t, slot) {
+                                (Target::Object(o), Slot::GraveyardCard { .. }) => !w.yard.contains_key(o),
+                                (Target::Object(o), _) => !w.permanents.contains_key(o),
+                                _ => false,
+                            });
+                        let mut after = if gone { w } else { apply(&ability.spec, &w, full, P0) };
+                        after.state_based_actions();
+                        after
+                    })
+                    .collect();
+                let at = format!("{name} at {targets:?}{}", sac.map_or(String::new(), |v| format!(", sacrificing {v:?}")));
+                let endings = every_ending_from(&state, &registry, None, Some(act));
+                if let Some(why) = disagreement(&want, &endings, &registry) {
+                    failures.push(format!("{at}: {why}"));
                     continue;
                 }
-                let mut w = apply(&ability.spec, &w, full, P0);
-                w.state_based_actions();
-                let want = w.observed();
-                match play_from(&state, &registry, None, Vec::new(), Some(act), Scene::Main, &[]) {
-                    Ok(Played::Done(after)) => {
-                        let got = observe(&after, &registry);
-                        if got != want {
-                            failures.push(format!("{name} at {targets:?}:\n      {}", differences(&got, &want)));
-                        } else if ability.once_each_turn {
-                            let mut again = *after;
-                            fund(&mut again, P0, &ability.mana, 0);
-                            let offered_again = engine::legal_actions(&again, &registry).actions.iter()
-                                .any(|a| matches!(a, Action::ActivateAbility { object_id, ability_index, .. }
-                                    if *object_id == id && *ability_index == ability.index));
-                            if offered_again {
-                                failures.push(format!("{name}: offered a second time in the turn"));
-                            }
-                        }
+                if ability.once_each_turn {
+                    let Ok([after]) = endings.as_deref() else { unreachable!("one ending, as just compared") };
+                    let mut again = after.clone();
+                    fund(&mut again, P0, &ability.mana, 0);
+                    let offered_again = engine::legal_actions(&again, &registry).actions.iter()
+                        .any(|a| matches!(a, Action::ActivateAbility { object_id, ability_index, .. }
+                            if *object_id == id && *ability_index == ability.index));
+                    if offered_again {
+                        failures.push(format!("{name}: offered a second time in the turn"));
                     }
-                    Ok(Played::Asks(options)) => failures.push(format!("{name} at {targets:?}: the engine asked a question the text does not, answerable {options:?}")),
-                    Err(why) => failures.push(format!("{name} at {targets:?}: {why}")),
                 }
             }
         }
@@ -4098,6 +4171,7 @@ fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Opt
         stack: Vec::new(),
         source: None,
         cost_exiled: Vec::new(),
+        cost_sacrificed: None,
         x: 0,
         tokens: Vec::new(),
         life: [20, 20],
@@ -4776,7 +4850,10 @@ fn the_grammar_reads_its_templates() {
         ..card("Drownyard", "{T}: Add {C}.\n{1}{U}{B}, {T}: Target player mills three cards.")
     }).unwrap();
     assert_eq!(drownyard.activated[0].index, 1, "the mana ability is index 0");
-    assert!(read_activated("{1}, Sacrifice a creature: You gain life equal to the sacrificed creature's toughness.", 0).is_none());
+    let disciple = read_activated("{1}, Sacrifice a creature: You gain life equal to the sacrificed creature's toughness.", 0).unwrap();
+    assert_eq!((disciple.sacrifice, disciple.spec.effects), (Some(Sacrifice::AnyCreature), vec![Effect::GainLifeEqualToSacrificedToughness]));
+    assert!(read_activated("{W}{U}, {T}, Exile a creature card from your graveyard: Create a 1/1 white Spirit creature token with flying.", 1).unwrap().exile_creature_card);
+    assert!(read_activated("{1}, Sacrifice two creatures: Draw a card.", 0).is_none());
 
     assert_eq!(Additional::read("As an additional cost to cast this spell, sacrifice a creature."), Some(Additional::SacrificeCreature));
     assert_eq!(Additional::read("As an additional cost to cast this spell, exile two creature cards from your graveyard."), Some(Additional::ExileCreatureCards(2)));
