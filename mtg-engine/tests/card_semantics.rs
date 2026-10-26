@@ -17,7 +17,10 @@
 //! into whether it enters tapped and what mana it makes, and the activated
 //! abilities it can read ("{1}{W}, Sacrifice this creature: Exile target
 //! enchantment.") into their costs and effects, and the werewolves, both
-//! faces, into when they transform. A reference semantics,
+//! faces, into when they transform. The keywords themselves are held to
+//! what they do in combat: every creature whose text is keywords attacks,
+//! unblocked and against each of the others, under a reference model of
+//! CR 508-510. A reference semantics,
 //! written from the
 //! Comprehensive Rules and sharing no code with `src/cards/`, says what
 //! those effects do to a board described by the Oracle data of the cards on
@@ -53,7 +56,7 @@ mod common;
 use std::collections::BTreeMap;
 
 use common::*;
-use mtg_engine::actions::{Action, CastTargetSpec, ResolvedChoice, Target};
+use mtg_engine::actions::{Action, CastTargetSpec, CombatPrompt, ResolvedChoice, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
@@ -1213,6 +1216,8 @@ struct Model {
     /// the one showing (CR 712.8).
     other_face: Option<Box<Model>>,
     transformed: bool,
+    /// Dealt damage by a source with deathtouch (CR 702.2b).
+    deathtouched: bool,
 }
 
 impl Model {
@@ -1235,6 +1240,7 @@ impl Model {
             attached: None,
             other_face: None,
             transformed: false,
+            deathtouched: false,
         }
     }
 
@@ -1448,7 +1454,7 @@ impl World {
     fn state_based_actions(&mut self) {
         loop {
             let dying: Vec<ObjectId> = self.permanents.iter()
-                .filter(|(_, m)| m.is_creature() && m.toughness.is_some_and(|t| t <= 0 || m.damage >= t as u32))
+                .filter(|(_, m)| m.is_creature() && m.toughness.is_some_and(|t| t <= 0 || m.damage >= t as u32 || (m.deathtouched && m.damage > 0)))
                 .map(|(id, _)| *id)
                 .collect();
             let before = self.tokens.len();
@@ -1910,6 +1916,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                         attached: None,
                         other_face: None,
                         transformed: false,
+                        deathtouched: false,
                     });
                 }
             }
@@ -2107,7 +2114,12 @@ fn asked_at_cast(state: &GameState, registry: &CardRegistry) -> Result<Vec<Vec<T
 enum Answer {
     Target(Option<Target>),
     YesNo(bool),
+    /// An option by its place, as a combat damage assignment is answered.
+    Index(usize, String),
 }
+
+/// A combat to declare: who attacks whom, and who blocks whom.
+type Combat = (Vec<(ObjectId, PlayerId)>, Vec<(ObjectId, ObjectId)>);
 
 /// Where a scripted game stopped.
 enum Played {
@@ -2123,12 +2135,14 @@ enum Played {
 /// state-based actions and triggers and all. The questions asked after the
 /// cast are answered from `script`, in order.
 fn play(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>, targets: Vec<Target>, script: &[Answer]) -> Result<Played, String> {
-    play_from(state, registry, spell, targets, None, script)
+    play_from(state, registry, spell, targets, None, None, script)
 }
 
 /// [`play`], starting with `first` instead of a cast when it is given: an
 /// activation, as the engine offered it.
-fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>, targets: Vec<Target>, first: Option<Action>, script: &[Answer]) -> Result<Played, String> {
+/// With `combat`, the game is played from the main phase through combat,
+/// declaring it, and stops in the main phase after.
+fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>, targets: Vec<Target>, first: Option<Action>, combat: Option<&Combat>, script: &[Answer]) -> Result<Played, String> {
     let mut state = state.clone();
     // A spell that asks for its targets at cast time is cast bare, and each
     // question answered in turn as a player answers them: one target for a
@@ -2154,6 +2168,12 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
         if decisions > 40 {
             trouble = Some("the game did not come to rest".to_string());
             return Action::AbandonGame;
+        }
+        if let (Some((attackers, blocks)), Some(prompt)) = (combat, &legal.combat_prompt) {
+            return match prompt {
+                CombatPrompt::ChooseAttackers { .. } => Action::DeclareAttackers { attackers: attackers.clone(), planeswalker_attacks: Vec::new() },
+                CombatPrompt::ChooseBlockers { .. } => Action::DeclareBlockers { assignments: blocks.clone() },
+            };
         }
         match &legal.resolution_prompt {
             Some(ResolutionChoiceKind::ChooseTargetSet { max, .. }) if answering_cast => {
@@ -2192,13 +2212,27 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
                     }
                 };
             }
+            Some(ResolutionChoiceKind::AssignCombatDamage { options, .. }) => {
+                return match script.next() {
+                    Some(Answer::Index(i, label)) => Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(*i, label.clone()) },
+                    Some(other) => {
+                        trouble = Some(format!("the script answers {other:?} to a damage assignment"));
+                        Action::AbandonGame
+                    }
+                    None => {
+                        unanswered = Some(options.iter().enumerate().map(|(i, l)| Answer::Index(i, l.clone())).collect());
+                        Action::AbandonGame
+                    }
+                };
+            }
             Some(prompt) => {
                 trouble = Some(format!("the engine asked {prompt:?}, which the text does not"));
                 return Action::AbandonGame;
             }
             None => {}
         }
-        if s.stack.is_empty() {
+        let at_rest = s.stack.is_empty() && (combat.is_none() || s.step == Step::PostcombatMain);
+        if at_rest {
             return Action::AbandonGame;
         }
         Action::PassPriority
@@ -2499,7 +2533,7 @@ fn every_readable_activated_ability_does_what_its_text_says() {
                 let mut w = apply(&ability.spec, &w, full, P0);
                 w.state_based_actions();
                 let want = w.observed();
-                match play_from(&state, &registry, None, Vec::new(), Some(act), &[]) {
+                match play_from(&state, &registry, None, Vec::new(), Some(act), None, &[]) {
                     Ok(Played::Done(after)) => {
                         let got = observe(&after, &registry);
                         if got != want {
@@ -2580,6 +2614,264 @@ fn every_readable_werewolf_transforms_as_its_text_says() {
     }
     assert!(werewolves > 0);
     assert!(failures.is_empty(), "{}", failures.join("\n  "));
+}
+
+// ---- combat ----
+
+fn has(m: &Model, k: Keyword) -> bool {
+    m.keywords.contains(&k)
+}
+
+/// Whether evasion lets `blocker` block `attacker` (CR 509.1b): flying
+/// only by flying or reach (702.9b, 702.17b), intimidate only by an
+/// artifact creature or one that shares a colour (702.13b).
+fn evasion_allows(attacker: &Model, blocker: &Model) -> bool {
+    !(has(attacker, Keyword::Flying) && !(has(blocker, Keyword::Flying) || has(blocker, Keyword::Reach)))
+        && !(has(attacker, Keyword::Intimidate)
+            && !(blocker.types.iter().any(|t| t == "artifact") || attacker.colors.iter().any(|c| blocker.colors.contains(c))))
+}
+
+/// Every way a combat in which `a` attacks the opponent, blocked by
+/// `blocker` or not, can end, as CR 510 deals its damage: a first-strike
+/// step when either has first strike or double strike (510.4), damage
+/// dealt at once in each step, a trampler assigning lethal damage to its
+/// blocker and as much of the rest as it likes to the player (702.19b-c,
+/// lethal being 1 from a deathtouch source, 702.2c), a blocked creature
+/// whose blocker is gone dealing no damage unless it tramples (509.1h,
+/// 702.19e), lifelink gaining its controller what it dealt (702.15b), and
+/// state-based actions after each step, deathtouch damage lethal (704.5h).
+/// An attacker without vigilance taps to attack (508.1f, 702.20b).
+fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec<World> {
+    let mut w = world.clone();
+    if !has(&w.permanents[&a], Keyword::Vigilance) {
+        w.permanents.get_mut(&a).expect("the attacker").tapped = true;
+    }
+    let fast = |m: &Model| has(m, Keyword::FirstStrike) || has(m, Keyword::DoubleStrike);
+    let any_fast = fast(&w.permanents[&a]) || blocker.is_some_and(|b| fast(&w.permanents[&b]));
+    let steps: &[Option<bool>] = if any_fast { &[Some(true), Some(false)] } else { &[None] };
+    let mut worlds = vec![w];
+    for &step in steps {
+        // Who deals damage in this step: in a first-strike step, first and
+        // double strikers; in the regular step after one, whoever has not
+        // first strike, and double strikers again; with no first-strike
+        // step, everyone.
+        let deals = |m: &Model| match step {
+            Some(true) => fast(m),
+            Some(false) => !has(m, Keyword::FirstStrike) || has(m, Keyword::DoubleStrike),
+            None => true,
+        };
+        let power = |m: &Model| u32::try_from(m.power.unwrap_or(0).max(0)).expect("non-negative");
+        let mut next = Vec::new();
+        for w in worlds {
+            // Each branch is one assignment: (recipient, amount, source).
+            let mut branches: Vec<Vec<(Target, u32, ObjectId)>> = vec![Vec::new()];
+            if let Some(am) = w.permanents.get(&a).filter(|m| deals(m) && power(m) > 0) {
+                let n = power(am);
+                match blocker {
+                    None => branches[0].push((Target::Player(P1), n, a)),
+                    Some(b) => match w.permanents.get(&b) {
+                        Some(bm) => {
+                            let lethal = if has(am, Keyword::Deathtouch) {
+                                1
+                            } else {
+                                u32::try_from(bm.toughness.unwrap_or(0).max(0)).expect("non-negative").saturating_sub(bm.damage)
+                            };
+                            if has(am, Keyword::Trample) && n > lethal {
+                                branches = (lethal..=n)
+                                    .map(|x| vec![(Target::Object(b), x, a), (Target::Player(P1), n - x, a)])
+                                    .collect();
+                            } else {
+                                branches[0].push((Target::Object(b), n, a));
+                            }
+                        }
+                        None if has(am, Keyword::Trample) => branches[0].push((Target::Player(P1), n, a)),
+                        None => {}
+                    },
+                }
+            }
+            if let (Some(b), true) = (blocker, w.permanents.contains_key(&a)) {
+                if let Some(bm) = w.permanents.get(&b).filter(|m| deals(m) && power(m) > 0) {
+                    for branch in &mut branches {
+                        branch.push((Target::Object(a), power(bm), b));
+                    }
+                }
+            }
+            for branch in branches {
+                let mut w2 = w.clone();
+                for (to, n, from) in &branch {
+                    if *n == 0 {
+                        continue;
+                    }
+                    let source = w.permanents[from].clone();
+                    match to {
+                        Target::Object(id) => {
+                            let m = w2.permanents.get_mut(id).expect("in combat");
+                            m.damage += n;
+                            m.deathtouched |= has(&source, Keyword::Deathtouch);
+                        }
+                        Target::Player(p) => w2.life[p.0 as usize] -= *n as i32,
+                        _ => unreachable!(),
+                    }
+                    if has(&source, Keyword::Lifelink) {
+                        w2.life[source.controller.0 as usize] += *n as i32;
+                    }
+                }
+                w2.state_based_actions();
+                next.push(w2);
+            }
+        }
+        worlds = next;
+    }
+    worlds
+}
+
+/// Two creatures, one each side, and nothing else but the caster's land in
+/// hand and both libraries: a combat between them, and the same in the
+/// reference.
+fn arena(registry: &CardRegistry, attacker: &Printed, blocker: Option<&Printed>) -> (GameState, World, ObjectId, Option<ObjectId>) {
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let mut world = World {
+        permanents: BTreeMap::new(),
+        yard: BTreeMap::new(),
+        a_creature_died: false,
+        stack: Vec::new(),
+        source: None,
+        tokens: Vec::new(),
+        life: [20, 20],
+        hand: [vec!["Island".to_string()], Vec::new()],
+        graveyard: [Vec::new(), Vec::new()],
+        exile: [Vec::new(), Vec::new()],
+        library: [Vec::new(), Vec::new()],
+    };
+    spell_in_hand(&mut state, registry, "Island", P0);
+    for p in [P0, P1] {
+        for name in LIBRARY {
+            stock_library_with(&mut state, registry, p, name, 1);
+            world.library[p.0 as usize].push(name.to_string());
+        }
+    }
+    let a = named_permanent(&mut state, registry, &attacker.name, P0);
+    world.permanents.insert(a, Model::printed(attacker, P0));
+    let b = blocker.map(|card| {
+        let b = named_permanent(&mut state, registry, &card.name, P1);
+        world.permanents.insert(b, Model::printed(card, P1));
+        b
+    });
+    (state, world, a, b)
+}
+
+/// Who may attack, and who may block whom alone, as the engine asks it:
+/// the attackers its prompt names, and for the blocker the attackers it
+/// may block and the attackers that need more than one.
+fn combat_questions(state: &GameState, registry: &CardRegistry, a: ObjectId) -> (Vec<ObjectId>, Option<(std::collections::HashMap<ObjectId, Vec<ObjectId>>, std::collections::HashMap<ObjectId, u32>)>) {
+    let mut state = state.clone();
+    let mut eligible = Vec::new();
+    let mut blocks = None;
+    let mut decisions = 0;
+    engine::run_game_loop(&mut state, registry, |_s: &GameState, _acting: PlayerId, legal: &engine::LegalActions| {
+        decisions += 1;
+        match &legal.combat_prompt {
+            _ if decisions > 40 => Action::AbandonGame,
+            Some(CombatPrompt::ChooseAttackers { eligible: e, .. }) => {
+                eligible.clone_from(e);
+                if e.contains(&a) {
+                    Action::DeclareAttackers { attackers: vec![(a, P1)], planeswalker_attacks: Vec::new() }
+                } else {
+                    Action::AbandonGame
+                }
+            }
+            Some(CombatPrompt::ChooseBlockers { legal_blocks, min_blockers, .. }) => {
+                blocks = Some((legal_blocks.clone(), min_blockers.clone()));
+                Action::AbandonGame
+            }
+            None => Action::PassPriority,
+        }
+    });
+    (eligible, blocks)
+}
+
+/// Every game a combat can end in: each damage assignment it asks for
+/// answered every way, replayed from the start for each.
+fn every_combat_ending(state: &GameState, registry: &CardRegistry, combat: &Combat) -> Result<Vec<GameState>, String> {
+    let mut todo: Vec<Vec<Answer>> = vec![Vec::new()];
+    let mut done = Vec::new();
+    while let Some(script) = todo.pop() {
+        if done.len() + todo.len() > 200 {
+            return Err("more than 200 ways to answer".to_string());
+        }
+        match play_from(state, registry, None, Vec::new(), None, Some(combat), &script)? {
+            Played::Done(s) => done.push(*s),
+            Played::Asks(options) => todo.extend(options.into_iter().map(|o| [script.clone(), vec![o]].concat())),
+        }
+    }
+    Ok(done)
+}
+
+/// Every creature the grammar reads whose text is keywords alone attacks,
+/// once unblocked and once against each of them as a lone blocker: the
+/// engine lets it attack exactly when it lacks defender (CR 702.3b), lets
+/// each blocker block it alone exactly when evasion and menace allow
+/// (509.1b, 702.110b), and the combat ends every way the reference allows
+/// and no other, every damage assignment the attacking player may choose
+/// tried.
+#[test]
+fn every_keyword_creature_fights_as_its_keywords_say() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let fighters: Vec<&Printed> = cards.iter()
+        .filter(|(c, s)| c.has_type("Creature") && s.etb.is_none() && s.dies.is_none() && s.activated.is_empty()
+            && !s.werewolf && !s.pt_is_creatures_you_control && !s.enters_tapped && c.power.is_some())
+        .map(|(c, _)| c)
+        .collect();
+    let mut failures = Vec::new();
+    let mut combats = 0;
+    for attacker in &fighters {
+        for blocker in std::iter::once(None).chain(fighters.iter().map(Some)) {
+            let (state, world, a, b) = arena(&registry, attacker, blocker.copied());
+            let name = format!("{} attacking{}", attacker.name, blocker.map_or(String::new(), |b| format!(", {} blocking", b.name)));
+            let am = &world.permanents[&a];
+            let (eligible, blocks) = combat_questions(&state, &registry, a);
+            if eligible.contains(&a) == has(am, Keyword::Defender) {
+                failures.push(format!("{name}: offered as an attacker {}, and it {} defender", eligible.contains(&a),
+                    if has(am, Keyword::Defender) { "has" } else { "lacks" }));
+                continue;
+            }
+            if has(am, Keyword::Defender) {
+                continue;
+            }
+            let mut block = Vec::new();
+            if let Some(b) = b {
+                let bm = &world.permanents[&b];
+                let Some((legal_blocks, min_blockers)) = blocks else {
+                    failures.push(format!("{name}: no blockers were asked for"));
+                    continue;
+                };
+                let may = legal_blocks.get(&b).is_some_and(|v| v.contains(&a));
+                if may != evasion_allows(am, bm) {
+                    failures.push(format!("{name}: it may block {may}, and evasion says {}", evasion_allows(am, bm)));
+                    continue;
+                }
+                let needs = min_blockers.get(&a).copied();
+                if needs != has(am, Keyword::Menace).then_some(2) {
+                    failures.push(format!("{name}: needs {needs:?} blockers, and menace says {:?}", has(am, Keyword::Menace).then_some(2)));
+                    continue;
+                }
+                if !(may && needs.is_none()) {
+                    continue;
+                }
+                block.push((b, a));
+            }
+            combats += 1;
+            let want = combat_outcomes(&world, a, b.filter(|_| !block.is_empty()));
+            let endings = every_combat_ending(&state, &registry, &(vec![(a, P1)], block));
+            if let Some(why) = disagreement(&want, &endings, &registry) {
+                failures.push(format!("{name}: {why}"));
+            }
+        }
+    }
+    assert!(combats > 0);
+    assert!(failures.is_empty(), "{} of {combats} combats disagree with the keywords:\n  {}", failures.len(), failures.join("\n  "));
 }
 
 /// A creature spell with Flash can be cast whenever its controller has
