@@ -1,5 +1,7 @@
 [workspace]
 members = ["mtg-kernel", "mtg-engine", "mtg-player", "mtg-runner", "mtg-draft", "mtg-draft-runner"]
+# The coverage-guided fuzz target builds on nightly with its own workspace.
+exclude = ["fuzz"]
 resolver = "2"
 
 [workspace.lints.rust]
