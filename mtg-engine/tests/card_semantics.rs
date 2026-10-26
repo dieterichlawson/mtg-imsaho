@@ -371,6 +371,12 @@ enum Effect {
     /// "<slot> can't block this turn": a rule on it until the cleanup step
     /// (CR 514.2).
     CantBlockThisTurn { slot: usize },
+    /// "Transform all Humans": each double-faced one; a single-faced one
+    /// does nothing (CR 701.27a, c).
+    TransformAll { filter: Filter },
+    /// "Prevent all combat damage that would be dealt this turn by creatures
+    /// other than Werewolves and Wolves" (CR 615.1).
+    PreventCombatDamageExcept { except: Filter },
     /// "Reveal the top four cards of your library. Put all land cards
     /// revealed this way into your hand and the rest into your graveyard."
     RevealTopSplit { n: usize, to_hand: Filter },
@@ -1293,6 +1299,14 @@ impl Spec {
         if s == "Exile that card" {
             let Some(Effect::ChooseNonlandFromHand { slot }) = self.effects.pop() else { return None };
             self.effects.push(Effect::ExileChosenNonlandFromHand { slot });
+            return Some(());
+        }
+        if let Some(f) = s.strip_prefix("Transform all ") {
+            self.effects.push(Effect::TransformAll { filter: filter(f)? });
+            return Some(());
+        }
+        if let Some(f) = s.strip_prefix("Prevent all combat damage that would be dealt this turn by creatures other than ") {
+            self.effects.push(Effect::PreventCombatDamageExcept { except: filter(&f.replace(" and ", " or "))? });
             return Some(());
         }
         if s == "Choose a permanent type" {
@@ -2721,6 +2735,9 @@ struct World {
     /// own asks (CR 701.27f); empty for an ability resolving as it was
     /// activated, nothing between.
     faces_put: BTreeMap<ObjectId, bool>,
+    /// "Prevent all combat damage that would be dealt this turn by creatures
+    /// other than <filter>": the filters, ending in the cleanup step.
+    prevent_combat_damage_except: Vec<Filter>,
     /// The triggered abilities put on the stack (CR 603.3), which the turn
     /// tests compare with what the engine puts there: one whose
     /// intervening "if" is false does not trigger at all (603.4). One with
@@ -2782,6 +2799,10 @@ struct PermanentSeen {
     /// as a declaration would find it (CR 509.1a, 508.1d).
     may_block: bool,
     must_attack: bool,
+    /// A creature whose combat damage to its controller's opponent would be
+    /// prevented (CR 615.1), as by "prevent all combat damage that would be
+    /// dealt by" it or Moonmist.
+    combat_damage_prevented: bool,
 }
 
 fn seen(m: &Model) -> PermanentSeen {
@@ -2807,6 +2828,7 @@ fn seen(m: &Model) -> PermanentSeen {
         regeneration_shields: m.shields,
         may_block: m.is_creature() && !m.tapped && !restricted(m, Restriction::CantBlock),
         must_attack: m.is_creature() && restricted(m, Restriction::AttacksEachCombat),
+        combat_damage_prevented: false,
     }
 }
 
@@ -2821,6 +2843,14 @@ enum Dest {
 }
 
 impl World {
+    /// Whether combat damage `m` would deal is prevented: by a rule on it
+    /// ("prevent all combat damage that would be dealt to and dealt by
+    /// enchanted creature"), or by an effect this turn on every creature but
+    /// those it names (Moonmist) (CR 615.1).
+    fn combat_damage_prevented(&self, m: &Model) -> bool {
+        restricted(m, Restriction::NoCombatDamage) || self.prevent_combat_damage_except.iter().any(|f| !m.matches(f, m.controller))
+    }
+
     /// This world as triggers are put on the stack from it, each
     /// double-faced permanent's face recorded (CR 701.27f).
     fn with_faces_put(&self) -> World {
@@ -2874,6 +2904,7 @@ impl World {
                     Some(Target::Player(p)) => Some(format!("player {}", p.0)),
                     _ => None,
                 };
+                seen.combat_damage_prevented = m.is_creature() && now.combat_damage_prevented(m);
                 seen
             })
             .collect();
@@ -3112,6 +3143,7 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
         x: 0,
         faces_put: BTreeMap::new(),
         triggered: 0,
+        prevent_combat_damage_except: Vec::new(),
         tokens: Vec::new(),
         life: [20, 20],
         pool: [BTreeMap::new(), BTreeMap::new()],
@@ -3213,6 +3245,18 @@ fn observe(state: &GameState, registry: &CardRegistry) -> Observed {
                     .or_else(|| o.attached_to_player.map(|p| format!("player {}", p.0))),
                 may_block: creature && mtg_engine::combat::can_block_at_all(state, o.id, registry),
                 must_attack: creature && state.must_attack(o.id, registry),
+                combat_damage_prevented: creature && {
+                    let at = mtg_engine::damage::PendingDamage {
+                        source: o.id,
+                        target: mtg_engine::events::DamageTarget::Player(PlayerId(1 - o.controller.0)),
+                        amount: 1,
+                        kind: mtg_engine::damage::DamageKind::Combat,
+                        applied: Vec::new(),
+                        settled: false,
+                    };
+                    mtg_engine::damage::applicable_effects(state, &at, registry).iter()
+                        .any(|e| matches!(e, mtg_engine::damage::DamageEffect::PreventAll(_)))
+                },
             }
         })
         .collect();
@@ -3713,6 +3757,12 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 }
             }
             Effect::RevealHand { .. } => {}
+            Effect::TransformAll { filter } => {
+                for m in w.permanents.values_mut().filter(|m| m.other_face.is_some() && m.matches(filter, caster)) {
+                    m.transform();
+                }
+            }
+            Effect::PreventCombatDamageExcept { except } => w.prevent_combat_damage_except.push(except.clone()),
             Effect::ChooseNonlandFromHand { .. } | Effect::ChooseAPermanentType => panic!("read only with what is done with the choice"),
             Effect::ExileChosenNonlandFromHand { slot } => {
                 if let (Some(p), Some(name)) = (player(*slot), &world.picked) {
@@ -4177,7 +4227,8 @@ fn lasts_the_turn(spec: &Spec) -> bool {
     spec.effects.iter().any(|e| matches!(e,
         Effect::Damage { .. } | Effect::DamageEach { .. } | Effect::DamageX { .. } | Effect::Pump { .. } | Effect::PumpEach { .. }
         | Effect::PumpX { .. } | Effect::Fight { .. } | Effect::Tap { .. } | Effect::Regenerate { .. } | Effect::RegenerateAll { .. }
-        | Effect::GainControl { .. } | Effect::PumpPerCount { .. } | Effect::CantBlockThisTurn { .. }))
+        | Effect::GainControl { .. } | Effect::PumpPerCount { .. } | Effect::CantBlockThisTurn { .. }
+        | Effect::PreventCombatDamageExcept { .. }))
 }
 
 /// Every way the players can make the choices `spec` asks for as it
@@ -4311,6 +4362,7 @@ fn next_turn_outcomes(spec: &Spec, world: &World, id: ObjectId, active: PlayerId
     }
     // Mana empties as each step ends (CR 500.4).
     w.pool = [BTreeMap::new(), BTreeMap::new()];
+    w.prevent_combat_damage_except.clear();
     w.a_creature_died = false;
     w.source = Some(id);
     let me = w.permanents.get(&id);
@@ -5002,8 +5054,8 @@ const READ: &[&str] = &[
     "Manor Skeleton", "Markov Patrician", "Mask of Avacyn", "Mausoleum Guard",
     "Maw of the Mire", "Mayor of Avabruck", "Mentor of the Meek", "Midnight Haunting",
     "Mindshrieker", "Moan of the Unhallowed", "Moldgraf Monstrosity", "Moment of Heroism",
-    "Moon Heron", "Moorland Haunt", "Morkrut Banshee", "Mountain", "Mulch", "Murder of Crows",
-    "Naturalize", "Nephalia Drownyard", "Night Revelers", "Night Terrors",
+    "Moon Heron", "Moonmist", "Moorland Haunt", "Morkrut Banshee", "Mountain", "Mulch",
+    "Murder of Crows", "Naturalize", "Nephalia Drownyard", "Night Revelers", "Night Terrors",
     "Nightbird's Clutches", "Olivia Voldaren", "One-Eyed Scarecrow", "Orchard Spirit",
     "Pacifism", "Paraselene", "Pitchburn Devils", "Plains", "Prey Upon", "Purify the Grave",
     "Rage Thrower", "Rakish Heir", "Rally the Peasants", "Ranger's Guile",
@@ -5996,7 +6048,7 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
                     // Protection and "prevent all combat damage that would
                     // be dealt to and dealt by" it (CR 702.16e, 615.1).
                     let n = match to {
-                        _ if restricted(&source, Restriction::NoCombatDamage) => 0,
+                        _ if w.combat_damage_prevented(&source) => 0,
                         Target::Object(id) if protected(&w.permanents[id], &source)
                             || restricted(&w.permanents[id], Restriction::NoCombatDamage) => 0,
                         _ => *n,
@@ -6205,6 +6257,7 @@ fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Opt
         x: 0,
         faces_put: BTreeMap::new(),
         triggered: 0,
+        prevent_combat_damage_except: Vec::new(),
         tokens: Vec::new(),
         life: [20, 20],
         pool: [BTreeMap::new(), BTreeMap::new()],
