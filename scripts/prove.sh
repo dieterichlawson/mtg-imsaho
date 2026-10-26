@@ -2,11 +2,15 @@
 # Run the engine's proofs: Verus over mtg-kernel, then Kani over
 # mtg-engine/src/proofs/.
 #
-# Usage: scripts/prove.sh [verus | kani [HARNESS...]]
-#   With no arguments, both. `verus` checks every contract in mtg-kernel
-#   (seconds, once vstd is built). `kani` runs every Kani proof, or only the
-#   named ones (a name may be the last part of the path, e.g.
-#   counting_a_cost_counts_every_pip).
+# Usage: scripts/prove.sh [verus | kani [HARNESS...] | exhaustive]
+#   With no arguments, Verus and Kani. `verus` checks every contract in
+#   mtg-kernel (seconds, once vstd is built). `kani` runs every Kani proof,
+#   or only the named ones (a name may be the last part of the path, e.g.
+#   counting_a_cost_counts_every_pip). `exhaustive` runs the bounded
+#   exhaustive checks at a larger scope than `cargo test` gives them, in
+#   release: the autotap planner against tapping by hand on every board of
+#   up to three sources with up to two mana floating (about 30 million
+#   boards, a few minutes).
 #
 # A proof is a theorem over every input it quantifies over, not a sample:
 # GREEN means no input breaks the property. A Verus proof holds for every
@@ -31,9 +35,9 @@ KANI_VERSION=0.68.0
 
 what="${1:-all}"
 case "$what" in
-    verus | kani) shift ;;
+    verus | kani | exhaustive) shift ;;
     all) ;;
-    *) echo "usage: scripts/prove.sh [verus | kani [HARNESS...]]" >&2; exit 2 ;;
+    *) echo "usage: scripts/prove.sh [verus | kani [HARNESS...] | exhaustive]" >&2; exit 2 ;;
 esac
 
 prove_verus() {
@@ -68,8 +72,14 @@ EOF
     cargo kani -p mtg-engine --output-format terse "${args[@]}"
 }
 
+check_exhaustively() {
+    AUTOTAP_EXHAUSTIVE_SOURCES=3 AUTOTAP_EXHAUSTIVE_POOL=2 \
+        cargo test --release -p mtg-engine --test autotap_brute_force every_small_board
+}
+
 case "$what" in
     verus) prove_verus ;;
     kani) prove_kani "$@" ;;
+    exhaustive) check_exhaustively ;;
     all) prove_verus; prove_kani ;;
 esac

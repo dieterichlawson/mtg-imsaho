@@ -54,3 +54,22 @@ jobs:
 
       - name: Prove
         run: scripts/prove.sh kani
+
+  # The bounded exhaustive checks at the scope `cargo test` is too slow
+  # for in a debug build: every board of up to three mana sources, up to
+  # two mana floating and every cost shape, the autotap planner held to
+  # tapping by hand (scripts/prove.sh exhaustive). GREEN means no board in
+  # that space breaks the planner's contract.
+  exhaustive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      # The toolchain tests.yml builds with.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.97.0"
+
+      - name: Check every small board
+        run: scripts/prove.sh exhaustive
