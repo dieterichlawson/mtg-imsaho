@@ -1921,10 +1921,20 @@ struct World {
     /// permanent a creature spell becomes.
     tokens: Vec<Model>,
     life: [i32; 2],
+    /// Floating mana: what a cost left of what was funded for it.
+    pool: [BTreeMap<ManaType, u32>; 2],
     hand: [Vec<String>; 2],
     graveyard: [Vec<String>; 2],
     exile: [Vec<String>; 2],
     library: [Vec<String>; 2],
+}
+
+/// The reference's pool after paying an {X} of `x` from `X_FLOAT`
+/// floating colorless.
+fn x_left(world: &World, x: u32) -> [BTreeMap<ManaType, u32>; 2] {
+    let mut pool = world.pool.clone();
+    *pool[0].entry(ManaType::Colorless).or_insert(0) += X_FLOAT - x;
+    pool
 }
 
 /// What is observable about a game at rest, in a form both the engine's
@@ -1933,6 +1943,9 @@ struct World {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 struct Observed {
     life: [i32; 2],
+    /// Each player's floating mana, by type: so a cost paid short or over
+    /// shows (CR 106.4, 601.2h).
+    pool: [Vec<(ManaType, u32)>; 2],
     hand: [Vec<String>; 2],
     graveyard: [Vec<String>; 2],
     exile: [Vec<String>; 2],
@@ -2040,6 +2053,7 @@ impl World {
         let sorted = |zones: &[Vec<String>; 2]| zones.clone().map(|mut z| { z.sort(); z });
         Observed {
             life: self.life,
+            pool: self.pool.clone().map(|p| p.into_iter().filter(|(_, n)| *n > 0).collect()),
             hand: sorted(&self.hand),
             graveyard: sorted(&self.graveyard),
             exile: sorted(&self.exile),
@@ -2224,6 +2238,7 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
         x: 0,
         tokens: Vec::new(),
         life: [20, 20],
+        pool: [BTreeMap::new(), BTreeMap::new()],
         hand: [Vec::new(), Vec::new()],
         graveyard: [Vec::new(), Vec::new()],
         exile: [Vec::new(), Vec::new()],
@@ -2310,6 +2325,7 @@ fn observe(state: &GameState, registry: &CardRegistry) -> Observed {
     battlefield.sort();
     Observed {
         life: [state.players[0].life, state.players[1].life],
+        pool: [P0, P1].map(|p| state.players[p.0 as usize].mana_pool.mana.iter().filter(|(_, n)| **n > 0).map(|(t, n)| (*t, *n)).collect()),
         hand: zone(Zone::Hand),
         graveyard: zone(Zone::Graveyard),
         exile: zone(Zone::Exile),
@@ -2324,6 +2340,9 @@ fn differences(engine: &Observed, text: &Observed) -> String {
     let mut out = Vec::new();
     if engine.life != text.life {
         out.push(format!("life: engine {:?}, the text {:?}", engine.life, text.life));
+    }
+    if engine.pool != text.pool {
+        out.push(format!("mana pool: engine {:?}, the text {:?}", engine.pool, text.pool));
     }
     for (what, e, t) in [
         ("hand", &engine.hand, &text.hand),
@@ -3616,7 +3635,7 @@ fn every_readable_card_does_what_its_text_says() {
             if cost.symbols.contains(&ManaSymbol::X) {
                 for targets in expected_sets {
                     casts += 1;
-                    let want: Vec<World> = (0..=X_FLOAT).map(|x| resolve(spec, &World { x, ..world.clone() }, &targets, P0, card, spell)).collect();
+                    let want: Vec<World> = (0..=X_FLOAT).map(|x| resolve(spec, &World { x, pool: x_left(&world, x), ..world.clone() }, &targets, P0, card, spell)).collect();
                     if let Some(why) = disagreement(&want, &every_ending_at(&state, &registry, spell, &targets), &registry) {
                         failures.push(format!("{name} at {targets:?}: {why}"));
                     }
@@ -3716,7 +3735,7 @@ fn every_readable_activated_ability_does_what_its_text_says() {
                 if ability.mana.symbols.contains(&ManaSymbol::X) {
                     let want: Vec<World> = (0..=X_FLOAT)
                         .map(|x| {
-                            let mut after = apply(&ability.spec, &World { x, ..w.clone() }, full, P0);
+                            let mut after = apply(&ability.spec, &World { x, pool: x_left(&w, x), ..w.clone() }, full, P0);
                             after.state_based_actions();
                             after
                         })
@@ -4082,6 +4101,7 @@ fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Opt
         x: 0,
         tokens: Vec::new(),
         life: [20, 20],
+        pool: [BTreeMap::new(), BTreeMap::new()],
         hand: [vec!["Island".to_string()], vec!["Island".to_string()]],
         graveyard: [Vec::new(), Vec::new()],
         exile: [Vec::new(), Vec::new()],
@@ -4578,8 +4598,9 @@ fn every_readable_mana_ability_makes_what_its_text_says() {
                 for &(t, n) in option {
                     *pool.entry(t).or_insert(0) += n;
                 }
+                let made = World { pool: [pool.clone(), BTreeMap::new()], ..w.clone() };
                 let pool: Vec<(ManaType, u32)> = pool.into_iter().filter(|(_, n)| *n > 0).collect();
-                want.push((pool, w.observed()));
+                want.push((pool, made.observed()));
             }
         }
         want.sort();
