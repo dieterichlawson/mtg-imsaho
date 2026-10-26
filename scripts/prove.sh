@@ -10,7 +10,8 @@
 #   exhaustive checks at a larger scope than `cargo test` gives them, in
 #   release: the autotap planner against tapping by hand on every board of
 #   up to three sources with up to two mana floating (about 30 million
-#   boards, a few minutes).
+#   boards, a few minutes), and every Equipment the card grammar reads on
+#   every creature it reads, against every other (about 40,000 combats).
 #
 # A proof is a theorem over every input it quantifies over, not a sample:
 # GREEN means no input breaks the property. A Verus proof holds for every
@@ -75,6 +76,8 @@ EOF
 check_exhaustively() {
     AUTOTAP_EXHAUSTIVE_SOURCES=3 AUTOTAP_EXHAUSTIVE_POOL=2 \
         cargo test --release -p mtg-engine --test autotap_brute_force every_small_board
+    CARD_SEMANTICS_EVERY_FIGHT=1 \
+        cargo test --release -p mtg-engine --test card_semantics every_static_reaches_the_combats_it_changes
 }
 
 case "$what" in
