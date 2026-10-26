@@ -348,6 +348,12 @@ enum Effect {
     /// "Return N <filter> cards at random from your graveyard to your hand"
     /// or "to the battlefield": the cards in `World::chosen`.
     ReturnAtRandom { n: usize, filter: Option<Filter>, to_battlefield: bool },
+    /// "Search your library for a basic land card, reveal it, put it into
+    /// your hand, then shuffle", or for "its controller", the controller of
+    /// the permanent in `of` as it was, onto the battlefield; with
+    /// `morbid_battlefield`, "you may put that card onto the battlefield
+    /// instead ... if a creature died this turn" (CR 701.19).
+    SearchForBasicLand { of: Option<usize>, to_battlefield: bool, morbid_battlefield: bool },
     /// A dies trigger's "exile it": the card the creature became, from its
     /// owner's graveyard (CR 400.7, 608.2h).
     ExileItFromGraveyard,
@@ -1008,6 +1014,15 @@ impl Spec {
                 return Some(());
             }
         }
+        if s == "Search your library for a basic land card, reveal it, put it into your hand, then shuffle" {
+            self.effects.push(Effect::SearchForBasicLand { of: None, to_battlefield: false, morbid_battlefield: false });
+            return Some(());
+        }
+        if s == "Its controller may search their library for a basic land card, put it onto the battlefield, then shuffle" {
+            let of = self.slots.len().checked_sub(1)?;
+            self.effects.push(Effect::SearchForBasicLand { of: Some(of), to_battlefield: true, morbid_battlefield: false });
+            return Some(());
+        }
         if let Some((first, then)) = s.split_once(", then ") {
             self.sentence(&format!("{first}."))?;
             let mut chars = then.chars();
@@ -1370,6 +1385,13 @@ fn read(card: &Printed) -> Result<Spec, String> {
         // from hand is what is checked here, and `flashback.rs` reaches the
         // other one.
         if line.starts_with("Flashback {") {
+            continue;
+        }
+        if line == "Morbid — You may put that card onto the battlefield instead of putting it into your hand if a creature died this turn." {
+            let Some(Effect::SearchForBasicLand { morbid_battlefield, .. }) = spec.effects.last_mut() else {
+                return Err(format!("cannot read {line:?}"));
+            };
+            *morbid_battlefield = true;
             continue;
         }
         if let Some(cost) = Additional::read(line) {
@@ -2044,6 +2066,12 @@ struct World {
     /// The cards discarded at random, by name, one way it can go;
     /// [`random_choices`] lists them all.
     discarded: Vec<String>,
+    /// The card a search finds, by name, and whether it goes onto the
+    /// battlefield; none when the searcher finds nothing (CR 701.19b).
+    found: Option<(String, bool)>,
+    /// Each player whose library has been shuffled, whose order is then
+    /// not compared (CR 701.20a).
+    shuffled: [bool; 2],
     /// The value of X for the spell or ability resolving: the one its
     /// controller announced (CR 107.3a, 601.2b), or the number of cards
     /// exiled for an "exile X cards" cost.
@@ -2401,6 +2429,8 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
         cost_sacrificed: None,
         chosen: Vec::new(),
         discarded: Vec::new(),
+        found: None,
+        shuffled: [false, false],
         x: 0,
         tokens: Vec::new(),
         life: [20, 20],
@@ -2754,6 +2784,19 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     w.graveyard[c].push(card);
                 }
             }
+            Effect::SearchForBasicLand { of, .. } => {
+                let p = searcher(world, targets, *of, caster);
+                if let Some((name, onto_battlefield)) = &world.found {
+                    let at = w.library[p.0 as usize].iter().position(|n| n == name).expect("a card the search can find");
+                    w.library[p.0 as usize].remove(at);
+                    if *onto_battlefield {
+                        w.tokens.push(basic_land(name, p));
+                    } else {
+                        w.hand[p.0 as usize].push(name.clone());
+                    }
+                }
+                w.shuffled[p.0 as usize] = true;
+            }
             Effect::ExileItFromGraveyard => {
                 if let Some(card) = w.source.and_then(|id| w.leave_yard(id)) {
                     w.exile[card.owner.0 as usize].push(card.name.expect("a card"));
@@ -3106,6 +3149,70 @@ fn random_choices(spec: &Spec, world: &World, caster: PlayerId) -> Vec<World> {
     ways
 }
 
+/// Who searches: the caster, or the controller of the permanent in slot
+/// `of` as it was before the effect (CR 608.2h).
+fn searcher(world: &World, targets: &[Target], of: Option<usize>, caster: PlayerId) -> PlayerId {
+    match of.map(|slot| &targets[slot]) {
+        Some(Target::Object(id)) => world.permanents.get(id).map_or(caster, |m| m.controller),
+        _ => caster,
+    }
+}
+
+const BASIC_LANDS: [&str; 5] = ["Plains", "Island", "Swamp", "Mountain", "Forest"];
+
+/// A basic land card put onto the battlefield, as its type line makes it.
+fn basic_land(name: &str, owner: PlayerId) -> Model {
+    let printed = Printed {
+        name: name.to_string(), mana_cost: String::new(), type_line: format!("Basic Land — {name}"),
+        oracle_text: String::new(), power: None, toughness: None, back: None,
+    };
+    Model::printed(&printed, owner)
+}
+
+/// Every way `spec`'s searches can go on `world`: each basic land card in
+/// the searcher's library, told apart by name, or nothing, a search for a
+/// card of a stated quality being free to fail (CR 701.19b); to the
+/// battlefield as well when morbid allows it.
+fn search_choices(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Vec<World> {
+    let mut ways = vec![world.clone()];
+    for effect in &spec.effects {
+        let Effect::SearchForBasicLand { of, to_battlefield, morbid_battlefield } = effect else { continue };
+        let p = searcher(world, targets, *of, caster);
+        let mut lands: Vec<String> = world.library[p.0 as usize].iter().filter(|n| BASIC_LANDS.contains(&n.as_str())).cloned().collect();
+        lands.sort();
+        lands.dedup();
+        let mut found: Vec<Option<(String, bool)>> = vec![None];
+        for land in lands {
+            found.push(Some((land.clone(), *to_battlefield)));
+            if *morbid_battlefield && world.a_creature_died && !to_battlefield {
+                found.push(Some((land, true)));
+            }
+        }
+        ways = ways.into_iter().flat_map(|w| found.iter().map(move |f| World { found: f.clone(), ..w.clone() })).collect();
+    }
+    ways
+}
+
+/// Every way `spec` can resolve at `targets` on `world`, as the world to
+/// apply it on: each way its random effects can go, each choice another
+/// player makes, each card a search can find.
+fn resolution_ways(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Vec<World> {
+    let mut ways = random_choices(spec, world, caster);
+    if spec.effects.iter().any(|e| matches!(e, Effect::SacrificeOfTheirChoice { .. } | Effect::EachPlayerChoosesACreature)) {
+        ways = ways.iter()
+            .flat_map(|w| resolution_choices(spec, w, targets).into_iter().map(move |chosen| World { chosen, ..w.clone() }))
+            .collect();
+    }
+    ways.iter().flat_map(|w| search_choices(spec, w, targets, caster)).collect()
+}
+
+/// Whether `spec` asks anything as it resolves: something random, a
+/// choice another player makes, a search.
+fn asks_as_it_resolves(spec: &Spec) -> bool {
+    is_random(spec) || spec.effects.iter().any(|e| matches!(e,
+        Effect::SacrificeOfTheirChoice { .. } | Effect::EachPlayerChoosesACreature | Effect::SearchForBasicLand { .. }))
+}
+
 /// Whether `spec` does something at random.
 fn is_random(spec: &Spec) -> bool {
     spec.effects.iter().any(|e| matches!(e, Effect::DiscardAtRandom { .. } | Effect::ReturnAtRandom { .. }))
@@ -3292,7 +3399,7 @@ fn trigger_outcomes(trigger: &Trigger, world: &World, caster: PlayerId) -> Vec<W
     }
     let mut out = Vec::new();
     for targets in sets {
-        for way in random_choices(&trigger.spec, world, caster) {
+        for way in resolution_ways(&trigger.spec, world, &targets, caster) {
             let mut after = apply(&trigger.spec, &way, &targets, caster);
             after.state_based_actions();
             out.push(after);
@@ -3463,6 +3570,8 @@ enum Answer {
     Order(Vec<usize>),
     /// The value of X, paid from floating colorless mana.
     X(u32),
+    /// The card a search finds, or none (CR 701.19b).
+    Found(Option<ObjectId>),
 }
 
 /// A combat to declare: who attacks whom, and who blocks whom.
@@ -3591,6 +3700,20 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
                             .filter(|s| s.len() >= *min)
                             .map(|s| Answer::Exile(s.iter().map(|t| match t { Target::Object(id) => *id, _ => unreachable!() }).collect()))
                             .collect());
+                        Action::AbandonGame
+                    }
+                };
+            }
+            Some(ResolutionChoiceKind::ChooseFromLibrary { options, .. }) => {
+                return match script.next() {
+                    Some(Answer::Found(Some(id))) => Action::ResolveChoice { choice: ResolvedChoice::ChosenCard(*id) },
+                    Some(Answer::Found(None)) => Action::ResolveChoice { choice: ResolvedChoice::ChosenTarget(None) },
+                    Some(other) => {
+                        trouble = Some(format!("the script answers {other:?} to a search"));
+                        Action::AbandonGame
+                    }
+                    None => {
+                        unanswered = Some(options.iter().map(|id| Answer::Found(Some(*id))).chain(std::iter::once(Answer::Found(None))).collect());
                         Action::AbandonGame
                     }
                 };
@@ -3754,8 +3877,8 @@ const READ: &[&str] = &[
     "Avacyn's Pilgrim", "Avacynian Priest", "Balefire Dragon", "Battleground Geist",
     "Blasphemous Act", "Bloodcrazed Neonate", "Bloodgift Demon", "Bonds of Faith",
     "Boneyard Wurm", "Bramblecrush", "Brimstone Volley", "Bump in the Night",
-    "Butcher's Cleaver", "Chapel Geist", "Claustrophobia", "Clifftop Retreat", "Cobbled Wings",
-    "Coral Merfolk", "Corpse Lunge", "Counterspell", "Curse of Death's Hold",
+    "Butcher's Cleaver", "Caravan Vigil", "Chapel Geist", "Claustrophobia", "Clifftop Retreat",
+    "Cobbled Wings", "Coral Merfolk", "Corpse Lunge", "Counterspell", "Curse of Death's Hold",
     "Curse of Oblivion", "Curse of the Bloody Tome", "Curse of the Nightly Hunt",
     "Curse of the Pierced Heart", "Darkthicket Wolf", "Dead Weight", "Demonmail Hauberk",
     "Deranged Assistant", "Desperate Ravings", "Devil's Play", "Diregraf Ghoul",
@@ -3764,9 +3887,9 @@ const READ: &[&str] = &[
     "Falkenrath Noble", "Feeling of Dread", "Feral Ridgewolf", "Festerhide Boar", "Forest",
     "Fortress Crab", "Full Moon's Rise", "Furor of the Bitten", "Gallows Warden",
     "Gatstaf Shepherd", "Gavony Township", "Geist-Honored Monk", "Geistcatcher's Rig",
-    "Geistflame", "Ghostly Possession", "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth",
-    "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms", "Grave Bramble",
-    "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Harvest Pyre",
+    "Geistflame", "Ghost Quarter", "Ghostly Possession", "Ghoulcaller's Bell", "Ghoulraiser",
+    "Giant Growth", "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms",
+    "Grave Bramble", "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Harvest Pyre",
     "Hinterland Harbor", "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness",
     "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker", "Island",
     "Isolated Chapel", "Kalonian Tusker", "Kessig Wolf", "Kessig Wolf Run", "Kindercatch",
@@ -3786,10 +3909,11 @@ const READ: &[&str] = &[
     "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble",
     "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp", "Swords to Plowshares",
     "Think Twice", "Thraben Purebloods", "Tormented Pariah", "Travel Preparations",
-    "Tribute to Hunger", "Typhoid Rats", "Unburial Rites", "Unruly Mob", "Urgent Exorcism",
-    "Vampire Interloper", "Vampiric Fury", "Victim of Night", "Village Bell-Ringer",
-    "Village Cannibals", "Village Ironsmith", "Villagers of Estwald", "Voiceless Spirit",
-    "Walking Corpse", "Woodland Cemetery", "Woodland Sleuth", "Wreath of Geists",
+    "Traveler's Amulet", "Tribute to Hunger", "Typhoid Rats", "Unburial Rites", "Unruly Mob",
+    "Urgent Exorcism", "Vampire Interloper", "Vampiric Fury", "Victim of Night",
+    "Village Bell-Ringer", "Village Cannibals", "Village Ironsmith", "Villagers of Estwald",
+    "Voiceless Spirit", "Walking Corpse", "Woodland Cemetery", "Woodland Sleuth",
+    "Wreath of Geists",
 ];
 
 // ---- the properties ----
@@ -3817,8 +3941,16 @@ fn disagreement(want: &[World], got: &Result<Vec<GameState>, String>, registry: 
         Ok(endings) => endings,
         Err(why) => return Some(why.clone()),
     };
-    let want: BTreeSet<Observed> = want.iter().map(World::observed).collect();
-    let got: BTreeSet<Observed> = got.iter().map(|e| observe(e, registry)).collect();
+    // A shuffled library's order is not the text's to say (CR 701.20a).
+    let shuffled: Vec<usize> = (0..2).filter(|p| want.iter().any(|w| w.shuffled[*p])).collect();
+    let unordered = |mut o: Observed| {
+        for p in &shuffled {
+            o.library[*p].sort();
+        }
+        o
+    };
+    let want: BTreeSet<Observed> = want.iter().map(|w| unordered(w.observed())).collect();
+    let got: BTreeSet<Observed> = got.iter().map(|e| unordered(observe(e, registry))).collect();
     if got == want {
         return None;
     }
@@ -3993,29 +4125,22 @@ fn every_readable_card_does_what_its_text_says() {
                 }
                 continue;
             }
-            // A spell that does something at random: every way it can go,
-            // against every way the engine goes from 32 seeds.
-            if !spec.permanent && is_random(spec) {
+            // A spell that asks something as it resolves (at random, of
+            // another player, of a search): every way it can go, against
+            // every way the engine goes, from 32 seeds when it is random
+            // (CR 608.2d, 701.19).
+            if !spec.permanent && asks_as_it_resolves(spec) {
                 for targets in expected_sets {
                     casts += 1;
-                    let want: Vec<World> = random_choices(spec, &world, P0).iter()
+                    let want: Vec<World> = resolution_ways(spec, &world, &targets, P0).iter()
                         .map(|way| resolve(spec, way, &targets, P0, card, spell))
                         .collect();
-                    if let Some(why) = disagreement(&want, &over_seeds(&state, |s| every_ending_at(s, &registry, spell, &targets)), &registry) {
-                        failures.push(format!("{name} at {targets:?}: {why}"));
-                    }
-                }
-                continue;
-            }
-            // A spell whose players choose as it resolves: at each target
-            // set, every way they can choose (CR 608.2d).
-            if spec.effects.iter().any(|e| matches!(e, Effect::SacrificeOfTheirChoice { .. } | Effect::EachPlayerChoosesACreature)) {
-                for targets in expected_sets {
-                    casts += 1;
-                    let want: Vec<World> = resolution_choices(spec, &world, &targets).into_iter()
-                        .map(|chosen| resolve(spec, &World { chosen, ..world.clone() }, &targets, P0, card, spell))
-                        .collect();
-                    if let Some(why) = disagreement(&want, &every_ending_at(&state, &registry, spell, &targets), &registry) {
+                    let endings = if is_random(spec) {
+                        over_seeds(&state, |s| every_ending_at(s, &registry, spell, &targets))
+                    } else {
+                        every_ending_at(&state, &registry, spell, &targets)
+                    };
+                    if let Some(why) = disagreement(&want, &endings, &registry) {
                         failures.push(format!("{name} at {targets:?}: {why}"));
                     }
                 }
@@ -4168,6 +4293,7 @@ fn every_readable_activated_ability_does_what_its_text_says() {
                 if ability.mana.symbols.contains(&ManaSymbol::X) {
                     ways = ways.iter().flat_map(|w| (0..=X_FLOAT).map(|x| World { x, pool: x_left(w, x), ..w.clone() })).collect();
                 }
+                ways = ways.iter().flat_map(|w| resolution_ways(&ability.spec, w, full, P0)).collect();
                 let want: Vec<World> = ways.into_iter()
                     .map(|w| {
                         // A target gone by the time it resolves: it does
@@ -4576,6 +4702,8 @@ fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Opt
         cost_sacrificed: None,
         chosen: Vec::new(),
         discarded: Vec::new(),
+        found: None,
+        shuffled: [false, false],
         x: 0,
         tokens: Vec::new(),
         life: [20, 20],
@@ -5254,6 +5382,10 @@ fn the_grammar_reads_its_templates() {
         ..card("Drownyard", "{T}: Add {C}.\n{1}{U}{B}, {T}: Target player mills three cards.")
     }).unwrap();
     assert_eq!(drownyard.activated[0].index, 1, "the mana ability is index 0");
+    let vigil = read(&card("Caravan Vigil", "Search your library for a basic land card, reveal it, put it into your hand, then shuffle.\nMorbid — You may put that card onto the battlefield instead of putting it into your hand if a creature died this turn.")).unwrap();
+    assert_eq!(vigil.effects, vec![Effect::SearchForBasicLand { of: None, to_battlefield: false, morbid_battlefield: true }]);
+    let quarter = read_activated("{T}, Sacrifice this land: Destroy target land. Its controller may search their library for a basic land card, put it onto the battlefield, then shuffle.", 1).unwrap();
+    assert_eq!(quarter.spec.effects, vec![Effect::Destroy { slot: 0 }, Effect::SearchForBasicLand { of: Some(0), to_battlefield: true, morbid_battlefield: false }]);
     let mut tribute = Spec::default();
     for sentence in ["Target opponent sacrifices a creature of their choice. ", "You gain life equal to that creature's toughness."] {
         tribute.sentence(sentence).unwrap();
