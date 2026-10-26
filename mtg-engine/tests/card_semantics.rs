@@ -189,6 +189,8 @@ fn mana_cost(printed: &str) -> Option<ManaCost> {
             }
         } else if let Some(c) = Color::ALL.into_iter().find(|c| sym == color_letter(*c).to_string()) {
             symbols.push(ManaSymbol::Colored(c));
+        } else if sym == "X" {
+            symbols.push(ManaSymbol::X);
         } else {
             return None;
         }
@@ -336,6 +338,11 @@ enum Effect {
     DamageEqualToExiledPower { slot: usize },
     /// "<player slot> draws N cards".
     PlayerDraws { slot: usize, n: usize },
+    /// "~ deals X damage to <slot>" (CR 107.3).
+    DamageX { slot: usize },
+    /// "<slot> gets +X/+0 [and gains K] until end of turn": `power` and
+    /// `toughness` times X.
+    PumpX { slot: usize, power: i32, toughness: i32, gains: Vec<Keyword> },
     /// Equip's "Attach to target creature you control" (CR 702.6a, 701.3):
     /// the source becomes attached to it, coming off what it was on.
     Attach { slot: usize },
@@ -561,6 +568,9 @@ impl CombatText {
 enum Additional {
     SacrificeCreature,
     ExileCreatureCards(usize),
+    /// "exile X cards from your graveyard": any number of any cards, X
+    /// being how many.
+    ExileXCards,
 }
 
 impl Additional {
@@ -568,6 +578,9 @@ impl Additional {
         let rest = line.strip_prefix("As an additional cost to cast this spell, ")?.strip_suffix('.')?;
         if rest == "sacrifice a creature" {
             return Some(Additional::SacrificeCreature);
+        }
+        if rest == "exile X cards from your graveyard" {
+            return Some(Additional::ExileXCards);
         }
         let n = rest.strip_prefix("exile ")?
             .strip_suffix(" creature card from your graveyard")
@@ -1068,6 +1081,14 @@ impl Spec {
         }
         // CR 120.3: "~ deals N damage to ...", and "it" for a permanent's
         // own trigger ("it deals 3 damage", "you may have it deal 4").
+        if let Some(to) = s.strip_prefix("~ deals X damage to ") {
+            let slot = match to {
+                "any target" => self.slot(Slot::Any),
+                _ => self.slot(Slot::Permanent(filter(to.strip_prefix("target ")?)?)),
+            };
+            self.effects.push(Effect::DamageX { slot });
+            return Some(());
+        }
         if let Some(rest) = s.strip_prefix("~ deals ").or_else(|| s.strip_prefix("It deals ")).or_else(|| s.strip_prefix("Have it deal ")) {
             let (n, to) = rest.split_once(" damage to ")?;
             let amount = number(n)?;
@@ -1088,6 +1109,12 @@ impl Spec {
         }
         // A pump of one target or of a group (CR 611.2).
         if let Some(rest) = s.strip_prefix("Target ") {
+            if let Some((who, change)) = rest.split_once(" gets ").filter(|(_, c)| c.starts_with("+X/")) {
+                let ((power, toughness), gains) = pump(&format!("gets {}", change.replacen("+X/", "+1/", 1).replacen("/+X", "/+1", 1)))?;
+                let slot = self.slot(Slot::Permanent(filter(who)?));
+                self.effects.push(Effect::PumpX { slot, power, toughness, gains });
+                return Some(());
+            }
             if let Some((who, change)) = rest.split_once(" gets ") {
                 let ((power, toughness), gains) = pump(&format!("gets {change}"))?;
                 let slot = self.slot(Slot::Permanent(filter(who)?));
@@ -1886,6 +1913,10 @@ struct World {
     source: Option<ObjectId>,
     /// The cards exiled to pay the spell's additional cost.
     cost_exiled: Vec<Model>,
+    /// The value of X for the spell or ability resolving: the one its
+    /// controller announced (CR 107.3a, 601.2b), or the number of cards
+    /// exiled for an "exile X cards" cost.
+    x: u32,
     /// Permanents the reference has no engine id for: tokens, and the
     /// permanent a creature spell becomes.
     tokens: Vec<Model>,
@@ -2190,6 +2221,7 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
         stack: Vec::new(),
         source: None,
         cost_exiled: Vec::new(),
+        x: 0,
         tokens: Vec::new(),
         life: [20, 20],
         hand: [Vec::new(), Vec::new()],
@@ -2605,6 +2637,20 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     }
                 }
             }
+            Effect::DamageX { slot } => {
+                if let Some(id) = object(*slot) {
+                    w.permanents.get_mut(&id).expect("a target on the board").damage += world.x;
+                } else if let Some(p) = player(*slot) {
+                    w.life[p] -= world.x as i32;
+                }
+            }
+            Effect::PumpX { slot, power, toughness, gains } => {
+                let x = i32::try_from(world.x).expect("a few");
+                if let Some(m) = object(*slot).and_then(|id| w.permanents.get_mut(&id)) {
+                    change(m, power * x, toughness * x);
+                    m.keywords.extend(gains);
+                }
+            }
             Effect::PlayerDraws { slot, n } => {
                 if let Some(p) = player(*slot) {
                     for _ in 0..*n {
@@ -2732,6 +2778,15 @@ fn payments(spec: &Spec, world: &World, caster: PlayerId) -> Vec<Option<Payment>
                 .map(|s| Some(Payment::Exile(s.iter().map(|t| match t { Target::Object(id) => *id, _ => unreachable!() }).collect())))
                 .collect()
         }
+        Some(Additional::ExileXCards) => {
+            let cards: Vec<Target> = world.yard.iter()
+                .filter(|(_, m)| m.owner == caster)
+                .map(|(id, _)| Target::Object(*id))
+                .collect();
+            subsets(&cards, cards.len()).into_iter()
+                .map(|s| Some(Payment::Exile(s.iter().map(|t| match t { Target::Object(id) => *id, _ => unreachable!() }).collect())))
+                .collect()
+        }
     }
 }
 
@@ -2752,6 +2807,7 @@ fn pay(world: &World, payment: &Option<Payment>) -> World {
                 w.exile[m.owner.0 as usize].push(m.name.clone().expect("a card"));
                 w.cost_exiled.push(m);
             }
+            w.x = u32::try_from(ids.len()).expect("a few");
         }
     }
     w
@@ -2957,14 +3013,21 @@ fn death_outcomes(spec: &Spec, world: &World, caster: PlayerId, watcher: ObjectI
 
 // ---- the engine side ----
 
+/// The colorless mana floated for an {X}: every X from 0 to it is tried,
+/// each paid from the pool alone, so no question of which source to tap
+/// arises.
+const X_FLOAT: u32 = 3;
+
 /// Mana for exactly `cost` in `player`'s pool: each coloured pip of its
-/// colour, generic as colorless, less `cheaper` generic.
+/// colour, generic as colorless, less `cheaper` generic, and `X_FLOAT`
+/// colorless for an {X}.
 fn fund(state: &mut GameState, player: PlayerId, cost: &ManaCost, cheaper: u32) {
     let pool = &mut state.get_player_mut(player).mana_pool;
     for sym in &cost.symbols {
         match sym {
             ManaSymbol::Colored(c) => pool.add(ManaType::from(*c), 1),
             ManaSymbol::Generic(n) => pool.add(ManaType::Colorless, n.saturating_sub(cheaper)),
+            ManaSymbol::X => pool.add(ManaType::Colorless, X_FLOAT),
             other => panic!("no card read here costs {other:?}"),
         }
     }
@@ -3033,6 +3096,8 @@ enum Answer {
     Exile(Vec<ObjectId>),
     /// The order simultaneous triggers go on the stack, first to last.
     Order(Vec<usize>),
+    /// The value of X, paid from floating colorless mana.
+    X(u32),
 }
 
 /// A combat to declare: who attacks whom, and who blocks whom.
@@ -3162,6 +3227,23 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
                     }
                 };
             }
+            Some(ResolutionChoiceKind::ChooseXFunding { options, .. }) => {
+                return match script.next() {
+                    Some(Answer::X(x)) => {
+                        let pool = if *x == 0 { BTreeMap::new() } else { BTreeMap::from([(ManaType::Colorless, *x)]) };
+                        Action::ResolveChoice { choice: ResolvedChoice::XFunding(mtg_engine::funding::FundingResponse { pool, taps: BTreeMap::new() }) }
+                    }
+                    Some(other) => {
+                        trouble = Some(format!("the script answers {other:?} to choosing X"));
+                        Action::AbandonGame
+                    }
+                    None => {
+                        let floating = options.pool.get(&ManaType::Colorless).copied().unwrap_or(0);
+                        unanswered = Some((0..=floating).map(Answer::X).collect());
+                        Action::AbandonGame
+                    }
+                };
+            }
             Some(ResolutionChoiceKind::ChooseTriggerOrder { options, .. }) => {
                 return match script.next() {
                     Some(Answer::Order(order)) => Action::ResolveChoice { choice: ResolvedChoice::ChosenOrder(order.clone()) },
@@ -3231,6 +3313,22 @@ fn every_ending(state: &GameState, registry: &CardRegistry, spell: Option<Object
     every_ending_from(state, registry, spell, None)
 }
 
+/// [`every_ending`] for `spell` cast at `targets`.
+fn every_ending_at(state: &GameState, registry: &CardRegistry, spell: ObjectId, targets: &[Target]) -> Result<Vec<GameState>, String> {
+    let mut todo: Vec<Vec<Answer>> = vec![Vec::new()];
+    let mut done = Vec::new();
+    while let Some(script) = todo.pop() {
+        if done.len() + todo.len() > 500 {
+            return Err("more than 500 ways to answer".to_string());
+        }
+        match play_from(state, registry, Some(spell), targets.to_vec(), None, Scene::Main, &script)? {
+            Played::Done(s) => done.push(*s),
+            Played::Asks(options) => todo.extend(options.into_iter().map(|o| [script.clone(), vec![o]].concat())),
+        }
+    }
+    Ok(done)
+}
+
 /// [`every_ending`], starting with `first` when it is given.
 fn every_ending_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>, first: Option<Action>) -> Result<Vec<GameState>, String> {
     let mut todo: Vec<Vec<Answer>> = vec![Vec::new()];
@@ -3291,28 +3389,29 @@ const READ: &[&str] = &[
     "Coral Merfolk", "Corpse Lunge", "Counterspell", "Curse of Death's Hold",
     "Curse of Oblivion", "Curse of the Bloody Tome", "Curse of the Nightly Hunt",
     "Curse of the Pierced Heart", "Darkthicket Wolf", "Dead Weight", "Deranged Assistant",
-    "Diregraf Ghoul", "Dissipate", "Divination", "Doom Blade", "Doomed Traveler", "Dream Twist",
-    "Elite Inquisitor", "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread",
-    "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab", "Furor of the Bitten",
-    "Gallows Warden", "Gatstaf Shepherd", "Gavony Township", "Geist-Honored Monk",
-    "Geistcatcher's Rig", "Geistflame", "Ghostly Possession", "Ghoulcaller's Bell",
-    "Giant Growth", "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms",
-    "Grave Bramble", "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity",
+    "Devil's Play", "Diregraf Ghoul", "Dissipate", "Divination", "Doom Blade",
+    "Doomed Traveler", "Dream Twist", "Elite Inquisitor", "Falkenrath Marauders",
+    "Falkenrath Noble", "Feeling of Dread", "Feral Ridgewolf", "Festerhide Boar", "Forest",
+    "Fortress Crab", "Furor of the Bitten", "Gallows Warden", "Gatstaf Shepherd",
+    "Gavony Township", "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame",
+    "Ghostly Possession", "Ghoulcaller's Bell", "Giant Growth", "Glorious Anthem",
+    "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms", "Grave Bramble",
+    "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Harvest Pyre",
     "Hinterland Harbor", "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness",
     "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker", "Island",
-    "Isolated Chapel", "Kalonian Tusker", "Kessig Wolf", "Kindercatch", "Lantern Spirit",
-    "Lava Axe", "Lightning Bolt", "Lost in the Mist", "Lumberknot", "Makeshift Mauler",
-    "Markov Patrician", "Mask of Avacyn", "Mausoleum Guard", "Maw of the Mire",
-    "Midnight Haunting", "Moan of the Unhallowed", "Moment of Heroism", "Moon Heron",
-    "Morkrut Banshee", "Mountain", "Naturalize", "Nephalia Drownyard", "Night Revelers",
-    "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism", "Paraselene", "Pitchburn Devils",
-    "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower", "Rally the Peasants",
-    "Ranger's Guile", "Rebuke", "Reckless Waif", "Riot Devils", "Rolling Temblor",
-    "Rotting Fensnake", "Runechanter's Pike", "Savannah Lions", "Scourge of Geier Reach",
-    "Selfless Cathar", "Selhoff Occultist", "Sensory Deprivation", "Sharpened Pitchfork",
-    "Shimmering Grotto", "Silent Departure", "Silver-Inlaid Dagger", "Silverchase Fox",
-    "Skaab Goliath", "Slayer of the Wicked", "Smite the Monstrous", "Sol Ring",
-    "Somberwald Spider", "Spectral Flight", "Spectral Rider", "Spider Spawning",
+    "Isolated Chapel", "Kalonian Tusker", "Kessig Wolf", "Kessig Wolf Run", "Kindercatch",
+    "Lantern Spirit", "Lava Axe", "Lightning Bolt", "Lost in the Mist", "Lumberknot",
+    "Makeshift Mauler", "Markov Patrician", "Mask of Avacyn", "Mausoleum Guard",
+    "Maw of the Mire", "Midnight Haunting", "Moan of the Unhallowed", "Moment of Heroism",
+    "Moon Heron", "Morkrut Banshee", "Mountain", "Naturalize", "Nephalia Drownyard",
+    "Night Revelers", "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism", "Paraselene",
+    "Pitchburn Devils", "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower",
+    "Rally the Peasants", "Ranger's Guile", "Rebuke", "Reckless Waif", "Riot Devils",
+    "Rolling Temblor", "Rotting Fensnake", "Runechanter's Pike", "Savannah Lions",
+    "Scourge of Geier Reach", "Selfless Cathar", "Selhoff Occultist", "Sensory Deprivation",
+    "Sharpened Pitchfork", "Shimmering Grotto", "Silent Departure", "Silver-Inlaid Dagger",
+    "Silverchase Fox", "Skaab Goliath", "Slayer of the Wicked", "Smite the Monstrous",
+    "Sol Ring", "Somberwald Spider", "Spectral Flight", "Spectral Rider", "Spider Spawning",
     "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble",
     "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp", "Swords to Plowshares",
     "Think Twice", "Thraben Purebloods", "Tormented Pariah", "Travel Preparations",
@@ -3512,6 +3611,18 @@ fn every_readable_card_does_what_its_text_says() {
                 }
                 continue;
             }
+            // An {X} spell: at each target set, every X from nothing to
+            // what floats, announced as it is cast (CR 107.3a, 601.2b).
+            if cost.symbols.contains(&ManaSymbol::X) {
+                for targets in expected_sets {
+                    casts += 1;
+                    let want: Vec<World> = (0..=X_FLOAT).map(|x| resolve(spec, &World { x, ..world.clone() }, &targets, P0, card, spell)).collect();
+                    if let Some(why) = disagreement(&want, &every_ending_at(&state, &registry, spell, &targets), &registry) {
+                        failures.push(format!("{name} at {targets:?}: {why}"));
+                    }
+                }
+                continue;
+            }
             for targets in expected_sets {
                 casts += 1;
                 let want = resolve(spec, &world, &targets, P0, card, spell).observed();
@@ -3599,6 +3710,21 @@ fn every_readable_activated_ability_does_what_its_text_says() {
                 }
                 if ability.sacrifice_self {
                     w.leave(id, Dest::Graveyard);
+                }
+                // An {X} cost: every X from nothing to what floats (CR
+                // 107.3a, 602.2b).
+                if ability.mana.symbols.contains(&ManaSymbol::X) {
+                    let want: Vec<World> = (0..=X_FLOAT)
+                        .map(|x| {
+                            let mut after = apply(&ability.spec, &World { x, ..w.clone() }, full, P0);
+                            after.state_based_actions();
+                            after
+                        })
+                        .collect();
+                    if let Some(why) = disagreement(&want, &every_ending_from(&state, &registry, None, Some(act)), &registry) {
+                        failures.push(format!("{name} at {targets:?}: {why}"));
+                    }
+                    continue;
                 }
                 let mut w = apply(&ability.spec, &w, full, P0);
                 w.state_based_actions();
@@ -3953,6 +4079,7 @@ fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Opt
         stack: Vec::new(),
         source: None,
         cost_exiled: Vec::new(),
+        x: 0,
         tokens: Vec::new(),
         life: [20, 20],
         hand: [vec!["Island".to_string()], vec!["Island".to_string()]],
@@ -4633,7 +4760,13 @@ fn the_grammar_reads_its_templates() {
     assert_eq!(Additional::read("As an additional cost to cast this spell, sacrifice a creature."), Some(Additional::SacrificeCreature));
     assert_eq!(Additional::read("As an additional cost to cast this spell, exile two creature cards from your graveyard."), Some(Additional::ExileCreatureCards(2)));
     assert_eq!(Additional::read("As an additional cost to cast this spell, exile a creature card from your graveyard."), Some(Additional::ExileCreatureCards(1)));
-    assert_eq!(Additional::read("As an additional cost to cast this spell, exile X cards from your graveyard."), None);
+    assert_eq!(Additional::read("As an additional cost to cast this spell, exile X cards from your graveyard."), Some(Additional::ExileXCards));
+    let mut play = Spec::default();
+    play.sentence("~ deals X damage to any target.").unwrap();
+    assert_eq!((play.slots, play.effects), (vec![Slot::Any], vec![Effect::DamageX { slot: 0 }]));
+    let run = read_activated("{X}{R}{G}, {T}: Target creature gets +X/+0 and gains trample until end of turn.", 1).unwrap();
+    assert!(run.tap && run.mana.symbols.contains(&ManaSymbol::X));
+    assert_eq!(run.spec.effects, vec![Effect::PumpX { slot: 0, power: 1, toughness: 0, gains: vec![Keyword::Trample] }]);
 
     let grotto = ManaAbility::read("{1}, {T}: Add one mana of any color.").unwrap();
     assert_eq!((grotto.cost, grotto.mill, grotto.options.len()), (1, 0, 5));
