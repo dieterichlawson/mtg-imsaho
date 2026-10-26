@@ -522,7 +522,7 @@ no seat is asked before game 1. The hosted table (`mtg-draft-server`) writes
 the same line for a seat no model answered, with no prompt or response
 before it: a person's sideboarding and choice, `kept the deck (<why>)` for a
 seat the table plays for (AI or person) or an AI seat whose model gave no
-answer, `; plays first
+answer, ` | plays first
 (no choice was made)` when the clock chose, and a game-1 line for the coin
 flip's winner. The question is one cached schema for every
 pool, like the deck build's, and costs at most two calls a seat a match;

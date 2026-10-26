@@ -81,7 +81,8 @@ def json_in_text(text):
 
 
 def counted(cards):
-    return ", ".join(f"{n}x {c}" if n > 1 else c for c, n in collections.Counter(cards).items())
+    # "; " between names: "Grimgrin, Corpse-Born" is one card (#925).
+    return "; ".join(f"{n}x {c}" if n > 1 else c for c, n in collections.Counter(cards).items())
 
 
 def seat_story(night, s):
@@ -92,8 +93,8 @@ def seat_story(night, s):
         picks[pack].append(card)
     lines = [f"You were seat {s['seat']} of {night['players']}. Packs 1 and 3 passed left, pack 2 right.",
              "Your picks, in order:"]
-    lines += [f"  Pack {p}: " + ", ".join(cards) for p, cards in sorted(picks.items())]
-    lines.append(f"Your deck ({s['colors']}): {counted(s['maindeck'])}; "
+    lines += [f"  Pack {p}: " + "; ".join(cards) for p, cards in sorted(picks.items())]
+    lines.append(f"Your deck ({s['colors']}): {counted(s['maindeck'])}. Basic lands: "
                  + ", ".join(f"{n} {l}" for l, n in s["lands"].items()) + ".")
     if s.get("notes"):
         lines.append(f"Your notes at the end of the draft: {s['notes']}")

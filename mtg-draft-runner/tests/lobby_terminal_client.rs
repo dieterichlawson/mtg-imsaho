@@ -215,7 +215,7 @@ fn the_coin_flips_winner_chooses_from_the_client() {
     assert!(terminal.contains("round 1: game 1: seat 0 chose to draw first"), "{terminal}");
     // The log records a person's choice as it does an AI seat's (#878): it
     // was a line on the host's terminal and nowhere else.
-    server.wait_for_log("[Seat 0] SIDEBOARD before game 1: no change; draws first", Duration::from_secs(10));
+    server.wait_for_log("[Seat 0] SIDEBOARD before game 1: no change | draws first", Duration::from_secs(10));
 
     // Game 1 conceded on the game page; before game 2 the person swaps a
     // card from the client, and the log says which.
