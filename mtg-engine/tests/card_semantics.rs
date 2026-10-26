@@ -321,7 +321,9 @@ enum Effect {
     /// "Create N [tapped] P/T <colour> <subtypes> creature tokens [with K]"
     /// (CR 111.2).
     /// "... for each creature card in your graveyard": `n` that many times.
-    Tokens { n: usize, power: i32, toughness: i32, colors: Vec<Color>, subtypes: Vec<String>, keywords: Vec<Keyword>, tapped: bool, per_creature_card: bool },
+    /// "Create X ..., where X is half the number of Zombies you control,
+    /// rounded down": that many, counted as it resolves (CR 107.3, 608.2h).
+    Tokens { n: usize, power: i32, toughness: i32, colors: Vec<Color>, subtypes: Vec<String>, keywords: Vec<Keyword>, tapped: bool, per_creature_card: bool, half_of: Option<Filter> },
     /// "Its controller gains life equal to its power": the power the
     /// object last had on the battlefield (CR 608.2h).
     ControllerGainsLifeEqualToPower { slot: usize },
@@ -672,7 +674,7 @@ impl CombatText {
                     }
                     let mut tokens = Spec::default();
                     tokens.tokens(&rest.replacen(" that's tapped and attacking", "", 1))?;
-                    let Some(Effect::Tokens { n: 1, power, toughness, colors, subtypes, keywords, tapped: false, per_creature_card }) = tokens.effects.pop() else {
+                    let Some(Effect::Tokens { n: 1, power, toughness, colors, subtypes, keywords, tapped: false, per_creature_card, half_of: None }) = tokens.effects.pop() else {
                         return None;
                     };
                     self.on_attack_tokens = Some(AttackTokens { power, toughness, colors, subtypes, keywords, per_creature_card, exile_at_end_of_combat });
@@ -1637,6 +1639,11 @@ impl Spec {
             Some(r) => (r, true),
             None => (rest, false),
         };
+        let (rest, half_of) = match rest.strip_suffix(", rounded down").and_then(|r| r.split_once(", where X is half the number of ")) {
+            Some((r, what)) => (r.replacen("X ", "1 ", 1), Some(filter(what)?)),
+            None => (rest.to_string(), None),
+        };
+        let rest = rest.as_str();
         let (rest, keywords) = match rest.split_once(" with ") {
             Some((r, k)) => (r, k.split(" and ").map(keyword_named).collect::<Option<Vec<_>>>()?),
             None => (rest, Vec::new()),
@@ -1666,7 +1673,7 @@ impl Spec {
         }
         let mut keywords = keywords;
         keywords.sort_by_key(|k| k.label());
-        self.effects.push(Effect::Tokens { n, power, toughness, colors, subtypes, keywords, tapped, per_creature_card });
+        self.effects.push(Effect::Tokens { n, power, toughness, colors, subtypes, keywords, tapped, per_creature_card, half_of });
         Some(())
     }
 }
@@ -2007,7 +2014,9 @@ fn read_enchantment(card: &Printed) -> Result<Spec, String> {
             spec.combat.read(line).ok_or_else(unread)?;
             continue;
         }
-        if line.starts_with("At the beginning of enchanted player's upkeep, ") && spec.slots == [Slot::Player] {
+        if (line.starts_with("At the beginning of enchanted player's upkeep, ") && spec.slots == [Slot::Player])
+            || (line.starts_with("At the beginning of your upkeep, ") && !spec.enchants)
+        {
             spec.upkeep = Some(Box::new(read_upkeep(line).ok_or_else(unread)?));
             continue;
         }
@@ -3542,8 +3551,12 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     }
                 }
             }
-            Effect::Tokens { n, power, toughness, colors, subtypes, keywords, tapped, per_creature_card } => {
+            Effect::Tokens { n, power, toughness, colors, subtypes, keywords, tapped, per_creature_card, half_of } => {
                 let times = if *per_creature_card { *n * w.creature_cards_in_graveyard(caster) as usize } else { *n };
+                let times = match half_of {
+                    Some(f) => w.permanents.values().chain(&w.tokens).filter(|m| m.matches(f, caster)).count() / 2,
+                    None => times,
+                };
                 for _ in 0..times {
                     w.tokens.push(Model { tapped: *tapped, ..creature_token((*power, *toughness), colors, subtypes, keywords, caster) });
                 }
@@ -4461,17 +4474,17 @@ const READ: &[&str] = &[
     "Desperate Ravings", "Devil's Play", "Diregraf Ghoul", "Disciple of Griselbrand",
     "Dissipate", "Divination", "Divine Reckoning", "Doom Blade", "Doomed Traveler",
     "Dream Twist", "Elder Cathar", "Elder of Laurels", "Elite Inquisitor",
-    "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread", "Feral Ridgewolf",
-    "Festerhide Boar", "Forest", "Fortress Crab", "Full Moon's Rise", "Furor of the Bitten",
-    "Gallows Warden", "Galvanic Juggernaut", "Gatstaf Shepherd", "Gavony Township",
-    "Geist of Saint Traft", "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame",
-    "Ghost Quarter", "Ghostly Possession", "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth",
-    "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms", "Grave Bramble",
-    "Graveyard Shovel", "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity",
-    "Hanweir Watchkeep", "Harvest Pyre", "Hinterland Harbor", "Hollowhenge Scavenger",
-    "Holy Strength", "Hysterical Blindness", "Infernal Plunge", "Instigator Gang",
-    "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker", "Island",
-    "Isolated Chapel", "Kalonian Tusker", "Kessig Cagebreakers", "Kessig Wolf",
+    "Endless Ranks of the Dead", "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread",
+    "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab", "Full Moon's Rise",
+    "Furor of the Bitten", "Gallows Warden", "Galvanic Juggernaut", "Gatstaf Shepherd",
+    "Gavony Township", "Geist of Saint Traft", "Geist-Honored Monk", "Geistcatcher's Rig",
+    "Geistflame", "Ghost Quarter", "Ghostly Possession", "Ghoulcaller's Bell", "Ghoulraiser",
+    "Giant Growth", "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms",
+    "Grave Bramble", "Graveyard Shovel", "Grizzled Outcasts", "Grizzly Bears",
+    "Gruesome Deformity", "Hanweir Watchkeep", "Harvest Pyre", "Hinterland Harbor",
+    "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness", "Infernal Plunge",
+    "Instigator Gang", "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker",
+    "Island", "Isolated Chapel", "Kalonian Tusker", "Kessig Cagebreakers", "Kessig Wolf",
     "Kessig Wolf Run", "Kindercatch", "Kruin Outlaw", "Lantern Spirit", "Lava Axe",
     "Lightning Bolt", "Lost in the Mist", "Lumberknot", "Make a Wish", "Makeshift Mauler",
     "Manor Skeleton", "Markov Patrician", "Mask of Avacyn", "Mausoleum Guard",
@@ -5146,6 +5159,14 @@ fn every_turn_begins_as_its_text_says() {
                 world.permanents.insert(id, Model { tapped, ..model_of(spec, card, P0) });
                 id
             };
+            // Three of what the trigger counts, so that half of it rounds.
+            let counted = spec.upkeep.iter().flat_map(|u| &u.trigger.spec.effects).filter_map(|e| match e {
+                Effect::Tokens { half_of: Some(Filter(clauses)), .. } => Some(clauses),
+                _ => None,
+            });
+            for clause in counted.flatten() {
+                add_creatures_of(&mut state, &mut world, &registry, &cards, clause.head.as_deref().expect("a subtype"), 3, P0);
+            }
             world.refresh();
             // Every land tapped in the turn before, so the untap step has
             // something to untap, and something to leave tapped.
@@ -6219,7 +6240,7 @@ fn the_grammar_reads_its_templates() {
     let spec = read(&card("X", "Create thirteen tapped 2/2 black Zombie creature tokens.")).unwrap();
     assert_eq!(spec.effects, vec![Effect::Tokens {
         n: 13, power: 2, toughness: 2, colors: vec![Color::Black], subtypes: vec!["Zombie".to_string()],
-        keywords: vec![], tapped: true, per_creature_card: false,
+        keywords: vec![], tapped: true, per_creature_card: false, half_of: None,
     }]);
 
     let spec = read(&card("X", "Exile target creature. Its controller gains life equal to its power.")).unwrap();
