@@ -130,7 +130,11 @@ impl Printed {
     fn keywords(&self) -> Vec<Keyword> {
         let mut out = Vec::new();
         for line in without_reminders(&self.oracle_text).lines() {
-            let words: Vec<&str> = line.split(',').map(str::trim).collect();
+            // Protection rides on a keyword line ("Defender, protection
+            // from Zombies") without being one of the engine's keywords.
+            let words: Vec<&str> = line.split(',').map(str::trim)
+                .filter(|w| !w.to_lowercase().starts_with("protection from "))
+                .collect();
             let all: Option<Vec<Keyword>> = words.iter().map(|w| keyword_named(w)).collect();
             if let Some(ks) = all {
                 out.extend(ks);
@@ -376,6 +380,10 @@ struct Spec {
     /// "~'s power and toughness are each equal to the number of creature
     /// cards in your graveyard" (CR 604.3).
     pt_is_creature_cards: bool,
+    /// "... equal to the number of cards in your hand".
+    pt_is_cards_in_hand: bool,
+    /// What it says about attacking, blocking and combat damage.
+    combat: CombatText,
     /// A werewolf: "At the beginning of each upkeep, if no spells were cast
     /// last turn, transform this creature", and on its back face, whose
     /// text is read too, "... if a player cast two or more spells last
@@ -436,6 +444,95 @@ impl ManaAbility {
     /// as the cards declare them (Shimmering Grotto's "any color" is five).
     fn indices(&self) -> usize {
         self.options.len()
+    }
+}
+
+/// A creature's text about combat: restrictions on blocking it or by it,
+/// protection, forced attacks, conditional haste, and what dealing combat
+/// damage to a player does.
+#[derive(Debug, Clone, PartialEq, Default)]
+struct CombatText {
+    /// "This creature can't block." (CR 509.1a)
+    cant_block: bool,
+    /// "This creature can't be blocked."
+    cant_be_blocked: bool,
+    /// "This creature can't be blocked except by creatures with flying or
+    /// reach."
+    only_by_flying_or_reach: bool,
+    /// "This creature can't be blocked by Humans.": the subtypes that
+    /// can't block it.
+    not_blocked_by: Vec<String>,
+    /// "Protection from Zombies" (CR 702.16): the subtypes it has
+    /// protection from. It can't be blocked by them (702.16f) and damage
+    /// they would deal it is prevented (702.16e).
+    protection_from: Vec<String>,
+    /// "This creature attacks each combat if able." (CR 508.1d)
+    attacks_each_combat: bool,
+    /// "This creature has haste as long as an opponent controls a Human."
+    haste_if_opponent_controls: Option<String>,
+    /// "Whenever this creature deals combat damage to a player, ..." (CR
+    /// 510.3a, 603.2).
+    on_damage_to_player: Vec<OnPlayerDamage>,
+}
+
+/// What "whenever this creature deals combat damage to a player" does.
+#[derive(Debug, Clone, PartialEq)]
+enum OnPlayerDamage {
+    /// "put a +1/+1 counter on it", "put two +1/+1 counters on it".
+    CountersOnSelf(u32),
+    /// "draw a card".
+    Draw(usize),
+    /// "it deals that much damage to each creature that player controls".
+    ThatMuchToEachCreatureThatPlayerControls,
+}
+
+/// "Humans" → "Human", "Werewolves" → "Werewolf": a subtype from its
+/// plural, as rules text prints it.
+fn singular(word: &str) -> String {
+    match word.strip_suffix("ves") {
+        Some(stem) => format!("{stem}f"),
+        None => word.strip_suffix('s').unwrap_or(word).to_string(),
+    }
+}
+
+impl CombatText {
+    /// Read one line of a creature's text about combat, if it is one.
+    fn read(&mut self, line: &str) -> Option<()> {
+        match line {
+            "This creature can't block." => self.cant_block = true,
+            "This creature can't be blocked." => self.cant_be_blocked = true,
+            "This creature can't be blocked except by creatures with flying or reach." => self.only_by_flying_or_reach = true,
+            "This creature attacks each combat if able." => self.attacks_each_combat = true,
+            _ => {
+                if let Some(t) = line.strip_prefix("This creature can't be blocked by ").and_then(|r| r.strip_suffix('.')) {
+                    self.not_blocked_by.push(singular(t));
+                } else if let Some(t) = line.strip_prefix("This creature has haste as long as an opponent controls a ").and_then(|r| r.strip_suffix('.')) {
+                    self.haste_if_opponent_controls = Some(t.to_string());
+                } else if let Some(effect) = line.strip_prefix("Whenever this creature deals combat damage to a player, ").and_then(|r| r.strip_suffix('.')) {
+                    let e = match effect {
+                        "draw a card" => OnPlayerDamage::Draw(1),
+                        "it deals that much damage to each creature that player controls" => OnPlayerDamage::ThatMuchToEachCreatureThatPlayerControls,
+                        _ => {
+                            let n = effect.strip_prefix("put ")?
+                                .strip_suffix(" +1/+1 counter on it")
+                                .or_else(|| effect.strip_prefix("put ")?.strip_suffix(" +1/+1 counters on it"))?;
+                            OnPlayerDamage::CountersOnSelf(number(n)?)
+                        }
+                    };
+                    self.on_damage_to_player.push(e);
+                } else if let Some(rest) = line.strip_prefix("Protection from ") {
+                    // "Protection from Vampires, from Werewolves, and from
+                    // Zombies": one ability per quality (CR 702.16g).
+                    for part in rest.split(", ") {
+                        let t = part.trim_start_matches("and ").trim_start_matches("from ");
+                        self.protection_from.push(singular(t));
+                    }
+                } else {
+                    return None;
+                }
+            }
+        }
+        Some(())
     }
 }
 
@@ -1003,6 +1100,13 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
             spec.pt_is_creature_cards = true;
             continue;
         }
+        if line == "~'s power and toughness are each equal to the number of cards in your hand." {
+            spec.pt_is_cards_in_hand = true;
+            continue;
+        }
+        if spec.combat.read(line).is_some() {
+            continue;
+        }
         if let Some(cost) = Additional::read(line) {
             spec.additional = Some(cost);
             continue;
@@ -1054,6 +1158,12 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
             continue;
         }
         for word in line.split(',').map(str::trim) {
+            // "Defender, protection from Zombies": protection is a keyword
+            // ability with a quality, not one of the engine's keywords.
+            if let Some(t) = word.strip_prefix("protection from ") {
+                spec.combat.protection_from.push(singular(t));
+                continue;
+            }
             let k = keyword_named(word).ok_or_else(unread)?;
             spec.flash |= k == Keyword::Flash;
         }
@@ -1337,6 +1447,10 @@ struct Model {
     /// Power and toughness are the number of creature cards in its
     /// controller's graveyard, counted when observed (CR 604.3).
     counts_creature_cards: bool,
+    /// ... or the number of cards in its controller's hand.
+    counts_hand: bool,
+    /// Its text about combat.
+    combat: CombatText,
 }
 
 impl Model {
@@ -1361,6 +1475,8 @@ impl Model {
             transformed: false,
             deathtouched: false,
             counts_creature_cards: false,
+            counts_hand: false,
+            combat: CombatText::default(),
         }
     }
 
@@ -1509,20 +1625,35 @@ enum Dest {
 }
 
 impl World {
+    /// A permanent's power and toughness as they stand: printed, changed,
+    /// or counted (CR 604.3) when its text defines them.
+    fn pt_of(&self, m: &Model) -> (Option<i32>, Option<i32>) {
+        let n = |count: usize| Some(i32::try_from(count).expect("a few"));
+        if m.counts_creatures {
+            let c = self.permanents.values().chain(&self.tokens).filter(|o| o.is_creature() && o.controller == m.controller).count();
+            (n(c), n(c))
+        } else if m.counts_creature_cards {
+            let c = self.creature_cards_in_graveyard(m.controller) as usize;
+            (n(c), n(c))
+        } else if m.counts_hand {
+            let c = self.hand[m.controller.0 as usize].len();
+            (n(c), n(c))
+        } else {
+            (m.power, m.toughness)
+        }
+    }
+
     fn observed(&self) -> Observed {
         let all: Vec<&Model> = self.permanents.values().chain(&self.tokens).collect();
         let mut battlefield: Vec<PermanentSeen> = all.iter()
             .map(|m| {
                 let mut seen = seen(m);
-                if m.counts_creatures {
-                    let n = i32::try_from(all.iter().filter(|o| o.is_creature() && o.controller == m.controller).count()).expect("a few");
-                    seen.power = Some(n);
-                    seen.toughness = Some(n);
-                }
-                if m.counts_creature_cards {
-                    let n = i32::try_from(self.creature_cards_in_graveyard(m.controller)).expect("a few");
-                    seen.power = Some(n);
-                    seen.toughness = Some(n);
+                (seen.power, seen.toughness) = self.pt_of(m);
+                if let Some(t) = &m.combat.haste_if_opponent_controls {
+                    if all.iter().any(|o| o.controller != m.controller && o.subtypes.contains(t)) && !seen.keywords.contains(&"haste") {
+                        seen.keywords.push("haste");
+                        seen.keywords.sort_unstable();
+                    }
                 }
                 seen.attached_to = match &m.attached {
                     Some(Target::Object(id)) => self.permanents.get(id).and_then(|a| a.name.clone()),
@@ -1581,7 +1712,7 @@ impl World {
     fn state_based_actions(&mut self) {
         loop {
             let dying: Vec<ObjectId> = self.permanents.iter()
-                .filter(|(_, m)| m.is_creature() && m.toughness.is_some_and(|t| t <= 0 || m.damage >= t as u32 || (m.deathtouched && m.damage > 0)))
+                .filter(|(_, m)| m.is_creature() && self.pt_of(m).1.is_some_and(|t| t <= 0 || m.damage >= t as u32 || (m.deathtouched && m.damage > 0)))
                 .map(|(id, _)| *id)
                 .collect();
             let before = self.tokens.len();
@@ -2052,6 +2183,8 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                         transformed: false,
                         deathtouched: false,
                         counts_creature_cards: false,
+                        counts_hand: false,
+                        combat: CombatText::default(),
                     });
                 }
             }
@@ -2182,6 +2315,8 @@ fn creature_outcomes(spec: &Spec, world: &World, caster: PlayerId, card: &Printe
         tapped: spec.enters_tapped,
         counts_creatures: spec.pt_is_creatures_you_control,
         counts_creature_cards: spec.pt_is_creature_cards,
+        counts_hand: spec.pt_is_cards_in_hand,
+        combat: spec.combat.clone(),
         ..Model::printed(card, caster)
     };
     if let (Some(n), true) = (spec.enters_with_counters_if_morbid, world.a_creature_died) {
@@ -2526,30 +2661,33 @@ fn readable(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (Vec<
 /// lose it.
 const READ: &[&str] = &[
     "Abbey Griffin", "Altar's Reap", "Ambush Viper", "Ancient Grudge", "Armored Skaab",
-    "Army of the Damned", "Avacyn's Pilgrim", "Avacynian Priest", "Blasphemous Act",
-    "Boneyard Wurm", "Bramblecrush", "Brimstone Volley", "Bump in the Night", "Chapel Geist",
-    "Clifftop Retreat", "Coral Merfolk", "Corpse Lunge", "Counterspell",
-    "Curse of Death's Hold", "Darkthicket Wolf", "Dead Weight", "Deranged Assistant",
-    "Diregraf Ghoul", "Dissipate", "Divination", "Doom Blade", "Doomed Traveler", "Dream Twist",
-    "Feeling of Dread", "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab",
-    "Gatstaf Shepherd", "Gavony Township", "Geist-Honored Monk", "Geistcatcher's Rig",
-    "Geistflame", "Ghoulcaller's Bell", "Giant Growth", "Glorious Anthem", "Gnaw to the Bone",
-    "Goblin Piker", "Grasp of Phantoms", "Grizzled Outcasts", "Grizzly Bears",
-    "Gruesome Deformity", "Hinterland Harbor", "Hollowhenge Scavenger", "Holy Strength",
-    "Hysterical Blindness", "Intangible Virtue", "Into the Maw of Hell", "Island",
-    "Isolated Chapel", "Kalonian Tusker", "Kessig Wolf", "Kindercatch", "Lantern Spirit",
-    "Lava Axe", "Lightning Bolt", "Lost in the Mist", "Makeshift Mauler", "Markov Patrician",
-    "Mausoleum Guard", "Maw of the Mire", "Midnight Haunting", "Moan of the Unhallowed",
-    "Moment of Heroism", "Moon Heron", "Morkrut Banshee", "Mountain", "Naturalize",
-    "Nephalia Drownyard", "Paraselene", "Pitchburn Devils", "Plains", "Prey Upon",
+    "Army of the Damned", "Avacyn's Pilgrim", "Avacynian Priest", "Balefire Dragon",
+    "Blasphemous Act", "Bloodcrazed Neonate", "Boneyard Wurm", "Bramblecrush",
+    "Brimstone Volley", "Bump in the Night", "Chapel Geist", "Clifftop Retreat",
+    "Coral Merfolk", "Corpse Lunge", "Counterspell", "Curse of Death's Hold",
+    "Darkthicket Wolf", "Dead Weight", "Deranged Assistant", "Diregraf Ghoul", "Dissipate",
+    "Divination", "Doom Blade", "Doomed Traveler", "Dream Twist", "Elite Inquisitor",
+    "Falkenrath Marauders", "Feeling of Dread", "Feral Ridgewolf", "Festerhide Boar", "Forest",
+    "Fortress Crab", "Gatstaf Shepherd", "Gavony Township", "Geist-Honored Monk",
+    "Geistcatcher's Rig", "Geistflame", "Ghoulcaller's Bell", "Giant Growth", "Glorious Anthem",
+    "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms", "Grave Bramble",
+    "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Hinterland Harbor",
+    "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness", "Intangible Virtue",
+    "Into the Maw of Hell", "Invisible Stalker", "Island", "Isolated Chapel", "Kalonian Tusker",
+    "Kessig Wolf", "Kindercatch", "Lantern Spirit", "Lava Axe", "Lightning Bolt",
+    "Lost in the Mist", "Makeshift Mauler", "Markov Patrician", "Mausoleum Guard",
+    "Maw of the Mire", "Midnight Haunting", "Moan of the Unhallowed", "Moment of Heroism",
+    "Moon Heron", "Morkrut Banshee", "Mountain", "Naturalize", "Nephalia Drownyard",
+    "Night Revelers", "Orchard Spirit", "Paraselene", "Pitchburn Devils", "Plains", "Prey Upon",
     "Purify the Grave", "Rally the Peasants", "Ranger's Guile", "Rebuke", "Reckless Waif",
     "Riot Devils", "Rolling Temblor", "Rotting Fensnake", "Savannah Lions", "Selfless Cathar",
     "Sensory Deprivation", "Shimmering Grotto", "Silent Departure", "Silverchase Fox",
     "Skaab Goliath", "Slayer of the Wicked", "Smite the Monstrous", "Sol Ring",
     "Somberwald Spider", "Spectral Flight", "Spectral Rider", "Spider Spawning",
-    "Spidery Grasp", "Stensia Bloodhall", "Stitched Drake", "Sulfur Falls", "Swamp",
-    "Swords to Plowshares", "Think Twice", "Thraben Purebloods", "Tormented Pariah",
-    "Travel Preparations", "Typhoid Rats", "Unburial Rites", "Urgent Exorcism", "Vampiric Fury",
+    "Spidery Grasp", "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble",
+    "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp", "Swords to Plowshares",
+    "Think Twice", "Thraben Purebloods", "Tormented Pariah", "Travel Preparations",
+    "Typhoid Rats", "Unburial Rites", "Urgent Exorcism", "Vampire Interloper", "Vampiric Fury",
     "Victim of Night", "Village Bell-Ringer", "Village Ironsmith", "Villagers of Estwald",
     "Voiceless Spirit", "Walking Corpse", "Woodland Cemetery", "Wreath of Geists",
 ];
@@ -2887,13 +3025,27 @@ fn has(m: &Model, k: Keyword) -> bool {
     m.keywords.contains(&k)
 }
 
-/// Whether evasion lets `blocker` block `attacker` (CR 509.1b): flying
-/// only by flying or reach (702.9b, 702.17b), intimidate only by an
-/// artifact creature or one that shares a colour (702.13b).
+/// Whether `blocker` may block `attacker` alone (CR 509.1a-b): a creature
+/// that can't block, can't; flying is blocked only by flying or reach
+/// (702.9b, 702.17b), intimidate only by an artifact creature or one that
+/// shares a colour (702.13b); and the attacker's own restrictions: can't
+/// be blocked, only by creatures with flying or reach, not by a subtype,
+/// and not by what it has protection from (702.16f).
 fn evasion_allows(attacker: &Model, blocker: &Model) -> bool {
-    !(has(attacker, Keyword::Flying) && !(has(blocker, Keyword::Flying) || has(blocker, Keyword::Reach)))
+    let a = &attacker.combat;
+    !blocker.combat.cant_block
+        && !a.cant_be_blocked
+        && !(has(attacker, Keyword::Flying) && !(has(blocker, Keyword::Flying) || has(blocker, Keyword::Reach)))
+        && !(a.only_by_flying_or_reach && !(has(blocker, Keyword::Flying) || has(blocker, Keyword::Reach)))
         && !(has(attacker, Keyword::Intimidate)
             && !(blocker.types.iter().any(|t| t == "artifact") || attacker.colors.iter().any(|c| blocker.colors.contains(c))))
+        && !a.not_blocked_by.iter().chain(&a.protection_from).any(|t| blocker.subtypes.contains(t))
+}
+
+/// Whether damage `source` would deal `to` is prevented by protection
+/// (CR 702.16e).
+fn protected(to: &Model, source: &Model) -> bool {
+    to.combat.protection_from.iter().any(|t| source.subtypes.contains(t))
 }
 
 /// Every way a combat in which `a` attacks the opponent, blocked by
@@ -2903,9 +3055,12 @@ fn evasion_allows(attacker: &Model, blocker: &Model) -> bool {
 /// blocker and as much of the rest as it likes to the player (702.19b-c,
 /// lethal being 1 from a deathtouch source, 702.2c), a blocked creature
 /// whose blocker is gone dealing no damage unless it tramples (509.1h,
-/// 702.19e), lifelink gaining its controller what it dealt (702.15b), and
-/// state-based actions after each step, deathtouch damage lethal (704.5h).
-/// An attacker without vigilance taps to attack (508.1f, 702.20b).
+/// 702.19e), damage protection prevents not dealt (702.16e), lifelink
+/// gaining its controller what it dealt (702.15b), and state-based actions
+/// after each step, deathtouch damage lethal (704.5h). Then each
+/// "whenever this creature deals combat damage to a player" that the step
+/// set off resolves (603.3), and state-based actions again. An attacker
+/// without vigilance taps to attack (508.1f, 702.20b).
 fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec<World> {
     let mut w = world.clone();
     if !has(&w.permanents[&a], Keyword::Vigilance) {
@@ -2925,9 +3080,9 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
             Some(false) => !has(m, Keyword::FirstStrike) || has(m, Keyword::DoubleStrike),
             None => true,
         };
-        let power = |m: &Model| u32::try_from(m.power.unwrap_or(0).max(0)).expect("non-negative");
         let mut next = Vec::new();
         for w in worlds {
+            let power = |m: &Model| u32::try_from(w.pt_of(m).0.unwrap_or(0).max(0)).expect("non-negative");
             // Each branch is one assignment: (recipient, amount, source).
             let mut branches: Vec<Vec<(Target, u32, ObjectId)>> = vec![Vec::new()];
             if let Some(am) = w.permanents.get(&a).filter(|m| deals(m) && power(m) > 0) {
@@ -2939,7 +3094,7 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
                             let lethal = if has(am, Keyword::Deathtouch) {
                                 1
                             } else {
-                                u32::try_from(bm.toughness.unwrap_or(0).max(0)).expect("non-negative").saturating_sub(bm.damage)
+                                u32::try_from(w.pt_of(bm).1.unwrap_or(0).max(0)).expect("non-negative").saturating_sub(bm.damage)
                             };
                             if has(am, Keyword::Trample) && n > lethal {
                                 branches = (lethal..=n)
@@ -2963,25 +3118,67 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
             }
             for branch in branches {
                 let mut w2 = w.clone();
+                let mut to_player = 0;
                 for (to, n, from) in &branch {
-                    if *n == 0 {
+                    let source = w.permanents[from].clone();
+                    let n = match to {
+                        Target::Object(id) if protected(&w.permanents[id], &source) => 0,
+                        _ => *n,
+                    };
+                    if n == 0 {
                         continue;
                     }
-                    let source = w.permanents[from].clone();
                     match to {
                         Target::Object(id) => {
                             let m = w2.permanents.get_mut(id).expect("in combat");
                             m.damage += n;
                             m.deathtouched |= has(&source, Keyword::Deathtouch);
                         }
-                        Target::Player(p) => w2.life[p.0 as usize] -= *n as i32,
+                        Target::Player(p) => {
+                            w2.life[p.0 as usize] -= n as i32;
+                            to_player += n;
+                        }
                         _ => unreachable!(),
                     }
                     if has(&source, Keyword::Lifelink) {
-                        w2.life[source.controller.0 as usize] += *n as i32;
+                        w2.life[source.controller.0 as usize] += n as i32;
                     }
                 }
                 w2.state_based_actions();
+                if to_player > 0 {
+                    let attacker = w.permanents[&a].clone();
+                    for effect in &attacker.combat.on_damage_to_player {
+                        match effect {
+                            OnPlayerDamage::CountersOnSelf(k) => {
+                                if let Some(m) = w2.permanents.get_mut(&a) {
+                                    let k = i32::try_from(*k).expect("a few");
+                                    change(m, k, k);
+                                    m.counters.0 += k as u32;
+                                }
+                            }
+                            OnPlayerDamage::Draw(k) => {
+                                for _ in 0..*k {
+                                    let card = w2.library[0].remove(0);
+                                    w2.hand[0].push(card);
+                                }
+                            }
+                            OnPlayerDamage::ThatMuchToEachCreatureThatPlayerControls => {
+                                let theirs: Vec<ObjectId> = w2.permanents.iter()
+                                    .filter(|(_, m)| m.controller == P1 && m.is_creature())
+                                    .map(|(id, _)| *id)
+                                    .collect();
+                                for id in theirs {
+                                    if !protected(&w2.permanents[&id], &attacker) {
+                                        let m = w2.permanents.get_mut(&id).expect("on the battlefield");
+                                        m.damage += to_player;
+                                        m.deathtouched |= has(&attacker, Keyword::Deathtouch);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    w2.state_based_actions();
+                }
                 next.push(w2);
             }
         }
@@ -2993,7 +3190,7 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
 /// Two creatures, one each side, and nothing else but the caster's land in
 /// hand and both libraries: a combat between them, and the same in the
 /// reference.
-fn arena(registry: &CardRegistry, attacker: &Printed, blocker: Option<&Printed>) -> (GameState, World, ObjectId, Option<ObjectId>) {
+fn arena(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Option<(&Printed, &Spec)>) -> (GameState, World, ObjectId, Option<ObjectId>) {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let mut world = World {
         permanents: BTreeMap::new(),
@@ -3004,56 +3201,74 @@ fn arena(registry: &CardRegistry, attacker: &Printed, blocker: Option<&Printed>)
         cost_exiled: Vec::new(),
         tokens: Vec::new(),
         life: [20, 20],
-        hand: [vec!["Island".to_string()], Vec::new()],
+        hand: [vec!["Island".to_string()], vec!["Island".to_string()]],
         graveyard: [Vec::new(), Vec::new()],
         exile: [Vec::new(), Vec::new()],
         library: [Vec::new(), Vec::new()],
     };
+    // A card in each hand: a land the caster could play, so the game loop
+    // asks them rather than passing for them, and something a creature
+    // that counts its controller's hand can count.
     spell_in_hand(&mut state, registry, "Island", P0);
+    spell_in_hand(&mut state, registry, "Island", P1);
     for p in [P0, P1] {
         for name in LIBRARY {
             stock_library_with(&mut state, registry, p, name, 1);
             world.library[p.0 as usize].push(name.to_string());
         }
     }
-    let a = named_permanent(&mut state, registry, &attacker.name, P0);
-    world.permanents.insert(a, Model::printed(attacker, P0));
-    let b = blocker.map(|card| {
-        let b = named_permanent(&mut state, registry, &card.name, P1);
-        world.permanents.insert(b, Model::printed(card, P1));
-        b
-    });
+    let mut place = |state: &mut GameState, (card, spec): (&Printed, &Spec), owner: PlayerId| {
+        let id = named_permanent(state, registry, &card.name, owner);
+        world.permanents.insert(id, Model {
+            combat: spec.combat.clone(),
+            counts_hand: spec.pt_is_cards_in_hand,
+            ..Model::printed(card, owner)
+        });
+        id
+    };
+    let a = place(&mut state, attacker, P0);
+    let b = blocker.map(|b| place(&mut state, b, P1));
     (state, world, a, b)
 }
 
-/// Who may attack, and who may block whom alone, as the engine asks it:
-/// the attackers its prompt names, and for the blocker the attackers it
-/// may block and the attackers that need more than one.
-fn combat_questions(state: &GameState, registry: &CardRegistry, a: ObjectId) -> (Vec<ObjectId>, Option<(std::collections::HashMap<ObjectId, Vec<ObjectId>>, std::collections::HashMap<ObjectId, u32>)>) {
+/// What the engine asks in a combat: the attackers its prompt names and
+/// those that must attack, and for the blocker the attackers it may block
+/// and the attackers that need more than one.
+struct Asked {
+    eligible: Vec<ObjectId>,
+    must_attack: Vec<ObjectId>,
+    blocks: Option<(std::collections::HashMap<ObjectId, Vec<ObjectId>>, std::collections::HashMap<ObjectId, u32>)>,
+}
+
+fn combat_questions(state: &GameState, registry: &CardRegistry, a: ObjectId) -> Asked {
     let mut state = state.clone();
-    let mut eligible = Vec::new();
-    let mut blocks = None;
+    let mut asked = Asked { eligible: Vec::new(), must_attack: Vec::new(), blocks: None };
     let mut decisions = 0;
-    engine::run_game_loop(&mut state, registry, |_s: &GameState, _acting: PlayerId, legal: &engine::LegalActions| {
+    let turn = state.turn_number;
+    // This turn's combat only: with no creature able to attack, the engine
+    // asks nothing and the turn goes on, and the next turn's questions are
+    // about a different board.
+    engine::run_game_loop(&mut state, registry, |s: &GameState, _acting: PlayerId, legal: &engine::LegalActions| {
         decisions += 1;
         match &legal.combat_prompt {
-            _ if decisions > 40 => Action::AbandonGame,
-            Some(CombatPrompt::ChooseAttackers { eligible: e, .. }) => {
-                eligible.clone_from(e);
-                if e.contains(&a) {
+            _ if decisions > 40 || s.turn_number != turn || s.step == Step::PostcombatMain => Action::AbandonGame,
+            Some(CombatPrompt::ChooseAttackers { eligible, must_attack, .. }) => {
+                asked.eligible.clone_from(eligible);
+                asked.must_attack.clone_from(must_attack);
+                if eligible.contains(&a) {
                     Action::DeclareAttackers { attackers: vec![(a, P1)], planeswalker_attacks: Vec::new() }
                 } else {
                     Action::AbandonGame
                 }
             }
             Some(CombatPrompt::ChooseBlockers { legal_blocks, min_blockers, .. }) => {
-                blocks = Some((legal_blocks.clone(), min_blockers.clone()));
+                asked.blocks = Some((legal_blocks.clone(), min_blockers.clone()));
                 Action::AbandonGame
             }
             None => Action::PassPriority,
         }
     });
-    (eligible, blocks)
+    asked
 }
 
 /// Every game a combat can end in: each damage assignment it asks for
@@ -3073,55 +3288,96 @@ fn every_combat_ending(state: &GameState, registry: &CardRegistry, combat: &Comb
     Ok(done)
 }
 
-/// Every creature the grammar reads whose text is keywords alone attacks,
-/// once unblocked and once against each of them as a lone blocker: the
-/// engine lets it attack exactly when it lacks defender (CR 702.3b), lets
-/// each blocker block it alone exactly when evasion and menace allow
-/// (509.1b, 702.110b), and the combat ends every way the reference allows
-/// and no other, every damage assignment the attacking player may choose
-/// tried.
+/// Every creature the grammar reads whose text is keywords and combat text
+/// attacks, once unblocked and once against each of them as a lone
+/// blocker. The engine must:
+///
+/// - let it attack exactly when it lacks defender (CR 702.3b), and require
+///   it to exactly when its text says it attacks each combat if able
+///   (508.1d); and, summoning sick, let it attack exactly when it has
+///   haste, or the haste its text grants while an opponent controls a
+///   creature of some type (302.6, 702.10b);
+/// - let each blocker block it alone exactly when evasion, restrictions,
+///   protection and menace allow (509.1b, 702.16f, 702.110b);
+/// - end the combat every way the reference allows and no other, every
+///   damage assignment the attacking player may choose tried, whether the
+///   creature opposite blocks or not.
 #[test]
 fn every_keyword_creature_fights_as_its_keywords_say() {
     let registry = registry();
     let cache = oracle_cache();
     let (cards, _) = readable(&registry, &cache);
-    let fighters: Vec<&Printed> = cards.iter()
+    let fighters: Vec<(&Printed, &Spec)> = cards.iter()
         .filter(|(c, s)| c.has_type("Creature") && s.etb.is_none() && s.dies.is_none() && s.activated.is_empty()
-            && !s.werewolf && !s.pt_is_creatures_you_control && !s.enters_tapped && c.power.is_some())
-        .map(|(c, _)| c)
+            && s.mana.is_empty() && !s.werewolf && !s.pt_is_creatures_you_control && !s.pt_is_creature_cards
+            && !s.enters_tapped && (c.power.is_some() || s.pt_is_cards_in_hand))
+        .map(|(c, s)| (c, s))
         .collect();
     let mut failures = Vec::new();
     let mut combats = 0;
-    for attacker in &fighters {
-        for blocker in std::iter::once(None).chain(fighters.iter().map(Some)) {
-            let (state, world, a, b) = arena(&registry, attacker, blocker.copied());
-            let name = format!("{} attacking{}", attacker.name, blocker.map_or(String::new(), |b| format!(", {} blocking", b.name)));
+    for &attacker in &fighters {
+        let (card, spec) = attacker;
+        // Summoning sick, against no one and against a creature of each
+        // type its haste may depend on.
+        let haste_types: Vec<Option<&str>> = std::iter::once(None)
+            .chain(spec.combat.haste_if_opponent_controls.as_deref().map(Some))
+            .collect();
+        for needs in haste_types {
+            let opponent = needs.map(|t| fighters.iter().copied()
+                .find(|(c, _)| c.types().1.iter().any(|s| s == t))
+                .expect("a creature of that type to stand opposite"));
+            let (mut state, world, a, _) = arena(&registry, attacker, opponent);
+            state.get_object_mut(a).expect("the attacker").summoning_sick = true;
+            let hasty = has(&world.permanents[&a], Keyword::Haste) || needs.is_some();
+            let may = combat_questions(&state, &registry, a).eligible.contains(&a);
+            if may != (hasty && !has(&world.permanents[&a], Keyword::Defender)) {
+                failures.push(format!("{} summoning sick{}: may attack {may}, and its text says {hasty}",
+                    card.name, needs.map_or(String::new(), |t| format!(" opposite a {t}"))));
+            }
+        }
+        for blocker in std::iter::once(None).chain(fighters.iter().copied().map(Some)) {
+            let (state, world, a, b) = arena(&registry, attacker, blocker);
+            let name = format!("{} attacking{}", card.name, blocker.map_or(String::new(), |(b, _)| format!(", {} blocking", b.name)));
             let am = &world.permanents[&a];
-            let (eligible, blocks) = combat_questions(&state, &registry, a);
-            if eligible.contains(&a) == has(am, Keyword::Defender) {
-                failures.push(format!("{name}: offered as an attacker {}, and it {} defender", eligible.contains(&a),
+            let asked = combat_questions(&state, &registry, a);
+            if asked.eligible.contains(&a) == has(am, Keyword::Defender) {
+                failures.push(format!("{name}: offered as an attacker {}, and it {} defender", asked.eligible.contains(&a),
                     if has(am, Keyword::Defender) { "has" } else { "lacks" }));
                 continue;
             }
             if has(am, Keyword::Defender) {
                 continue;
             }
+            if asked.must_attack.contains(&a) != am.combat.attacks_each_combat {
+                failures.push(format!("{name}: required to attack {}, and its text says {}",
+                    asked.must_attack.contains(&a), am.combat.attacks_each_combat));
+                continue;
+            }
             let mut block = Vec::new();
             if let Some(b) = b {
                 let bm = &world.permanents[&b];
-                let Some((legal_blocks, min_blockers)) = blocks else {
+                let Some((legal_blocks, min_blockers)) = asked.blocks else {
                     failures.push(format!("{name}: no blockers were asked for"));
                     continue;
                 };
                 let may = legal_blocks.get(&b).is_some_and(|v| v.contains(&a));
                 if may != evasion_allows(am, bm) {
-                    failures.push(format!("{name}: it may block {may}, and evasion says {}", evasion_allows(am, bm)));
+                    failures.push(format!("{name}: it may block {may}, and the text says {}", evasion_allows(am, bm)));
                     continue;
                 }
                 let needs = min_blockers.get(&a).copied();
                 if needs != has(am, Keyword::Menace).then_some(2) {
                     failures.push(format!("{name}: needs {needs:?} blockers, and menace says {:?}", has(am, Keyword::Menace).then_some(2)));
                     continue;
+                }
+                // The defender may always decline to block: with the
+                // creature standing by, unblocked damage and what it sets
+                // off (Balefire Dragon's) reach the board as well.
+                combats += 1;
+                let want = combat_outcomes(&world, a, None);
+                let endings = every_combat_ending(&state, &registry, &(vec![(a, P1)], Vec::new()));
+                if let Some(why) = disagreement(&want, &endings, &registry) {
+                    failures.push(format!("{name} declining to block: {why}"));
                 }
                 if !(may && needs.is_none()) {
                     continue;
@@ -3137,7 +3393,7 @@ fn every_keyword_creature_fights_as_its_keywords_say() {
         }
     }
     assert!(combats > 0);
-    assert!(failures.is_empty(), "{} of {combats} combats disagree with the keywords:\n  {}", failures.len(), failures.join("\n  "));
+    assert!(failures.is_empty(), "{} of {combats} combats disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
 /// A creature spell with Flash can be cast whenever its controller has
@@ -3403,8 +3659,13 @@ fn the_grammar_reads_its_templates() {
 
     let viper = Printed { oracle_text: "Flash\nDeathtouch".to_string(), type_line: "Creature — Snake".to_string(), ..card("Viper", "") };
     assert!(read_creature(&viper).is_ok_and(|s| s.permanent && s.flash));
-    let not_only_keywords = Printed { oracle_text: "Flying\nThis creature can't block.".to_string(), ..viper };
-    assert!(read_creature(&not_only_keywords).is_err());
+    let interloper = Printed { oracle_text: "Flying\nThis creature can't block.".to_string(), ..viper.clone() };
+    assert!(read_creature(&interloper).is_ok_and(|s| s.combat.cant_block));
+    let inquisitor = Printed { oracle_text: "First strike, vigilance\nProtection from Vampires, from Werewolves, and from Zombies".to_string(), ..viper.clone() };
+    assert_eq!(read_creature(&inquisitor).unwrap().combat.protection_from, vec!["Vampire", "Werewolf", "Zombie"]);
+    assert_eq!(Printed { oracle_text: "Defender, protection from Zombies".to_string(), ..viper.clone() }.keywords(), vec![Keyword::Defender]);
+    let unread = Printed { oracle_text: "Flying\nThis creature can't be the target of spells.".to_string(), ..viper };
+    assert!(read_creature(&unread).is_err());
 
     let spec = read(&card("X", "Counter target noncreature spell. If that spell is countered this way, exile it instead of putting it into its owner's graveyard.")).unwrap();
     assert_eq!(spec.effects, vec![Effect::Counter { slot: 0, exile: true }]);
