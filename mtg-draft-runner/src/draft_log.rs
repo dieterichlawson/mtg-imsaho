@@ -488,7 +488,7 @@ fn deck_header(seat: usize, total: usize, retries: usize, fallback: bool) -> Str
     } else if fallback {
         format!("[Seat {seat}] DECK ({total} cards, FALLBACK after {retries} failed attempts)")
     } else {
-        format!("[Seat {seat}] DECK ({total} cards, {})", crate::count(retries as usize, "retry", "retries"))
+        format!("[Seat {seat}] DECK ({total} cards, {})", crate::count(retries, "retry", "retries"))
     }
 }
 

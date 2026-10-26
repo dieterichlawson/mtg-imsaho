@@ -257,7 +257,8 @@ fn main() {
     let registry = Arc::new(CardRegistry::with_all_cards());
     let removed = set_data.filter_implemented(&registry);
     if !removed.is_empty() && !args.quiet {
-        mtg_player::stderr_line!("note: {} cards not implemented, removed from the draft pool", removed.len());
+        mtg_player::stderr_line!("note: {} not implemented, removed from the draft pool",
+            mtg_draft_runner::count(removed.len(), "card", "cards"));
     }
     let sheets = SheetData::from_set_data(&set_data)
         .unwrap_or_else(|e| die(&format!("failed to build sheet data: {e}")));
@@ -313,10 +314,11 @@ root or set {} to the mtg-gui directory", web_dir.display(), mtg_player::gui::WE
     let mut resumed_note = None;
     if let (Some(save), Some(path)) = (&save, &args.resume) {
         lobby.restore(save).unwrap_or_else(|e| die(&format!("--resume {path}: {e}")));
-        resumed_note = Some(format!("the table carries on from the snapshot {path} (seed {}, seats {}): {} picks, {} \
-decks and {} finished matches replayed; a match that was in progress is played again from its first game",
+        resumed_note = Some(format!("the table carries on from the snapshot {path} (seed {}, seats {}): {}, {} \
+and {} replayed; a match that was in progress is played again from its first game",
             save.seed, save.seats.iter().map(|s| s.kind.as_str()).collect::<Vec<_>>().join(","),
-            save.picks.len(), save.decks.len(), save.matches.len()));
+            mtg_draft_runner::count(save.picks.len(), "pick", "picks"), mtg_draft_runner::count(save.decks.len(), "deck", "decks"),
+            mtg_draft_runner::count(save.matches.len(), "finished match", "finished matches")));
     }
     let save_path = args.save.as_ref().map_or_else(|| out_dir.join("table.save.json"), PathBuf::from);
 
