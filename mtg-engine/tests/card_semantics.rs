@@ -605,8 +605,14 @@ enum Static {
     Enchanted { power: i32, toughness: i32, has: Vec<Keyword>, per_creature_card: bool },
     /// "<creatures> get +P/+T [and have K]"; with `enchanted_player`, the
     /// creatures that player controls ("Creatures enchanted player controls
-    /// get -1/-1").
+    /// get -1/-1"). "Other" leaves out the source (CR 109.5).
     Group { filter: Filter, enchanted_player: bool, power: i32, toughness: i32, has: Vec<Keyword> },
+    /// "This creature gets +P/+T for each <permanent>": the change, as
+    /// many times as there are of them when it applies (CR 611.3a).
+    PerEach { filter: Filter, power: i32, toughness: i32 },
+    /// "As long as you control a <subtype>, this creature has K" (CR
+    /// 611.3a, 604.1).
+    IfYouControl { subtype: String, has: Vec<Keyword> },
 }
 
 /// An enters-the-battlefield trigger.
@@ -693,7 +699,7 @@ fn filter(text: &str) -> Option<Filter> {
         let words: Vec<&str> = rest.split_whitespace().map(|w| w.trim_end_matches(',')).collect();
         let (head, quals) = words.split_last()?;
         for q in quals {
-            if *q == "another" {
+            if *q == "another" || q.eq_ignore_ascii_case("other") {
                 clause.other = true;
             } else if *q == "attacking" {
                 clause.attacking = true;
@@ -1148,6 +1154,10 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
             spec.werewolf = true;
             continue;
         }
+        if let Some(st) = creature_static(line) {
+            spec.statics.push(st);
+            continue;
+        }
         let index = spec.mana.iter().map(ManaAbility::indices).sum::<usize>() + spec.activated.len();
         if let Some(ability) = ManaAbility::read(line) {
             spec.mana.push(ability);
@@ -1223,6 +1233,38 @@ fn static_change(text: &str) -> Option<((i32, i32), Vec<Keyword>)> {
     Some((pt_change(change)?, keywords))
 }
 
+/// "Creatures you control get +1/+1", "Other Spirit creatures you control
+/// get +1/+0", "Creature tokens you control have vigilance": a static that
+/// changes a group, the full stop gone.
+fn group_static(body: &str) -> Option<Static> {
+    let (who, rest) = ["get ", "have "].iter()
+        .find_map(|verb| body.split_once(&format!(" {verb}")).map(|(who, rest)| (who, format!("{verb}{rest}"))))?;
+    let ((power, toughness), has) = static_change(&rest)?;
+    let filter = if who == "Creature tokens you control" {
+        Filter(vec![Clause { head: Some("creature".to_string()), yours: Some(true), token: true, ..Clause::default() }])
+    } else {
+        filter(who)?
+    };
+    Some(Static::Group { filter, enchanted_player: false, power, toughness, has })
+}
+
+/// A creature's static ability about itself or a group: "This creature
+/// gets +1/+1 for each creature your opponents control", "As long as you
+/// control a Human, this creature has hexproof and indestructible", or a
+/// group's change.
+fn creature_static(line: &str) -> Option<Static> {
+    let body = line.strip_suffix('.')?;
+    if let Some((change, each)) = body.strip_prefix("This creature gets ").and_then(|r| r.split_once(" for each ")) {
+        let (power, toughness) = pt_change(change)?;
+        return Some(Static::PerEach { filter: filter(each)?, power, toughness });
+    }
+    if let Some((subtype, has)) = body.strip_prefix("As long as you control a ").and_then(|r| r.split_once(", this creature has ")) {
+        let has = has.split(" and ").map(keyword_named).collect::<Option<Vec<_>>>()?;
+        return Some(Static::IfYouControl { subtype: subtype.to_string(), has });
+    }
+    group_static(body)
+}
+
 /// Read an enchantment: an Aura's "Enchant creature" or "Enchant player"
 /// and the static abilities the grammar knows, line by line.
 fn read_enchantment(card: &Printed) -> Result<Spec, String> {
@@ -1254,19 +1296,7 @@ fn read_enchantment(card: &Printed) -> Result<Spec, String> {
             spec.statics.push(Static::Group { filter: filter("creature").expect("a filter"), enchanted_player: true, power, toughness, has });
             continue;
         }
-        let group = |who: &str, rest: &str| -> Option<Static> {
-            let ((power, toughness), has) = static_change(rest)?;
-            let filter = if who == "Creature tokens you control" {
-                Filter(vec![Clause { head: Some("creature".to_string()), yours: Some(true), token: true, ..Clause::default() }])
-            } else {
-                filter(who)?
-            };
-            Some(Static::Group { filter, enchanted_player: false, power, toughness, has })
-        };
-        let parsed = ["get ", "have "].iter()
-            .find_map(|verb| body.split_once(&format!(" {verb}")).map(|(who, rest)| (who, format!("{verb}{rest}"))))
-            .and_then(|(who, rest)| group(who, &rest));
-        spec.statics.push(parsed.ok_or_else(unread)?);
+        spec.statics.push(group_static(body).ok_or_else(unread)?);
     }
     if spec.enchants != spec.slots.first().is_some() || spec.statics.is_empty() {
         return Err("not an enchantment the grammar reads".to_string());
@@ -1451,6 +1481,13 @@ struct Model {
     counts_hand: bool,
     /// Its text about combat.
     combat: CombatText,
+    /// Its static abilities (CR 604.1), which [`World::refresh`] applies.
+    statics: Vec<Static>,
+    /// What the static abilities on the battlefield do to it as they stand:
+    /// keywords they grant, and their change to power and toughness, not
+    /// counted in `keywords`, `power` or `toughness`.
+    granted: Vec<Keyword>,
+    boost: (i32, i32),
 }
 
 impl Model {
@@ -1477,6 +1514,9 @@ impl Model {
             counts_creature_cards: false,
             counts_hand: false,
             combat: CombatText::default(),
+            statics: Vec::new(),
+            granted: Vec::new(),
+            boost: (0, 0),
         }
     }
 
@@ -1513,6 +1553,13 @@ impl Model {
     }
 
     fn matches(&self, filter: &Filter, caster: PlayerId) -> bool {
+        self.matches_from(filter, caster, false)
+    }
+
+    /// [`Model::matches`] for an ability whose source this is when
+    /// `is_source`, which "other" leaves out (CR 109.5).
+    fn matches_from(&self, filter: &Filter, caster: PlayerId, is_source: bool) -> bool {
+        let has = |k: &Keyword| self.keywords.contains(k) || self.granted.contains(k);
         filter.0.iter().any(|c| {
             let head = match &c.head {
                 None => true,
@@ -1523,9 +1570,10 @@ impl Model {
                 && !c.not_colors.iter().any(|col| self.colors.contains(col))
                 && !c.not_types.iter().any(|t| self.types.contains(t) || self.subtypes.contains(t))
                 && c.subtypes.iter().all(|t| self.subtypes.contains(t))
-                && c.min_power.is_none_or(|n| self.power.is_some_and(|p| p >= n))
-                && !c.without.iter().any(|k| self.keywords.contains(k))
-                && c.with.iter().all(|k| self.keywords.contains(k))
+                && c.min_power.is_none_or(|n| self.power.is_some_and(|p| p + self.boost.0 >= n))
+                && !c.without.iter().any(has)
+                && c.with.iter().all(has)
+                && !(c.other && is_source)
                 && (!c.token || self.name.is_none())
                 && c.yours.is_none_or(|y| (self.controller == caster) == y)
                 // Nothing on the board is attacking: it is the precombat
@@ -1592,7 +1640,7 @@ struct PermanentSeen {
 }
 
 fn seen(m: &Model) -> PermanentSeen {
-    let mut keywords: Vec<&'static str> = m.keywords.iter().map(|k| k.label()).collect();
+    let mut keywords: Vec<&'static str> = m.keywords.iter().chain(&m.granted).map(|k| k.label()).collect();
     keywords.sort_unstable();
     keywords.dedup();
     let mut colors: Vec<char> = m.colors.iter().map(|c| color_letter(*c)).collect();
@@ -1628,6 +1676,12 @@ impl World {
     /// A permanent's power and toughness as they stand: printed, changed,
     /// or counted (CR 604.3) when its text defines them.
     fn pt_of(&self, m: &Model) -> (Option<i32>, Option<i32>) {
+        let (p, t) = self.defined_pt(m);
+        (p.map(|p| p + m.boost.0), t.map(|t| t + m.boost.1))
+    }
+
+    /// [`World::pt_of`] before static abilities change it (CR 613.4b-c).
+    fn defined_pt(&self, m: &Model) -> (Option<i32>, Option<i32>) {
         let n = |count: usize| Some(i32::try_from(count).expect("a few"));
         if m.counts_creatures {
             let c = self.permanents.values().chain(&self.tokens).filter(|o| o.is_creature() && o.controller == m.controller).count();
@@ -1644,11 +1698,13 @@ impl World {
     }
 
     fn observed(&self) -> Observed {
-        let all: Vec<&Model> = self.permanents.values().chain(&self.tokens).collect();
+        let mut now = self.clone();
+        now.refresh();
+        let all: Vec<&Model> = now.permanents.values().chain(&now.tokens).collect();
         let mut battlefield: Vec<PermanentSeen> = all.iter()
             .map(|m| {
                 let mut seen = seen(m);
-                (seen.power, seen.toughness) = self.pt_of(m);
+                (seen.power, seen.toughness) = now.pt_of(m);
                 if let Some(t) = &m.combat.haste_if_opponent_controls {
                     if all.iter().any(|o| o.controller != m.controller && o.subtypes.contains(t)) && !seen.keywords.contains(&"haste") {
                         seen.keywords.push("haste");
@@ -1685,7 +1741,7 @@ impl World {
             Dest::Graveyard => {
                 self.graveyard[owner].push(name);
                 // A new object, with its printed characteristics (CR 400.7).
-                self.yard.insert(id, Model { controller: m.owner, damage: 0, tapped: false, counters: (0, 0), ..m });
+                self.yard.insert(id, Model { controller: m.owner, damage: 0, tapped: false, counters: (0, 0), granted: Vec::new(), boost: (0, 0), ..m });
             }
             Dest::Exile => self.exile[owner].push(name),
             Dest::Hand => self.hand[owner].push(name),
@@ -1706,22 +1762,99 @@ impl World {
         u32::try_from(self.yard.values().filter(|m| m.owner == p && m.is_creature()).count()).expect("a few")
     }
 
-    /// State-based actions, as CR 704.5f-g state them: a creature with
-    /// toughness 0 or less, or with damage at least its toughness, is put
-    /// into its owner's graveyard. Repeated until none applies (CR 704.3).
+    /// Apply the static abilities on the battlefield as the board stands
+    /// (CR 611.3a: their effects are not locked in, so a lord's bonus ends
+    /// when it leaves and a count follows what it counts): first the
+    /// keywords they grant (layer 6), then their changes to power and
+    /// toughness (layer 7c), whose "with flying" sees those keywords (CR
+    /// 613.1f, 613.4c).
+    fn refresh(&mut self) {
+        for m in self.permanents.values_mut().chain(self.tokens.iter_mut()) {
+            m.granted.clear();
+            m.boost = (0, 0);
+        }
+        for keywords in [true, false] {
+            let before = self.clone();
+            let n = before.permanents.len();
+            let targets = before.permanents.iter().map(|(id, m)| (Some(*id), m)).chain(before.tokens.iter().map(|m| (None, m)));
+            for (k, (id, m)) in targets.enumerate() {
+                let ((mut power, mut toughness), mut has) = ((0, 0), Vec::new());
+                for (src_id, src) in &before.permanents {
+                    for st in &src.statics {
+                        if let Some(((p, t), h)) = before.static_effect(st, *src_id, src, id, m) {
+                            power += p;
+                            toughness += t;
+                            has.extend(h);
+                        }
+                    }
+                }
+                let target = match id {
+                    Some(id) => self.permanents.get_mut(&id).expect("on the battlefield"),
+                    None => &mut self.tokens[k - n],
+                };
+                if keywords {
+                    target.granted = has;
+                } else {
+                    target.boost = (power, toughness);
+                }
+            }
+        }
+    }
+
+    /// What static ability `st` of `src` (id `src_id`) does to the creature
+    /// `m` (id `id`, none for a token): a change to its power and toughness,
+    /// and keywords; None when it does not apply to it.
+    fn static_effect(&self, st: &Static, src_id: ObjectId, src: &Model, id: Option<ObjectId>, m: &Model) -> Option<((i32, i32), Vec<Keyword>)> {
+        if !m.is_creature() {
+            return None;
+        }
+        let is_source = id == Some(src_id);
+        let count = |n: usize| i32::try_from(n).expect("a few");
+        match st {
+            Static::Enchanted { power, toughness, has, per_creature_card } => {
+                let k = if *per_creature_card { count(self.creature_cards_in_graveyard(src.controller) as usize) } else { 1 };
+                matches!(src.attached, Some(Target::Object(e)) if Some(e) == id).then(|| ((power * k, toughness * k), has.clone()))
+            }
+            Static::Group { filter, enchanted_player, power, toughness, has } => {
+                let whose = !enchanted_player || matches!(src.attached, Some(Target::Player(p)) if p == m.controller);
+                (whose && m.matches_from(filter, src.controller, is_source)).then(|| ((*power, *toughness), has.clone()))
+            }
+            Static::PerEach { filter, power, toughness } => {
+                let k = count(self.permanents.values().chain(&self.tokens).filter(|o| o.matches(filter, src.controller)).count());
+                is_source.then_some(((power * k, toughness * k), Vec::new()))
+            }
+            Static::IfYouControl { subtype, has } => {
+                let holds = self.permanents.values().chain(&self.tokens).any(|o| o.controller == src.controller && o.subtypes.contains(subtype));
+                (is_source && holds).then(|| ((0, 0), has.clone()))
+            }
+        }
+    }
+
+    /// State-based actions, as CR 704.5f-h state them: a creature with
+    /// toughness 0 or less is put into its owner's graveyard, and one with
+    /// damage at least its toughness, or any from a source with deathtouch,
+    /// is destroyed, which indestructible stops (702.12b). Repeated until
+    /// none applies (CR 704.3), the static abilities applied afresh each
+    /// time.
     fn state_based_actions(&mut self) {
         loop {
+            self.refresh();
+            let dies = |m: &Model| m.is_creature() && self.pt_of(m).1.is_some_and(|t| t <= 0
+                || (!has(m, Keyword::Indestructible) && (m.damage >= t as u32 || (m.deathtouched && m.damage > 0))));
             let dying: Vec<ObjectId> = self.permanents.iter()
-                .filter(|(_, m)| m.is_creature() && self.pt_of(m).1.is_some_and(|t| t <= 0 || m.damage >= t as u32 || (m.deathtouched && m.damage > 0)))
+                .filter(|(_, m)| dies(m))
                 .map(|(id, _)| *id)
                 .collect();
-            let before = self.tokens.len();
-            self.tokens.retain(|m| m.toughness.is_none_or(|t| t > 0 && m.damage < t as u32));
+            let tokens_dying: Vec<bool> = self.tokens.iter().map(dies).collect();
             let falls = self.permanents.values()
                 .any(|m| matches!(m.attached, Some(Target::Object(a)) if !self.permanents.contains_key(&a)));
-            if dying.is_empty() && before == self.tokens.len() && !falls {
+            if dying.is_empty() && !tokens_dying.contains(&true) && !falls {
                 return;
             }
+            // A token dies too (CR 700.4), and then ceases to exist (704.5d).
+            self.a_creature_died |= tokens_dying.contains(&true);
+            let mut flags = tokens_dying.into_iter();
+            self.tokens.retain(|_| !flags.next().expect("one per token"));
             for id in dying {
                 self.leave(id, Dest::Graveyard);
                 self.a_creature_died = true;
@@ -1778,6 +1911,7 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
             world.library[p.0 as usize].push(name.to_string());
         }
     }
+    world.refresh();
     (state, world)
 }
 
@@ -2185,6 +2319,9 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                         counts_creature_cards: false,
                         counts_hand: false,
                         combat: CombatText::default(),
+                        statics: Vec::new(),
+                        granted: Vec::new(),
+                        boost: (0, 0),
                     });
                 }
             }
@@ -2264,34 +2401,9 @@ fn resolve(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId, car
     let mut w = apply(spec, world, targets, caster);
     if spec.permanent {
         // An enchantment: it enters, an Aura attached to what its spell
-        // targeted (CR 303.4f), and its static abilities apply at once.
+        // targeted (CR 303.4f), and its static abilities apply from then on.
         let attached = spec.enchants.then(|| targets[0].clone());
-        w.permanents.insert(id, Model { attached: attached.clone(), ..Model::printed(card, caster) });
-        let creature_cards = i32::try_from(w.creature_cards_in_graveyard(caster)).expect("a few");
-        for st in &spec.statics {
-            match st {
-                Static::Enchanted { power, toughness, has, per_creature_card } => {
-                    let k = if *per_creature_card { creature_cards } else { 1 };
-                    if let Some(Target::Object(e)) = &attached {
-                        let m = w.permanents.get_mut(e).expect("an enchanted creature");
-                        change(m, power * k, toughness * k);
-                        m.keywords.extend(has);
-                    }
-                }
-                Static::Group { filter, enchanted_player, power, toughness, has } => {
-                    let whose = match &attached {
-                        Some(Target::Player(p)) if *enchanted_player => Some(*p),
-                        _ => None,
-                    };
-                    for m in w.permanents.values_mut().chain(w.tokens.iter_mut()) {
-                        if m.is_creature() && m.matches(filter, caster) && whose.is_none_or(|p| m.controller == p) {
-                            change(m, *power, *toughness);
-                            m.keywords.extend(has);
-                        }
-                    }
-                }
-            }
-        }
+        w.permanents.insert(id, Model { attached, statics: spec.statics.clone(), ..Model::printed(card, caster) });
     }
     w.state_based_actions();
     if !spec.permanent {
@@ -2317,6 +2429,7 @@ fn creature_outcomes(spec: &Spec, world: &World, caster: PlayerId, card: &Printe
         counts_creature_cards: spec.pt_is_creature_cards,
         counts_hand: spec.pt_is_cards_in_hand,
         combat: spec.combat.clone(),
+        statics: spec.statics.clone(),
         ..Model::printed(card, caster)
     };
     if let (Some(n), true) = (spec.enters_with_counters_if_morbid, world.a_creature_died) {
@@ -2660,36 +2773,38 @@ fn readable(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (Vec<
 /// and names it, so coverage is never lost without someone deciding to
 /// lose it.
 const READ: &[&str] = &[
-    "Abbey Griffin", "Altar's Reap", "Ambush Viper", "Ancient Grudge", "Armored Skaab",
-    "Army of the Damned", "Avacyn's Pilgrim", "Avacynian Priest", "Balefire Dragon",
-    "Blasphemous Act", "Bloodcrazed Neonate", "Boneyard Wurm", "Bramblecrush",
-    "Brimstone Volley", "Bump in the Night", "Chapel Geist", "Clifftop Retreat",
-    "Coral Merfolk", "Corpse Lunge", "Counterspell", "Curse of Death's Hold",
-    "Darkthicket Wolf", "Dead Weight", "Deranged Assistant", "Diregraf Ghoul", "Dissipate",
-    "Divination", "Doom Blade", "Doomed Traveler", "Dream Twist", "Elite Inquisitor",
-    "Falkenrath Marauders", "Feeling of Dread", "Feral Ridgewolf", "Festerhide Boar", "Forest",
-    "Fortress Crab", "Gatstaf Shepherd", "Gavony Township", "Geist-Honored Monk",
-    "Geistcatcher's Rig", "Geistflame", "Ghoulcaller's Bell", "Giant Growth", "Glorious Anthem",
-    "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms", "Grave Bramble",
-    "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Hinterland Harbor",
-    "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness", "Intangible Virtue",
-    "Into the Maw of Hell", "Invisible Stalker", "Island", "Isolated Chapel", "Kalonian Tusker",
-    "Kessig Wolf", "Kindercatch", "Lantern Spirit", "Lava Axe", "Lightning Bolt",
-    "Lost in the Mist", "Makeshift Mauler", "Markov Patrician", "Mausoleum Guard",
-    "Maw of the Mire", "Midnight Haunting", "Moan of the Unhallowed", "Moment of Heroism",
-    "Moon Heron", "Morkrut Banshee", "Mountain", "Naturalize", "Nephalia Drownyard",
-    "Night Revelers", "Orchard Spirit", "Paraselene", "Pitchburn Devils", "Plains", "Prey Upon",
+    "Abbey Griffin", "Altar's Reap", "Ambush Viper", "Ancient Grudge", "Angelic Overseer",
+    "Armored Skaab", "Army of the Damned", "Avacyn's Pilgrim", "Avacynian Priest",
+    "Balefire Dragon", "Battleground Geist", "Blasphemous Act", "Bloodcrazed Neonate",
+    "Boneyard Wurm", "Bramblecrush", "Brimstone Volley", "Bump in the Night", "Chapel Geist",
+    "Clifftop Retreat", "Coral Merfolk", "Corpse Lunge", "Counterspell",
+    "Curse of Death's Hold", "Darkthicket Wolf", "Dead Weight", "Deranged Assistant",
+    "Diregraf Ghoul", "Dissipate", "Divination", "Doom Blade", "Doomed Traveler", "Dream Twist",
+    "Elite Inquisitor", "Falkenrath Marauders", "Feeling of Dread", "Feral Ridgewolf",
+    "Festerhide Boar", "Forest", "Fortress Crab", "Gallows Warden", "Gatstaf Shepherd",
+    "Gavony Township", "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame",
+    "Ghoulcaller's Bell", "Giant Growth", "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker",
+    "Grasp of Phantoms", "Grave Bramble", "Grizzled Outcasts", "Grizzly Bears",
+    "Gruesome Deformity", "Hinterland Harbor", "Hollowhenge Scavenger", "Holy Strength",
+    "Hysterical Blindness", "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker",
+    "Island", "Isolated Chapel", "Kalonian Tusker", "Kessig Wolf", "Kindercatch",
+    "Lantern Spirit", "Lava Axe", "Lightning Bolt", "Lost in the Mist", "Makeshift Mauler",
+    "Markov Patrician", "Mausoleum Guard", "Maw of the Mire", "Midnight Haunting",
+    "Moan of the Unhallowed", "Moment of Heroism", "Moon Heron", "Morkrut Banshee", "Mountain",
+    "Naturalize", "Nephalia Drownyard", "Night Revelers", "One-Eyed Scarecrow",
+    "Orchard Spirit", "Paraselene", "Pitchburn Devils", "Plains", "Prey Upon",
     "Purify the Grave", "Rally the Peasants", "Ranger's Guile", "Rebuke", "Reckless Waif",
-    "Riot Devils", "Rolling Temblor", "Rotting Fensnake", "Savannah Lions", "Selfless Cathar",
-    "Sensory Deprivation", "Shimmering Grotto", "Silent Departure", "Silverchase Fox",
-    "Skaab Goliath", "Slayer of the Wicked", "Smite the Monstrous", "Sol Ring",
-    "Somberwald Spider", "Spectral Flight", "Spectral Rider", "Spider Spawning",
-    "Spidery Grasp", "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble",
-    "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp", "Swords to Plowshares",
-    "Think Twice", "Thraben Purebloods", "Tormented Pariah", "Travel Preparations",
-    "Typhoid Rats", "Unburial Rites", "Urgent Exorcism", "Vampire Interloper", "Vampiric Fury",
-    "Victim of Night", "Village Bell-Ringer", "Village Ironsmith", "Villagers of Estwald",
-    "Voiceless Spirit", "Walking Corpse", "Woodland Cemetery", "Wreath of Geists",
+    "Riot Devils", "Rolling Temblor", "Rotting Fensnake", "Savannah Lions",
+    "Scourge of Geier Reach", "Selfless Cathar", "Sensory Deprivation", "Shimmering Grotto",
+    "Silent Departure", "Silverchase Fox", "Skaab Goliath", "Slayer of the Wicked",
+    "Smite the Monstrous", "Sol Ring", "Somberwald Spider", "Spectral Flight", "Spectral Rider",
+    "Spider Spawning", "Spidery Grasp", "Stensia Bloodhall", "Stitched Drake",
+    "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp",
+    "Swords to Plowshares", "Think Twice", "Thraben Purebloods", "Tormented Pariah",
+    "Travel Preparations", "Typhoid Rats", "Unburial Rites", "Urgent Exorcism",
+    "Vampire Interloper", "Vampiric Fury", "Victim of Night", "Village Bell-Ringer",
+    "Village Ironsmith", "Villagers of Estwald", "Voiceless Spirit", "Walking Corpse",
+    "Woodland Cemetery", "Wreath of Geists",
 ];
 
 // ---- the properties ----
@@ -3022,7 +3137,7 @@ fn every_readable_werewolf_transforms_as_its_text_says() {
 // ---- combat ----
 
 fn has(m: &Model, k: Keyword) -> bool {
-    m.keywords.contains(&k)
+    m.keywords.contains(&k) || m.granted.contains(&k)
 }
 
 /// Whether `blocker` may block `attacker` alone (CR 509.1a-b): a creature
@@ -3063,6 +3178,7 @@ fn protected(to: &Model, source: &Model) -> bool {
 /// without vigilance taps to attack (508.1f, 702.20b).
 fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec<World> {
     let mut w = world.clone();
+    w.refresh();
     if !has(&w.permanents[&a], Keyword::Vigilance) {
         w.permanents.get_mut(&a).expect("the attacker").tapped = true;
     }
@@ -3191,6 +3307,15 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
 /// hand and both libraries: a combat between them, and the same in the
 /// reference.
 fn arena(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Option<(&Printed, &Spec)>) -> (GameState, World, ObjectId, Option<ObjectId>) {
+    let (state, world, a, b, _) = arena_with(registry, attacker, blocker, None);
+    (state, world, a, b)
+}
+
+/// [`arena`], and a third creature standing by on one side, out of the
+/// combat.
+fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Option<(&Printed, &Spec)>, standing: Option<((&Printed, &Spec), PlayerId)>)
+    -> (GameState, World, ObjectId, Option<ObjectId>, Option<ObjectId>)
+{
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let mut world = World {
         permanents: BTreeMap::new(),
@@ -3222,13 +3347,16 @@ fn arena(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Option<(
         world.permanents.insert(id, Model {
             combat: spec.combat.clone(),
             counts_hand: spec.pt_is_cards_in_hand,
+            statics: spec.statics.clone(),
             ..Model::printed(card, owner)
         });
         id
     };
     let a = place(&mut state, attacker, P0);
     let b = blocker.map(|b| place(&mut state, b, P1));
-    (state, world, a, b)
+    let s = standing.map(|(c, side)| place(&mut state, c, side));
+    world.refresh();
+    (state, world, a, b, s)
 }
 
 /// What the engine asks in a combat: the attackers its prompt names and
@@ -3288,6 +3416,83 @@ fn every_combat_ending(state: &GameState, registry: &CardRegistry, combat: &Comb
     Ok(done)
 }
 
+/// The creatures the combat tests fight with: those the grammar reads whose
+/// text is keywords, combat text and static abilities.
+fn fighters(cards: &[(Printed, Spec)]) -> Vec<(&Printed, &Spec)> {
+    cards.iter()
+        .filter(|(c, s)| c.has_type("Creature") && s.etb.is_none() && s.dies.is_none() && s.activated.is_empty()
+            && s.mana.is_empty() && !s.werewolf && !s.pt_is_creatures_you_control && !s.pt_is_creature_cards
+            && !s.enters_tapped && (c.power.is_some() || s.pt_is_cards_in_hand))
+        .map(|(c, s)| (c, s))
+        .collect()
+}
+
+/// One combat in an arena: `a` attacks, and `b`, if there is one, may
+/// block it. The engine must offer `a` as an attacker exactly when it
+/// lacks defender, and require it to attack exactly when its text says it
+/// attacks each combat if able; let `b` block it alone exactly when
+/// evasion, restrictions, protection and menace allow; and end the combat
+/// every way the reference does and no other, with the defender declining
+/// to block and, when it may, blocking. The number of combats compared,
+/// and what disagrees.
+fn fight(registry: &CardRegistry, state: &GameState, world: &World, a: ObjectId, b: Option<ObjectId>, name: &str) -> (usize, Vec<String>) {
+    let mut failures = Vec::new();
+    let am = &world.permanents[&a];
+    let asked = combat_questions(state, registry, a);
+    if asked.eligible.contains(&a) == has(am, Keyword::Defender) {
+        failures.push(format!("{name}: offered as an attacker {}, and it {} defender", asked.eligible.contains(&a),
+            if has(am, Keyword::Defender) { "has" } else { "lacks" }));
+        return (0, failures);
+    }
+    if has(am, Keyword::Defender) {
+        return (0, failures);
+    }
+    if asked.must_attack.contains(&a) != am.combat.attacks_each_combat {
+        failures.push(format!("{name}: required to attack {}, and its text says {}",
+            asked.must_attack.contains(&a), am.combat.attacks_each_combat));
+        return (0, failures);
+    }
+    let mut combats = 0;
+    let mut block = Vec::new();
+    if let Some(b) = b {
+        let bm = &world.permanents[&b];
+        let Some((legal_blocks, min_blockers)) = asked.blocks else {
+            failures.push(format!("{name}: no blockers were asked for"));
+            return (0, failures);
+        };
+        let may = legal_blocks.get(&b).is_some_and(|v| v.contains(&a));
+        if may != evasion_allows(am, bm) {
+            failures.push(format!("{name}: it may block {may}, and the text says {}", evasion_allows(am, bm)));
+            return (0, failures);
+        }
+        let needs = min_blockers.get(&a).copied();
+        if needs != has(am, Keyword::Menace).then_some(2) {
+            failures.push(format!("{name}: needs {needs:?} blockers, and menace says {:?}", has(am, Keyword::Menace).then_some(2)));
+            return (0, failures);
+        }
+        // The defender may always decline to block: with the would-be
+        // blocker standing by, unblocked damage and what it sets off
+        // (Balefire Dragon's) reach the board as well.
+        combats += 1;
+        let want = combat_outcomes(world, a, None);
+        let endings = every_combat_ending(state, registry, &(vec![(a, P1)], Vec::new()));
+        if let Some(why) = disagreement(&want, &endings, registry) {
+            failures.push(format!("{name} declining to block: {why}"));
+        }
+        if !(may && needs.is_none()) {
+            return (combats, failures);
+        }
+        block.push((b, a));
+    }
+    combats += 1;
+    let want = combat_outcomes(world, a, b.filter(|_| !block.is_empty()));
+    let endings = every_combat_ending(state, registry, &(vec![(a, P1)], block));
+    if let Some(why) = disagreement(&want, &endings, registry) {
+        failures.push(format!("{name}: {why}"));
+    }
+    (combats, failures)
+}
+
 /// Every creature the grammar reads whose text is keywords and combat text
 /// attacks, once unblocked and once against each of them as a lone
 /// blocker. The engine must:
@@ -3307,12 +3512,7 @@ fn every_keyword_creature_fights_as_its_keywords_say() {
     let registry = registry();
     let cache = oracle_cache();
     let (cards, _) = readable(&registry, &cache);
-    let fighters: Vec<(&Printed, &Spec)> = cards.iter()
-        .filter(|(c, s)| c.has_type("Creature") && s.etb.is_none() && s.dies.is_none() && s.activated.is_empty()
-            && s.mana.is_empty() && !s.werewolf && !s.pt_is_creatures_you_control && !s.pt_is_creature_cards
-            && !s.enters_tapped && (c.power.is_some() || s.pt_is_cards_in_hand))
-        .map(|(c, s)| (c, s))
-        .collect();
+    let fighters = fighters(&cards);
     let mut failures = Vec::new();
     let mut combats = 0;
     for &attacker in &fighters {
@@ -3338,62 +3538,70 @@ fn every_keyword_creature_fights_as_its_keywords_say() {
         for blocker in std::iter::once(None).chain(fighters.iter().copied().map(Some)) {
             let (state, world, a, b) = arena(&registry, attacker, blocker);
             let name = format!("{} attacking{}", card.name, blocker.map_or(String::new(), |(b, _)| format!(", {} blocking", b.name)));
-            let am = &world.permanents[&a];
-            let asked = combat_questions(&state, &registry, a);
-            if asked.eligible.contains(&a) == has(am, Keyword::Defender) {
-                failures.push(format!("{name}: offered as an attacker {}, and it {} defender", asked.eligible.contains(&a),
-                    if has(am, Keyword::Defender) { "has" } else { "lacks" }));
-                continue;
+            let (n, why) = fight(&registry, &state, &world, a, b, &name);
+            combats += n;
+            failures.extend(why);
+        }
+    }
+    assert!(combats > 0);
+    assert!(failures.is_empty(), "{} of {combats} combats disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+}
+
+/// Every fight of [`every_keyword_creature_fights_as_its_keywords_say`]
+/// that a creature standing by on either side changes, out of combat: each
+/// fighter with a static ability, and a creature of each subtype a static
+/// asks its controller for (Angelic Overseer's Human). A lord's bonus,
+/// granted keywords, a count of opposing creatures: the engine must carry
+/// each into combat damage and the state-based actions after it, and drop
+/// it when what it depends on leaves (CR 611.3a, 613.4c, 704.3).
+#[test]
+fn every_static_reaches_the_combats_it_changes() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let fighters = fighters(&cards);
+    let mut standing: Vec<(&Printed, &Spec)> = fighters.iter().copied().filter(|(_, s)| !s.statics.is_empty()).collect();
+    for (_, spec) in standing.clone() {
+        for st in &spec.statics {
+            if let Static::IfYouControl { subtype, .. } = st {
+                standing.push(fighters.iter().copied()
+                    .find(|(c, s)| s.statics.is_empty() && c.types().1.contains(subtype))
+                    .expect("a creature of that subtype to stand by"));
             }
-            if has(am, Keyword::Defender) {
-                continue;
-            }
-            if asked.must_attack.contains(&a) != am.combat.attacks_each_combat {
-                failures.push(format!("{name}: required to attack {}, and its text says {}",
-                    asked.must_attack.contains(&a), am.combat.attacks_each_combat));
-                continue;
-            }
-            let mut block = Vec::new();
-            if let Some(b) = b {
-                let bm = &world.permanents[&b];
-                let Some((legal_blocks, min_blockers)) = asked.blocks else {
-                    failures.push(format!("{name}: no blockers were asked for"));
-                    continue;
-                };
-                let may = legal_blocks.get(&b).is_some_and(|v| v.contains(&a));
-                if may != evasion_allows(am, bm) {
-                    failures.push(format!("{name}: it may block {may}, and the text says {}", evasion_allows(am, bm)));
-                    continue;
+        }
+    }
+    let mut failures = Vec::new();
+    let mut combats = 0;
+    for &by in &standing {
+        for side in [P0, P1] {
+            for &attacker in &fighters {
+                for blocker in std::iter::once(None).chain(fighters.iter().copied().map(Some)) {
+                    let (state, world, a, b, s) = arena_with(&registry, attacker, blocker, Some((by, side)));
+                    // Only the combats it changes: what the static
+                    // abilities do to the combatants, against the same
+                    // arena without it.
+                    let mut without = world.clone();
+                    without.permanents.remove(&s.expect("standing by"));
+                    without.refresh();
+                    let changed = |id: ObjectId| {
+                        let (x, y) = (&world.permanents[&id], &without.permanents[&id]);
+                        x.boost != y.boost || x.granted != y.granted
+                    };
+                    if !(changed(a) || b.is_some_and(changed)) {
+                        continue;
+                    }
+                    let name = format!("{} attacking{}, {} standing by for player {}", attacker.0.name,
+                        blocker.map_or(String::new(), |(b, _)| format!(", {} blocking", b.name)), by.0.name, side.0);
+                    let (n, why) = fight(&registry, &state, &world, a, b, &name);
+                    combats += n;
+                    failures.extend(why);
                 }
-                let needs = min_blockers.get(&a).copied();
-                if needs != has(am, Keyword::Menace).then_some(2) {
-                    failures.push(format!("{name}: needs {needs:?} blockers, and menace says {:?}", has(am, Keyword::Menace).then_some(2)));
-                    continue;
-                }
-                // The defender may always decline to block: with the
-                // creature standing by, unblocked damage and what it sets
-                // off (Balefire Dragon's) reach the board as well.
-                combats += 1;
-                let want = combat_outcomes(&world, a, None);
-                let endings = every_combat_ending(&state, &registry, &(vec![(a, P1)], Vec::new()));
-                if let Some(why) = disagreement(&want, &endings, &registry) {
-                    failures.push(format!("{name} declining to block: {why}"));
-                }
-                if !(may && needs.is_none()) {
-                    continue;
-                }
-                block.push((b, a));
-            }
-            combats += 1;
-            let want = combat_outcomes(&world, a, b.filter(|_| !block.is_empty()));
-            let endings = every_combat_ending(&state, &registry, &(vec![(a, P1)], block));
-            if let Some(why) = disagreement(&want, &endings, &registry) {
-                failures.push(format!("{name}: {why}"));
             }
         }
     }
     assert!(combats > 0);
     assert!(failures.is_empty(), "{} of {combats} combats disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+    println!("{combats} combats with a creature standing by agree with the text");
 }
 
 /// A creature spell with Flash can be cast whenever its controller has
@@ -3633,6 +3841,18 @@ fn the_grammar_reads_its_templates() {
     let [Static::Group { filter: Filter(clauses), has, .. }] = &virtue.statics[..] else { panic!("one group static") };
     assert!(clauses[0].token && has == &vec![Keyword::Vigilance]);
     assert!(read_enchantment(&aura("Enchant creature\nEnchanted creature can't attack or block.")).is_err());
+
+    let lord = creature_static("Other Spirit creatures you control get +1/+0.").expect("a group static");
+    let Static::Group { filter: Filter(clauses), power: 1, toughness: 0, .. } = &lord else { panic!("+1/+0 to a group") };
+    assert!(clauses[0].other && clauses[0].yours == Some(true) && clauses[0].subtypes == ["Spirit"], "\"Other\" excludes the source");
+    let scarecrow = creature_static("Creatures with flying your opponents control get -1/-0.").expect("a group static");
+    let Static::Group { filter: Filter(clauses), power: -1, .. } = &scarecrow else { panic!("-1/-0 to a group") };
+    assert!(clauses[0].with == [Keyword::Flying] && clauses[0].yours == Some(false));
+    assert!(matches!(creature_static("This creature gets +1/+1 for each creature your opponents control."),
+        Some(Static::PerEach { power: 1, toughness: 1, .. })));
+    assert_eq!(creature_static("As long as you control a Human, this creature has hexproof and indestructible."),
+        Some(Static::IfYouControl { subtype: "Human".to_string(), has: vec![Keyword::Hexproof, Keyword::Indestructible] }));
+    assert!(creature_static("Whenever this creature attacks or blocks, other Humans you control get +1/+1 until end of turn.").is_none());
 
     let wolf = read_activated("{2}{G}: This creature gets +2/+2 until end of turn. Activate only once each turn.", 0).unwrap();
     assert!(wolf.once_each_turn && !wolf.tap && wolf.spec.slots == vec![Slot::This]);
