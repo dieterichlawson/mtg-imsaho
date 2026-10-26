@@ -411,6 +411,14 @@ enum Effect {
     /// "Transform this creature": it turns to its other face, unless it has
     /// transformed since the ability was put on the stack (CR 701.27a, f).
     TransformThis { slot: usize },
+    /// "Put a hatchling counter on this creature": one counter of a kind
+    /// with no rules of its own, which its text counts (CR 122.1).
+    NamedCounter { slot: usize, kind: String },
+    /// "Then if there are five or more hatchling counters on it, remove all
+    /// of them and transform it": the `NamedCounter` before it, counted
+    /// after it is put there (CR 608.2c, 122.8), and the transform as
+    /// `TransformThis`'s.
+    AtCountersRemoveAllAndTransform { slot: usize, kind: String, n: u32 },
     /// "Gain control of target creature until end of turn" or "for as long
     /// as you control ~" (CR 613.2, 611.2b).
     GainControl { slot: usize, until_end_of_turn: bool },
@@ -1561,6 +1569,23 @@ impl Spec {
             self.effects.push(Effect::PlusCounters { slot, n: 1 });
             return Some(());
         }
+        if let Some(kind) = s.strip_prefix("Put a ").and_then(|r| r.strip_suffix(" counter on this creature")).filter(|k| k.chars().all(char::is_alphabetic)) {
+            let slot = self.slot(Slot::This);
+            self.effects.push(Effect::NamedCounter { slot, kind: kind.to_string() });
+            return Some(());
+        }
+        if let Some((n, kind)) = s.strip_prefix("Then if there are ")
+            .and_then(|r| r.strip_suffix(" counters on it, remove all of them and transform it"))
+            .and_then(|r| r.split_once(" or more "))
+        {
+            let Some(Effect::NamedCounter { slot, kind: put }) = self.effects.last() else { return None };
+            if put != kind {
+                return None;
+            }
+            let slot = *slot;
+            self.effects.push(Effect::AtCountersRemoveAllAndTransform { slot, kind: kind.to_string(), n: number(n)? });
+            return Some(());
+        }
         // "Target player loses 1 life and you gain 1 life": two effects,
         // in that order (CR 608.2c).
         if let Some((loses, gain)) = s.split_once(" and you gain ") {
@@ -2527,6 +2552,8 @@ struct Model {
     /// +1/+1 and -1/-1 counters (CR 122.1a), already counted in power
     /// and toughness.
     counters: (u32, u32),
+    /// Counters of other kinds, by name: hatchling, study, slime.
+    named_counters: BTreeMap<String, u32>,
     /// Power and toughness are the number of creatures its controller
     /// controls, counted when observed (CR 604.3).
     counts_creatures: bool,
@@ -2588,6 +2615,7 @@ impl Model {
             damage: 0,
             tapped: false,
             counters: (0, 0),
+            named_counters: BTreeMap::new(),
             counts_creatures: false,
             attached: None,
             other_face: None,
@@ -2800,6 +2828,8 @@ struct PermanentSeen {
     colors: Vec<char>,
     subtypes: Vec<String>,
     counters: (u32, u32),
+    /// Counters of other kinds, by name.
+    named_counters: Vec<(String, u32)>,
     /// What it is attached to: a permanent by name, or "player N".
     attached_to: Option<String>,
     regeneration_shields: u32,
@@ -2832,6 +2862,7 @@ fn seen(m: &Model) -> PermanentSeen {
         colors,
         subtypes,
         counters: m.counters,
+        named_counters: m.named_counters.iter().filter(|(_, n)| **n > 0).map(|(k, n)| (k.clone(), *n)).collect(),
         attached_to: None,
         regeneration_shields: m.shields,
         may_block: m.is_creature() && !m.tapped && !restricted(m, Restriction::CantBlock),
@@ -3248,6 +3279,10 @@ fn observe(state: &GameState, registry: &CardRegistry) -> Observed {
                     o.counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0),
                     o.counters.get(&CounterType::MinusOneMinusOne).copied().unwrap_or(0),
                 ),
+                named_counters: o.counters.iter()
+                    .filter(|(t, n)| !matches!(t, CounterType::PlusOnePlusOne | CounterType::MinusOneMinusOne) && **n > 0)
+                    .map(|(t, n)| (t.label().to_string(), *n))
+                    .collect(),
                 regeneration_shields: o.regeneration_shields,
                 attached_to: o.attached_to.map(|host| state.name_of(host, registry))
                     .or_else(|| o.attached_to_player.map(|p| format!("player {}", p.0))),
@@ -3441,6 +3476,7 @@ fn creature_token((power, toughness): (i32, i32), colors: &[Color], subtypes: &[
         damage: 0,
         tapped: false,
         counters: (0, 0),
+        named_counters: BTreeMap::new(),
         counts_creatures: false,
         attached: None,
         other_face: None,
@@ -3456,7 +3492,7 @@ fn creature_token((power, toughness): (i32, i32), colors: &[Color], subtypes: &[
         shields: 0,
         temp: (0, 0),
         temp_keywords: Vec::new(),
-            temp_restricted: Vec::new(),
+        temp_restricted: Vec::new(),
         stolen_from: None,
         attacking: false,
         exile_at_end_of_combat: false,
@@ -3810,6 +3846,22 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 let id = object(*slot).expect("its source");
                 if let Some(m) = w.permanents.get_mut(&id).filter(|m| world.faces_put.get(&id).is_none_or(|t| *t == m.transformed)) {
                     m.transform();
+                }
+            }
+            Effect::NamedCounter { slot, kind } => {
+                for id in objects(*slot) {
+                    if let Some(m) = w.permanents.get_mut(&id) {
+                        *m.named_counters.entry(kind.clone()).or_insert(0) += 1;
+                    }
+                }
+            }
+            Effect::AtCountersRemoveAllAndTransform { slot, kind, n } => {
+                let id = object(*slot).expect("its source");
+                if let Some(m) = w.permanents.get_mut(&id).filter(|m| m.named_counters.get(kind).is_some_and(|k| k >= n)) {
+                    m.named_counters.remove(kind);
+                    if world.faces_put.get(&id).is_none_or(|t| *t == m.transformed) {
+                        m.transform();
+                    }
                 }
             }
             Effect::RegenerateAll { filter } => {
@@ -5097,31 +5149,32 @@ const READ: &[&str] = &[
     "Instigator Gang", "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker",
     "Island", "Isolated Chapel", "Kalonian Tusker", "Kessig Cagebreakers", "Kessig Wolf",
     "Kessig Wolf Run", "Kindercatch", "Kruin Outlaw", "Lantern Spirit", "Lava Axe",
-    "Lightning Bolt", "Lost in the Mist", "Lumberknot", "Make a Wish", "Makeshift Mauler",
-    "Manor Skeleton", "Markov Patrician", "Mask of Avacyn", "Mausoleum Guard",
-    "Maw of the Mire", "Mayor of Avabruck", "Mentor of the Meek", "Midnight Haunting",
-    "Mindshrieker", "Moan of the Unhallowed", "Moldgraf Monstrosity", "Moment of Heroism",
-    "Moon Heron", "Moonmist", "Moorland Haunt", "Morkrut Banshee", "Mountain", "Mulch",
-    "Murder of Crows", "Naturalize", "Nephalia Drownyard", "Night Revelers", "Night Terrors",
-    "Nightbird's Clutches", "Olivia Voldaren", "One-Eyed Scarecrow", "Orchard Spirit",
-    "Pacifism", "Paraselene", "Pitchburn Devils", "Plains", "Prey Upon", "Purify the Grave",
-    "Rage Thrower", "Rakish Heir", "Rally the Peasants", "Ranger's Guile",
-    "Reaper from the Abyss", "Rebuke", "Reckless Waif", "Riot Devils", "Rolling Temblor",
-    "Rotting Fensnake", "Runechanter's Pike", "Savannah Lions", "Scourge of Geier Reach",
-    "Screeching Bat", "Selfless Cathar", "Selhoff Occultist", "Sensory Deprivation",
-    "Sever the Bloodline", "Sharpened Pitchfork", "Shimmering Grotto", "Silent Departure",
-    "Silver-Inlaid Dagger", "Silverchase Fox", "Skaab Goliath", "Skeletal Grimace",
-    "Skirsdag Cultist", "Slayer of the Wicked", "Smite the Monstrous", "Sol Ring",
-    "Somberwald Spider", "Spectral Flight", "Spectral Rider", "Spider Spawning",
-    "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble",
-    "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp", "Swords to Plowshares",
-    "Think Twice", "Thraben Purebloods", "Thraben Sentry", "Tormented Pariah",
-    "Traitorous Blood", "Travel Preparations", "Traveler's Amulet", "Tree of Redemption",
-    "Trepanation Blade", "Tribute to Hunger", "Typhoid Rats", "Ulvenwald Mystics",
-    "Unburial Rites", "Unruly Mob", "Urgent Exorcism", "Vampire Interloper", "Vampiric Fury",
-    "Victim of Night", "Village Bell-Ringer", "Village Cannibals", "Village Ironsmith",
-    "Villagers of Estwald", "Voiceless Spirit", "Walking Corpse", "Wooden Stake",
-    "Woodland Cemetery", "Woodland Sleuth", "Wreath of Geists",
+    "Lightning Bolt", "Lost in the Mist", "Ludevic's Test Subject", "Lumberknot", "Make a Wish",
+    "Makeshift Mauler", "Manor Skeleton", "Markov Patrician", "Mask of Avacyn",
+    "Mausoleum Guard", "Maw of the Mire", "Mayor of Avabruck", "Mentor of the Meek",
+    "Midnight Haunting", "Mindshrieker", "Moan of the Unhallowed", "Moldgraf Monstrosity",
+    "Moment of Heroism", "Moon Heron", "Moonmist", "Moorland Haunt", "Morkrut Banshee",
+    "Mountain", "Mulch", "Murder of Crows", "Naturalize", "Nephalia Drownyard",
+    "Night Revelers", "Night Terrors", "Nightbird's Clutches", "Olivia Voldaren",
+    "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism", "Paraselene", "Pitchburn Devils",
+    "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower", "Rakish Heir",
+    "Rally the Peasants", "Ranger's Guile", "Reaper from the Abyss", "Rebuke", "Reckless Waif",
+    "Riot Devils", "Rolling Temblor", "Rotting Fensnake", "Runechanter's Pike",
+    "Savannah Lions", "Scourge of Geier Reach", "Screeching Bat", "Selfless Cathar",
+    "Selhoff Occultist", "Sensory Deprivation", "Sever the Bloodline", "Sharpened Pitchfork",
+    "Shimmering Grotto", "Silent Departure", "Silver-Inlaid Dagger", "Silverchase Fox",
+    "Skaab Goliath", "Skeletal Grimace", "Skirsdag Cultist", "Slayer of the Wicked",
+    "Smite the Monstrous", "Sol Ring", "Somberwald Spider", "Spectral Flight", "Spectral Rider",
+    "Spider Spawning", "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake",
+    "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp",
+    "Swords to Plowshares", "Think Twice", "Thraben Purebloods", "Thraben Sentry",
+    "Tormented Pariah", "Traitorous Blood", "Travel Preparations", "Traveler's Amulet",
+    "Tree of Redemption", "Trepanation Blade", "Tribute to Hunger", "Typhoid Rats",
+    "Ulvenwald Mystics", "Unburial Rites", "Unruly Mob", "Urgent Exorcism",
+    "Vampire Interloper", "Vampiric Fury", "Victim of Night", "Village Bell-Ringer",
+    "Village Cannibals", "Village Ironsmith", "Villagers of Estwald", "Voiceless Spirit",
+    "Walking Corpse", "Wooden Stake", "Woodland Cemetery", "Woodland Sleuth",
+    "Wreath of Geists",
 ];
 
 // ---- the properties ----
@@ -5482,13 +5535,28 @@ fn every_readable_activated_ability_does_what_its_text_says() {
     }
     for (card, spec) in cards.iter().chain(&backs) {
         // An ability activated only if its controller controls enough of a
-        // subtype is tried on the board, with one too few, and with enough.
+        // subtype is tried on the board, with one too few, and with enough;
+        // one that counts the counters it puts on its source, with none
+        // there, with two too few and with one too few.
         let short = |a: &Activated| a.if_you_control.iter().flat_map(move |(n, _)| [n - 1, *n].map(Some)).collect::<Vec<_>>();
-        for (ability, count) in spec.activated.iter().flat_map(|a| std::iter::once((a, None)).chain(short(a).into_iter().map(move |c| (a, c)))) {
+        let counted = |a: &Activated| a.spec.effects.iter().find_map(|e| match e {
+            Effect::AtCountersRemoveAllAndTransform { kind, n, .. } => Some([n - 2, n - 1].map(|k| (kind.clone(), k))),
+            _ => None,
+        });
+        let variants = spec.activated.iter()
+            .flat_map(|a| std::iter::once((a, None)).chain(short(a).into_iter().map(move |c| (a, c))))
+            .flat_map(|(a, c)| std::iter::once((a, c, None)).chain(counted(a).into_iter().flatten().map(move |k| (a, c, Some(k)))));
+        for (ability, count, already) in variants {
             checked += 1;
-            let name = format!("{}'s ability {}{}", card.name, ability.index, count.map_or(String::new(), |c| format!(" with {c} of its controller's")));
+            let name = format!("{}'s ability {}{}{}", card.name, ability.index,
+                count.map_or(String::new(), |c| format!(" with {c} of its controller's")),
+                already.as_ref().map_or(String::new(), |(kind, n)| format!(" with {n} {kind} counters on it")));
             let (mut state, mut world) = board(&registry, &cache);
             let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
+            if let Some((kind, n)) = &already {
+                state.get_object_mut(id).expect("just placed").counters.insert(counter_named(kind), *n);
+                world.permanents.get_mut(&id).expect("just placed").named_counters.insert(kind.clone(), *n);
+            }
             let of = |world: &World, subtype: &str| world.permanents.values().filter(|m| m.controller == P0 && m.subtypes.iter().any(|t| t == subtype)).count();
             if let (Some(c), Some((_, subtype))) = (count, &ability.if_you_control) {
                 let more = c.saturating_sub(of(&world, subtype));
@@ -5688,6 +5756,13 @@ fn every_readable_activated_ability_does_what_its_text_says() {
     assert!(checked > 0);
     assert!(failures.is_empty(), "{} of the {checked} abilities read disagree with their text:\n  {}",
         failures.len(), failures.join("\n  "));
+}
+
+/// The engine's counter of the kind a card's text names.
+fn counter_named(kind: &str) -> CounterType {
+    [CounterType::Slime, CounterType::Study, CounterType::Hatchling, CounterType::Loyalty].into_iter()
+        .find(|t| t.label() == kind)
+        .unwrap_or_else(|| panic!("no {kind} counter in the engine"))
 }
 
 /// Every werewolf the grammar reads, and the two on the board with it: at
@@ -7549,6 +7624,16 @@ fn the_grammar_reads_its_templates() {
         vec![Effect::ReturnAtRandom { n: 2, filter: None, to_battlefield: false }]);
     assert_eq!(read(&card("X", "Draw two cards, then discard a card.")).unwrap().effects,
         vec![Effect::Draw { n: 2 }, Effect::Discard { n: 1 }]);
+
+    let egg = read_activated("{1}{U}: Put a hatchling counter on this creature. Then if there are five or more hatchling counters on it, remove all of them and transform it.", 0).unwrap();
+    assert_eq!(egg.spec.effects, vec![
+        Effect::NamedCounter { slot: 0, kind: "hatchling".to_string() },
+        Effect::AtCountersRemoveAllAndTransform { slot: 0, kind: "hatchling".to_string(), n: 5 },
+    ]);
+    assert!(read_activated("{1}: Put a study counter on this creature. Then if there are five or more hatchling counters on it, remove all of them and transform it.", 0).is_none(),
+        "the counters counted are the ones put");
+    let bat = read_upkeep("At the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform this creature.").unwrap();
+    assert!(bat.trigger.optional && bat.trigger.pay == mana_cost("{2}{B}{B}") && bat.trigger.spec.effects == [Effect::TransformThis { slot: 0 }]);
 }
 
 
