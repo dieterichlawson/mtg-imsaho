@@ -367,6 +367,9 @@ enum Effect {
     /// "If a creature card is discarded this way, <effects>": the rest, on
     /// the same slots, when the card discarded is one.
     IfDiscardedCreature(Box<Spec>),
+    /// "<slot> can't block this turn": a rule on it until the cleanup step
+    /// (CR 514.2).
+    CantBlockThisTurn { slot: usize },
     /// "Regenerate this creature": a shield (CR 701.19a).
     Regenerate { slot: usize },
     /// "Transform this creature": it turns to its other face, unless it has
@@ -1449,6 +1452,14 @@ impl Spec {
             self.effects.push(Effect::Tap { slot, tapped: true });
             return Some(());
         }
+        if let Some(who) = s.strip_suffix(" can't block this turn") {
+            let slot = match who.strip_prefix("Up to ") {
+                Some(rest) => self.up_to(rest)?,
+                None => self.slot(Slot::Permanent(filter(who.strip_prefix("Target ")?)?)),
+            };
+            self.effects.push(Effect::CantBlockThisTurn { slot });
+            return Some(());
+        }
         if let Some(rest) = s.strip_prefix("Put a +1/+1 counter on each of up to ") {
             let slot = self.up_to(rest)?;
             self.effects.push(Effect::PlusCounters { slot, n: 1 });
@@ -2356,6 +2367,8 @@ struct Model {
     /// 514.2, 611.2a).
     temp: (i32, i32),
     temp_keywords: Vec<Keyword>,
+    /// ... and rules: "can't block this turn".
+    temp_restricted: Vec<Restriction>,
     /// Who controlled it before an effect that gives it back in the
     /// cleanup step took it (CR 514.2).
     stolen_from: Option<PlayerId>,
@@ -2396,17 +2409,18 @@ impl Model {
             shields: 0,
             temp: (0, 0),
             temp_keywords: Vec::new(),
+            temp_restricted: Vec::new(),
             stolen_from: None,
             attacking: false,
             exile_at_end_of_combat: false,
         }
     }
 
-    /// [`Model::printed`], and for a double-faced card the grammar reads,
-    /// its text and its back face ready to turn to.
+    /// [`Model::printed`], and for a creature the grammar reads, its text,
+    /// and a double-faced card's back face ready to turn to.
     fn printed_with_faces(p: &Printed, owner: PlayerId) -> Self {
         match read_creature(p) {
-            Ok(front) if p.back.is_some() => model_of(&front, p, owner),
+            Ok(front) if p.has_type("Creature") => model_of(&front, p, owner),
             _ => Model::printed(p, owner),
         }
     }
@@ -2481,7 +2495,7 @@ struct Change {
 
 /// Whether `m` is under `r`, by its own text or a static ability.
 fn restricted(m: &Model, r: Restriction) -> bool {
-    m.restricted.contains(&r) || match r {
+    m.restricted.contains(&r) || m.temp_restricted.contains(&r) || match r {
         Restriction::CantBlock => m.combat.cant_block,
         Restriction::AttacksEachCombat => m.combat.attacks_each_combat,
         _ => false,
@@ -2587,6 +2601,10 @@ struct PermanentSeen {
     /// What it is attached to: a permanent by name, or "player N".
     attached_to: Option<String>,
     regeneration_shields: u32,
+    /// A creature that may block at all, and one that must attack if able,
+    /// as a declaration would find it (CR 509.1a, 508.1d).
+    may_block: bool,
+    must_attack: bool,
 }
 
 fn seen(m: &Model) -> PermanentSeen {
@@ -2610,6 +2628,8 @@ fn seen(m: &Model) -> PermanentSeen {
         counters: m.counters,
         attached_to: None,
         regeneration_shields: m.shields,
+        may_block: m.is_creature() && !m.tapped && !restricted(m, Restriction::CantBlock),
+        must_attack: m.is_creature() && restricted(m, Restriction::AttacksEachCombat),
     }
 }
 
@@ -2708,7 +2728,7 @@ impl World {
             Dest::Graveyard => {
                 self.graveyard[owner].push(name);
                 // A new object, with its printed characteristics (CR 400.7).
-                self.yard.insert(id, Model { controller: m.owner, damage: 0, tapped: false, counters: (0, 0), granted: Vec::new(), boost: (0, 0), restricted: Vec::new(), shields: 0, temp: (0, 0), temp_keywords: Vec::new(), ..m });
+                self.yard.insert(id, Model { controller: m.owner, damage: 0, tapped: false, counters: (0, 0), granted: Vec::new(), boost: (0, 0), restricted: Vec::new(), shields: 0, temp: (0, 0), temp_keywords: Vec::new(), temp_restricted: Vec::new(), ..m });
             }
             Dest::Exile => self.exile[owner].push(name),
             Dest::Hand => self.hand[owner].push(name),
@@ -3008,6 +3028,8 @@ fn observe(state: &GameState, registry: &CardRegistry) -> Observed {
                 regeneration_shields: o.regeneration_shields,
                 attached_to: o.attached_to.map(|host| state.name_of(host, registry))
                     .or_else(|| o.attached_to_player.map(|p| format!("player {}", p.0))),
+                may_block: creature && mtg_engine::combat::can_block_at_all(state, o.id, registry),
+                must_attack: creature && state.must_attack(o.id, registry),
             }
         })
         .collect();
@@ -3199,6 +3221,7 @@ fn creature_token((power, toughness): (i32, i32), colors: &[Color], subtypes: &[
         shields: 0,
         temp: (0, 0),
         temp_keywords: Vec::new(),
+            temp_restricted: Vec::new(),
         stolen_from: None,
         attacking: false,
         exile_at_end_of_combat: false,
@@ -3463,6 +3486,13 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
             Effect::Regenerate { slot } => {
                 if let Some(m) = object(*slot).and_then(|id| w.permanents.get_mut(&id)) {
                     m.shields += 1;
+                }
+            }
+            Effect::CantBlockThisTurn { slot } => {
+                for id in objects(*slot) {
+                    if let Some(m) = w.permanents.get_mut(&id) {
+                        m.temp_restricted.push(Restriction::CantBlock);
+                    }
                 }
             }
             Effect::TransformThis { slot } => {
@@ -3851,7 +3881,7 @@ fn lasts_the_turn(spec: &Spec) -> bool {
     spec.effects.iter().any(|e| matches!(e,
         Effect::Damage { .. } | Effect::DamageEach { .. } | Effect::DamageX { .. } | Effect::Pump { .. } | Effect::PumpEach { .. }
         | Effect::PumpX { .. } | Effect::Fight { .. } | Effect::Tap { .. } | Effect::Regenerate { .. } | Effect::RegenerateAll { .. }
-        | Effect::GainControl { .. } | Effect::PumpPerCount { .. }))
+        | Effect::GainControl { .. } | Effect::PumpPerCount { .. } | Effect::CantBlockThisTurn { .. }))
 }
 
 /// Every way the players can make the choices `spec` asks for as it
@@ -3974,6 +4004,7 @@ fn next_turn_outcomes(spec: &Spec, world: &World, id: ObjectId, active: PlayerId
         m.deathtouched = false;
         m.temp = (0, 0);
         m.temp_keywords.clear();
+        m.temp_restricted.clear();
         m.shields = 0;
         if let Some(owner) = m.stolen_from.take() {
             m.controller = owner;
@@ -4598,30 +4629,31 @@ const READ: &[&str] = &[
     "Brimstone Volley", "Bump in the Night", "Burning Vengeance", "Butcher's Cleaver",
     "Caravan Vigil", "Cellar Door", "Chapel Geist", "Charmbreaker Devils", "Civilized Scholar",
     "Claustrophobia", "Clifftop Retreat", "Cloistered Youth", "Cobbled Wings", "Coral Merfolk",
-    "Corpse Lunge", "Counterspell", "Curse of Death's Hold", "Curse of Oblivion",
-    "Curse of Stalked Prey", "Curse of the Bloody Tome", "Curse of the Nightly Hunt",
-    "Curse of the Pierced Heart", "Darkthicket Wolf", "Daybreak Ranger", "Dead Weight",
-    "Demonmail Hauberk", "Deranged Assistant", "Desperate Ravings", "Devil's Play",
-    "Diregraf Ghoul", "Disciple of Griselbrand", "Dissipate", "Divination", "Divine Reckoning",
-    "Doom Blade", "Doomed Traveler", "Dream Twist", "Elder Cathar", "Elder of Laurels",
-    "Elite Inquisitor", "Endless Ranks of the Dead", "Falkenrath Marauders", "Falkenrath Noble",
-    "Feeling of Dread", "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab",
-    "Full Moon's Rise", "Furor of the Bitten", "Gallows Warden", "Galvanic Juggernaut",
-    "Gatstaf Shepherd", "Gavony Township", "Geist of Saint Traft", "Geist-Honored Monk",
-    "Geistcatcher's Rig", "Geistflame", "Ghost Quarter", "Ghostly Possession",
-    "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth", "Glorious Anthem", "Gnaw to the Bone",
-    "Goblin Piker", "Grasp of Phantoms", "Grave Bramble", "Graveyard Shovel",
-    "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Hanweir Watchkeep",
-    "Harvest Pyre", "Hinterland Harbor", "Hollowhenge Scavenger", "Holy Strength",
-    "Hysterical Blindness", "Infernal Plunge", "Instigator Gang", "Intangible Virtue",
-    "Into the Maw of Hell", "Invisible Stalker", "Island", "Isolated Chapel", "Kalonian Tusker",
-    "Kessig Cagebreakers", "Kessig Wolf", "Kessig Wolf Run", "Kindercatch", "Kruin Outlaw",
-    "Lantern Spirit", "Lava Axe", "Lightning Bolt", "Lost in the Mist", "Lumberknot",
-    "Make a Wish", "Makeshift Mauler", "Manor Skeleton", "Markov Patrician", "Mask of Avacyn",
-    "Mausoleum Guard", "Maw of the Mire", "Mayor of Avabruck", "Midnight Haunting",
-    "Moan of the Unhallowed", "Moldgraf Monstrosity", "Moment of Heroism", "Moon Heron",
-    "Moorland Haunt", "Morkrut Banshee", "Mountain", "Murder of Crows", "Naturalize",
-    "Nephalia Drownyard", "Night Revelers", "Olivia Voldaren", "One-Eyed Scarecrow",
+    "Corpse Lunge", "Counterspell", "Crossway Vampire", "Curse of Death's Hold",
+    "Curse of Oblivion", "Curse of Stalked Prey", "Curse of the Bloody Tome",
+    "Curse of the Nightly Hunt", "Curse of the Pierced Heart", "Darkthicket Wolf",
+    "Daybreak Ranger", "Dead Weight", "Demonmail Hauberk", "Deranged Assistant",
+    "Desperate Ravings", "Devil's Play", "Diregraf Ghoul", "Disciple of Griselbrand",
+    "Dissipate", "Divination", "Divine Reckoning", "Doom Blade", "Doomed Traveler",
+    "Dream Twist", "Elder Cathar", "Elder of Laurels", "Elite Inquisitor",
+    "Endless Ranks of the Dead", "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread",
+    "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab", "Full Moon's Rise",
+    "Furor of the Bitten", "Gallows Warden", "Galvanic Juggernaut", "Gatstaf Shepherd",
+    "Gavony Township", "Geist of Saint Traft", "Geist-Honored Monk", "Geistcatcher's Rig",
+    "Geistflame", "Ghost Quarter", "Ghostly Possession", "Ghoulcaller's Bell", "Ghoulraiser",
+    "Giant Growth", "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms",
+    "Grave Bramble", "Graveyard Shovel", "Grizzled Outcasts", "Grizzly Bears",
+    "Gruesome Deformity", "Hanweir Watchkeep", "Harvest Pyre", "Hinterland Harbor",
+    "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness", "Infernal Plunge",
+    "Instigator Gang", "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker",
+    "Island", "Isolated Chapel", "Kalonian Tusker", "Kessig Cagebreakers", "Kessig Wolf",
+    "Kessig Wolf Run", "Kindercatch", "Kruin Outlaw", "Lantern Spirit", "Lava Axe",
+    "Lightning Bolt", "Lost in the Mist", "Lumberknot", "Make a Wish", "Makeshift Mauler",
+    "Manor Skeleton", "Markov Patrician", "Mask of Avacyn", "Mausoleum Guard",
+    "Maw of the Mire", "Mayor of Avabruck", "Midnight Haunting", "Moan of the Unhallowed",
+    "Moldgraf Monstrosity", "Moment of Heroism", "Moon Heron", "Moorland Haunt",
+    "Morkrut Banshee", "Mountain", "Murder of Crows", "Naturalize", "Nephalia Drownyard",
+    "Night Revelers", "Nightbird's Clutches", "Olivia Voldaren", "One-Eyed Scarecrow",
     "Orchard Spirit", "Pacifism", "Paraselene", "Pitchburn Devils", "Plains", "Prey Upon",
     "Purify the Grave", "Rage Thrower", "Rakish Heir", "Rally the Peasants", "Ranger's Guile",
     "Reaper from the Abyss", "Rebuke", "Reckless Waif", "Riot Devils", "Rolling Temblor",
