@@ -32,7 +32,7 @@ Put it in the file for that rule. If none fits, make one, named for the rule.
 | whose upkeep / whose permanent a trigger watches (CR 603.2) | `your_upkeep_scope.rs`, `curse_and_equip_scope.rs` |
 | continuous effects (CR 611) | `continuous_effects.rs`, `snapshot_anthems.rs`, `attacking_creatures_anthem.rs`, `equipment_human_conditional.rs` |
 | costs (CR 601.2b/f) | `spell_costs.rs`, `tap_cost_legality.rs`, `counter_costs.rs`, `tap_creatures_cost.rs`, `xcost_mana.rs`, `x_cost_spells.rs`, `x_cost_funding_flow.rs`, `funding_build_options.rs` |
-| mana | `lands_and_mana.rs`, `mana_filters.rs`, `mana_ability_offers.rs`, `equipment_autotap.rs`, `autotap_brute_force.rs` (the planner against a hand-tap oracle over seeded boards), `autotap_beyond_the_hand.rs` (what a plan keeps payable besides the hand: abilities, flashback, payments during resolution) |
+| mana | `lands_and_mana.rs`, `mana_filters.rs`, `mana_ability_offers.rs`, `equipment_autotap.rs`, `autotap_brute_force.rs` (the planner against a hand-tap oracle over seeded boards, and over every board of up to two sources), `autotap_beyond_the_hand.rs` (what a plan keeps payable besides the hand: abilities, flashback, payments during resolution) |
 | casting and resolution (CR 601, 608) | `spells.rs`, `spell_cleanup.rs`, `multi_target_and_mill.rs`, `instant_interaction.rs` |
 | flashback (CR 702.33) | `flashback.rs`, `flashback_multiple_instances.rs` |
 | targeting and legality | `characteristics_targeting.rs`, `ability_target_protection.rs`, `hexproof_filter.rs`, `player_protection.rs`, `resolution_time_checks.rs`, `submitted_targets.rs`, `cast_target_specs.rs`, `targeting_vocabulary.rs`, `prompt_shapes.rs` |
@@ -98,6 +98,7 @@ too.
 | equipment | `cards_equipment_and_artifacts.rs`, `cards_equipment_costs.rs` |
 | sacrifice and other additional costs | `cards_sacrifice_and_additional_costs.rs` |
 | activated abilities on permanents | `cards_activated_abilities.rs` |
+| every instant and sorcery whose Oracle text a small grammar can read, at every target, against that reading (no hand-written cases; tier 3 of `docs/plans/formal-verification.md`) | `card_semantics.rs` |
 | spells and enchantments | `cards_spells_and_enchantments.rs` |
 | evasion, and P/T that depends on the board | `cards_evasion_and_graveyard_pt.rs` |
 | cards that change what the rules allow | `cards_rule_modifiers.rs` |
@@ -168,7 +169,9 @@ A test checks the inputs someone wrote down. Some properties are also
 proved, for every input: the rules arithmetic in the `mtg-kernel` crate with
 Verus, and the engine-side glue around it in `mtg-engine/src/proofs/` with
 the Kani model checker. `scripts/prove.sh` and the `proofs` workflow run
-both; they are not part of `cargo test`. What each proof covers, and what it
+both; they are not part of `cargo test`. `scripts/prove.sh exhaustive` runs
+the bounded exhaustive checks at a larger scope than `cargo test` affords,
+and `scripts/fuzz-engine.sh` fuzzes the whole engine with libFuzzer. What each proof covers, and what it
 does not, is in `docs/plans/formal-verification.md`. A defect a proof finds
 gets an ordinary test here as well, so the suite guards it on a machine
 without the provers.
