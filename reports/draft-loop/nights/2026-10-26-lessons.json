@@ -1,0 +1,366 @@
+{
+ "night": "2026-10-26",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "colors": "BG",
+   "record": "1-2-0",
+   "lessons": [
+    "Tonight's 17-land BG went 1-2 in games of 14 to 24 turns, contradicting the guide's 16-land rule; keep 16 unless the top end truly needs the extra land.",
+    "Stop taking second copies of unplayable tricks: my two Moonmists and two Vampiric Furies made no deck, and those picks should have gone to playable two-drops.",
+    "Count flier answers before building: Naturalize only hits enchantments and artifacts, so it was dead against round one's Chapel Geist and Voiceless Spirit, a 0-2 loss."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4985,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3318,
+    "output_tokens_details": {
+     "thinking_tokens": 3120
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4985
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3318,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4985,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4985,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "colors": "WR",
+   "record": "3-0-0",
+   "lessons": [
+    "Take white removal and fliers early: Fiend Hunter, Smite the Monstrous and Bonds of Faith carried this WR deck to a 6-0 game record, with Chapel Geist and Voiceless Spirit closing games.",
+    "Expect long games: the WU matchup ran 24 and 28 turns, so evasive finishers like Midnight Haunting and Falkenrath Marauders mattered more than raw power against stalled boards.",
+    "Build a low curve on 17 lands (10 Plains, 7 Mountain), as the 3-0 deck did, and cut Butcher's Cleaver for cheaper creatures and removal."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3215,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 822,
+    "output_tokens_details": {
+     "thinking_tokens": 600
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3215
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 822,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3215,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3215,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": true,
+   "colors": "WU",
+   "record": "1-2-0",
+   "lessons": [
+    "Contrary to the guide's 16-land rule, my WU deck ran 17 lands on a 2-3 drop curve, and I lost a 47-turn round-three game to BG; play 16 lands with a low curve like the BG decks.",
+    "I took Spider Spawning second in pack one, then went WU and never played it; the guide says commit to a main colour by pick 5, and tonight's only 3-0 deck was WR, not BG.",
+    "My WU deck had five fliers yet still lost a 47-turn round-three game to BG's ground bodies, so fliers alone don't break stalls; pair them with removal and a faster clock."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4961,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2429,
+    "output_tokens_details": {
+     "thinking_tokens": 2214
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4961
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2429,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4961,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4961,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "colors": "R",
+   "record": "2-1-0",
+   "lessons": [
+    "Mono-red 17-Mountain aggro went 5-3 in games, but its games ran 15 to 29 turns, so early pressure didn't close; draft reach and card-advantage removal like Harvest Pyre before a third one-drop.",
+    "Blue never became splashable without fixing, so my notes ended mono-red; commit to a second colour's playables early instead of hoping for a late splash.",
+    "Round 1's WU deck with Claustrophobia, 2x Rebuke and Smite the Monstrous outlasted my red creatures; prefer threats that leave value when removed, like Pitchburn Devils, over plain bodies."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3240,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2517,
+    "output_tokens_details": {
+     "thinking_tokens": 2299
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3240
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2517,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3240,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3240,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "colors": "BG",
+   "record": "2-1-0",
+   "lessons": [
+    "Tonight contradicted the guide: no BG deck went 3-0. BG seats finished 1-2, 2-1 and 2-1, and the 3-0 was WR seat 1. Treat BG as good, not proven.",
+    "The guide's 'keep Naturalize main against green fatties' is wrong because Naturalize cannot touch creatures. I ran two. Main creature removal such as Victim of Night or Corpse Lunge instead.",
+    "I lost 0-2 to WR's fliers-and-removal deck and took Wreath of Geists twice without playing it. Take removal or evasive threats over Wreath."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 4949,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 3763,
+    "output_tokens_details": {
+     "thinking_tokens": 3550
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 4949
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 3763,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 4949,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 4949,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "colors": "WB",
+   "record": "0-3-0",
+   "lessons": [
+    "Count the pod's removal before pick 10: BG and UB drafters here ran two Naturalize, two Prey Upon, Victim of Night, and two Sensory Deprivation, so favor card advantage and evasion over one-for-one bodies.",
+    "With Bloodline Keeper's 2BB, Curse of Death's Hold, and Corpse Lunge in the deck, my 10 Plains/7 Swamp split was a real colour risk; go 9/8 or cut the double-black cards.",
+    "My games stalled to 20-32 turns without a clear finisher, so keep at least one reliable closer like Bloodline Keeper and avoid cutting too many cheap pressure creatures for marginal card quality."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3213,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2036,
+    "output_tokens_details": {
+     "thinking_tokens": 1792
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3213
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2036,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3213,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3213,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": true,
+   "colors": "BG",
+   "record": "2-1-0",
+   "lessons": [
+    "Keep one flexible answer main: my BG deck had no Naturalize or Urgent Exorcism and lost 0-2 to a BG deck with two Naturalize, two Prey Upon and Night Terrors.",
+    "Where tonight contradicted the guide: my 17-land BG deck won 2-1 with Kindercatch and 5-drops, so 16 lands is not mandatory when the top end is heavy.",
+    "Don't take Falkenrath Marauders second pick in pack 2 when black is set; I cut all red and it never made the deck."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 5025,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2405,
+    "output_tokens_details": {
+     "thinking_tokens": 2215
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 5025
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2405,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 5025,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 5025,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "colors": "UB",
+   "record": "1-2-0",
+   "lessons": [
+    "Liliana of the Veil needs BB, but I ran 5 Swamps to 11 Islands; count double-pip cards before setting the land split, not after.",
+    "Round 3's red aggro deck beat my slow blue-black control 2-1 in 23-29 turn games; prioritise two-drops and early evasive threats over a third cheap blocker.",
+    "Long stalled games against black-green (18-31 turns) show blue-black control needs real finishers; I had only Galvanic Juggernaut and Stitched Drake, so draft more threats than walls."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3187,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2561,
+    "output_tokens_details": {
+     "thinking_tokens": 2370
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3187
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2561,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3187,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3187,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}
