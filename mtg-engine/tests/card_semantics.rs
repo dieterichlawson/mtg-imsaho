@@ -484,6 +484,8 @@ struct Spec {
     upkeep: Option<Box<Upkeep>>,
     /// "At the beginning of your end step, ..." or "... of each end step".
     end_step: Option<Box<EndStep>>,
+    /// "Whenever you cast <a spell>, ...".
+    on_cast: Option<Box<CastWatch>>,
     /// An Aura's "Enchant creature" / "Enchant player" (CR 303.4a, 702.5):
     /// the slot its spell targets, the first of `slots`.
     enchants: bool,
@@ -1004,6 +1006,35 @@ fn read_end_step(line: &str) -> Option<EndStep> {
     Some(EndStep { each, unless_attacked, trigger })
 }
 
+/// "Whenever you cast <a spell>, <effect>" (CR 603.2, 601.2i): a spell its
+/// controller casts, of the card types it names, or from their graveyard.
+#[derive(Debug, Clone, PartialEq)]
+struct CastWatch {
+    /// The card types it names ("an instant or sorcery spell"), lower case;
+    /// empty for any spell.
+    kinds: Vec<String>,
+    from_graveyard: bool,
+    trigger: Trigger,
+}
+
+fn read_cast_watch(line: &str) -> Option<CastWatch> {
+    let (what, rest) = line.strip_prefix("Whenever you cast ")?.split_once(", ")?;
+    let (what, from_graveyard) = match what.strip_suffix(" from your graveyard") {
+        Some(w) => (w, true),
+        None => (what, false),
+    };
+    let what = what.strip_prefix("an ").or_else(|| what.strip_prefix("a "))?.strip_suffix("spell")?.trim_end();
+    let kinds: Vec<String> = if what.is_empty() { Vec::new() } else { what.split(" or ").map(str::to_string).collect() };
+    if !kinds.iter().all(|k| CARD_TYPES.contains(&k.as_str())) {
+        return None;
+    }
+    let mut trigger = Trigger::default();
+    for sentence in capitalized(rest).split_inclusive(". ") {
+        trigger.spec.sentence(sentence)?;
+    }
+    Some(CastWatch { kinds, from_graveyard, trigger })
+}
+
 /// `text` with its first letter a capital, as a sentence of its own.
 fn capitalized(text: &str) -> String {
     let mut chars = text.chars();
@@ -1045,7 +1076,7 @@ fn pt_change(word: &str) -> Option<(i32, i32)> {
     Some((p.parse().ok()?, t.parse().ok()?))
 }
 
-const CARD_TYPES: [&str; 5] = ["creature", "artifact", "enchantment", "land", "planeswalker"];
+const CARD_TYPES: [&str; 7] = ["creature", "artifact", "enchantment", "land", "planeswalker", "instant", "sorcery"];
 
 /// A description of permanents: "nonblack creature", "artifact or
 /// enchantment", "non-Vampire, non-Werewolf, non-Zombie creature",
@@ -1208,7 +1239,7 @@ impl Spec {
             self.effects.push(Effect::ExileFromGraveyard { slot, n: number(n)? as usize });
             return Some(());
         }
-        for this in ["This creature ", "This land ", "This artifact "] {
+        for this in ["This creature ", "This land ", "This artifact ", "This enchantment "] {
             if let Some(rest) = s.strip_prefix(this).filter(|r| !r.starts_with("fights ")) {
                 if let Some(rest) = rest.strip_prefix("deals ") {
                     return self.sentence(&format!("~ deals {rest}."));
@@ -1801,6 +1832,10 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
             spec.end_step = Some(Box::new(read_end_step(line).ok_or_else(unread)?));
             continue;
         }
+        if line.starts_with("Whenever you cast ") {
+            spec.on_cast = Some(Box::new(read_cast_watch(line).ok_or_else(unread)?));
+            continue;
+        }
         if let Some((who, rest)) = line.strip_prefix("Whenever ").and_then(|r| r.split_once(" dies, ")) {
             let who = match who {
                 "this creature or another creature" => "creature",
@@ -2052,6 +2087,10 @@ fn read_enchantment(card: &Printed) -> Result<Spec, String> {
             spec.upkeep = Some(Box::new(read_upkeep(line).ok_or_else(unread)?));
             continue;
         }
+        if line.starts_with("Whenever you cast ") {
+            spec.on_cast = Some(Box::new(read_cast_watch(line).ok_or_else(unread)?));
+            continue;
+        }
         if let Some(statics) = restriction_static(body) {
             spec.statics.extend(statics);
             continue;
@@ -2081,7 +2120,7 @@ fn read_enchantment(card: &Printed) -> Result<Spec, String> {
         spec.statics.push(group_static(body).ok_or_else(unread)?);
     }
     if spec.enchants != spec.slots.first().is_some()
-        || (spec.statics.is_empty() && spec.upkeep.is_none() && spec.activated.is_empty() && spec.combat == CombatText::default())
+        || (spec.statics.is_empty() && spec.upkeep.is_none() && spec.activated.is_empty() && spec.combat == CombatText::default() && spec.on_cast.is_none())
     {
         return Err("not an enchantment the grammar reads".to_string());
     }
@@ -4556,50 +4595,50 @@ const READ: &[&str] = &[
     "Ashmouth Hound", "Avacyn's Pilgrim", "Avacynian Priest", "Balefire Dragon",
     "Battleground Geist", "Blasphemous Act", "Bloodcrazed Neonate", "Bloodgift Demon",
     "Bloodline Keeper", "Bonds of Faith", "Boneyard Wurm", "Brain Weevil", "Bramblecrush",
-    "Brimstone Volley", "Bump in the Night", "Butcher's Cleaver", "Caravan Vigil",
-    "Cellar Door", "Chapel Geist", "Civilized Scholar", "Claustrophobia", "Clifftop Retreat",
-    "Cloistered Youth", "Cobbled Wings", "Coral Merfolk", "Corpse Lunge", "Counterspell",
-    "Curse of Death's Hold", "Curse of Oblivion", "Curse of Stalked Prey",
-    "Curse of the Bloody Tome", "Curse of the Nightly Hunt", "Curse of the Pierced Heart",
-    "Darkthicket Wolf", "Daybreak Ranger", "Dead Weight", "Demonmail Hauberk",
-    "Deranged Assistant", "Desperate Ravings", "Devil's Play", "Diregraf Ghoul",
-    "Disciple of Griselbrand", "Dissipate", "Divination", "Divine Reckoning", "Doom Blade",
-    "Doomed Traveler", "Dream Twist", "Elder Cathar", "Elder of Laurels", "Elite Inquisitor",
-    "Endless Ranks of the Dead", "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread",
-    "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab", "Full Moon's Rise",
-    "Furor of the Bitten", "Gallows Warden", "Galvanic Juggernaut", "Gatstaf Shepherd",
-    "Gavony Township", "Geist of Saint Traft", "Geist-Honored Monk", "Geistcatcher's Rig",
-    "Geistflame", "Ghost Quarter", "Ghostly Possession", "Ghoulcaller's Bell", "Ghoulraiser",
-    "Giant Growth", "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms",
-    "Grave Bramble", "Graveyard Shovel", "Grizzled Outcasts", "Grizzly Bears",
-    "Gruesome Deformity", "Hanweir Watchkeep", "Harvest Pyre", "Hinterland Harbor",
-    "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness", "Infernal Plunge",
-    "Instigator Gang", "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker",
-    "Island", "Isolated Chapel", "Kalonian Tusker", "Kessig Cagebreakers", "Kessig Wolf",
-    "Kessig Wolf Run", "Kindercatch", "Kruin Outlaw", "Lantern Spirit", "Lava Axe",
-    "Lightning Bolt", "Lost in the Mist", "Lumberknot", "Make a Wish", "Makeshift Mauler",
-    "Manor Skeleton", "Markov Patrician", "Mask of Avacyn", "Mausoleum Guard",
-    "Maw of the Mire", "Mayor of Avabruck", "Midnight Haunting", "Moan of the Unhallowed",
-    "Moldgraf Monstrosity", "Moment of Heroism", "Moon Heron", "Moorland Haunt",
-    "Morkrut Banshee", "Mountain", "Murder of Crows", "Naturalize", "Nephalia Drownyard",
-    "Night Revelers", "Olivia Voldaren", "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism",
-    "Paraselene", "Pitchburn Devils", "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower",
-    "Rakish Heir", "Rally the Peasants", "Ranger's Guile", "Reaper from the Abyss", "Rebuke",
-    "Reckless Waif", "Riot Devils", "Rolling Temblor", "Rotting Fensnake", "Runechanter's Pike",
-    "Savannah Lions", "Scourge of Geier Reach", "Selfless Cathar", "Selhoff Occultist",
-    "Sensory Deprivation", "Sever the Bloodline", "Sharpened Pitchfork", "Shimmering Grotto",
-    "Silent Departure", "Silver-Inlaid Dagger", "Silverchase Fox", "Skaab Goliath",
-    "Skirsdag Cultist", "Slayer of the Wicked", "Smite the Monstrous", "Sol Ring",
-    "Somberwald Spider", "Spectral Flight", "Spectral Rider", "Spider Spawning",
-    "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble",
-    "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp", "Swords to Plowshares",
-    "Think Twice", "Thraben Purebloods", "Thraben Sentry", "Tormented Pariah",
-    "Traitorous Blood", "Travel Preparations", "Traveler's Amulet", "Tree of Redemption",
-    "Tribute to Hunger", "Typhoid Rats", "Ulvenwald Mystics", "Unburial Rites", "Unruly Mob",
-    "Urgent Exorcism", "Vampire Interloper", "Vampiric Fury", "Victim of Night",
-    "Village Bell-Ringer", "Village Cannibals", "Village Ironsmith", "Villagers of Estwald",
-    "Voiceless Spirit", "Walking Corpse", "Wooden Stake", "Woodland Cemetery",
-    "Woodland Sleuth", "Wreath of Geists",
+    "Brimstone Volley", "Bump in the Night", "Burning Vengeance", "Butcher's Cleaver",
+    "Caravan Vigil", "Cellar Door", "Chapel Geist", "Charmbreaker Devils", "Civilized Scholar",
+    "Claustrophobia", "Clifftop Retreat", "Cloistered Youth", "Cobbled Wings", "Coral Merfolk",
+    "Corpse Lunge", "Counterspell", "Curse of Death's Hold", "Curse of Oblivion",
+    "Curse of Stalked Prey", "Curse of the Bloody Tome", "Curse of the Nightly Hunt",
+    "Curse of the Pierced Heart", "Darkthicket Wolf", "Daybreak Ranger", "Dead Weight",
+    "Demonmail Hauberk", "Deranged Assistant", "Desperate Ravings", "Devil's Play",
+    "Diregraf Ghoul", "Disciple of Griselbrand", "Dissipate", "Divination", "Divine Reckoning",
+    "Doom Blade", "Doomed Traveler", "Dream Twist", "Elder Cathar", "Elder of Laurels",
+    "Elite Inquisitor", "Endless Ranks of the Dead", "Falkenrath Marauders", "Falkenrath Noble",
+    "Feeling of Dread", "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab",
+    "Full Moon's Rise", "Furor of the Bitten", "Gallows Warden", "Galvanic Juggernaut",
+    "Gatstaf Shepherd", "Gavony Township", "Geist of Saint Traft", "Geist-Honored Monk",
+    "Geistcatcher's Rig", "Geistflame", "Ghost Quarter", "Ghostly Possession",
+    "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth", "Glorious Anthem", "Gnaw to the Bone",
+    "Goblin Piker", "Grasp of Phantoms", "Grave Bramble", "Graveyard Shovel",
+    "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Hanweir Watchkeep",
+    "Harvest Pyre", "Hinterland Harbor", "Hollowhenge Scavenger", "Holy Strength",
+    "Hysterical Blindness", "Infernal Plunge", "Instigator Gang", "Intangible Virtue",
+    "Into the Maw of Hell", "Invisible Stalker", "Island", "Isolated Chapel", "Kalonian Tusker",
+    "Kessig Cagebreakers", "Kessig Wolf", "Kessig Wolf Run", "Kindercatch", "Kruin Outlaw",
+    "Lantern Spirit", "Lava Axe", "Lightning Bolt", "Lost in the Mist", "Lumberknot",
+    "Make a Wish", "Makeshift Mauler", "Manor Skeleton", "Markov Patrician", "Mask of Avacyn",
+    "Mausoleum Guard", "Maw of the Mire", "Mayor of Avabruck", "Midnight Haunting",
+    "Moan of the Unhallowed", "Moldgraf Monstrosity", "Moment of Heroism", "Moon Heron",
+    "Moorland Haunt", "Morkrut Banshee", "Mountain", "Murder of Crows", "Naturalize",
+    "Nephalia Drownyard", "Night Revelers", "Olivia Voldaren", "One-Eyed Scarecrow",
+    "Orchard Spirit", "Pacifism", "Paraselene", "Pitchburn Devils", "Plains", "Prey Upon",
+    "Purify the Grave", "Rage Thrower", "Rakish Heir", "Rally the Peasants", "Ranger's Guile",
+    "Reaper from the Abyss", "Rebuke", "Reckless Waif", "Riot Devils", "Rolling Temblor",
+    "Rotting Fensnake", "Runechanter's Pike", "Savannah Lions", "Scourge of Geier Reach",
+    "Selfless Cathar", "Selhoff Occultist", "Sensory Deprivation", "Sever the Bloodline",
+    "Sharpened Pitchfork", "Shimmering Grotto", "Silent Departure", "Silver-Inlaid Dagger",
+    "Silverchase Fox", "Skaab Goliath", "Skirsdag Cultist", "Slayer of the Wicked",
+    "Smite the Monstrous", "Sol Ring", "Somberwald Spider", "Spectral Flight", "Spectral Rider",
+    "Spider Spawning", "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake",
+    "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp",
+    "Swords to Plowshares", "Think Twice", "Thraben Purebloods", "Thraben Sentry",
+    "Tormented Pariah", "Traitorous Blood", "Travel Preparations", "Traveler's Amulet",
+    "Tree of Redemption", "Tribute to Hunger", "Typhoid Rats", "Ulvenwald Mystics",
+    "Unburial Rites", "Unruly Mob", "Urgent Exorcism", "Vampire Interloper", "Vampiric Fury",
+    "Victim of Night", "Village Bell-Ringer", "Village Cannibals", "Village Ironsmith",
+    "Villagers of Estwald", "Voiceless Spirit", "Walking Corpse", "Wooden Stake",
+    "Woodland Cemetery", "Woodland Sleuth", "Wreath of Geists",
 ];
 
 // ---- the properties ----
@@ -5986,6 +6025,109 @@ fn every_flashback_spell_does_what_its_text_says() {
     }
     assert!(casts > 0);
     assert!(failures.is_empty(), "{} of {casts} flashback casts disagree with their text:\n  {}", failures.len(), failures.join("\n  "));
+}
+
+/// Every permanent the grammar reads with a trigger on spells being cast,
+/// on the board under the caster: the caster casts Think Twice from their
+/// hand and again by flashback from their graveyard, and the Grizzly Bears
+/// in their hand, and the opponent casts Giant Growth. A cast the text
+/// names sets it off: the trigger goes
+/// on the stack above the spell, resolves first every way it can, and the
+/// spell after it (CR 601.2i, 603.3, 608.1). A cast it does not name, and
+/// the opponent's, set off nothing, which the stack count sees.
+#[test]
+fn every_cast_watcher_sees_what_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let (twice, twice_spec) = (&cache["Think Twice"], read(&cache["Think Twice"]).expect("Think Twice reads"));
+    let (growth, growth_spec) = (&cache["Giant Growth"], read(&cache["Giant Growth"]).expect("Giant Growth reads"));
+    let (bears, bears_spec) = (&cache["Grizzly Bears"], read_creature(&cache["Grizzly Bears"]).expect("Grizzly Bears reads"));
+    let mut failures = Vec::new();
+    let mut casts = 0;
+    for (card, spec) in cards.iter().filter(|(_, s)| s.on_cast.is_some()) {
+        let watch = spec.on_cast.as_deref().expect("filtered");
+        let names = |spell: &Printed, from_graveyard: bool| {
+            (watch.kinds.is_empty() || watch.kinds.iter().any(|k| spell.types().0.iter().any(|t| t.to_lowercase() == *k)))
+                && (!watch.from_graveyard || from_graveyard)
+        };
+        // The caster's own casts, from the hand and from the graveyard.
+        for from_graveyard in [false, true] {
+            casts += 1;
+            let (mut state, mut world) = board(&registry, &cache);
+            let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
+            world.refresh();
+            let (spell, flashback) = if from_graveyard {
+                let spell = world.yard.iter().find(|(_, m)| m.owner == P0 && m.name.as_deref() == Some("Think Twice")).map(|(i, _)| *i).expect("on the board");
+                world.yard.remove(&spell);
+                let at = world.graveyard[0].iter().position(|n| n == "Think Twice").expect("in the graveyard");
+                world.graveyard[0].remove(at);
+                (spell, twice_spec.flashback.clone())
+            } else {
+                (spell_in_hand(&mut state, &registry, "Think Twice", P0), None)
+            };
+            fund(&mut state, P0, flashback.as_ref().unwrap_or(&mana_cost(&twice.mana_cost).expect("a cost")), 0);
+            let mut w = world.clone();
+            w.source = Some(id);
+            let triggered = if names(twice, from_graveyard) { trigger_outcomes(&watch.trigger, &w, P0) } else { vec![w] };
+            let want: Vec<World> = triggered.iter()
+                .map(|w| {
+                    let mut after = resolve(&twice_spec, w, &[], P0, twice, spell);
+                    if from_graveyard {
+                        let last = after.graveyard[0].pop().expect("the spell");
+                        after.exile[0].push(last);
+                    }
+                    after
+                })
+                .collect();
+            let got = every_ending_casting(&state, &registry, spell, &[], Some(cast_for(spell, Vec::new(), flashback.as_ref())));
+            let what = format!("{} as its controller casts Think Twice{}", card.name, if from_graveyard { " by flashback" } else { "" });
+            // The engine puts the spell on the stack as well.
+            let mut from = state.clone();
+            from.stack_puts += 1;
+            if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &from, &got)) {
+                failures.push(format!("{what}: {why}"));
+            }
+        }
+        // A creature spell, from the hand.
+        casts += 1;
+        let (mut state, mut world) = board(&registry, &cache);
+        let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
+        world.refresh();
+        let spell = state.objects.values().find(|o| o.zone == Zone::Hand && o.owner == P0 && o.name == "Grizzly Bears").map(|o| o.id).expect("in the caster's hand");
+        let at = world.hand[0].iter().position(|n| n == "Grizzly Bears").expect("in the reference's hand");
+        world.hand[0].remove(at);
+        fund(&mut state, P0, &mana_cost(&bears.mana_cost).expect("a cost"), 0);
+        let mut w = world.clone();
+        w.source = Some(id);
+        let triggered = if names(bears, false) { trigger_outcomes(&watch.trigger, &w, P0) } else { vec![w] };
+        let want: Vec<World> = triggered.iter().flat_map(|w| creature_outcomes(&bears_spec, w, P0, bears, spell)).collect();
+        let got = every_ending(&state, &registry, Some(spell));
+        let mut from = state.clone();
+        from.stack_puts += 1;
+        if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &from, &got)) {
+            failures.push(format!("{} as its controller casts Grizzly Bears: {why}", card.name));
+        }
+        // The opponent's, cast in the game loop, which collects what a cast
+        // sets off.
+        casts += 1;
+        let (mut state, mut world) = board(&registry, &cache);
+        place_face(&mut state, &mut world, &registry, card, spec, P0);
+        world.refresh();
+        let spell = spell_in_hand(&mut state, &registry, "Giant Growth", P1);
+        fund(&mut state, P1, &mana_cost(&growth.mana_cost).expect("a cost"), 0);
+        state.priority_player = Some(P1);
+        let kindercatch = world.permanents.iter().find(|(_, m)| m.name.as_deref() == Some("Kindercatch")).map(|(i, _)| *i).expect("on the board");
+        let want = vec![resolve(&growth_spec, &world, &[Target::Object(kindercatch)], P1, growth, spell)];
+        let got = every_ending_from(&state, &registry, None, Some(cast_action(spell, vec![Target::Object(kindercatch)])));
+        let mut from = state.clone();
+        from.stack_puts += 1;
+        if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &from, &got)) {
+            failures.push(format!("{} as the opponent casts Giant Growth: {why}", card.name));
+        }
+    }
+    assert!(casts > 0);
+    assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
 /// Every creature the grammar reads that does not fight in the combat
