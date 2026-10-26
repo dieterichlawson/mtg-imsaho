@@ -1,8 +1,8 @@
 # What the proofs catch that the tests do not — 2026-10-25
 
-`mtg-kernel` holds the two pieces of the rules proved with Verus so far:
-paying a mana cost out of a pool (`mana.rs`) and dividing a blocked
-attacker's combat damage (`combat.rs`). This is a measurement of what those
+`mtg-kernel` holds the pieces of the rules proved with Verus: paying a mana
+cost out of a pool (`mana.rs`), dividing a blocked attacker's combat damage
+(`combat.rs`), and, measured separately below, funding X (`funding.rs`). This is a measurement of what those
 proofs add over the test suite. It follows Anthropic's post on LLM-driven
 formal verification (2026-10-22), which injected seven bugs into a verified
 Python interpreter: five survived the random tests, all seven broke the
@@ -95,3 +95,40 @@ unpinned on purpose (`docs/mutation-testing-guide.md`, "would my test still
 pass if this function were rewritten correctly a different way?"); if the
 preference ever matters to a player, the property to state is "spare is
 spent biggest surplus first", and it belongs in the proof.
+
+## The funding kernel — 2026-10-26
+
+`funding.rs` was proved after the first measurement, and measured the same
+way: 14 mutants, F01–F14 in `scripts/kernel-mutants.py`, with the page's
+X-funding fixture test (`gui_protocol`, 168 boards) added to the tests run.
+
+| mutant | what it breaks | proof | tests |
+|---|---|---|---|
+| F01 | a group's last source is never tapped | caught | caught |
+| F02 | a group has as many sources as it likes | caught | caught |
+| F03 | a group has one source more than it does | caught | caught |
+| F04 | one tap more than a reachable sum is missed when it starts from nothing | caught | caught |
+| F05 | tapping nothing is not a way to pay nothing | caught | caught |
+| F06 | the pool only tops up what taps cannot pay exactly | caught | caught |
+| F07 | a tap sum the whole pool tops up exactly is passed over | caught | caught |
+| F08 | a short X stops looking below one | caught | caught |
+| F09 | a short X leaves a point in the pool | caught | **missed** (whole suite too), then caught |
+| F10 | the first group is never tapped | caught | caught |
+| F11 | a group takes the most it can whether or not the rest can finish | caught | caught |
+| F12 | a group holds back its last source | caught | caught |
+| F13 | a fundable X is measured from the smallest tap sum, not the nearest | caught | caught |
+| F14 | the whole pool never counts towards a fundable X | caught | caught |
+
+The proof caught all 14 and the tests 13. F09 changes how much the kernel
+says comes from the pool when X cannot be paid in full, and the engine
+never read that number: it drained the pool by its own loop. So no test
+could see it, and the proof could, because the contract states it. The
+engine now asserts its drain against the kernel's amounts in debug builds
+(`allocate_for_x`), which is what turned F09 to caught: the glue is held
+to the proof rather than trusted beside it.
+
+The pattern the two measurements share: the proofs catch what the
+contracts state, whether or not anything downstream looks (C05, C07, F09),
+and the tests catch what the code is preferred to do beyond the contract
+(M07, M08, M10, M11). A kernel output nobody reads is a place the two can
+drift apart, and a debug assertion at the call site closes it.

@@ -43,7 +43,8 @@ yet.
 All of these find bugs; none can show that a bug is absent. A proof covers
 every input in its space, including the ones nobody thought of and the
 fuzzer never reached. The first three specs written for this effort found
-five defects in code all of the above had passed (see
+five defects in code all of the above had passed, and the bounded
+exhaustive check of the autotap planner a sixth (see
 [defects found](#defects-found)).
 
 ## Tools, and what they turned out to be able to do
@@ -54,8 +55,8 @@ reasons about integers rather than bits, so a proof holds for every amount.
 The proved code lives in the `mtg-kernel` crate, inside `verus!` blocks.
 `cargo build` erases the contracts and compiles the rest as ordinary Rust,
 so the engine runs the code that was proved, not a copy of it. Only
-`mtg-kernel` depends on `vstd`. Both kernels verify in about a second, once
-`vstd` is built. Verus has no specification for some of `std` (it rejected
+`mtg-kernel` depends on `vstd`. The three kernels (59 obligations) verify in
+about three seconds, once `vstd` is built. Verus has no specification for some of `std` (it rejected
 `slice::swap` and `sort_by_key`); the kernels write those few lines out.
 
 **Kani** (bounded model checking of the compiled Rust, through CBMC) proves
@@ -85,10 +86,13 @@ and writes the result back small, with unit tests on it.
     scripts/prove.sh                   # Verus, then Kani: about four minutes
     scripts/prove.sh verus             # mtg-kernel only: seconds once vstd is built
     scripts/prove.sh kani [HARNESS...] # the Kani proofs, or the named ones
-    scripts/kernel-mutants.py          # what the proofs and the tests each catch
+    scripts/prove.sh exhaustive        # the bounded exhaustive checks, in release
+    scripts/kernel-mutants.py [ID...]  # what the proofs and the tests each catch
+    scripts/fuzz-engine.sh [SECONDS]   # the whole engine under libFuzzer (tier 2)
 
-The `proofs` workflow runs both provers on every push to master and every
-pull request. The Verus release (0.2026.10.04), its Rust toolchain and the
+The `proofs` workflow runs both provers, and the exhaustive checks, on every
+push to master and every pull request; `nightly-fuzz` runs the coverage-guided
+target for 50 minutes a night. The Verus release (0.2026.10.04), its Rust toolchain and the
 Kani version (0.68.0) are pinned in `scripts/prove.sh`, and `vstd` in
 `mtg-kernel/Cargo.toml` must match the Verus release. Run the Kani proofs
 one at a time, as the script does: four at once ran a 15 GB machine out of
@@ -105,9 +109,11 @@ A proof is a proof relative to what it assumes. Here that is:
   functions the kernels call (`min`, `clamp`, `saturating_sub`, `Vec::push`);
 - **rustc**, compiling the same source for the game that Verus checked;
 - the **glue** that is not proved: reading `ManaPool`'s `BTreeMap` into six
-  counts and writing the result back, and mapping blockers' ids to
-  positions. Each is a few lines with unit tests, and the combat mapping is
-  also covered by the exhaustive division test.
+  counts and writing the result back, mapping blockers' ids to positions,
+  and turning X's source groups into counts and the kernel's taps back into
+  mana. Each is a few lines with unit tests; the combat mapping is also
+  covered by the exhaustive division test, and the X pool step is asserted
+  against the kernel's proved amounts on every call in a debug build.
 
 ## The tiers
 
@@ -121,8 +127,9 @@ values. Each gets a spec written from the CR, proved for every input.
 | paying a cost from the pool: `can_pay`, `auto_pay`, `auto_pay_reserving` | 107.4, 601.2h | **proved**, three defects fixed |
 | combat damage division, `divide_combat_damage` | 510.1c-d, 702.19b, with 509.2's order | **proved** sound and complete, one defect fixed |
 | X funding from floating mana, `allocate_for_x`'s pool step | 107.3, and the reserve property of payment | **proved** by reuse of `pay_around`, one defect fixed |
-| autotap planner soundness: a plan it returns pays the cost | 601.2g-h, 605.3 | next; `autotap_brute_force.rs` is the sampled version |
-| autotap planner completeness: if some set of sources can pay, it finds one | 601.2g | next |
+| X funding: which X can be paid, and the taps that pay it (`fundable_x_values`, `allocate_for_x`) | 107.3, 601.2f-h | **proved** for every board and every X |
+| autotap planner soundness: a plan it returns pays the cost | 601.2g-h, 605.3 | **checked exhaustively** on every board of up to three sources (29.6 million); not yet proved for every board |
+| autotap planner completeness: if some set of sources can pay, it finds one | 601.2g | **checked exhaustively** as above, one defect fixed |
 | power and toughness from counters and effects (layer 7) | 613.4, 704.5q | planned; needs extracting from `state.rs` |
 | lethal damage, deathtouch, and what state-based actions destroy | 704.5f-h, 702.2b | planned |
 | the turn's step sequence and who gets priority | 500.1, 117.3-4 | planned |
@@ -137,13 +144,18 @@ test always passes") rather than writing specs by hand. The same move here
 gives the whole-engine theorem: **from any state a game can reach, no legal
 action makes the engine panic or break an invariant.**
 
-1. Write it as a coverage-guided fuzz target (`cargo fuzz`) to the rules of
-   Theorem's verification skill. The input bytes decode, totally, to a
-   sequence of choices. Every property aborts when it fails. Seed inputs
-   reach every check, and each check is shown to fail under a one-line
-   mutation. Counts and recursion taken from the input are bounded, and the
-   input is the only source of randomness. This is useful the day it
-   exists: the random seats do no coverage guidance.
+1. **Done**: a coverage-guided fuzz target (`fuzz/fuzz_targets/game.rs`,
+   `scripts/fuzz-engine.sh`) to the rules of Theorem's verification skill.
+   The input bytes decode, totally, to a game: two pick the coverage decks,
+   eight seed the engine, and every choice both random seats make is drawn
+   from the rest. Every invariant the seeded campaign checks is checked at
+   every decision, plus card conservation, a decision that offers nothing,
+   and a save round trip; a violation, a stall or a panic (overflow
+   included) aborts. Games are bounded by the input and a decision ceiling,
+   and the input is the only randomness. With an invariant deliberately
+   broken it reports the break within its first inputs. See
+   [the whole engine under libFuzzer](#the-whole-engine-under-libfuzzer)
+   for what it has run.
 2. That target is the shape Theorem's pipeline proves things about (Rust is
    supported, and they have offered to run it for open-source projects). The
    largest program in their report had about 51,000 lines linked in, so a
@@ -192,6 +204,13 @@ This engine is an interpreter of the rules, and the same split applies:
 Cheapest first: vanilla and keyword-only creatures (all engine, data
 already checked against Scryfall), then the core cards in `src/cards/*.rs`,
 then Innistrad by mechanic, in the groups the `cards_*.rs` files use.
+
+The first family is done in a form that comes before steps 2 and 3: the
+spec language is a grammar over the Oracle text itself rather than a
+transcription, the reference semantics is a test-side interpreter rather
+than Verus spec functions, and refinement is checked on a fixed board at
+every legal target rather than proved. See
+[cards against their Oracle text](#cards-against-their-oracle-text).
 
 ### Tier 4: whole-game properties
 
@@ -257,13 +276,92 @@ tramples over. The proof is stated against the rule the engine implements;
 moving to the current rule would change `legal_division` and the prompt
 together.
 
-### X funding from floating mana
+### X funding
 
-`allocate_for_x`'s pool step is `pay_around` with an all-generic cost, so it
-carries that proof: it spends exactly what X asks of the pool, and leaves
-what the rest of the hand needs whenever the pool could pay both. The page
-has its own copy of the allocator, held to the engine's answers by
+`mtg-kernel/src/funding.rs`, called by `fundable_x_values` and
+`allocate_for_x`. The sources that can pay X come in groups: `quanta[j]`
+mana for each tap of a group-`j` source, `counts[j]` sources in the group.
+The spec, `reachable`, says a sum is tappable for exactly when some number
+of each group's sources, none past its count, adds up to it; floating mana
+tops a tap sum up by anything from nothing to the whole pool. Proved for
+every group, every count, every pool and every X:
+
+- `reachability`'s rows are exactly the reachable sums, including the
+  per-residue pass that keeps a group of thousands of lands linear;
+- `fundable_amounts[m]` holds exactly when some tap sum the pool can top up
+  comes to `m`, so the values the prompt offers are the values that can be
+  paid (#595);
+- `fund`'s taps are an allocation the board has and add up to its tap sum;
+  taps, pool and shortfall add up to what X asks; nothing is short exactly
+  when some allocation pays X exactly (#593); an exact allocation taps as
+  little as any exact one, so the pool is spent first; and nothing funds
+  more of X than this does.
+
+The pool step is `pay_around` with an all-generic cost, so it carries that
+proof as well: it leaves what the rest of the hand needs whenever the pool
+could pay both. Which mana it spends is the engine's choice; how much is
+asserted against the kernel's on every call in a debug build. The page has
+its own copy of the allocator, held to the engine's answers by
 `x-funding-cases.jsonl` (1,542 checks over 168 boards).
+
+### The autotap planner, every small board
+
+`compute_autotap` is a heuristic: a greedy pass ranked by a priority key,
+then a repair search for plans that strand a spell in hand. A proof for
+every board is further off, so the promise it makes is checked
+exhaustively over a bounded space instead (`autotap_brute_force.rs`, the
+small-scope hypothesis): every multiset of the 23 kinds of source the card
+pool has (basics, check lands, Sol Ring, mana creatures, Shimmering
+Grotto's filters, Deranged Assistant's side effect), every floating pool
+and every cost of each shape a generator draws. On each board the planner
+must offer a plan exactly when some way of tapping by hand pays, and the
+plan must execute the way the engine executes it, name each source once and
+tap nothing it did not need.
+
+- `cargo test`: every board of up to two sources and one floating mana,
+  about 1.4 million.
+- `scripts/prove.sh exhaustive` (and the `proofs` workflow): up to three
+  sources and two floating mana, 29.6 million boards, under two minutes in
+  release.
+- Run once: up to four sources and one floating mana for the shapes the
+  pool's cards have, 24.7 million boards.
+
+The three-source scope found defect 6 below on 9,500 boards, all with
+three-colour costs, which no card in the pool has yet; the random sweeps of
+2,000 boards each had not. The four-source scope found nothing for the
+shapes the pool has.
+
+### Cards against their Oracle text
+
+`mtg-engine/tests/card_semantics.rs`. A grammar reads each instant's and
+sorcery's Oracle text, as Scryfall prints it, into effects: damage to a
+target or to each of a group, pumps of a target or a group, destroy,
+exile, bounce, put on top, tap and untap, draw, gain and lose life, mill,
+tokens, and "its controller gains life equal to its power". A reference
+semantics written from the CR, sharing no code with `src/cards/`, says what
+those effects do to a board described by its cards' Oracle data, and
+applies state-based actions. Each card the grammar reads is cast through
+the engine's game loop at every set of targets the engine offers, on a
+board of fourteen permanents chosen for their differences, and the engine
+must offer exactly the target sets the text allows and leave every zone and
+every permanent's characteristics where the reference says.
+
+31 of the pool's 69 instants and sorceries are read, and all 31 agree at
+every target. With Lightning Bolt dealing 2, Doom Blade sparing green
+rather than black, or Midnight Haunting's Spirits without flying, the check
+fails and names the difference. What it does not yet read: counterspells
+(no spell on the stack to target), "up to N" targets, fights, morbid,
+additional costs, graveyard targets, counts ("for each creature card in
+your graveyard"), choices and randomness. Each is a template, or a board
+variant, to add; `CARDS_READ` keeps the number read from falling.
+
+### The whole engine under libFuzzer
+
+`fuzz/fuzz_targets/game.rs`. The first campaign ran for 75 minutes across
+three workers: about 13,400 whole games, a corpus of 2,600 inputs reaching
+26,700 code edges (still climbing), and no finding: no invariant broken, no
+panic, no overflow, no stall. The nightly job keeps the corpus from night to night,
+so each night starts from everything the last one reached.
 
 ### Defects found
 
@@ -274,13 +372,17 @@ has its own copy of the allocator, held to the engine's answers by
 | 3 | the spare was counted before the cost paid its own pips | writing the spec | as 2 |
 | 4 | combat damage was divided silently whenever the power did not exceed the blockers' total lethal, though 4 power on two 2-toughness blockers may go 2-2, 3-1 or 4-0 | the completeness property; restoring the old rule makes the proof fail | over the same 608 seeded fuzz games the question came up 273 times, where it had come up 143 |
 | 5 | X paid from floating mana took all of one type first, the same as 2 | proving the allocator by reuse | every seat's X answer: CLI, fuzzer, page |
+| 6 | the autotap planner gave each coloured pip the best free source in turn and never revisited a choice, so three duals that pay `{W}{U}{B}` only in a cycle got no plan | the exhaustive small-board check, at three sources | latent: no card in the pool costs three colours |
 
 Each has a regression test that fails without its fix.
 
 ### What the proofs catch that the tests do not
 
-`reports/verification-mutants.md`: 29 mutants of the two kernels. The proofs
-caught 24 and the tests 26, and each caught mutants the other missed. The
+`reports/verification-mutants.md`: 29 mutants of the payment and combat
+kernels, and 14 of the funding kernel. Of the first 29 the proofs caught 24
+and the tests 26, and each caught mutants the other missed; of the funding
+14 the proof caught all and the tests 13, the one they missed changing an
+output the engine did not read until it was asserted. The
 proofs alone caught a combat change that asks about blockers out of order
 and silently cuts an answer already given, which the exhaustive test cannot
 see because the set of reachable divisions does not change. The tests alone
