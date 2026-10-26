@@ -360,6 +360,8 @@ struct Spec {
     /// "When this creature dies, ..." (CR 700.4, 603.6c): a leaves-the-
     /// battlefield trigger, which looks back at the creature as it was.
     dies: Option<Box<Trigger>>,
+    /// "Whenever another creature dies, ...": a trigger on other deaths.
+    watch: Option<Box<Watch>>,
     /// An Aura's "Enchant creature" / "Enchant player" (CR 303.4a, 702.5):
     /// the slot its spell targets, the first of `slots`.
     enchants: bool,
@@ -626,6 +628,18 @@ struct Trigger {
     if_morbid: bool,
 }
 
+/// "Whenever <creatures> die, ...": a leaves-the-battlefield trigger of a
+/// permanent on other creatures' deaths, which looks back at the creature
+/// as it last existed on the battlefield (CR 603.6c, 603.10a).
+#[derive(Debug, Clone, PartialEq)]
+struct Watch {
+    /// Which deaths: "another creature", "a creature" and "this creature
+    /// or another creature" (the source too), "another creature you
+    /// control", "another Human creature".
+    dying: Filter,
+    trigger: Trigger,
+}
+
 impl Spec {
     /// Whether the board after a death can read differently.
     fn reads_morbid(&self) -> bool {
@@ -790,6 +804,22 @@ impl Spec {
                 self.effects.push(Effect::Pump { slot, power, toughness, gains });
                 return Some(());
             }
+        }
+        if s == "Put a +1/+1 counter on this creature" {
+            let slot = self.slot(Slot::This);
+            self.effects.push(Effect::PlusCounters { slot, n: 1 });
+            return Some(());
+        }
+        // "Target player loses 1 life and you gain 1 life": two effects,
+        // in that order (CR 608.2c).
+        if let Some((loses, gain)) = s.split_once(" and you gain ") {
+            let n: i32 = number(gain.strip_suffix(" life")?)?.try_into().ok()?;
+            self.sentence(&format!("{loses}."))?;
+            if !matches!(self.effects.last(), Some(Effect::LoseLife { .. })) {
+                return None;
+            }
+            self.effects.push(Effect::GainLife { n });
+            return Some(());
         }
         if s == "Return this creature to its owner's hand" {
             let slot = self.slot(Slot::This);
@@ -1115,6 +1145,18 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
         }
         if let Some(cost) = Additional::read(line) {
             spec.additional = Some(cost);
+            continue;
+        }
+        if let Some((who, rest)) = line.strip_prefix("Whenever ").and_then(|r| r.split_once(" dies, ")) {
+            let who = match who {
+                "this creature or another creature" => "creature",
+                w => w.strip_prefix("a ").unwrap_or(w),
+            };
+            let mut chars = rest.chars();
+            let sentence: String = chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default();
+            let mut trigger = Trigger::default();
+            trigger.spec.sentence(&sentence).ok_or_else(unread)?;
+            spec.watch = Some(Box::new(Watch { dying: filter(who).ok_or_else(unread)?, trigger }));
             continue;
         }
         if let Some(rest) = line.strip_prefix("When this creature dies, ") {
@@ -2077,6 +2119,20 @@ fn subsets(options: &[Target], n: usize) -> Vec<Vec<Target>> {
 /// object at most once per slot (CR 115.3) and allowed across slots,
 /// which is what the spells here would need (none shares a candidate
 /// between slots). An "up to N" slot is any set of at most N.
+/// Every order of `0..n`.
+fn permutations(n: usize) -> Vec<Vec<usize>> {
+    if n == 0 {
+        return vec![Vec::new()];
+    }
+    permutations(n - 1).into_iter()
+        .flat_map(|p| (0..n).map(move |at| {
+            let mut q = p.clone();
+            q.insert(at, n - 1);
+            q
+        }))
+        .collect()
+}
+
 fn target_sets(spec: &Spec, world: &World, caster: PlayerId) -> Vec<Vec<Target>> {
     if let [Slot::UpTo { n, .. }] = spec.slots.as_slice() {
         let mut sets = subsets(&candidates(&spec.slots[0], world, caster), *n);
@@ -2466,19 +2522,76 @@ fn trigger_outcomes(trigger: &Trigger, world: &World, caster: PlayerId) -> Vec<W
     out
 }
 
-/// Every way the creature `id` dying on `world` can end: lethal damage,
-/// state-based actions put it into its owner's graveyard (CR 704.5g), and
-/// its dies trigger resolves each way it can.
-fn death_outcomes(spec: &Spec, world: &World, caster: PlayerId, id: ObjectId) -> Vec<World> {
-    let mut w = world.clone();
-    let m = w.permanents.get_mut(&id).expect("the creature is on the battlefield");
-    m.damage = u32::try_from(m.toughness.expect("a creature").max(1)).expect("positive");
-    w.state_based_actions();
-    assert!(!w.permanents.contains_key(&id), "lethal damage kills it");
-    match &spec.dies {
-        Some(trigger) => trigger_outcomes(trigger, &w, caster),
-        None => vec![w],
+/// Every way `triggers`, controlled by `caster` and set off at once, can
+/// resolve on `world`: put on the stack in each order (CR 603.3b), each
+/// with every set of targets it allows chosen as it goes there, or removed
+/// if it has none (603.3d), and resolved last first, state-based actions
+/// after each (704.3); each "you may" taken or declined. Their targets are
+/// players or their own source, which stay legal.
+fn triggers_outcomes(triggers: &[&Trigger], world: &World, caster: PlayerId) -> Vec<World> {
+    if let [trigger] = triggers {
+        return trigger_outcomes(trigger, world, caster);
     }
+    assert!(triggers.iter().all(|t| t.spec.slots.iter().all(|s| matches!(s, Slot::Player | Slot::Opponent | Slot::PlayerOrPlaneswalker | Slot::This))),
+        "simultaneous triggers here target players or their source");
+    let mut out = Vec::new();
+    for order in permutations(triggers.len()) {
+        let mut choices: Vec<Vec<Option<Vec<Target>>>> = vec![Vec::new()];
+        for &i in &order {
+            let sets = target_sets(&triggers[i].spec, world, caster);
+            let options: Vec<Option<Vec<Target>>> = if sets.is_empty() { vec![None] } else { sets.into_iter().map(Some).collect() };
+            choices = choices.into_iter()
+                .flat_map(|c| options.iter().map(move |o| [c.clone(), vec![o.clone()]].concat()))
+                .collect();
+        }
+        for chosen in choices {
+            let mut worlds = vec![world.clone()];
+            for (k, &i) in order.iter().enumerate().rev() {
+                let Some(targets) = &chosen[k] else { continue };
+                let trigger = triggers[i];
+                worlds = worlds.into_iter()
+                    .flat_map(|w| {
+                        let mut after = apply(&trigger.spec, &w, targets, caster);
+                        after.state_based_actions();
+                        if trigger.optional { vec![after, w] } else { vec![after] }
+                    })
+                    .collect();
+            }
+            out.extend(worlds);
+        }
+    }
+    out
+}
+
+/// Every way the creatures `dying` dying at once on `world` can end, where
+/// `watcher` is the creature read as `spec`: lethal damage, state-based
+/// actions put them into their owners' graveyards (CR 704.5g), and the
+/// triggers those deaths set off resolve each way they can: the watcher's
+/// dies trigger when it is one of them, and its "whenever ... dies" for
+/// each that, as it last existed on the battlefield, is one its text names,
+/// the watcher having been there to see it (CR 603.6c, 603.10a).
+fn death_outcomes(spec: &Spec, world: &World, caster: PlayerId, watcher: ObjectId, dying: &[ObjectId]) -> Vec<World> {
+    let mut w = world.clone();
+    w.refresh();
+    for id in dying {
+        let lethal = w.pt_of(&w.permanents[id]).1.expect("a creature").max(1);
+        w.permanents.get_mut(id).expect("the creature is on the battlefield").damage = u32::try_from(lethal).expect("positive");
+    }
+    let before = w.clone();
+    w.state_based_actions();
+    assert!(dying.iter().all(|id| !w.permanents.contains_key(id)), "lethal damage kills them");
+    let mut triggers = Vec::new();
+    for (id, last) in before.permanents.iter().filter(|(id, m)| m.is_creature() && !w.permanents.contains_key(id)) {
+        if *id == watcher {
+            triggers.extend(spec.dies.as_deref());
+        }
+        if let Some(watch) = spec.watch.as_ref().filter(|_| before.permanents.contains_key(&watcher)) {
+            if last.matches_from(&watch.dying, caster, *id == watcher) {
+                triggers.push(&watch.trigger);
+            }
+        }
+    }
+    triggers_outcomes(&triggers, &w, caster)
 }
 
 // ---- the engine side ----
@@ -2557,6 +2670,8 @@ enum Answer {
     Index(usize, String),
     /// The cards exiled to pay a cost.
     Exile(Vec<ObjectId>),
+    /// The order simultaneous triggers go on the stack, first to last.
+    Order(Vec<usize>),
 }
 
 /// A combat to declare: who attacks whom, and who blocks whom.
@@ -2666,6 +2781,19 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
                             .filter(|s| s.len() >= *min)
                             .map(|s| Answer::Exile(s.iter().map(|t| match t { Target::Object(id) => *id, _ => unreachable!() }).collect()))
                             .collect());
+                        Action::AbandonGame
+                    }
+                };
+            }
+            Some(ResolutionChoiceKind::ChooseTriggerOrder { options, .. }) => {
+                return match script.next() {
+                    Some(Answer::Order(order)) => Action::ResolveChoice { choice: ResolvedChoice::ChosenOrder(order.clone()) },
+                    Some(other) => {
+                        trouble = Some(format!("the script answers {other:?} to ordering triggers"));
+                        Action::AbandonGame
+                    }
+                    None => {
+                        unanswered = Some(permutations(options.len()).into_iter().map(Answer::Order).collect());
                         Action::AbandonGame
                     }
                 };
@@ -2780,29 +2908,30 @@ const READ: &[&str] = &[
     "Clifftop Retreat", "Coral Merfolk", "Corpse Lunge", "Counterspell",
     "Curse of Death's Hold", "Darkthicket Wolf", "Dead Weight", "Deranged Assistant",
     "Diregraf Ghoul", "Dissipate", "Divination", "Doom Blade", "Doomed Traveler", "Dream Twist",
-    "Elite Inquisitor", "Falkenrath Marauders", "Feeling of Dread", "Feral Ridgewolf",
-    "Festerhide Boar", "Forest", "Fortress Crab", "Gallows Warden", "Gatstaf Shepherd",
-    "Gavony Township", "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame",
-    "Ghoulcaller's Bell", "Giant Growth", "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker",
-    "Grasp of Phantoms", "Grave Bramble", "Grizzled Outcasts", "Grizzly Bears",
+    "Elite Inquisitor", "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread",
+    "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab", "Gallows Warden",
+    "Gatstaf Shepherd", "Gavony Township", "Geist-Honored Monk", "Geistcatcher's Rig",
+    "Geistflame", "Ghoulcaller's Bell", "Giant Growth", "Glorious Anthem", "Gnaw to the Bone",
+    "Goblin Piker", "Grasp of Phantoms", "Grave Bramble", "Grizzled Outcasts", "Grizzly Bears",
     "Gruesome Deformity", "Hinterland Harbor", "Hollowhenge Scavenger", "Holy Strength",
     "Hysterical Blindness", "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker",
     "Island", "Isolated Chapel", "Kalonian Tusker", "Kessig Wolf", "Kindercatch",
-    "Lantern Spirit", "Lava Axe", "Lightning Bolt", "Lost in the Mist", "Makeshift Mauler",
-    "Markov Patrician", "Mausoleum Guard", "Maw of the Mire", "Midnight Haunting",
-    "Moan of the Unhallowed", "Moment of Heroism", "Moon Heron", "Morkrut Banshee", "Mountain",
-    "Naturalize", "Nephalia Drownyard", "Night Revelers", "One-Eyed Scarecrow",
-    "Orchard Spirit", "Paraselene", "Pitchburn Devils", "Plains", "Prey Upon",
-    "Purify the Grave", "Rally the Peasants", "Ranger's Guile", "Rebuke", "Reckless Waif",
-    "Riot Devils", "Rolling Temblor", "Rotting Fensnake", "Savannah Lions",
-    "Scourge of Geier Reach", "Selfless Cathar", "Sensory Deprivation", "Shimmering Grotto",
-    "Silent Departure", "Silverchase Fox", "Skaab Goliath", "Slayer of the Wicked",
-    "Smite the Monstrous", "Sol Ring", "Somberwald Spider", "Spectral Flight", "Spectral Rider",
-    "Spider Spawning", "Spidery Grasp", "Stensia Bloodhall", "Stitched Drake",
-    "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp",
-    "Swords to Plowshares", "Think Twice", "Thraben Purebloods", "Tormented Pariah",
-    "Travel Preparations", "Typhoid Rats", "Unburial Rites", "Urgent Exorcism",
-    "Vampire Interloper", "Vampiric Fury", "Victim of Night", "Village Bell-Ringer",
+    "Lantern Spirit", "Lava Axe", "Lightning Bolt", "Lost in the Mist", "Lumberknot",
+    "Makeshift Mauler", "Markov Patrician", "Mausoleum Guard", "Maw of the Mire",
+    "Midnight Haunting", "Moan of the Unhallowed", "Moment of Heroism", "Moon Heron",
+    "Morkrut Banshee", "Mountain", "Naturalize", "Nephalia Drownyard", "Night Revelers",
+    "One-Eyed Scarecrow", "Orchard Spirit", "Paraselene", "Pitchburn Devils", "Plains",
+    "Prey Upon", "Purify the Grave", "Rage Thrower", "Rally the Peasants", "Ranger's Guile",
+    "Rebuke", "Reckless Waif", "Riot Devils", "Rolling Temblor", "Rotting Fensnake",
+    "Savannah Lions", "Scourge of Geier Reach", "Selfless Cathar", "Selhoff Occultist",
+    "Sensory Deprivation", "Shimmering Grotto", "Silent Departure", "Silverchase Fox",
+    "Skaab Goliath", "Slayer of the Wicked", "Smite the Monstrous", "Sol Ring",
+    "Somberwald Spider", "Spectral Flight", "Spectral Rider", "Spider Spawning",
+    "Spidery Grasp", "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble",
+    "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp", "Swords to Plowshares",
+    "Think Twice", "Thraben Purebloods", "Tormented Pariah", "Travel Preparations",
+    "Typhoid Rats", "Unburial Rites", "Unruly Mob", "Urgent Exorcism", "Vampire Interloper",
+    "Vampiric Fury", "Victim of Night", "Village Bell-Ringer", "Village Cannibals",
     "Village Ironsmith", "Villagers of Estwald", "Voiceless Spirit", "Walking Corpse",
     "Woodland Cemetery", "Wreath of Geists",
 ];
@@ -2902,23 +3031,49 @@ fn every_readable_card_does_what_its_text_says() {
                     failures.push(format!("{name}: {why}"));
                     continue;
                 }
-                if spec.dies.is_some() {
+                if spec.dies.is_some() || spec.watch.is_some() {
                     let ([after_entering], Ok([entered])) = (entering.as_slice(), endings.as_deref()) else {
                         // One way of entering, so one creature to kill.
                         failures.push(format!("{name}: a death is checked from one way of entering"));
                         continue;
                     };
-                    casts += 1;
-                    let mut dying = entered.clone();
-                    let id = dying.objects.values()
+                    let id = entered.objects.values()
                         .find(|o| o.zone == Zone::Battlefield && !o.is_token && o.name == card.name)
                         .map(|o| o.id)
                         .expect("the creature is on the battlefield");
-                    let lethal = dying.effective_toughness(id, &registry).expect("a creature").max(1);
-                    dying.get_object_mut(id).expect("on the battlefield").damage_marked = u32::try_from(lethal).expect("positive");
-                    let deaths = death_outcomes(spec, after_entering, P0, spell);
-                    if let Some(why) = disagreement(&deaths, &every_ending(&dying, &registry, None), &registry) {
-                        failures.push(format!("{name} dying: {why}"));
+                    // Who dies: the creature itself; and, for a trigger on
+                    // other deaths, each other creature on the board, and
+                    // each two at once, the creature itself among them or
+                    // not (CR 603.10a: it sees the deaths it dies with).
+                    let mut who = vec![vec![spell]];
+                    if spec.watch.is_some() {
+                        let creatures: Vec<ObjectId> = after_entering.permanents.iter()
+                            .filter(|(_, m)| m.is_creature())
+                            .map(|(r, _)| *r)
+                            .collect();
+                        who.extend(creatures.iter().filter(|r| **r != spell).map(|r| vec![*r]));
+                        for (i, x) in creatures.iter().enumerate() {
+                            who.extend(creatures[i + 1..].iter().map(|y| vec![*x, *y]));
+                        }
+                    }
+                    for rs in who {
+                        casts += 1;
+                        let mut dying = entered.clone();
+                        for &r in &rs {
+                            let e = if r == spell { id } else { r };
+                            let lethal = dying.effective_toughness(e, &registry).expect("a creature").max(1);
+                            dying.get_object_mut(e).expect("on the battlefield").damage_marked = u32::try_from(lethal).expect("positive");
+                        }
+                        let deaths = death_outcomes(spec, after_entering, P0, spell, &rs);
+                        let what = match rs.as_slice() {
+                            [r] if *r == spell => "dying".to_string(),
+                            _ => format!("seeing {} die", rs.iter()
+                                .map(|r| after_entering.permanents[r].name.as_deref().unwrap_or("a token"))
+                                .collect::<Vec<_>>().join(" and ")),
+                        };
+                        if let Some(why) = disagreement(&deaths, &every_ending(&dying, &registry, None), &registry) {
+                            failures.push(format!("{name} {what}: {why}"));
+                        }
                     }
                 }
                 continue;
@@ -3420,7 +3575,7 @@ fn every_combat_ending(state: &GameState, registry: &CardRegistry, combat: &Comb
 /// text is keywords, combat text and static abilities.
 fn fighters(cards: &[(Printed, Spec)]) -> Vec<(&Printed, &Spec)> {
     cards.iter()
-        .filter(|(c, s)| c.has_type("Creature") && s.etb.is_none() && s.dies.is_none() && s.activated.is_empty()
+        .filter(|(c, s)| c.has_type("Creature") && s.etb.is_none() && s.dies.is_none() && s.watch.is_none() && s.activated.is_empty()
             && s.mana.is_empty() && !s.werewolf && !s.pt_is_creatures_you_control && !s.pt_is_creature_cards
             && !s.enters_tapped && (c.power.is_some() || s.pt_is_cards_in_hand))
         .map(|(c, s)| (c, s))
@@ -3853,6 +4008,16 @@ fn the_grammar_reads_its_templates() {
     assert_eq!(creature_static("As long as you control a Human, this creature has hexproof and indestructible."),
         Some(Static::IfYouControl { subtype: "Human".to_string(), has: vec![Keyword::Hexproof, Keyword::Indestructible] }));
     assert!(creature_static("Whenever this creature attacks or blocks, other Humans you control get +1/+1 until end of turn.").is_none());
+
+    let watcher = |text: &str| read_creature(&Printed { oracle_text: text.to_string(), ..slayer.clone() }).unwrap().watch.expect("a trigger on deaths");
+    let mob = watcher("Whenever another creature you control dies, put a +1/+1 counter on this creature.");
+    assert!(mob.dying.0[0].other && mob.dying.0[0].yours == Some(true));
+    assert_eq!(mob.trigger.spec.effects, vec![Effect::PlusCounters { slot: 0, n: 1 }]);
+    assert_eq!(mob.trigger.spec.slots, vec![Slot::This]);
+    let noble = watcher("Whenever this creature or another creature dies, target player loses 1 life and you gain 1 life.");
+    assert!(!noble.dying.0[0].other, "\"this creature or another\" is every creature");
+    assert_eq!(noble.trigger.spec.effects, vec![Effect::LoseLife { slot: 0, n: 1 }, Effect::GainLife { n: 1 }]);
+    assert_eq!(watcher("Whenever another Human creature dies, put a +1/+1 counter on this creature.").dying.0[0].subtypes, ["Human"]);
 
     let wolf = read_activated("{2}{G}: This creature gets +2/+2 until end of turn. Activate only once each turn.", 0).unwrap();
     assert!(wolf.once_each_turn && !wolf.tap && wolf.spec.slots == vec![Slot::This]);
