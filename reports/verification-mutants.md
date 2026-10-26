@@ -368,3 +368,74 @@ does not transform its source if it has transformed since the ability
 went on the stack (a test asserted the opposite), and CR 113.7a, under
 which Daybreak Ranger's ability is the face's it was activated from.
 Both are fixed, with regression tests that fail without the fix.
+
+## The cards: watchers, flashback, the library, and declarations — 2026-10-26
+
+The same method for the families since: 45 mutants, 45 caught.
+
+| family | mutant | caught by |
+|---|---|---|
+| a creature that keeps itself tapped | Galvanic Juggernaut untaps | the turn test |
+| | Galvanic Juggernaut need not attack | **only** the declarations test |
+| | a death does not untap it | the dies check, the watcher tapped |
+| counted tokens | Endless Ranks rounds up | the turn test, three Zombies |
+| | the opponent's Zombies count | the turn test |
+| | every player's upkeep | the turn test |
+| a discard of one's choice | Murder of Crows discards the first card unasked | the dies check, with a Bears in hand |
+| | no discard | the dies check |
+| | declining draws too | the dies check |
+| | it draws two | the dies check |
+| Civilized Scholar | any discard transforms it | the activated-ability test |
+| | no untap | the activated-ability test |
+| | the first card discarded unasked | the activated-ability test |
+| | Homicidal Brute triggers after attacking | **only** the stack count, having attacked |
+| | Homicidal Brute does not tap | the end-step test |
+| flashback | a flashback spell goes to the graveyard | the flashback test |
+| | a sorcery's flashback at instant speed | the flashback test |
+| triggers on casts | Charmbreaker Devils see the opponent's spells | **only** once the opponent casts in the game loop |
+| | the Devils see any spell | the cast-watcher test, a creature cast |
+| | the Devils get +3/+0 | the cast-watcher test |
+| | the Devils return any card | the turn test |
+| | Burning Vengeance sees casts from the hand | the cast-watcher test |
+| | Burning Vengeance sees the opponent's spells | the cast-watcher test |
+| can't block this turn | Nightbird's Clutches stop only one | the cast and flashback tests |
+| | the Clutches target up to one | the cast and flashback tests |
+| | the engine ignores "can't block this turn" | every check, through what is observed |
+| | it lasts past the turn | the next-turn check |
+| triggers on creatures entering | Mentor of the Meek sees power 1 or less | the enter-watcher test |
+| | Mentor sees the opponent's creatures | the enter-watcher test |
+| | Mentor draws when it cannot pay | **only** a cast with no mana left |
+| | Champion of the Parish sees any creature | the enter-watcher test |
+| | Champion sees the opponent's Humans | the enter-watcher test |
+| the library | Mulch keeps the nonlands | the cast test |
+| | Mulch reveals three | the cast test |
+| | Forbidden Alchemy looks at three | the cast and flashback tests |
+| | Delver of Secrets transforms on any card | **only** the turn test with a land on top |
+| | Delver transforms unrevealed | the turn test |
+| | Mindshrieker gets one more | the activated-ability test |
+| | Cellar Door never finds a creature | **only** once a library holds one |
+| granted abilities | Skeletal Grimace gives +1/+0 | the granted-ability test, the Aura fights |
+| | the regeneration is free | the granted-ability test |
+| | no shield | the granted-ability test |
+| attack or block | Hamlet Captain pumps itself | the fights |
+| | the Captain pumps any creature | the standing-by fights |
+| | the Captain does nothing as it blocks | the standing-by fights |
+
+Four checks came from mutants that first survived. Galvanic Juggernaut is
+not a fighter, having a trigger the combat reference does not play out,
+so nothing asked whether it must attack: every creature that does not
+fight is now held to its declarations. The opponent's spells had been
+cast with `submit_action` alone, which sets off nothing, so a Devils that
+saw them passed; the opponent now casts in the game loop. A Mentor that
+draws without paying could not be seen while the test always floated the
+mana. And, written before any mutant, whether a creature may block and
+must attack is now part of what every check observes, which the engine
+passed on every board at once, Vampire Interloper and Goblin Piker
+included.
+
+Changing the board's libraries, from five basic lands to an instant, three
+lands and a creature card, turned a Cellar Door branch that had never run
+into a checked one, and made the Delver, Mulch, Forbidden Alchemy and
+Mindshrieker templates mean something. The harness had relied on the drawn
+card being a land the active player could play, so that the game stopped
+in their main phase; each player now holds a land instead.

@@ -480,7 +480,34 @@ opponent's creatures tapped.
   and then does nothing is seen.
 - **"You may"**: besides every ending reached, the death checks play
   every "may" taken and every one declined, since as a set of endings a
-  wrong answer to one can hide behind a right answer to another.
+  wrong answer to one can hide behind a right answer to another. A "may"
+  with a cost ("you may pay {1}. If you do, draw a card") is taken only
+  when the mana floating pays it, and played with none left.
+- **Triggers on spells cast and creatures entering**: with the watcher on
+  the board, its controller casts an instant from hand and by flashback
+  and a creature, and the opponent casts in the game loop, so that what a
+  cast sets off is collected; a creature entering is judged as it is on
+  the battlefield (CR 601.2i, 603.6a).
+- **Flashback**: every spell that has it cast from its owner's graveyard
+  for its flashback cost, at exactly the targets the text allows, the
+  card on the stack and not among them, resolving as from a hand and
+  exiled after; a sorcery's flashback not offered with a spell on the
+  stack (CR 702.34a, 307.1).
+- **Abilities an Aura grants**, activated on the creature it enchants as
+  the Aura's, and gone with it (CR 113.2c).
+- **Declarations, everywhere**: every permanent observed says whether it
+  may block at all and whether it must attack, as the engine's own
+  declaration checks answer, so "can't block this turn" and "attacks each
+  combat if able" are compared in every ending of every check; and every
+  creature that does not fight in the combat tests is still offered as an
+  attacker and a blocker exactly as its text says (CR 508.1, 509.1).
+- **The board's hands and libraries** hold what a choice or a look at
+  them can tell apart: a creature card in the caster's hand, a land in
+  each hand so that either player is asked in their own main phase, and
+  in each library an instant on top and a creature card at the bottom.
+  A discard of one's choice, a pick from cards looked at, a reveal that
+  transforms, a mill whose mana value counts, are each read and played
+  every way.
 - **What lasts the turn**: every spell and ability whose effect is
   damage, a pump, a tap or a shield is played on into the opponent's main
   phase, where "until end of turn" changes, damage and regeneration
@@ -516,23 +543,25 @@ opponent's creatures tapped.
   exhaustive` fights every Equipment and Aura on every creature against
   every other.
 
-208 of the pool's 268 instants, sorceries, creatures, enchantments, lands
+224 of the pool's 268 instants, sorceries, creatures, enchantments, lands
 and artifacts are read, and all agree. Every template has been shown to
 catch a deliberate bug in a card that uses it, and the engine code under
 it, from Lightning Bolt dealing 2 to the untap step untapping every
 player's permanents (`reports/verification-mutants.md` lists the rounds:
-of the latest 145 mutants, 142 caught, one missed for want of a change of
+of the latest 190 mutants, 187 caught, one missed for want of a change of
 control between activation and resolution, two equivalent), and the
 failure names the cast and the difference. Every mutant that first
 survived became a check or a board: the "may" policies, the stack count,
-"nothing beyond its text", the opponent's Vampire. Not yet read: copies,
-triggers on spells being cast and on creatures entering, replacement
-effects ("would deal combat damage, deals double"), counters other than
-+1/+1 and -1/-1, rule modifiers (cost reductions for others, "can't be
-activated"), granted activated abilities, looking at and revealing
-cards, and costs other than those above. Each is a template, or a board,
-to add; `READ` lists the cards read, and a change that stops reading any
-of them fails and names it.
+"nothing beyond its text", the opponent's Vampire, the declarations
+test, the opponent casting in the game loop, a Bears cast with no mana
+left. Not yet read: copies, replacement effects ("would deal combat
+damage, deals double", token doubling), counters other than +1/+1 and
+-1/-1, rule modifiers (cost reductions, "can't be activated", "can't be
+cast"), modal spells, protection and hexproof granted, attack triggers
+with targets, links between abilities ("the exiled card"), and costs of
+tapping other creatures or removing counters. Each is a template, or a
+board, to add; `READ` lists the cards read, and a change that stops
+reading any of them fails and names it.
 
 ### The whole engine under libFuzzer
 

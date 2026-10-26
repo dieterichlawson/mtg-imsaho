@@ -98,7 +98,7 @@ too.
 | equipment | `cards_equipment_and_artifacts.rs`, `cards_equipment_costs.rs` |
 | sacrifice and other additional costs | `cards_sacrifice_and_additional_costs.rs` |
 | activated abilities on permanents | `cards_activated_abilities.rs` |
-| every card whose Oracle text a small grammar can read (spells, creatures and their triggers, statics, Auras and Equipment, lands, mana and activated abilities, both faces of double-faced cards, upkeeps and end steps, combat), at every target and every answer, against a reference reading of the rules (no hand-written cases; tier 3 of `docs/plans/formal-verification.md`; `CARD_SEMANTICS_EVERY_FIGHT=1` widens the equipped fights) | `card_semantics.rs` |
+| every card whose Oracle text a small grammar can read (spells and their flashback, creatures and their triggers on deaths, casts and creatures entering, statics, Auras and Equipment and what they grant, lands, mana and activated abilities, both faces of double-faced cards, upkeeps and end steps, combat and every creature's declarations), at every target and every answer, against a reference reading of the rules (no hand-written cases; tier 3 of `docs/plans/formal-verification.md`; `CARD_SEMANTICS_EVERY_FIGHT=1` widens the equipped fights) | `card_semantics.rs` |
 | spells and enchantments | `cards_spells_and_enchantments.rs` |
 | evasion, and P/T that depends on the board | `cards_evasion_and_graveyard_pt.rs` |
 | cards that change what the rules allow | `cards_rule_modifiers.rs` |
