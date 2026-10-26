@@ -364,6 +364,9 @@ enum Effect {
     /// "Discard a card": one its controller chooses from their hand, as
     /// it is then (CR 701.8a).
     Discard { n: usize },
+    /// "If a creature card is discarded this way, <effects>": the rest, on
+    /// the same slots, when the card discarded is one.
+    IfDiscardedCreature(Box<Spec>),
     /// "Regenerate this creature": a shield (CR 701.19a).
     Regenerate { slot: usize },
     /// "Transform this creature": it turns to its other face, unless it has
@@ -1148,6 +1151,18 @@ impl Spec {
         // "another target creature" is a target that is another creature.
         let s = s.replace("another target ", "target another ");
         let s = s.trim().strip_suffix('.')?;
+        if let Some(then) = s.strip_prefix("If a creature card is discarded this way, ").filter(|_| matches!(self.effects.last(), Some(Effect::Discard { .. }))) {
+            // "untap this creature, then transform it": two instructions.
+            let then = format!("{}.", capitalized(then).replace(", then transform it", ". Transform this creature"));
+            let mut inner = Spec { slots: self.slots.clone(), ..Spec::default() };
+            for sentence in then.split_inclusive(". ") {
+                inner.sentence(sentence)?;
+            }
+            // What it adds is the source, which is no target.
+            self.slots.clone_from(&inner.slots);
+            self.effects.push(Effect::IfDiscardedCreature(Box::new(inner)));
+            return Some(());
+        }
         if let Some(to) = s.strip_prefix("~ deals damage equal to the exiled card's power to ") {
             let f = filter(to.strip_prefix("target ")?)?;
             let slot = self.slot(Slot::Permanent(f));
@@ -3343,6 +3358,11 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     w.life[c] = t;
                 }
             }
+            Effect::IfDiscardedCreature(then) => {
+                if world.discarded.iter().any(|n| cached_oracle().get(n).is_some_and(|c| c.has_type("Creature"))) {
+                    w = apply(then, &w, targets, caster);
+                }
+            }
             Effect::DiscardAtRandom { .. } | Effect::Discard { .. } => {
                 for name in &world.discarded {
                     let at = w.hand[c].iter().position(|h| h == name).expect("a card in hand");
@@ -3949,17 +3969,19 @@ fn next_turn_outcomes(spec: &Spec, world: &World, id: ObjectId, active: PlayerId
 }
 
 /// Every way the end step of `active`'s turn can go on `world`, where `id`
-/// is the permanent read as `spec`: its end-step trigger, if its text says
-/// this is its end step and its intervening "if" holds, resolves each way
-/// it can (CR 513.1a, 603.4); nothing has attacked this turn. Mana empties
-/// as the main phase ends (500.4).
-fn end_step_outcomes(spec: &Spec, world: &World, id: ObjectId, active: PlayerId) -> Vec<World> {
+/// is the permanent read as `spec`, which `attacked` this turn or did not:
+/// its end-step trigger, if its text says this is its end step and its
+/// intervening "if" holds, resolves each way it can (CR 513.1a, 603.4).
+/// Mana empties as the main phase ends (500.4).
+fn end_step_outcomes(spec: &Spec, world: &World, id: ObjectId, active: PlayerId, attacked: bool) -> Vec<World> {
     let mut w = world.clone();
     w.pool = [BTreeMap::new(), BTreeMap::new()];
     w.source = Some(id);
     let controller = w.permanents.get(&id).map_or(P0, |m| m.controller);
     match spec.end_step.as_deref() {
-        Some(end) if (end.each || controller == active) && (!end.trigger.if_morbid || w.a_creature_died) => {
+        Some(end) if (end.each || controller == active) && (!end.trigger.if_morbid || w.a_creature_died)
+            && !(end.unless_attacked && attacked) =>
+        {
             triggers_outcomes(&[&end.trigger], &w, controller)
         }
         _ => vec![w],
@@ -4511,14 +4533,14 @@ const READ: &[&str] = &[
     "Battleground Geist", "Blasphemous Act", "Bloodcrazed Neonate", "Bloodgift Demon",
     "Bloodline Keeper", "Bonds of Faith", "Boneyard Wurm", "Brain Weevil", "Bramblecrush",
     "Brimstone Volley", "Bump in the Night", "Butcher's Cleaver", "Caravan Vigil",
-    "Cellar Door", "Chapel Geist", "Claustrophobia", "Clifftop Retreat", "Cloistered Youth",
-    "Cobbled Wings", "Coral Merfolk", "Corpse Lunge", "Counterspell", "Curse of Death's Hold",
-    "Curse of Oblivion", "Curse of Stalked Prey", "Curse of the Bloody Tome",
-    "Curse of the Nightly Hunt", "Curse of the Pierced Heart", "Darkthicket Wolf",
-    "Daybreak Ranger", "Dead Weight", "Demonmail Hauberk", "Deranged Assistant",
-    "Desperate Ravings", "Devil's Play", "Diregraf Ghoul", "Disciple of Griselbrand",
-    "Dissipate", "Divination", "Divine Reckoning", "Doom Blade", "Doomed Traveler",
-    "Dream Twist", "Elder Cathar", "Elder of Laurels", "Elite Inquisitor",
+    "Cellar Door", "Chapel Geist", "Civilized Scholar", "Claustrophobia", "Clifftop Retreat",
+    "Cloistered Youth", "Cobbled Wings", "Coral Merfolk", "Corpse Lunge", "Counterspell",
+    "Curse of Death's Hold", "Curse of Oblivion", "Curse of Stalked Prey",
+    "Curse of the Bloody Tome", "Curse of the Nightly Hunt", "Curse of the Pierced Heart",
+    "Darkthicket Wolf", "Daybreak Ranger", "Dead Weight", "Demonmail Hauberk",
+    "Deranged Assistant", "Desperate Ravings", "Devil's Play", "Diregraf Ghoul",
+    "Disciple of Griselbrand", "Dissipate", "Divination", "Divine Reckoning", "Doom Blade",
+    "Doomed Traveler", "Dream Twist", "Elder Cathar", "Elder of Laurels", "Elite Inquisitor",
     "Endless Ranks of the Dead", "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread",
     "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab", "Full Moon's Rise",
     "Furor of the Bitten", "Gallows Warden", "Galvanic Juggernaut", "Gatstaf Shepherd",
@@ -5261,7 +5283,8 @@ fn stack_disagreement(want: &[World], world: &World, from: &GameState, endings: 
 
 /// Every permanent the grammar reads with an end-step trigger, either face
 /// up, on the board and on the board after a death: from the postcombat
-/// main phase of each player's turn, in which nothing attacked, the engine
+/// main phase of each player's turn, in which nothing attacked, or for a
+/// trigger that asks, in which the permanent attacked, the engine
 /// must play on into the next turn's main phase exactly as the reference
 /// does: the trigger resolved every way its text allows in the end step it
 /// names, when its intervening "if" holds, and in no other (CR 513.1a,
@@ -5285,11 +5308,16 @@ fn every_turn_ends_as_its_text_says() {
             Some(f) => read_creature(f).ok(),
             None => card.back.as_deref().and_then(back_face_reads),
         };
-        for &(which, build) in &boards {
+        let attacks: &[bool] = if spec.end_step.as_ref().is_some_and(|e| e.unless_attacked) { &[false, true] } else { &[false] };
+        for (&(which, build), &attacked) in boards.iter().flat_map(|b| attacks.iter().map(move |a| (b, a))) {
             for active in [P0, P1] {
                 ends += 1;
                 let (mut state, mut world) = build(&registry, &cache);
                 let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
+                let which = format!("{which}{}", if attacked { ", having attacked" } else { "" });
+                if attacked {
+                    state.get_object_mut(id).expect("just placed").attacked_on_turn = Some(state.turn_number);
+                }
                 world.refresh();
                 state.step = Step::PostcombatMain;
                 state.active_player = active;
@@ -5297,7 +5325,7 @@ fn every_turn_ends_as_its_text_says() {
                 state.num_spells_cast_this_turn = BTreeMap::from([(active, 1)]);
                 let next = if active == P0 { P1 } else { P0 };
                 let placed = world.permanents[&id].transformed;
-                let want: Vec<World> = end_step_outcomes(spec, &world, id, active).into_iter()
+                let want: Vec<World> = end_step_outcomes(spec, &world, id, active, attacked).into_iter()
                     .flat_map(|w| {
                         let turned = w.permanents.get(&id).is_some_and(|m| m.transformed != placed);
                         let now = if turned { other.as_ref().expect("the face it turned to reads") } else { spec };
