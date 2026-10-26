@@ -6,14 +6,18 @@ use mtg_engine::view::GameView;
 use crate::Player;
 
 /// A player that picks randomly from legal actions.
-pub struct RandomPlayer {
+pub struct RandomPlayer<R = ChaCha12Rng> {
     name: String,
     /// `rand`'s `StdRng` is this generator, and seeds it the same way, so
     /// a seed plays the game it always played. Named here because it can
     /// say where it is in its stream, which `StdRng` hides: a save carries
     /// that, so a resumed seat continues the saved game's draws instead of
     /// starting its stream again (#844).
-    rng: ChaCha12Rng,
+    ///
+    /// Any other generator works for a seat that is never saved: the fuzz
+    /// target (`fuzz/`) hands it one that reads the fuzzer's input, so
+    /// every choice the seat makes comes from bytes the fuzzer can steer.
+    rng: R,
 }
 
 /// How often this seat backs out of a cast-time prompt instead of
@@ -70,6 +74,14 @@ const MULLIGAN_CHANCE: f64 = 0.25;
 /// prompt, and to reach it with more than one card to bottom.
 const MAX_MULLIGANS: u32 = 3;
 
+impl<R: Rng> RandomPlayer<R> {
+    /// A seat whose every choice comes from `rng`.
+    #[must_use]
+    pub fn with_rng(name: &str, rng: R) -> Self {
+        Self { name: name.to_string(), rng }
+    }
+}
+
 impl RandomPlayer {
     #[must_use]
     pub fn new(name: &str) -> Self {
@@ -116,7 +128,7 @@ impl RandomPlayer {
     }
 }
 
-impl RandomPlayer {
+impl<R: Rng> RandomPlayer<R> {
     /// Back out of the cast this prompt belongs to?
     ///
     /// Only ever asked at the three prompt kinds the engine accepts
@@ -129,7 +141,7 @@ impl RandomPlayer {
     }
 }
 
-impl Player for RandomPlayer {
+impl<R: Rng> Player for RandomPlayer<R> {
     fn name(&self) -> &str {
         &self.name
     }
@@ -476,7 +488,7 @@ impl Decision {
     }
 }
 
-impl RandomPlayer {
+impl<R: Rng> RandomPlayer<R> {
     /// Choose a random combat action from a combat prompt.
     pub fn choose_combat(&mut self, prompt: &CombatPrompt) -> Action {
         let rng = &mut self.rng;
