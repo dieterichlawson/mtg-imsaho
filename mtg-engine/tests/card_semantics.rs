@@ -16,7 +16,8 @@
 //! into what it does while it is on the battlefield, each land it can read
 //! into whether it enters tapped and what mana it makes, and the activated
 //! abilities it can read ("{1}{W}, Sacrifice this creature: Exile target
-//! enchantment.") into their costs and effects. A reference semantics,
+//! enchantment.") into their costs and effects, and the werewolves, both
+//! faces, into when they transform. A reference semantics,
 //! written from the
 //! Comprehensive Rules and sharing no code with `src/cards/`, says what
 //! those effects do to a board described by the Oracle data of the cards on
@@ -69,6 +70,8 @@ struct Printed {
     oracle_text: String,
     power: Option<i32>,
     toughness: Option<i32>,
+    /// A double-faced card's back face (CR 712.1), with no mana cost.
+    back: Option<Box<Printed>>,
 }
 
 fn oracle_cache() -> BTreeMap<String, Printed> {
@@ -76,15 +79,23 @@ fn oracle_cache() -> BTreeMap<String, Printed> {
     let raw = std::fs::read_to_string(path).expect("data/oracle_cache.json is readable");
     let json: serde_json::Value = serde_json::from_str(&raw).expect("the oracle cache is JSON");
     let int = |v: &serde_json::Value| v.as_str().and_then(|s| s.parse().ok());
+    let face = |c: &serde_json::Value, name: &str| Printed {
+        name: name.to_string(),
+        mana_cost: c["mana_cost"].as_str().unwrap_or("").to_string(),
+        type_line: c["type_line"].as_str().unwrap_or("").to_string(),
+        oracle_text: c["oracle_text"].as_str().unwrap_or("").to_string(),
+        power: int(&c["power"]),
+        toughness: int(&c["toughness"]),
+        back: None,
+    };
     json["cards"].as_object().expect("a cards map").iter()
-        .map(|(name, c)| (name.clone(), Printed {
-            name: name.clone(),
-            mana_cost: c["mana_cost"].as_str().unwrap_or("").to_string(),
-            type_line: c["type_line"].as_str().unwrap_or("").to_string(),
-            oracle_text: c["oracle_text"].as_str().unwrap_or("").to_string(),
-            power: int(&c["power"]),
-            toughness: int(&c["toughness"]),
-        }))
+        .map(|(name, c)| {
+            let mut front = face(c, name);
+            if let Some(b) = c.get("back_face").filter(|b| b.is_object()) {
+                front.back = Some(Box::new(face(b, b["name"].as_str().unwrap_or(""))));
+            }
+            (name.clone(), front)
+        })
         .collect()
 }
 
@@ -351,6 +362,11 @@ struct Spec {
     land: Option<(Vec<ManaType>, Option<Vec<String>>)>,
     /// Activated abilities other than mana abilities (CR 602).
     activated: Vec<Activated>,
+    /// A werewolf: "At the beginning of each upkeep, if no spells were cast
+    /// last turn, transform this creature", and on its back face, whose
+    /// text is read too, "... if a player cast two or more spells last
+    /// turn, transform this creature" (CR 603.4, 701.27, 712).
+    werewolf: bool,
 }
 
 /// "<cost>: <effect>" (CR 602.1).
@@ -911,6 +927,15 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
             spec.etb = Some(Box::new(trigger));
             continue;
         }
+        if line == "At the beginning of each upkeep, if no spells were cast last turn, transform this creature." {
+            // The back face, read the same way, must turn back.
+            let back = card.back.as_ref().ok_or_else(unread)?;
+            if back_face_reads(back).is_none() {
+                return Err(format!("cannot read the back face {:?}", back.oracle_text));
+            }
+            spec.werewolf = true;
+            continue;
+        }
         if line.contains(": ") {
             let index = spec.activated.len();
             spec.activated.push(read_activated(line, index).ok_or_else(unread)?);
@@ -922,6 +947,20 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
         }
     }
     Ok(spec)
+}
+
+/// A werewolf's back face, when its text is keywords and the trigger that
+/// transforms it back: its keywords.
+fn back_face_reads(back: &Printed) -> Option<Vec<Keyword>> {
+    let mut back_turns = false;
+    for line in without_reminders(&back.oracle_text).lines().map(str::trim).filter(|l| !l.is_empty()) {
+        if line == "At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature." {
+            back_turns = true;
+        } else if !line.split(',').map(str::trim).all(|w| keyword_named(w).is_some()) {
+            return None;
+        }
+    }
+    back_turns.then(|| back.keywords())
 }
 
 /// Read an artifact that is nothing but activated abilities the grammar
@@ -1170,6 +1209,10 @@ struct Model {
     counts_creatures: bool,
     /// What an Aura enchants (CR 303.4).
     attached: Option<Target>,
+    /// A werewolf's face that is not showing, and whether the back face is
+    /// the one showing (CR 712.8).
+    other_face: Option<Box<Model>>,
+    transformed: bool,
 }
 
 impl Model {
@@ -1190,7 +1233,37 @@ impl Model {
             counters: (0, 0),
             counts_creatures: false,
             attached: None,
+            other_face: None,
+            transformed: false,
         }
+    }
+
+    /// [`Model::printed`], with a werewolf's back face ready to turn to.
+    /// Its colours stay the front's: a werewolf's back face has a colour
+    /// indicator of the same colour (CR 204, 712.8), which the Oracle data
+    /// here does not carry.
+    fn printed_with_faces(p: &Printed, owner: PlayerId) -> Self {
+        let mut m = Model::printed(p, owner);
+        if let Some(back) = p.back.as_ref().filter(|b| back_face_reads(b).is_some() && read_creature(p).is_ok_and(|s| s.werewolf)) {
+            let mut b = Model::printed(back, owner);
+            b.colors = m.colors.clone();
+            m.other_face = Some(Box::new(b));
+        }
+        m
+    }
+
+    /// Turn to the other face: its characteristics, this object's state.
+    fn transform(&mut self) {
+        let Some(mut other) = self.other_face.take() else { return };
+        std::mem::swap(&mut self.name, &mut other.name);
+        std::mem::swap(&mut self.types, &mut other.types);
+        std::mem::swap(&mut self.subtypes, &mut other.subtypes);
+        std::mem::swap(&mut self.colors, &mut other.colors);
+        std::mem::swap(&mut self.keywords, &mut other.keywords);
+        std::mem::swap(&mut self.power, &mut other.power);
+        std::mem::swap(&mut self.toughness, &mut other.toughness);
+        self.other_face = Some(other);
+        self.transformed = !self.transformed;
     }
 
     fn is_creature(&self) -> bool {
@@ -1421,7 +1494,7 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
     };
     for (name, owner) in BOARD {
         let id = named_permanent(&mut state, registry, name, owner);
-        world.permanents.insert(id, Model::printed(&cache[name], owner));
+        world.permanents.insert(id, Model::printed_with_faces(&cache[name], owner));
     }
     for (name, owner) in GRAVEYARDS {
         let id = card_in_graveyard(&mut state, registry, name, owner);
@@ -1477,7 +1550,8 @@ fn observe(state: &GameState, registry: &CardRegistry) -> Observed {
             let mut subtypes = state.subtypes_of(o.id, registry);
             subtypes.sort();
             PermanentSeen {
-                name: if o.is_token { None } else { Some(name_of(o.id)) },
+                // The active face's name (CR 712.8).
+                name: if o.is_token { None } else { Some(state.name_of(o.id, registry)) },
                 controller: o.controller.0,
                 power: if creature { state.effective_power(o.id, registry) } else { None },
                 toughness: if creature { state.effective_toughness(o.id, registry) } else { None },
@@ -1834,6 +1908,8 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                         counters: (0, 0),
                         counts_creatures: false,
                         attached: None,
+                        other_face: None,
+                        transformed: false,
                     });
                 }
             }
@@ -2205,25 +2281,26 @@ const READ: &[&str] = &[
     "Bump in the Night", "Chapel Geist", "Clifftop Retreat", "Coral Merfolk", "Counterspell",
     "Curse of Death's Hold", "Darkthicket Wolf", "Dead Weight", "Diregraf Ghoul", "Dissipate",
     "Divination", "Doom Blade", "Doomed Traveler", "Dream Twist", "Feeling of Dread",
-    "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab", "Gavony Township",
-    "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame", "Ghoulcaller's Bell",
-    "Giant Growth", "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms",
-    "Grizzly Bears", "Gruesome Deformity", "Hinterland Harbor", "Hollowhenge Scavenger",
-    "Holy Strength", "Hysterical Blindness", "Intangible Virtue", "Into the Maw of Hell",
-    "Island", "Isolated Chapel", "Kalonian Tusker", "Kessig Wolf", "Kindercatch",
-    "Lantern Spirit", "Lava Axe", "Lightning Bolt", "Lost in the Mist", "Markov Patrician",
-    "Mausoleum Guard", "Maw of the Mire", "Midnight Haunting", "Moan of the Unhallowed",
-    "Moment of Heroism", "Moon Heron", "Morkrut Banshee", "Mountain", "Naturalize",
-    "Nephalia Drownyard", "Paraselene", "Pitchburn Devils", "Plains", "Prey Upon",
-    "Purify the Grave", "Rally the Peasants", "Ranger's Guile", "Rebuke", "Riot Devils",
-    "Rolling Temblor", "Rotting Fensnake", "Savannah Lions", "Selfless Cathar",
-    "Sensory Deprivation", "Silent Departure", "Silverchase Fox", "Slayer of the Wicked",
-    "Smite the Monstrous", "Somberwald Spider", "Spectral Flight", "Spectral Rider",
-    "Spider Spawning", "Spidery Grasp", "Stensia Bloodhall", "Sulfur Falls", "Swamp",
-    "Swords to Plowshares", "Think Twice", "Thraben Purebloods", "Travel Preparations",
+    "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab", "Gatstaf Shepherd",
+    "Gavony Township", "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame",
+    "Ghoulcaller's Bell", "Giant Growth", "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker",
+    "Grasp of Phantoms", "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity",
+    "Hinterland Harbor", "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness",
+    "Intangible Virtue", "Into the Maw of Hell", "Island", "Isolated Chapel", "Kalonian Tusker",
+    "Kessig Wolf", "Kindercatch", "Lantern Spirit", "Lava Axe", "Lightning Bolt",
+    "Lost in the Mist", "Markov Patrician", "Mausoleum Guard", "Maw of the Mire",
+    "Midnight Haunting", "Moan of the Unhallowed", "Moment of Heroism", "Moon Heron",
+    "Morkrut Banshee", "Mountain", "Naturalize", "Nephalia Drownyard", "Paraselene",
+    "Pitchburn Devils", "Plains", "Prey Upon", "Purify the Grave", "Rally the Peasants",
+    "Ranger's Guile", "Rebuke", "Reckless Waif", "Riot Devils", "Rolling Temblor",
+    "Rotting Fensnake", "Savannah Lions", "Selfless Cathar", "Sensory Deprivation",
+    "Silent Departure", "Silverchase Fox", "Slayer of the Wicked", "Smite the Monstrous",
+    "Somberwald Spider", "Spectral Flight", "Spectral Rider", "Spider Spawning",
+    "Spidery Grasp", "Stensia Bloodhall", "Sulfur Falls", "Swamp", "Swords to Plowshares",
+    "Think Twice", "Thraben Purebloods", "Tormented Pariah", "Travel Preparations",
     "Typhoid Rats", "Unburial Rites", "Urgent Exorcism", "Vampiric Fury", "Victim of Night",
-    "Village Bell-Ringer", "Voiceless Spirit", "Walking Corpse", "Woodland Cemetery",
-    "Wreath of Geists",
+    "Village Bell-Ringer", "Village Ironsmith", "Villagers of Estwald", "Voiceless Spirit",
+    "Walking Corpse", "Woodland Cemetery", "Wreath of Geists",
 ];
 
 // ---- the properties ----
@@ -2449,6 +2526,62 @@ fn every_readable_activated_ability_does_what_its_text_says() {
         failures.len(), failures.join("\n  "));
 }
 
+/// Every werewolf the grammar reads, and the two on the board with it: at
+/// the beginning of an upkeep after a turn in which no spells were cast,
+/// each transforms to its back face, keeping what has happened to it; at
+/// the beginning of one after a turn in which a player cast two spells,
+/// each transforms back (CR 603.4, 712.8). Each upkeep is played on, the
+/// triggers ordered front first, and with nothing else to do in it the game
+/// goes on to the draw step, where the caster draws (CR 504.1), and stops
+/// in the main phase that follows, where they could play a land.
+#[test]
+fn every_readable_werewolf_transforms_as_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let mut failures = Vec::new();
+    let mut werewolves = 0;
+    for (card, _) in cards.iter().filter(|(_, s)| s.werewolf) {
+        werewolves += 1;
+        let (mut state, mut world) = board(&registry, &cache);
+        let id = named_permanent(&mut state, &registry, &card.name, P0);
+        world.permanents.insert(id, Model::printed_with_faces(card, P0));
+        // The upkeep starts, and with it each werewolf's trigger: first
+        // after a quiet turn, then after a turn of two spells.
+        for (phase, cast_last_turn) in [("after a turn with no spells", 0), ("after a turn of two spells", 2)] {
+            state.step = Step::Upkeep;
+            state.priority_player = Some(P0);
+            state.num_spells_cast_last_turn = [(P1, cast_last_turn)].into_iter().filter(|(_, n)| *n > 0).collect();
+            fire_step_trigger(&mut state, Step::Upkeep, &registry);
+            for m in world.permanents.values_mut().filter(|m| m.other_face.is_some()) {
+                if m.transformed == (cast_last_turn >= 2) {
+                    m.transform();
+                }
+            }
+            let drawn = world.library[0].remove(0);
+            world.hand[0].push(drawn);
+            state = match play(&state, &registry, None, Vec::new(), &[]) {
+                Ok(Played::Done(after)) => *after,
+                Ok(Played::Asks(options)) => {
+                    failures.push(format!("{} {phase}: the engine asked a question the text does not, answerable {options:?}", card.name));
+                    break;
+                }
+                Err(why) => {
+                    failures.push(format!("{} {phase}: {why}", card.name));
+                    break;
+                }
+            };
+            let (got, want) = (observe(&state, &registry), world.observed());
+            if got != want {
+                failures.push(format!("{} {phase}:\n      {}", card.name, differences(&got, &want)));
+                break;
+            }
+        }
+    }
+    assert!(werewolves > 0);
+    assert!(failures.is_empty(), "{}", failures.join("\n  "));
+}
+
 /// A creature spell with Flash can be cast whenever its controller has
 /// priority, and one without only in their own main phase with the stack
 /// empty (CR 702.8a, 307.1): on the opponent's turn, with priority passed
@@ -2563,6 +2696,7 @@ fn the_grammar_reads_its_templates() {
         oracle_text: text.to_string(),
         power: None,
         toughness: None,
+        back: None,
     };
     let spec = read(&card("Bolt", "Bolt deals 3 damage to any target.")).unwrap();
     assert_eq!(spec.slots, vec![Slot::Any]);
