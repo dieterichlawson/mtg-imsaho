@@ -586,9 +586,10 @@ pub fn still_on_battlefield(state: &GameState, object_id: ObjectId) -> bool {
 
 /// What came of asking a permanent to transform.
 ///
-/// Three of the four are refusals, and they are different refusals: a token
+/// Four of the five are refusals, and they are different refusals: a token
 /// copy of a double-faced card, a single-faced card wearing a double-faced
-/// creature's face, and nothing there to transform at all. A caller that
+/// creature's face, nothing there to transform at all, and an ability of the
+/// permanent's own that it has transformed since. A caller that
 /// cannot tell them apart cannot say which happened, and neither can a
 /// reader of the log (issue #500).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -605,6 +606,11 @@ pub enum TransformResult {
     /// CR 400.7: there is nothing on the battlefield to transform. The
     /// ability still resolves (CR 113.7a); it just has no permanent.
     NotAPermanent,
+    /// CR 701.27f: the ability resolving is the permanent's own, and the
+    /// permanent has transformed since it went on the stack. Moonmist in
+    /// response to a werewolf's upkeep trigger, or a second activation of
+    /// Bloodline Keeper's transform held under the first.
+    AlreadyTransformed,
 }
 
 impl TransformResult {
@@ -631,6 +637,8 @@ pub fn transform_line(name: &str, result: TransformResult, new_name: &str) -> St
             format!("{name} does not transform — the card under it has only one face (CR 701.28c)"),
         TransformResult::NotAPermanent =>
             format!("{name} does not transform — it is no longer on the battlefield (CR 400.7)"),
+        TransformResult::AlreadyTransformed =>
+            format!("{name} does not transform — it has transformed since this ability went on the stack (CR 701.27f)"),
     }
 }
 
@@ -722,6 +730,17 @@ pub fn transform_quietly(
         return TransformResult::SingleFaced;
     }
 
+    // CR 701.27f: "If an activated or triggered ability of a permanent ...
+    // tries to transform it, the permanent does so only if it hasn't
+    // transformed or converted since the ability was put onto the stack."
+    // The entry resolving is held across a question it asks, so a "you may
+    // transform" answered later is still that ability's.
+    if state.resolving_ability.as_ref().zip(state.get_object(object_id))
+        .is_some_and(|(entry, obj)| entry.predates_a_transform_of(obj))
+    {
+        return TransformResult::AlreadyTransformed;
+    }
+
     // Refresh the display cache with the face now showing.
     let new_name = if was_transformed {
         Some(behavior.card_data().name)
@@ -731,6 +750,7 @@ pub fn transform_quietly(
 
     if let Some(obj) = state.get_object_mut(object_id) {
         obj.is_transformed = !was_transformed;
+        obj.transforms += 1;
         if let Some(name) = new_name {
             obj.name = name;
         }
@@ -886,10 +906,11 @@ pub fn werewolf_should_transform(state: &GameState, object_id: ObjectId) -> bool
     //
     // These differ when the permanent transforms between the trigger and its
     // resolution: Moonmist in response to a front-face Werewolf's upkeep
-    // trigger flips it forward, and the front face's ability must still resolve
-    // and flip it back, because "no spells were cast last turn" is unchanged by
-    // anything cast this turn. Reading the current face instead tested the back
-    // face's condition and did nothing.
+    // trigger flips it forward, and the front face's condition, "no spells were
+    // cast last turn", is unchanged by anything cast this turn. The trigger
+    // still transforms nothing — the permanent has transformed since it went on
+    // the stack (CR 701.27f, in `transform_quietly`) — but it is the front
+    // face's ability resolving, and its condition is the one to report.
     let back_face = state.resolving_trigger_from_back_face
         .unwrap_or_else(|| state.get_object(object_id).is_some_and(|o| o.is_transformed));
     if back_face {

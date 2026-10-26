@@ -613,14 +613,18 @@ fn ludevics_abomination_offers_no_activated_ability() {
 /// Once the ability is on the stack it is its own object and resolves on its
 /// own terms (CR 113.7a); transforming is not a zone change, so the permanent
 /// underneath it is the same object throughout (CR 400.7, CR 712.8). Nothing
-/// in "put a hatchling counter on this creature ... remove all of them and
-/// transform it" asks which face is up, so activations held back after the
-/// flip land their counters on Ludevic's Abomination and, at five, flip it
-/// back.
+/// in "put a hatchling counter on this creature ... remove all of them" asks
+/// which face is up, so activations held on the stack from before the flip
+/// land their counters on Ludevic's Abomination, and at five remove them. Their
+/// "transform it" does nothing: the permanent has transformed since they went
+/// on the stack (CR 701.27f).
 ///
 /// The card used to open its resolution with `if is_transformed { return }`,
 /// reasoning that the back face has no activated abilities — which is true and
-/// beside the point, since the ability is no longer on the permanent.
+/// beside the point, since the ability is no longer on the permanent. This test
+/// then said the fifth surplus activation flips it back, and simulated "held"
+/// activations by activating them after the flip, where 701.27f has nothing to
+/// say; all six are on the stack at once here.
 #[test]
 fn surplus_activations_keep_working_after_the_flip() {
     let reg = registry();
@@ -628,17 +632,18 @@ fn surplus_activations_keep_working_after_the_flip() {
 
     let subject = named_permanent(&mut state, &reg, "Ludevic's Test Subject", P0);
 
-    // Five activations reach the flip.
+    // Six activations on the stack at once, four counters on it already.
     state.add_counters(subject, CounterType::Hatchling, 4);
-    activate_via_hooks(&mut state, &reg, subject, 0, &[]);
+    for _ in 0..6 {
+        activate_via_hooks(&mut state, &reg, subject, 0, &[]);
+    }
+
+    // The first to resolve reaches five and flips it.
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
     assert!(state.get_object(subject).unwrap().is_transformed,
         "precondition: it is Ludevic's Abomination now");
 
-    // Four more copies of the ability, held on the stack from before the flip,
-    // resolve one at a time.
     for expected in 1..=4 {
-        activate_via_hooks(&mut state, &reg, subject, 0, &[]);
         mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
         assert_eq!(state.get_counter_count(subject, CounterType::Hatchling), expected,
             "the counter goes on the permanent whichever face is up");
@@ -646,13 +651,14 @@ fn surplus_activations_keep_working_after_the_flip() {
             "four counters is not five");
     }
 
-    // The fifth removes them all and transforms it — back to the front face.
-    activate_via_hooks(&mut state, &reg, subject, 0, &[]);
+    // The last removes them all, and does not transform it: it has transformed
+    // since this activation went on the stack.
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert!(state.stack.is_empty());
     let obj = state.get_object(subject).unwrap();
-    assert!(!obj.is_transformed, "\"transform it\" flips whichever face is up");
-    assert_eq!(obj.name, "Ludevic's Test Subject");
-    assert_eq!(state.get_counter_count(subject, CounterType::Hatchling), 0);
+    assert!(obj.is_transformed, "\"transform it\" is ignored after a transform since it was activated (CR 701.27f)");
+    assert_eq!(state.name_of(subject, &reg), "Ludevic's Abomination");
+    assert_eq!(state.get_counter_count(subject, CounterType::Hatchling), 0, "\"remove all of them\" still happens");
 }
 
 // -------------------------------------------------------------------------
@@ -779,6 +785,32 @@ fn bloodline_keeper_creates_vampire_token() {
     let obj = state.get_object(token).unwrap();
     assert_eq!(obj.power, Some(2));
     assert_eq!(obj.toughness, Some(2));
+}
+
+/// CR 701.27f: a second activation of "{B}: Transform this creature", held on
+/// the stack under the first, does not transform Lord of Lineage back. It has
+/// transformed since that activation went on the stack, so the instruction is
+/// ignored.
+#[test]
+fn bloodline_keepers_second_transform_held_under_the_first_does_nothing() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let keeper = named_permanent(&mut state, &reg, "Bloodline Keeper", P0);
+    activate_via_hooks(&mut state, &reg, keeper, 1, &[]);
+    activate_via_hooks(&mut state, &reg, keeper, 1, &[]);
+
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert_eq!(state.name_of(keeper, &reg), "Lord of Lineage");
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert!(state.stack.is_empty());
+    assert_eq!(state.name_of(keeper, &reg), "Lord of Lineage",
+        "the second activation predates the transform, so it does not transform it back");
+
+    // And Lord of Lineage has no transform ability of its own to activate.
+    let card_id = state.get_object(keeper).unwrap().card_id;
+    let abilities = reg.get(card_id).unwrap().activated_abilities(&state, keeper, &reg);
+    assert!(abilities.iter().all(|a| a.ability_index != 1), "Lord of Lineage has no transform ability");
 }
 
 // -------------------------------------------------------------------------

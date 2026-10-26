@@ -240,7 +240,7 @@ fn a_stack_drained_by_auto_passes_resolves_one_object_per_pass_round() {
             target_requirement: None,
             sacrificed: None,
             sacrificed_toughness: None,
-            loyalty: false,
+            loyalty: false, source_transforms: 0,
         });
     }
     // The fuzz runner's mode: every pass is a decision the observer sees.

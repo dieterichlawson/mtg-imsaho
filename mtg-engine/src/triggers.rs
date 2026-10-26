@@ -53,13 +53,17 @@ pub struct TriggerSource {
     /// triggered, not whatever face is up by then.
     #[serde(default)]
     pub from_back_face: bool,
+    /// The source's transform count as this went on the stack, stamped by
+    /// `put_on_stack` (CR 701.27f).
+    #[serde(default)]
+    pub transforms: u32,
 }
 
 impl TriggerSource {
     #[must_use]
     pub fn new(id: ObjectId, card_id: CardId, controller: PlayerId, description: impl Into<String>) -> Self {
         Self { id, card_id, controller, description: description.into(),
-               chosen_targets: Vec::new(), from_back_face: false }
+               chosen_targets: Vec::new(), from_back_face: false, transforms: 0 }
     }
 
     /// Record which face this triggered from (CR 712.8 — the faces have

@@ -58,10 +58,37 @@ pub enum StackEntry {
         /// longer existed by the time anyone could answer it.
         #[serde(default)]
         loyalty: bool,
+        /// Its source's transform count as it went on the stack, stamped by
+        /// `put_on_stack` (CR 701.27f).
+        #[serde(default)]
+        source_transforms: u32,
     },
 }
 
 impl StackEntry {
+    /// The permanent whose ability this is, if it is an ability.
+    #[must_use]
+    pub fn ability_source(&self) -> Option<ObjectId> {
+        match self {
+            StackEntry::Trigger(t) => Some(t.source.id),
+            StackEntry::Ability { source_id, .. } => Some(*source_id),
+            StackEntry::Spell(_) => None,
+        }
+    }
+
+    /// Whether this is an ability of `object` put on the stack before
+    /// `object` last transformed, so that it may not transform it now
+    /// (CR 701.27f).
+    #[must_use]
+    pub fn predates_a_transform_of(&self, object: &GameObject) -> bool {
+        let put = match self {
+            StackEntry::Trigger(t) if t.source.id == object.id => t.source.transforms,
+            StackEntry::Ability { source_id, source_transforms, .. } if *source_id == object.id => *source_transforms,
+            _ => return false,
+        };
+        put != object.transforms
+    }
+
     /// Get the `ObjectId` if this is a spell.
     #[must_use]
     pub fn as_spell(&self) -> Option<ObjectId> {
@@ -534,7 +561,17 @@ pub fn default_rng_seed() -> u64 {
 
 impl GameState {
     /// Put an entry on top of the stack (CR 405.1), counting it.
-    pub fn put_on_stack(&mut self, entry: StackEntry) {
+    pub fn put_on_stack(&mut self, mut entry: StackEntry) {
+        // CR 701.27f: an ability that transforms its own source asks, as it
+        // resolves, whether the source has transformed since now.
+        let count = entry.ability_source()
+            .and_then(|id| self.get_object(id))
+            .map_or(0, |o| o.transforms);
+        match &mut entry {
+            StackEntry::Trigger(t) => t.source.transforms = count,
+            StackEntry::Ability { source_transforms, .. } => *source_transforms = count,
+            StackEntry::Spell(_) => {}
+        }
         let controller = match &entry {
             StackEntry::Spell(id) => self.get_object(*id).map(|o| o.controller),
             StackEntry::Trigger(trigger) => Some(trigger.controller()),
@@ -726,6 +763,7 @@ impl GameState {
             counters: std::collections::BTreeMap::new(),
             regeneration_shields: 0,
             is_transformed: false,
+            transforms: 0,
             x_value: None,
             chosen_mode: None,
             abilities_activated_this_turn: std::collections::BTreeSet::new(),
@@ -1029,6 +1067,7 @@ impl GameState {
             // CR 707.8a: a copy of a permanent with its back face up shows
             // that face too, and the flag is what makes every accessor agree.
             is_transformed: face.is_some_and(|f| f.is_transformed),
+            transforms: 0,
             x_value: None,
             abilities_activated_this_turn: std::collections::BTreeSet::new(),
             chosen_mode: None,
@@ -4126,6 +4165,12 @@ pub struct GameObject {
     /// Whether this double-faced card is on its back face.
     #[serde(default)]
     pub is_transformed: bool,
+
+    /// How many times it has transformed. An ability of its own that
+    /// transforms it compares this with the count as the ability went on the
+    /// stack, and does nothing if they differ (CR 701.27f).
+    #[serde(default)]
+    pub transforms: u32,
 
     /// Whether a state-triggered ability (CR 603.8) for this object is currently
     /// on the stack. While true, the trigger won't fire again.

@@ -87,9 +87,10 @@ impl CardBehavior for LudevicsTestSubject {
     /// source (CR 113.7a), transforming is not a zone change so the permanent
     /// is the same object throughout (CR 400.7, CR 712.8), and "this creature"
     /// is a self-reference to that object rather than to a permanent with a
-    /// particular name. So five surplus activations held on the
-    /// stack really do stack hatchling counters onto Ludevic's Abomination and
-    /// flip it back.
+    /// particular name. So surplus activations held on the stack really do
+    /// stack hatchling counters onto Ludevic's Abomination, and at five remove
+    /// them; their "transform it" is ignored, the permanent having transformed
+    /// since they went on the stack (CR 701.27f, in `transform_quietly`).
     ///
     /// Pre-errata the line read "Put a hatchling counter on Ludevic's Test
     /// Subject", which is where the old contrary reading came from; the name
