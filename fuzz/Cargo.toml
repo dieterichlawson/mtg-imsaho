@@ -1,0 +1,33 @@
+[package]
+name = "mtg-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+mtg-engine = { path = "../mtg-engine" }
+mtg-player = { path = "../mtg-player" }
+rand_core = "0.6"
+serde_json = "1"
+
+# Its own workspace: cargo-fuzz builds on nightly with sanitizer
+# instrumentation, and nothing here should reach the stable workspace's
+# builds, lints or tests (scripts/fuzz-engine.sh runs it).
+[workspace]
+
+[[bin]]
+name = "game"
+path = "fuzz_targets/game.rs"
+test = false
+doc = false
+bench = false
+
+# As the main workspace's release builds: an overflow is a finding, not a
+# wrapped number.
+[profile.release]
+overflow-checks = true
+debug = 1
