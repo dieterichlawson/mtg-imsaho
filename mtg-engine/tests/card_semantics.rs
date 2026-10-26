@@ -224,6 +224,9 @@ enum Slot {
     /// "this creature", "this land": the ability's own source. Not a
     /// target; its place in a target list is filled with the source.
     This,
+    /// "enchanted creature" in an Aura's trigger: the creature it enchants.
+    /// Not a target.
+    EnchantedCreature,
     /// "that player" in a Curse's trigger: the player it enchants; with
     /// `or_planeswalker`, "that player or a planeswalker that player
     /// controls", which its controller chooses. Not a target.
@@ -636,6 +639,57 @@ enum Static {
     /// "As long as you control a <subtype>, this creature has K" (CR
     /// 611.3a, 604.1).
     IfYouControl { subtype: String, has: Vec<Keyword> },
+    /// What an Aura stops or makes a creature do: "Enchanted creature
+    /// can't attack or block", "... attacks each combat if able",
+    /// "Prevent all combat damage that would be dealt to and dealt by
+    /// enchanted creature", "... doesn't untap during its controller's
+    /// untap step"; with `group`, the creatures the enchanted player
+    /// controls ("attack each combat if able"); with `unless_subtype`, only
+    /// while it is not one ("Otherwise, it can't attack or block").
+    Restricts { group: bool, what: Vec<Restriction>, unless_subtype: Option<String> },
+}
+
+/// A rule a static ability puts on a creature (CR 508.1c-d, 509.1b,
+/// 615.1, 502.3).
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Restriction {
+    CantAttack,
+    CantBlock,
+    AttacksEachCombat,
+    NoCombatDamage,
+    DoesntUntap,
+}
+
+/// An Aura's line that restricts the creature it enchants, or the
+/// creatures of the player it enchants, the full stop gone; with any
+/// change to power and toughness it also makes.
+fn restriction_static(body: &str) -> Option<Vec<Static>> {
+    use Restriction::*;
+    let restricts = |what: Vec<Restriction>| Static::Restricts { group: false, what, unless_subtype: None };
+    let out = match body {
+        "Enchanted creature can't attack or block" => vec![restricts(vec![CantAttack, CantBlock])],
+        "Enchanted creature doesn't untap during its controller's untap step" => vec![restricts(vec![DoesntUntap])],
+        "Prevent all combat damage that would be dealt to and dealt by enchanted creature" => vec![restricts(vec![NoCombatDamage])],
+        "Creatures enchanted player controls attack each combat if able" =>
+            vec![Static::Restricts { group: true, what: vec![AttacksEachCombat], unless_subtype: None }],
+        _ => {
+            let rest = body.strip_prefix("Enchanted creature ")?;
+            if let Some(change) = rest.strip_suffix(" and attacks each combat if able") {
+                vec![attached_static(change, None)?, restricts(vec![AttacksEachCombat])]
+            } else {
+                // "gets +2/+2 as long as it's a Human. Otherwise, it can't
+                // attack or block."
+                let (change, rest) = rest.split_once(" as long as it's a ")?;
+                let (subtype, otherwise) = rest.split_once(". Otherwise, it ")?;
+                if otherwise != "can't attack or block" {
+                    return None;
+                }
+                vec![attached_static(change, Some(subtype))?,
+                    Static::Restricts { group: false, what: vec![CantAttack, CantBlock], unless_subtype: Some(subtype.to_string()) }]
+            }
+        }
+    };
+    Some(out)
 }
 
 /// What an attached static's X counts, in its controller's graveyard.
@@ -860,6 +914,11 @@ impl Spec {
         }
         // The ability's source ("This creature gets +2/+0 until end of
         // turn", "Return this creature to its owner's hand").
+        if s == "Tap enchanted creature" {
+            let slot = self.slot(Slot::EnchantedCreature);
+            self.effects.push(Effect::Tap { slot, tapped: true });
+            return Some(());
+        }
         if let Some(rest) = s.strip_prefix("This Aura deals ") {
             let (n, to) = rest.split_once(" damage to ")?;
             if to != "that player or a planeswalker that player controls" {
@@ -1460,6 +1519,18 @@ fn read_enchantment(card: &Printed) -> Result<Spec, String> {
             spec.upkeep = Some(Box::new(read_upkeep(line).ok_or_else(unread)?));
             continue;
         }
+        if let Some(statics) = restriction_static(body) {
+            spec.statics.extend(statics);
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("When this Aura enters, ").filter(|_| spec.enchants) {
+            let mut chars = rest.chars();
+            let sentence: String = chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default();
+            let mut trigger = Trigger::default();
+            trigger.spec.sentence(&sentence).ok_or_else(unread)?;
+            spec.etb = Some(Box::new(trigger));
+            continue;
+        }
         if let Some(rest) = body.strip_prefix("Enchanted creature ") {
             spec.statics.push(attached_static(rest, None).ok_or_else(unread)?);
             continue;
@@ -1683,6 +1754,8 @@ struct Model {
     /// counted in `keywords`, `power` or `toughness`.
     granted: Vec<Keyword>,
     boost: (i32, i32),
+    /// ... and the rules they put on it.
+    restricted: Vec<Restriction>,
 }
 
 impl Model {
@@ -1712,6 +1785,7 @@ impl Model {
             statics: Vec::new(),
             granted: Vec::new(),
             boost: (0, 0),
+            restricted: Vec::new(),
         }
     }
 
@@ -1775,6 +1849,23 @@ impl Model {
                 // main phase.
                 && !c.attacking
         })
+    }
+}
+
+/// What a static ability does to one creature: a change to its power and
+/// toughness, keywords, and rules.
+struct Change {
+    pt: (i32, i32),
+    has: Vec<Keyword>,
+    restricted: Vec<Restriction>,
+}
+
+/// Whether `m` is under `r`, by its own text or a static ability.
+fn restricted(m: &Model, r: Restriction) -> bool {
+    m.restricted.contains(&r) || match r {
+        Restriction::CantBlock => m.combat.cant_block,
+        Restriction::AttacksEachCombat => m.combat.attacks_each_combat,
+        _ => false,
     }
 }
 
@@ -1936,7 +2027,7 @@ impl World {
             Dest::Graveyard => {
                 self.graveyard[owner].push(name);
                 // A new object, with its printed characteristics (CR 400.7).
-                self.yard.insert(id, Model { controller: m.owner, damage: 0, tapped: false, counters: (0, 0), granted: Vec::new(), boost: (0, 0), ..m });
+                self.yard.insert(id, Model { controller: m.owner, damage: 0, tapped: false, counters: (0, 0), granted: Vec::new(), boost: (0, 0), restricted: Vec::new(), ..m });
             }
             Dest::Exile => self.exile[owner].push(name),
             Dest::Hand => self.hand[owner].push(name),
@@ -1967,19 +2058,21 @@ impl World {
         for m in self.permanents.values_mut().chain(self.tokens.iter_mut()) {
             m.granted.clear();
             m.boost = (0, 0);
+            m.restricted.clear();
         }
         for keywords in [true, false] {
             let before = self.clone();
             let n = before.permanents.len();
             let targets = before.permanents.iter().map(|(id, m)| (Some(*id), m)).chain(before.tokens.iter().map(|m| (None, m)));
             for (k, (id, m)) in targets.enumerate() {
-                let ((mut power, mut toughness), mut has) = ((0, 0), Vec::new());
+                let ((mut power, mut toughness), mut has, mut restricted) = ((0, 0), Vec::new(), Vec::new());
                 for (src_id, src) in &before.permanents {
                     for st in &src.statics {
-                        if let Some(((p, t), h)) = before.static_effect(st, *src_id, src, id, m) {
+                        if let Some(Change { pt: (p, t), has: h, restricted: r }) = before.static_effect(st, *src_id, src, id, m) {
                             power += p;
                             toughness += t;
                             has.extend(h);
+                            restricted.extend(r);
                         }
                     }
                 }
@@ -1989,6 +2082,7 @@ impl World {
                 };
                 if keywords {
                     target.granted = has;
+                    target.restricted = restricted;
                 } else {
                     target.boost = (power, toughness);
                 }
@@ -1997,14 +2091,15 @@ impl World {
     }
 
     /// What static ability `st` of `src` (id `src_id`) does to the creature
-    /// `m` (id `id`, none for a token): a change to its power and toughness,
-    /// and keywords; None when it does not apply to it.
-    fn static_effect(&self, st: &Static, src_id: ObjectId, src: &Model, id: Option<ObjectId>, m: &Model) -> Option<((i32, i32), Vec<Keyword>)> {
+    /// `m` (id `id`, none for a token); None when it does not apply to it.
+    fn static_effect(&self, st: &Static, src_id: ObjectId, src: &Model, id: Option<ObjectId>, m: &Model) -> Option<Change> {
         if !m.is_creature() {
             return None;
         }
         let is_source = id == Some(src_id);
         let count = |n: usize| i32::try_from(n).expect("a few");
+        let change = |pt: (i32, i32), has: &[Keyword]| Change { pt, has: has.to_vec(), restricted: Vec::new() };
+        let on_it = matches!(src.attached, Some(Target::Object(e)) if Some(e) == id);
         match st {
             Static::Enchanted { power, toughness, has, per, if_subtype } => {
                 let k = match per {
@@ -2015,19 +2110,24 @@ impl World {
                         .count()),
                 };
                 let holds = if_subtype.as_ref().is_none_or(|t| m.subtypes.contains(t));
-                (holds && matches!(src.attached, Some(Target::Object(e)) if Some(e) == id)).then(|| ((power * k, toughness * k), has.clone()))
+                (holds && on_it).then(|| change((power * k, toughness * k), has))
             }
             Static::Group { filter, enchanted_player, power, toughness, has } => {
                 let whose = !enchanted_player || matches!(src.attached, Some(Target::Player(p)) if p == m.controller);
-                (whose && m.matches_from(filter, src.controller, is_source)).then(|| ((*power, *toughness), has.clone()))
+                (whose && m.matches_from(filter, src.controller, is_source)).then(|| change((*power, *toughness), has))
             }
             Static::PerEach { filter, power, toughness } => {
                 let k = count(self.permanents.values().chain(&self.tokens).filter(|o| o.matches(filter, src.controller)).count());
-                is_source.then_some(((power * k, toughness * k), Vec::new()))
+                is_source.then(|| change((power * k, toughness * k), &[]))
             }
             Static::IfYouControl { subtype, has } => {
                 let holds = self.permanents.values().chain(&self.tokens).any(|o| o.controller == src.controller && o.subtypes.contains(subtype));
-                (is_source && holds).then(|| ((0, 0), has.clone()))
+                (is_source && holds).then(|| change((0, 0), has))
+            }
+            Static::Restricts { group, what, unless_subtype } => {
+                let whom = if *group { matches!(src.attached, Some(Target::Player(p)) if p == m.controller) } else { on_it };
+                let holds = unless_subtype.as_ref().is_none_or(|t| !m.subtypes.contains(t));
+                (whom && holds).then(|| Change { pt: (0, 0), has: Vec::new(), restricted: what.clone() })
             }
         }
     }
@@ -2247,6 +2347,10 @@ fn candidates(slot: &Slot, world: &World, caster: PlayerId) -> Vec<Target> {
         Slot::This => world.source.into_iter().map(Target::Object).collect(),
         // No planeswalker is on the board, so "that player or a
         // planeswalker that player controls" is the player.
+        Slot::EnchantedCreature => world.source.and_then(|s| world.permanents.get(&s))
+            .and_then(|m| match m.attached { Some(Target::Object(id)) => Some(Target::Object(id)), _ => None })
+            .into_iter()
+            .collect(),
         Slot::EnchantedPlayer { .. } => world.source.and_then(|s| world.permanents.get(&s))
             .and_then(|m| match m.attached { Some(Target::Player(p)) => Some(Target::Player(p)), _ => None })
             .into_iter()
@@ -2580,6 +2684,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                         statics: Vec::new(),
                         granted: Vec::new(),
                         boost: (0, 0),
+                        restricted: Vec::new(),
                     });
                 }
             }
@@ -2662,6 +2767,14 @@ fn resolve(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId, car
         // targeted (CR 303.4f), and its static abilities apply from then on.
         let attached = spec.enchants.then(|| targets[0].clone());
         w.permanents.insert(id, Model { attached, statics: spec.statics.clone(), ..Model::printed(card, caster) });
+        // Its enters trigger, on the board it entered (CR 603.6a); one with
+        // no choices, as the Auras read here have.
+        if let Some(trigger) = &spec.etb {
+            w.source = Some(id);
+            w.state_based_actions();
+            let [after] = &trigger_outcomes(trigger, &w, caster)[..] else { panic!("an Aura's enters trigger with choices") };
+            w = after.clone();
+        }
     }
     w.state_based_actions();
     if !spec.permanent {
@@ -2720,7 +2833,7 @@ fn next_turn_outcomes(spec: &Spec, world: &World, id: ObjectId, active: PlayerId
     for m in w.permanents.values_mut().chain(w.tokens.iter_mut()) {
         m.damage = 0;
         m.deathtouched = false;
-        if m.controller == active {
+        if m.controller == active && !restricted(m, Restriction::DoesntUntap) {
             m.tapped = false;
         }
     }
@@ -3172,25 +3285,27 @@ const READ: &[&str] = &[
     "Abbey Griffin", "Altar's Reap", "Ambush Viper", "Ancient Grudge",
     "Angel of Flight Alabaster", "Angelic Overseer", "Armored Skaab", "Army of the Damned",
     "Avacyn's Pilgrim", "Avacynian Priest", "Balefire Dragon", "Battleground Geist",
-    "Blasphemous Act", "Bloodcrazed Neonate", "Bloodgift Demon", "Boneyard Wurm",
-    "Bramblecrush", "Brimstone Volley", "Bump in the Night", "Butcher's Cleaver",
-    "Chapel Geist", "Clifftop Retreat", "Cobbled Wings", "Coral Merfolk", "Corpse Lunge",
-    "Counterspell", "Curse of Death's Hold", "Curse of Oblivion", "Curse of the Bloody Tome",
+    "Blasphemous Act", "Bloodcrazed Neonate", "Bloodgift Demon", "Bonds of Faith",
+    "Boneyard Wurm", "Bramblecrush", "Brimstone Volley", "Bump in the Night",
+    "Butcher's Cleaver", "Chapel Geist", "Claustrophobia", "Clifftop Retreat", "Cobbled Wings",
+    "Coral Merfolk", "Corpse Lunge", "Counterspell", "Curse of Death's Hold",
+    "Curse of Oblivion", "Curse of the Bloody Tome", "Curse of the Nightly Hunt",
     "Curse of the Pierced Heart", "Darkthicket Wolf", "Dead Weight", "Deranged Assistant",
     "Diregraf Ghoul", "Dissipate", "Divination", "Doom Blade", "Doomed Traveler", "Dream Twist",
     "Elite Inquisitor", "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread",
-    "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab", "Gallows Warden",
-    "Gatstaf Shepherd", "Gavony Township", "Geist-Honored Monk", "Geistcatcher's Rig",
-    "Geistflame", "Ghoulcaller's Bell", "Giant Growth", "Glorious Anthem", "Gnaw to the Bone",
-    "Goblin Piker", "Grasp of Phantoms", "Grave Bramble", "Grizzled Outcasts", "Grizzly Bears",
-    "Gruesome Deformity", "Hinterland Harbor", "Hollowhenge Scavenger", "Holy Strength",
-    "Hysterical Blindness", "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker",
-    "Island", "Isolated Chapel", "Kalonian Tusker", "Kessig Wolf", "Kindercatch",
-    "Lantern Spirit", "Lava Axe", "Lightning Bolt", "Lost in the Mist", "Lumberknot",
-    "Makeshift Mauler", "Markov Patrician", "Mask of Avacyn", "Mausoleum Guard",
-    "Maw of the Mire", "Midnight Haunting", "Moan of the Unhallowed", "Moment of Heroism",
-    "Moon Heron", "Morkrut Banshee", "Mountain", "Naturalize", "Nephalia Drownyard",
-    "Night Revelers", "One-Eyed Scarecrow", "Orchard Spirit", "Paraselene", "Pitchburn Devils",
+    "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab", "Furor of the Bitten",
+    "Gallows Warden", "Gatstaf Shepherd", "Gavony Township", "Geist-Honored Monk",
+    "Geistcatcher's Rig", "Geistflame", "Ghostly Possession", "Ghoulcaller's Bell",
+    "Giant Growth", "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms",
+    "Grave Bramble", "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity",
+    "Hinterland Harbor", "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness",
+    "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker", "Island",
+    "Isolated Chapel", "Kalonian Tusker", "Kessig Wolf", "Kindercatch", "Lantern Spirit",
+    "Lava Axe", "Lightning Bolt", "Lost in the Mist", "Lumberknot", "Makeshift Mauler",
+    "Markov Patrician", "Mask of Avacyn", "Mausoleum Guard", "Maw of the Mire",
+    "Midnight Haunting", "Moan of the Unhallowed", "Moment of Heroism", "Moon Heron",
+    "Morkrut Banshee", "Mountain", "Naturalize", "Nephalia Drownyard", "Night Revelers",
+    "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism", "Paraselene", "Pitchburn Devils",
     "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower", "Rally the Peasants",
     "Ranger's Guile", "Rebuke", "Reckless Waif", "Riot Devils", "Rolling Temblor",
     "Rotting Fensnake", "Runechanter's Pike", "Savannah Lions", "Scourge of Geier Reach",
@@ -3571,24 +3686,26 @@ fn every_readable_werewolf_transforms_as_its_text_says() {
     assert!(failures.is_empty(), "{}", failures.join("\n  "));
 }
 
-/// Every permanent the grammar reads with an upkeep trigger, on the board:
-/// a creature of the caster's, or a Curse the caster put on the opponent.
-/// From the end step of the turn before each player's turn, the engine must
-/// play on into that turn's main phase exactly as the reference does:
-/// damage gone, the active player's permanents untapped and no one else's,
-/// the trigger resolved every way its text allows in the upkeep it names
-/// and in no other, and the active player's draw (CR 514.2, 502.3, 503.1a,
-/// 504.1). One spell is cast in the turn before, so
+/// Every permanent the grammar reads with an upkeep trigger, or that keeps
+/// a creature from untapping, on the board: a creature of the caster's, a
+/// Curse the caster put on the opponent, or an Aura on the caster's tapped
+/// Grizzly Bears. From the end step of the turn before each player's turn,
+/// the engine must play on into that turn's main phase exactly as the
+/// reference does: damage gone, the active player's permanents untapped
+/// but for what its text keeps tapped, and no one else's, the trigger
+/// resolved every way its text allows in the upkeep it names and in no
+/// other, and the active player's draw (CR 514.2, 502.3, 503.1a, 504.1). One spell is cast in the turn before, so
 /// that neither face of a werewolf on the board transforms: its triggers
 /// ask for no spells last turn, or two.
 #[test]
-fn every_upkeep_trigger_does_what_its_text_says() {
+fn every_turn_begins_as_its_text_says() {
     let registry = registry();
     let cache = oracle_cache();
     let (cards, _) = readable(&registry, &cache);
     let mut failures = Vec::new();
     let mut upkeeps = 0;
-    for (card, spec) in cards.iter().filter(|(_, s)| s.upkeep.is_some()) {
+    let keeps_tapped = |s: &Spec| s.statics.iter().any(|st| matches!(st, Static::Restricts { what, .. } if what.contains(&Restriction::DoesntUntap)));
+    for (card, spec) in cards.iter().filter(|(_, s)| s.upkeep.is_some() || keeps_tapped(s)) {
         // The upkeep its text names, and the other player's, which it must
         // leave alone.
         for active in [P0, P1] {
@@ -3597,6 +3714,17 @@ fn every_upkeep_trigger_does_what_its_text_says() {
             let id = if curse {
                 let id = attach_curse_to_player(&mut state, &registry, &card.name, P0, P1);
                 world.permanents.insert(id, Model { attached: Some(Target::Player(P1)), ..model_of(spec, card, P0) });
+                id
+            } else if spec.enchants {
+                let bears = world.permanents.iter()
+                    .find(|(_, m)| m.name.as_deref() == Some("Grizzly Bears"))
+                    .map(|(id, _)| *id)
+                    .expect("on the board");
+                let id = named_permanent(&mut state, &registry, &card.name, P0);
+                state.attach(id, bears);
+                state.get_object_mut(bears).expect("on the board").tapped = true;
+                world.permanents.get_mut(&bears).expect("on the board").tapped = true;
+                world.permanents.insert(id, Model { attached: Some(Target::Object(bears)), ..model_of(spec, card, P0) });
                 id
             } else {
                 let id = named_permanent(&mut state, &registry, &card.name, P0);
@@ -3644,7 +3772,7 @@ fn has(m: &Model, k: Keyword) -> bool {
 /// and not by what it has protection from (702.16f).
 fn evasion_allows(attacker: &Model, blocker: &Model) -> bool {
     let a = &attacker.combat;
-    !blocker.combat.cant_block
+    !restricted(blocker, Restriction::CantBlock)
         && !a.cant_be_blocked
         && !(has(attacker, Keyword::Flying) && !(has(blocker, Keyword::Flying) || has(blocker, Keyword::Reach)))
         && !(a.only_by_flying_or_reach && !(has(blocker, Keyword::Flying) || has(blocker, Keyword::Reach)))
@@ -3733,8 +3861,12 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
                 let mut to_player = 0;
                 for (to, n, from) in &branch {
                     let source = w.permanents[from].clone();
+                    // Protection and "prevent all combat damage that would
+                    // be dealt to and dealt by" it (CR 702.16e, 615.1).
                     let n = match to {
-                        Target::Object(id) if protected(&w.permanents[id], &source) => 0,
+                        _ if restricted(&source, Restriction::NoCombatDamage) => 0,
+                        Target::Object(id) if protected(&w.permanents[id], &source)
+                            || restricted(&w.permanents[id], Restriction::NoCombatDamage) => 0,
                         _ => *n,
                     };
                     if n == 0 {
@@ -3808,7 +3940,8 @@ fn arena(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Option<(
 }
 
 /// [`arena`], and a third permanent standing by on one side, out of the
-/// combat: a creature, or an Equipment attached to that side's combatant.
+/// combat: a creature, or an Equipment or Aura attached to that side's
+/// combatant, or a Curse on that side's player.
 fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Option<(&Printed, &Spec)>, standing: Option<((&Printed, &Spec), PlayerId)>)
     -> (GameState, World, ObjectId, Option<ObjectId>, Option<ObjectId>)
 {
@@ -3850,11 +3983,17 @@ fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Opt
     };
     let a = place(&mut state, attacker, P0);
     let b = blocker.map(|b| place(&mut state, b, P1));
-    let s = standing.map(|(c, side)| (place(&mut state, c, side), c.0, side));
-    if let Some((id, _, side)) = s.filter(|(_, card, _)| card.type_line.contains("Equipment")) {
-        if let Some(host) = if side == P0 { Some(a) } else { b } {
-            state.attach(id, host);
-            world.permanents.get_mut(&id).expect("just placed").attached = Some(Target::Object(host));
+    let s = standing.map(|(c, side)| (place(&mut state, c, side), c, side));
+    if let Some((id, (card, spec), side)) = s {
+        let on_player = spec.enchants && spec.slots.first() == Some(&Slot::Player);
+        if on_player {
+            state.get_object_mut(id).expect("just placed").attached_to_player = Some(side);
+            world.permanents.get_mut(&id).expect("just placed").attached = Some(Target::Player(side));
+        } else if spec.enchants || card.type_line.contains("Equipment") {
+            if let Some(host) = if side == P0 { Some(a) } else { b } {
+                state.attach(id, host);
+                world.permanents.get_mut(&id).expect("just placed").attached = Some(Target::Object(host));
+            }
         }
     }
     world.refresh();
@@ -3947,17 +4086,18 @@ fn fight(registry: &CardRegistry, state: &GameState, world: &World, a: ObjectId,
     let mut failures = Vec::new();
     let am = &world.permanents[&a];
     let asked = combat_questions(state, registry, a);
-    if asked.eligible.contains(&a) == has(am, Keyword::Defender) {
-        failures.push(format!("{name}: offered as an attacker {}, and it {} defender", asked.eligible.contains(&a),
-            if has(am, Keyword::Defender) { "has" } else { "lacks" }));
+    let may_attack = !has(am, Keyword::Defender) && !restricted(am, Restriction::CantAttack);
+    if asked.eligible.contains(&a) != may_attack {
+        failures.push(format!("{name}: offered as an attacker {}, and its text {} it", asked.eligible.contains(&a),
+            if may_attack { "allows" } else { "forbids" }));
         return (0, failures);
     }
-    if has(am, Keyword::Defender) {
+    if !may_attack {
         return (0, failures);
     }
-    if asked.must_attack.contains(&a) != am.combat.attacks_each_combat {
-        failures.push(format!("{name}: required to attack {}, and its text says {}",
-            asked.must_attack.contains(&a), am.combat.attacks_each_combat));
+    let must = restricted(am, Restriction::AttacksEachCombat);
+    if asked.must_attack.contains(&a) != must {
+        failures.push(format!("{name}: required to attack {}, and its text says {must}", asked.must_attack.contains(&a)));
         return (0, failures);
     }
     let mut combats = 0;
@@ -4055,11 +4195,73 @@ fn every_keyword_creature_fights_as_its_keywords_say() {
     assert!(failures.is_empty(), "{} of {combats} combats disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
+/// The fights [`every_keyword_creature_fights_as_its_keywords_say`] has,
+/// again with each of `standing` on either side, out of combat: a creature,
+/// or an Equipment or Aura on that side's combatant or player. Only the
+/// combats it changes are fought: those where what the static abilities do
+/// to a combatant differs from the same arena without it. With `probes`,
+/// the creature it changes fights only a probe of each kind of opponent.
+fn standing_fights(registry: &CardRegistry, fighters: &[(&Printed, &Spec)], standing: &[(&Printed, &Spec)], probes: Option<&[(&Printed, &Spec)]>)
+    -> (usize, Vec<String>)
+{
+    let mut failures = Vec::new();
+    let mut combats = 0;
+    for &by in standing {
+        for side in [P0, P1] {
+            let attackers = match probes { Some(p) if side == P1 => p, _ => fighters };
+            let blockers = match probes { Some(p) if side == P0 => p, _ => fighters };
+            for &attacker in attackers {
+                for blocker in std::iter::once(None).chain(blockers.iter().copied().map(Some)) {
+                    let (state, mut world, a, b, s) = arena_with(registry, attacker, blocker, Some((by, side)));
+                    // A combatant the static kills before combat does not
+                    // fight; the cast test sees that death.
+                    world.state_based_actions();
+                    if !world.permanents.contains_key(&a) || b.is_some_and(|b| !world.permanents.contains_key(&b)) {
+                        continue;
+                    }
+                    let mut without = world.clone();
+                    without.permanents.remove(&s.expect("standing by"));
+                    without.refresh();
+                    let changed = |id: ObjectId| {
+                        let (x, y) = (&world.permanents[&id], &without.permanents[&id]);
+                        x.boost != y.boost || x.granted != y.granted || x.restricted != y.restricted
+                    };
+                    if !(changed(a) || b.is_some_and(changed)) {
+                        continue;
+                    }
+                    let name = format!("{} attacking{}, {} standing by for player {}", attacker.0.name,
+                        blocker.map_or(String::new(), |(b, _)| format!(", {} blocking", b.name)), by.0.name, side.0);
+                    let (n, why) = fight(registry, &state, &world, a, b, &name);
+                    combats += n;
+                    failures.extend(why);
+                }
+            }
+        }
+    }
+    (combats, failures)
+}
+
+/// A vanilla fighter, and one with each keyword that changes how combat
+/// damage is dealt or who may block: the opponents an Equipment's or an
+/// Aura's creature fights unless CARD_SEMANTICS_EVERY_FIGHT is set
+/// (scripts/prove.sh exhaustive), when it fights every fighter.
+fn probes<'a>(fighters: &[(&'a Printed, &'a Spec)]) -> Option<Vec<(&'a Printed, &'a Spec)>> {
+    if std::env::var_os("CARD_SEMANTICS_EVERY_FIGHT").is_some() {
+        return None;
+    }
+    let mut probes: Vec<(&Printed, &Spec)> = Vec::new();
+    for k in [None, Some(Keyword::Flying), Some(Keyword::FirstStrike), Some(Keyword::Deathtouch), Some(Keyword::Trample), Some(Keyword::Reach)] {
+        let kind = fighters.iter().copied().find(|(c, s)| s.statics.is_empty() && s.combat == CombatText::default()
+            && k.map_or(c.keywords().is_empty(), |k| c.keywords().contains(&k)));
+        probes.extend(kind.filter(|p| !probes.iter().any(|q| q.0.name == p.0.name)));
+    }
+    Some(probes)
+}
+
 /// Every fight of [`every_keyword_creature_fights_as_its_keywords_say`]
-/// that a permanent standing by on either side changes, out of combat: each
-/// fighter with a static ability, a creature of each subtype a static asks
-/// its controller for (Angelic Overseer's Human), and each Equipment the
-/// grammar reads, attached to that side's combatant. A lord's bonus,
+/// that a creature standing by on either side changes, out of combat: each
+/// fighter with a static ability, and a creature of each subtype a static
+/// asks its controller for (Angelic Overseer's Human). A lord's bonus,
 /// granted keywords, a count of opposing creatures: the engine must carry
 /// each into combat damage and the state-based actions after it, and drop
 /// it when what it depends on leaves (CR 611.3a, 613.4c, 704.3).
@@ -4070,7 +4272,6 @@ fn every_static_reaches_the_combats_it_changes() {
     let (cards, _) = readable(&registry, &cache);
     let fighters = fighters(&cards);
     let mut standing: Vec<(&Printed, &Spec)> = fighters.iter().copied().filter(|(_, s)| !s.statics.is_empty()).collect();
-    standing.extend(cards.iter().filter(|(c, s)| c.type_line.contains("Equipment") && !s.statics.is_empty()).map(|(c, s)| (c, s)));
     for (_, spec) in standing.clone() {
         for st in &spec.statics {
             if let Static::IfYouControl { subtype, .. } = st {
@@ -4080,53 +4281,51 @@ fn every_static_reaches_the_combats_it_changes() {
             }
         }
     }
-    let mut failures = Vec::new();
-    let mut combats = 0;
-    // An Equipment changes every creature it is on, so it fights every
-    // fighter against a probe of each kind of opponent: one with each
-    // keyword combat damage turns on, and a vanilla one. With
-    // CARD_SEMANTICS_EVERY_FIGHT set (scripts/prove.sh exhaustive), against
-    // every fighter.
-    let every_fight = std::env::var_os("CARD_SEMANTICS_EVERY_FIGHT").is_some();
-    let mut probes: Vec<(&Printed, &Spec)> = Vec::new();
-    for k in [None, Some(Keyword::Flying), Some(Keyword::FirstStrike), Some(Keyword::Deathtouch), Some(Keyword::Trample), Some(Keyword::Reach)] {
-        let kind = fighters.iter().copied().find(|(c, s)| s.statics.is_empty() && s.combat == CombatText::default()
-            && k.map_or(c.keywords().is_empty(), |k| c.keywords().contains(&k)));
-        probes.extend(kind.filter(|p| !probes.iter().any(|q| q.0.name == p.0.name)));
-    }
-    for &by in &standing {
-        let equipment = by.0.type_line.contains("Equipment");
-        for side in [P0, P1] {
-            let attackers = if equipment && side == P1 && !every_fight { &probes } else { &fighters };
-            let blockers = if equipment && side == P0 && !every_fight { &probes } else { &fighters };
-            for &attacker in attackers {
-                for blocker in std::iter::once(None).chain(blockers.iter().copied().map(Some)) {
-                    let (state, world, a, b, s) = arena_with(&registry, attacker, blocker, Some((by, side)));
-                    // Only the combats it changes: what the static
-                    // abilities do to the combatants, against the same
-                    // arena without it.
-                    let mut without = world.clone();
-                    without.permanents.remove(&s.expect("standing by"));
-                    without.refresh();
-                    let changed = |id: ObjectId| {
-                        let (x, y) = (&world.permanents[&id], &without.permanents[&id]);
-                        x.boost != y.boost || x.granted != y.granted
-                    };
-                    if !(changed(a) || b.is_some_and(changed)) {
-                        continue;
-                    }
-                    let name = format!("{} attacking{}, {} standing by for player {}", attacker.0.name,
-                        blocker.map_or(String::new(), |(b, _)| format!(", {} blocking", b.name)), by.0.name, side.0);
-                    let (n, why) = fight(&registry, &state, &world, a, b, &name);
-                    combats += n;
-                    failures.extend(why);
-                }
-            }
-        }
-    }
+    let (combats, failures) = standing_fights(&registry, &fighters, &standing, None);
     assert!(combats > 0);
     assert!(failures.is_empty(), "{} of {combats} combats disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
-    println!("{combats} combats with a permanent standing by agree with the text");
+    println!("{combats} combats with a creature standing by agree with the text");
+}
+
+/// The same with each Equipment the grammar reads on the combatant of
+/// either side: what it gives the creature it is on reaches combat, and
+/// the Equipment stays when that creature dies (CR 301.5, 704.5n).
+#[test]
+fn every_equipment_reaches_the_combats_it_is_in() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let fighters = fighters(&cards);
+    let standing: Vec<(&Printed, &Spec)> = cards.iter()
+        .filter(|(c, s)| c.type_line.contains("Equipment") && !s.statics.is_empty())
+        .map(|(c, s)| (c, s))
+        .collect();
+    let (combats, failures) = standing_fights(&registry, &fighters, &standing, probes(&fighters).as_deref());
+    assert!(combats > 0);
+    assert!(failures.is_empty(), "{} of {combats} combats disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+    println!("{combats} combats with an Equipment agree with the text");
+}
+
+/// The same with each Aura the grammar reads on the combatant of either
+/// side, or on its player: what it gives the creature, and what it stops
+/// or makes it do, reach combat: "can't attack or block", "attacks each
+/// combat if able", combat damage to and by it prevented (CR 508.1c-d,
+/// 509.1b, 615.1); and the Aura goes to the graveyard when its creature
+/// dies (704.5m).
+#[test]
+fn every_aura_reaches_the_combats_it_is_in() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let fighters = fighters(&cards);
+    let standing: Vec<(&Printed, &Spec)> = cards.iter()
+        .filter(|(_, s)| s.enchants && !s.statics.is_empty())
+        .map(|(c, s)| (c, s))
+        .collect();
+    let (combats, failures) = standing_fights(&registry, &fighters, &standing, probes(&fighters).as_deref());
+    assert!(combats > 0);
+    assert!(failures.is_empty(), "{} of {combats} combats disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+    println!("{combats} combats with an Aura agree with the text");
 }
 
 /// A creature spell with Flash can be cast whenever its controller has
@@ -4365,7 +4564,15 @@ fn the_grammar_reads_its_templates() {
     let virtue = read_enchantment(&Printed { type_line: "Enchantment".to_string(), ..aura("Creature tokens you control get +1/+1 and have vigilance.") }).unwrap();
     let [Static::Group { filter: Filter(clauses), has, .. }] = &virtue.statics[..] else { panic!("one group static") };
     assert!(clauses[0].token && has == &vec![Keyword::Vigilance]);
-    assert!(read_enchantment(&aura("Enchant creature\nEnchanted creature can't attack or block.")).is_err());
+    let pacifism = read_enchantment(&aura("Enchant creature\nEnchanted creature can't attack or block.")).unwrap();
+    assert_eq!(pacifism.statics, vec![Static::Restricts { group: false, what: vec![Restriction::CantAttack, Restriction::CantBlock], unless_subtype: None }]);
+    let bonds = read_enchantment(&aura("Enchant creature\nEnchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block.")).unwrap();
+    assert!(matches!(&bonds.statics[..], [Static::Enchanted { power: 2, toughness: 2, if_subtype: Some(h), .. },
+        Static::Restricts { unless_subtype: Some(u), .. }] if h == "Human" && u == "Human"));
+    let claustrophobia = read_enchantment(&Printed { name: "Claustrophobia".to_string(),
+        ..aura("Enchant creature\nWhen this Aura enters, tap enchanted creature.\nEnchanted creature doesn't untap during its controller's untap step.") }).unwrap();
+    assert_eq!(claustrophobia.etb.expect("an enters trigger").spec.slots, vec![Slot::EnchantedCreature]);
+    assert!(read_enchantment(&aura("Enchant creature\nEnchanted creature can't block unless it's a Human.")).is_err());
 
     let lord = creature_static("Other Spirit creatures you control get +1/+0.").expect("a group static");
     let Static::Group { filter: Filter(clauses), power: 1, toughness: 0, .. } = &lord else { panic!("+1/+0 to a group") };
