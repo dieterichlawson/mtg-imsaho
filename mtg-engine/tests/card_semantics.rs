@@ -77,6 +77,15 @@ struct Printed {
     back: Option<Box<Printed>>,
 }
 
+/// [`oracle_cache`], read once.
+fn cached_oracle() -> &'static BTreeMap<String, Printed> {
+    static CACHE: std::sync::OnceLock<BTreeMap<String, Printed>> = std::sync::OnceLock::new();
+    CACHE.get_or_init(oracle_cache)
+}
+
+/// The cards in the attacker's graveyard in an arena.
+const ARENA_GRAVEYARD: [&str; 2] = ["Walking Corpse", "Grizzly Bears"];
+
 fn oracle_cache() -> BTreeMap<String, Printed> {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../data/oracle_cache.json");
     let raw = std::fs::read_to_string(path).expect("data/oracle_cache.json is readable");
@@ -529,6 +538,34 @@ struct CombatText {
     /// "Whenever this creature deals combat damage to a player, ..." (CR
     /// 510.3a, 603.2).
     on_damage_to_player: Vec<OnPlayerDamage>,
+    /// "Whenever this creature attacks, create <tokens> that's tapped and
+    /// attacking [for each creature card in your graveyard]. [Exile that
+    /// token at end of combat.]" (CR 508.4).
+    on_attack_tokens: Option<AttackTokens>,
+    /// "Whenever this creature blocks or becomes blocked by a creature,
+    /// this creature deals N damage to that creature." (CR 509.4)
+    block_damage: Option<u32>,
+    /// An Equipment's "Whenever equipped creature blocks or becomes blocked
+    /// by a <type>, destroy that creature. It can't be regenerated."
+    stake: Option<String>,
+    /// "Whenever a <type> you control deals combat damage to a player, put
+    /// a +1/+1 counter on it."
+    counters_on_yours: Option<String>,
+    /// A Curse's "Whenever a creature deals combat damage to enchanted
+    /// player, put a +1/+1 counter on that creature."
+    counters_on_damage_to_enchanted: bool,
+}
+
+/// Tokens a creature's attack makes, tapped and attacking.
+#[derive(Debug, Clone, PartialEq)]
+struct AttackTokens {
+    power: i32,
+    toughness: i32,
+    colors: Vec<Color>,
+    subtypes: Vec<String>,
+    keywords: Vec<Keyword>,
+    per_creature_card: bool,
+    exile_at_end_of_combat: bool,
 }
 
 /// What "whenever this creature deals combat damage to a player" does.
@@ -576,6 +613,35 @@ impl CombatText {
                         }
                     };
                     self.on_damage_to_player.push(e);
+                } else if let Some(rest) = line.strip_prefix("Whenever this creature attacks, create ").or_else(|| line.strip_prefix("Whenever ~ attacks, create ")) {
+                    let (rest, exile_at_end_of_combat) = match rest.strip_suffix(" Exile that token at end of combat.") {
+                        Some(r) => (r, true),
+                        None => (rest, false),
+                    };
+                    let rest = rest.strip_suffix('.')?;
+                    if !rest.contains(" that's tapped and attacking") {
+                        return None;
+                    }
+                    let mut tokens = Spec::default();
+                    tokens.tokens(&rest.replacen(" that's tapped and attacking", "", 1))?;
+                    let Some(Effect::Tokens { n: 1, power, toughness, colors, subtypes, keywords, tapped: false, per_creature_card }) = tokens.effects.pop() else {
+                        return None;
+                    };
+                    self.on_attack_tokens = Some(AttackTokens { power, toughness, colors, subtypes, keywords, per_creature_card, exile_at_end_of_combat });
+                } else if let Some(n) = line.strip_prefix("Whenever this creature blocks or becomes blocked by a creature, this creature deals ")
+                    .and_then(|r| r.strip_suffix(" damage to that creature."))
+                {
+                    self.block_damage = Some(number(n)?);
+                } else if let Some(t) = line.strip_prefix("Whenever a ")
+                    .and_then(|r| r.strip_suffix(" you control deals combat damage to a player, put a +1/+1 counter on it."))
+                {
+                    self.counters_on_yours = Some(t.to_string());
+                } else if let Some(t) = line.strip_prefix("Whenever equipped creature blocks or becomes blocked by a ")
+                    .and_then(|r| r.strip_suffix(", destroy that creature. It can't be regenerated."))
+                {
+                    self.stake = Some(t.to_string());
+                } else if line == "Whenever a creature deals combat damage to enchanted player, put a +1/+1 counter on that creature." {
+                    self.counters_on_damage_to_enchanted = true;
                 } else if let Some(rest) = line.strip_prefix("Protection from ") {
                     // "Protection from Vampires, from Werewolves, and from
                     // Zombies": one ability per quality (CR 702.16g).
@@ -1567,7 +1633,9 @@ fn read_artifact(card: &Printed) -> Result<Spec, String> {
     for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
         let index = spec.mana.iter().map(ManaAbility::indices).sum::<usize>() + spec.activated.len();
         let body = line.strip_suffix('.').unwrap_or(line);
-        if let Some(rest) = body.strip_prefix("Equipped creature ") {
+        if line.starts_with("Whenever equipped creature ") {
+            spec.combat.read(line).ok_or_else(|| format!("cannot read {line:?}"))?;
+        } else if let Some(rest) = body.strip_prefix("Equipped creature ") {
             spec.statics.push(attached_static(rest, None).ok_or_else(|| format!("cannot read {line:?}"))?);
         } else if let Some((subtype, rest)) = body.strip_prefix("As long as equipped creature is a ").and_then(|r| r.split_once(", it ")) {
             let rest = rest.replace("gets an additional ", "gets ");
@@ -1670,6 +1738,10 @@ fn read_enchantment(card: &Printed) -> Result<Spec, String> {
             }
             _ => {}
         }
+        if line.starts_with("Whenever a creature deals combat damage to enchanted player, ") && spec.slots == [Slot::Player] {
+            spec.combat.read(line).ok_or_else(unread)?;
+            continue;
+        }
         if line.starts_with("At the beginning of enchanted player's upkeep, ") && spec.slots == [Slot::Player] {
             spec.upkeep = Some(Box::new(read_upkeep(line).ok_or_else(unread)?));
             continue;
@@ -1702,7 +1774,9 @@ fn read_enchantment(card: &Printed) -> Result<Spec, String> {
         }
         spec.statics.push(group_static(body).ok_or_else(unread)?);
     }
-    if spec.enchants != spec.slots.first().is_some() || (spec.statics.is_empty() && spec.upkeep.is_none() && spec.activated.is_empty()) {
+    if spec.enchants != spec.slots.first().is_some()
+        || (spec.statics.is_empty() && spec.upkeep.is_none() && spec.activated.is_empty() && spec.combat == CombatText::default())
+    {
         return Err("not an enchantment the grammar reads".to_string());
     }
     Ok(spec)
@@ -1923,6 +1997,10 @@ struct Model {
     /// 514.2, 611.2a).
     temp: (i32, i32),
     temp_keywords: Vec<Keyword>,
+    /// A token that entered attacking (CR 508.4), and whether its text
+    /// exiles it at end of combat.
+    attacking: bool,
+    exile_at_end_of_combat: bool,
 }
 
 impl Model {
@@ -1956,6 +2034,8 @@ impl Model {
             shields: 0,
             temp: (0, 0),
             temp_keywords: Vec::new(),
+            attacking: false,
+            exile_at_end_of_combat: false,
         }
     }
 
@@ -2677,6 +2757,41 @@ fn target_sets(spec: &Spec, world: &World, caster: PlayerId) -> Vec<Vec<Target>>
     sets
 }
 
+/// A creature token with the characteristics its text gives it (CR 111.3).
+fn creature_token((power, toughness): (i32, i32), colors: &[Color], subtypes: &[String], keywords: &[Keyword], controller: PlayerId) -> Model {
+    Model {
+        name: None,
+        owner: controller,
+        controller,
+        types: vec!["creature".to_string()],
+        subtypes: subtypes.to_vec(),
+        colors: colors.to_vec(),
+        keywords: keywords.to_vec(),
+        power: Some(power),
+        toughness: Some(toughness),
+        damage: 0,
+        tapped: false,
+        counters: (0, 0),
+        counts_creatures: false,
+        attached: None,
+        other_face: None,
+        transformed: false,
+        deathtouched: false,
+        counts_creature_cards: false,
+        counts_hand: false,
+        combat: CombatText::default(),
+        statics: Vec::new(),
+        granted: Vec::new(),
+        boost: (0, 0),
+        restricted: Vec::new(),
+        shields: 0,
+        temp: (0, 0),
+        temp_keywords: Vec::new(),
+        attacking: false,
+        exile_at_end_of_combat: false,
+    }
+}
+
 /// An "until end of turn" change to `m` (CR 611.2a, 613.4c).
 fn until_end_of_turn(m: &mut Model, (power, toughness): (i32, i32), gains: &[Keyword]) {
     m.temp.0 += power;
@@ -3000,35 +3115,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
             Effect::Tokens { n, power, toughness, colors, subtypes, keywords, tapped, per_creature_card } => {
                 let times = if *per_creature_card { *n * w.creature_cards_in_graveyard(caster) as usize } else { *n };
                 for _ in 0..times {
-                    w.tokens.push(Model {
-                        name: None,
-                        owner: caster,
-                        controller: caster,
-                        types: vec!["creature".to_string()],
-                        subtypes: subtypes.clone(),
-                        colors: colors.clone(),
-                        keywords: keywords.clone(),
-                        power: Some(*power),
-                        toughness: Some(*toughness),
-                        damage: 0,
-                        tapped: *tapped,
-                        counters: (0, 0),
-                        counts_creatures: false,
-                        attached: None,
-                        other_face: None,
-                        transformed: false,
-                        deathtouched: false,
-                        counts_creature_cards: false,
-                        counts_hand: false,
-                        combat: CombatText::default(),
-                        statics: Vec::new(),
-                        granted: Vec::new(),
-                        boost: (0, 0),
-                        restricted: Vec::new(),
-                        shields: 0,
-                        temp: (0, 0),
-                        temp_keywords: Vec::new(),
-                    });
+                    w.tokens.push(Model { tapped: *tapped, ..creature_token((*power, *toughness), colors, subtypes, keywords, caster) });
                 }
             }
             Effect::ControllerGainsLifeEqualToPower { slot } => {
@@ -3874,46 +3961,47 @@ fn readable(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (Vec<
 const READ: &[&str] = &[
     "Abbey Griffin", "Altar's Reap", "Ambush Viper", "Ancient Grudge",
     "Angel of Flight Alabaster", "Angelic Overseer", "Armored Skaab", "Army of the Damned",
-    "Avacyn's Pilgrim", "Avacynian Priest", "Balefire Dragon", "Battleground Geist",
-    "Blasphemous Act", "Bloodcrazed Neonate", "Bloodgift Demon", "Bonds of Faith",
-    "Boneyard Wurm", "Bramblecrush", "Brimstone Volley", "Bump in the Night",
+    "Ashmouth Hound", "Avacyn's Pilgrim", "Avacynian Priest", "Balefire Dragon",
+    "Battleground Geist", "Blasphemous Act", "Bloodcrazed Neonate", "Bloodgift Demon",
+    "Bonds of Faith", "Boneyard Wurm", "Bramblecrush", "Brimstone Volley", "Bump in the Night",
     "Butcher's Cleaver", "Caravan Vigil", "Chapel Geist", "Claustrophobia", "Clifftop Retreat",
     "Cobbled Wings", "Coral Merfolk", "Corpse Lunge", "Counterspell", "Curse of Death's Hold",
-    "Curse of Oblivion", "Curse of the Bloody Tome", "Curse of the Nightly Hunt",
-    "Curse of the Pierced Heart", "Darkthicket Wolf", "Dead Weight", "Demonmail Hauberk",
-    "Deranged Assistant", "Desperate Ravings", "Devil's Play", "Diregraf Ghoul",
-    "Disciple of Griselbrand", "Dissipate", "Divination", "Divine Reckoning", "Doom Blade",
-    "Doomed Traveler", "Dream Twist", "Elite Inquisitor", "Falkenrath Marauders",
-    "Falkenrath Noble", "Feeling of Dread", "Feral Ridgewolf", "Festerhide Boar", "Forest",
-    "Fortress Crab", "Full Moon's Rise", "Furor of the Bitten", "Gallows Warden",
-    "Gatstaf Shepherd", "Gavony Township", "Geist-Honored Monk", "Geistcatcher's Rig",
-    "Geistflame", "Ghost Quarter", "Ghostly Possession", "Ghoulcaller's Bell", "Ghoulraiser",
-    "Giant Growth", "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms",
-    "Grave Bramble", "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Harvest Pyre",
+    "Curse of Oblivion", "Curse of Stalked Prey", "Curse of the Bloody Tome",
+    "Curse of the Nightly Hunt", "Curse of the Pierced Heart", "Darkthicket Wolf",
+    "Dead Weight", "Demonmail Hauberk", "Deranged Assistant", "Desperate Ravings",
+    "Devil's Play", "Diregraf Ghoul", "Disciple of Griselbrand", "Dissipate", "Divination",
+    "Divine Reckoning", "Doom Blade", "Doomed Traveler", "Dream Twist", "Elite Inquisitor",
+    "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread", "Feral Ridgewolf",
+    "Festerhide Boar", "Forest", "Fortress Crab", "Full Moon's Rise", "Furor of the Bitten",
+    "Gallows Warden", "Gatstaf Shepherd", "Gavony Township", "Geist of Saint Traft",
+    "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame", "Ghost Quarter",
+    "Ghostly Possession", "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth",
+    "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms", "Grave Bramble",
+    "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Harvest Pyre",
     "Hinterland Harbor", "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness",
     "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker", "Island",
-    "Isolated Chapel", "Kalonian Tusker", "Kessig Wolf", "Kessig Wolf Run", "Kindercatch",
-    "Lantern Spirit", "Lava Axe", "Lightning Bolt", "Lost in the Mist", "Lumberknot",
-    "Make a Wish", "Makeshift Mauler", "Manor Skeleton", "Markov Patrician", "Mask of Avacyn",
-    "Mausoleum Guard", "Maw of the Mire", "Midnight Haunting", "Moan of the Unhallowed",
-    "Moldgraf Monstrosity", "Moment of Heroism", "Moon Heron", "Moorland Haunt",
-    "Morkrut Banshee", "Mountain", "Naturalize", "Nephalia Drownyard", "Night Revelers",
-    "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism", "Paraselene", "Pitchburn Devils",
-    "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower", "Rally the Peasants",
-    "Ranger's Guile", "Rebuke", "Reckless Waif", "Riot Devils", "Rolling Temblor",
-    "Rotting Fensnake", "Runechanter's Pike", "Savannah Lions", "Scourge of Geier Reach",
-    "Selfless Cathar", "Selhoff Occultist", "Sensory Deprivation", "Sharpened Pitchfork",
-    "Shimmering Grotto", "Silent Departure", "Silver-Inlaid Dagger", "Silverchase Fox",
-    "Skaab Goliath", "Skirsdag Cultist", "Slayer of the Wicked", "Smite the Monstrous",
-    "Sol Ring", "Somberwald Spider", "Spectral Flight", "Spectral Rider", "Spider Spawning",
-    "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble",
-    "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp", "Swords to Plowshares",
-    "Think Twice", "Thraben Purebloods", "Tormented Pariah", "Travel Preparations",
-    "Traveler's Amulet", "Tribute to Hunger", "Typhoid Rats", "Unburial Rites", "Unruly Mob",
-    "Urgent Exorcism", "Vampire Interloper", "Vampiric Fury", "Victim of Night",
-    "Village Bell-Ringer", "Village Cannibals", "Village Ironsmith", "Villagers of Estwald",
-    "Voiceless Spirit", "Walking Corpse", "Woodland Cemetery", "Woodland Sleuth",
-    "Wreath of Geists",
+    "Isolated Chapel", "Kalonian Tusker", "Kessig Cagebreakers", "Kessig Wolf",
+    "Kessig Wolf Run", "Kindercatch", "Lantern Spirit", "Lava Axe", "Lightning Bolt",
+    "Lost in the Mist", "Lumberknot", "Make a Wish", "Makeshift Mauler", "Manor Skeleton",
+    "Markov Patrician", "Mask of Avacyn", "Mausoleum Guard", "Maw of the Mire",
+    "Midnight Haunting", "Moan of the Unhallowed", "Moldgraf Monstrosity", "Moment of Heroism",
+    "Moon Heron", "Moorland Haunt", "Morkrut Banshee", "Mountain", "Naturalize",
+    "Nephalia Drownyard", "Night Revelers", "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism",
+    "Paraselene", "Pitchburn Devils", "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower",
+    "Rakish Heir", "Rally the Peasants", "Ranger's Guile", "Rebuke", "Reckless Waif",
+    "Riot Devils", "Rolling Temblor", "Rotting Fensnake", "Runechanter's Pike",
+    "Savannah Lions", "Scourge of Geier Reach", "Selfless Cathar", "Selhoff Occultist",
+    "Sensory Deprivation", "Sharpened Pitchfork", "Shimmering Grotto", "Silent Departure",
+    "Silver-Inlaid Dagger", "Silverchase Fox", "Skaab Goliath", "Skirsdag Cultist",
+    "Slayer of the Wicked", "Smite the Monstrous", "Sol Ring", "Somberwald Spider",
+    "Spectral Flight", "Spectral Rider", "Spider Spawning", "Spidery Grasp", "Splinterfright",
+    "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist",
+    "Sulfur Falls", "Swamp", "Swords to Plowshares", "Think Twice", "Thraben Purebloods",
+    "Tormented Pariah", "Travel Preparations", "Traveler's Amulet", "Tribute to Hunger",
+    "Typhoid Rats", "Unburial Rites", "Unruly Mob", "Urgent Exorcism", "Vampire Interloper",
+    "Vampiric Fury", "Victim of Night", "Village Bell-Ringer", "Village Cannibals",
+    "Village Ironsmith", "Villagers of Estwald", "Voiceless Spirit", "Walking Corpse",
+    "Wooden Stake", "Woodland Cemetery", "Woodland Sleuth", "Wreath of Geists",
 ];
 
 // ---- the properties ----
@@ -4552,8 +4640,41 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
     if !has(&w.permanents[&a], Keyword::Vigilance) {
         w.permanents.get_mut(&a).expect("the attacker").tapped = true;
     }
+    // Its attack trigger: tokens that enter tapped and attacking, never
+    // having been declared attackers (CR 508.4).
+    if let Some(t) = w.permanents[&a].combat.on_attack_tokens.clone() {
+        let k = if t.per_creature_card { w.creature_cards_in_graveyard(P0) } else { 1 };
+        for _ in 0..k {
+            let token = creature_token((t.power, t.toughness), &t.colors, &t.subtypes, &t.keywords, P0);
+            w.tokens.push(Model { tapped: true, attacking: true, exile_at_end_of_combat: t.exile_at_end_of_combat, ..token });
+        }
+        w.state_based_actions();
+    }
+    // Block triggers (CR 509.4): "blocks or becomes blocked by a creature,
+    // this creature deals 1 damage to that creature", and a stake on
+    // either destroying the other if it is the type the stake names, past
+    // any shield.
+    if let Some(b) = blocker {
+        for (one, other) in [(a, b), (b, a)] {
+            let (Some(om), Some(xm)) = (w.permanents.get(&one).cloned(), w.permanents.get(&other).cloned()) else { continue };
+            let staked = w.permanents.values()
+                .any(|e| e.combat.stake.as_ref().is_some_and(|t| xm.subtypes.contains(t)) && e.attached == Some(Target::Object(one)));
+            if staked && !has(&xm, Keyword::Indestructible) {
+                w.leave(other, Dest::Graveyard);
+                w.a_creature_died = true;
+                continue;
+            }
+            if let Some(n) = om.combat.block_damage.filter(|_| !protected(&xm, &om)) {
+                let m = w.permanents.get_mut(&other).expect("in combat");
+                m.damage += n;
+                m.deathtouched |= has(&om, Keyword::Deathtouch);
+            }
+        }
+        w.state_based_actions();
+    }
     let fast = |m: &Model| has(m, Keyword::FirstStrike) || has(m, Keyword::DoubleStrike);
-    let any_fast = fast(&w.permanents[&a]) || blocker.is_some_and(|b| fast(&w.permanents[&b]));
+    let any_fast = w.permanents.get(&a).is_some_and(fast) || blocker.is_some_and(|b| w.permanents.get(&b).is_some_and(fast))
+        || w.tokens.iter().any(|t| t.attacking && fast(t));
     let steps: &[Option<bool>] = if any_fast { &[Some(true), Some(false)] } else { &[None] };
     let mut worlds = vec![w];
     for &step in steps {
@@ -4570,11 +4691,11 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
         for w in worlds {
             let power = |m: &Model| u32::try_from(w.pt_of(m).0.unwrap_or(0).max(0)).expect("non-negative");
             // Each branch is one assignment: (recipient, amount, source).
-            let mut branches: Vec<Vec<(Target, u32, ObjectId)>> = vec![Vec::new()];
+            let mut branches: Vec<Vec<(Target, u32, Src)>> = vec![Vec::new()];
             if let Some(am) = w.permanents.get(&a).filter(|m| deals(m) && power(m) > 0) {
                 let n = power(am);
                 match blocker {
-                    None => branches[0].push((Target::Player(P1), n, a)),
+                    None => branches[0].push((Target::Player(P1), n, Src::Permanent(a))),
                     Some(b) => match w.permanents.get(&b) {
                         Some(bm) => {
                             let lethal = if has(am, Keyword::Deathtouch) {
@@ -4584,13 +4705,13 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
                             };
                             if has(am, Keyword::Trample) && n > lethal {
                                 branches = (lethal..=n)
-                                    .map(|x| vec![(Target::Object(b), x, a), (Target::Player(P1), n - x, a)])
+                                    .map(|x| vec![(Target::Object(b), x, Src::Permanent(a)), (Target::Player(P1), n - x, Src::Permanent(a))])
                                     .collect();
                             } else {
-                                branches[0].push((Target::Object(b), n, a));
+                                branches[0].push((Target::Object(b), n, Src::Permanent(a)));
                             }
                         }
-                        None if has(am, Keyword::Trample) => branches[0].push((Target::Player(P1), n, a)),
+                        None if has(am, Keyword::Trample) => branches[0].push((Target::Player(P1), n, Src::Permanent(a))),
                         None => {}
                     },
                 }
@@ -4598,15 +4719,21 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
             if let (Some(b), true) = (blocker, w.permanents.contains_key(&a)) {
                 if let Some(bm) = w.permanents.get(&b).filter(|m| deals(m) && power(m) > 0) {
                     for branch in &mut branches {
-                        branch.push((Target::Object(a), power(bm), b));
+                        branch.push((Target::Object(a), power(bm), Src::Permanent(b)));
                     }
+                }
+            }
+            // The tokens attacking, unblocked.
+            for (i, t) in w.tokens.iter().enumerate().filter(|(_, t)| t.attacking && deals(t) && power(t) > 0) {
+                for branch in &mut branches {
+                    branch.push((Target::Player(P1), power(t), Src::Token(i)));
                 }
             }
             for branch in branches {
                 let mut w2 = w.clone();
-                let mut to_player = 0;
+                let mut to_players: Vec<(Src, u32)> = Vec::new();
                 for (to, n, from) in &branch {
-                    let source = w.permanents[from].clone();
+                    let source = from.model(&w).clone();
                     // Protection and "prevent all combat damage that would
                     // be dealt to and dealt by" it (CR 702.16e, 615.1).
                     let n = match to {
@@ -4626,7 +4753,7 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
                         }
                         Target::Player(p) => {
                             w2.life[p.0 as usize] -= n as i32;
-                            to_player += n;
+                            to_players.push((*from, n));
                         }
                         _ => unreachable!(),
                     }
@@ -4634,47 +4761,101 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
                         w2.life[source.controller.0 as usize] += n as i32;
                     }
                 }
+                let tokens_before = w2.tokens.len();
                 w2.state_based_actions();
-                if to_player > 0 {
-                    let attacker = w.permanents[&a].clone();
-                    for effect in &attacker.combat.on_damage_to_player {
-                        match effect {
-                            OnPlayerDamage::CountersOnSelf(k) => {
-                                if let Some(m) = w2.permanents.get_mut(&a) {
-                                    let k = i32::try_from(*k).expect("a few");
-                                    change(m, k, k);
-                                    m.counters.0 += k as u32;
-                                }
-                            }
-                            OnPlayerDamage::Draw(k) => {
-                                for _ in 0..*k {
-                                    let card = w2.library[0].remove(0);
-                                    w2.hand[0].push(card);
-                                }
-                            }
-                            OnPlayerDamage::ThatMuchToEachCreatureThatPlayerControls => {
-                                let theirs: Vec<ObjectId> = w2.permanents.iter()
-                                    .filter(|(_, m)| m.controller == P1 && m.is_creature())
-                                    .map(|(id, _)| *id)
-                                    .collect();
-                                for id in theirs {
-                                    if !protected(&w2.permanents[&id], &attacker) {
-                                        let m = w2.permanents.get_mut(&id).expect("on the battlefield");
-                                        m.damage += to_player;
-                                        m.deathtouched |= has(&attacker, Keyword::Deathtouch);
-                                    }
-                                }
-                            }
+                assert_eq!(tokens_before, w2.tokens.len(), "no token here dies of combat damage");
+                for (from, dealt) in to_players {
+                    let source = from.model(&w).clone();
+                    if from == Src::Permanent(a) {
+                        on_damage_to_player(&mut w2, a, &source, dealt);
+                    }
+                    // A watcher of its controller's creatures of a type, and
+                    // a Curse on the player dealt the damage.
+                    // Each one triggers on its own (CR 603.2).
+                    let watchers = w2.permanents.values().filter(|m| m.controller == source.controller
+                        && m.combat.counters_on_yours.as_ref().is_some_and(|t| source.subtypes.contains(t))).count();
+                    let cursed = w2.permanents.values().filter(|m| m.combat.counters_on_damage_to_enchanted && m.attached == Some(Target::Player(P1))).count();
+                    for _ in 0..watchers + cursed {
+                        if let Some(m) = from.model_mut(&mut w2) {
+                            change(m, 1, 1);
+                            m.counters.0 += 1;
                         }
                     }
-                    w2.state_based_actions();
                 }
+                w2.state_based_actions();
                 next.push(w2);
             }
         }
         worlds = next;
     }
+    // End of combat: what its text exiles then is exiled, a token ceasing
+    // to exist (CR 511.1, 111.7).
+    for w in &mut worlds {
+        w.tokens.retain(|t| !t.exile_at_end_of_combat);
+        for t in &mut w.tokens {
+            t.attacking = false;
+        }
+    }
     worlds
+}
+
+/// What dealt combat damage: a permanent the engine numbered, or a token
+/// the reference holds by its place.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Src {
+    Permanent(ObjectId),
+    Token(usize),
+}
+
+impl Src {
+    fn model<'a>(&self, w: &'a World) -> &'a Model {
+        match self {
+            Src::Permanent(id) => &w.permanents[id],
+            Src::Token(i) => &w.tokens[*i],
+        }
+    }
+
+    fn model_mut<'a>(&self, w: &'a mut World) -> Option<&'a mut Model> {
+        match self {
+            Src::Permanent(id) => w.permanents.get_mut(id),
+            Src::Token(i) => w.tokens.get_mut(*i),
+        }
+    }
+}
+
+/// The attacker's own "whenever this creature deals combat damage to a
+/// player" (CR 510.3a), `dealt` being how much it dealt.
+fn on_damage_to_player(w2: &mut World, a: ObjectId, attacker: &Model, dealt: u32) {
+    for effect in &attacker.combat.on_damage_to_player {
+        match effect {
+            OnPlayerDamage::CountersOnSelf(k) => {
+                if let Some(m) = w2.permanents.get_mut(&a) {
+                    let k = i32::try_from(*k).expect("a few");
+                    change(m, k, k);
+                    m.counters.0 += k as u32;
+                }
+            }
+            OnPlayerDamage::Draw(k) => {
+                for _ in 0..*k {
+                    let card = w2.library[0].remove(0);
+                    w2.hand[0].push(card);
+                }
+            }
+            OnPlayerDamage::ThatMuchToEachCreatureThatPlayerControls => {
+                let theirs: Vec<ObjectId> = w2.permanents.iter()
+                    .filter(|(_, m)| m.controller == P1 && m.is_creature())
+                    .map(|(id, _)| *id)
+                    .collect();
+                for id in theirs {
+                    if !protected(&w2.permanents[&id], attacker) {
+                        let m = w2.permanents.get_mut(&id).expect("on the battlefield");
+                        m.damage += dealt;
+                        m.deathtouched |= has(attacker, Keyword::Deathtouch);
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Two creatures, one each side, and nothing else but the caster's land in
@@ -4723,6 +4904,13 @@ fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Opt
             stock_library_with(&mut state, registry, p, name, 1);
             world.library[p.0 as usize].push(name.to_string());
         }
+    }
+    // Two creature cards in the attacker's graveyard, for what an attack
+    // makes "for each creature card in your graveyard".
+    for name in ARENA_GRAVEYARD {
+        let id = card_in_graveyard(&mut state, registry, name, P0);
+        world.yard.insert(id, Model::printed(&cached_oracle()[name], P0));
+        world.graveyard[0].push(name.to_string());
     }
     let mut place = |state: &mut GameState, (card, spec): (&Printed, &Spec), owner: PlayerId| {
         let id = named_permanent(state, registry, &card.name, owner);
@@ -4979,7 +5167,13 @@ fn standing_fights(registry: &CardRegistry, fighters: &[(&Printed, &Spec)], stan
                         let (x, y) = (&world.permanents[&id], &without.permanents[&id]);
                         x.boost != y.boost || x.granted != y.granted || x.restricted != y.restricted
                     };
-                    if !(changed(a) || b.is_some_and(changed)) {
+                    // A permanent whose combat text watches the fight changes
+                    // it too: one watching its controller's attackers of a
+                    // type, standing by for the attacker, or a Curse on the
+                    // defending player.
+                    let watches = (side == P0 && by.1.combat.counters_on_yours.as_ref().is_some_and(|t| attacker.0.types().1.contains(t)))
+                        || (side == P1 && by.1.combat.counters_on_damage_to_enchanted);
+                    if !(changed(a) || b.is_some_and(changed) || watches) {
                         continue;
                     }
                     let name = format!("{} attacking{}, {} standing by for player {}", attacker.0.name,
@@ -5024,7 +5218,9 @@ fn every_static_reaches_the_combats_it_changes() {
     let cache = oracle_cache();
     let (cards, _) = readable(&registry, &cache);
     let fighters = fighters(&cards);
-    let mut standing: Vec<(&Printed, &Spec)> = fighters.iter().copied().filter(|(_, s)| !s.statics.is_empty()).collect();
+    let mut standing: Vec<(&Printed, &Spec)> = fighters.iter().copied()
+        .filter(|(_, s)| !s.statics.is_empty() || s.combat.counters_on_yours.is_some())
+        .collect();
     for (_, spec) in standing.clone() {
         for st in &spec.statics {
             if let Static::IfYouControl { subtype, .. } = st {
@@ -5072,7 +5268,7 @@ fn every_aura_reaches_the_combats_it_is_in() {
     let (cards, _) = readable(&registry, &cache);
     let fighters = fighters(&cards);
     let standing: Vec<(&Printed, &Spec)> = cards.iter()
-        .filter(|(_, s)| s.enchants && !s.statics.is_empty())
+        .filter(|(_, s)| s.enchants && (!s.statics.is_empty() || s.combat != CombatText::default()))
         .map(|(c, s)| (c, s))
         .collect();
     let (combats, failures) = standing_fights(&registry, &fighters, &standing, probes(&fighters).as_deref());
@@ -5386,6 +5582,19 @@ fn the_grammar_reads_its_templates() {
     assert_eq!(vigil.effects, vec![Effect::SearchForBasicLand { of: None, to_battlefield: false, morbid_battlefield: true }]);
     let quarter = read_activated("{T}, Sacrifice this land: Destroy target land. Its controller may search their library for a basic land card, put it onto the battlefield, then shuffle.", 1).unwrap();
     assert_eq!(quarter.spec.effects, vec![Effect::Destroy { slot: 0 }, Effect::SearchForBasicLand { of: Some(0), to_battlefield: true, morbid_battlefield: false }]);
+    let mut geist = CombatText::default();
+    geist.read("Whenever ~ attacks, create a 4/4 white Angel creature token with flying that's tapped and attacking. Exile that token at end of combat.").unwrap();
+    assert_eq!(geist.on_attack_tokens, Some(AttackTokens { power: 4, toughness: 4, colors: vec![Color::White], subtypes: vec!["Angel".to_string()],
+        keywords: vec![Keyword::Flying], per_creature_card: false, exile_at_end_of_combat: true }));
+    let mut cagebreakers = CombatText::default();
+    cagebreakers.read("Whenever this creature attacks, create a 2/2 green Wolf creature token that's tapped and attacking for each creature card in your graveyard.").unwrap();
+    assert!(cagebreakers.on_attack_tokens.is_some_and(|t| t.per_creature_card && !t.exile_at_end_of_combat));
+    let mut hound = CombatText::default();
+    hound.read("Whenever this creature blocks or becomes blocked by a creature, this creature deals 1 damage to that creature.").unwrap();
+    assert_eq!(hound.block_damage, Some(1));
+    assert!(CombatText::default().read("Whenever this creature attacks, create a 1/1 white Spirit creature token with flying.").is_none(),
+        "a token that does not enter attacking is another template");
+
     let mut tribute = Spec::default();
     for sentence in ["Target opponent sacrifices a creature of their choice. ", "You gain life equal to that creature's toughness."] {
         tribute.sentence(sentence).unwrap();
