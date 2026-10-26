@@ -1858,6 +1858,11 @@ struct Model {
     restricted: Vec<Restriction>,
     /// Regeneration shields (CR 701.19a), which last the turn.
     shields: u32,
+    /// What "until end of turn" effects have done to it: a change to power
+    /// and toughness, and keywords, both ending in the cleanup step (CR
+    /// 514.2, 611.2a).
+    temp: (i32, i32),
+    temp_keywords: Vec<Keyword>,
 }
 
 impl Model {
@@ -1889,6 +1894,8 @@ impl Model {
             boost: (0, 0),
             restricted: Vec::new(),
             shields: 0,
+            temp: (0, 0),
+            temp_keywords: Vec::new(),
         }
     }
 
@@ -1931,7 +1938,7 @@ impl Model {
     /// [`Model::matches`] for an ability whose source this is when
     /// `is_source`, which "other" leaves out (CR 109.5).
     fn matches_from(&self, filter: &Filter, caster: PlayerId, is_source: bool) -> bool {
-        let has = |k: &Keyword| self.keywords.contains(k) || self.granted.contains(k);
+        let has = |k: &Keyword| self.keywords.contains(k) || self.granted.contains(k) || self.temp_keywords.contains(k);
         filter.0.iter().any(|c| {
             let head = match &c.head {
                 None => true,
@@ -1942,7 +1949,7 @@ impl Model {
                 && !c.not_colors.iter().any(|col| self.colors.contains(col))
                 && !c.not_types.iter().any(|t| self.types.contains(t) || self.subtypes.contains(t))
                 && c.subtypes.iter().all(|t| self.subtypes.contains(t))
-                && c.min_power.is_none_or(|n| self.power.is_some_and(|p| p + self.boost.0 >= n))
+                && c.min_power.is_none_or(|n| self.power.is_some_and(|p| p + self.boost.0 + self.temp.0 >= n))
                 && !c.without.iter().any(has)
                 && c.with.iter().all(has)
                 && !(c.other && is_source)
@@ -2054,7 +2061,7 @@ struct PermanentSeen {
 }
 
 fn seen(m: &Model) -> PermanentSeen {
-    let mut keywords: Vec<&'static str> = m.keywords.iter().chain(&m.granted).map(|k| k.label()).collect();
+    let mut keywords: Vec<&'static str> = m.keywords.iter().chain(&m.granted).chain(&m.temp_keywords).map(|k| k.label()).collect();
     keywords.sort_unstable();
     keywords.dedup();
     let mut colors: Vec<char> = m.colors.iter().map(|c| color_letter(*c)).collect();
@@ -2092,7 +2099,7 @@ impl World {
     /// or counted (CR 604.3) when its text defines them.
     fn pt_of(&self, m: &Model) -> (Option<i32>, Option<i32>) {
         let (p, t) = self.defined_pt(m);
-        (p.map(|p| p + m.boost.0), t.map(|t| t + m.boost.1))
+        (p.map(|p| p + m.boost.0 + m.temp.0), t.map(|t| t + m.boost.1 + m.temp.1))
     }
 
     /// [`World::pt_of`] before static abilities change it (CR 613.4b-c).
@@ -2157,7 +2164,7 @@ impl World {
             Dest::Graveyard => {
                 self.graveyard[owner].push(name);
                 // A new object, with its printed characteristics (CR 400.7).
-                self.yard.insert(id, Model { controller: m.owner, damage: 0, tapped: false, counters: (0, 0), granted: Vec::new(), boost: (0, 0), restricted: Vec::new(), shields: 0, ..m });
+                self.yard.insert(id, Model { controller: m.owner, damage: 0, tapped: false, counters: (0, 0), granted: Vec::new(), boost: (0, 0), restricted: Vec::new(), shields: 0, temp: (0, 0), temp_keywords: Vec::new(), ..m });
             }
             Dest::Exile => self.exile[owner].push(name),
             Dest::Hand => self.hand[owner].push(name),
@@ -2598,6 +2605,13 @@ fn target_sets(spec: &Spec, world: &World, caster: PlayerId) -> Vec<Vec<Target>>
     sets
 }
 
+/// An "until end of turn" change to `m` (CR 611.2a, 613.4c).
+fn until_end_of_turn(m: &mut Model, (power, toughness): (i32, i32), gains: &[Keyword]) {
+    m.temp.0 += power;
+    m.temp.1 += toughness;
+    m.temp_keywords.extend(gains);
+}
+
 /// A creature's power, toughness and counters changed by `by` (CR 613.4).
 fn change(m: &mut Model, power: i32, toughness: i32) {
     m.power = m.power.map(|p| p + power);
@@ -2642,15 +2656,13 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
             }
             Effect::Pump { slot, power, toughness, gains } => {
                 if let Some(m) = object(*slot).and_then(|id| w.permanents.get_mut(&id)) {
-                    change(m, *power, *toughness);
-                    m.keywords.extend(gains);
+                    until_end_of_turn(m, (*power, *toughness), gains);
                 }
             }
             Effect::PumpEach { filter, power, toughness, gains } => {
                 for m in w.permanents.values_mut().chain(w.tokens.iter_mut()) {
                     if m.is_creature() && m.matches(filter, caster) {
-                        change(m, *power, *toughness);
-                        m.keywords.extend(gains);
+                        until_end_of_turn(m, (*power, *toughness), gains);
                     }
                 }
             }
@@ -2669,12 +2681,13 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 // much (CR 701.12a, 702.15b).
                 let (Some(ia), Some(ib)) = (object(*a), object(*b)) else { continue };
                 let (ma, mb) = (w.permanents[&ia].clone(), w.permanents[&ib].clone());
-                let dealt = |m: &Model| u32::try_from(m.power.unwrap_or(0).max(0)).expect("non-negative");
-                w.permanents.get_mut(&ib).expect("on the board").damage += dealt(&ma);
-                w.permanents.get_mut(&ia).expect("on the board").damage += dealt(&mb);
-                for m in [&ma, &mb] {
-                    if m.keywords.contains(&Keyword::Lifelink) {
-                        w.life[m.controller.0 as usize] += dealt(m) as i32;
+                let (pa, pb) = (w.pt_of(&ma).0, w.pt_of(&mb).0);
+                let dealt = |p: Option<i32>| u32::try_from(p.unwrap_or(0).max(0)).expect("non-negative");
+                w.permanents.get_mut(&ib).expect("on the board").damage += dealt(pa);
+                w.permanents.get_mut(&ia).expect("on the board").damage += dealt(pb);
+                for (m, p) in [(&ma, pa), (&mb, pb)] {
+                    if has(m, Keyword::Lifelink) {
+                        w.life[m.controller.0 as usize] += dealt(p) as i32;
                     }
                 }
             }
@@ -2820,8 +2833,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
             Effect::PumpX { slot, power, toughness, gains } => {
                 let x = i32::try_from(world.x).expect("a few");
                 if let Some(m) = object(*slot).and_then(|id| w.permanents.get_mut(&id)) {
-                    change(m, power * x, toughness * x);
-                    m.keywords.extend(gains);
+                    until_end_of_turn(m, (power * x, toughness * x), gains);
                 }
             }
             Effect::PlayerDraws { slot, n } => {
@@ -2905,6 +2917,8 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                         boost: (0, 0),
                         restricted: Vec::new(),
                         shields: 0,
+                        temp: (0, 0),
+                        temp_keywords: Vec::new(),
                     });
                 }
             }
@@ -2914,7 +2928,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 // anything earlier in this resolution.
                 let id = object(*slot).expect("an object slot");
                 let last = w.permanents.get(&id).or_else(|| world.permanents.get(&id)).expect("on the board");
-                let gain = last.power.unwrap_or(0);
+                let gain = world.pt_of(last).0.unwrap_or(0);
                 w.life[last.controller.0 as usize] += gain;
             }
         }
@@ -2985,6 +2999,15 @@ fn pay(world: &World, payment: &Option<Payment>) -> World {
         }
     }
     w
+}
+
+/// Whether `spec` does what lasts the turn and should last no longer:
+/// damage, a pump, a tap, a shield (CR 514.2, 502.3). Its result is then
+/// also played into the opponent's turn.
+fn lasts_the_turn(spec: &Spec) -> bool {
+    spec.effects.iter().any(|e| matches!(e,
+        Effect::Damage { .. } | Effect::DamageEach { .. } | Effect::DamageX { .. } | Effect::Pump { .. } | Effect::PumpEach { .. }
+        | Effect::PumpX { .. } | Effect::Fight { .. } | Effect::Tap { .. } | Effect::Regenerate { .. } | Effect::RegenerateAll { .. }))
 }
 
 /// Every way the players can make the choices `spec` asks for as it
@@ -3092,22 +3115,29 @@ fn model_of(spec: &Spec, card: &Printed, controller: PlayerId) -> Model {
 /// damage (CR 514.2) and the turn's morbid (700.4); the untap step untaps
 /// the active player's permanents (502.3); the upkeep trigger, if its text
 /// says this is its upkeep, resolves each way it can (503.1a, 603.3); and
-/// the active player draws (504.1).
+/// the active player draws (504.1). The cleanup also ends "until end of
+/// turn" effects and regeneration shields, and mana empties between steps
+/// (514.2, 500.4).
 fn next_turn_outcomes(spec: &Spec, world: &World, id: ObjectId, active: PlayerId) -> Vec<World> {
     let mut w = world.clone();
     for m in w.permanents.values_mut().chain(w.tokens.iter_mut()) {
         m.damage = 0;
         m.deathtouched = false;
+        m.temp = (0, 0);
+        m.temp_keywords.clear();
+        m.shields = 0;
         if m.controller == active && !restricted(m, Restriction::DoesntUntap) {
             m.tapped = false;
         }
     }
+    // Mana empties as each step ends (CR 500.4).
+    w.pool = [BTreeMap::new(), BTreeMap::new()];
     w.a_creature_died = false;
     w.source = Some(id);
-    let me = &w.permanents[&id];
-    let controller = me.controller;
+    let me = w.permanents.get(&id);
+    let controller = me.map_or(P0, |m| m.controller);
     let whose = match spec.upkeep.as_deref() {
-        Some(Upkeep { enchanted_player: true, .. }) => match me.attached {
+        Some(Upkeep { enchanted_player: true, .. }) => match me.and_then(|m| m.attached.clone()) {
             Some(Target::Player(p)) => Some(p),
             _ => None,
         },
@@ -3323,6 +3353,8 @@ enum Scene<'a> {
     /// On through the end of the turn into a step of the next, the stack
     /// empty there; no one attacks.
     Until(Step),
+    /// The same, for a step the turn it starts in also has.
+    NextTurn(Step),
 }
 
 /// Where a scripted game stopped.
@@ -3363,6 +3395,7 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
     let mut trouble = None;
     let mut unanswered = None;
     let mut decisions = 0;
+    let turn = state.turn_number;
     engine::run_game_loop(&mut state, registry, |s: &GameState, _acting: PlayerId, legal: &engine::LegalActions| {
         decisions += 1;
         if let Some(c) = cast.take() {
@@ -3489,6 +3522,7 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
             Scene::Main => true,
             Scene::Combat(_) => s.step == Step::PostcombatMain,
             Scene::Until(step) => s.step == step,
+            Scene::NextTurn(step) => s.turn_number != turn && s.step == step,
         };
         if at_rest {
             return Action::AbandonGame;
@@ -3848,14 +3882,23 @@ fn every_readable_card_does_what_its_text_says() {
                 }
                 continue;
             }
+            let lasts_the_turn = lasts_the_turn(spec);
             for targets in expected_sets {
                 casts += 1;
-                let want = resolve(spec, &world, &targets, P0, card, spell).observed();
+                let resolved = resolve(spec, &world, &targets, P0, card, spell);
+                let want = resolved.observed();
                 match cast_and_let_resolve(&state, &registry, spell, targets.clone()) {
                     Ok(after) => {
                         let got = observe(&after, &registry);
                         if got != want {
                             failures.push(format!("{name} at {targets:?}:\n      {}", differences(&got, &want)));
+                        } else if lasts_the_turn {
+                            // Played on into the opponent's turn.
+                            let next = next_turn_outcomes(&Spec::default(), &resolved, spell, P1);
+                            let endings = every_scene_ending(&after, &registry, Scene::NextTurn(Step::PrecombatMain));
+                            if let Some(why) = disagreement(&next, &endings, &registry) {
+                                failures.push(format!("{name} at {targets:?}, in the next turn: {why}"));
+                            }
                         }
                     }
                     Err(why) => failures.push(format!("{name} at {targets:?}: {why}")),
@@ -3995,6 +4038,20 @@ fn every_readable_activated_ability_does_what_its_text_says() {
                 if let Some(why) = disagreement(&want, &endings, &registry) {
                     failures.push(format!("{at}: {why}"));
                     continue;
+                }
+                // Played on into the opponent's turn, where what lasted
+                // this one is gone.
+                if lasts_the_turn(&ability.spec) {
+                    if let (Ok([after]), [w]) = (endings.as_deref(), &want[..]) {
+                        // With one spell cast this turn, so that neither face
+                        // of a werewolf on the board transforms.
+                        let mut after = after.clone();
+                        after.num_spells_cast_this_turn = BTreeMap::from([(P0, 1)]);
+                        let next = next_turn_outcomes(&Spec::default(), w, id, P1);
+                        if let Some(why) = disagreement(&next, &every_scene_ending(&after, &registry, Scene::NextTurn(Step::PrecombatMain)), &registry) {
+                            failures.push(format!("{at}, in the next turn: {why}"));
+                        }
+                    }
                 }
                 // A shield is for the next destruction this turn: each
                 // creature with one is dealt lethal damage, and must
@@ -4173,7 +4230,7 @@ fn every_turn_begins_as_its_text_says() {
 // ---- combat ----
 
 fn has(m: &Model, k: Keyword) -> bool {
-    m.keywords.contains(&k) || m.granted.contains(&k)
+    m.keywords.contains(&k) || m.granted.contains(&k) || m.temp_keywords.contains(&k)
 }
 
 /// Whether `blocker` may block `attacker` alone (CR 509.1a-b): a creature
