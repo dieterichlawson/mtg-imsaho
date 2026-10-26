@@ -460,6 +460,9 @@ struct Spec {
     permanent: bool,
     /// "Flash" (CR 702.8): castable whenever its controller has priority.
     flash: bool,
+    /// "Flashback {cost}" (CR 702.34a): castable from its owner's
+    /// graveyard for that cost, and exiled as it leaves the stack.
+    flashback: Option<ManaCost>,
     /// "This creature enters tapped" (CR 614.1c).
     enters_tapped: bool,
     /// "Morbid — This creature enters with N +1/+1 counters on it if a
@@ -1706,10 +1709,10 @@ fn read(card: &Printed) -> Result<Spec, String> {
     let text = without_reminders(&card.oracle_text).replace(&card.name, "~");
     let mut spec = Spec::default();
     for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
-        // Flashback is a second way to cast the card (CR 702.34a); the cast
-        // from hand is what is checked here, and `flashback.rs` reaches the
-        // other one.
-        if line.starts_with("Flashback {") {
+        // Flashback is a second way to cast the card (CR 702.34a), which
+        // the flashback test checks.
+        if let Some(cost) = line.strip_prefix("Flashback {").and_then(|r| mana_cost(&format!("{{{r}"))) {
+            spec.flashback = Some(cost);
             continue;
         }
         if line == "Morbid — You may put that card onto the battlefield instead of putting it into your hand if a creature died this turn." {
@@ -4132,8 +4135,14 @@ fn fund(state: &mut GameState, player: PlayerId, cost: &ManaCost, cheaper: u32) 
 /// its row in the legal actions says (CR 601.2c), and for a spell that
 /// asks at cast time, every path through the questions it asks.
 fn offered(state: &GameState, registry: &CardRegistry, spell: ObjectId) -> Result<Vec<Vec<Target>>, String> {
+    offered_as(state, registry, spell, None)
+}
+
+/// [`offered`], for the cast for the alternative cost `flashback` when it
+/// is given.
+fn offered_as(state: &GameState, registry: &CardRegistry, spell: ObjectId, flashback: Option<&ManaCost>) -> Result<Vec<Vec<Target>>, String> {
     let legal = engine::legal_actions(state, registry);
-    let Some(row) = legal.castable_spells.iter().find(|c| c.object_id == spell && !c.is_flashback) else {
+    let Some(row) = legal.castable_spells.iter().find(|c| c.object_id == spell && c.is_flashback == flashback.is_some()) else {
         return Ok(Vec::new());
     };
     let mut sets = match &row.target_spec {
@@ -4144,13 +4153,22 @@ fn offered(state: &GameState, registry: &CardRegistry, spell: ObjectId) -> Resul
             .collect(),
         CastTargetSpec::TwoTargets { .. } => return Err("an \"up to\" second slot, which no template reads".to_string()),
         CastTargetSpec::ChosenAtCast => {
-            let asked = engine::submit_action(state, &cast_action(spell, Vec::new()), registry);
+            let asked = engine::submit_action(state, &cast_for(spell, Vec::new(), flashback), registry);
             asked_at_cast(&asked, registry)?
         }
     };
     sets.sort_by_key(|s| s.iter().map(target_key).collect::<Vec<_>>());
     sets.dedup();
     Ok(sets)
+}
+
+/// The cast of `spell` at `targets`, for its flashback cost when one is
+/// given.
+fn cast_for(spell: ObjectId, targets: Vec<Target>, flashback: Option<&ManaCost>) -> Action {
+    Action::CastSpell {
+        object_id: spell, targets, sacrifice: None, exile_count: None, exile_ids: vec![],
+        alternative_cost: flashback.cloned(), tap_plan: vec![],
+    }
 }
 
 /// Every target set reachable by answering the cast-time target questions
@@ -4452,13 +4470,19 @@ fn every_ending(state: &GameState, registry: &CardRegistry, spell: Option<Object
 
 /// [`every_ending`] for `spell` cast at `targets`.
 fn every_ending_at(state: &GameState, registry: &CardRegistry, spell: ObjectId, targets: &[Target]) -> Result<Vec<GameState>, String> {
+    every_ending_casting(state, registry, spell, targets, None)
+}
+
+/// [`every_ending_at`], cast as `first` when it is given: for its
+/// flashback cost, say, the targets answered as the cast asks for them.
+fn every_ending_casting(state: &GameState, registry: &CardRegistry, spell: ObjectId, targets: &[Target], first: Option<Action>) -> Result<Vec<GameState>, String> {
     let mut todo: Vec<Vec<Answer>> = vec![Vec::new()];
     let mut done = Vec::new();
     while let Some(script) = todo.pop() {
         if done.len() + todo.len() > 500 {
             return Err("more than 500 ways to answer".to_string());
         }
-        match play_from(state, registry, Some(spell), targets.to_vec(), None, Scene::Main, &script)? {
+        match play_from(state, registry, Some(spell), targets.to_vec(), first.clone(), Scene::Main, &script)? {
             Played::Done(s) => done.push(*s),
             Played::Asks(options) => todo.extend(options.into_iter().map(|o| [script.clone(), vec![o]].concat())),
         }
@@ -5873,6 +5897,95 @@ fn fight(registry: &CardRegistry, state: &GameState, world: &World, a: ObjectId,
         failures.push(format!("{name}: {why}"));
     }
     (combats, failures)
+}
+
+/// Every instant and sorcery the grammar reads with flashback, cast from
+/// its owner's graveyard for its flashback cost (CR 702.34a): offered at
+/// exactly the targets the text allows, the card itself on the stack and
+/// not among them (601.2a), and resolving every way a cast from a hand
+/// would, but exiled instead of put into the graveyard; on the board and,
+/// for a card that reads morbid, after a death.
+#[test]
+fn every_flashback_spell_does_what_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let mut failures = Vec::new();
+    let mut casts = 0;
+    let boards: [(&str, Build); 2] = [("", board), (" after a death", board_after_a_death)];
+    for (card, spec) in cards.iter().filter(|(_, s)| s.flashback.is_some() && s.additional.is_none() && !s.slots.iter().any(|s| matches!(s, Slot::Spell(_)))) {
+        let flashback = spec.flashback.as_ref().expect("filtered");
+        for (which, build) in boards.iter().enumerate().filter(|(i, _)| *i == 0 || spec.reads_morbid()).map(|(_, b)| *b) {
+            let (mut state, mut world) = build(&registry, &cache);
+            // A card of that name already in the graveyard is the one cast,
+            // as the engine offers one cast for copies of an untargeted
+            // spell; the reference has it on the stack, out of the graveyard.
+            let there = world.yard.iter().find(|(_, m)| m.owner == P0 && m.name.as_deref() == Some(card.name.as_str())).map(|(id, _)| *id);
+            let spell = match there {
+                Some(id) => {
+                    world.yard.remove(&id);
+                    let at = world.graveyard[0].iter().position(|n| *n == card.name).expect("in the graveyard");
+                    world.graveyard[0].remove(at);
+                    id
+                }
+                None => card_in_graveyard(&mut state, &registry, &card.name, P0),
+            };
+            fund(&mut state, P0, flashback, 0);
+            let name = format!("{} by flashback{which}", card.name);
+            let expected = target_sets(spec, &world, P0);
+            match offered_as(&state, &registry, spell, Some(flashback)) {
+                Ok(sets) if sets == expected => {}
+                Ok(sets) => {
+                    failures.push(format!("{name}: offers targets {sets:?}, the text allows {expected:?}"));
+                    continue;
+                }
+                Err(why) => {
+                    failures.push(format!("{name}: {why}"));
+                    continue;
+                }
+            }
+            // With the opponent's spell on the stack, a sorcery's flashback
+            // is not offered and an instant's is (CR 307.1, 304.1).
+            let (mut busy, mut busy_world) = (state.clone(), world.clone());
+            the_opponent_holds_a_spell_on_the_stack(&mut busy, &mut busy_world, &registry, &cache);
+            let offered_busy = engine::legal_actions(&busy, &registry).castable_spells.iter().any(|c| c.object_id == spell && c.is_flashback);
+            if offered_busy != card.has_type("Instant") {
+                failures.push(format!("{name}: offered with a spell on the stack {offered_busy}, and it is {}an instant", if card.has_type("Instant") { "" } else { "not " }));
+            }
+            let asks = engine::legal_actions(&state, &registry).castable_spells.iter()
+                .any(|c| c.object_id == spell && c.is_flashback && matches!(c.target_spec, CastTargetSpec::ChosenAtCast));
+            for targets in expected {
+                casts += 1;
+                // An {X} in the flashback cost: every X from nothing to what
+                // floats (CR 107.3a).
+                let xs: Vec<World> = if flashback.symbols.contains(&ManaSymbol::X) {
+                    (0..=X_FLOAT).map(|x| World { x, pool: x_left(&world, x), ..world.clone() }).collect()
+                } else {
+                    vec![world.clone()]
+                };
+                let want: Vec<World> = xs.iter().flat_map(|w| resolution_ways(spec, w, &targets, P0))
+                    .map(|way| {
+                        let mut after = resolve(spec, &way, &targets, P0, card, spell);
+                        let last = after.graveyard[0].pop();
+                        assert_eq!(last.as_deref(), Some(card.name.as_str()), "the spell went last into its graveyard");
+                        after.exile[0].push(card.name.clone());
+                        after
+                    })
+                    .collect();
+                let first = cast_for(spell, if asks { Vec::new() } else { targets.clone() }, Some(flashback));
+                let endings = if is_random(spec) {
+                    over_seeds(&state, |s| every_ending_casting(s, &registry, spell, &targets, Some(first.clone())))
+                } else {
+                    every_ending_casting(&state, &registry, spell, &targets, Some(first.clone()))
+                };
+                if let Some(why) = disagreement(&want, &endings, &registry) {
+                    failures.push(format!("{name} at {targets:?}: {why}"));
+                }
+            }
+        }
+    }
+    assert!(casts > 0);
+    assert!(failures.is_empty(), "{} of {casts} flashback casts disagree with their text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
 /// Every creature the grammar reads that does not fight in the combat
