@@ -371,6 +371,21 @@ enum Effect {
     /// "<slot> can't block this turn": a rule on it until the cleanup step
     /// (CR 514.2).
     CantBlockThisTurn { slot: usize },
+    /// "Reveal the top four cards of your library. Put all land cards
+    /// revealed this way into your hand and the rest into your graveyard."
+    RevealTopSplit { n: usize, to_hand: Filter },
+    /// "Look at the top four cards of your library. Put one of them into
+    /// your hand and the rest into your graveyard": one its controller
+    /// chooses.
+    LookTopPickOne { n: usize },
+    /// "look at the top card of your library. You may reveal that card. If
+    /// an instant or sorcery card is revealed this way, transform this
+    /// creature."
+    RevealTopTransformIf { slot: usize, kinds: Filter },
+    /// "This creature gets +X/+X until end of turn, where X is the milled
+    /// card's mana value": the card the mill before it took, from the top
+    /// of that player's library.
+    PumpByMilledManaValue { slot: usize, milled: usize },
     /// "Regenerate this creature": a shield (CR 701.19a).
     Regenerate { slot: usize },
     /// "Transform this creature": it turns to its other face, unless it has
@@ -1226,6 +1241,13 @@ impl Spec {
         // "another target creature" is a target that is another creature.
         let s = s.replace("another target ", "target another ");
         let s = s.trim().strip_suffix('.')?;
+        if s == "This creature gets +X/+X until end of turn, where X is the milled card's mana value" {
+            let Some(Effect::Mill { slot: milled, n: 1 }) = self.effects.last() else { return None };
+            let milled = *milled;
+            let slot = self.slot(Slot::This);
+            self.effects.push(Effect::PumpByMilledManaValue { slot, milled });
+            return Some(());
+        }
         if let Some(then) = s.strip_prefix("If a creature card is discarded this way, ").filter(|_| matches!(self.effects.last(), Some(Effect::Discard { .. }))) {
             // "untap this creature, then transform it": two instructions.
             let then = format!("{}.", capitalized(then).replace(", then transform it", ". Transform this creature"));
@@ -1488,6 +1510,23 @@ impl Spec {
         if let Some(rest) = s.strip_prefix("Tap up to ") {
             let slot = self.up_to(rest)?;
             self.effects.push(Effect::Tap { slot, tapped: true });
+            return Some(());
+        }
+        if let Some((n, kind)) = s.strip_prefix("Reveal the top ").and_then(|r| r.split_once(" cards of your library; put all "))
+            .and_then(|(n, r)| Some((n, r.strip_suffix(" cards revealed this way into your hand and the rest into your graveyard")?)))
+        {
+            self.effects.push(Effect::RevealTopSplit { n: number(n)? as usize, to_hand: filter(kind)? });
+            return Some(());
+        }
+        if let Some(n) = s.strip_prefix("Look at the top ").and_then(|r| r.strip_suffix(" cards of your library; put one of them into your hand and the rest into your graveyard")) {
+            self.effects.push(Effect::LookTopPickOne { n: number(n)? as usize });
+            return Some(());
+        }
+        if let Some(kinds) = s.strip_prefix("Look at the top card of your library. You may reveal that card. If an ")
+            .and_then(|r| r.strip_suffix(" card is revealed this way, transform this creature"))
+        {
+            let slot = self.slot(Slot::This);
+            self.effects.push(Effect::RevealTopTransformIf { slot, kinds: filter(kinds)? });
             return Some(());
         }
         if let Some(who) = s.strip_suffix(" can't block this turn") {
@@ -1786,7 +1825,9 @@ impl Spec {
 
 /// Read a card's whole text, or say which sentence the grammar cannot read.
 fn read(card: &Printed) -> Result<Spec, String> {
-    let text = without_reminders(&card.oracle_text).replace(&card.name, "~");
+    // "... of your library. Put ...": the cards looked at, and where they
+    // go, are one instruction.
+    let text = without_reminders(&card.oracle_text).replace(&card.name, "~").replace(" of your library. Put ", " of your library; put ");
     let mut spec = Spec::default();
     for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
         // Flashback is a second way to cast the card (CR 702.34a), which
@@ -2353,8 +2394,10 @@ fn the_opponent_holds_a_spell_on_the_stack(state: &mut GameState, world: &mut Wo
 }
 
 /// Each player's library, top first: distinct names, so a card put on top
-/// or drawn is told apart from the rest.
-const LIBRARY: [&str; 5] = ["Island", "Swamp", "Mountain", "Plains", "Forest"];
+/// or drawn is told apart from the rest; an instant on top, for what looks
+/// at it or mills it, three basic lands, for what searches, and a creature
+/// card at the bottom, for what asks what it is.
+const LIBRARY: [&str; 5] = ["Think Twice", "Island", "Swamp", "Mountain", "Grizzly Bears"];
 
 /// One permanent as the reference sees it: its printed characteristics and
 /// what has happened to it.
@@ -2572,6 +2615,10 @@ struct World {
     /// The cards discarded at random, by name, one way it can go;
     /// [`random_choices`] lists them all.
     discarded: Vec<String>,
+    /// The card put into a hand from the top of a library, by name, and
+    /// whether the top card was revealed: one way each can go.
+    picked: Option<String>,
+    revealed: bool,
     /// The card a search finds, by name, and whether it goes onto the
     /// battlefield; none when the searcher finds nothing (CR 701.19b).
     found: Option<(String, bool)>,
@@ -2971,6 +3018,8 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
         cost_sacrificed: None,
         chosen: Vec::new(),
         discarded: Vec::new(),
+        picked: None,
+        revealed: false,
         found: None,
         shuffled: [false, false],
         x: 0,
@@ -3005,6 +3054,10 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
     // turn after a spell that left the caster nothing.
     spell_in_hand(&mut state, registry, "Island", P0);
     world.hand[0].push("Island".to_string());
+    // The opponent too, so that in their own turn they are asked in their
+    // main phase as well, whatever they draw.
+    spell_in_hand(&mut state, registry, "Island", P1);
+    world.hand[1].push("Island".to_string());
     // And a creature card the caster cannot cast from this board, so that a
     // choice from the hand, or a discard that asks what was discarded, has
     // something to tell apart.
@@ -3449,10 +3502,17 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     }
                 }
             }
-            Effect::TokenIfCreatureCard(_) => {
-                // The board's libraries hold only basic lands, none of them
-                // a creature card.
-                assert!(LIBRARY.iter().all(|n| BASIC_LANDS.contains(n)));
+            Effect::TokenIfCreatureCard(token) => {
+                // "If it's a creature card": the card the effect before it put
+                // into its owner's graveyard, from the bottom of the library.
+                let Some(Effect::BottomCardToGraveyard { slot }) = i.checked_sub(1).map(|j| &spec.effects[j]) else {
+                    panic!("read only after a card put into a graveyard");
+                };
+                let creature = player(*slot).and_then(|p| world.library[p].last())
+                    .is_some_and(|n| cached_oracle().get(n).is_some_and(|c| c.has_type("Creature")));
+                if creature {
+                    w = apply(&Spec { effects: vec![(**token).clone()], slots: spec.slots.clone(), ..Spec::default() }, &w, targets, caster);
+                }
             }
             Effect::ExchangeLifeWithToughness { slot } => {
                 if let Some(id) = object(*slot) {
@@ -3529,6 +3589,40 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
             Effect::Regenerate { slot } => {
                 if let Some(m) = object(*slot).and_then(|id| w.permanents.get_mut(&id)) {
                     m.shields += 1;
+                }
+            }
+            Effect::RevealTopSplit { n, to_hand } => {
+                for _ in 0..(*n).min(w.library[c].len()) {
+                    let card = w.library[c].remove(0);
+                    let to = if cached_oracle().get(&card).is_some_and(|p| Model::printed(p, caster).matches(to_hand, caster)) { &mut w.hand[c] } else { &mut w.graveyard[c] };
+                    to.push(card);
+                }
+            }
+            Effect::LookTopPickOne { n } => {
+                let looked: Vec<String> = w.library[c].drain(..(*n).min(w.library[c].len())).collect();
+                let picked = world.picked.as_ref().expect("a card picked, as the ways say");
+                let at = looked.iter().position(|l| l == picked).expect("one of them");
+                for (i, card) in looked.into_iter().enumerate() {
+                    if i == at { w.hand[c].push(card) } else { w.graveyard[c].push(card) }
+                }
+            }
+            Effect::RevealTopTransformIf { slot, kinds } => {
+                let top = w.library[c].first().and_then(|n| cached_oracle().get(n));
+                if world.revealed && top.is_some_and(|p| Model::printed(p, caster).matches(kinds, caster)) {
+                    let id = object(*slot).expect("its source");
+                    if let Some(m) = w.permanents.get_mut(&id).filter(|m| world.faces_put.get(&id).is_none_or(|t| *t == m.transformed)) {
+                        m.transform();
+                    }
+                }
+            }
+            Effect::PumpByMilledManaValue { slot, milled } => {
+                let x = player(*milled).and_then(|p| world.library[p].first())
+                    .and_then(|n| cached_oracle().get(n))
+                    .and_then(|p| mana_cost(&p.mana_cost))
+                    .map_or(0, |cost| i32::try_from(cost.mana_value()).expect("small"));
+                if let Some(m) = object(*slot).and_then(|id| w.permanents.get_mut(&id)) {
+                    m.temp.0 += x;
+                    m.temp.1 += x;
                 }
             }
             Effect::CantBlockThisTurn { slot } => {
@@ -3887,7 +3981,33 @@ fn resolution_ways(spec: &Spec, world: &World, targets: &[Target], caster: Playe
             .flat_map(|w| resolution_choices(spec, w, targets).into_iter().map(move |chosen| World { chosen, ..w.clone() }))
             .collect();
     }
-    ways.iter().flat_map(|w| search_choices(spec, w, targets, caster)).collect()
+    ways.iter().flat_map(|w| search_choices(spec, w, targets, caster)).flat_map(|w| look_choices(spec, &w, caster)).collect()
+}
+
+/// Every way its controller can choose among the top of their library as
+/// `spec` resolves: which of the cards looked at goes to the hand, by name;
+/// whether to reveal a top card that would transform the source.
+fn look_choices(spec: &Spec, world: &World, caster: PlayerId) -> Vec<World> {
+    let c = caster.0 as usize;
+    let mut ways = vec![world.clone()];
+    for effect in &spec.effects {
+        match effect {
+            Effect::LookTopPickOne { n } => {
+                let mut names: Vec<String> = world.library[c].iter().take(*n).cloned().collect();
+                names.sort();
+                names.dedup();
+                ways = ways.into_iter().flat_map(|w| names.iter().map(move |n| World { picked: Some(n.clone()), ..w.clone() })).collect();
+            }
+            Effect::RevealTopTransformIf { kinds, .. } => {
+                let top = world.library[c].first().and_then(|n| cached_oracle().get(n));
+                if top.is_some_and(|p| Model::printed(p, caster).matches(kinds, caster)) {
+                    ways = ways.into_iter().flat_map(|w| [true, false].map(|revealed| World { revealed, ..w.clone() })).collect();
+                }
+            }
+            _ => {}
+        }
+    }
+    ways
 }
 
 /// Whether `spec` asks anything as it resolves: something random, a
@@ -3895,7 +4015,8 @@ fn resolution_ways(spec: &Spec, world: &World, targets: &[Target], caster: Playe
 fn asks_as_it_resolves(spec: &Spec) -> bool {
     is_random(spec) || spec.effects.iter().any(|e| matches!(e,
         Effect::SacrificeOfTheirChoice { .. } | Effect::EachPlayerChoosesACreature | Effect::SearchForBasicLand { .. }
-        | Effect::PlayerExilesFromGraveyard { .. } | Effect::Discard { .. }))
+        | Effect::PlayerExilesFromGraveyard { .. } | Effect::Discard { .. } | Effect::LookTopPickOne { .. }
+        | Effect::RevealTopTransformIf { .. }))
 }
 
 /// Whether `spec` does something at random.
@@ -4485,7 +4606,7 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
                     }
                 };
             }
-            Some(ResolutionChoiceKind::ChooseCardFromHand { cards, .. }) => {
+            Some(ResolutionChoiceKind::ChooseFromLookedAt { looked_at: cards, .. }) | Some(ResolutionChoiceKind::ChooseCardFromHand { cards, .. }) => {
                 return match script.next() {
                     Some(Answer::Card(id)) => Action::ResolveChoice { choice: ResolvedChoice::ChosenCard(*id) },
                     Some(other) => {
@@ -4710,32 +4831,33 @@ const READ: &[&str] = &[
     "Cloistered Youth", "Cobbled Wings", "Coral Merfolk", "Corpse Lunge", "Counterspell",
     "Crossway Vampire", "Curse of Death's Hold", "Curse of Oblivion", "Curse of Stalked Prey",
     "Curse of the Bloody Tome", "Curse of the Nightly Hunt", "Curse of the Pierced Heart",
-    "Darkthicket Wolf", "Daybreak Ranger", "Dead Weight", "Demonmail Hauberk",
-    "Deranged Assistant", "Desperate Ravings", "Devil's Play", "Diregraf Ghoul",
-    "Disciple of Griselbrand", "Dissipate", "Divination", "Divine Reckoning", "Doom Blade",
-    "Doomed Traveler", "Dream Twist", "Elder Cathar", "Elder of Laurels", "Elite Inquisitor",
-    "Endless Ranks of the Dead", "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread",
-    "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab", "Full Moon's Rise",
-    "Furor of the Bitten", "Gallows Warden", "Galvanic Juggernaut", "Gatstaf Shepherd",
-    "Gavony Township", "Geist of Saint Traft", "Geist-Honored Monk", "Geistcatcher's Rig",
-    "Geistflame", "Ghost Quarter", "Ghostly Possession", "Ghoulcaller's Bell", "Ghoulraiser",
-    "Giant Growth", "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms",
-    "Grave Bramble", "Graveyard Shovel", "Grizzled Outcasts", "Grizzly Bears",
-    "Gruesome Deformity", "Hanweir Watchkeep", "Harvest Pyre", "Hinterland Harbor",
-    "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness", "Infernal Plunge",
-    "Instigator Gang", "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker",
-    "Island", "Isolated Chapel", "Kalonian Tusker", "Kessig Cagebreakers", "Kessig Wolf",
+    "Darkthicket Wolf", "Daybreak Ranger", "Dead Weight", "Delver of Secrets",
+    "Demonmail Hauberk", "Deranged Assistant", "Desperate Ravings", "Devil's Play",
+    "Diregraf Ghoul", "Disciple of Griselbrand", "Dissipate", "Divination", "Divine Reckoning",
+    "Doom Blade", "Doomed Traveler", "Dream Twist", "Elder Cathar", "Elder of Laurels",
+    "Elite Inquisitor", "Endless Ranks of the Dead", "Falkenrath Marauders", "Falkenrath Noble",
+    "Feeling of Dread", "Feral Ridgewolf", "Festerhide Boar", "Forbidden Alchemy", "Forest",
+    "Fortress Crab", "Full Moon's Rise", "Furor of the Bitten", "Gallows Warden",
+    "Galvanic Juggernaut", "Gatstaf Shepherd", "Gavony Township", "Geist of Saint Traft",
+    "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame", "Ghost Quarter",
+    "Ghostly Possession", "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth",
+    "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms", "Grave Bramble",
+    "Graveyard Shovel", "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity",
+    "Hanweir Watchkeep", "Harvest Pyre", "Hinterland Harbor", "Hollowhenge Scavenger",
+    "Holy Strength", "Hysterical Blindness", "Infernal Plunge", "Instigator Gang",
+    "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker", "Island",
+    "Isolated Chapel", "Kalonian Tusker", "Kessig Cagebreakers", "Kessig Wolf",
     "Kessig Wolf Run", "Kindercatch", "Kruin Outlaw", "Lantern Spirit", "Lava Axe",
     "Lightning Bolt", "Lost in the Mist", "Lumberknot", "Make a Wish", "Makeshift Mauler",
     "Manor Skeleton", "Markov Patrician", "Mask of Avacyn", "Mausoleum Guard",
     "Maw of the Mire", "Mayor of Avabruck", "Mentor of the Meek", "Midnight Haunting",
-    "Moan of the Unhallowed", "Moldgraf Monstrosity", "Moment of Heroism", "Moon Heron",
-    "Moorland Haunt", "Morkrut Banshee", "Mountain", "Murder of Crows", "Naturalize",
-    "Nephalia Drownyard", "Night Revelers", "Nightbird's Clutches", "Olivia Voldaren",
-    "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism", "Paraselene", "Pitchburn Devils",
-    "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower", "Rakish Heir",
-    "Rally the Peasants", "Ranger's Guile", "Reaper from the Abyss", "Rebuke", "Reckless Waif",
-    "Riot Devils", "Rolling Temblor", "Rotting Fensnake", "Runechanter's Pike",
+    "Mindshrieker", "Moan of the Unhallowed", "Moldgraf Monstrosity", "Moment of Heroism",
+    "Moon Heron", "Moorland Haunt", "Morkrut Banshee", "Mountain", "Mulch", "Murder of Crows",
+    "Naturalize", "Nephalia Drownyard", "Night Revelers", "Nightbird's Clutches",
+    "Olivia Voldaren", "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism", "Paraselene",
+    "Pitchburn Devils", "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower",
+    "Rakish Heir", "Rally the Peasants", "Ranger's Guile", "Reaper from the Abyss", "Rebuke",
+    "Reckless Waif", "Riot Devils", "Rolling Temblor", "Rotting Fensnake", "Runechanter's Pike",
     "Savannah Lions", "Scourge of Geier Reach", "Selfless Cathar", "Selhoff Occultist",
     "Sensory Deprivation", "Sever the Bloodline", "Sharpened Pitchfork", "Shimmering Grotto",
     "Silent Departure", "Silver-Inlaid Dagger", "Silverchase Fox", "Skaab Goliath",
@@ -5382,9 +5504,18 @@ fn every_turn_begins_as_its_text_says() {
         Static::Restricts { what, .. } | Static::RestrictsItself { what } if what.contains(&Restriction::DoesntUntap)));
     for (card, spec) in cards.iter().filter(|(_, s)| s.upkeep.is_some() || keeps_tapped(s)) {
         // The upkeep its text names, and the other player's, which it must
-        // leave alone.
-        for active in [P0, P1] {
+        // leave alone; for a trigger that looks at the top of the library,
+        // with the instant there and with a land there instead.
+        let looks = spec.upkeep.iter().flat_map(|u| &u.trigger.spec.effects).any(|e| matches!(e, Effect::RevealTopTransformIf { .. }));
+        let tops: &[bool] = if looks { &[false, true] } else { &[false] };
+        for (active, &rotated) in [P0, P1].into_iter().flat_map(|a| tops.iter().map(move |r| (a, r))) {
             let (mut state, mut world) = board(&registry, &cache);
+            if rotated {
+                for p in [P0, P1] {
+                    state.players[p.0 as usize].library_order.rotate_left(1);
+                    world.library[p.0 as usize].rotate_left(1);
+                }
+            }
             let curse = spec.upkeep.as_ref().is_some_and(|u| u.enchanted_player);
             let id = if curse {
                 let id = attach_curse_to_player(&mut state, &registry, &card.name, P0, P1);
@@ -5437,7 +5568,7 @@ fn every_turn_begins_as_its_text_says() {
             // drop.
             let got = every_scene_ending(&state, &registry, Scene::Until(Step::PrecombatMain));
             if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &state, &got)) {
-                failures.push(format!("{} in player {}'s turn: {why}", card.name, active.0));
+                failures.push(format!("{} in player {}'s turn{}: {why}", card.name, active.0, if rotated { ", a land on top of the library" } else { "" }));
             }
         }
     }
@@ -5845,6 +5976,8 @@ fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Opt
         cost_sacrificed: None,
         chosen: Vec::new(),
         discarded: Vec::new(),
+        picked: None,
+        revealed: false,
         found: None,
         shuffled: [false, false],
         x: 0,
