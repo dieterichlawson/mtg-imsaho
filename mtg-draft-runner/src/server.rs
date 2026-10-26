@@ -219,7 +219,14 @@ impl Shared {
             let clients = self.clients();
             let mut views: Vec<(usize, String)> = Vec::new();
             let mut seen: Vec<usize> = Vec::new();
-            for c in clients.iter() {
+            // Once `closed` has gone out, no view follows it: the sockets
+            // close one by one, and a view sent between two of them told the
+            // page still open that a seat whose page had closed was "away",
+            // while that seat's own page froze on "here" (#895). Read under
+            // the clients lock, which `quit_because` takes after setting the
+            // reason, so a view is either before `closed` or not sent.
+            let closed = self.stop_reason().is_some();
+            for c in clients.iter().filter(|_| !closed) {
                 if !seen.contains(&c.seat) {
                     seen.push(c.seat);
                     if let Ok(json) = serde_json::to_string(&lobby.view(c.seat)) {
@@ -1351,6 +1358,45 @@ fn pump(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #895: after `closed` no view goes out. A view sent while the sockets
+    /// closed told the page still open that a seat whose page had closed was
+    /// "away", and that seat's own page froze on "here".
+    #[test]
+    fn no_view_follows_the_closed_message() {
+        let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/.."));
+        let mut set_data = mtg_draft::set_data::SetData::load(&root.join("data/sets/isd.json")).unwrap();
+        let registry = Arc::new(CardRegistry::with_all_cards());
+        set_data.filter_implemented(&registry);
+        let mut names = set_data.all_card_names();
+        names.sort();
+        let mut it = names.into_iter().cycle();
+        let packs: Vec<Vec<mtg_draft::pack::BoosterPack>> = (0..2).map(|_| (0..3).map(|_| {
+            let cards: Vec<String> = it.by_ref().take(14).collect();
+            mtg_draft::pack::BoosterPack { commons: cards[..12].to_vec(), uncommons: vec![], rare: cards[12].clone(), dfc: cards[13].clone(), foil: None }
+        }).collect()).collect();
+        let lines = CardLines::new(&set_data.all_card_names(), &set_data.rarities(), &registry);
+        let config = crate::lobby::LobbyConfig {
+            set_code: "isd".into(), set_name: set_data.set_name.clone(),
+            seats: vec![SeatKind::Human, SeatKind::Human], best_of: 3, seed: 1, guide_path: None,
+            pick_seconds: None, build_seconds: None, sideboard_seconds: None, out_dir: None,
+        };
+        let lobby = Lobby::new(config, &packs, &set_data, Arc::clone(&registry), &lines, crate::draft_log::DraftLogger::silent()).unwrap();
+        let server = ServerConfig {
+            bind: "127.0.0.1".into(), port: 0, advertise: "127.0.0.1".into(), game_ports: (0, 0),
+            web_dir: root.join("mtg-gui"), quiet: true, out_dir: None, guide: None, save: None, direct_game_ports: false,
+        };
+        let shared = Shared::new(lobby, server, registry, lines, String::new(), set_data.set_name.clone());
+        let (tx, rx) = mpsc::channel();
+        shared.add_client(0, tx);
+        shared.notify();
+        let kind = |m: String| serde_json::from_str::<serde_json::Value>(&m).unwrap()["type"].as_str().unwrap_or("").to_string();
+        assert_eq!(rx.try_iter().map(kind).collect::<Vec<_>>(), ["view"], "a view goes out while the table is open");
+        shared.quit_because("the server was stopped by Ctrl-C (SIGINT)");
+        shared.lobby().set_name(1, "Bo");
+        shared.notify();
+        assert_eq!(rx.try_iter().map(kind).collect::<Vec<_>>(), ["closed"], "nothing after closed");
+    }
 
     /// A game log that cannot be written is said, not dropped.
     #[test]
