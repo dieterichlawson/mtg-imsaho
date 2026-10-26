@@ -313,7 +313,14 @@ impl Shared {
 
     fn add_client(&self, seat: usize, tx: mpsc::Sender<String>) -> u64 {
         let id = self.next_client.fetch_add(1, Ordering::Relaxed);
-        self.clients().push(Client { id, seat, tx });
+        let mut clients = self.clients();
+        // A socket that joins a closed table is told so: `quit_because` told
+        // only the clients it had, and a later one was closed bare, which a
+        // page reads as a dropped network and retries (#895's review).
+        if let Some(reason) = self.stop_reason() {
+            let _ = tx.send(serde_json::json!({"type": "closed", "reason": reason}).to_string());
+        }
+        clients.push(Client { id, seat, tx });
         id
     }
 
@@ -322,7 +329,13 @@ impl Shared {
     }
 
     fn send_to(&self, id: u64, msg: &str) {
-        if let Some(c) = self.clients().iter().find(|c| c.id == id) {
+        let clients = self.clients();
+        // Nothing after `closed`, as in `notify` (#895's review): a review
+        // or a refusal asked for in the moment of the close followed it.
+        if self.stop_reason().is_some() {
+            return;
+        }
+        if let Some(c) = clients.iter().find(|c| c.id == id) {
             let _ = c.tx.send(msg.to_string());
         }
     }
@@ -381,6 +394,12 @@ impl Shared {
     /// tell each person in a match whether their opponent's page is open:
     /// "Opponent is thinking" over a closed tab was all they got (#822).
     fn poll_game_pages(&self) {
+        // While the table closes, the game pages close one by one, and a
+        // last poll told the page still open that its opponent's page had
+        // closed and the game waits for it (#895's review).
+        if self.stop_reason().is_some() {
+            return;
+        }
         let pages: Vec<(usize, usize, usize, PageHandle)> = self.in_game.lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner).iter()
             .map(|p| (p.seat, p.opponent, p.page.connected(), p.page.clone())).collect();
@@ -1388,7 +1407,7 @@ mod tests {
         };
         let shared = Shared::new(lobby, server, registry, lines, String::new(), set_data.set_name.clone());
         let (tx, rx) = mpsc::channel();
-        shared.add_client(0, tx);
+        let first = shared.add_client(0, tx);
         shared.notify();
         let kind = |m: String| serde_json::from_str::<serde_json::Value>(&m).unwrap()["type"].as_str().unwrap_or("").to_string();
         assert_eq!(rx.try_iter().map(kind).collect::<Vec<_>>(), ["view"], "a view goes out while the table is open");
@@ -1396,6 +1415,14 @@ mod tests {
         shared.lobby().set_name(1, "Bo");
         shared.notify();
         assert_eq!(rx.try_iter().map(kind).collect::<Vec<_>>(), ["closed"], "nothing after closed");
+        // Nor a reply to something asked in the moment of the close; and a
+        // socket that joins the closed table is told it is closed.
+        shared.send_to(first, &serde_json::json!({"type": "refused", "reason": "late"}).to_string());
+        let (tx2, rx2) = mpsc::channel();
+        let late = shared.add_client(1, tx2);
+        shared.send_to(late, &serde_json::json!({"type": "review", "picks": []}).to_string());
+        assert_eq!(rx.try_iter().count(), 0);
+        assert_eq!(rx2.try_iter().map(kind).collect::<Vec<_>>(), ["closed"]);
     }
 
     /// A game log that cannot be written is said, not dropped.
