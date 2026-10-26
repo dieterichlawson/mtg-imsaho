@@ -186,6 +186,9 @@ enum Slot {
     /// "target card from a graveyard", "target creature card from your
     /// graveyard": a card, not a permanent (CR 115.1, 404).
     GraveyardCard { filter: Option<Filter>, yours: bool },
+    /// "target spell", "target noncreature spell": a spell on the stack
+    /// (CR 115.1, 405).
+    Spell(Filter),
 }
 
 /// A description of permanents: any one of the alternatives ("artifact or
@@ -268,6 +271,9 @@ enum Effect {
     /// [with a -1/-1 counter on it]" (CR 110.2: under its owner's, the
     /// caster's, control).
     Reanimate { slot: usize, minus_counter: bool },
+    /// "Counter target spell" (CR 701.6a): it leaves the stack for its
+    /// owner's graveyard, or exile when the text says "exile it instead".
+    Counter { slot: usize, exile: bool },
 }
 
 /// A card's text, read.
@@ -368,7 +374,9 @@ fn filter(text: &str) -> Option<Filter> {
         let singular = lower.strip_suffix('s').unwrap_or(&lower);
         let head = if CARD_TYPES.contains(&singular) || singular == "permanent" { singular } else { head };
         clause.head = match head {
-            "permanent" => None,
+            // What kind of object it is, the slot says; the words are
+            // about its characteristics.
+            "permanent" | "spell" => None,
             h if CARD_TYPES.contains(&h) => Some(h.to_string()),
             // A subtype is capitalised in Oracle text.
             h if h.chars().next().is_some_and(char::is_uppercase) => Some(h.to_string()),
@@ -425,6 +433,16 @@ impl Spec {
         if let Some(rest) = s.strip_prefix("Put a +1/+1 counter on each of up to ") {
             let slot = self.up_to(rest)?;
             self.effects.push(Effect::PlusCounters { slot, n: 1 });
+            return Some(());
+        }
+        if let Some(f) = s.strip_prefix("Counter target ") {
+            let slot = self.slot(Slot::Spell(filter(f)?));
+            self.effects.push(Effect::Counter { slot, exile: false });
+            return Some(());
+        }
+        if s == "If that spell is countered this way, exile it instead of putting it into its owner's graveyard" {
+            let Some(Effect::Counter { exile, .. }) = self.effects.last_mut() else { return None };
+            *exile = true;
             return Some(());
         }
         if let Some(f) = s.strip_prefix("Destroy all ") {
@@ -629,6 +647,11 @@ fn read(card: &Printed) -> Result<Spec, String> {
         if line.starts_with("Flashback {") {
             continue;
         }
+        // An alternative cost (CR 118.9); the cast checked here pays the
+        // mana cost.
+        if line == "If it's not your turn, you may exile a blue card from your hand rather than pay this spell's mana cost." {
+            continue;
+        }
         if line == "This spell costs {1} less to cast for each creature on the battlefield." {
             spec.cheaper_per_creature = true;
             continue;
@@ -723,6 +746,33 @@ fn board_after_a_death(registry: &CardRegistry, cache: &BTreeMap<String, Printed
     (state, world)
 }
 
+/// The opponent casts Giant Growth on Kindercatch and passes, and the
+/// caster holds priority with it on the stack: what a counterspell is read
+/// against. Done after the card under test is in hand and paid for, so the
+/// caster has something to do and the game loop asks them rather than
+/// passing for them.
+fn opponent_casts_a_spell(state: &mut GameState, world: &mut World, registry: &CardRegistry, cache: &BTreeMap<String, Printed>) {
+    let growth = spell_in_hand(state, registry, "Giant Growth", P1);
+    fund(state, P1, &mana_cost("{G}").expect("a cost"), 0);
+    let kindercatch = world.permanents.iter()
+        .find(|(_, m)| m.name.as_deref() == Some("Kindercatch"))
+        .map(|(id, _)| *id)
+        .expect("on the board");
+    let mut cast = Some(cast_action(growth, vec![Target::Object(kindercatch)]));
+    engine::run_game_loop(state, registry, |s: &GameState, acting: PlayerId, _legal: &engine::LegalActions| {
+        if acting == P1 {
+            cast.take().unwrap_or(Action::PassPriority)
+        } else if s.stack.is_empty() {
+            Action::PassPriority
+        } else {
+            Action::AbandonGame
+        }
+    });
+    assert!(state.stack.len() == 1 && state.priority_player == Some(P0),
+        "Giant Growth is on the stack and the caster has priority");
+    world.stack.push((growth, Model::printed(&cache["Giant Growth"], P1)));
+}
+
 /// Each player's library, top first: distinct names, so a card put on top
 /// or drawn is told apart from the rest.
 const LIBRARY: [&str; 5] = ["Island", "Swamp", "Mountain", "Plains", "Forest"];
@@ -802,6 +852,9 @@ struct World {
     yard: BTreeMap<ObjectId, Model>,
     /// A creature died this turn (CR 700.4), which morbid reads.
     a_creature_died: bool,
+    /// Spells on the stack below the one being checked, by id, last cast
+    /// last (CR 405.2).
+    stack: Vec<(ObjectId, Model)>,
     /// Permanents the reference has no engine id for: tokens, and the
     /// permanent a creature spell becomes.
     tokens: Vec<Model>,
@@ -947,6 +1000,7 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
         permanents: BTreeMap::new(),
         yard: BTreeMap::new(),
         a_creature_died: false,
+        stack: Vec::new(),
         tokens: Vec::new(),
         life: [20, 20],
         hand: [Vec::new(), Vec::new()],
@@ -1093,6 +1147,10 @@ fn candidates(slot: &Slot, world: &World, caster: PlayerId) -> Vec<Target> {
         Slot::PlayerOrPlaneswalker | Slot::Player => players(&|_| true),
         Slot::Opponent => players(&|p| p != caster),
         Slot::Permanent(f) | Slot::UpTo { filter: f, .. } => world.permanents.iter()
+            .filter(|(_, m)| m.matches(f, caster))
+            .map(|(id, _)| Target::Object(*id))
+            .collect(),
+        Slot::Spell(f) => world.stack.iter()
             .filter(|(_, m)| m.matches(f, caster))
             .map(|(id, _)| Target::Object(*id))
             .collect(),
@@ -1272,6 +1330,13 @@ fn resolve(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId, car
                     w.permanents.insert(object(*slot).expect("just read"), m);
                 }
             }
+            Effect::Counter { slot, exile } => {
+                if let Some(at) = object(*slot).and_then(|id| w.stack.iter().position(|(s, _)| *s == id)) {
+                    let (_, m) = w.stack.remove(at);
+                    let name = m.name.expect("a spell from a card");
+                    if *exile { w.exile[m.owner.0 as usize].push(name) } else { w.graveyard[m.owner.0 as usize].push(name) }
+                }
+            }
             Effect::ToHand { slot } => {
                 if let Some(id) = object(*slot) {
                     w.leave(id, Dest::Hand);
@@ -1346,6 +1411,7 @@ fn resolve(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId, car
     if !spec.permanent {
         w.graveyard[c].push(card.name.clone());
     }
+    assert!(w.stack.is_empty(), "the reference resolves only what it counters; {:?} is left", w.stack);
     w
 }
 
@@ -1488,7 +1554,7 @@ fn readable(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (Vec<
 /// How many cards the grammar read when this was last raised. A change
 /// that reads more raises it; one that reads fewer fails here, so coverage
 /// is never lost without someone deciding to lose it.
-const CARDS_READ: usize = 60;
+const CARDS_READ: usize = 63;
 
 // ---- the properties ----
 
@@ -1520,13 +1586,18 @@ fn every_readable_card_does_what_its_text_says() {
     let boards: [(&str, Build); 2] = [("", board), (" after a death", board_after_a_death)];
     for (card, spec) in &cards {
         let boards = if spec.morbid.is_some() { &boards[..] } else { &boards[..1] };
+        let counters = spec.slots.iter().any(|s| matches!(s, Slot::Spell(_)));
         for (which, build) in boards {
-            let (mut state, world) = build(&registry, &cache);
+            let (mut state, mut world) = build(&registry, &cache);
             let spell = spell_in_hand(&mut state, &registry, &card.name, P0);
             let cost = mana_cost(&card.mana_cost).expect("read above");
             let creatures = u32::try_from(world.permanents.values().filter(|m| m.is_creature()).count()).expect("a few");
             fund(&mut state, P0, &cost, if spec.cheaper_per_creature { creatures } else { 0 });
-            let name = format!("{}{which}", card.name);
+            // A counterspell is read with a spell to counter.
+            if counters {
+                opponent_casts_a_spell(&mut state, &mut world, &registry, &cache);
+            }
+            let name = format!("{}{}{which}", card.name, if counters { " against Giant Growth" } else { "" });
 
             let expected_sets = target_sets(spec, &world, P0);
             let offered_sets = match offered(&state, &registry, spell) {
@@ -1660,7 +1731,12 @@ fn the_grammar_reads_its_templates() {
     let not_only_keywords = Printed { oracle_text: "Flying\nThis creature can't block.".to_string(), ..viper };
     assert!(read_creature(&not_only_keywords).is_err());
 
-    assert!(read(&card("X", "Counter target spell.")).is_err(), "a spell target is not a template here yet");
+    let spec = read(&card("X", "Counter target noncreature spell. If that spell is countered this way, exile it instead of putting it into its owner's graveyard.")).unwrap();
+    assert_eq!(spec.effects, vec![Effect::Counter { slot: 0, exile: true }]);
+    let Slot::Spell(Filter(clauses)) = &spec.slots[0] else { panic!("a spell slot") };
+    assert_eq!((clauses[0].head.clone(), clauses[0].not_types.clone()), (None, vec!["creature".to_string()]));
+
+    assert!(read(&card("X", "Counter target spell unless its controller pays {1}.")).is_err(), "a payment is not a template yet");
     assert!(read(&card("X", "Draw two cards, then discard a card at random.")).is_err());
 }
 
