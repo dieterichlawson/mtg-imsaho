@@ -457,11 +457,13 @@ pub fn table_line(v: &Value) -> String {
 }
 
 /// What decides whether the table's one line is printed again: the line
-/// itself, or, while a pack is in front of the seat, only the count of
-/// packs queued behind it (#894).
+/// itself, or, while a pack is in front of the seat, only what is the
+/// seat's own: the count of packs queued behind it and its own row (a
+/// name it just gave itself) (#894).
 fn table_line_key(v: &Value) -> String {
     if v["phase"] == "drafting" && v["pack"].is_object() {
-        format!("queued {}", v["pack"]["waiting"])
+        let me = v["seats"].as_array().into_iter().flatten().find(|x| x["seat"] == v["seat"]);
+        format!("queued {} me {}", v["pack"]["waiting"], me.map(|x| x["name"].to_string()).unwrap_or_default())
     } else {
         table_line(v)
     }
@@ -1036,6 +1038,9 @@ mod tests {
         let key = table_line_key(&v);
         v["seats"][0]["picks"] = 31.into();
         assert_eq!(table_line_key(&v), key);
+        v["seats"][0]["name"] = "Host".into();
+        assert_ne!(table_line_key(&v), key, "this seat's own new name is a line");
+        let key = table_line_key(&v);
         v["pack"]["waiting"] = 1.into();
         assert_ne!(table_line_key(&v), key);
         // Building, before a deck is sent: the last line is what to type,
