@@ -20,4 +20,19 @@
 //! [Verus]: https://github.com/verus-lang/verus
 
 pub mod combat;
+pub mod funding;
 pub mod mana;
+
+// `verus!` erases the directive below to an empty block under rustc.
+#[allow(unused_braces)]
+mod platform {
+use vstd::prelude::*;
+
+verus! {
+
+// Every platform the engine is built for has 64-bit pointers, and the
+// funding proofs lean on `usize` holding any `u32` plus one.
+global size_of usize == 8;
+
+} // verus!
+}
