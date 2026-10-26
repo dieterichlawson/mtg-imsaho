@@ -170,7 +170,7 @@ def log_health(path):
     summary misses the calls before a `--resume`)."""
     if not path or not os.path.exists(path):
         return None
-    h = {"reasks": 0, "unreadable": 0, "panics": 0, "game_calls": 0,
+    h = {"reasks": 0, "unreadable": 0, "panics": 0, "harness_chose": 0, "game_calls": 0,
          "out": 0, "thinking": 0, "cache_read": 0, "cache_write": 0}
     # A game seat's re-ask is `REASK [SeatN]`, a pick's a bare `REASK`; a
     # draft reply with no answer in it is the backend's `API_WARN ... no
@@ -183,8 +183,14 @@ def log_health(path):
             h["reasks"] += 1
         elif "UNREADABLE" in line or ("API_WARN" in line and "no structured object" in line):
             h["unreadable"] += 1
-        elif "panicked" in line or "INVARIANT" in line:
+        # A worker's panic reaches the log as its `FATAL` line (the panic
+        # text is stderr's), a backend that gave up as `API_FATAL` (#900's
+        # review).
+        elif "panicked" in line or "INVARIANT" in line or re.search(r"\t(API_)?FATAL\b", line):
             h["panics"] += 1
+        # A game seat's answer the harness could not use and chose for.
+        elif re.search(r"\t(MALFORMED|NO_ANSWER) \[", line):
+            h["harness_chose"] += 1
         elif (m := usage.search(line)):
             h["game_calls"] += 1
             for k, v in zip(("out", "thinking", "cache_read", "cache_write"), m.groups()):

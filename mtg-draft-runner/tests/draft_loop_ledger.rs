@@ -5,7 +5,8 @@
 //! pick's bare `REASK`; only the game seat's `UNREADABLE`, never a draft
 //! reply's `API_WARN ... no structured object`; and only `USAGE` lines with
 //! a thinking figure, so a night under the prompt stub said "The games made
-//! 0 calls" beside the runner's "Games: 1274 calls".
+//! 0 calls" beside the runner's "Games: 1274 calls". A worker's panic is
+//! its `FATAL` line in the log, which the panic count never read.
 
 use std::process::Command;
 
@@ -25,6 +26,10 @@ fn the_ledger_counts_every_reask_unreadable_reply_and_call_the_log_holds() {
         format!("{at}UNREADABLE [Seat0]\tno JSON object"),
         format!("{at}USAGE [Seat0]\tin 10 out 5 thinking n/a cache_read 7 cache_write 0"),
         format!("{at}USAGE [Seat1]\tin 10 out 6 thinking 3 cache_read 7 cache_write 2"),
+        format!("{at}MALFORMED [Seat1]\tthe answer named no offered action"),
+        format!("{at}NO_ANSWER [Seat0]\tthe backend never answered"),
+        format!("{at}FATAL seat 1, pack 2 pick 3: the worker panicked\t"),
+        format!("{at}API_FATAL\tclaude -p failed after 6 attempts"),
     ].join("\n") + "\n").unwrap();
     let script = concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/draft-loop");
     let out = Command::new("python3")
@@ -38,5 +43,9 @@ fn the_ledger_counts_every_reask_unreadable_reply_and_call_the_log_holds() {
     assert_eq!(h["game_calls"], 2, "{h}");
     assert_eq!(h["out"], 11, "{h}");
     assert_eq!(h["thinking"], 3, "{h}");
+    // A worker's panic is its FATAL line, a backend that gave up API_FATAL;
+    // a game answer the harness chose for is MALFORMED or NO_ANSWER.
+    assert_eq!(h["panics"], 2, "{h}");
+    assert_eq!(h["harness_chose"], 2, "{h}");
     let _ = std::fs::remove_dir_all(&dir);
 }
