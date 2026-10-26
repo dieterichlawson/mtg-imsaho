@@ -645,8 +645,8 @@ hands it to the table for good, and its games are forfeit"));
                         Some(SeatKind::Ai(spec)) => crate::llm_client::ai_seat_label(spec),
                         _ => s.kind.to_string(),
                     };
-                    shared.reply(&format!("  seat {seat} {kind} {} — {}, {} ({} picks)",
-                        s.name, s.presence, s.status, s.picks));
+                    shared.reply(&format!("  seat {seat} {kind} {} — {}, {} ({} pick{})",
+                        s.name, s.presence, s.status, s.picks, if s.picks == 1 { "" } else { "s" }));
                 }
             }
             Some("quit" | "q" | "exit") => {

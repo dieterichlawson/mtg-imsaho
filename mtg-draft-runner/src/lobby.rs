@@ -1415,7 +1415,8 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
                 let lands_after = sent.lands.values().sum::<u32>() + short;
                 if lands_after > MAX_TOPPED_UP_LANDS {
                     return Err(Some(format!(
-                        "it was {short} cards short, and {lands_after} lands is not a deck")));
+                        "it was {short} card{} short, and {lands_after} lands is not a deck",
+                        if short == 1 { "" } else { "s" })));
                 }
                 let most = |lands: &HashMap<String, u32>| lands.iter()
                     .filter(|(_, n)| **n > 0)

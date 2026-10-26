@@ -192,8 +192,8 @@ impl DraftLogger {
         );
         mtg_player::game_log::write(
             file, line,
-            &format!("[Seat {}] PICK Pack {} Pick {} | Chose: {} (from {} cards)",
-                seat, pack, pick_index, chosen_name, available.len()),
+            &format!("[Seat {}] PICK Pack {} Pick {} | Chose: {} (from {} card{})",
+                seat, pack, pick_index, chosen_name, available.len(), if available.len() == 1 { "" } else { "s" }),
             "",
         );
     }
@@ -250,7 +250,7 @@ unusable response, substituted {chosen_name} (the first card) — replayed from 
         mtg_player::game_log::write(
             file, line,
             &format!("[Seat {seat}] PICK Pack {pack} Pick {pick_index} | Chose: {chosen_name} \
-(from {available} cards) — replayed from the snapshot, no prompt sent"),
+(from {available} card{}) — replayed from the snapshot, no prompt sent", if available == 1 { "" } else { "s" }),
             "",
         );
     }

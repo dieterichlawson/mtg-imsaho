@@ -466,9 +466,11 @@ pub fn render(v: &Value, build: &Build) -> (String, String) {
             None => " (not here yet)".to_string(),
         };
         let auto = if x["auto"].as_bool().unwrap_or(false) { " [table picks]" } else { "" };
-        table.push_str(&format!("  seat {} {:<6} {:<12} {} {} picks{joined}{auto}\n",
+        // "1 pick", not "1 picks" (#914, #874's slip).
+        let picks = x["picks"].as_u64().unwrap_or(0);
+        table.push_str(&format!("  seat {} {:<6} {:<12} {} {picks} pick{}{joined}{auto}\n",
             x["seat"], x["kind"].as_str().unwrap_or("?"), x["name"].as_str().unwrap_or("?"),
-            x["status"].as_str().unwrap_or("?"), x["picks"]));
+            x["status"].as_str().unwrap_or("?"), if picks == 1 { "" } else { "s" }));
     }
     if let Some(notice) = v["notice"].as_str() {
         s.push_str(&format!("!! {notice}\n"));
@@ -965,6 +967,17 @@ mod tests {
              "pack": [{"name": "Lantern Spirit"}, {"name": "Lost in the Mist"}, {"name": "Grimgrin, Corpse-Born"}, {"name": "Abattoir Ghoul"}]}]});
         assert!(review_listing(&comma).contains("3.2 Lost in the Mist — over Lantern Spirit; Grimgrin, Corpse-Born; Abattoir Ghoul\n"),
             "{}", review_listing(&comma));
+    }
+
+    /// #914: a seat with one pick reads "1 pick", as #874 made the page's
+    /// counts read; the client said "1 picks".
+    #[test]
+    fn a_seat_with_one_pick_is_said_in_the_singular() {
+        let v = serde_json::json!({"type": "view", "phase": "drafting", "seat": 0, "set": "isd", "pack": null, "pool": [],
+            "seats": [{"seat": 0, "name": "seat 0", "kind": "human", "status": "picking", "picks": 0, "joined": true},
+                      {"seat": 1, "name": "seat 1", "kind": "ai", "status": "waiting", "picks": 1, "joined": true}]});
+        let (table, _) = render(&v, &Build::default());
+        assert!(table.contains(" waiting 1 pick\n") && table.contains(" picking 0 picks\n"), "{table}");
     }
 
     /// #889: a card the review shows as passed over is in no pack and no
