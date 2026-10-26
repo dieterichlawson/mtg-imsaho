@@ -630,6 +630,18 @@ async function main() {
         check(rows === between.pool.length, `${tag}: every pool card is a row to sideboard with (${rows})`);
         const inMain = await page.$$eval("#between .row.in-main", r => r.length);
         check(inMain === b.deck.main.length, `${tag}: the deck played last game is the one marked (${inMain} of ${b.deck.main.length})`);
+        // Keeping the deck is the usual choice on a running clock: Ready is
+        // on the first screen at either width, and on a phone it and the
+        // land steppers come before the pool, not ~1,900 px under it (#885).
+        {
+          const at = await page.evaluate(() => {
+            const top = sel => { const el = document.querySelector(sel); return el ? el.getBoundingClientRect().top + scrollY : null; };
+            const bottom = sel => { const el = document.querySelector(sel); return el ? el.getBoundingClientRect().bottom + scrollY : null; };
+            return { ready: bottom("#sideboard-ready"), steppers: top('#between [data-land="Plains"]'), firstRow: top("#between .row") };
+          });
+          check(at.ready !== null && at.ready <= viewport.height, `${tag}: Ready for the next game is on the first screen (bottom ${Math.round(at.ready)} <= ${viewport.height})`);
+          if (viewport.width < 760) check(at.steppers !== null && at.steppers < at.firstRow, `${tag}: the land steppers come before the pool (${Math.round(at.steppers)} < ${Math.round(at.firstRow)})`);
+        }
         const before = (await sent()).length;
         // One card out: 39, which the server would refuse, so nothing is sent
         // and Ready says why; a basic in for it is a deck again, and is sent.

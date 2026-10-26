@@ -202,6 +202,10 @@
     .row-detail { display: block; border-width: 1px; margin: 2px 0 6px; }
     .phone-count { display: block; position: sticky; top: 0; z-index: 1; padding: 4px 6px; background: var(--bg); color: var(--accent); border-bottom: 1px solid var(--border); }
     .deckpanel .panel-detail { display: none; }
+    /* Between games the usual choice is Ready with the deck as it was, on
+       the sideboard clock: the panel with Ready comes before the pool, not
+       under its 45 rows (#885). Building keeps the pool first (#792). */
+    .between .build-layout .deckpanel { order: -1; }
     th, td { padding-right: 6px; }
     /* The seat's kind is the one column a phone can do without. */
     .seats th:nth-child(3), .seats td:nth-child(3) { display: none; }
