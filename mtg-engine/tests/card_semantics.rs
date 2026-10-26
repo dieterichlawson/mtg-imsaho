@@ -830,6 +830,9 @@ enum Static {
     /// controls ("attack each combat if able"); with `unless_subtype`, only
     /// while it is not one ("Otherwise, it can't attack or block").
     Restricts { group: bool, what: Vec<Restriction>, unless_subtype: Option<String> },
+    /// What a creature's own text stops it doing: "This creature doesn't
+    /// untap during your untap step" (CR 502.3).
+    RestrictsItself { what: Vec<Restriction> },
 }
 
 /// A rule a static ability puts on a creature (CR 508.1c-d, 509.1b,
@@ -1148,9 +1151,9 @@ impl Spec {
         }
         // The ability's source ("This creature gets +2/+0 until end of
         // turn", "Return this creature to its owner's hand").
-        if s == "Tap this creature" {
+        if s == "Tap this creature" || s == "Untap this creature" {
             let slot = self.slot(Slot::This);
-            self.effects.push(Effect::Tap { slot, tapped: true });
+            self.effects.push(Effect::Tap { slot, tapped: s.starts_with("Tap") });
             return Some(());
         }
         if let Some(n) = s.strip_prefix("You lose ").and_then(|r| r.strip_suffix(" life")) {
@@ -1969,6 +1972,9 @@ fn group_static(body: &str) -> Option<Static> {
 /// group's change.
 fn creature_static(line: &str) -> Option<Static> {
     let body = line.strip_suffix('.')?;
+    if body == "This creature doesn't untap during your untap step" {
+        return Some(Static::RestrictsItself { what: vec![Restriction::DoesntUntap] });
+    }
     if let Some((change, each)) = body.strip_prefix("This creature gets ").and_then(|r| r.split_once(" for each ")) {
         let (power, toughness) = pt_change(change)?;
         return Some(Static::PerEach { filter: filter(each)?, power, toughness });
@@ -2724,6 +2730,7 @@ impl World {
                 let holds = unless_subtype.as_ref().is_none_or(|t| !m.subtypes.contains(t));
                 (whom && holds).then(|| Change { pt: (0, 0), has: Vec::new(), restricted: what.clone() })
             }
+            Static::RestrictsItself { what } => is_source.then(|| Change { pt: (0, 0), has: Vec::new(), restricted: what.clone() }),
         }
     }
 
@@ -4456,9 +4463,9 @@ const READ: &[&str] = &[
     "Dream Twist", "Elder Cathar", "Elder of Laurels", "Elite Inquisitor",
     "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread", "Feral Ridgewolf",
     "Festerhide Boar", "Forest", "Fortress Crab", "Full Moon's Rise", "Furor of the Bitten",
-    "Gallows Warden", "Gatstaf Shepherd", "Gavony Township", "Geist of Saint Traft",
-    "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame", "Ghost Quarter",
-    "Ghostly Possession", "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth",
+    "Gallows Warden", "Galvanic Juggernaut", "Gatstaf Shepherd", "Gavony Township",
+    "Geist of Saint Traft", "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame",
+    "Ghost Quarter", "Ghostly Possession", "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth",
     "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms", "Grave Bramble",
     "Graveyard Shovel", "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity",
     "Hanweir Watchkeep", "Harvest Pyre", "Hinterland Harbor", "Hollowhenge Scavenger",
@@ -4627,9 +4634,16 @@ fn every_readable_card_does_what_its_text_says() {
                             who.extend(creatures[i + 1..].iter().map(|y| vec![*x, *y]));
                         }
                     }
-                    for rs in who {
+                    // A watcher sees them untapped, and tapped, as by an
+                    // attack, so that an untap has something to do.
+                    let taps: &[bool] = if spec.watch.is_some() { &[false, true] } else { &[false] };
+                    for (rs, &tapped) in who.iter().flat_map(|rs| taps.iter().map(move |t| (rs.clone(), t))) {
                         casts += 1;
                         let mut dying = entered.clone();
+                        let mut after_entering = after_entering.clone();
+                        dying.get_object_mut(id).expect("on the battlefield").tapped = tapped;
+                        after_entering.permanents.get_mut(&spell).expect("on the battlefield").tapped = tapped;
+                        let after_entering = &after_entering;
                         for &r in &rs {
                             let e = if r == spell { id } else { r };
                             let lethal = dying.effective_toughness(e, &registry).expect("a creature").max(1);
@@ -4637,9 +4651,9 @@ fn every_readable_card_does_what_its_text_says() {
                         }
                         let what = match rs.as_slice() {
                             [r] if *r == spell => "dying".to_string(),
-                            _ => format!("seeing {} die", rs.iter()
+                            _ => format!("seeing {} die{}", rs.iter()
                                 .map(|r| after_entering.permanents[r].name.as_deref().unwrap_or("a token"))
-                                .collect::<Vec<_>>().join(" and ")),
+                                .collect::<Vec<_>>().join(" and "), if tapped { ", tapped" } else { "" }),
                         };
                         // Every way, and then each "you may" taken every
                         // time and declined every time.
@@ -5100,7 +5114,8 @@ fn every_turn_begins_as_its_text_says() {
     let (cards, _) = readable(&registry, &cache);
     let mut failures = Vec::new();
     let mut upkeeps = 0;
-    let keeps_tapped = |s: &Spec| s.statics.iter().any(|st| matches!(st, Static::Restricts { what, .. } if what.contains(&Restriction::DoesntUntap)));
+    let keeps_tapped = |s: &Spec| s.statics.iter().any(|st| matches!(st,
+        Static::Restricts { what, .. } | Static::RestrictsItself { what } if what.contains(&Restriction::DoesntUntap)));
     for (card, spec) in cards.iter().filter(|(_, s)| s.upkeep.is_some() || keeps_tapped(s)) {
         // The upkeep its text names, and the other player's, which it must
         // leave alone.
@@ -5124,7 +5139,11 @@ fn every_turn_begins_as_its_text_says() {
                 id
             } else {
                 let id = named_permanent(&mut state, &registry, &card.name, P0);
-                world.permanents.insert(id, model_of(spec, card, P0));
+                // A creature that keeps itself tapped, tapped, so that is
+                // what its text has to do.
+                let tapped = spec.statics.iter().any(|st| matches!(st, Static::RestrictsItself { what } if what.contains(&Restriction::DoesntUntap)));
+                state.get_object_mut(id).expect("just placed").tapped = tapped;
+                world.permanents.insert(id, Model { tapped, ..model_of(spec, card, P0) });
                 id
             };
             world.refresh();
@@ -5750,6 +5769,49 @@ fn fight(registry: &CardRegistry, state: &GameState, world: &World, a: ObjectId,
         failures.push(format!("{name}: {why}"));
     }
     (combats, failures)
+}
+
+/// Every creature the grammar reads that does not fight in the combat
+/// tests, its text having a trigger or an ability their reference does
+/// not play out, is still declared as its keywords and combat text say:
+/// offered as an attacker exactly when it may attack and required to
+/// exactly when it must (CR 508.1a, 508.1d), and offered as a blocker of
+/// Grizzly Bears exactly when it may block it (509.1a-b).
+#[test]
+fn every_creature_is_declared_as_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let backs = back_faces(&cards);
+    let fighting: Vec<&str> = fighters(&cards, &backs).iter().map(|(c, _)| c.name.as_str()).collect();
+    let bears = cards.iter().find(|(c, _)| c.name == "Grizzly Bears").expect("Grizzly Bears read");
+    let mut failures = Vec::new();
+    let mut checked = 0;
+    for (card, spec) in cards.iter().chain(&backs).filter(|(c, _)| c.has_type("Creature") && !fighting.contains(&c.name.as_str())) {
+        checked += 1;
+        let (state, world, a, _) = arena(&registry, (card, spec), None);
+        let asked = combat_questions(&state, &registry, a);
+        let am = &world.permanents[&a];
+        let may_attack = !has(am, Keyword::Defender) && !restricted(am, Restriction::CantAttack);
+        let must = may_attack && restricted(am, Restriction::AttacksEachCombat);
+        if asked.eligible.contains(&a) != may_attack {
+            failures.push(format!("{}: offered as an attacker {}, and its text says {may_attack}", card.name, asked.eligible.contains(&a)));
+        } else if asked.must_attack.contains(&a) != must {
+            failures.push(format!("{}: required to attack {}, and its text says {must}", card.name, asked.must_attack.contains(&a)));
+        }
+        // One that counts what its controller has may be 0/0 on that side,
+        // and gone before anyone blocks (CR 704.5f).
+        let (state, mut world, a, b) = arena(&registry, (&bears.0, &bears.1), Some((card, spec)));
+        world.state_based_actions();
+        let b = b.expect("a blocker");
+        let asked = combat_questions(&state, &registry, a);
+        let may = asked.blocks.is_some_and(|(legal, _)| legal.get(&b).is_some_and(|v| v.contains(&a)));
+        if may != world.permanents.get(&b).is_some_and(|bm| evasion_allows(&world.permanents[&a], bm)) {
+            failures.push(format!("{}: may block Grizzly Bears {may}, and its text says {}", card.name, !may));
+        }
+    }
+    assert!(checked > 0);
+    assert!(failures.is_empty(), "{} of {checked} creatures are declared against their text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
 /// Every creature the grammar reads whose text is keywords and combat text
