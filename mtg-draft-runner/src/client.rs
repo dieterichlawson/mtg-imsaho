@@ -24,7 +24,9 @@ Between games of a match: play or draw (when the choice is yours), the
 same add, drop and lands to sideboard (from game 2), and ready to start
 the game.
 text <n> prints a card's rules text: the pack's card <n> while drafting,
-the pool's card <n> while building or sideboarding.
+the pool's card <n> while building or sideboarding. text <name> reads a
+card by its name, or the start of it, from the pack, the pool or the
+last review, the cards passed over included.
 review prints every pack you were handed and what you took from it."
     };
 }
@@ -64,6 +66,9 @@ pub struct Build {
     /// built before the server read them carries an older record, which
     /// must not undo them (#815's review).
     in_flight: Vec<Value>,
+    /// The last `review` the server sent: its cards passed over are in no
+    /// pack and no pool, and `text <name>` reads them from here (#889).
+    review: Option<Value>,
 }
 
 /// How a client's session ended.
@@ -139,7 +144,10 @@ pub fn run(
                         }
                         view = Some(msg);
                     }
-                    Some("review") => out(&review_listing(&msg)),
+                    Some("review") => {
+                        out(&review_listing(&msg));
+                        build.review = Some(msg);
+                    }
                     // The host ended the table: said, and nothing to wait for
                     // (#824). The close frame follows.
                     Some("closed") => {
@@ -201,7 +209,7 @@ pub fn refresh_build(view: &Value, build: &mut Build, built_for_phase: &mut Stri
         let key = format!("between {} {}", m["round"], b["game"]);
         if key != *built_for_phase {
             if let Some(deck) = b["deck"].as_object() {
-                *build = build_from_view(view, deck);
+                *build = Build { review: build.review.take(), ..build_from_view(view, deck) };
             }
             *built_for_phase = key;
         }
@@ -226,7 +234,7 @@ pub fn refresh_build(view: &Value, build: &mut Build, built_for_phase: &mut Stri
     let differs = !same_deck(deck, &deck_message(view, build));
     if new_phase || (differs && (final_deck || build.in_flight.is_empty())) {
         let in_flight = if new_phase || final_deck { Vec::new() } else { std::mem::take(&mut build.in_flight) };
-        *build = build_from_view(view, deck);
+        *build = Build { review: build.review.take(), ..build_from_view(view, deck) };
         build.in_flight = in_flight;
     }
 }
@@ -374,7 +382,8 @@ pub fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Optio
         }
         "text" => {
             let Some(v) = view else { return Command::Print("no view yet".into()) };
-            Command::Print(card_text(v, words.get(1).copied()))
+            let arg = words[1..].join(" ");
+            Command::Print(card_text(v, (!arg.is_empty()).then_some(arg.as_str()), build.review.as_ref()))
         }
         "lands" => {
             let Some(v) = view else { return Command::Print("no view yet".into()) };
@@ -954,6 +963,31 @@ mod tests {
             "{}", review_listing(&comma));
     }
 
+    /// #889: a card the review shows as passed over is in no pack and no
+    /// pool, and `text <n>` could not reach it; `text <name>` reads it from
+    /// the last review, by its whole name or the start of it.
+    #[test]
+    fn text_reads_a_card_of_the_review_by_name() {
+        let v = serde_json::json!({"phase": "building", "pack": null,
+            "pool": [{"name": "Chapel Geist", "line": "Chapel Geist {1}{W}{W}", "text": "Flying"}]});
+        let review = serde_json::json!({"type": "review", "picks": [
+            {"round": 1, "pick": 1, "card": "Chapel Geist", "auto": false, "pack": [
+                {"name": "Chapel Geist", "line": "Chapel Geist {1}{W}{W}", "text": "Flying"},
+                {"name": "Grimgrin, Corpse-Born", "line": "Grimgrin, Corpse-Born {3}{U}{B}", "text": "Grimgrin enters tapped."},
+                {"name": "Moan of the Unhallowed", "line": "Moan of the Unhallowed {2}{B}{B}", "text": "Create two 2/2 black Zombie tokens."},
+                {"name": "Moon Heron", "line": "Moon Heron {3}{U}", "text": "Flying"}]}]});
+        let read = card_text(&v, Some("grimgrin, corpse-born"), Some(&review));
+        assert!(read.starts_with("Grimgrin, Corpse-Born {3}{U}{B}\nGrimgrin enters tapped."), "{read}");
+        let read = card_text(&v, Some("Moan"), Some(&review));
+        assert!(read.contains("Create two 2/2"), "{read}");
+        assert!(card_text(&v, Some("Mo"), Some(&review)).contains("could be Moan of the Unhallowed; Moon Heron"));
+        assert!(card_text(&v, Some("Moan"), None).starts_with("no card named Moan"));
+        // The pool's own card by name, and by number as before.
+        assert!(card_text(&v, Some("chapel geist"), None).ends_with("\nFlying"));
+        assert!(card_text(&v, Some("0"), None).ends_with("\nFlying"));
+        assert!(review_listing(&review).starts_with("your draft (text <name> reads any card here):\n"));
+    }
+
     /// The order a tie on points is broken by is printed beside the
     /// points, as the runner's standings print it.
     #[test]
@@ -1011,8 +1045,13 @@ fn pool_listing(v: &Value) -> String {
 /// the headline only, and the client had no way to read a card at all,
 /// where the page shows the text of the card under the cursor (#792).
 /// While drafting `n` is the pack's number for the card; otherwise the
-/// pool's.
-fn card_text(v: &Value, arg: Option<&str>) -> String {
+/// pool's. A name instead of a number reads the card by name from the
+/// pack, the pool or the last review, whose cards passed over could not be
+/// read at all (#889).
+fn card_text(v: &Value, arg: Option<&str>, review: Option<&Value>) -> String {
+    if let Some(name) = arg.filter(|a| a.parse::<usize>().is_err()) {
+        return card_by_name(v, review, name);
+    }
     // While drafting the pool is listed by counts, not numbers, so the only
     // numbers on screen are the pack's.
     if v["phase"].as_str() == Some("drafting") && !v["pack"].is_object() {
@@ -1035,6 +1074,32 @@ fn card_text(v: &Value, arg: Option<&str>) -> String {
     };
     let Some(card) = card else {
         return format!("no card {n}: text takes {what}");
+    };
+    let body = card["text"].as_str().filter(|t| !t.is_empty()).unwrap_or("(no rules text)");
+    format!("{}\n{body}", card["line"].as_str().unwrap_or("?"))
+}
+
+/// `text <name>`: the card of that name, or the one whose name starts with
+/// it, among the pack, the pool and the last review's packs.
+fn card_by_name(v: &Value, review: Option<&Value>, name: &str) -> String {
+    let mut cards: Vec<&Value> = v["pack"]["cards"].as_array().into_iter().flatten()
+        .chain(v["pool"].as_array().into_iter().flatten()).collect();
+    if let Some(r) = review {
+        cards.extend(r["picks"].as_array().into_iter().flatten()
+            .flat_map(|p| p["pack"].as_array().into_iter().flatten()));
+    }
+    let want = name.to_lowercase();
+    let named = |c: &&Value| c["name"].as_str().map(str::to_lowercase);
+    let exact = cards.iter().find(|c| named(c).as_deref() == Some(want.as_str()));
+    let mut starts: Vec<&str> = cards.iter().filter(|c| named(c).is_some_and(|n| n.starts_with(&want)))
+        .filter_map(|c| c["name"].as_str()).collect();
+    starts.sort_unstable();
+    starts.dedup();
+    let card = match (exact, starts.as_slice()) {
+        (Some(c), _) => *c,
+        (None, [one]) => cards.iter().find(|c| c["name"].as_str() == Some(*one)).copied().unwrap_or(&Value::Null),
+        (None, []) => return format!("no card named {name} in the pack, the pool or your last review"),
+        (None, many) => return format!("{name} could be {}: type more of the name", many.join("; ")),
     };
     let body = card["text"].as_str().filter(|t| !t.is_empty()).unwrap_or("(no rules text)");
     format!("{}\n{body}", card["line"].as_str().unwrap_or("?"))
@@ -1107,7 +1172,7 @@ pub fn review_listing(msg: &Value) -> String {
     if picks.is_empty() {
         return "no picks yet".to_string();
     }
-    let mut s = String::from("your draft:\n");
+    let mut s = String::from("your draft (text <name> reads any card here):\n");
     for p in &picks {
         if p["pick"] == 1 {
             s.push_str(&format!("Pack {}\n", p["round"]));
