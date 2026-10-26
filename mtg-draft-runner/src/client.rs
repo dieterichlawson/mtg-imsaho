@@ -951,8 +951,9 @@ mod tests {
         assert!(mine.contains("23 spells + 17 lands = 40 cards"), "{mine}");
         // The last line says the choice again, under the pool's rows,
         // where the line above them has scrolled off (#885's review).
-        let last = mine.trim_end().lines().last().unwrap_or("");
-        assert_eq!(last, "type ready to start game 2 (they are still deciding); type play or draw (not chosen yet: you play first)");
+        let last: Vec<&str> = mine.trim_end().lines().rev().take(2).collect();
+        assert_eq!(last, ["type ready to start game 2 (they are still deciding)", "type play or draw (not chosen yet: you play first)"]);
+        assert!(last.iter().all(|l| l.chars().count() <= 80), "{last:?}");
 
         let sent = |c: Command| match c { Command::Send(m) => m, Command::Print(p) => panic!("printed {p}"), _ => panic!("nothing") };
         let printed = |c: Command| match c { Command::Print(p) => p, _ => panic!("not printed") };
@@ -1268,13 +1269,14 @@ fn between_listing(v: &Value, m: &Value, b: &Value, build: &Build, who: &dyn Fn(
         // Under the pool, the choice is said again beside ready: printed
         // only above the pool's ~45 rows, it scrolled off an 80x24
         // terminal, as Ready sat under them on the page (#885's review).
+        // A line of its own: beside ready it was 103 columns (#885's review).
         let choice = match (b["sideboarding"] == true && b["you_choose"] == true, b["play_first"].as_bool()) {
-            (false, _) => String::new(),
-            (true, None) => "; type play or draw (not chosen yet: you play first)".to_string(),
-            (true, Some(true)) => "; you play first (draw to change it)".to_string(),
-            (true, Some(false)) => "; you draw first (play to change it)".to_string(),
+            (false, _) => "",
+            (true, None) => "type play or draw (not chosen yet: you play first)\n",
+            (true, Some(true)) => "you play first (type draw to change it)\n",
+            (true, Some(false)) => "you draw first (type play to change it)\n",
         };
-        format!("type ready to start game {game} ({them}){choice}\n")
+        format!("{choice}type ready to start game {game} ({them})\n")
     });
     s
 }
