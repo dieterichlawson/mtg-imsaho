@@ -361,6 +361,9 @@ enum Effect {
     PlayerDraws { slot: usize, n: usize },
     /// "~ deals X damage to <slot>" (CR 107.3).
     DamageX { slot: usize },
+    /// "Discard a card": one its controller chooses from their hand, as
+    /// it is then (CR 701.8a).
+    Discard { n: usize },
     /// "Regenerate this creature": a shield (CR 701.19a).
     Regenerate { slot: usize },
     /// "Transform this creature": it turns to its other face, unless it has
@@ -1221,6 +1224,11 @@ impl Spec {
             self.effects.push(Effect::DiscardAtRandom { n });
             return Some(());
         }
+        if let Some(n) = s.strip_prefix("Discard ") {
+            let n = number(n.strip_suffix(" cards").or_else(|| n.strip_suffix(" card"))?)? as usize;
+            self.effects.push(Effect::Discard { n });
+            return Some(());
+        }
         if s == "Exile it" {
             self.effects.push(Effect::ExileItFromGraveyard);
             return Some(());
@@ -1784,10 +1792,16 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
                 Some(r) => (true, r),
                 None => (false, rest),
             };
-            let mut chars = rest.chars();
-            let sentence: String = chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default();
             let mut trigger = Trigger { optional, ..Trigger::default() };
-            trigger.spec.sentence(&sentence).ok_or_else(unread)?;
+            for sentence in capitalized(rest).split_inclusive(". ") {
+                // "You may draw a card. If you do, discard a card": declining
+                // the "may" declines the rest with it.
+                let sentence = match sentence.strip_prefix("If you do, ").filter(|_| optional) {
+                    Some(then) => capitalized(then),
+                    None => sentence.to_string(),
+                };
+                trigger.spec.sentence(&sentence).ok_or_else(unread)?;
+            }
             spec.watch = Some(Box::new(Watch { dying: filter(who).ok_or_else(unread)?, trigger }));
             continue;
         }
@@ -2871,6 +2885,11 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
     // turn after a spell that left the caster nothing.
     spell_in_hand(&mut state, registry, "Island", P0);
     world.hand[0].push("Island".to_string());
+    // And a creature card the caster cannot cast from this board, so that a
+    // choice from the hand, or a discard that asks what was discarded, has
+    // something to tell apart.
+    spell_in_hand(&mut state, registry, "Grizzly Bears", P0);
+    world.hand[0].push("Grizzly Bears".to_string());
     for p in [P0, P1] {
         for name in LIBRARY {
             stock_library_with(&mut state, registry, p, name, 1);
@@ -3324,7 +3343,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     w.life[c] = t;
                 }
             }
-            Effect::DiscardAtRandom { .. } => {
+            Effect::DiscardAtRandom { .. } | Effect::Discard { .. } => {
                 for name in &world.discarded {
                     let at = w.hand[c].iter().position(|h| h == name).expect("a card in hand");
                     let card = w.hand[c].remove(at);
@@ -3652,8 +3671,8 @@ fn random_choices(spec: &Spec, world: &World, caster: PlayerId) -> Vec<World> {
     for effect in &spec.effects {
         match effect {
             Effect::Draw { n } => drawn += n,
-            Effect::DiscardAtRandom { n } => {
-                assert_eq!(*n, 1, "the reference discards one card at random");
+            Effect::DiscardAtRandom { n } | Effect::Discard { n } => {
+                assert_eq!(*n, 1, "the reference discards one card");
                 let mut hand: Vec<String> = world.hand[c].iter().chain(world.library[c].iter().take(drawn)).cloned().collect();
                 hand.sort();
                 hand.dedup();
@@ -3741,7 +3760,7 @@ fn resolution_ways(spec: &Spec, world: &World, targets: &[Target], caster: Playe
 fn asks_as_it_resolves(spec: &Spec) -> bool {
     is_random(spec) || spec.effects.iter().any(|e| matches!(e,
         Effect::SacrificeOfTheirChoice { .. } | Effect::EachPlayerChoosesACreature | Effect::SearchForBasicLand { .. }
-        | Effect::PlayerExilesFromGraveyard { .. }))
+        | Effect::PlayerExilesFromGraveyard { .. } | Effect::Discard { .. }))
 }
 
 /// Whether `spec` does something at random.
@@ -4000,11 +4019,22 @@ fn triggers_outcomes(triggers: &[&Trigger], world: &World, caster: PlayerId) -> 
             for (k, &i) in order.iter().enumerate().rev() {
                 let Some(targets) = &chosen[k] else { continue };
                 let trigger = triggers[i];
+                // Each with every way it can resolve, on the board the
+                // ones before it left: a discard chooses from the hand as
+                // it is by then.
                 worlds = worlds.into_iter()
                     .flat_map(|w| {
-                        let mut after = apply(&trigger.spec, &w, targets, caster);
-                        after.state_based_actions();
-                        if trigger.optional { vec![after, w] } else { vec![after] }
+                        let mut out: Vec<World> = resolution_ways(&trigger.spec, &w, targets, caster).iter()
+                            .map(|way| {
+                                let mut after = apply(&trigger.spec, way, targets, caster);
+                                after.state_based_actions();
+                                after
+                            })
+                            .collect();
+                        if trigger.optional {
+                            out.push(w);
+                        }
+                        out
                     })
                     .collect();
             }
@@ -4143,6 +4173,8 @@ enum Answer {
     X(u32),
     /// The card a search finds, or none (CR 701.19b).
     Found(Option<ObjectId>),
+    /// A card chosen from a hand, as a discard is.
+    Card(ObjectId),
 }
 
 /// A combat to declare: who attacks whom, and who blocks whom.
@@ -4261,6 +4293,19 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
                     }
                     None => {
                         unanswered = Some(vec![Answer::YesNo(true), Answer::YesNo(false)]);
+                        Action::AbandonGame
+                    }
+                };
+            }
+            Some(ResolutionChoiceKind::ChooseCardFromHand { cards, .. }) => {
+                return match script.next() {
+                    Some(Answer::Card(id)) => Action::ResolveChoice { choice: ResolvedChoice::ChosenCard(*id) },
+                    Some(other) => {
+                        trouble = Some(format!("the script answers {other:?} to a choice from a hand"));
+                        Action::AbandonGame
+                    }
+                    None => {
+                        unanswered = Some(cards.iter().map(|c| Answer::Card(*c)).collect());
                         Action::AbandonGame
                     }
                 };
@@ -4490,9 +4535,9 @@ const READ: &[&str] = &[
     "Manor Skeleton", "Markov Patrician", "Mask of Avacyn", "Mausoleum Guard",
     "Maw of the Mire", "Mayor of Avabruck", "Midnight Haunting", "Moan of the Unhallowed",
     "Moldgraf Monstrosity", "Moment of Heroism", "Moon Heron", "Moorland Haunt",
-    "Morkrut Banshee", "Mountain", "Naturalize", "Nephalia Drownyard", "Night Revelers",
-    "Olivia Voldaren", "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism", "Paraselene",
-    "Pitchburn Devils", "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower",
+    "Morkrut Banshee", "Mountain", "Murder of Crows", "Naturalize", "Nephalia Drownyard",
+    "Night Revelers", "Olivia Voldaren", "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism",
+    "Paraselene", "Pitchburn Devils", "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower",
     "Rakish Heir", "Rally the Peasants", "Ranger's Guile", "Reaper from the Abyss", "Rebuke",
     "Reckless Waif", "Riot Devils", "Rolling Temblor", "Rotting Fensnake", "Runechanter's Pike",
     "Savannah Lions", "Scourge of Geier Reach", "Selfless Cathar", "Selhoff Occultist",
@@ -4585,7 +4630,17 @@ fn every_readable_card_does_what_its_text_says() {
         let counters = spec.slots.iter().any(|s| matches!(s, Slot::Spell(_)));
         for &(which, build) in boards {
             let (mut state, mut world) = build(&registry, &cache);
-            let spell = spell_in_hand(&mut state, &registry, &card.name, P0);
+            // A card of that name already in the caster's hand is the one
+            // cast: the engine offers one cast for copies of an untargeted
+            // spell.
+            let spell = match state.objects.values().find(|o| o.zone == Zone::Hand && o.owner == P0 && o.name == card.name) {
+                Some(o) => {
+                    let at = world.hand[0].iter().position(|h| *h == card.name).expect("in the reference's hand too");
+                    world.hand[0].remove(at);
+                    o.id
+                }
+                None => spell_in_hand(&mut state, &registry, &card.name, P0),
+            };
             let cost = mana_cost(&card.mana_cost).expect("read above");
             let creatures = u32::try_from(world.permanents.values().filter(|m| m.is_creature()).count()).expect("a few");
             fund(&mut state, P0, &cost, if spec.cheaper_per_creature { creatures } else { 0 });
@@ -6442,7 +6497,9 @@ fn the_grammar_reads_its_templates() {
         vec![Effect::Draw { n: 2 }, Effect::DiscardAtRandom { n: 1 }]);
     assert_eq!(read(&card("X", "Return two cards at random from your graveyard to your hand.")).unwrap().effects,
         vec![Effect::ReturnAtRandom { n: 2, filter: None, to_battlefield: false }]);
-    assert!(read(&card("X", "Draw two cards, then discard a card.")).is_err(), "a discard of the player's choice is not read");
+    assert_eq!(read(&card("X", "Draw two cards, then discard a card.")).unwrap().effects,
+        vec![Effect::Draw { n: 2 }, Effect::Discard { n: 1 }]);
 }
+
 
 
