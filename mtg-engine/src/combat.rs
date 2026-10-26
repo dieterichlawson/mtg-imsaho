@@ -110,63 +110,69 @@ pub fn declare_blockers_with_registry(
     // that are actually attacking may be blocked (CR 509.1a). In a two-player
     // game the defender is the non-active player.
     let defender = state.opponent(state.active_player);
-    let mut valid: Vec<(ObjectId, ObjectId)> = Vec::new();
-    for &(blocker, attacker) in assignments {
-        // The same pair submitted twice is one block, not two (seen from a
-        // pasted line of repeated pairs — issue #50).
-        if valid.contains(&(blocker, attacker)) {
-            continue;
-        }
-        // CR 509.1b: a creature can block only one attacker. No card in this
-        // set lifts that (there is no "can block an additional creature"
-        // effect in the engine), so a blocker already spoken for refuses any
-        // further assignment — without this, one blocker blocked two
-        // attackers and dealt its full power to each (issue #62).
-        if let Some(&(_, first)) = valid.iter().find(|&&(b, _)| b == blocker) {
-            state.log(crate::state::LogLevel::Info, format!(
-                "ignored illegal block: {} is already blocking {} and can block \
-                 only one attacker (CR 509.1b)",
-                state.obj_name(blocker), state.obj_name(first)));
-            continue;
-        }
-        let is_attacking = state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&attacker));
+
+    // Which pairs stand is proved in `mtg_kernel::blocks::judge_blocks`:
+    // what it accepts is a legal declaration (CR 509.1a-b), and a legal
+    // submission is accepted whole. Here the board is read into its terms,
+    // each distinct blocker and attacker numbered in order of first mention.
+    let mut blockers: Vec<ObjectId> = Vec::new();
+    let mut attackers: Vec<ObjectId> = Vec::new();
+    let index = |list: &mut Vec<ObjectId>, id: ObjectId| -> usize {
+        list.iter().position(|&x| x == id).unwrap_or_else(|| { list.push(id); list.len() - 1 })
+    };
+    let pairs: Vec<(usize, usize)> = assignments.iter()
+        .map(|&(b, a)| (index(&mut blockers, b), index(&mut attackers, a)))
+        .collect();
+    let legal: Vec<Vec<bool>> = blockers.iter().map(|&blocker| {
         let defenders_creature = state.get_object(blocker).is_some_and(|o| o.controller == defender);
-        if is_attacking && defenders_creature && can_block_attacker(state, blocker, attacker, registry) {
-            valid.push((blocker, attacker));
-        } else {
-            // A submitted pair the rules refuse (CR 509.1) is dropped — but
-            // never silently: a block that vanishes without a trace cost
-            // real games before the log said anything (issue #40). The
-            // prompt's `legal_blocks` is the up-front source of truth; this
-            // line is the audit trail for anything that slips past it.
-            state.log(crate::state::LogLevel::Info, format!(
+        attackers.iter().map(|&attacker| {
+            let is_attacking = state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&attacker));
+            is_attacking && defenders_creature && can_block_attacker(state, blocker, attacker, registry)
+        }).collect()
+    }).collect();
+    let minimum: Vec<u32> = attackers.iter().map(|&a| minimum_blockers(state, a, registry)).collect();
+    let verdicts = mtg_kernel::blocks::judge_blocks(&pairs, &legal, &minimum);
+
+    // Every pair the rules refuse is dropped — but never silently: a block
+    // that vanishes without a trace cost real games before the log said
+    // anything (issues #40, #72). The prompt's `legal_blocks` and
+    // `min_blockers` are the up-front source of truth; these lines are the
+    // audit trail for anything that slips past them.
+    use mtg_kernel::blocks::Verdict;
+    let mut valid: Vec<(ObjectId, ObjectId)> = Vec::new();
+    for (k, &(blocker, attacker)) in assignments.iter().enumerate() {
+        match verdicts[k] {
+            Verdict::Accepted => valid.push((blocker, attacker)),
+            // The same pair submitted twice is one block, not two (seen
+            // from a pasted line of repeated pairs — issue #50).
+            Verdict::Duplicate => {}
+            // CR 509.1b: a creature can block only one attacker. No card in
+            // this set lifts that, so a blocker already spoken for refuses
+            // any further assignment — without this, one blocker blocked two
+            // attackers and dealt its full power to each (issue #62).
+            Verdict::BlockerTaken => {
+                let first = assignments[..k].iter().zip(&verdicts)
+                    .find(|(&(b, _), v)| b == blocker && !matches!(v, Verdict::Illegal | Verdict::BlockerTaken))
+                    .map_or(attacker, |(&(_, a), _)| a);
+                state.log(crate::state::LogLevel::Info, format!(
+                    "ignored illegal block: {} is already blocking {} and can block \
+                     only one attacker (CR 509.1b)",
+                    state.obj_name(blocker), state.obj_name(first)));
+            }
+            Verdict::Illegal => state.log(crate::state::LogLevel::Info, format!(
                 "ignored illegal block: {} can't block {}",
-                state.obj_name(blocker), state.obj_name(attacker)));
+                state.obj_name(blocker), state.obj_name(attacker))),
+            Verdict::UnderMinimum => {
+                let a = pairs[k].1;
+                let blocked = pairs.iter().zip(&verdicts)
+                    .filter(|(p, v)| p.1 == a && matches!(v, Verdict::Accepted | Verdict::UnderMinimum))
+                    .count();
+                state.log(crate::state::LogLevel::Info, format!(
+                    "ignored illegal block: {} blocking {} — it can't be blocked by \
+                     fewer than {} creatures (CR 509.1b), and only {} blocked it",
+                    state.obj_name(blocker), state.obj_name(attacker), minimum[a], blocked));
+            }
         }
-    }
-
-    // Minimum blocker enforcement: for attackers with menace or MinimumBlockers
-    // effects, verify they have enough blockers. If not, remove the block
-    // assignments for that attacker (can't be blocked by fewer than N creatures).
-    let mut blocker_counts: std::collections::HashMap<ObjectId, usize> = std::collections::HashMap::new();
-    for &(_, attacker) in &valid {
-        *blocker_counts.entry(attacker).or_insert(0) += 1;
-    }
-
-    // The same never-silently rule as the per-pairing filter above: a
-    // dropped under-minimum block turned "Bears blocks Terror" into
-    // "declared no blockers" with no trace, and the defender ate 10 damage
-    // without ever learning why (issue #72). The prompt's `min_blockers`
-    // is the up-front source of truth; this line is the audit trail.
-    let (valid, dropped) = partition_under_minimum_blocks(
-        &valid, |attacker| minimum_blockers(state, attacker, registry));
-    for (blocker, attacker) in dropped {
-        let min = minimum_blockers(state, attacker, registry);
-        state.log(crate::state::LogLevel::Info, format!(
-            "ignored illegal block: {} blocking {} — it can't be blocked by \
-             fewer than {} creatures (CR 509.1b), and only {} blocked it",
-            state.obj_name(blocker), state.obj_name(attacker), min,
-            blocker_counts.get(&attacker).copied().unwrap_or(0)));
     }
 
     declare_blockers(state, &valid);
