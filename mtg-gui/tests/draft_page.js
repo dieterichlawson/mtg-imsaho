@@ -714,6 +714,21 @@ async function main() {
         check((await page.$$eval("#review h4", els => els.map(e => e.textContent))).join(",") === "Pack 1,Pack 2", `${tag}: by pack`);
         const o = await overflow();
         check(o.scrollW <= o.clientW, `${tag}: the review fits sideways (${o.scrollW} <= ${o.clientW})`);
+        // Every card of the review reads by a tap, the taken one and the
+        // rest, at a phone's width too: a hover tooltip was the only
+        // reading, and only of the taken card (#889).
+        const readOf = () => page.$$eval("#review .review-detail", els => els.map(e => e.textContent));
+        await page.click('#review [data-review-card="1.1:2"]');
+        await page.waitForTimeout(50);
+        let read = await readOf();
+        check(read.length === 1 && read[0].includes("Moan of the Unhallowed text"), `${tag}: a tap on a card passed over reads it (${JSON.stringify(read)})`);
+        await page.click('#review [data-review-card="2.1:0"]');
+        await page.waitForTimeout(50);
+        read = await readOf();
+        check(read.length === 1 && read[0].includes("Brimstone Volley text"), `${tag}: a tap on a taken card reads it instead (${JSON.stringify(read)})`);
+        await page.click('#review [data-review-card="2.1:0"]');
+        await page.waitForTimeout(50);
+        check((await readOf()).length === 0, `${tag}: a second tap closes it`);
         await page.click("#review-toggle");
       }
 

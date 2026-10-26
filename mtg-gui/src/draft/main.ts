@@ -359,6 +359,10 @@ const actions: Actions = {
     if (state.reviewOpen) send({ type: "review" });
     draw();
   },
+  readReview(key: string) {
+    state.reviewRead = state.reviewRead === key ? null : key;
+    draw();
+  },
   dismiss() { state.refusal = null; draw(); },
   dismissNotice() { state.notice = null; draw(); },
 };

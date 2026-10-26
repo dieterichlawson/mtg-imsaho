@@ -345,10 +345,23 @@ function reviewSection(state, actions) {
                 parts.push(h("h4", { text: `Pack ${round}` }));
                 // Unnumbered: each row begins with its pick ("3.4"), and an ordered
                 // list put a second counter before it ("4. 3.4 Rage Thrower", #889).
+                // Every card in a row is a button that reads it in place, under the
+                // row: a hover tooltip was the only reading, and a phone has no
+                // hover (#889).
                 parts.push(h("ul", { class: "review-list" }, ...picks.map(p => {
-                    const taken = p.pack.find(c => c.name === p.card);
-                    const rest = p.pack.filter(c => c !== taken).map(c => c.name);
-                    return h("li", { "data-pick": `${p.round}.${p.pick}` }, h("span", { class: "review-pick", title: taken ? taken.text : "", text: `${p.round}.${p.pick} ${p.card}` }), p.auto ? h("span", { class: "muted", text: " (the table's pick)" }) : null, rest.length ? h("span", { class: "muted review-rest", text: ` — over ${rest.join(", ")}` }) : null);
+                    const at = `${p.round}.${p.pick}`;
+                    const takenAt = p.pack.findIndex(c => c.name === p.card);
+                    const card = (i) => {
+                        const key = `${at}:${i}`;
+                        return h("button", { type: "button", class: `review-card${state.reviewRead === key ? " reading" : ""}`, "data-review-card": key,
+                            onclick: () => actions.readReview(key) }, p.pack[i].name);
+                    };
+                    const rest = p.pack.map((_, i) => i).filter(i => i !== takenAt);
+                    const over = [];
+                    rest.forEach((i, n) => { if (n > 0)
+                        over.push(", "); over.push(card(i)); });
+                    const read = state.reviewRead !== null && state.reviewRead.startsWith(`${at}:`) ? p.pack[Number(state.reviewRead.slice(at.length + 1))] : undefined;
+                    return h("li", { "data-pick": at }, h("span", { class: "review-pick" }, `${at} `, takenAt >= 0 ? card(takenAt) : p.card), p.auto ? h("span", { class: "muted", text: " (the table's pick)" }) : null, rest.length ? h("span", { class: "muted review-rest" }, " — over ", ...over) : null, read ? h("div", { class: "detail review-detail" }, cardDetail(read)) : null);
                 })));
             }
         }
