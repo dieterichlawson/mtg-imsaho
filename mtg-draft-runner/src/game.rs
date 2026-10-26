@@ -389,6 +389,26 @@ pub fn play_match(
     }
 }
 
+/// What each seat showed its opponent: its cards (not tokens) that were
+/// public when the game ended, by the card's name. An object's `name` is
+/// the face it shows, so a transformed Grizzled Outcasts was recorded as
+/// "Krallenhorde Wantons", a name the card lines do not know, and the AI
+/// seat's sideboard prompt listed it bare, with no cost, type or front
+/// face (#908).
+fn shown_cards(state: &mtg_engine::state::GameState, registry: &CardRegistry) -> [Vec<String>; 2] {
+    [PlayerId(0), PlayerId(1)].map(|p| {
+        let mut cards: Vec<String> = state.objects.values()
+            .filter(|o| o.owner == p && !o.is_token)
+            .filter(|o| matches!(o.zone, Zone::Battlefield | Zone::Graveyard | Zone::Exile | Zone::Stack))
+            .map(|o| registry.card_data(o.card_id).map_or_else(|| o.name.clone(), |c| c.name))
+            .map(|name| mtg_draft::front_face(&name).to_string())
+            .collect();
+        cards.sort();
+        cards.dedup();
+        cards
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn play_game(
     a: &mut MatchSeat,
@@ -603,18 +623,7 @@ fn play_game(
         .map(|entry| entry.message.clone())
         .collect();
 
-    // What each seat showed its opponent: its cards (not tokens) that were
-    // public when the game ended.
-    let showed = [PlayerId(0), PlayerId(1)].map(|p| {
-        let mut cards: Vec<String> = state.objects.values()
-            .filter(|o| o.owner == p && !o.is_token)
-            .filter(|o| matches!(o.zone, Zone::Battlefield | Zone::Graveyard | Zone::Exile | Zone::Stack))
-            .map(|o| mtg_draft::front_face(&o.name).to_string())
-            .collect();
-        cards.sort();
-        cards.dedup();
-        cards
-    });
+    let showed = shown_cards(&state, registry);
 
     (GameOutcome {
         winner,
@@ -805,5 +814,30 @@ mod harness_stop_tests {
             " [2 games forfeited: no game page for seat 0]");
         assert_eq!(unplayed_games_note(&[game(Some(0), false), unplayed("the seat is away")]),
             " [1 game forfeited: a seat stalled] [1 game forfeited: the seat is away]");
+    }
+}
+
+#[cfg(test)]
+mod shown_cards_tests {
+    use super::shown_cards;
+    use mtg_engine::cards::CardRegistry;
+    use mtg_engine::ids::PlayerId;
+    use mtg_engine::state::GameState;
+    use mtg_engine::types::Zone;
+
+    /// #908: a transformed card is shown by its card's name, which the card
+    /// lines know, not by the back face it shows ("Krallenhorde Wantons").
+    #[test]
+    fn a_transformed_card_is_shown_by_its_front_face() {
+        let registry = CardRegistry::with_all_cards();
+        let mut state = GameState::new(2);
+        let outcasts = registry.get_id_by_name("Grizzled Outcasts").expect("Grizzled Outcasts");
+        let id = state.create_object(outcasts, PlayerId(1), Zone::Battlefield, Some(4), Some(4));
+        let obj = state.get_object_mut(id).unwrap();
+        obj.name = "Krallenhorde Wantons".to_string();
+        obj.is_transformed = true;
+        let hidden = state.create_object(outcasts, PlayerId(1), Zone::Hand, Some(4), Some(4));
+        state.get_object_mut(hidden).unwrap().name = "Grizzled Outcasts".to_string();
+        assert_eq!(shown_cards(&state, &registry), [Vec::<String>::new(), vec!["Grizzled Outcasts".to_string()]]);
     }
 }
