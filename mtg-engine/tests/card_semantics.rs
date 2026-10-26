@@ -320,6 +320,9 @@ enum Effect {
     MillEach { n: usize },
     /// "Put a +1/+1 counter on each <filter>".
     PlusCountersEach { filter: Filter },
+    /// "~ deals damage equal to the exiled card's power to <slot>": the
+    /// card exiled to pay for it (CR 601.2h, 608.2h).
+    DamageEqualToExiledPower { slot: usize },
 }
 
 /// A card's text, read.
@@ -365,11 +368,37 @@ struct Spec {
     land: Option<(Vec<ManaType>, Option<Vec<String>>)>,
     /// Activated abilities other than mana abilities (CR 602).
     activated: Vec<Activated>,
+    /// "As an additional cost to cast this spell, sacrifice a creature" or
+    /// "exile N creature cards from your graveyard" (CR 601.2b, 601.2h).
+    additional: Option<Additional>,
+    /// "~'s power and toughness are each equal to the number of creature
+    /// cards in your graveyard" (CR 604.3).
+    pt_is_creature_cards: bool,
     /// A werewolf: "At the beginning of each upkeep, if no spells were cast
     /// last turn, transform this creature", and on its back face, whose
     /// text is read too, "... if a player cast two or more spells last
     /// turn, transform this creature" (CR 603.4, 701.27, 712).
     werewolf: bool,
+}
+
+/// An additional cost to cast a spell.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Additional {
+    SacrificeCreature,
+    ExileCreatureCards(usize),
+}
+
+impl Additional {
+    fn read(line: &str) -> Option<Additional> {
+        let rest = line.strip_prefix("As an additional cost to cast this spell, ")?.strip_suffix('.')?;
+        if rest == "sacrifice a creature" {
+            return Some(Additional::SacrificeCreature);
+        }
+        let n = rest.strip_prefix("exile ")?
+            .strip_suffix(" creature card from your graveyard")
+            .or_else(|| rest.strip_prefix("exile ")?.strip_suffix(" creature cards from your graveyard"))?;
+        Some(Additional::ExileCreatureCards(number(n)? as usize))
+    }
 }
 
 /// "<cost>: <effect>" (CR 602.1).
@@ -579,6 +608,12 @@ impl Spec {
         // "another target creature" is a target that is another creature.
         let s = s.replace("another target ", "target another ");
         let s = s.trim().strip_suffix('.')?;
+        if let Some(to) = s.strip_prefix("~ deals damage equal to the exiled card's power to ") {
+            let f = filter(to.strip_prefix("target ")?)?;
+            let slot = self.slot(Slot::Permanent(f));
+            self.effects.push(Effect::DamageEqualToExiledPower { slot });
+            return Some(());
+        }
         // The ability's source ("This creature gets +2/+0 until end of
         // turn", "Return this creature to its owner's hand").
         for this in ["This creature ", "This land ", "This artifact "] {
@@ -850,6 +885,10 @@ fn read(card: &Printed) -> Result<Spec, String> {
         if line.starts_with("Flashback {") {
             continue;
         }
+        if let Some(cost) = Additional::read(line) {
+            spec.additional = Some(cost);
+            continue;
+        }
         // An alternative cost (CR 118.9); the cast checked here pays the
         // mana cost.
         if line == "If it's not your turn, you may exile a blue card from your hand rather than pay this spell's mana cost." {
@@ -900,6 +939,14 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
         }
         if line == "~'s power and toughness are each equal to the number of creatures you control." {
             spec.pt_is_creatures_you_control = true;
+            continue;
+        }
+        if line == "~'s power and toughness are each equal to the number of creature cards in your graveyard." {
+            spec.pt_is_creature_cards = true;
+            continue;
+        }
+        if let Some(cost) = Additional::read(line) {
+            spec.additional = Some(cost);
             continue;
         }
         if let Some(rest) = line.strip_prefix("When this creature dies, ") {
@@ -1124,10 +1171,13 @@ const BOARD: [(&str, PlayerId); 14] = [
     ("Burning Vengeance", P1),
 ];
 
-/// What is in each graveyard to begin with: a creature card and something
-/// else on each side, for what targets or counts cards there.
-const GRAVEYARDS: [(&str, PlayerId); 4] = [
+/// What is in each graveyard to begin with, for what targets, counts or
+/// exiles cards there: three creature cards of different powers and an
+/// instant on the caster's side, a creature card and a land on the other.
+const GRAVEYARDS: [(&str, PlayerId); 6] = [
     ("Walking Corpse", P0),
+    ("Kalonian Tusker", P0),
+    ("Chapel Geist", P0),
     ("Think Twice", P0),
     ("Grizzly Bears", P1),
     ("Forest", P1),
@@ -1218,6 +1268,9 @@ struct Model {
     transformed: bool,
     /// Dealt damage by a source with deathtouch (CR 702.2b).
     deathtouched: bool,
+    /// Power and toughness are the number of creature cards in its
+    /// controller's graveyard, counted when observed (CR 604.3).
+    counts_creature_cards: bool,
 }
 
 impl Model {
@@ -1241,6 +1294,7 @@ impl Model {
             other_face: None,
             transformed: false,
             deathtouched: false,
+            counts_creature_cards: false,
         }
     }
 
@@ -1314,6 +1368,8 @@ struct World {
     stack: Vec<(ObjectId, Model)>,
     /// The permanent whose ability is being read, which "another" excludes.
     source: Option<ObjectId>,
+    /// The cards exiled to pay the spell's additional cost.
+    cost_exiled: Vec<Model>,
     /// Permanents the reference has no engine id for: tokens, and the
     /// permanent a creature spell becomes.
     tokens: Vec<Model>,
@@ -1394,6 +1450,11 @@ impl World {
                 let mut seen = seen(m);
                 if m.counts_creatures {
                     let n = i32::try_from(all.iter().filter(|o| o.is_creature() && o.controller == m.controller).count()).expect("a few");
+                    seen.power = Some(n);
+                    seen.toughness = Some(n);
+                }
+                if m.counts_creature_cards {
+                    let n = i32::try_from(self.creature_cards_in_graveyard(m.controller)).expect("a few");
                     seen.power = Some(n);
                     seen.toughness = Some(n);
                 }
@@ -1491,6 +1552,7 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
         a_creature_died: false,
         stack: Vec::new(),
         source: None,
+        cost_exiled: Vec::new(),
         tokens: Vec::new(),
         life: [20, 20],
         hand: [Vec::new(), Vec::new()],
@@ -1823,6 +1885,12 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     w.permanents.insert(object(*slot).expect("just read"), m);
                 }
             }
+            Effect::DamageEqualToExiledPower { slot } => {
+                let n: u32 = w.cost_exiled.iter().map(|m| u32::try_from(m.power.unwrap_or(0).max(0)).expect("non-negative")).sum();
+                if let Some(m) = object(*slot).and_then(|id| w.permanents.get_mut(&id)) {
+                    m.damage += n;
+                }
+            }
             Effect::MillEach { n } => {
                 for p in 0..2 {
                     for _ in 0..*n {
@@ -1917,6 +1985,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                         other_face: None,
                         transformed: false,
                         deathtouched: false,
+                        counts_creature_cards: false,
                     });
                 }
             }
@@ -1928,6 +1997,61 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 let last = w.permanents.get(&id).or_else(|| world.permanents.get(&id)).expect("on the board");
                 let gain = last.power.unwrap_or(0);
                 w.life[last.controller.0 as usize] += gain;
+            }
+        }
+    }
+    w
+}
+
+/// A way to pay a spell's additional cost: the creature sacrificed, or the
+/// cards exiled.
+#[derive(Debug, Clone, PartialEq)]
+enum Payment {
+    Sacrifice(ObjectId),
+    Exile(Vec<ObjectId>),
+}
+
+/// Every way `caster` can pay `spec`'s additional cost on `world` (CR
+/// 601.2h): any creature they control, or any set of the right number of
+/// creature cards in their graveyard. One empty payment when there is no
+/// additional cost; none at all when it cannot be paid, and then the spell
+/// cannot be cast (601.2h, 601.3).
+fn payments(spec: &Spec, world: &World, caster: PlayerId) -> Vec<Option<Payment>> {
+    match spec.additional {
+        None => vec![None],
+        Some(Additional::SacrificeCreature) => world.permanents.iter()
+            .filter(|(_, m)| m.controller == caster && m.is_creature())
+            .map(|(id, _)| Some(Payment::Sacrifice(*id)))
+            .collect(),
+        Some(Additional::ExileCreatureCards(n)) => {
+            let cards: Vec<Target> = world.yard.iter()
+                .filter(|(_, m)| m.owner == caster && m.is_creature())
+                .map(|(id, _)| Target::Object(*id))
+                .collect();
+            subsets(&cards, n).into_iter()
+                .filter(|s| s.len() == n)
+                .map(|s| Some(Payment::Exile(s.iter().map(|t| match t { Target::Object(id) => *id, _ => unreachable!() }).collect())))
+                .collect()
+        }
+    }
+}
+
+/// `world` with `payment` made: a sacrificed creature put into its
+/// owner's graveyard, as a creature dying (CR 701.21a, 700.4); exiled cards
+/// moved to exile, remembered for what the spell says of them.
+fn pay(world: &World, payment: &Option<Payment>) -> World {
+    let mut w = world.clone();
+    match payment {
+        None => {}
+        Some(Payment::Sacrifice(id)) => {
+            w.leave(*id, Dest::Graveyard);
+            w.a_creature_died = true;
+        }
+        Some(Payment::Exile(ids)) => {
+            for id in ids {
+                let m = w.leave_yard(*id).expect("a card in the graveyard");
+                w.exile[m.owner.0 as usize].push(m.name.clone().expect("a card"));
+                w.cost_exiled.push(m);
             }
         }
     }
@@ -1991,6 +2115,7 @@ fn creature_outcomes(spec: &Spec, world: &World, caster: PlayerId, card: &Printe
         controller: caster,
         tapped: spec.enters_tapped,
         counts_creatures: spec.pt_is_creatures_you_control,
+        counts_creature_cards: spec.pt_is_creature_cards,
         ..Model::printed(card, caster)
     };
     if let (Some(n), true) = (spec.enters_with_counters_if_morbid, world.a_creature_died) {
@@ -2116,6 +2241,8 @@ enum Answer {
     YesNo(bool),
     /// An option by its place, as a combat damage assignment is answered.
     Index(usize, String),
+    /// The cards exiled to pay a cost.
+    Exile(Vec<ObjectId>),
 }
 
 /// A combat to declare: who attacks whom, and who blocks whom.
@@ -2212,6 +2339,23 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
                     }
                 };
             }
+            Some(ResolutionChoiceKind::ChooseExileFromGraveyard { options, min, max, .. }) => {
+                return match script.next() {
+                    Some(Answer::Exile(ids)) => Action::ResolveChoice { choice: ResolvedChoice::ChosenExileSet(ids.clone()) },
+                    Some(other) => {
+                        trouble = Some(format!("the script answers {other:?} to an exile cost"));
+                        Action::AbandonGame
+                    }
+                    None => {
+                        let as_targets: Vec<Target> = options.iter().map(|id| Target::Object(*id)).collect();
+                        unanswered = Some(subsets(&as_targets, *max).into_iter()
+                            .filter(|s| s.len() >= *min)
+                            .map(|s| Answer::Exile(s.iter().map(|t| match t { Target::Object(id) => *id, _ => unreachable!() }).collect()))
+                            .collect());
+                        Action::AbandonGame
+                    }
+                };
+            }
             Some(ResolutionChoiceKind::AssignCombatDamage { options, .. }) => {
                 return match script.next() {
                     Some(Answer::Index(i, label)) => Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(*i, label.clone()) },
@@ -2261,13 +2405,18 @@ fn cast_and_let_resolve(state: &GameState, registry: &CardRegistry, spell: Objec
 /// Every game the cast can end in: each question asked after it answered
 /// every way the engine allows, replayed from the start for each branch.
 fn every_ending(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>) -> Result<Vec<GameState>, String> {
+    every_ending_from(state, registry, spell, None)
+}
+
+/// [`every_ending`], starting with `first` when it is given.
+fn every_ending_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>, first: Option<Action>) -> Result<Vec<GameState>, String> {
     let mut todo: Vec<Vec<Answer>> = vec![Vec::new()];
     let mut done = Vec::new();
     while let Some(script) = todo.pop() {
         if done.len() + todo.len() > 500 {
             return Err("more than 500 ways to answer".to_string());
         }
-        match play(state, registry, spell, Vec::new(), &script)? {
+        match play_from(state, registry, spell, Vec::new(), first.clone(), None, &script)? {
             Played::Done(s) => done.push(*s),
             Played::Asks(options) => todo.extend(options.into_iter().map(|o| [script.clone(), vec![o]].concat())),
         }
@@ -2310,31 +2459,32 @@ fn readable(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (Vec<
 /// and names it, so coverage is never lost without someone deciding to
 /// lose it.
 const READ: &[&str] = &[
-    "Abbey Griffin", "Ambush Viper", "Ancient Grudge", "Armored Skaab", "Army of the Damned",
-    "Avacynian Priest", "Blasphemous Act", "Bramblecrush", "Brimstone Volley",
-    "Bump in the Night", "Chapel Geist", "Clifftop Retreat", "Coral Merfolk", "Counterspell",
-    "Curse of Death's Hold", "Darkthicket Wolf", "Dead Weight", "Diregraf Ghoul", "Dissipate",
-    "Divination", "Doom Blade", "Doomed Traveler", "Dream Twist", "Feeling of Dread",
-    "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab", "Gatstaf Shepherd",
-    "Gavony Township", "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame",
-    "Ghoulcaller's Bell", "Giant Growth", "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker",
-    "Grasp of Phantoms", "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity",
-    "Hinterland Harbor", "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness",
-    "Intangible Virtue", "Into the Maw of Hell", "Island", "Isolated Chapel", "Kalonian Tusker",
-    "Kessig Wolf", "Kindercatch", "Lantern Spirit", "Lava Axe", "Lightning Bolt",
-    "Lost in the Mist", "Markov Patrician", "Mausoleum Guard", "Maw of the Mire",
+    "Abbey Griffin", "Altar's Reap", "Ambush Viper", "Ancient Grudge", "Armored Skaab",
+    "Army of the Damned", "Avacynian Priest", "Blasphemous Act", "Boneyard Wurm",
+    "Bramblecrush", "Brimstone Volley", "Bump in the Night", "Chapel Geist", "Clifftop Retreat",
+    "Coral Merfolk", "Corpse Lunge", "Counterspell", "Curse of Death's Hold",
+    "Darkthicket Wolf", "Dead Weight", "Diregraf Ghoul", "Dissipate", "Divination",
+    "Doom Blade", "Doomed Traveler", "Dream Twist", "Feeling of Dread", "Feral Ridgewolf",
+    "Festerhide Boar", "Forest", "Fortress Crab", "Gatstaf Shepherd", "Gavony Township",
+    "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame", "Ghoulcaller's Bell",
+    "Giant Growth", "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms",
+    "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Hinterland Harbor",
+    "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness", "Intangible Virtue",
+    "Into the Maw of Hell", "Island", "Isolated Chapel", "Kalonian Tusker", "Kessig Wolf",
+    "Kindercatch", "Lantern Spirit", "Lava Axe", "Lightning Bolt", "Lost in the Mist",
+    "Makeshift Mauler", "Markov Patrician", "Mausoleum Guard", "Maw of the Mire",
     "Midnight Haunting", "Moan of the Unhallowed", "Moment of Heroism", "Moon Heron",
     "Morkrut Banshee", "Mountain", "Naturalize", "Nephalia Drownyard", "Paraselene",
     "Pitchburn Devils", "Plains", "Prey Upon", "Purify the Grave", "Rally the Peasants",
     "Ranger's Guile", "Rebuke", "Reckless Waif", "Riot Devils", "Rolling Temblor",
     "Rotting Fensnake", "Savannah Lions", "Selfless Cathar", "Sensory Deprivation",
-    "Silent Departure", "Silverchase Fox", "Slayer of the Wicked", "Smite the Monstrous",
-    "Somberwald Spider", "Spectral Flight", "Spectral Rider", "Spider Spawning",
-    "Spidery Grasp", "Stensia Bloodhall", "Sulfur Falls", "Swamp", "Swords to Plowshares",
-    "Think Twice", "Thraben Purebloods", "Tormented Pariah", "Travel Preparations",
-    "Typhoid Rats", "Unburial Rites", "Urgent Exorcism", "Vampiric Fury", "Victim of Night",
-    "Village Bell-Ringer", "Village Ironsmith", "Villagers of Estwald", "Voiceless Spirit",
-    "Walking Corpse", "Woodland Cemetery", "Wreath of Geists",
+    "Silent Departure", "Silverchase Fox", "Skaab Goliath", "Slayer of the Wicked",
+    "Smite the Monstrous", "Somberwald Spider", "Spectral Flight", "Spectral Rider",
+    "Spider Spawning", "Spidery Grasp", "Stensia Bloodhall", "Stitched Drake", "Sulfur Falls",
+    "Swamp", "Swords to Plowshares", "Think Twice", "Thraben Purebloods", "Tormented Pariah",
+    "Travel Preparations", "Typhoid Rats", "Unburial Rites", "Urgent Exorcism", "Vampiric Fury",
+    "Victim of Night", "Village Bell-Ringer", "Village Ironsmith", "Villagers of Estwald",
+    "Voiceless Spirit", "Walking Corpse", "Woodland Cemetery", "Wreath of Geists",
 ];
 
 // ---- the properties ----
@@ -2412,9 +2562,19 @@ fn every_readable_card_does_what_its_text_says() {
             // A creature spell: every way it can end, against every way the
             // engine lets it end; then, if its text says what its death
             // does, every way that can end.
+            let payable = payments(spec, &world, P0);
+            if payable.is_empty() {
+                // An additional cost that cannot be paid: no cast (CR 601.2h).
+                if engine::legal_actions(&state, &registry).castable_spells.iter().any(|c| c.object_id == spell) {
+                    failures.push(format!("{name}: offered though its additional cost cannot be paid"));
+                }
+                continue;
+            }
             if spec.permanent && card.has_type("Creature") {
                 casts += 1;
-                let entering = creature_outcomes(spec, &world, P0, card, spell);
+                let entering: Vec<World> = payable.iter()
+                    .flat_map(|p| creature_outcomes(spec, &pay(&world, p), P0, card, spell))
+                    .collect();
                 let endings = every_ending(&state, &registry, Some(spell));
                 if let Some(why) = disagreement(&entering, &endings, &registry) {
                     failures.push(format!("{name}: {why}"));
@@ -2422,6 +2582,7 @@ fn every_readable_card_does_what_its_text_says() {
                 }
                 if spec.dies.is_some() {
                     let ([after_entering], Ok([entered])) = (entering.as_slice(), endings.as_deref()) else {
+                        // One way of entering, so one creature to kill.
                         failures.push(format!("{name}: a death is checked from one way of entering"));
                         continue;
                     };
@@ -2451,6 +2612,41 @@ fn every_readable_card_does_what_its_text_says() {
             };
             if offered_sets != expected_sets {
                 failures.push(format!("{name}: offers targets {offered_sets:?}, the text allows {expected_sets:?} ({spec:?})"));
+                continue;
+            }
+            // Each way to pay an additional cost is a way the cast can go:
+            // the sacrifice is named in the cast, the exile asked after it.
+            if spec.additional.is_some() {
+                let row = engine::legal_actions(&state, &registry).castable_spells.into_iter().find(|c| c.object_id == spell);
+                let mut offered_sacrifices = row.map(|r| r.sacrifice_options).unwrap_or_default();
+                offered_sacrifices.sort();
+                let mut sacrifices: Vec<ObjectId> = payable.iter()
+                    .filter_map(|p| match p { Some(Payment::Sacrifice(id)) => Some(*id), _ => None })
+                    .collect();
+                sacrifices.sort();
+                if offered_sacrifices != sacrifices {
+                    failures.push(format!("{name}: offers to sacrifice {offered_sacrifices:?}, the text allows {sacrifices:?}"));
+                    continue;
+                }
+                for targets in expected_sets {
+                    casts += 1;
+                    let want: Vec<World> = payable.iter().map(|p| resolve(spec, &pay(&world, p), &targets, P0, card, spell)).collect();
+                    let casts_by_sacrifice: Vec<Option<ObjectId>> = if sacrifices.is_empty() { vec![None] } else { sacrifices.iter().copied().map(Some).collect() };
+                    let mut endings = Vec::new();
+                    for sacrifice in casts_by_sacrifice {
+                        let first = Action::CastSpell {
+                            object_id: spell, targets: targets.clone(), sacrifice, exile_count: None,
+                            exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
+                        };
+                        match every_ending_from(&state, &registry, Some(spell), Some(first)) {
+                            Ok(e) => endings.extend(e),
+                            Err(why) => failures.push(format!("{name} at {targets:?}: {why}")),
+                        }
+                    }
+                    if let Some(why) = disagreement(&want, &Ok(endings), &registry) {
+                        failures.push(format!("{name} at {targets:?}: {why}"));
+                    }
+                }
                 continue;
             }
             for targets in expected_sets {
@@ -2736,6 +2932,7 @@ fn arena(registry: &CardRegistry, attacker: &Printed, blocker: Option<&Printed>)
         a_creature_died: false,
         stack: Vec::new(),
         source: None,
+        cost_exiled: Vec::new(),
         tokens: Vec::new(),
         life: [20, 20],
         hand: [vec!["Island".to_string()], Vec::new()],
@@ -3067,6 +3264,11 @@ fn the_grammar_reads_its_templates() {
     }).unwrap();
     assert_eq!(drownyard.activated[0].index, 1, "the mana ability is index 0");
     assert!(read_activated("{1}, Sacrifice a creature: You gain life equal to the sacrificed creature's toughness.", 0).is_none());
+
+    assert_eq!(Additional::read("As an additional cost to cast this spell, sacrifice a creature."), Some(Additional::SacrificeCreature));
+    assert_eq!(Additional::read("As an additional cost to cast this spell, exile two creature cards from your graveyard."), Some(Additional::ExileCreatureCards(2)));
+    assert_eq!(Additional::read("As an additional cost to cast this spell, exile a creature card from your graveyard."), Some(Additional::ExileCreatureCards(1)));
+    assert_eq!(Additional::read("As an additional cost to cast this spell, exile X cards from your graveyard."), None);
 
     let viper = Printed { oracle_text: "Flash\nDeathtouch".to_string(), type_line: "Creature — Snake".to_string(), ..card("Viper", "") };
     assert!(read_creature(&viper).is_ok_and(|s| s.permanent && s.flash));
