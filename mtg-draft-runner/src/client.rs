@@ -91,7 +91,7 @@ pub fn run(
     let mut view: Option<Value> = None;
     let mut shown = String::new();
     let mut shown_table = String::new();
-    let mut shown_line = String::new();
+    let mut shown_key = String::new();
     let mut build = Build::default();
     let mut built_for_phase = String::new();
     // The pack on screen (id and pick) and when it was printed.
@@ -131,16 +131,19 @@ pub fn run(
                         // changed, not on every other seat's pick; the
                         // table's state is one line when only that moved.
                         let (table, mine) = render(&msg, &build);
-                        // The one line only when it says something new: a
-                        // clock tick changes the table but not the line, and
-                        // reprinting it each tick pushed the pack off (#894).
+                        // The one line only when it says something new to
+                        // this seat: a clock tick changes the table but not
+                        // the line, and while a pack is in front of the seat
+                        // only its own queue concerns it. A line per tick or
+                        // per other seat's pick pushed the pack off (#894).
+                        let key = table_line_key(&msg);
                         if mine != shown {
                             out(&format!("{table}{mine}"));
                             shown = mine;
-                            shown_line = table_line(&msg);
-                        } else if table != shown_table && table_line(&msg) != shown_line {
-                            shown_line = table_line(&msg);
-                            out(&shown_line);
+                            shown_key = key;
+                        } else if table != shown_table && key != shown_key {
+                            shown_key = key;
+                            out(&table_line(&msg));
                         }
                         shown_table = table;
                         let pack = serde_json::json!([msg["pack"]["id"], msg["pack"]["pick"]]);
@@ -451,6 +454,17 @@ pub fn table_line(v: &Value) -> String {
         n => format!(" {n} more packs waiting for you"),
     };
     format!("[{}]{queued}", parts.join("; "))
+}
+
+/// What decides whether the table's one line is printed again: the line
+/// itself, or, while a pack is in front of the seat, only the count of
+/// packs queued behind it (#894).
+fn table_line_key(v: &Value) -> String {
+    if v["phase"] == "drafting" && v["pack"].is_object() {
+        format!("queued {}", v["pack"]["waiting"])
+    } else {
+        table_line(v)
+    }
 }
 
 /// The view as the terminal shows it: the table (everybody's state) and
@@ -1016,6 +1030,13 @@ mod tests {
         assert_eq!(mine2, mine, "a new count of packs queued is not a new screen");
         assert!(table2 != table && table2.contains("2 more packs waiting for you"), "{table2}");
         assert!(table_line(&v).ends_with("] 2 more packs waiting for you"), "{}", table_line(&v));
+        // Another seat's pick moves the table, not this seat's line while it
+        // holds a pack; its own queue does (#894's review).
+        let key = table_line_key(&v);
+        v["seats"][0]["picks"] = 31.into();
+        assert_eq!(table_line_key(&v), key);
+        v["pack"]["waiting"] = 1.into();
+        assert_ne!(table_line_key(&v), key);
         // Building, before a deck is sent: the last line is what to type,
         // not "0 spells + 0 lands = 0 cards" (#894's review).
         v["phase"] = "building".into();
