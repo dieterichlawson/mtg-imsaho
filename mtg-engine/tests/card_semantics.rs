@@ -1028,7 +1028,12 @@ fn read_upkeep(line: &str) -> Option<Upkeep> {
         Some(r) => (true, r),
         None => (false, rest),
     };
-    let mut trigger = Trigger { optional, ..Trigger::default() };
+    // "you may pay {2}{B}{B}. If you do, transform this creature."
+    let (pay, rest) = match rest.strip_prefix("pay ").and_then(|r| r.split_once(". If you do, ")).filter(|_| optional) {
+        Some((cost, then)) => (Some(mana_cost(cost)?), then),
+        None => (None, rest),
+    };
+    let mut trigger = Trigger { optional, pay, ..Trigger::default() };
     trigger.spec.sentence(&capitalized(rest))?;
     Some(Upkeep { enchanted_player, trigger })
 }
@@ -2109,8 +2114,9 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
 }
 
 /// A double-faced card's back face, when its text is keywords, combat
-/// text, static abilities and activated abilities, and for a werewolf's
-/// the trigger that transforms it back, which sets `werewolf`: what the
+/// text, static abilities, activated abilities and upkeep and end-step
+/// triggers, and for a werewolf's the trigger that transforms it back,
+/// which sets `werewolf`: what the
 /// grammar reads of it (its keywords are its printed ones). Its abilities
 /// are numbered from its own first, as the engine numbers them.
 fn back_face_reads(back: &Printed) -> Option<Spec> {
@@ -2119,6 +2125,8 @@ fn back_face_reads(back: &Printed) -> Option<Spec> {
         let index = spec.mana.iter().map(ManaAbility::indices).sum::<usize>() + spec.activated.len();
         if line == "At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature." {
             spec.werewolf = true;
+        } else if line.starts_with("At the beginning of your upkeep, ") {
+            spec.upkeep = Some(Box::new(read_upkeep(line)?));
         } else if line.contains(" end step, ") {
             spec.end_step = Some(Box::new(read_end_step(line)?));
         } else if line.split(',').map(str::trim).all(|w| keyword_named(w).is_some()) || spec.combat.read(line).is_some() {
@@ -4421,27 +4429,66 @@ fn trigger_outcomes(trigger: &Trigger, world: &World, caster: PlayerId) -> Vec<W
     put.triggered += 1;
     let mut out = Vec::new();
     for targets in sets {
-        // A "may" with a cost is taken only if it can be paid.
+        // A "may" with a cost is taken only if it can be paid, each way it
+        // can be.
         let paid = match &trigger.pay {
-            Some(cost) => match paid_from_pool(&put, caster, cost) {
-                Some(w) => w,
-                None => {
-                    out.push(put.clone());
-                    continue;
-                }
-            },
-            None => put.clone(),
+            Some(cost) => ways_to_pay(&put, caster, cost),
+            None => vec![put.clone()],
         };
-        for way in resolution_ways(&trigger.spec, &paid, &targets, caster) {
-            let mut after = apply(&trigger.spec, &way, &targets, caster);
-            after.state_based_actions();
-            out.push(after);
+        for paid in &paid {
+            for way in resolution_ways(&trigger.spec, paid, &targets, caster) {
+                let mut after = apply(&trigger.spec, &way, &targets, caster);
+                after.state_based_actions();
+                out.push(after);
+            }
         }
-        if trigger.optional {
+        if trigger.optional || paid.is_empty() {
             out.push(put.clone());
         }
     }
     out.into_iter().map(|mut w| { w.faces_put.clear(); w }).collect()
+}
+
+/// Every way `player` can pay `cost` on `world` while something resolves
+/// (CR 608.2g, 601.2g-h): with mana from their pool and from activating
+/// the mana abilities of untapped lands and artifacts they control that
+/// cost nothing but {T}, a set of those from which none could be left out;
+/// generic last, from what the pips leave. None of them if it cannot be
+/// paid. Floating mana enough on its own is the one way.
+fn ways_to_pay(world: &World, player: PlayerId, cost: &ManaCost) -> Vec<World> {
+    let sources: Vec<(ObjectId, Vec<Vec<(ManaType, u32)>>)> = world.permanents.iter()
+        .filter(|(_, m)| m.controller == player && !m.tapped)
+        .filter_map(|(id, m)| {
+            let printed = cached_oracle().get(m.name.as_ref()?)?;
+            let spec = if m.types.iter().any(|t| t == "land") { read_land(printed) } else if m.types == ["artifact"] { read_artifact(printed) } else { return None };
+            let options: Vec<Vec<(ManaType, u32)>> = spec.ok()?.mana.into_iter()
+                .filter(|a| a.cost == 0 && a.mill == 0)
+                .flat_map(|a| a.options)
+                .collect();
+            (!options.is_empty()).then_some((*id, options))
+        })
+        .collect();
+    // Each source left alone, or tapped for one of what it makes.
+    let mut plans: Vec<Vec<(ObjectId, &Vec<(ManaType, u32)>)>> = vec![Vec::new()];
+    for (id, options) in &sources {
+        plans = plans.into_iter()
+            .flat_map(|plan| std::iter::once(plan.clone()).chain(options.iter().map(move |o| [plan.clone(), vec![(*id, o)]].concat())))
+            .collect();
+    }
+    let paid = |plan: &[(ObjectId, &Vec<(ManaType, u32)>)]| {
+        let mut w = world.clone();
+        for (id, made) in plan {
+            w.permanents.get_mut(id).expect("a source").tapped = true;
+            for (t, n) in made.iter() {
+                *w.pool[player.0 as usize].entry(*t).or_insert(0) += n;
+            }
+        }
+        paid_from_pool(&w, player, cost)
+    };
+    plans.iter()
+        .filter(|plan| (0..plan.len()).all(|k| paid(&[&plan[..k], &plan[k + 1..]].concat()).is_none()))
+        .filter_map(|plan| paid(plan))
+        .collect()
 }
 
 /// `world` with `cost` paid from `player`'s mana pool, generic from what is
@@ -5061,20 +5108,20 @@ const READ: &[&str] = &[
     "Rage Thrower", "Rakish Heir", "Rally the Peasants", "Ranger's Guile",
     "Reaper from the Abyss", "Rebuke", "Reckless Waif", "Riot Devils", "Rolling Temblor",
     "Rotting Fensnake", "Runechanter's Pike", "Savannah Lions", "Scourge of Geier Reach",
-    "Selfless Cathar", "Selhoff Occultist", "Sensory Deprivation", "Sever the Bloodline",
-    "Sharpened Pitchfork", "Shimmering Grotto", "Silent Departure", "Silver-Inlaid Dagger",
-    "Silverchase Fox", "Skaab Goliath", "Skeletal Grimace", "Skirsdag Cultist",
-    "Slayer of the Wicked", "Smite the Monstrous", "Sol Ring", "Somberwald Spider",
-    "Spectral Flight", "Spectral Rider", "Spider Spawning", "Spidery Grasp", "Splinterfright",
-    "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist",
-    "Sulfur Falls", "Swamp", "Swords to Plowshares", "Think Twice", "Thraben Purebloods",
-    "Thraben Sentry", "Tormented Pariah", "Traitorous Blood", "Travel Preparations",
-    "Traveler's Amulet", "Tree of Redemption", "Trepanation Blade", "Tribute to Hunger",
-    "Typhoid Rats", "Ulvenwald Mystics", "Unburial Rites", "Unruly Mob", "Urgent Exorcism",
-    "Vampire Interloper", "Vampiric Fury", "Victim of Night", "Village Bell-Ringer",
-    "Village Cannibals", "Village Ironsmith", "Villagers of Estwald", "Voiceless Spirit",
-    "Walking Corpse", "Wooden Stake", "Woodland Cemetery", "Woodland Sleuth",
-    "Wreath of Geists",
+    "Screeching Bat", "Selfless Cathar", "Selhoff Occultist", "Sensory Deprivation",
+    "Sever the Bloodline", "Sharpened Pitchfork", "Shimmering Grotto", "Silent Departure",
+    "Silver-Inlaid Dagger", "Silverchase Fox", "Skaab Goliath", "Skeletal Grimace",
+    "Skirsdag Cultist", "Slayer of the Wicked", "Smite the Monstrous", "Sol Ring",
+    "Somberwald Spider", "Spectral Flight", "Spectral Rider", "Spider Spawning",
+    "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble",
+    "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp", "Swords to Plowshares",
+    "Think Twice", "Thraben Purebloods", "Thraben Sentry", "Tormented Pariah",
+    "Traitorous Blood", "Travel Preparations", "Traveler's Amulet", "Tree of Redemption",
+    "Trepanation Blade", "Tribute to Hunger", "Typhoid Rats", "Ulvenwald Mystics",
+    "Unburial Rites", "Unruly Mob", "Urgent Exorcism", "Vampire Interloper", "Vampiric Fury",
+    "Victim of Night", "Village Bell-Ringer", "Village Cannibals", "Village Ironsmith",
+    "Villagers of Estwald", "Voiceless Spirit", "Walking Corpse", "Wooden Stake",
+    "Woodland Cemetery", "Woodland Sleuth", "Wreath of Geists",
 ];
 
 // ---- the properties ----
@@ -5711,24 +5758,38 @@ fn every_readable_werewolf_transforms_as_its_text_says() {
 /// resolved every way its text allows in the upkeep it names and in no
 /// other, and the active player's draw (CR 514.2, 502.3, 503.1a, 504.1). One spell is cast in the turn before, so
 /// that neither face of a werewolf on the board transforms: its triggers
-/// ask for no spells last turn, or two.
+/// ask for no spells last turn, or two. A double-faced card's back face is
+/// on the board transformed. A trigger with a cost is read on the board,
+/// whose lands cannot pay it, and with two Swamps of the caster's more,
+/// which leave one way to.
 #[test]
 fn every_turn_begins_as_its_text_says() {
     let registry = registry();
     let cache = oracle_cache();
     let (cards, _) = readable(&registry, &cache);
+    let backs = back_faces(&cards);
     let mut failures = Vec::new();
     let mut upkeeps = 0;
     let keeps_tapped = |s: &Spec| s.statics.iter().any(|st| matches!(st,
         Static::Restricts { what, .. } | Static::RestrictsItself { what } if what.contains(&Restriction::DoesntUntap)));
-    for (card, spec) in cards.iter().filter(|(_, s)| s.upkeep.is_some() || keeps_tapped(s)) {
+    for (card, spec) in cards.iter().chain(&backs).filter(|(_, s)| s.upkeep.is_some() || keeps_tapped(s)) {
         // The upkeep its text names, and the other player's, which it must
         // leave alone; for a trigger that looks at the top of the library,
         // with the instant there and with a land there instead.
         let looks = spec.upkeep.iter().flat_map(|u| &u.trigger.spec.effects).any(|e| matches!(e, Effect::RevealTopTransformIf { .. }));
+        let pays = spec.upkeep.as_ref().is_some_and(|u| u.trigger.pay.is_some());
         let tops: &[bool] = if looks { &[false, true] } else { &[false] };
-        for (active, &rotated) in [P0, P1].into_iter().flat_map(|a| tops.iter().map(move |r| (a, r))) {
+        let swamps: &[bool] = if pays { &[false, true] } else { &[false] };
+        let variants = [P0, P1].into_iter()
+            .flat_map(|a| tops.iter().flat_map(move |r| swamps.iter().map(move |w| (a, *r, *w))));
+        for (active, rotated, rich) in variants {
             let (mut state, mut world) = board(&registry, &cache);
+            if rich {
+                for _ in 0..2 {
+                    let id = named_permanent(&mut state, &registry, "Swamp", P0);
+                    world.permanents.insert(id, Model::printed(&cache["Swamp"], P0));
+                }
+            }
             if rotated {
                 for p in [P0, P1] {
                     state.players[p.0 as usize].library_order.rotate_left(1);
@@ -5752,12 +5813,12 @@ fn every_turn_begins_as_its_text_says() {
                 world.permanents.insert(id, Model { attached: Some(Target::Object(bears)), ..model_of(spec, card, P0) });
                 id
             } else {
-                let id = named_permanent(&mut state, &registry, &card.name, P0);
+                let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
                 // A creature that keeps itself tapped, tapped, so that is
                 // what its text has to do.
                 let tapped = spec.statics.iter().any(|st| matches!(st, Static::RestrictsItself { what } if what.contains(&Restriction::DoesntUntap)));
                 state.get_object_mut(id).expect("just placed").tapped = tapped;
-                world.permanents.insert(id, Model { tapped, ..model_of(spec, card, P0) });
+                world.permanents.get_mut(&id).expect("just placed").tapped = tapped;
                 id
             };
             // Three of what the trigger counts, so that half of it rounds.
@@ -5787,7 +5848,8 @@ fn every_turn_begins_as_its_text_says() {
             // drop.
             let got = every_scene_ending(&state, &registry, Scene::Until(Step::PrecombatMain));
             if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &state, &got)) {
-                failures.push(format!("{} in player {}'s turn{}: {why}", card.name, active.0, if rotated { ", a land on top of the library" } else { "" }));
+                failures.push(format!("{} in player {}'s turn{}{}: {why}", card.name, active.0,
+                    if rotated { ", a land on top of the library" } else { "" }, if rich { ", with two Swamps more" } else { "" }));
             }
         }
     }
