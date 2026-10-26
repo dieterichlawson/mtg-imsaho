@@ -631,6 +631,9 @@ struct CombatText {
     /// "Whenever this creature blocks or becomes blocked by a creature,
     /// this creature deals N damage to that creature." (CR 509.4)
     block_damage: Option<u32>,
+    /// "Whenever this creature attacks or blocks, other Humans you control
+    /// get +1/+1 until end of turn." (CR 508.3a, 509.3a)
+    attack_or_block_pump: Option<(Filter, (i32, i32))>,
     /// An Equipment's "Whenever equipped creature blocks or becomes blocked
     /// by a <type>, destroy that creature. It can't be regenerated."
     stake: Option<String>,
@@ -714,6 +717,11 @@ impl CombatText {
                         return None;
                     };
                     self.on_attack_tokens = Some(AttackTokens { power, toughness, colors, subtypes, keywords, per_creature_card, exile_at_end_of_combat });
+                } else if let Some((who, pt)) = line.strip_prefix("Whenever this creature attacks or blocks, ")
+                    .and_then(|r| r.strip_suffix(" until end of turn."))
+                    .and_then(|r| r.split_once(" get "))
+                {
+                    self.attack_or_block_pump = Some((filter(who)?, pt_change(pt)?));
                 } else if let Some(n) = line.strip_prefix("Whenever this creature blocks or becomes blocked by a creature, this creature deals ")
                     .and_then(|r| r.strip_suffix(" damage to that creature."))
                 {
@@ -4855,10 +4863,10 @@ const READ: &[&str] = &[
     "Ghostly Possession", "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth",
     "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms", "Grave Bramble",
     "Graveyard Shovel", "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity",
-    "Hanweir Watchkeep", "Harvest Pyre", "Hinterland Harbor", "Hollowhenge Scavenger",
-    "Holy Strength", "Hysterical Blindness", "Infernal Plunge", "Instigator Gang",
-    "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker", "Island",
-    "Isolated Chapel", "Kalonian Tusker", "Kessig Cagebreakers", "Kessig Wolf",
+    "Hamlet Captain", "Hanweir Watchkeep", "Harvest Pyre", "Hinterland Harbor",
+    "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness", "Infernal Plunge",
+    "Instigator Gang", "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker",
+    "Island", "Isolated Chapel", "Kalonian Tusker", "Kessig Cagebreakers", "Kessig Wolf",
     "Kessig Wolf Run", "Kindercatch", "Kruin Outlaw", "Lantern Spirit", "Lava Axe",
     "Lightning Bolt", "Lost in the Mist", "Lumberknot", "Make a Wish", "Makeshift Mauler",
     "Manor Skeleton", "Markov Patrician", "Mask of Avacyn", "Mausoleum Guard",
@@ -5719,6 +5727,24 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
             w.tokens.push(Model { tapped: true, attacking: true, exile_at_end_of_combat: t.exile_at_end_of_combat, ..token });
         }
         w.state_based_actions();
+    }
+    // "Whenever this creature attacks or blocks, other Humans you control
+    // get +1/+1 until end of turn", as it attacks and as it blocks.
+    for (fighter, declared) in [(Some(a), true), (blocker, blocker.is_some())] {
+        let Some(m) = fighter.and_then(|f| w.permanents.get(&f)).filter(|_| declared).cloned() else { continue };
+        if let Some((who, (p, t))) = &m.combat.attack_or_block_pump {
+            let source = fighter.expect("declared");
+            let ids: Vec<ObjectId> = w.permanents.iter().filter(|(id, o)| o.is_creature() && o.matches_from(who, m.controller, **id == source)).map(|(id, _)| *id).collect();
+            for id in ids {
+                let o = w.permanents.get_mut(&id).expect("on the battlefield");
+                o.temp.0 += p;
+                o.temp.1 += t;
+            }
+            for token in w.tokens.iter_mut().filter(|o| o.is_creature() && o.matches(who, m.controller)) {
+                token.temp.0 += p;
+                token.temp.1 += t;
+            }
+        }
     }
     // Block triggers (CR 509.4): "blocks or becomes blocked by a creature,
     // this creature deals 1 damage to that creature", and a stake on
