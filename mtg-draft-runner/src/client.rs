@@ -91,6 +91,7 @@ pub fn run(
     let mut view: Option<Value> = None;
     let mut shown = String::new();
     let mut shown_table = String::new();
+    let mut shown_line = String::new();
     let mut build = Build::default();
     let mut built_for_phase = String::new();
     // The pack on screen (id and pick) and when it was printed.
@@ -130,11 +131,16 @@ pub fn run(
                         // changed, not on every other seat's pick; the
                         // table's state is one line when only that moved.
                         let (table, mine) = render(&msg, &build);
+                        // The one line only when it says something new: a
+                        // clock tick changes the table but not the line, and
+                        // reprinting it each tick pushed the pack off (#894).
                         if mine != shown {
                             out(&format!("{table}{mine}"));
                             shown = mine;
-                        } else if table != shown_table {
-                            out(&table_line(&msg));
+                            shown_line = table_line(&msg);
+                        } else if table != shown_table && table_line(&msg) != shown_line {
+                            shown_line = table_line(&msg);
+                            out(&shown_line);
                         }
                         shown_table = table;
                         let pack = serde_json::json!([msg["pack"]["id"], msg["pack"]["pick"]]);
@@ -1010,6 +1016,13 @@ mod tests {
         assert_eq!(mine2, mine, "a new count of packs queued is not a new screen");
         assert!(table2 != table && table2.contains("2 more packs waiting for you"), "{table2}");
         assert!(table_line(&v).ends_with("] 2 more packs waiting for you"), "{}", table_line(&v));
+        // Building, before a deck is sent: the last line is what to type,
+        // not "0 spells + 0 lands = 0 cards" (#894's review).
+        v["phase"] = "building".into();
+        v["pack"] = Value::Null;
+        v["deck"] = Value::Null;
+        let listing = build_listing(&v, &Build::default());
+        assert!(listing.ends_with("add <n> to put pool card n in the deck, lands plains=7 island=10, then ready\n"), "{listing}");
     }
 
     /// #914: a seat with one pick reads "1 pick", as #874 made the page's
@@ -1294,6 +1307,10 @@ fn build_listing(v: &Value, build: &Build) -> String {
         } else if deck["valid"].as_bool().unwrap_or(false) {
             s.push_str("legal — type ready when it is final\n");
         }
+    } else {
+        // Before the first deck is sent the count was the last line, and the
+        // commands were on the heading ~42 rows up (#894's review).
+        s.push_str("add <n> to put pool card n in the deck, lands plains=7 island=10, then ready\n");
     }
     s
 }

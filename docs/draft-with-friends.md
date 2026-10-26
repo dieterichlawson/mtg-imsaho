@@ -159,8 +159,10 @@ mtg-draft-client ws://192.168.1.20:8800/ws?seat=0&key=7c5b0a8e... --name Lawson
 ```
 
 A plain line-oriented client. It prints your view when something of
-yours changes — the pack as a numbered list, your pool with counts — and
-one line for the table when only other seats moved. Type a card's number
+yours changes — the pack as a numbered list under one line counting your
+pool (`pool` lists it), so the pack and the question are the last thing on
+screen — and one line for the table when only other seats moved, which
+also says how many more packs are waiting for you. Type a card's number
 to pick it; a number typed before a new pack has been up for 300 ms (a
 pick typed twice) is not taken from it, and the client says so. While building: `add <n>` and `drop <n>` by the pool numbers
 shown, `lands plains=7 island=10`, `show`, and `ready` when the deck is
