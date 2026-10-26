@@ -342,6 +342,13 @@ enum Effect {
     DamageX { slot: usize },
     /// "Regenerate this creature": a shield (CR 701.19a).
     Regenerate { slot: usize },
+    /// "<player slot> sacrifices a creature of their choice" (CR 701.21a):
+    /// the creature in `World::chosen`.
+    SacrificeOfTheirChoice { slot: usize },
+    /// "Each player chooses a creature they control." (CR 101.4: in turn
+    /// order), and "Destroy the rest.": every other creature, at once.
+    EachPlayerChoosesACreature,
+    DestroyTheRest,
     /// "Regenerate all <filter>".
     RegenerateAll { filter: Filter },
     /// "You gain life equal to the sacrificed creature's toughness": its
@@ -992,6 +999,18 @@ impl Spec {
                 return Some(());
             }
         }
+        if s == "Each player chooses a creature they control" {
+            self.effects.push(Effect::EachPlayerChoosesACreature);
+            return Some(());
+        }
+        if s == "Destroy the rest" && matches!(self.effects.last(), Some(Effect::EachPlayerChoosesACreature)) {
+            self.effects.push(Effect::DestroyTheRest);
+            return Some(());
+        }
+        if s == "You gain life equal to that creature's toughness" && matches!(self.effects.last(), Some(Effect::SacrificeOfTheirChoice { .. })) {
+            self.effects.push(Effect::GainLifeEqualToSacrificedToughness);
+            return Some(());
+        }
         if s == "Regenerate this creature" {
             let slot = self.slot(Slot::This);
             self.effects.push(Effect::Regenerate { slot });
@@ -1158,6 +1177,11 @@ impl Spec {
                 let ((power, toughness), gains) = pump(&format!("gets {change}"))?;
                 let slot = self.slot(Slot::Permanent(filter(who)?));
                 self.effects.push(Effect::Pump { slot, power, toughness, gains });
+                return Some(());
+            }
+            if let Some(who) = rest.strip_suffix(" sacrifices a creature of their choice") {
+                let slot = self.player_slot(who)?;
+                self.effects.push(Effect::SacrificeOfTheirChoice { slot });
                 return Some(());
             }
             if let Some((who, rest)) = rest.split_once(" draws ") {
@@ -1965,8 +1989,13 @@ struct World {
     source: Option<ObjectId>,
     /// The cards exiled to pay the spell's additional cost.
     cost_exiled: Vec<Model>,
-    /// The creature sacrificed to pay an ability's cost, as it last was.
+    /// The creature sacrificed to pay an ability's cost, or by its effect,
+    /// as it last was.
     cost_sacrificed: Option<Model>,
+    /// The creatures players chose as the spell resolves ("sacrifices a
+    /// creature of their choice", "each player chooses a creature"), one
+    /// way of choosing; [`resolution_choices`] lists them all.
+    chosen: Vec<ObjectId>,
     /// The value of X for the spell or ability resolving: the one its
     /// controller announced (CR 107.3a, 601.2b), or the number of cards
     /// exiled for an "exile X cards" cost.
@@ -2322,6 +2351,7 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
         source: None,
         cost_exiled: Vec::new(),
         cost_sacrificed: None,
+        chosen: Vec::new(),
         x: 0,
         tokens: Vec::new(),
         life: [20, 20],
@@ -2662,6 +2692,24 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     .collect();
                 destroyed = doomed.into_iter().filter(|id| w.destroy(*id)).count();
             }
+            Effect::SacrificeOfTheirChoice { .. } => {
+                if let Some(&victim) = world.chosen.first() {
+                    w.refresh();
+                    w.cost_sacrificed = w.permanents.get(&victim).cloned();
+                    w.leave(victim, Dest::Graveyard);
+                    w.a_creature_died = true;
+                }
+            }
+            Effect::EachPlayerChoosesACreature => {}
+            Effect::DestroyTheRest => {
+                let doomed: Vec<ObjectId> = w.permanents.iter()
+                    .filter(|(id, m)| m.is_creature() && !world.chosen.contains(id))
+                    .map(|(id, _)| *id)
+                    .collect();
+                for id in doomed {
+                    w.destroy(id);
+                }
+            }
             Effect::Regenerate { slot } => {
                 if let Some(m) = object(*slot).and_then(|id| w.permanents.get_mut(&id)) {
                     m.shields += 1;
@@ -2756,8 +2804,10 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 }
             }
             Effect::GainLifeEqualToSacrificedToughness => {
-                if let Some(m) = &world.cost_sacrificed {
-                    w.life[c] += world.pt_of(m).1.unwrap_or(0);
+                // Sacrificed for the cost, or by an earlier effect of this
+                // one.
+                if let Some(m) = w.cost_sacrificed.clone() {
+                    w.life[c] += w.pt_of(&m).1.unwrap_or(0);
                 }
             }
             Effect::DamageX { slot } => {
@@ -2935,6 +2985,41 @@ fn pay(world: &World, payment: &Option<Payment>) -> World {
         }
     }
     w
+}
+
+/// Every way the players can make the choices `spec` asks for as it
+/// resolves at `targets`: each creature the player sacrificing controls,
+/// or one creature of each player's who has any, in turn order. One empty
+/// way when it asks for none.
+fn resolution_choices(spec: &Spec, world: &World, targets: &[Target]) -> Vec<Vec<ObjectId>> {
+    let of = |p: PlayerId| -> Vec<ObjectId> {
+        world.permanents.iter().filter(|(_, m)| m.controller == p && m.is_creature()).map(|(id, _)| *id).collect()
+    };
+    let mut ways = vec![Vec::new()];
+    for effect in &spec.effects {
+        let options: Vec<Vec<ObjectId>> = match effect {
+            Effect::SacrificeOfTheirChoice { slot } => match &targets[*slot] {
+                Target::Player(p) => of(*p).into_iter().map(|c| vec![c]).collect(),
+                _ => continue,
+            },
+            Effect::EachPlayerChoosesACreature => {
+                let mut picks = vec![Vec::new()];
+                for p in [P0, P1] {
+                    let theirs = of(p);
+                    if !theirs.is_empty() {
+                        picks = picks.into_iter().flat_map(|k: Vec<ObjectId>| theirs.iter().map(move |c| [k.clone(), vec![*c]].concat())).collect();
+                    }
+                }
+                picks
+            }
+            _ => continue,
+        };
+        if options.is_empty() {
+            continue;
+        }
+        ways = ways.into_iter().flat_map(|w| options.iter().map(move |o| [w.clone(), o.clone()].concat())).collect();
+    }
+    ways
 }
 
 /// What resolving the instant or sorcery `card`, read as `spec`, with
@@ -3514,36 +3599,37 @@ const READ: &[&str] = &[
     "Curse of Oblivion", "Curse of the Bloody Tome", "Curse of the Nightly Hunt",
     "Curse of the Pierced Heart", "Darkthicket Wolf", "Dead Weight", "Demonmail Hauberk",
     "Deranged Assistant", "Devil's Play", "Diregraf Ghoul", "Disciple of Griselbrand",
-    "Dissipate", "Divination", "Doom Blade", "Doomed Traveler", "Dream Twist",
-    "Elite Inquisitor", "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread",
-    "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab", "Full Moon's Rise",
-    "Furor of the Bitten", "Gallows Warden", "Gatstaf Shepherd", "Gavony Township",
-    "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame", "Ghostly Possession",
-    "Ghoulcaller's Bell", "Giant Growth", "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker",
-    "Grasp of Phantoms", "Grave Bramble", "Grizzled Outcasts", "Grizzly Bears",
-    "Gruesome Deformity", "Harvest Pyre", "Hinterland Harbor", "Hollowhenge Scavenger",
-    "Holy Strength", "Hysterical Blindness", "Intangible Virtue", "Into the Maw of Hell",
-    "Invisible Stalker", "Island", "Isolated Chapel", "Kalonian Tusker", "Kessig Wolf",
-    "Kessig Wolf Run", "Kindercatch", "Lantern Spirit", "Lava Axe", "Lightning Bolt",
-    "Lost in the Mist", "Lumberknot", "Makeshift Mauler", "Manor Skeleton", "Markov Patrician",
-    "Mask of Avacyn", "Mausoleum Guard", "Maw of the Mire", "Midnight Haunting",
-    "Moan of the Unhallowed", "Moment of Heroism", "Moon Heron", "Moorland Haunt",
-    "Morkrut Banshee", "Mountain", "Naturalize", "Nephalia Drownyard", "Night Revelers",
-    "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism", "Paraselene", "Pitchburn Devils",
-    "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower", "Rally the Peasants",
-    "Ranger's Guile", "Rebuke", "Reckless Waif", "Riot Devils", "Rolling Temblor",
-    "Rotting Fensnake", "Runechanter's Pike", "Savannah Lions", "Scourge of Geier Reach",
-    "Selfless Cathar", "Selhoff Occultist", "Sensory Deprivation", "Sharpened Pitchfork",
-    "Shimmering Grotto", "Silent Departure", "Silver-Inlaid Dagger", "Silverchase Fox",
-    "Skaab Goliath", "Skirsdag Cultist", "Slayer of the Wicked", "Smite the Monstrous",
-    "Sol Ring", "Somberwald Spider", "Spectral Flight", "Spectral Rider", "Spider Spawning",
-    "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble",
-    "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp", "Swords to Plowshares",
-    "Think Twice", "Thraben Purebloods", "Tormented Pariah", "Travel Preparations",
-    "Typhoid Rats", "Unburial Rites", "Unruly Mob", "Urgent Exorcism", "Vampire Interloper",
-    "Vampiric Fury", "Victim of Night", "Village Bell-Ringer", "Village Cannibals",
-    "Village Ironsmith", "Villagers of Estwald", "Voiceless Spirit", "Walking Corpse",
-    "Woodland Cemetery", "Wreath of Geists",
+    "Dissipate", "Divination", "Divine Reckoning", "Doom Blade", "Doomed Traveler",
+    "Dream Twist", "Elite Inquisitor", "Falkenrath Marauders", "Falkenrath Noble",
+    "Feeling of Dread", "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab",
+    "Full Moon's Rise", "Furor of the Bitten", "Gallows Warden", "Gatstaf Shepherd",
+    "Gavony Township", "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame",
+    "Ghostly Possession", "Ghoulcaller's Bell", "Giant Growth", "Glorious Anthem",
+    "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms", "Grave Bramble",
+    "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Harvest Pyre",
+    "Hinterland Harbor", "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness",
+    "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker", "Island",
+    "Isolated Chapel", "Kalonian Tusker", "Kessig Wolf", "Kessig Wolf Run", "Kindercatch",
+    "Lantern Spirit", "Lava Axe", "Lightning Bolt", "Lost in the Mist", "Lumberknot",
+    "Makeshift Mauler", "Manor Skeleton", "Markov Patrician", "Mask of Avacyn",
+    "Mausoleum Guard", "Maw of the Mire", "Midnight Haunting", "Moan of the Unhallowed",
+    "Moment of Heroism", "Moon Heron", "Moorland Haunt", "Morkrut Banshee", "Mountain",
+    "Naturalize", "Nephalia Drownyard", "Night Revelers", "One-Eyed Scarecrow",
+    "Orchard Spirit", "Pacifism", "Paraselene", "Pitchburn Devils", "Plains", "Prey Upon",
+    "Purify the Grave", "Rage Thrower", "Rally the Peasants", "Ranger's Guile", "Rebuke",
+    "Reckless Waif", "Riot Devils", "Rolling Temblor", "Rotting Fensnake", "Runechanter's Pike",
+    "Savannah Lions", "Scourge of Geier Reach", "Selfless Cathar", "Selhoff Occultist",
+    "Sensory Deprivation", "Sharpened Pitchfork", "Shimmering Grotto", "Silent Departure",
+    "Silver-Inlaid Dagger", "Silverchase Fox", "Skaab Goliath", "Skirsdag Cultist",
+    "Slayer of the Wicked", "Smite the Monstrous", "Sol Ring", "Somberwald Spider",
+    "Spectral Flight", "Spectral Rider", "Spider Spawning", "Spidery Grasp", "Splinterfright",
+    "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist",
+    "Sulfur Falls", "Swamp", "Swords to Plowshares", "Think Twice", "Thraben Purebloods",
+    "Tormented Pariah", "Travel Preparations", "Tribute to Hunger", "Typhoid Rats",
+    "Unburial Rites", "Unruly Mob", "Urgent Exorcism", "Vampire Interloper", "Vampiric Fury",
+    "Victim of Night", "Village Bell-Ringer", "Village Cannibals", "Village Ironsmith",
+    "Villagers of Estwald", "Voiceless Spirit", "Walking Corpse", "Woodland Cemetery",
+    "Wreath of Geists",
 ];
 
 // ---- the properties ----
@@ -3731,6 +3817,20 @@ fn every_readable_card_does_what_its_text_says() {
                         }
                     }
                     if let Some(why) = disagreement(&want, &Ok(endings), &registry) {
+                        failures.push(format!("{name} at {targets:?}: {why}"));
+                    }
+                }
+                continue;
+            }
+            // A spell whose players choose as it resolves: at each target
+            // set, every way they can choose (CR 608.2d).
+            if spec.effects.iter().any(|e| matches!(e, Effect::SacrificeOfTheirChoice { .. } | Effect::EachPlayerChoosesACreature)) {
+                for targets in expected_sets {
+                    casts += 1;
+                    let want: Vec<World> = resolution_choices(spec, &world, &targets).into_iter()
+                        .map(|chosen| resolve(spec, &World { chosen, ..world.clone() }, &targets, P0, card, spell))
+                        .collect();
+                    if let Some(why) = disagreement(&want, &every_ending_at(&state, &registry, spell, &targets), &registry) {
                         failures.push(format!("{name} at {targets:?}: {why}"));
                     }
                 }
@@ -4266,6 +4366,7 @@ fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Opt
         source: None,
         cost_exiled: Vec::new(),
         cost_sacrificed: None,
+        chosen: Vec::new(),
         x: 0,
         tokens: Vec::new(),
         life: [20, 20],
@@ -4944,6 +5045,14 @@ fn the_grammar_reads_its_templates() {
         ..card("Drownyard", "{T}: Add {C}.\n{1}{U}{B}, {T}: Target player mills three cards.")
     }).unwrap();
     assert_eq!(drownyard.activated[0].index, 1, "the mana ability is index 0");
+    let mut tribute = Spec::default();
+    for sentence in ["Target opponent sacrifices a creature of their choice. ", "You gain life equal to that creature's toughness."] {
+        tribute.sentence(sentence).unwrap();
+    }
+    assert_eq!((tribute.slots, tribute.effects), (vec![Slot::Opponent],
+        vec![Effect::SacrificeOfTheirChoice { slot: 0 }, Effect::GainLifeEqualToSacrificedToughness]));
+    let mut rest = Spec::default();
+    assert!(rest.sentence("Destroy the rest.").is_none(), "\"the rest\" needs a choice before it");
     let disciple = read_activated("{1}, Sacrifice a creature: You gain life equal to the sacrificed creature's toughness.", 0).unwrap();
     assert_eq!((disciple.sacrifice, disciple.spec.effects), (Some(Sacrifice::AnyCreature), vec![Effect::GainLifeEqualToSacrificedToughness]));
     assert!(read_activated("{W}{U}, {T}, Exile a creature card from your graveyard: Create a 1/1 white Spirit creature token with flying.", 1).unwrap().exile_creature_card);
