@@ -207,11 +207,14 @@ pub fn deck_change(before: &DraftDeck, after: &DraftDeck) -> String {
             lands.push(format!("{land} {d:+}"));
         }
     }
+    // Names are joined by "; " and the parts by " | ": a card name may hold
+    // a comma ("Grimgrin, Corpse-Born"), and joined by ", " it read as two
+    // cards to a person and to a script splitting the line (#925).
     let mut parts = Vec::new();
-    if !ins.is_empty() { parts.push(format!("in: {}", ins.join(", "))); }
-    if !outs.is_empty() { parts.push(format!("out: {}", outs.join(", "))); }
+    if !ins.is_empty() { parts.push(format!("in: {}", ins.join("; "))); }
+    if !outs.is_empty() { parts.push(format!("out: {}", outs.join("; "))); }
     if !lands.is_empty() { parts.push(lands.join(", ")); }
-    if parts.is_empty() { "no change".to_string() } else { parts.join("; ") }
+    if parts.is_empty() { "no change".to_string() } else { parts.join(" | ") }
 }
 
 /// The log's record of a seat's between-games answer: its prompt, its
@@ -227,8 +230,8 @@ pub fn log_sideboard(seat: usize, game: usize, before: &DraftDeck, decision: &Si
     };
     let choice = match (chooses, decision.play_first) {
         (false, _) => String::new(),
-        (true, Some(false)) => "; draws first".to_string(),
-        (true, _) => "; plays first".to_string(),
+        (true, Some(false)) => " | draws first".to_string(),
+        (true, _) => " | plays first".to_string(),
     };
     w(&format!("[Seat {seat}] SIDEBOARD before game {game}: {change}{choice}"), "");
 }
@@ -249,9 +252,9 @@ pub fn log_between(seat: usize, game: usize, before: &DraftDeck, after: Option<&
     };
     let choice = match (chooses, play_first) {
         (false, _) => "",
-        (true, Some(true)) => "; plays first",
-        (true, Some(false)) => "; draws first",
-        (true, None) => "; plays first (no choice was made)",
+        (true, Some(true)) => " | plays first",
+        (true, Some(false)) => " | draws first",
+        (true, None) => " | plays first (no choice was made)",
     };
     mtg_player::game_log::write(file!(), line!(),
         &format!("[Seat {seat}] SIDEBOARD before game {game}: {change}{choice}"), "");
@@ -377,5 +380,31 @@ mod deck_prompt_tests {
         assert!(prompt.contains("even if you drafted one"), "{prompt}");
         // The sideboard it is silently creating.
         assert!(prompt.contains("sideboard"), "{prompt}");
+    }
+}
+
+#[cfg(test)]
+mod deck_change_tests {
+    use super::deck_change;
+    use mtg_draft::deckbuilding::DraftDeck;
+
+    fn deck(main: &[&str], plains: u32) -> DraftDeck {
+        DraftDeck {
+            maindeck: main.iter().map(|s| (*s).to_string()).collect(),
+            lands: [("Plains".to_string(), plains)].into_iter().collect(),
+            sideboard: Vec::new(),
+        }
+    }
+
+    /// #925: a card name may hold a comma, so the names in a list are
+    /// joined by "; " and the parts by " | ": joined by ", " the log's
+    /// "in: Grimgrin, Corpse-Born, Moan of the Unhallowed" read as three.
+    #[test]
+    fn a_name_with_a_comma_is_one_card_in_the_change() {
+        let before = deck(&["Moan of the Unhallowed", "Typhoid Rats", "Chapel Geist"], 8);
+        let after = deck(&["Grimgrin, Corpse-Born", "Abattoir Ghoul", "Chapel Geist"], 9);
+        assert_eq!(deck_change(&before, &after),
+            "in: Abattoir Ghoul; Grimgrin, Corpse-Born | out: Moan of the Unhallowed; Typhoid Rats | Plains +1");
+        assert_eq!(deck_change(&before, &before), "no change");
     }
 }

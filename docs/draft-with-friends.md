@@ -232,8 +232,9 @@ deck and plays. The host's terminal says who sideboarded and who chose
 what. The log has each AI seat's prompt and answer, and for every seat one
 `[Seat N] SIDEBOARD before game G:` line once both are ready: the cards in
 and out (or `no change`, or `kept the deck (<why>)` for a seat that could
-not choose), and the chooser's `; plays first`, `; draws first` or `; plays
-first (no choice was made)`; before game 1 only the chooser's.
+not choose), and the chooser's ` | plays first`, ` | draws first` or ` | plays
+first (no choice was made)`; before game 1 only the chooser's. Card names
+are joined by `; ` and the parts by ` | `, since a name may hold a comma.
 
 ## The log and the files
 

@@ -716,15 +716,18 @@ async function main() {
         const card = (name) => ({ name, line: name, text: `${name} text`, rarity: "common", colors: [] });
         await page.evaluate((m) => window.mtgDraftDebug.stage(m), { type: "review", picks: [
           { round: 1, pick: 1, card: "Chapel Geist", auto: false, pack: [card("Doomed Traveler"), card("Chapel Geist"), card("Moan of the Unhallowed")] },
-          { round: 1, pick: 2, card: "Typhoid Rats", auto: true, pack: [card("Typhoid Rats")] },
+          { round: 1, pick: 2, card: "Lost in the Mist", auto: false, pack: [card("Lost in the Mist"), card("Grimgrin, Corpse-Born"), card("Abattoir Ghoul")] },
+          { round: 1, pick: 3, card: "Typhoid Rats", auto: true, pack: [card("Typhoid Rats")] },
           { round: 2, pick: 1, card: "Brimstone Volley", auto: false, pack: [card("Brimstone Volley"), card("Geistflame")] },
         ] });
         await page.waitForTimeout(50);
         const rows = await page.$$eval("#review li", els => els.map(e => e.textContent.replace(/\u00a0/g, " ")));
         check(await page.$$eval("#review ol", els => els.length) === 0, `${tag}: the review's rows carry their pick and no second counter (#889)`);
-        check(rows.length === 3 && rows[0] === "1.1 Chapel Geist — over Doomed Traveler, Moan of the Unhallowed",
+        check(rows.length === 4 && rows[0] === "1.1 Chapel Geist — over Doomed Traveler; Moan of the Unhallowed",
           `${tag}: each pick is the card taken over the rest of its pack (${JSON.stringify(rows)})`);
-        check(rows[1].includes("the table's pick"), `${tag}: a pick the table made says so`);
+        // "; " between the names: "Grimgrin, Corpse-Born" is one card (#925).
+        check(rows[1] === "1.2 Lost in the Mist — over Grimgrin, Corpse-Born; Abattoir Ghoul", `${tag}: a name with a comma reads as one card (${rows[1]})`);
+        check(rows[2].includes("the table's pick"), `${tag}: a pick the table made says so`);
         check((await page.$$eval("#review h4", els => els.map(e => e.textContent))).join(",") === "Pack 1,Pack 2", `${tag}: by pack`);
         const o = await overflow();
         check(o.scrollW <= o.clientW, `${tag}: the review fits sideways (${o.scrollW} <= ${o.clientW})`);

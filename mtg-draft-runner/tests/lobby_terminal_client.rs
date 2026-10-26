@@ -246,7 +246,7 @@ fn the_coin_flips_winner_chooses_from_the_client() {
     let log = server.wait_for_log("[Seat 0] SIDEBOARD before game 2:", Duration::from_secs(30));
     let line = log.lines().find(|l| l.contains("[Seat 0] SIDEBOARD before game 2:")).unwrap();
     assert!(line.contains(&format!("in: {in_name}")) && line.contains(&format!("out: {out_name}")), "{line}");
-    assert!(line.ends_with("; plays first (no choice was made)"), "seat 0 lost and chose nothing: {line}");
+    assert!(line.ends_with(" | plays first (no choice was made)"), "seat 0 lost and chose nothing: {line}");
     writeln!(stdin, "quit").unwrap();
     assert!(child.wait().unwrap().success());
 }

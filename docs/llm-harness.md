@@ -514,9 +514,10 @@ which is read only when the choice is its own — the last game's loser
 chooses, and after a drawn game whoever chose before. Repeating the counts
 keeps the deck; an answer that does not make a legal deck keeps it too,
 with no retry. The log has `[Seat N] SIDEBOARD_PROMPT before game G`, its
-`_RESPONSE`, and one `[Seat N] SIDEBOARD before game G: in: ...; out: ...`
-line (or `no change`) with `; plays first` or `; draws first` for the
-chooser. Game 1's player on the play is a coin flip's winner, who plays —
+`_RESPONSE`, and one `[Seat N] SIDEBOARD before game G: in: A; B | out: C | Plains +1`
+line (or `no change`) with ` | plays first` or ` | draws first` for the
+chooser: card names are joined by `; `, since a name may hold a comma
+("Grimgrin, Corpse-Born"), and the parts by ` | `. Game 1's player on the play is a coin flip's winner, who plays —
 no seat is asked before game 1. The hosted table (`mtg-draft-server`) writes
 the same line for a seat no model answered, with no prompt or response
 before it: a person's sideboarding and choice, `kept the deck (<why>)` for a

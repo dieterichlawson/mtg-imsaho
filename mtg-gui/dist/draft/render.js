@@ -361,8 +361,9 @@ function reviewSection(state, actions) {
                     };
                     const rest = p.pack.map((_, i) => i).filter(i => i !== takenAt);
                     const over = [];
+                    // "; ", not ", ": "Grimgrin, Corpse-Born" read as two cards (#925).
                     rest.forEach((i, n) => { if (n > 0)
-                        over.push(", "); over.push(card(i)); });
+                        over.push("; "); over.push(card(i)); });
                     const read = state.reviewRead !== null && state.reviewRead.startsWith(`${at}:`) ? p.pack[Number(state.reviewRead.slice(at.length + 1))] : undefined;
                     return h("li", { "data-pick": at }, h("span", { class: "review-pick" }, `${at} `, takenAt >= 0 ? card(takenAt) : p.card), p.auto ? h("span", { class: "muted", text: " (the table's pick)" }) : null, rest.length ? h("span", { class: "muted review-rest" }, `${dashed("over")} `, ...over) : null, read ? h("div", { class: "detail review-detail" }, cardDetail(read)) : null);
                 })));
@@ -469,7 +470,7 @@ function playing(view, done, state, actions) {
     sections.push(h("h3", { text: "Seats" }), seatsTable(view));
     if (view.deck) {
         sections.push(reviewSection(state, actions));
-        sections.push(h("h3", { text: `Your deck (${view.deck.main.length + Object.values(view.deck.lands).reduce((a, b) => a + b, 0)})` }), h("p", { class: "decklist" }, [...view.deck.main, ...Object.entries(view.deck.lands).filter(([, n]) => n > 0).map(([l, n]) => `${n} ${l}`)].join(", ")));
+        sections.push(h("h3", { text: `Your deck (${view.deck.main.length + Object.values(view.deck.lands).reduce((a, b) => a + b, 0)})` }), h("p", { class: "decklist" }, [...view.deck.main, ...Object.entries(view.deck.lands).filter(([, n]) => n > 0).map(([l, n]) => `${n} ${l}`)].join("; ")));
     }
     return h("section", { class: `phase phase-${done ? "done" : "playing"}` }, ...sections);
 }

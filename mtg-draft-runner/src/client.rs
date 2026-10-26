@@ -938,14 +938,20 @@ mod tests {
              "pack": [{"name": "Doomed Traveler"}, {"name": "Chapel Geist"}, {"name": "Moan of the Unhallowed"}]},
             {"round": 1, "pick": 2, "card": "Typhoid Rats", "auto": true, "pack": [{"name": "Typhoid Rats"}]}]});
         let text = review_listing(&msg);
-        assert!(text.contains("Pack 1\n  1.1 Chapel Geist — over Doomed Traveler, Moan of the Unhallowed\n"), "{text}");
+        assert!(text.contains("Pack 1\n  1.1 Chapel Geist — over Doomed Traveler; Moan of the Unhallowed\n"), "{text}");
         assert!(text.contains("  1.2 Typhoid Rats (the table's pick)\n"), "{text}");
         // #904: two copies in the pack, one taken: the other was passed over.
         let twice = serde_json::json!({"type": "review", "picks": [
             {"round": 1, "pick": 1, "card": "Shimmering Grotto", "auto": false,
              "pack": [{"name": "Shimmering Grotto"}, {"name": "Moonmist"}, {"name": "Shimmering Grotto"}]}]});
-        assert!(review_listing(&twice).contains("1.1 Shimmering Grotto — over Moonmist, Shimmering Grotto\n"),
+        assert!(review_listing(&twice).contains("1.1 Shimmering Grotto — over Moonmist; Shimmering Grotto\n"),
             "{}", review_listing(&twice));
+        // #925: a name with a comma in it is one card in the list.
+        let comma = serde_json::json!({"type": "review", "picks": [
+            {"round": 3, "pick": 2, "card": "Lost in the Mist", "auto": false,
+             "pack": [{"name": "Lantern Spirit"}, {"name": "Lost in the Mist"}, {"name": "Grimgrin, Corpse-Born"}, {"name": "Abattoir Ghoul"}]}]});
+        assert!(review_listing(&comma).contains("3.2 Lost in the Mist — over Lantern Spirit; Grimgrin, Corpse-Born; Abattoir Ghoul\n"),
+            "{}", review_listing(&comma));
     }
 
     /// The order a tie on points is broken by is printed beside the
@@ -1074,7 +1080,7 @@ fn between_listing(v: &Value, m: &Value, b: &Value, build: &Build, who: &dyn Fn(
         let shown: Vec<&str> = b["opponent_showed"].as_array().into_iter().flatten()
             .filter_map(|c| c["name"].as_str()).collect();
         if !shown.is_empty() {
-            s.push_str(&format!("  {opponent} has shown: {}\n", shown.join(", ")));
+            s.push_str(&format!("  {opponent} has shown: {}\n", shown.join("; ")));
         }
         s.push_str("your pool — add <n> / drop <n> to sideboard, text <n> to read a card, lands plains=7 island=10:\n");
         for (i, c) in v["pool"].as_array().into_iter().flatten().enumerate() {
@@ -1116,8 +1122,9 @@ pub fn review_listing(msg: &Value) -> String {
         }
         let auto = if p["auto"] == true { " (the table's pick)" } else { "" };
         s.push_str(&format!("  {}.{} {card}{auto}", p["round"], p["pick"]));
+        // "; ", not ", ": "Grimgrin, Corpse-Born" read as two cards (#925).
         if !rest.is_empty() {
-            s.push_str(&format!(" — over {}", rest.join(", ")));
+            s.push_str(&format!(" — over {}", rest.join("; ")));
         }
         s.push('\n');
     }

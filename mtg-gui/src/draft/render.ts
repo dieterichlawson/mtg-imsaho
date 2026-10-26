@@ -430,7 +430,8 @@ function reviewSection(state: PageState, actions: Actions): HTMLElement {
           };
           const rest = p.pack.map((_, i) => i).filter(i => i !== takenAt);
           const over: Child[] = [];
-          rest.forEach((i, n) => { if (n > 0) over.push(", "); over.push(card(i)); });
+          // "; ", not ", ": "Grimgrin, Corpse-Born" read as two cards (#925).
+          rest.forEach((i, n) => { if (n > 0) over.push("; "); over.push(card(i)); });
           const read = state.reviewRead !== null && state.reviewRead.startsWith(`${at}:`) ? p.pack[Number(state.reviewRead.slice(at.length + 1))] : undefined;
           return h("li", { "data-pick": at },
             h("span", { class: "review-pick" }, `${at} `, takenAt >= 0 ? card(takenAt) : p.card),
@@ -557,7 +558,7 @@ function playing(view: DraftView, done: boolean, state: PageState, actions: Acti
   if (view.deck) {
     sections.push(reviewSection(state, actions));
     sections.push(h("h3", { text: `Your deck (${view.deck.main.length + Object.values(view.deck.lands).reduce((a, b) => a + b, 0)})` }),
-      h("p", { class: "decklist" }, [...view.deck.main, ...Object.entries(view.deck.lands).filter(([, n]) => n > 0).map(([l, n]) => `${n} ${l}`)].join(", ")));
+      h("p", { class: "decklist" }, [...view.deck.main, ...Object.entries(view.deck.lands).filter(([, n]) => n > 0).map(([l, n]) => `${n} ${l}`)].join("; ")));
   }
   return h("section", { class: `phase phase-${done ? "done" : "playing"}` }, ...sections);
 }
