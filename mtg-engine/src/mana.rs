@@ -578,38 +578,42 @@ fn greedy_autotap(
             .count()
     });
 
-    for color in colored_needs {
-        let mt = ManaType::from(color);
-        // Find the best available source that can produce this color.
-        //
-        // What the ability costs ranks ahead of the opportunity-cost tier. A
-        // filter ("{1}, {T}: Add one mana of any color") paying a pip takes a
-        // second source to fund it, so it is two taps where a source that
-        // makes the colour for free is one. Ranking by tier alone let
-        // Shimmering Grotto (tier 1) beat Avacyn's Pilgrim (tier 3) for {W}:
-        // a {1}{W} spell off Grotto + Pilgrim was then unpayable and missing
-        // from the menu, and off Forest + Pilgrim + Grotto it tapped all
-        // three (issue #615).
-        let best = available.iter()
-            .enumerate()
-            .filter_map(|(pos, &src_idx)| cheapest_ability_producing(&sources[src_idx], mt)
-                .map(|ability| (pos, src_idx, ability_cost(ability))))
-            .min_by_key(|&(_, src_idx, cost)| (cost, source_sort_key(&sources[src_idx], &hand_demand)));
+    // Each pip takes the best available source that can produce its color.
+    //
+    // What the ability costs ranks ahead of the opportunity-cost tier. A
+    // filter ("{1}, {T}: Add one mana of any color") paying a pip takes a
+    // second source to fund it, so it is two taps where a source that
+    // makes the colour for free is one. Ranking by tier alone let
+    // Shimmering Grotto (tier 1) beat Avacyn's Pilgrim (tier 3) for {W}:
+    // a {1}{W} spell off Grotto + Pilgrim was then unpayable and missing
+    // from the menu, and off Forest + Pilgrim + Grotto it tapped all
+    // three (issue #615).
+    let preferred: Vec<Vec<usize>> = colored_needs.iter()
+        .map(|&color| {
+            let mt = ManaType::from(color);
+            let mut can: Vec<(u32, (ManaSourceKind, usize, u32), usize)> = available.iter()
+                .filter_map(|&src_idx| cheapest_ability_producing(&sources[src_idx], mt)
+                    .map(|ability| (ability_cost(ability), source_sort_key(&sources[src_idx], &hand_demand), src_idx)))
+                .collect();
+            // Stable, so equal keys keep the order the sources were given.
+            can.sort_by_key(|&(cost, key, _)| (cost, key));
+            can.into_iter().map(|(_, _, src_idx)| src_idx).collect()
+        })
+        .collect();
+    let assigned = match_pips_to_sources(&preferred, sources.len())?;
 
-        if let Some((avail_pos, src_idx, _)) = best {
-            let source = &sources[src_idx];
-            let ability = cheapest_ability_producing(source, mt).unwrap();
-            let ability_idx = ability.ability_index;
-            let total_produced = ability_total_mana(ability);
-            // 1 mana used for the colored pip, rest is excess.
-            excess_mana += total_produced - 1;
-            remaining.generic += ability_cost(ability);
+    for (pip, &src_idx) in assigned.iter().enumerate() {
+        let mt = ManaType::from(colored_needs[pip]);
+        let source = &sources[src_idx];
+        let ability = cheapest_ability_producing(source, mt).unwrap();
+        let ability_idx = ability.ability_index;
+        let total_produced = ability_total_mana(ability);
+        // 1 mana used for the colored pip, rest is excess.
+        excess_mana += total_produced - 1;
+        remaining.generic += ability_cost(ability);
 
-            tap_plan.push((source.object_id, ability_idx));
-            available.remove(avail_pos);
-        } else {
-            return None; // Can't satisfy this colored requirement.
-        }
+        tap_plan.push((source.object_id, ability_idx));
+        available.retain(|&a| a != src_idx);
     }
 
     // Phase 3: Satisfy generic mana.
@@ -716,6 +720,55 @@ fn greedy_autotap(
 
     free_abilities_first(&mut tap_plan, sources);
     Some(tap_plan)
+}
+
+/// A different source for each coloured pip, `preferred[pip]` listing the
+/// sources that can pay that pip, best first: the source each pip is paid
+/// with, or `None` when no assignment pays them all.
+///
+/// Each pip in turn takes its best source still free, which is the choice
+/// the planner always made. When none is free, the earlier pips are
+/// re-routed along an augmenting path (Kuhn's algorithm) rather than the
+/// cost given up: taking each pip's best free source alone gave {U} the W/U
+/// dual and {B} the W/B dual, and with only the U/B dual left for {W} found
+/// no plan for {W}{U}{B} that the three lands pay (one pip each, in a
+/// cycle). An augmenting path exists whenever the pips can be matched at
+/// all, so this finds an assignment whenever one exists, and changes no
+/// assignment the greedy choice already completed.
+fn match_pips_to_sources(preferred: &[Vec<usize>], n_sources: usize) -> Option<Vec<usize>> {
+    /// Find `pip` a source: a free one, or one whose pip can move to another.
+    fn augment(pip: usize, preferred: &[Vec<usize>], owner: &mut [Option<usize>], seen: &mut [bool]) -> bool {
+        if let Some(&free) = preferred[pip].iter().find(|&&s| owner[s].is_none()) {
+            owner[free] = Some(pip);
+            return true;
+        }
+        for &s in &preferred[pip] {
+            if seen[s] {
+                continue;
+            }
+            seen[s] = true;
+            let holder = owner[s].expect("a source not free has a pip");
+            if augment(holder, preferred, owner, seen) {
+                owner[s] = Some(pip);
+                return true;
+            }
+        }
+        false
+    }
+    let mut owner: Vec<Option<usize>> = vec![None; n_sources];
+    for pip in 0..preferred.len() {
+        let mut seen = vec![false; n_sources];
+        if !augment(pip, preferred, &mut owner, &mut seen) {
+            return None;
+        }
+    }
+    let mut assigned = vec![usize::MAX; preferred.len()];
+    for (s, pip) in owner.iter().enumerate() {
+        if let Some(pip) = *pip {
+            assigned[pip] = s;
+        }
+    }
+    Some(assigned)
 }
 
 /// Whether `cost` (its non-X part) is within reach of `pool` plus `sources`
@@ -1669,6 +1722,38 @@ mod tests {
         assert!(result.is_some());
         let plan = result.unwrap();
         assert_eq!(plan.len(), 3);
+    }
+
+    /// Three duals, each sharing a colour with the other two, pay one pip
+    /// of each colour only in a cycle: W/U for {U}, W/B for {B}, and nothing
+    /// is left for {W} unless the pips are re-routed. Giving each pip its
+    /// best free source in turn found no plan, and the cast was missing
+    /// from the menu with the lands for it untapped. Found by the
+    /// exhaustive small-board sweep in `autotap_brute_force.rs`.
+    #[test]
+    fn coloured_pips_are_matched_to_sources_not_taken_greedily() {
+        let cost = ManaCost::new(vec![
+            ManaSymbol::Colored(Color::Blue),
+            ManaSymbol::Colored(Color::Black),
+            ManaSymbol::Colored(Color::White),
+        ]);
+        let sources = vec![
+            make_source(1, ManaSourceKind::NonBasicMana, dual_abilities(ManaType::White, ManaType::Blue)),
+            make_source(2, ManaSourceKind::NonBasicMana, dual_abilities(ManaType::White, ManaType::Black)),
+            make_source(3, ManaSourceKind::NonBasicMana, dual_abilities(ManaType::Blue, ManaType::Black)),
+        ];
+        let plan = compute_autotap(&cost, &ManaPool::new(), &sources, &[])
+            .expect("the three duals pay one pip each");
+        let mut pool = ManaPool::new();
+        for (id, ability_index) in &plan {
+            let source = sources.iter().find(|s| s.object_id == *id).unwrap();
+            let ability = source.abilities.iter().find(|a| a.ability_index == *ability_index).unwrap();
+            for &(mt, n) in &ability.produced {
+                pool.add(mt, n);
+            }
+        }
+        assert_eq!(plan.len(), 3);
+        assert!(can_pay(&pool, &cost), "the plan {plan:?} pays {cost}");
     }
 
     #[test]
