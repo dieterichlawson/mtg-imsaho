@@ -351,6 +351,33 @@ enum Effect {
     DamageX { slot: usize },
     /// "Regenerate this creature": a shield (CR 701.19a).
     Regenerate { slot: usize },
+    /// "If that creature is a <subtype>, put N +1/+1 counters on it
+    /// instead": the counters of the `PlusCounters` before it, `n_if` of
+    /// them for a creature of that subtype.
+    PlusCountersIfSubtype { slot: usize, n: u32, subtype: String, n_if: u32 },
+    /// "<slot> gets +X/+X until end of turn, where X is the number of
+    /// <filter>": counted as it resolves.
+    PumpPerCount { slot: usize, power: i32, toughness: i32, filter: Filter },
+    /// "Add {R}{R}{R}." (CR 106.4).
+    AddMana(Vec<(ManaType, u32)>),
+    /// "Exile target creature and all other creatures with the same name
+    /// as that creature" (CR 201.2).
+    ExileWithSameName { slot: usize },
+    /// "<player slot> exiles a card from their graveyard": the card in
+    /// `World::chosen`, which that player chooses; "If it's a creature
+    /// card, you gain N life".
+    PlayerExilesFromGraveyard { slot: usize },
+    GainLifeIfExiledCreature { n: i32 },
+    /// "<player slot> discards N cards": the whole hand here, no hand on
+    /// the board holding more (CR 701.9a).
+    PlayerDiscards { slot: usize, n: usize },
+    /// "<player slot> puts the bottom card of their library into their
+    /// graveyard. If it's a creature card, you create <token>".
+    BottomCardToGraveyard { slot: usize },
+    TokenIfCreatureCard(Box<Effect>),
+    /// "Exchange your life total with this creature's toughness" (CR
+    /// 701.10, 613.4b).
+    ExchangeLifeWithToughness { slot: usize },
     /// "discard N cards at random" (CR 701.9b): the cards in
     /// `World::discarded`.
     DiscardAtRandom { n: usize },
@@ -1118,6 +1145,56 @@ impl Spec {
             self.effects.push(Effect::ReturnAtRandom { n, filter, to_battlefield });
             return Some(());
         }
+        if let Some(rest) = s.strip_prefix("If that creature is a ") {
+            let (subtype, n) = rest.split_once(", put ")?;
+            let n_if = number(n.strip_suffix(" +1/+1 counters on it instead")?)?;
+            let Some(Effect::PlusCounters { slot, n }) = self.effects.pop() else { return None };
+            self.effects.push(Effect::PlusCountersIfSubtype { slot, n, subtype: subtype.to_string(), n_if });
+            return Some(());
+        }
+        if let Some(f) = s.strip_prefix("Put a +1/+1 counter on target ") {
+            let slot = self.slot(Slot::Permanent(filter(f)?));
+            self.effects.push(Effect::PlusCounters { slot, n: 1 });
+            return Some(());
+        }
+        if let Some(mana) = s.strip_prefix("Add ") {
+            let mut out: Vec<(ManaType, u32)> = Vec::new();
+            for sym in mana.split('}').filter(|x| !x.is_empty()) {
+                let t = mana_named(&format!("{sym}}}"))?;
+                match out.iter_mut().find(|(k, _)| *k == t) {
+                    Some((_, n)) => *n += 1,
+                    None => out.push((t, 1)),
+                }
+            }
+            self.effects.push(Effect::AddMana(out));
+            return Some(());
+        }
+        if let Some(f) = s.strip_prefix("Exile target ").and_then(|r| r.strip_suffix(" and all other creatures with the same name as that creature")) {
+            let slot = self.slot(Slot::Permanent(filter(f)?));
+            self.effects.push(Effect::ExileWithSameName { slot });
+            return Some(());
+        }
+        if let Some(n) = s.strip_prefix("If it's a creature card, you gain ").and_then(|r| r.strip_suffix(" life")) {
+            if !matches!(self.effects.last(), Some(Effect::PlayerExilesFromGraveyard { .. })) {
+                return None;
+            }
+            self.effects.push(Effect::GainLifeIfExiledCreature { n: number(n)?.try_into().ok()? });
+            return Some(());
+        }
+        if let Some(rest) = s.strip_prefix("If it's a creature card, you create ") {
+            if !matches!(self.effects.last(), Some(Effect::BottomCardToGraveyard { .. })) {
+                return None;
+            }
+            let mut token = Spec::default();
+            token.tokens(rest)?;
+            self.effects.push(Effect::TokenIfCreatureCard(Box::new(token.effects.pop()?)));
+            return Some(());
+        }
+        if s == "Exchange your life total with this creature's toughness" {
+            let slot = self.slot(Slot::This);
+            self.effects.push(Effect::ExchangeLifeWithToughness { slot });
+            return Some(());
+        }
         if s == "Each player chooses a creature they control" {
             self.effects.push(Effect::EachPlayerChoosesACreature);
             return Some(());
@@ -1286,7 +1363,17 @@ impl Spec {
         }
         // A pump of one target or of a group (CR 611.2).
         if let Some(rest) = s.strip_prefix("Target ") {
-            if let Some((who, change)) = rest.split_once(" gets ").filter(|(_, c)| c.starts_with("+X/")) {
+            if let Some((who, change)) = rest.split_once(" gets ").filter(|(_, c)| c.contains(", where X is the number of ")) {
+                let (change, count) = change.split_once(", where X is the number of ")?;
+                let ((power, toughness), gains) = pump(&format!("gets {}", change.replace("+X", "+1")))?;
+                if !gains.is_empty() {
+                    return None;
+                }
+                let slot = self.slot(Slot::Permanent(filter(who)?));
+                self.effects.push(Effect::PumpPerCount { slot, power, toughness, filter: filter(count)? });
+                return Some(());
+            }
+            if let Some((who, change)) = rest.split_once(" gets ").filter(|(_, c)| c.starts_with("+X/") && !c.contains(", where X is ")) {
                 let ((power, toughness), gains) = pump(&format!("gets {}", change.replacen("+X/", "+1/", 1).replacen("/+X", "/+1", 1)))?;
                 let slot = self.slot(Slot::Permanent(filter(who)?));
                 self.effects.push(Effect::PumpX { slot, power, toughness, gains });
@@ -1296,6 +1383,22 @@ impl Spec {
                 let ((power, toughness), gains) = pump(&format!("gets {change}"))?;
                 let slot = self.slot(Slot::Permanent(filter(who)?));
                 self.effects.push(Effect::Pump { slot, power, toughness, gains });
+                return Some(());
+            }
+            if let Some(who) = rest.strip_suffix(" exiles a card from their graveyard") {
+                let slot = self.player_slot(who)?;
+                self.effects.push(Effect::PlayerExilesFromGraveyard { slot });
+                return Some(());
+            }
+            if let Some(who) = rest.strip_suffix(" puts the bottom card of their library into their graveyard") {
+                let slot = self.player_slot(who)?;
+                self.effects.push(Effect::BottomCardToGraveyard { slot });
+                return Some(());
+            }
+            if let Some((who, n)) = rest.split_once(" discards ") {
+                let n = number(n.strip_suffix(" cards").or_else(|| n.strip_suffix(" card"))?)? as usize;
+                let slot = self.player_slot(who)?;
+                self.effects.push(Effect::PlayerDiscards { slot, n });
                 return Some(());
             }
             if let Some(who) = rest.strip_suffix(" sacrifices a creature of their choice") {
@@ -1549,9 +1652,11 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
         }
         if let Some(rest) = line.strip_prefix("When this creature dies, ") {
             let mut chars = rest.chars();
-            let sentence: String = chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default();
+            let text: String = chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default();
             let mut trigger = Trigger::default();
-            trigger.spec.sentence(&sentence).ok_or_else(unread)?;
+            for sentence in text.split_inclusive(". ") {
+                trigger.spec.sentence(sentence).ok_or_else(unread)?;
+            }
             spec.dies = Some(Box::new(trigger));
             continue;
         }
@@ -1888,6 +1993,16 @@ fn board_after_a_death(registry: &CardRegistry, cache: &BTreeMap<String, Printed
     world.yard.insert(lions, Model::printed(&cache["Savannah Lions"], P1));
     world.graveyard[1].push("Savannah Lions".to_string());
     world.a_creature_died = true;
+    (state, world)
+}
+
+/// The board, with a second Grizzly Bears, the opponent's: what a card that
+/// reads names is read against.
+fn board_with_twins(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameState, World) {
+    let (mut state, mut world) = board(registry, cache);
+    let twin = named_permanent(&mut state, registry, "Grizzly Bears", P1);
+    world.permanents.insert(twin, Model::printed(&cache["Grizzly Bears"], P1));
+    world.refresh();
     (state, world)
 }
 
@@ -2892,6 +3007,79 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     .collect();
                 destroyed = doomed.into_iter().filter(|id| w.destroy(*id)).count();
             }
+            Effect::PlusCountersIfSubtype { slot, n, subtype, n_if } => {
+                if let Some(m) = object(*slot).and_then(|id| w.permanents.get_mut(&id)) {
+                    let k = i32::try_from(if m.subtypes.contains(subtype) { *n_if } else { *n }).expect("a few");
+                    change(m, k, k);
+                    m.counters.0 += k as u32;
+                }
+            }
+            Effect::PumpPerCount { slot, power, toughness, filter } => {
+                let k = i32::try_from(w.permanents.values().chain(&w.tokens).filter(|m| m.matches(filter, caster)).count()).expect("a few");
+                if let Some(m) = object(*slot).and_then(|id| w.permanents.get_mut(&id)) {
+                    until_end_of_turn(m, (power * k, toughness * k), &[]);
+                }
+            }
+            Effect::AddMana(mana) => {
+                for (t, n) in mana {
+                    *w.pool[c].entry(*t).or_insert(0) += n;
+                }
+            }
+            Effect::ExileWithSameName { slot } => {
+                if let Some(name) = object(*slot).and_then(|id| w.permanents.get(&id)).and_then(|m| m.name.clone()) {
+                    let doomed: Vec<ObjectId> = w.permanents.iter()
+                        .filter(|(_, m)| m.is_creature() && m.name.as_ref() == Some(&name))
+                        .map(|(id, _)| *id)
+                        .collect();
+                    for id in doomed {
+                        w.leave(id, Dest::Exile);
+                    }
+                }
+            }
+            Effect::PlayerExilesFromGraveyard { .. } => {
+                for id in &world.chosen {
+                    if let Some(card) = w.leave_yard(*id) {
+                        w.exile[card.owner.0 as usize].push(card.name.clone().expect("a card"));
+                        w.cost_exiled.push(card);
+                    }
+                }
+            }
+            Effect::GainLifeIfExiledCreature { n } => {
+                if w.cost_exiled.last().is_some_and(Model::is_creature) {
+                    w.life[c] += n;
+                }
+            }
+            Effect::PlayerDiscards { slot, n } => {
+                if let Some(p) = player(*slot) {
+                    assert!(w.hand[p].len() <= *n, "the reference discards a whole hand, not a choice from it");
+                    let hand = std::mem::take(&mut w.hand[p]);
+                    w.graveyard[p].extend(hand);
+                }
+            }
+            Effect::BottomCardToGraveyard { slot } => {
+                if let Some(p) = player(*slot) {
+                    if let Some(card) = w.library[p].pop() {
+                        w.graveyard[p].push(card);
+                    }
+                }
+            }
+            Effect::TokenIfCreatureCard(_) => {
+                // The board's libraries hold only basic lands, none of them
+                // a creature card.
+                assert!(LIBRARY.iter().all(|n| BASIC_LANDS.contains(n)));
+            }
+            Effect::ExchangeLifeWithToughness { slot } => {
+                if let Some(id) = object(*slot) {
+                    let t = w.pt_of(&w.permanents[&id]).1.unwrap_or(0);
+                    let life = w.life[c];
+                    let m = w.permanents.get_mut(&id).expect("the source");
+                    // The toughness it is set to is its base (CR 613.4b);
+                    // what changes it on top of that still does.
+                    let on_top = t - m.toughness.unwrap_or(0);
+                    m.toughness = Some(life - on_top);
+                    w.life[c] = t;
+                }
+            }
             Effect::DiscardAtRandom { .. } => {
                 for name in &world.discarded {
                     let at = w.hand[c].iter().position(|h| h == name).expect("a card in hand");
@@ -3285,7 +3473,7 @@ fn search_choices(spec: &Spec, world: &World, targets: &[Target], caster: Player
 /// player makes, each card a search can find.
 fn resolution_ways(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Vec<World> {
     let mut ways = random_choices(spec, world, caster);
-    if spec.effects.iter().any(|e| matches!(e, Effect::SacrificeOfTheirChoice { .. } | Effect::EachPlayerChoosesACreature)) {
+    if spec.effects.iter().any(|e| matches!(e, Effect::SacrificeOfTheirChoice { .. } | Effect::EachPlayerChoosesACreature | Effect::PlayerExilesFromGraveyard { .. })) {
         ways = ways.iter()
             .flat_map(|w| resolution_choices(spec, w, targets).into_iter().map(move |chosen| World { chosen, ..w.clone() }))
             .collect();
@@ -3297,7 +3485,8 @@ fn resolution_ways(spec: &Spec, world: &World, targets: &[Target], caster: Playe
 /// choice another player makes, a search.
 fn asks_as_it_resolves(spec: &Spec) -> bool {
     is_random(spec) || spec.effects.iter().any(|e| matches!(e,
-        Effect::SacrificeOfTheirChoice { .. } | Effect::EachPlayerChoosesACreature | Effect::SearchForBasicLand { .. }))
+        Effect::SacrificeOfTheirChoice { .. } | Effect::EachPlayerChoosesACreature | Effect::SearchForBasicLand { .. }
+        | Effect::PlayerExilesFromGraveyard { .. }))
 }
 
 /// Whether `spec` does something at random.
@@ -3341,6 +3530,10 @@ fn resolution_choices(spec: &Spec, world: &World, targets: &[Target]) -> Vec<Vec
         let options: Vec<Vec<ObjectId>> = match effect {
             Effect::SacrificeOfTheirChoice { slot } => match &targets[*slot] {
                 Target::Player(p) => of(*p).into_iter().map(|c| vec![c]).collect(),
+                _ => continue,
+            },
+            Effect::PlayerExilesFromGraveyard { slot } => match &targets[*slot] {
+                Target::Player(p) => world.yard.iter().filter(|(_, m)| m.owner == *p).map(|(id, _)| vec![*id]).collect(),
                 _ => continue,
             },
             Effect::EachPlayerChoosesACreature => {
@@ -3718,10 +3911,17 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
     let mut unanswered = None;
     let mut decisions = 0;
     let turn = state.turn_number;
+    let step = state.step;
     engine::run_game_loop(&mut state, registry, |s: &GameState, _acting: PlayerId, legal: &engine::LegalActions| {
         decisions += 1;
         if let Some(c) = cast.take() {
             return c;
+        }
+        // In the main phase: a player with nothing left to do is passed for,
+        // and the game goes on; the first question in a later step means
+        // the stack emptied where it started.
+        if matches!(scene, Scene::Main) && (s.step != step || s.turn_number != turn) && s.stack.is_empty() {
+            return Action::AbandonGame;
         }
         if decisions > 40 {
             trouble = Some("the game did not come to rest".to_string());
@@ -3963,45 +4163,47 @@ const READ: &[&str] = &[
     "Angel of Flight Alabaster", "Angelic Overseer", "Armored Skaab", "Army of the Damned",
     "Ashmouth Hound", "Avacyn's Pilgrim", "Avacynian Priest", "Balefire Dragon",
     "Battleground Geist", "Blasphemous Act", "Bloodcrazed Neonate", "Bloodgift Demon",
-    "Bonds of Faith", "Boneyard Wurm", "Bramblecrush", "Brimstone Volley", "Bump in the Night",
-    "Butcher's Cleaver", "Caravan Vigil", "Chapel Geist", "Claustrophobia", "Clifftop Retreat",
-    "Cobbled Wings", "Coral Merfolk", "Corpse Lunge", "Counterspell", "Curse of Death's Hold",
-    "Curse of Oblivion", "Curse of Stalked Prey", "Curse of the Bloody Tome",
-    "Curse of the Nightly Hunt", "Curse of the Pierced Heart", "Darkthicket Wolf",
-    "Dead Weight", "Demonmail Hauberk", "Deranged Assistant", "Desperate Ravings",
-    "Devil's Play", "Diregraf Ghoul", "Disciple of Griselbrand", "Dissipate", "Divination",
-    "Divine Reckoning", "Doom Blade", "Doomed Traveler", "Dream Twist", "Elite Inquisitor",
+    "Bonds of Faith", "Boneyard Wurm", "Brain Weevil", "Bramblecrush", "Brimstone Volley",
+    "Bump in the Night", "Butcher's Cleaver", "Caravan Vigil", "Cellar Door", "Chapel Geist",
+    "Claustrophobia", "Clifftop Retreat", "Cobbled Wings", "Coral Merfolk", "Corpse Lunge",
+    "Counterspell", "Curse of Death's Hold", "Curse of Oblivion", "Curse of Stalked Prey",
+    "Curse of the Bloody Tome", "Curse of the Nightly Hunt", "Curse of the Pierced Heart",
+    "Darkthicket Wolf", "Dead Weight", "Demonmail Hauberk", "Deranged Assistant",
+    "Desperate Ravings", "Devil's Play", "Diregraf Ghoul", "Disciple of Griselbrand",
+    "Dissipate", "Divination", "Divine Reckoning", "Doom Blade", "Doomed Traveler",
+    "Dream Twist", "Elder Cathar", "Elder of Laurels", "Elite Inquisitor",
     "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread", "Feral Ridgewolf",
     "Festerhide Boar", "Forest", "Fortress Crab", "Full Moon's Rise", "Furor of the Bitten",
     "Gallows Warden", "Gatstaf Shepherd", "Gavony Township", "Geist of Saint Traft",
     "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame", "Ghost Quarter",
     "Ghostly Possession", "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth",
     "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms", "Grave Bramble",
-    "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Harvest Pyre",
-    "Hinterland Harbor", "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness",
-    "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker", "Island",
-    "Isolated Chapel", "Kalonian Tusker", "Kessig Cagebreakers", "Kessig Wolf",
-    "Kessig Wolf Run", "Kindercatch", "Lantern Spirit", "Lava Axe", "Lightning Bolt",
-    "Lost in the Mist", "Lumberknot", "Make a Wish", "Makeshift Mauler", "Manor Skeleton",
-    "Markov Patrician", "Mask of Avacyn", "Mausoleum Guard", "Maw of the Mire",
-    "Midnight Haunting", "Moan of the Unhallowed", "Moldgraf Monstrosity", "Moment of Heroism",
-    "Moon Heron", "Moorland Haunt", "Morkrut Banshee", "Mountain", "Naturalize",
-    "Nephalia Drownyard", "Night Revelers", "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism",
-    "Paraselene", "Pitchburn Devils", "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower",
-    "Rakish Heir", "Rally the Peasants", "Ranger's Guile", "Rebuke", "Reckless Waif",
-    "Riot Devils", "Rolling Temblor", "Rotting Fensnake", "Runechanter's Pike",
-    "Savannah Lions", "Scourge of Geier Reach", "Selfless Cathar", "Selhoff Occultist",
-    "Sensory Deprivation", "Sharpened Pitchfork", "Shimmering Grotto", "Silent Departure",
-    "Silver-Inlaid Dagger", "Silverchase Fox", "Skaab Goliath", "Skirsdag Cultist",
-    "Slayer of the Wicked", "Smite the Monstrous", "Sol Ring", "Somberwald Spider",
-    "Spectral Flight", "Spectral Rider", "Spider Spawning", "Spidery Grasp", "Splinterfright",
-    "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist",
-    "Sulfur Falls", "Swamp", "Swords to Plowshares", "Think Twice", "Thraben Purebloods",
-    "Tormented Pariah", "Travel Preparations", "Traveler's Amulet", "Tribute to Hunger",
-    "Typhoid Rats", "Unburial Rites", "Unruly Mob", "Urgent Exorcism", "Vampire Interloper",
-    "Vampiric Fury", "Victim of Night", "Village Bell-Ringer", "Village Cannibals",
-    "Village Ironsmith", "Villagers of Estwald", "Voiceless Spirit", "Walking Corpse",
-    "Wooden Stake", "Woodland Cemetery", "Woodland Sleuth", "Wreath of Geists",
+    "Graveyard Shovel", "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity",
+    "Harvest Pyre", "Hinterland Harbor", "Hollowhenge Scavenger", "Holy Strength",
+    "Hysterical Blindness", "Infernal Plunge", "Intangible Virtue", "Into the Maw of Hell",
+    "Invisible Stalker", "Island", "Isolated Chapel", "Kalonian Tusker", "Kessig Cagebreakers",
+    "Kessig Wolf", "Kessig Wolf Run", "Kindercatch", "Lantern Spirit", "Lava Axe",
+    "Lightning Bolt", "Lost in the Mist", "Lumberknot", "Make a Wish", "Makeshift Mauler",
+    "Manor Skeleton", "Markov Patrician", "Mask of Avacyn", "Mausoleum Guard",
+    "Maw of the Mire", "Midnight Haunting", "Moan of the Unhallowed", "Moldgraf Monstrosity",
+    "Moment of Heroism", "Moon Heron", "Moorland Haunt", "Morkrut Banshee", "Mountain",
+    "Naturalize", "Nephalia Drownyard", "Night Revelers", "One-Eyed Scarecrow",
+    "Orchard Spirit", "Pacifism", "Paraselene", "Pitchburn Devils", "Plains", "Prey Upon",
+    "Purify the Grave", "Rage Thrower", "Rakish Heir", "Rally the Peasants", "Ranger's Guile",
+    "Rebuke", "Reckless Waif", "Riot Devils", "Rolling Temblor", "Rotting Fensnake",
+    "Runechanter's Pike", "Savannah Lions", "Scourge of Geier Reach", "Selfless Cathar",
+    "Selhoff Occultist", "Sensory Deprivation", "Sever the Bloodline", "Sharpened Pitchfork",
+    "Shimmering Grotto", "Silent Departure", "Silver-Inlaid Dagger", "Silverchase Fox",
+    "Skaab Goliath", "Skirsdag Cultist", "Slayer of the Wicked", "Smite the Monstrous",
+    "Sol Ring", "Somberwald Spider", "Spectral Flight", "Spectral Rider", "Spider Spawning",
+    "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble",
+    "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp", "Swords to Plowshares",
+    "Think Twice", "Thraben Purebloods", "Tormented Pariah", "Travel Preparations",
+    "Traveler's Amulet", "Tree of Redemption", "Tribute to Hunger", "Typhoid Rats",
+    "Unburial Rites", "Unruly Mob", "Urgent Exorcism", "Vampire Interloper", "Vampiric Fury",
+    "Victim of Night", "Village Bell-Ringer", "Village Cannibals", "Village Ironsmith",
+    "Villagers of Estwald", "Voiceless Spirit", "Walking Corpse", "Wooden Stake",
+    "Woodland Cemetery", "Woodland Sleuth", "Wreath of Geists",
 ];
 
 // ---- the properties ----
@@ -4068,13 +4270,17 @@ fn every_readable_card_does_what_its_text_says() {
     let (cards, _) = readable(&registry, &cache);
     let mut failures = Vec::new();
     let mut casts = 0;
-    let boards: [(&str, Build); 2] = [("", board), (" after a death", board_after_a_death)];
+    let boards: [(&str, Build); 3] = [("", board), (" after a death", board_after_a_death), (" with two of a name", board_with_twins)];
     for (card, spec) in cards.iter().filter(|(_, s)| s.land.is_none()) {
         // A mana ability is not cast-and-resolve material (CR 605.3b): the
         // mana test checks it.
-        let boards = if spec.reads_morbid() { &boards[..] } else { &boards[..1] };
+        let reads_names = spec.effects.iter().any(|e| matches!(e, Effect::ExileWithSameName { .. }));
+        let boards: Vec<&(&str, Build)> = boards.iter().enumerate()
+            .filter(|(i, _)| *i == 0 || (*i == 1 && spec.reads_morbid()) || (*i == 2 && reads_names))
+            .map(|(_, b)| b)
+            .collect();
         let counters = spec.slots.iter().any(|s| matches!(s, Slot::Spell(_)));
-        for (which, build) in boards {
+        for &(which, build) in boards {
             let (mut state, mut world) = build(&registry, &cache);
             let spell = spell_in_hand(&mut state, &registry, &card.name, P0);
             let cost = mana_cost(&card.mana_cost).expect("read above");
@@ -5594,6 +5800,12 @@ fn the_grammar_reads_its_templates() {
     assert_eq!(hound.block_damage, Some(1));
     assert!(CombatText::default().read("Whenever this creature attacks, create a 1/1 white Spirit creature token with flying.").is_none(),
         "a token that does not enter attacking is another template");
+
+    let cathar = read_creature(&Printed { oracle_text: "When this creature dies, put a +1/+1 counter on target creature you control. If that creature is a Human, put two +1/+1 counters on it instead.".to_string(), ..slayer.clone() }).unwrap();
+    assert_eq!(cathar.dies.expect("a dies trigger").spec.effects, vec![Effect::PlusCountersIfSubtype { slot: 0, n: 1, subtype: "Human".to_string(), n_if: 2 }]);
+    let laurels = read_activated("{3}{G}: Target creature gets +X/+X until end of turn, where X is the number of creatures you control.", 0).unwrap();
+    assert!(matches!(&laurels.spec.effects[..], [Effect::PumpPerCount { power: 1, toughness: 1, .. }]));
+    assert_eq!(read(&card("X", "Add {R}{R}{R}.")).unwrap().effects, vec![Effect::AddMana(vec![(ManaType::Red, 3)])]);
 
     let mut tribute = Spec::default();
     for sentence in ["Target opponent sacrifices a creature of their choice. ", "You gain life equal to that creature's toughness."] {
