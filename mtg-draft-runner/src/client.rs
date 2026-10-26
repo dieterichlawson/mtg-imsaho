@@ -308,7 +308,7 @@ fn send_edit(v: &Value, build: &Build) -> Command {
     }
     let total = build.main.len() + build.lands.values().sum::<u32>() as usize;
     if total < 40 {
-        return Command::Print(format!("{total} cards: the deck for the next game needs 40 or more; nothing sent yet"));
+        return Command::Print(format!("{}: the deck for the next game needs 40 or more; nothing sent yet", crate::count(total, "card", "cards")));
     }
     Command::Send(vec![sideboard_message(v, build)])
 }
@@ -1117,7 +1117,7 @@ fn pool_listing(v: &Value) -> String {
         return "your pool is empty\n".to_string();
     }
     counts.sort();
-    let mut s = format!("your pool ({} cards):\n", v["pool"].as_array().map_or(0, Vec::len));
+    let mut s = format!("your pool ({}):\n", crate::count(v["pool"].as_array().map_or(0, Vec::len), "card", "cards"));
     for (line, n) in counts {
         s.push_str(&format!("  {n}x {line}\n"));
     }

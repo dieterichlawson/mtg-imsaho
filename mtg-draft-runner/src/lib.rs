@@ -16,6 +16,14 @@ pub mod standings;
 
 pub use standings::{standings_row, RowTags};
 
+/// "1 card", "3 cards": a count with its noun, singular at one. "1 picks",
+/// "1 cards short" and "1 retries" each had a format string of their own
+/// to slip in (#874, #914).
+#[must_use]
+pub fn count(n: usize, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == 1 { one } else { many })
+}
+
 use progress::end_progress_line;
 
 /// Silence the default panic output for a seat's fatal LLM failure.

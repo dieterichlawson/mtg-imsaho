@@ -913,8 +913,8 @@ this draft will be made under {} — this draft is a mixture of the two",
     let removed = set_data.filter_implemented(&registry);
     if !removed.is_empty() && !args.quiet {
         mtg_player::stderr_line!(
-            "Warning: {} cards not implemented, removed from draft pool",
-            removed.len()
+            "Warning: {} not implemented, removed from draft pool",
+            mtg_draft_runner::count(removed.len(), "card", "cards")
         );
     }
 

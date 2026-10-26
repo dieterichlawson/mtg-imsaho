@@ -65,7 +65,7 @@ impl DraftLogger {
         // notice used to be a stderr line `--quiet` suppressed, so a quiet
         // resume left no trace in any file (issue #401).
         if let Some((path, picks)) = resumed_from {
-            lines.push(format!("resumed from: {path} ({picks} picks replayed)"));
+            lines.push(format!("resumed from: {path} ({} replayed)", crate::count(picks, "pick", "picks")));
             // The guide lines below describe the rest of the draft. Saying
             // only that used to make the header assert something false about
             // the replayed picks, and the snapshot it points at recorded no
@@ -308,7 +308,7 @@ unusable response, substituted {chosen_name} (the first card) — replayed from 
             writeln!(content, "  {count} {name}").unwrap();
         }
         if !sideboard.is_empty() {
-            writeln!(content, "Sideboard ({} cards):", sideboard.len()).unwrap();
+            writeln!(content, "Sideboard ({}):", crate::count(sideboard.len(), "card", "cards")).unwrap();
             for card in sideboard {
                 let name = mtg_draft::front_face(card);
                 writeln!(content, "  {name}").unwrap();
@@ -488,7 +488,7 @@ fn deck_header(seat: usize, total: usize, retries: usize, fallback: bool) -> Str
     } else if fallback {
         format!("[Seat {seat}] DECK ({total} cards, FALLBACK after {retries} failed attempts)")
     } else {
-        format!("[Seat {seat}] DECK ({total} cards, {retries} retries)")
+        format!("[Seat {seat}] DECK ({total} cards, {})", crate::count(retries as usize, "retry", "retries"))
     }
 }
 
@@ -532,6 +532,10 @@ mod tests {
             deck_header(0, 40, 2, false),
             "[Seat 0] DECK (40 cards, 2 retries)"
         );
+        // A deck right on the second try: "1 retry", not "1 retries" (#914).
+        assert_eq!(deck_header(0, 40, 1, false), "[Seat 0] DECK (40 cards, 1 retry)");
+        assert_eq!(crate::count(1, "card", "cards"), "1 card");
+        assert_eq!(crate::count(0, "card", "cards"), "0 cards");
     }
 
     /// Issue #200: the fallback used to be indistinguishable from a deck

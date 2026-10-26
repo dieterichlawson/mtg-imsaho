@@ -233,7 +233,7 @@ pub fn print_usage_summary(outcome: RunOutcome) {
     // A per-game average only means anything for a metered phase; a
     // plan-quota or unpriced one has no dollars to divide.
     let per_game = match (game_cost, total_games) {
-        (Cost::Usd(v), n) if n > 0 => format!(" ({n} games, ${:.4}/game avg)",
+        (Cost::Usd(v), n) if n > 0 => format!(" ({}, ${:.4}/game avg)", crate::count(n, "game", "games"),
             v / f64::from(u32::try_from(n).unwrap_or(u32::MAX))),
         _ => String::new(),
     };

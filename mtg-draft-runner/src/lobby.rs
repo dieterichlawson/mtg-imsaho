@@ -103,7 +103,7 @@ pub fn parse_seats(spec: &str, default_ai: &str) -> Result<Vec<SeatKind>, String
     }
     if seats.len() < MIN_SEATS || seats.len() > MAX_SEATS {
         return Err(format!(
-            "--seats names {} seats; a pod is {MIN_SEATS} to {MAX_SEATS}", seats.len()));
+            "--seats names {}; a pod is {MIN_SEATS} to {MAX_SEATS}", crate::count(seats.len(), "seat", "seats")));
     }
     if seats.iter().filter(|s| **s == SeatKind::Cli).count() > 1 {
         return Err("at most one cli seat: the terminal is one keyboard".to_string());
@@ -580,7 +580,7 @@ impl TableSave {
     pub fn check(&self) -> Result<(), String> {
         let kinds = self.seat_kinds()?;
         if !(MIN_SEATS..=MAX_SEATS).contains(&kinds.len()) {
-            return Err(format!("it names {} seats; a pod is {MIN_SEATS} to {MAX_SEATS}", kinds.len()));
+            return Err(format!("it names {}; a pod is {MIN_SEATS} to {MAX_SEATS}", crate::count(kinds.len(), "seat", "seats")));
         }
         if kinds.iter().filter(|k| **k == SeatKind::Cli).count() > 1 {
             return Err("it has more than one cli seat".to_string());
@@ -1137,7 +1137,7 @@ the order they happened, not in seat order", "");
             return Err(format!("pack {pack_id} is not the pack in front of you (pack {} is)", front.id));
         }
         let card = front.cards.get(index)
-            .ok_or_else(|| format!("card {index} is past the end of the pack ({} cards)", front.cards.len()))?
+            .ok_or_else(|| format!("card {index} is past the end of the pack ({})", crate::count(front.cards.len(), "card", "cards")))?
             .clone();
         let (round, pick) = (front.round, front.pick);
         let line = format!("{} picked {} ({round}.{pick})", self.who(seat), mtg_draft::front_face(&card));
