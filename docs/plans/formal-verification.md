@@ -348,7 +348,9 @@ and four graveyard cards chosen for their differences.
   tokens, also "for each creature card in your graveyard"; graveyard
   targets and reanimation; counterspells, against a spell the opponent
   has cast; morbid, on a second board where a creature has died; a cost
-  reduction. Each is cast at every set of targets the engine offers, and
+  reduction; additional costs (sacrificing a creature, exiling creature
+  cards from the graveyard), every way they can be paid, and no cast at
+  all when they cannot. Each is cast at every set of targets the engine offers, and
   the engine must offer exactly the sets the text allows and leave every
   zone and every permanent's characteristics where the reference says.
 - **Creatures**: keywords, entering tapped or with counters, power and
@@ -375,7 +377,7 @@ and four graveyard cards chosen for their differences.
   383 combats among 21 creatures. Broken in the engine, reach, deathtouch,
   lifelink and first strike each fail it.
 
-112 of the pool's 268 instants, sorceries, creatures, enchantments, lands
+118 of the pool's 268 instants, sorceries, creatures, enchantments, lands
 and artifacts are read, and all agree. Every template has been shown to
 catch a deliberate bug in a card that uses it (Lightning Bolt dealing 2,
 Doom Blade sparing green, Midnight Haunting's Spirits without flying,
@@ -384,11 +386,12 @@ Bone's count, Dissipate countering to the graveyard, Morkrut Banshee's
 -4/-4, Slayer of the Wicked sparing Zombies, Pitchburn Devils' death
 damage, Dead Weight at -2/-1, Spectral Flight granting reach, Hinterland
 Harbor checking for a Plains, Feral Ridgewolf pumping +1/+0, a werewolf's
-back face one toughness off), and the failure names the cast and the
-difference. Not yet read: combat triggers, upkeep triggers other than
-werewolves', static abilities that are not changes to power, toughness and
-keywords ("can't block"), additional costs, X, choices made by an
-opponent, randomness, copies, equipment, and mana abilities with costs.
+back face one toughness off, Corpse Lunge using toughness, Skaab Goliath
+exiling one card), and the failure names the cast and the difference. Not
+yet read: combat triggers, upkeep triggers other than werewolves', static
+abilities that are not changes to power, toughness and keywords ("can't
+block"), X, choices made by an opponent, randomness, copies, equipment,
+and mana abilities with costs.
 Each is a template, or a board, to add; `READ` lists the cards read, and a
 change that stops reading any of them fails and names it.
 
