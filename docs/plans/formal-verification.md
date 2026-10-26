@@ -453,39 +453,62 @@ and four graveyard cards chosen for their differences.
   creature as it last was, the watcher seeing deaths it dies with (CR
   603.6c, 603.10a), and puts simultaneous triggers on the stack in every
   order the engine may ask for (603.3b).
-- **Upkeep triggers**, on creatures and on Curses: from the end step of the
-  turn before each player's turn, with every land tapped, into that turn's
-  main phase: damage gone, only the active player's permanents untapped,
-  the trigger resolved every way in the upkeep its text names and no other,
-  and the draw (CR 514.2, 502.3, 503.1a, 504.1).
+- **Upkeep triggers**, on creatures and on Curses, and Auras that keep a
+  creature tapped: from the end step of the turn before each player's
+  turn, with every land tapped, into that turn's main phase: damage gone,
+  only the active player's permanents untapped, the trigger resolved every
+  way in the upkeep its text names and no other, and the draw (CR 514.2,
+  502.3, 503.1a, 504.1).
+- **What lasts the turn**: every spell and ability whose effect is
+  damage, a pump, a tap or a shield is played on into the opponent's main
+  phase, where "until end of turn" changes, damage and regeneration
+  shields are gone and mana has emptied (514.2, 500.4).
+- **X**: an {X} spell or ability at every X its floating mana allows, and
+  Harvest Pyre's "exile X cards" at every subset of the graveyard.
+- **Costs** of mana, {T}, sacrificing the source, sacrificing a creature
+  (one offer per target and sacrifice, the target among them, 601.2b-h)
+  or exiling a card from the graveyard; and each player's floating mana is
+  observed, so a cost paid short shows.
+- **What resolution asks**: a choice another player makes ("sacrifices a
+  creature of their choice", "each player chooses a creature"), a
+  search of a library for a basic land card, with failing to find
+  (701.19b), and anything done at random, against 32 fixed seeds whose
+  union must be every way the text allows (701.9b). A shuffled library's
+  order is not compared.
+- **Regeneration**: a shield, then lethal damage and, separately, an
+  effect that destroys, each of which it must stop (701.19c).
 - **Combat**: every creature whose text is keywords, combat text and
   statics attacks, unblocked, with the defender declining to block, and
   against each of the others as a lone blocker, under a reference model of
-  CR 508-510: vigilance, defender, haste and summoning sickness, flying and
+  CR 508-511: vigilance, defender, haste and summoning sickness, flying and
   reach, intimidate, menace, first strike and double strike, deathtouch,
   lifelink, trample with every damage split the attacker may choose,
   "can't block", "can't be blocked [by <types>]", protection from creature
-  types, "attacks each combat if able", conditional haste, and triggers on
-  combat damage to a player. Then the same fights again wherever a
-  permanent standing by changes a combatant: a lord, a creature a static
-  asks for, or an Equipment on the combatant. About 2,200 and 10,900
-  combats agree; `scripts/prove.sh exhaustive` fights every Equipment on
-  every creature against every other, 41,083 combats.
+  types, "attacks each combat if able", conditional haste, tokens that
+  enter attacking and are exiled at end of combat, block triggers, and
+  triggers on combat damage to a player, the attacker's own and those of
+  other permanents. Then the same fights again wherever a permanent
+  standing by changes or watches a combatant: a lord, a creature a static
+  asks for, an Equipment or an Aura on the combatant, a Curse on its
+  player. About 3,700 and 26,000 combats agree; `scripts/prove.sh
+  exhaustive` fights every Equipment and Aura on every creature against
+  every other.
 
-157 of the pool's 268 instants, sorceries, creatures, enchantments, lands
+188 of the pool's 268 instants, sorceries, creatures, enchantments, lands
 and artifacts are read, and all agree. Every template has been shown to
 catch a deliberate bug in a card that uses it, and the engine code under
 it, from Lightning Bolt dealing 2 to the untap step untapping every
-player's permanents (`reports/verification-mutants.md` lists the 48 of
-the latest round: 47 caught, and one that needs a change of control the
-grammar cannot yet cause), and the failure names the cast and the
-difference. Not yet
-read: X, choices made by an opponent, randomness, copies, control change,
-transforms other than werewolves', triggers on attacking and blocking,
-damage replacement, Equipment with abilities of its own, and costs other
-than mana, {T} and sacrificing the source. Each is a template, or a board,
-to add; `READ` lists the cards read, and a change that stops reading any
-of them fails and names it.
+player's permanents (`reports/verification-mutants.md` lists the two
+latest rounds: of 100 mutants, 98 caught, one missed for want of a change
+of control the grammar cannot yet cause, one equivalent), and the failure
+names the cast and the difference. Not yet read: copies, control change,
+transforms other than werewolves', triggers on spells being cast,
+replacement effects ("would deal combat damage, deals double"), counters
+other than +1/+1 and -1/-1, rule modifiers (cost reductions for others,
+"can't be activated"), granted activated abilities, and costs other than
+those above. Each is a template, or a board, to add; `READ` lists the
+cards read, and a change that stops reading any of them fails and names
+it.
 
 ### The whole engine under libFuzzer
 

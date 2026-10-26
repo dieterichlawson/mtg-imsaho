@@ -223,3 +223,79 @@ named a case the first version did not reach, and each then caught a
 break nothing else did. The reading for later families: a test is chosen
 from the text's cases, not from the engine's code paths.
 
+## The cards, family by family, continued — 2026-10-26
+
+The same method for the families after the first 48: 52 mutants, 51
+caught and one equivalent.
+
+| family | mutant | caught by |
+|---|---|---|
+| restricting Auras | Pacifism lets it block | the Aura fights |
+| | Furor of the Bitten does not force the attack | the Aura fights |
+| | Bonds of Faith stops Humans blocking | the Aura fights |
+| | Ghostly Possession prevents nothing | the Aura fights |
+| | Claustrophobia lets it untap | the turn test |
+| | Claustrophobia does not tap | the cast test |
+| | Curse of the Nightly Hunt forces the wrong player | the Aura fights |
+| | the engine prevents combat damage only to the creature | the Aura fights |
+| | the engine prevents combat damage only by the creature | the Aura fights |
+| X | Devil's Play deals X-1 | the cast test |
+| | Harvest Pyre deals 2X | the cast test |
+| | Kessig Wolf Run gives +X/+X | the activated-ability test |
+| | the engine records a spell's X one more than paid | the cast test |
+| | the engine halves an ability's X | the activated-ability test |
+| the mana pool | Brimstone Volley costs one less | the cast test, **only** once the pool is observed |
+| | Grizzled Outcasts costs one less | the cast test, **only** once the pool is observed |
+| | Kessig Wolf Run's ability costs no {G} | the activated-ability test |
+| ability costs | Disciple of Griselbrand gains one more | the activated-ability test |
+| | Skirsdag Cultist cannot sacrifice itself | the activated-ability test |
+| | Demonmail Hauberk gives +4/+1 | the activated-ability test |
+| | Moorland Haunt exiles any card | the activated-ability test |
+| | Moorland Haunt's Spirit cannot fly | the activated-ability test |
+| | equip's sacrifice is "another creature" | **equivalent**: an Equipment is not a creature |
+| regeneration | Manor Skeleton gets no shield | the activated-ability test |
+| | Full Moon's Rise shields the opponent's Werewolves | the activated-ability test |
+| | regeneration does not tap | the lethal-damage follow-up |
+| | regeneration leaves the damage | the lethal-damage follow-up |
+| | state-based actions need two shields | the lethal-damage follow-up |
+| | a destroy effect needs two shields | **only** the destroyed-by-an-effect follow-up |
+| others' choices | Tribute to Hunger gains the power | the cast test |
+| | Tribute to Hunger offers the opponent one creature | the cast test |
+| | Divine Reckoning lets only the active player keep one | the cast test |
+| | Divine Reckoning destroys the creature chosen | the cast test |
+| what lasts the turn | "until end of turn" never ends | **only** the next-turn check |
+| | damage stays past the turn | **only** the next-turn check |
+| | regeneration shields last past the turn | **only** the next-turn check, for abilities |
+| at random | Make a Wish returns one card | the cast test |
+| | Moldgraf Monstrosity returns the first two, not two at random | **only** the seeds' completeness |
+| | Moldgraf Monstrosity stays in the graveyard | the dies check |
+| | Desperate Ravings draws one | the cast test |
+| | the engine's random choice is always the first | **only** the seeds' completeness |
+| searches | Caravan Vigil's battlefield option without a death | the cast test |
+| | Traveler's Amulet puts the land onto the battlefield | the activated-ability test |
+| | Ghost Quarter's land enters tapped | the activated-ability test |
+| | Ghost Quarter's search is the activator's | the activated-ability test |
+| combat triggers | Ashmouth Hound deals 2 | the fight test |
+| | Geist of Saint Traft's Angel is a 3/4 | the fight test |
+| | Geist of Saint Traft's Angel stays after combat | the fight test |
+| | Kessig Cagebreakers makes one Wolf | the fight test |
+| | Wooden Stake destroys any blocker | the Equipment fights |
+| | Rakish Heir counts only itself | the standing-by fights |
+| | Curse of Stalked Prey gives two counters | the Aura fights |
+
+Nine of the 51 are caught only by a check added for their family, and
+four of those checks are not about one card at all: the pool observed
+after a cast, the next turn, the second way to destroy, and the seeds
+having to reach every way "at random" allows. Each of the four found a
+gap that every card already read was passing through: a spell could cost
+less than its text, an "until end of turn" effect could last forever, and
+an engine with no randomness at all would have passed every random card.
+The checks were written from the rules the text invokes, not from the
+engine's code, which is why they reach what no card-specific test did.
+
+While writing these, the reference was wrong twice and the engine right:
+two Rakish Heirs each trigger, and Tribute to Hunger's "that creature" is
+the creature it made its controller sacrifice. Each was a fix to the
+reference, made after reading the rule, and both are now regression
+cases in the fights and casts.
+
