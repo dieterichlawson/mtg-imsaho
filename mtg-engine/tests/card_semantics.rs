@@ -340,6 +340,10 @@ enum Effect {
     PlayerDraws { slot: usize, n: usize },
     /// "~ deals X damage to <slot>" (CR 107.3).
     DamageX { slot: usize },
+    /// "Regenerate this creature": a shield (CR 701.19a).
+    Regenerate { slot: usize },
+    /// "Regenerate all <filter>".
+    RegenerateAll { filter: Filter },
     /// "You gain life equal to the sacrificed creature's toughness": its
     /// toughness as it last existed on the battlefield (CR 608.2h).
     GainLifeEqualToSacrificedToughness,
@@ -634,7 +638,7 @@ fn read_activated(line: &str, index: usize) -> Option<Activated> {
     for part in cost.split(", ") {
         match part {
             "{T}" => ability.tap = true,
-            "Sacrifice this creature" | "Sacrifice this land" | "Sacrifice this artifact" => ability.sacrifice_self = true,
+            "Sacrifice this creature" | "Sacrifice this land" | "Sacrifice this artifact" | "Sacrifice this enchantment" => ability.sacrifice_self = true,
             "Sacrifice a creature" => ability.sacrifice = Some(Sacrifice::AnyCreature),
             "Sacrifice another creature" => ability.sacrifice = Some(Sacrifice::AnotherCreature),
             "Exile a creature card from your graveyard" => ability.exile_creature_card = true,
@@ -987,6 +991,15 @@ impl Spec {
                 self.effects.push(Effect::Pump { slot, power, toughness, gains });
                 return Some(());
             }
+        }
+        if s == "Regenerate this creature" {
+            let slot = self.slot(Slot::This);
+            self.effects.push(Effect::Regenerate { slot });
+            return Some(());
+        }
+        if let Some(f) = s.strip_prefix("Regenerate all ") {
+            self.effects.push(Effect::RegenerateAll { filter: filter(f)? });
+            return Some(());
         }
         if s == "You gain life equal to the sacrificed creature's toughness" {
             self.effects.push(Effect::GainLifeEqualToSacrificedToughness);
@@ -1581,6 +1594,11 @@ fn read_enchantment(card: &Printed) -> Result<Spec, String> {
             spec.statics.extend(statics);
             continue;
         }
+        if line.contains(": ") {
+            let index = spec.activated.len();
+            spec.activated.push(read_activated(line, index).ok_or_else(unread)?);
+            continue;
+        }
         if let Some(rest) = line.strip_prefix("When this Aura enters, ").filter(|_| spec.enchants) {
             let mut chars = rest.chars();
             let sentence: String = chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default();
@@ -1600,7 +1618,7 @@ fn read_enchantment(card: &Printed) -> Result<Spec, String> {
         }
         spec.statics.push(group_static(body).ok_or_else(unread)?);
     }
-    if spec.enchants != spec.slots.first().is_some() || (spec.statics.is_empty() && spec.upkeep.is_none()) {
+    if spec.enchants != spec.slots.first().is_some() || (spec.statics.is_empty() && spec.upkeep.is_none() && spec.activated.is_empty()) {
         return Err("not an enchantment the grammar reads".to_string());
     }
     Ok(spec)
@@ -1814,6 +1832,8 @@ struct Model {
     boost: (i32, i32),
     /// ... and the rules they put on it.
     restricted: Vec<Restriction>,
+    /// Regeneration shields (CR 701.19a), which last the turn.
+    shields: u32,
 }
 
 impl Model {
@@ -1844,6 +1864,7 @@ impl Model {
             granted: Vec::new(),
             boost: (0, 0),
             restricted: Vec::new(),
+            shields: 0,
         }
     }
 
@@ -2000,6 +2021,7 @@ struct PermanentSeen {
     counters: (u32, u32),
     /// What it is attached to: a permanent by name, or "player N".
     attached_to: Option<String>,
+    regeneration_shields: u32,
 }
 
 fn seen(m: &Model) -> PermanentSeen {
@@ -2022,6 +2044,7 @@ fn seen(m: &Model) -> PermanentSeen {
         subtypes,
         counters: m.counters,
         attached_to: None,
+        regeneration_shields: m.shields,
     }
 }
 
@@ -2105,7 +2128,7 @@ impl World {
             Dest::Graveyard => {
                 self.graveyard[owner].push(name);
                 // A new object, with its printed characteristics (CR 400.7).
-                self.yard.insert(id, Model { controller: m.owner, damage: 0, tapped: false, counters: (0, 0), granted: Vec::new(), boost: (0, 0), restricted: Vec::new(), ..m });
+                self.yard.insert(id, Model { controller: m.owner, damage: 0, tapped: false, counters: (0, 0), granted: Vec::new(), boost: (0, 0), restricted: Vec::new(), shields: 0, ..m });
             }
             Dest::Exile => self.exile[owner].push(name),
             Dest::Hand => self.hand[owner].push(name),
@@ -2210,6 +2233,29 @@ impl World {
         }
     }
 
+    /// Destroy `id` (CR 701.8): nothing if it is indestructible (702.12b);
+    /// if it has a regeneration shield, the shield is used instead, and it
+    /// is tapped and its damage removed (701.19c); otherwise it goes to its
+    /// owner's graveyard, a death if it is a creature (700.4). Whether it
+    /// was destroyed.
+    fn destroy(&mut self, id: ObjectId) -> bool {
+        let Some(m) = self.permanents.get_mut(&id) else { return false };
+        if has(m, Keyword::Indestructible) {
+            return false;
+        }
+        if m.shields > 0 {
+            m.shields -= 1;
+            m.damage = 0;
+            m.deathtouched = false;
+            m.tapped = true;
+            return false;
+        }
+        let creature = m.is_creature();
+        self.leave(id, Dest::Graveyard);
+        self.a_creature_died |= creature;
+        true
+    }
+
     /// State-based actions, as CR 704.5f-h state them: a creature with
     /// toughness 0 or less is put into its owner's graveyard, and one with
     /// damage at least its toughness, or any from a source with deathtouch,
@@ -2221,9 +2267,10 @@ impl World {
             self.refresh();
             let dies = |m: &Model| m.is_creature() && self.pt_of(m).1.is_some_and(|t| t <= 0
                 || (!has(m, Keyword::Indestructible) && (m.damage >= t as u32 || (m.deathtouched && m.damage > 0))));
-            let dying: Vec<ObjectId> = self.permanents.iter()
+            let zero = |m: &Model| self.pt_of(m).1.is_some_and(|t| t <= 0);
+            let dying: Vec<(ObjectId, bool)> = self.permanents.iter()
                 .filter(|(_, m)| dies(m))
-                .map(|(id, _)| *id)
+                .map(|(id, m)| (*id, zero(m)))
                 .collect();
             let tokens_dying: Vec<bool> = self.tokens.iter().map(dies).collect();
             let falls = self.permanents.values()
@@ -2235,9 +2282,15 @@ impl World {
             self.a_creature_died |= tokens_dying.contains(&true);
             let mut flags = tokens_dying.into_iter();
             self.tokens.retain(|_| !flags.next().expect("one per token"));
-            for id in dying {
-                self.leave(id, Dest::Graveyard);
-                self.a_creature_died = true;
+            // Toughness 0 is not destruction (704.5f); lethal damage is
+            // (704.5g-h), and a shield can stop it.
+            for (id, zero) in dying {
+                if zero {
+                    self.leave(id, Dest::Graveyard);
+                    self.a_creature_died = true;
+                } else {
+                    self.destroy(id);
+                }
             }
             // An Aura attached to nothing goes to its owner's graveyard
             // (CR 704.5m); an Equipment becomes unattached and stays
@@ -2351,6 +2404,7 @@ fn observe(state: &GameState, registry: &CardRegistry) -> Observed {
                     o.counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0),
                     o.counters.get(&CounterType::MinusOneMinusOne).copied().unwrap_or(0),
                 ),
+                regeneration_shields: o.regeneration_shields,
                 attached_to: o.attached_to.map(name_of)
                     .or_else(|| o.attached_to_player.map(|p| format!("player {}", p.0))),
             }
@@ -2596,17 +2650,28 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
             }
             Effect::Destroy { slot } => {
                 if let Some(id) = object(*slot) {
-                    w.leave(id, Dest::Graveyard);
+                    w.destroy(id);
                 }
             }
             Effect::DestroyAll { filter } => {
+                // At once (CR 701.8c): what is destroyed is decided on the
+                // board as it stood.
                 let doomed: Vec<ObjectId> = w.permanents.iter()
                     .filter(|(_, m)| m.matches(filter, caster))
                     .map(|(id, _)| *id)
                     .collect();
-                destroyed = doomed.len();
-                for id in doomed {
-                    w.leave(id, Dest::Graveyard);
+                destroyed = doomed.into_iter().filter(|id| w.destroy(*id)).count();
+            }
+            Effect::Regenerate { slot } => {
+                if let Some(m) = object(*slot).and_then(|id| w.permanents.get_mut(&id)) {
+                    m.shields += 1;
+                }
+            }
+            Effect::RegenerateAll { filter } => {
+                for m in w.permanents.values_mut() {
+                    if m.is_creature() && m.matches(filter, caster) {
+                        m.shields += 1;
+                    }
                 }
             }
             Effect::GainLifePerDestroyed { n } => w.life[c] += n * i32::try_from(destroyed).expect("a few"),
@@ -2789,6 +2854,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                         granted: Vec::new(),
                         boost: (0, 0),
                         restricted: Vec::new(),
+                        shields: 0,
                     });
                 }
             }
@@ -3450,33 +3516,34 @@ const READ: &[&str] = &[
     "Deranged Assistant", "Devil's Play", "Diregraf Ghoul", "Disciple of Griselbrand",
     "Dissipate", "Divination", "Doom Blade", "Doomed Traveler", "Dream Twist",
     "Elite Inquisitor", "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread",
-    "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab", "Furor of the Bitten",
-    "Gallows Warden", "Gatstaf Shepherd", "Gavony Township", "Geist-Honored Monk",
-    "Geistcatcher's Rig", "Geistflame", "Ghostly Possession", "Ghoulcaller's Bell",
-    "Giant Growth", "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms",
-    "Grave Bramble", "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Harvest Pyre",
-    "Hinterland Harbor", "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness",
-    "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker", "Island",
-    "Isolated Chapel", "Kalonian Tusker", "Kessig Wolf", "Kessig Wolf Run", "Kindercatch",
-    "Lantern Spirit", "Lava Axe", "Lightning Bolt", "Lost in the Mist", "Lumberknot",
-    "Makeshift Mauler", "Markov Patrician", "Mask of Avacyn", "Mausoleum Guard",
-    "Maw of the Mire", "Midnight Haunting", "Moan of the Unhallowed", "Moment of Heroism",
-    "Moon Heron", "Moorland Haunt", "Morkrut Banshee", "Mountain", "Naturalize",
-    "Nephalia Drownyard", "Night Revelers", "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism",
-    "Paraselene", "Pitchburn Devils", "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower",
-    "Rally the Peasants", "Ranger's Guile", "Rebuke", "Reckless Waif", "Riot Devils",
-    "Rolling Temblor", "Rotting Fensnake", "Runechanter's Pike", "Savannah Lions",
-    "Scourge of Geier Reach", "Selfless Cathar", "Selhoff Occultist", "Sensory Deprivation",
-    "Sharpened Pitchfork", "Shimmering Grotto", "Silent Departure", "Silver-Inlaid Dagger",
-    "Silverchase Fox", "Skaab Goliath", "Skirsdag Cultist", "Slayer of the Wicked",
-    "Smite the Monstrous", "Sol Ring", "Somberwald Spider", "Spectral Flight", "Spectral Rider",
-    "Spider Spawning", "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake",
-    "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp",
-    "Swords to Plowshares", "Think Twice", "Thraben Purebloods", "Tormented Pariah",
-    "Travel Preparations", "Typhoid Rats", "Unburial Rites", "Unruly Mob", "Urgent Exorcism",
-    "Vampire Interloper", "Vampiric Fury", "Victim of Night", "Village Bell-Ringer",
-    "Village Cannibals", "Village Ironsmith", "Villagers of Estwald", "Voiceless Spirit",
-    "Walking Corpse", "Woodland Cemetery", "Wreath of Geists",
+    "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab", "Full Moon's Rise",
+    "Furor of the Bitten", "Gallows Warden", "Gatstaf Shepherd", "Gavony Township",
+    "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame", "Ghostly Possession",
+    "Ghoulcaller's Bell", "Giant Growth", "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker",
+    "Grasp of Phantoms", "Grave Bramble", "Grizzled Outcasts", "Grizzly Bears",
+    "Gruesome Deformity", "Harvest Pyre", "Hinterland Harbor", "Hollowhenge Scavenger",
+    "Holy Strength", "Hysterical Blindness", "Intangible Virtue", "Into the Maw of Hell",
+    "Invisible Stalker", "Island", "Isolated Chapel", "Kalonian Tusker", "Kessig Wolf",
+    "Kessig Wolf Run", "Kindercatch", "Lantern Spirit", "Lava Axe", "Lightning Bolt",
+    "Lost in the Mist", "Lumberknot", "Makeshift Mauler", "Manor Skeleton", "Markov Patrician",
+    "Mask of Avacyn", "Mausoleum Guard", "Maw of the Mire", "Midnight Haunting",
+    "Moan of the Unhallowed", "Moment of Heroism", "Moon Heron", "Moorland Haunt",
+    "Morkrut Banshee", "Mountain", "Naturalize", "Nephalia Drownyard", "Night Revelers",
+    "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism", "Paraselene", "Pitchburn Devils",
+    "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower", "Rally the Peasants",
+    "Ranger's Guile", "Rebuke", "Reckless Waif", "Riot Devils", "Rolling Temblor",
+    "Rotting Fensnake", "Runechanter's Pike", "Savannah Lions", "Scourge of Geier Reach",
+    "Selfless Cathar", "Selhoff Occultist", "Sensory Deprivation", "Sharpened Pitchfork",
+    "Shimmering Grotto", "Silent Departure", "Silver-Inlaid Dagger", "Silverchase Fox",
+    "Skaab Goliath", "Skirsdag Cultist", "Slayer of the Wicked", "Smite the Monstrous",
+    "Sol Ring", "Somberwald Spider", "Spectral Flight", "Spectral Rider", "Spider Spawning",
+    "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble",
+    "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp", "Swords to Plowshares",
+    "Think Twice", "Thraben Purebloods", "Tormented Pariah", "Travel Preparations",
+    "Typhoid Rats", "Unburial Rites", "Unruly Mob", "Urgent Exorcism", "Vampire Interloper",
+    "Vampiric Fury", "Victim of Night", "Village Bell-Ringer", "Village Cannibals",
+    "Village Ironsmith", "Villagers of Estwald", "Voiceless Spirit", "Walking Corpse",
+    "Woodland Cemetery", "Wreath of Geists",
 ];
 
 // ---- the properties ----
@@ -3828,6 +3895,33 @@ fn every_readable_activated_ability_does_what_its_text_says() {
                 if let Some(why) = disagreement(&want, &endings, &registry) {
                     failures.push(format!("{at}: {why}"));
                     continue;
+                }
+                // A shield is for the next destruction this turn: each
+                // creature with one is dealt lethal damage, and must
+                // regenerate (CR 701.19c, 704.5g).
+                if ability.spec.effects.iter().any(|e| matches!(e, Effect::Regenerate { .. } | Effect::RegenerateAll { .. })) {
+                    let (Ok([after]), [w]) = (endings.as_deref(), &want[..]) else { unreachable!("one way, as just compared") };
+                    let (mut engine_side, mut text) = (after.clone(), w.clone());
+                    for (shielded, m) in w.permanents.iter().filter(|(_, m)| m.shields > 0) {
+                        let lethal = u32::try_from(w.pt_of(m).1.unwrap_or(1).max(1)).expect("positive");
+                        engine_side.get_object_mut(*shielded).expect("on the battlefield").damage_marked = lethal;
+                        text.permanents.get_mut(shielded).expect("on the battlefield").damage = lethal;
+                    }
+                    text.state_based_actions();
+                    if let Some(why) = disagreement(&[text], &every_ending(&engine_side, &registry, None), &registry) {
+                        failures.push(format!("{at}, then dealt lethal damage: {why}"));
+                    }
+                    // And by an effect that destroys it (CR 701.8a), through
+                    // the engine's destruction.
+                    let (mut engine_side, mut text) = (after.clone(), w.clone());
+                    for shielded in w.permanents.iter().filter(|(_, m)| m.shields > 0).map(|(i, _)| *i) {
+                        mtg_engine::destruction::try_destroy(&mut engine_side, shielded, &registry);
+                        text.destroy(shielded);
+                    }
+                    text.state_based_actions();
+                    if let Some(why) = disagreement(&[text], &every_ending(&engine_side, &registry, None), &registry) {
+                        failures.push(format!("{at}, then destroyed: {why}"));
+                    }
                 }
                 if ability.once_each_turn {
                     let Ok([after]) = endings.as_deref() else { unreachable!("one ending, as just compared") };
