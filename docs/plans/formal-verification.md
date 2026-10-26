@@ -110,8 +110,9 @@ A proof is a proof relative to what it assumes. Here that is:
 - **rustc**, compiling the same source for the game that Verus checked;
 - the **glue** that is not proved: reading `ManaPool`'s `BTreeMap` into six
   counts and writing the result back, mapping blockers' ids to positions,
-  and turning X's source groups into counts and the kernel's taps back into
-  mana. Each is a few lines with unit tests; the combat mapping is also
+  turning X's source groups into counts and the kernel's taps back into
+  mana, reading the board into the turn's four facts and into the matrix
+  of blocks the rules allow pair by pair, and acting on a creature's fate. Each is a few lines with unit tests; the combat mapping is also
   covered by the exhaustive division test, and the X pool step is asserted
   against the kernel's proved amounts on every call in a debug build.
 
@@ -130,9 +131,10 @@ values. Each gets a spec written from the CR, proved for every input.
 | X funding: which X can be paid, and the taps that pay it (`fundable_x_values`, `allocate_for_x`) | 107.3, 601.2f-h | **proved** for every board and every X |
 | autotap planner soundness: a plan it returns pays the cost | 601.2g-h, 605.3 | **checked exhaustively** on every board of up to three sources (29.6 million); not yet proved for every board |
 | autotap planner completeness: if some set of sources can pay, it finds one | 601.2g | **checked exhaustively** as above, one defect fixed |
-| power and toughness from counters and effects (layer 7) | 613.4, 704.5q | **checked** against the card-semantics reference (pumps, counters, Auras, anthems, a count) on every cast; not yet extracted into a kernel |
-| lethal damage, deathtouch, and what state-based actions destroy | 704.5f-h, 704.5m, 702.2b | **checked** against the same reference after every cast and every combat damage step; not yet extracted |
-| the turn's step sequence and who gets priority | 500.1, 117.3-4 | planned |
+| power and toughness from counters and effects (layer 7) | 611.3a, 613.1f, 613.4 | **checked** against the card-semantics reference (pumps, counters, Auras, Equipment, anthems and lords applied continuously, counts) on every cast, death and combat; not yet extracted into a kernel |
+| lethal damage, deathtouch, zero toughness, and counter pairs | 704.5f-h, 704.5q | **proved** (`sba::creature_fate`, `sba::annihilate`), called by the state-based actions; indestructible, regeneration and attachments stay in the engine, checked against the same reference |
+| the turn's step sequence and who gets priority | 500.1, 103.7a, 508.8, 510.4, 514.3a, 117.3-4 | **proved** (`turn::next_step`, `turn::after_pass`), called by `advance_step` and the game loop |
+| which submitted blocks stand | 509.1a-b | **proved** (`blocks::judge_blocks`), called by `declare_blockers` |
 
 ### Tier 2: the whole engine, through the fuzz oracle
 
@@ -224,6 +226,14 @@ code here, so the preference is: extract the turn-step and priority
 functions into `mtg-kernel` and prove them there; a Lean model only for what
 no extraction can reach, checked against the engine on fuzz traces.
 
+The first part of that is done: the step sequence and what a pass does are
+proved in `mtg-kernel/src/turn.rs` and are what the engine runs (see [the
+turn and priority](#the-turn-and-priority)). What a round of passes does
+follows from them: with no player acting, a round ends after exactly as
+many passes as there are players. Termination of a whole turn needs the
+number of cleanup repeats bounded, which is a property of the cards, not of
+the turn.
+
 ## Proved so far
 
 ### Mana payment
@@ -305,6 +315,59 @@ asserted against the kernel's on every call in a debug build. The page has
 its own copy of the allocator, held to the engine's answers by
 `x-funding-cases.jsonl` (1,542 checks over 168 boards).
 
+### The turn and priority
+
+`mtg-kernel/src/turn.rs`, called by `advance_step` and the game loop. The
+spec is CR 500.1's twelve steps in order, and the four facts that change
+what follows a step, each tied to one step: the first turn's skipped draw
+step (CR 103.7a), the declare blockers and combat damage steps skipped
+when no creature attacked (508.8), a second combat damage step after
+first strikers (510.4), and another cleanup step after a player received
+priority in one (514.3a). Proved for every step and every combination of
+the facts (75 obligations):
+
+- the turn ends exactly after a cleanup step that does not repeat, and a
+  step is followed by itself exactly when the rules repeat it;
+- otherwise the next step is later in the turn, every step between is one
+  the rules skip from there, and every skip they call for is taken: both
+  main phases happen every turn. These determine the next step uniquely.
+
+`after_pass` is CR 117.3d and 117.4: the step ends exactly when every
+player has passed in succession with the stack empty, the top object
+resolves exactly when every player has passed with it non-empty, and
+otherwise priority goes to the next player in turn order. A test holds
+the engine's numbering of `Step` to the kernel's.
+
+### State-based actions
+
+`mtg-kernel/src/sba.rs`, called by the state-based actions pass. For every
+toughness, every amount of damage and either deathtouch flag (78
+obligations): toughness 0 or less puts a creature into its owner's
+graveyard, which indestructible does not stop (704.5f); otherwise damage at
+least its toughness, or any from a deathtouch source, destroys it
+(704.5g-h); otherwise nothing. Damage is compared at 64 bits, so no amount
+wraps. `annihilate` is 704.5q: the smaller number of +1/+1 and -1/-1
+counters is removed from both, so at most one kind is left and the net
+change to power and toughness is the same.
+
+### Block declarations
+
+`mtg-kernel/src/blocks.rs`, called by `declare_blockers`. Given which
+(blocker, attacker) pairs the rules allow and each attacker's minimum
+number of blockers, `judge_blocks` judges every pair a defending player
+submits: accepted, a duplicate, a blocker already blocking (509.1a), a
+block the rules refuse, or one of too few for its attacker (509.1b, so
+menace). Proved for every submission (92 obligations, no assumptions):
+
+- the pairs accepted are a legal declaration: each allowed, no blocker in
+  two, every blocked attacker blocked by at least its minimum;
+- a pair is refused as illegal only when the rules refuse it, and always
+  when they do and its blocker is free;
+- a submission that is a legal declaration is accepted whole.
+
+Each of the three kernels rejects each of four one-line breaks
+(`reports/verification-mutants.md`).
+
 ### The autotap planner, every small board
 
 `compute_autotap` is a heuristic: a greedy pass ranked by a priority key,
@@ -362,38 +425,67 @@ and four graveyard cards chosen for their differences.
 - **Werewolves**, both faces: transformed at an upkeep after a turn with
   no spells, and back after a turn of two, alongside the two werewolves
   already on the board.
-- **Enchantments**: Auras on a creature or a player and anthems whose
-  static abilities change power, toughness and keywords, with an Aura
-  attached to nothing put into its owner's graveyard.
-- **Lands**: entering tapped or not, and the mana each tap makes.
+- **Static abilities**, applied continuously: an Aura's, an Equipment's
+  and an anthem's change to the creature it is on or to a group, a lord's
+  ("other Spirit creatures you control get +1/+0", "creatures with flying
+  your opponents control get -1/-0"), a count ("+1/+1 for each creature
+  your opponents control") and a condition ("as long as you control a
+  Human", "as long as equipped creature is a Human"). The reference
+  applies every static on the battlefield afresh whenever it looks at the
+  board and before each pass of state-based actions, keywords before power
+  and toughness (CR 611.3a, 613.1f, 613.4c), so a bonus ends when its
+  source leaves; an Aura attached to nothing goes to its owner's graveyard
+  and an Equipment comes off and stays (704.5m-n).
+- **Lands**, and **mana abilities** on any permanent: entering tapped or
+  not, the mana each tap makes, a mana ability's own cost, and a creature
+  under its controller's control since the turn began only.
 - **Activated abilities** on creatures, lands and artifacts, paid with
   mana, {T} and sacrificing the source, at every target the text allows,
-  with "activate only once each turn".
-- **The keywords in combat**: every creature whose text is keywords
-  attacks, unblocked and against each of the others as a lone blocker,
-  under a reference model of CR 508-510 (vigilance, defender, flying and
+  with "activate only once each turn"; and the timing rule for each: with
+  the opponent's spell on the stack, an ability activated only as a
+  sorcery is not offered and any other is (CR 602.5d). **Equip** is one of
+  them, read as CR 702.6a defines it, onto every creature the caster
+  controls.
+- **Triggers on other deaths** ("whenever another creature you control
+  dies"): once such a creature has entered, every creature on the board
+  dies in turn and every two at once, it among them or not. The reference
+  fires the trigger for each death the text names, judged by the dying
+  creature as it last was, the watcher seeing deaths it dies with (CR
+  603.6c, 603.10a), and puts simultaneous triggers on the stack in every
+  order the engine may ask for (603.3b).
+- **Upkeep triggers**, on creatures and on Curses: from the end step of the
+  turn before each player's turn, with every land tapped, into that turn's
+  main phase: damage gone, only the active player's permanents untapped,
+  the trigger resolved every way in the upkeep its text names and no other,
+  and the draw (CR 514.2, 502.3, 503.1a, 504.1).
+- **Combat**: every creature whose text is keywords, combat text and
+  statics attacks, unblocked, with the defender declining to block, and
+  against each of the others as a lone blocker, under a reference model of
+  CR 508-510: vigilance, defender, haste and summoning sickness, flying and
   reach, intimidate, menace, first strike and double strike, deathtouch,
-  lifelink, and trample with every damage split the attacker may choose):
-  383 combats among 21 creatures. Broken in the engine, reach, deathtouch,
-  lifelink and first strike each fail it.
+  lifelink, trample with every damage split the attacker may choose,
+  "can't block", "can't be blocked [by <types>]", protection from creature
+  types, "attacks each combat if able", conditional haste, and triggers on
+  combat damage to a player. Then the same fights again wherever a
+  permanent standing by changes a combatant: a lord, a creature a static
+  asks for, or an Equipment on the combatant. About 2,200 and 10,900
+  combats agree; `scripts/prove.sh exhaustive` fights every Equipment on
+  every creature against every other, 41,083 combats.
 
-118 of the pool's 268 instants, sorceries, creatures, enchantments, lands
+157 of the pool's 268 instants, sorceries, creatures, enchantments, lands
 and artifacts are read, and all agree. Every template has been shown to
-catch a deliberate bug in a card that uses it (Lightning Bolt dealing 2,
-Doom Blade sparing green, Midnight Haunting's Spirits without flying,
-Brimstone Volley's morbid amount, Travel Preparations' counter, Gnaw to the
-Bone's count, Dissipate countering to the graveyard, Morkrut Banshee's
--4/-4, Slayer of the Wicked sparing Zombies, Pitchburn Devils' death
-damage, Dead Weight at -2/-1, Spectral Flight granting reach, Hinterland
-Harbor checking for a Plains, Feral Ridgewolf pumping +1/+0, a werewolf's
-back face one toughness off, Corpse Lunge using toughness, Skaab Goliath
-exiling one card), and the failure names the cast and the difference. Not
-yet read: combat triggers, upkeep triggers other than werewolves', static
-abilities that are not changes to power, toughness and keywords ("can't
-block"), X, choices made by an opponent, randomness, copies, equipment,
-and mana abilities with costs.
-Each is a template, or a board, to add; `READ` lists the cards read, and a
-change that stops reading any of them fails and names it.
+catch a deliberate bug in a card that uses it, and the engine code under
+it, from Lightning Bolt dealing 2 to the untap step untapping every
+player's permanents (`reports/verification-mutants.md` lists the 48 of
+the latest round: 47 caught, and one that needs a change of control the
+grammar cannot yet cause), and the failure names the cast and the
+difference. Not yet
+read: X, choices made by an opponent, randomness, copies, control change,
+transforms other than werewolves', triggers on attacking and blocking,
+damage replacement, Equipment with abilities of its own, and costs other
+than mana, {T} and sacrificing the source. Each is a template, or a board,
+to add; `READ` lists the cards read, and a change that stops reading any
+of them fails and names it.
 
 ### The whole engine under libFuzzer
 

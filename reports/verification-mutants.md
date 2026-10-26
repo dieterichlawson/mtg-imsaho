@@ -132,3 +132,94 @@ contracts state, whether or not anything downstream looks (C05, C07, F09),
 and the tests catch what the code is preferred to do beyond the contract
 (M07, M08, M10, M11). A kernel output nobody reads is a place the two can
 drift apart, and a debug assertion at the call site closes it.
+
+## The turn, state-based-action and block kernels — 2026-10-26
+
+Each kernel was broken four ways by hand, one line at a time, and Verus
+run on each break. Every break is rejected.
+
+| kernel | break | proof |
+|---|---|---|
+| `turn` | no attackers still goes on to combat damage | rejected |
+| `turn` | the first turn's draw step is not skipped | rejected |
+| `turn` | a cleanup step that does not repeat goes on to an untap step | rejected |
+| `turn` | priority needs one pass more than there are players | rejected |
+| `sba` | toughness 0 survives | rejected |
+| `sba` | deathtouch kills a creature dealt no damage | rejected |
+| `sba` | no counter pairs are removed | rejected |
+| `sba` | lethal damage needs one more point | rejected |
+| `blocks` | an attacker's minimum is short by one | rejected |
+| `blocks` | a block the rules refuse is let through | rejected |
+| `blocks` | a blocker may block a second attacker | rejected |
+| `blocks` | a block is miscounted towards its attacker's minimum | rejected |
+
+## The cards, family by family — 2026-10-26
+
+Each new family of `card_semantics.rs` was checked by breaking the engine
+in a card that uses it, or in the engine code under it, and running the
+whole file. 48 mutants; 47 caught.
+
+| family | mutant | caught by |
+|---|---|---|
+| mana abilities | Sol Ring makes one | the mana test |
+| | Deranged Assistant mills nothing | the mana test |
+| | summoning sickness ignored for mana | the mana test |
+| combat text | Stromkirk Noble blockable by Humans | the fight test |
+| | Grave Bramble protected from Vampires | the fight test |
+| | Falkenrath Marauders takes one counter | the fight test |
+| | Night Revelers' haste keyed to Elves | the fight test |
+| | Sturmgeist draws nothing | the fight test |
+| | Vampire Interloper can block | the fight test |
+| | Bloodcrazed Neonate not forced to attack | the fight test |
+| | Invisible Stalker blockable | the fight test |
+| | Balefire Dragon deals half | the fight test, once the defender also declines to block |
+| statics and lords | Battleground Geist gives +2 | the cast test and the standing-by test |
+| | Battleground Geist pumps itself | the cast test and the fight test |
+| | Battleground Geist pumps the opponent's Spirits | the cast test and the fight test |
+| | Gallows Warden gives nothing | the cast test and the standing-by test |
+| | One-Eyed Scarecrow shrinks its own fliers | the cast test and the fight test |
+| | One-Eyed Scarecrow shrinks every opposing creature | the cast test and the fight test |
+| | Scourge of Geier Reach counts its own creatures | the cast test and the fight test |
+| | Angelic Overseer without indestructible | the cast test and the standing-by test |
+| | the engine's "other" includes the source | the cast test and the fight test |
+| | state-based actions ignore indestructible | **only** the standing-by test |
+| other deaths | Rage Thrower deals 1 | the cast test |
+| | Unruly Mob watches the opponent's creatures | the cast test |
+| | Village Cannibals watch Elves | the cast test |
+| | Falkenrath Noble's own death drains nothing | the cast test |
+| | Selhoff Occultist mills two | the cast test |
+| | Lumberknot takes two counters | the cast test |
+| | a watcher sees its own death | the cast test |
+| | a watcher that dies in the same batch does not look back | the cast test, **only** through two deaths at once |
+| upkeep | Bloodgift Demon drains 2 | the upkeep test |
+| | Angel of Flight Alabaster returns any card | the upkeep test |
+| | Splinterfright mills one | the upkeep test |
+| | Curse of the Bloody Tome mills three | the upkeep test |
+| | Curse of the Pierced Heart deals 2 | the upkeep test |
+| | Curse of Oblivion exiles one | the upkeep test |
+| | "your upkeep" fires every upkeep | the upkeep test, in the other player's turn |
+| | a Curse fires in its controller's upkeep | the upkeep test, in the other player's turn |
+| | the untap step untaps every player's permanents | the upkeep test, with the lands tapped |
+| Equipment | Butcher's Cleaver gives +2 | the activated-ability and standing-by tests |
+| | Butcher's Cleaver's lifelink for Elves | the activated-ability and standing-by tests |
+| | Cobbled Wings give reach | the activated-ability and standing-by tests |
+| | Mask of Avacyn gives +1/+1 | the activated-ability and standing-by tests |
+| | Sharpened Pitchfork without first strike | the activated-ability and cast tests |
+| | Runechanter's Pike counts creature cards | the activated-ability test |
+| | equip at instant speed | the activated-ability test's timing check |
+| | a fallen Equipment goes to the graveyard | the standing-by test |
+| | `equip_target_is_legal` accepts another player's creature | **missed** |
+
+The survivor is reachable only through the re-check at resolution (CR
+608.2b): the targets the engine offers come from the ability's target
+requirement, not from that function, so it matters only when the creature
+changes control between activation and resolution. No card the grammar
+reads changes control yet; Traitorous Blood will.
+
+Three mutants were caught only by a check added for the family: a
+creature standing by out of combat, two deaths at once, and the other
+player's turn. Each of those checks was added because the family's text
+named a case the first version did not reach, and each then caught a
+break nothing else did. The reading for later families: a test is chosen
+from the text's cases, not from the engine's code paths.
+
