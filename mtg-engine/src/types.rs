@@ -406,6 +406,30 @@ impl Step {
         }
     }
 
+    /// Every step, in the order of a turn (CR 500.1).
+    pub const ALL: [Step; 12] = [
+        Step::Untap, Step::Upkeep, Step::Draw, Step::PrecombatMain,
+        Step::BeginCombat, Step::DeclareAttackers, Step::DeclareBlockers,
+        Step::CombatDamage, Step::EndCombat, Step::PostcombatMain,
+        Step::EndStep, Step::Cleanup,
+    ];
+
+    /// The step's place in the turn, as `mtg_kernel::turn` numbers it.
+    #[must_use]
+    pub fn index(self) -> u8 {
+        let i = Self::ALL.iter().position(|s| *s == self).expect("every step is in ALL");
+        u8::try_from(i).expect("twelve steps")
+    }
+
+    /// The step at `index` in the turn.
+    ///
+    /// # Panics
+    /// If `index` is not a step's place, which `mtg_kernel::turn` never gives.
+    #[must_use]
+    pub fn from_index(index: u8) -> Step {
+        Self::ALL[usize::from(index)]
+    }
+
     #[must_use]
     pub fn next(&self) -> Option<Step> {
         match self {
@@ -889,5 +913,24 @@ mod tests {
             assert_eq!(step, expected_step);
         }
         assert!(step.next().is_none());
+    }
+
+    /// The engine's steps and the proved turn kernel's numbers are one
+    /// order, and with nothing skipped or repeated the kernel's sequence is
+    /// the engine's.
+    #[test]
+    fn the_kernel_numbers_the_steps_in_the_order_of_a_turn() {
+        let plain = mtg_kernel::turn::StepFacts {
+            second_damage_step_due: false,
+            cleanup_repeats: false,
+            attackers_declared: true,
+            skips_first_draw: false,
+        };
+        for (i, step) in Step::ALL.iter().enumerate() {
+            assert_eq!(usize::from(step.index()), i);
+            assert_eq!(Step::from_index(step.index()), *step);
+            assert_eq!(mtg_kernel::turn::next_step(step.index(), plain).map(Step::from_index), step.next(),
+                "after {step:?}");
+        }
     }
 }

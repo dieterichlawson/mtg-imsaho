@@ -904,38 +904,36 @@ pub fn advance_step(state: &mut GameState, registry: &CardRegistry) {
     // CR 510.5: with first/double strikers in combat there are TWO combat
     // damage steps. The first instance set combat_damage_step_pending; repeat
     // Step::CombatDamage (regular damage) instead of moving to EndCombat.
-    let next = if state.step == Step::CombatDamage && state.combat_damage_step_pending {
-        Some(Step::CombatDamage)
-    } else if state.step == Step::Cleanup && std::mem::take(&mut state.cleanup_repeat) {
-        // CR 514.3a: the cleanup step that opened a priority window is
-        // followed by another cleanup step, not by the next turn. Without
-        // this, damage marked and until-end-of-turn effects created in that
-        // window rode into the next turn, and the hand-size discard was
-        // skipped altogether.
-        Some(Step::Cleanup)
-    } else if state.step == Step::DeclareAttackers
-        && !state.combat.as_ref().is_some_and(|c| c.any_attackers_declared)
-    {
-        // CR 508.8: if no creatures were declared as attackers (or put onto
-        // the battlefield attacking), skip the declare blockers and combat
-        // damage steps. Observable in rules terms: a "beginning of the
-        // declare blockers step" trigger must not fire, and no priority
-        // windows open in steps that don't happen.
-        Some(Step::EndCombat)
-    } else if state.step == Step::Upkeep
-        && state.is_first_turn
-        && state.players.len() == 2
-    {
-        // CR 103.7a: in a two-player game the player on the play skips the
-        // draw STEP of their first turn — the whole step, so no
-        // beginning-of-draw-step triggers and no priority window in it.
-        // Suppressing only the card draw used to leave an extra priority
-        // round that should not exist (issue #113).
-        state.log(LogLevel::Debug, "Turn 1: draw step skipped (CR 103.7a)".into());
-        Some(Step::PrecombatMain)
-    } else {
-        state.step.next()
+    // The step that follows is proved in `mtg_kernel::turn::next_step`
+    // against CR 500.1's order and the four facts that change it:
+    //
+    // - CR 510.4: with first/double strikers in combat there are TWO combat
+    //   damage steps. The first set combat_damage_step_pending.
+    // - CR 514.3a: the cleanup step that opened a priority window is
+    //   followed by another cleanup step, not by the next turn. Without
+    //   this, damage marked and until-end-of-turn effects created in that
+    //   window rode into the next turn, and the hand-size discard was
+    //   skipped altogether.
+    // - CR 508.8: if no creatures were declared as attackers (or put onto
+    //   the battlefield attacking), skip the declare blockers and combat
+    //   damage steps. Observable in rules terms: a "beginning of the
+    //   declare blockers step" trigger must not fire, and no priority
+    //   windows open in steps that don't happen.
+    // - CR 103.7a: in a two-player game the player on the play skips the
+    //   draw STEP of their first turn — the whole step, so no
+    //   beginning-of-draw-step triggers and no priority window in it.
+    //   Suppressing only the card draw used to leave an extra priority
+    //   round that should not exist (issue #113).
+    let facts = mtg_kernel::turn::StepFacts {
+        second_damage_step_due: state.combat_damage_step_pending,
+        cleanup_repeats: state.step == Step::Cleanup && std::mem::take(&mut state.cleanup_repeat),
+        attackers_declared: state.combat.as_ref().is_some_and(|c| c.any_attackers_declared),
+        skips_first_draw: state.is_first_turn && state.players.len() == 2,
     };
+    let next = mtg_kernel::turn::next_step(state.step.index(), facts).map(Step::from_index);
+    if state.step == Step::Upkeep && next == Some(Step::PrecombatMain) {
+        state.log(LogLevel::Debug, "Turn 1: draw step skipped (CR 103.7a)".into());
+    }
     if let Some(next_step) = next {
         state.step = next_step;
     } else {
@@ -1657,22 +1655,28 @@ fn run_game_loop_inner<F>(
         // After submitting, handle priority flow.
         match &action {
             Action::PassPriority => {
-                if state.consecutive_passes >= num_players {
-                    // All players passed in succession.
-                    if state.stack.is_empty() {
-                        // Stack empty, advance step.
+                // What all players passing in succession does is proved in
+                // `mtg_kernel::turn::after_pass` (CR 117.4).
+                let current = state.priority_player.unwrap_or(state.active_player);
+                match mtg_kernel::turn::after_pass(
+                    state.consecutive_passes, num_players, state.stack.len(), u32::from(current.0),
+                ) {
+                    mtg_kernel::turn::AfterPass::EndStep => {
                         state.priority_player = None;
                         advance_step(state, registry);
-                    } else {
+                    }
+                    mtg_kernel::turn::AfterPass::ResolveTop => {
                         let mut new_state = state.clone();
                         stack::resolve_top_of_stack(&mut new_state, registry);
                         *state = new_state;
                         state.consecutive_passes = 0;
                         state.priority_player = Some(state.active_player);
                     }
-                } else if let Some(current) = state.priority_player {
-                    // Pass to next player.
-                    state.priority_player = Some(state.next_player(current));
+                    mtg_kernel::turn::AfterPass::NextPlayer(next) => {
+                        if state.priority_player.is_some() {
+                            state.priority_player = Some(PlayerId(u8::try_from(next).expect("a player index")));
+                        }
+                    }
                 }
             }
 
