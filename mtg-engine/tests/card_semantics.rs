@@ -75,6 +75,9 @@ struct Printed {
     toughness: Option<i32>,
     /// A double-faced card's back face (CR 712.1), with no mana cost.
     back: Option<Box<Printed>>,
+    /// The colours of a colour indicator, which a back face has in place
+    /// of a mana cost (CR 204.1).
+    color_indicator: Vec<Color>,
 }
 
 /// [`oracle_cache`], read once.
@@ -99,6 +102,9 @@ fn oracle_cache() -> BTreeMap<String, Printed> {
         power: int(&c["power"]),
         toughness: int(&c["toughness"]),
         back: None,
+        color_indicator: c["color_indicator"].as_array().into_iter().flatten()
+            .filter_map(|l| Color::ALL.into_iter().find(|k| l.as_str() == Some(&color_letter(*k).to_string())))
+            .collect(),
     };
     json["cards"].as_object().expect("a cards map").iter()
         .map(|(name, c)| {
@@ -123,10 +129,12 @@ impl Printed {
         self.types().0.iter().any(|x| x == t)
     }
 
-    /// Its colours: the colours of the mana symbols in its cost (CR 202.2),
-    /// which is all there is for the cards on the board here (none has a
-    /// colour indicator).
+    /// Its colours: those of its colour indicator if it has one (CR 204.1),
+    /// and the colours of the mana symbols in its cost (202.2).
     fn colors(&self) -> Vec<Color> {
+        if !self.color_indicator.is_empty() {
+            return self.color_indicator.clone();
+        }
         let mut colors: Vec<Color> = Color::ALL.into_iter()
             .filter(|c| self.mana_cost.contains(&format!("{{{}}}", color_letter(*c))))
             .collect();
@@ -351,6 +359,9 @@ enum Effect {
     DamageX { slot: usize },
     /// "Regenerate this creature": a shield (CR 701.19a).
     Regenerate { slot: usize },
+    /// "Transform this creature": it turns to its other face, unless it has
+    /// transformed since the ability was put on the stack (CR 701.27a, f).
+    TransformThis { slot: usize },
     /// "Gain control of target creature until end of turn" or "for as long
     /// as you control ~" (CR 613.2, 611.2b).
     GainControl { slot: usize, until_end_of_turn: bool },
@@ -1219,6 +1230,11 @@ impl Spec {
             self.effects.push(Effect::Regenerate { slot });
             return Some(());
         }
+        if s == "Transform this creature" {
+            let slot = self.slot(Slot::This);
+            self.effects.push(Effect::TransformThis { slot });
+            return Some(());
+        }
         if let Some(f) = s.strip_prefix("Regenerate all ") {
             self.effects.push(Effect::RegenerateAll { filter: filter(f)? });
             return Some(());
@@ -1675,9 +1691,13 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
                 "this creature or another creature" => "creature",
                 w => w.strip_prefix("a ").unwrap_or(w),
             };
+            let (optional, rest) = match rest.strip_prefix("you may ") {
+                Some(r) => (true, r),
+                None => (false, rest),
+            };
             let mut chars = rest.chars();
             let sentence: String = chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default();
-            let mut trigger = Trigger::default();
+            let mut trigger = Trigger { optional, ..Trigger::default() };
             trigger.spec.sentence(&sentence).ok_or_else(unread)?;
             spec.watch = Some(Box::new(Watch { dying: filter(who).ok_or_else(unread)?, trigger }));
             continue;
@@ -1713,11 +1733,6 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
             continue;
         }
         if line == "At the beginning of each upkeep, if no spells were cast last turn, transform this creature." {
-            // The back face, read the same way, must turn back.
-            let back = card.back.as_ref().ok_or_else(unread)?;
-            if back_face_reads(back).is_none() {
-                return Err(format!("cannot read the back face {:?}", back.oracle_text));
-            }
             spec.werewolf = true;
             continue;
         }
@@ -1745,18 +1760,26 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
             spec.flash |= k == Keyword::Flash;
         }
     }
+    // A double-faced card is read with its back face, which must read too:
+    // a werewolf's turning back as its front turned, any other's being
+    // what its front transforms into.
+    if let Some(back) = &card.back {
+        if back_face_reads(back).is_none_or(|b| b.werewolf != spec.werewolf) {
+            return Err(format!("cannot read the back face {:?}", back.oracle_text));
+        }
+    }
     Ok(spec)
 }
 
-/// A werewolf's back face, when its text is keywords, combat text and
-/// static abilities, and the trigger that transforms it back: what the
-/// grammar reads of it (its keywords are its printed ones).
+/// A double-faced card's back face, when its text is keywords, combat
+/// text and static abilities, and for a werewolf's the trigger that
+/// transforms it back, which sets `werewolf`: what the grammar reads of it
+/// (its keywords are its printed ones).
 fn back_face_reads(back: &Printed) -> Option<Spec> {
-    let mut back_turns = false;
     let mut spec = Spec { permanent: true, ..Spec::default() };
     for line in without_reminders(&back.oracle_text).replace(&back.name, "~").lines().map(str::trim).filter(|l| !l.is_empty()) {
         if line == "At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature." {
-            back_turns = true;
+            spec.werewolf = true;
         } else if line.split(',').map(str::trim).all(|w| keyword_named(w).is_some()) || spec.combat.read(line).is_some() {
         } else if let Some(st) = creature_static(line) {
             spec.statics.push(st);
@@ -1764,7 +1787,7 @@ fn back_face_reads(back: &Printed) -> Option<Spec> {
             return None;
         }
     }
-    back_turns.then_some(spec)
+    Some(spec)
 }
 
 /// Read an artifact that is nothing but activated abilities the grammar
@@ -2198,22 +2221,22 @@ impl Model {
         }
     }
 
-    /// [`Model::printed`], with a werewolf's back face ready to turn to.
-    /// Its colours stay the front's: a werewolf's back face has a colour
-    /// indicator of the same colour (CR 204, 712.8), which the Oracle data
-    /// here does not carry.
+    /// [`Model::printed`], and for a double-faced card the grammar reads,
+    /// its text and its back face ready to turn to.
     fn printed_with_faces(p: &Printed, owner: PlayerId) -> Self {
-        let mut m = Model::printed(p, owner);
-        if let (Some(back), Ok(front)) = (p.back.as_ref(), read_creature(p).as_ref().map(|s| s.werewolf.then_some(s))) {
-            if let (Some(front), Some(back_spec)) = (front, back_face_reads(back)) {
-                m.statics.clone_from(&front.statics);
-                m.combat = front.combat.clone();
-                let mut b = Model { statics: back_spec.statics, combat: back_spec.combat, ..Model::printed(back, owner) };
-                b.colors = m.colors.clone();
-                m.other_face = Some(Box::new(b));
-            }
+        match read_creature(p) {
+            Ok(front) if p.back.is_some() => model_of(&front, p, owner),
+            _ => Model::printed(p, owner),
         }
-        m
+    }
+
+    /// The back face of `p`, if it has one the grammar reads: its printed
+    /// characteristics, its colour indicator's colours (CR 204.1, 712.8e),
+    /// and its text.
+    fn back_face(p: &Printed, owner: PlayerId) -> Option<Box<Model>> {
+        let back = p.back.as_ref()?;
+        let spec = back_face_reads(back)?;
+        Some(Box::new(Model { statics: spec.statics, combat: spec.combat, ..Model::printed(back, owner) }))
     }
 
     /// Turn to the other face: its characteristics, this object's state.
@@ -2321,6 +2344,11 @@ struct World {
     /// controller announced (CR 107.3a, 601.2b), or the number of cards
     /// exiled for an "exile X cards" cost.
     x: u32,
+    /// Whether each double-faced permanent was transformed when the
+    /// triggers resolving were put on the stack, which a transform of its
+    /// own asks (CR 701.27f); empty for an ability resolving as it was
+    /// activated, nothing between.
+    faces_put: BTreeMap<ObjectId, bool>,
     /// Permanents the reference has no engine id for: tokens, and the
     /// permanent a creature spell becomes.
     tokens: Vec<Model>,
@@ -2409,6 +2437,16 @@ enum Dest {
 }
 
 impl World {
+    /// This world as triggers are put on the stack from it, each
+    /// double-faced permanent's face recorded (CR 701.27f).
+    fn with_faces_put(&self) -> World {
+        let faces_put = self.permanents.iter()
+            .filter(|(_, m)| m.other_face.is_some())
+            .map(|(id, m)| (*id, m.transformed))
+            .collect();
+        World { faces_put, ..self.clone() }
+    }
+
     /// A permanent's power and toughness as they stand: printed, changed,
     /// or counted (CR 604.3) when its text defines them.
     fn pt_of(&self, m: &Model) -> (Option<i32>, Option<i32>) {
@@ -2682,6 +2720,7 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
         found: None,
         shuffled: [false, false],
         x: 0,
+        faces_put: BTreeMap::new(),
         tokens: Vec::new(),
         life: [20, 20],
         pool: [BTreeMap::new(), BTreeMap::new()],
@@ -3219,6 +3258,12 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     m.shields += 1;
                 }
             }
+            Effect::TransformThis { slot } => {
+                let id = object(*slot).expect("its source");
+                if let Some(m) = w.permanents.get_mut(&id).filter(|m| world.faces_put.get(&id).is_none_or(|t| *t == m.transformed)) {
+                    m.transform();
+                }
+            }
             Effect::RegenerateAll { filter } => {
                 for m in w.permanents.values_mut() {
                     if m.is_creature() && m.matches(filter, caster) {
@@ -3518,7 +3563,7 @@ const BASIC_LANDS: [&str; 5] = ["Plains", "Island", "Swamp", "Mountain", "Forest
 fn basic_land(name: &str, owner: PlayerId) -> Model {
     let printed = Printed {
         name: name.to_string(), mana_cost: String::new(), type_line: format!("Basic Land — {name}"),
-        oracle_text: String::new(), power: None, toughness: None, back: None,
+        oracle_text: String::new(), power: None, toughness: None, back: None, color_indicator: Vec::new(),
     };
     Model::printed(&printed, owner)
 }
@@ -3697,6 +3742,7 @@ fn model_of(spec: &Spec, card: &Printed, controller: PlayerId) -> Model {
         counts_hand: spec.pt_is_cards_in_hand,
         combat: spec.combat.clone(),
         statics: spec.statics.clone(),
+        other_face: Model::back_face(card, controller),
         ..Model::printed(card, controller)
     }
 }
@@ -3760,9 +3806,10 @@ fn trigger_outcomes(trigger: &Trigger, world: &World, caster: PlayerId) -> Vec<W
     if sets.is_empty() {
         return vec![world.clone()];
     }
+    let put = world.with_faces_put();
     let mut out = Vec::new();
     for targets in sets {
-        for way in resolution_ways(&trigger.spec, world, &targets, caster) {
+        for way in resolution_ways(&trigger.spec, &put, &targets, caster) {
             let mut after = apply(&trigger.spec, &way, &targets, caster);
             after.state_based_actions();
             out.push(after);
@@ -3771,7 +3818,7 @@ fn trigger_outcomes(trigger: &Trigger, world: &World, caster: PlayerId) -> Vec<W
             out.push(world.clone());
         }
     }
-    out
+    out.into_iter().map(|mut w| { w.faces_put.clear(); w }).collect()
 }
 
 /// Every way `triggers`, controlled by `caster` and set off at once, can
@@ -3797,7 +3844,7 @@ fn triggers_outcomes(triggers: &[&Trigger], world: &World, caster: PlayerId) -> 
                 .collect();
         }
         for chosen in choices {
-            let mut worlds = vec![world.clone()];
+            let mut worlds = vec![world.with_faces_put()];
             for (k, &i) in order.iter().enumerate().rev() {
                 let Some(targets) = &chosen[k] else { continue };
                 let trigger = triggers[i];
@@ -3812,7 +3859,7 @@ fn triggers_outcomes(triggers: &[&Trigger], world: &World, caster: PlayerId) -> 
             out.extend(worlds);
         }
     }
-    out
+    out.into_iter().map(|mut w| { w.faces_put.clear(); w }).collect()
 }
 
 /// Every way the creatures `dying` dying at once on `world` can end, where
@@ -3821,8 +3868,9 @@ fn triggers_outcomes(triggers: &[&Trigger], world: &World, caster: PlayerId) -> 
 /// triggers those deaths set off resolve each way they can: the watcher's
 /// dies trigger when it is one of them, and its "whenever ... dies" for
 /// each that, as it last existed on the battlefield, is one its text names,
-/// the watcher having been there to see it (CR 603.6c, 603.10a).
-fn death_outcomes(spec: &Spec, world: &World, caster: PlayerId, watcher: ObjectId, dying: &[ObjectId]) -> Vec<World> {
+/// the watcher having been there to see it (CR 603.6c, 603.10a). With
+/// `may`, each "you may" is taken, or each declined.
+fn death_outcomes(spec: &Spec, world: &World, caster: PlayerId, watcher: ObjectId, dying: &[ObjectId], may: Option<bool>) -> Vec<World> {
     let mut w = world.clone();
     w.refresh();
     for id in dying {
@@ -3833,17 +3881,25 @@ fn death_outcomes(spec: &Spec, world: &World, caster: PlayerId, watcher: ObjectI
     w.state_based_actions();
     assert!(dying.iter().all(|id| !w.permanents.contains_key(id)), "lethal damage kills them");
     let mut triggers = Vec::new();
+    // Its text is its front face's, which a transformed permanent does not
+    // have (CR 712.8e).
+    let front_up = before.permanents.get(&watcher).is_some_and(|m| !m.transformed);
     for (id, last) in before.permanents.iter().filter(|(id, m)| m.is_creature() && !w.permanents.contains_key(id)) {
-        if *id == watcher {
+        if *id == watcher && front_up {
             triggers.extend(spec.dies.as_deref());
         }
-        if let Some(watch) = spec.watch.as_ref().filter(|_| before.permanents.contains_key(&watcher)) {
+        if let Some(watch) = spec.watch.as_ref().filter(|_| front_up) {
             if last.matches_from(&watch.dying, caster, *id == watcher) {
                 triggers.push(&watch.trigger);
             }
         }
     }
-    triggers_outcomes(&triggers, &w, caster)
+    // Every "you may" taken, or every one declined, when `may` says so.
+    let taken: Vec<Trigger> = triggers.iter()
+        .filter(|t| !t.optional || may != Some(false))
+        .map(|t| Trigger { optional: t.optional && may.is_none(), ..(*t).clone() })
+        .collect();
+    triggers_outcomes(&taken.iter().collect::<Vec<_>>(), &w, caster)
 }
 
 // ---- the engine side ----
@@ -4193,6 +4249,14 @@ fn every_ending_at(state: &GameState, registry: &CardRegistry, spell: ObjectId, 
 
 /// [`every_ending`], starting with `first` when it is given.
 fn every_ending_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>, first: Option<Action>) -> Result<Vec<GameState>, String> {
+    every_ending_choosing(state, registry, spell, first, None)
+}
+
+/// [`every_ending_from`], with every yes-or-no question answered `may`
+/// when it is given: one strategy, rather than every one, for the "you
+/// may"s, whose endings as a set can hide a wrong answer to one behind a
+/// right answer to another.
+fn every_ending_choosing(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>, first: Option<Action>, may: Option<bool>) -> Result<Vec<GameState>, String> {
     let mut todo: Vec<Vec<Answer>> = vec![Vec::new()];
     let mut done = Vec::new();
     while let Some(script) = todo.pop() {
@@ -4201,7 +4265,9 @@ fn every_ending_from(state: &GameState, registry: &CardRegistry, spell: Option<O
         }
         match play_from(state, registry, spell, Vec::new(), first.clone(), Scene::Main, &script)? {
             Played::Done(s) => done.push(*s),
-            Played::Asks(options) => todo.extend(options.into_iter().map(|o| [script.clone(), vec![o]].concat())),
+            Played::Asks(options) => todo.extend(options.into_iter()
+                .filter(|o| !matches!((o, may), (Answer::YesNo(a), Some(m)) if *a != m))
+                .map(|o| [script.clone(), vec![o]].concat())),
         }
     }
     Ok(done)
@@ -4283,12 +4349,12 @@ const READ: &[&str] = &[
     "Spectral Flight", "Spectral Rider", "Spider Spawning", "Spidery Grasp", "Splinterfright",
     "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist",
     "Sulfur Falls", "Swamp", "Swords to Plowshares", "Think Twice", "Thraben Purebloods",
-    "Tormented Pariah", "Traitorous Blood", "Travel Preparations", "Traveler's Amulet",
-    "Tree of Redemption", "Tribute to Hunger", "Typhoid Rats", "Unburial Rites", "Unruly Mob",
-    "Urgent Exorcism", "Vampire Interloper", "Vampiric Fury", "Victim of Night",
-    "Village Bell-Ringer", "Village Cannibals", "Village Ironsmith", "Villagers of Estwald",
-    "Voiceless Spirit", "Walking Corpse", "Wooden Stake", "Woodland Cemetery",
-    "Woodland Sleuth", "Wreath of Geists",
+    "Thraben Sentry", "Tormented Pariah", "Traitorous Blood", "Travel Preparations",
+    "Traveler's Amulet", "Tree of Redemption", "Tribute to Hunger", "Typhoid Rats",
+    "Unburial Rites", "Unruly Mob", "Urgent Exorcism", "Vampire Interloper", "Vampiric Fury",
+    "Victim of Night", "Village Bell-Ringer", "Village Cannibals", "Village Ironsmith",
+    "Villagers of Estwald", "Voiceless Spirit", "Walking Corpse", "Wooden Stake",
+    "Woodland Cemetery", "Woodland Sleuth", "Wreath of Geists",
 ];
 
 // ---- the properties ----
@@ -4437,20 +4503,31 @@ fn every_readable_card_does_what_its_text_says() {
                             let lethal = dying.effective_toughness(e, &registry).expect("a creature").max(1);
                             dying.get_object_mut(e).expect("on the battlefield").damage_marked = u32::try_from(lethal).expect("positive");
                         }
-                        let deaths = death_outcomes(spec, after_entering, P0, spell, &rs);
-                        let died = if random {
-                            over_seeds(&dying, |s| every_ending(s, &registry, None))
-                        } else {
-                            every_ending(&dying, &registry, None)
-                        };
                         let what = match rs.as_slice() {
                             [r] if *r == spell => "dying".to_string(),
                             _ => format!("seeing {} die", rs.iter()
                                 .map(|r| after_entering.permanents[r].name.as_deref().unwrap_or("a token"))
                                 .collect::<Vec<_>>().join(" and ")),
                         };
-                        if let Some(why) = disagreement(&deaths, &died, &registry) {
-                            failures.push(format!("{name} {what}: {why}"));
+                        // Every way, and then each "you may" taken every
+                        // time and declined every time.
+                        let optional = spec.dies.as_ref().is_some_and(|t| t.optional) || spec.watch.as_ref().is_some_and(|w| w.trigger.optional);
+                        for may in [None, Some(true), Some(false)].into_iter().filter(|m| m.is_none() || optional) {
+                            let deaths = death_outcomes(spec, after_entering, P0, spell, &rs, may);
+                            let died = if random {
+                                over_seeds(&dying, |s| every_ending_choosing(s, &registry, None, None, may))
+                            } else {
+                                every_ending_choosing(&dying, &registry, None, None, may)
+                            };
+                            let policy = match may {
+                                None => "",
+                                Some(true) => ", taking every \"may\"",
+                                Some(false) => ", declining every \"may\"",
+                            };
+                            if let Some(why) = disagreement(&deaths, &died, &registry) {
+                                failures.push(format!("{name} {what}{policy}: {why}"));
+                                break;
+                            }
                         }
                     }
                 }
@@ -5180,6 +5257,7 @@ fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Opt
         found: None,
         shuffled: [false, false],
         x: 0,
+        faces_put: BTreeMap::new(),
         tokens: Vec::new(),
         life: [20, 20],
         pool: [BTreeMap::new(), BTreeMap::new()],
@@ -5207,8 +5285,7 @@ fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Opt
         world.graveyard[0].push(name.to_string());
     }
     let mut place = |state: &mut GameState, (card, spec): (&Printed, &Spec), owner: PlayerId| {
-        // A werewolf's back face: its front card, transformed, with its
-        // front's colour, which its colour indicator repeats (CR 712.8).
+        // A back face: its front card, transformed (CR 712.8e).
         let front = registry.get_id_by_name(&card.name).is_none()
             .then(|| cached_oracle().values().find(|f| f.back.as_ref().is_some_and(|b| b.name == card.name)))
             .flatten();
@@ -5221,7 +5298,6 @@ fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Opt
         };
         if let Some(f) = front {
             state.get_object_mut(id).expect("just placed").is_transformed = true;
-            m.colors = f.colors();
             m.transformed = true;
             m.other_face = Some(Box::new(Model::printed(f, owner)));
         }
@@ -5310,11 +5386,10 @@ fn every_scene_ending(state: &GameState, registry: &CardRegistry, scene: Scene) 
     Ok(done)
 }
 
-/// Each werewolf's back face the grammar reads, as a card of its own, for
+/// Each back face of a card the grammar reads, as a card of its own, for
 /// what fights as it.
 fn back_faces(cards: &[(Printed, Spec)]) -> Vec<(Printed, Spec)> {
     cards.iter()
-        .filter(|(_, s)| s.werewolf)
         .filter_map(|(c, _)| {
             let back = c.back.as_ref()?;
             Some(((**back).clone(), back_face_reads(back)?))
@@ -5323,8 +5398,8 @@ fn back_faces(cards: &[(Printed, Spec)]) -> Vec<(Printed, Spec)> {
 }
 
 /// The creatures the combat tests fight with: those the grammar reads whose
-/// text is keywords, combat text and static abilities, a werewolf's faces
-/// both, its back face in `backs`.
+/// text is keywords, combat text and static abilities, a double-faced
+/// card's faces both, its back face in `backs`.
 fn fighters<'a>(cards: &'a [(Printed, Spec)], backs: &'a [(Printed, Spec)]) -> Vec<(&'a Printed, &'a Spec)> {
     cards.iter().chain(backs)
         .filter(|(c, s)| c.has_type("Creature") && s.etb.is_none() && s.dies.is_none() && s.watch.is_none() && s.activated.is_empty()
@@ -5792,6 +5867,7 @@ fn the_grammar_reads_its_templates() {
         power: None,
         toughness: None,
         back: None,
+        color_indicator: Vec::new(),
     };
     let spec = read(&card("Bolt", "Bolt deals 3 damage to any target.")).unwrap();
     assert_eq!(spec.slots, vec![Slot::Any]);
