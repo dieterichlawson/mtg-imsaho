@@ -184,9 +184,9 @@ def log_health(path):
         elif "UNREADABLE" in line or ("API_WARN" in line and "no structured object" in line):
             h["unreadable"] += 1
         # A worker's panic reaches the log as its `FATAL` line (the panic
-        # text is stderr's), a backend that gave up as `API_FATAL` (#900's
-        # review).
-        elif "panicked" in line or "INVARIANT" in line or re.search(r"\t(API_)?FATAL\b", line):
+        # text is stderr's), and so does a backend that gave up, after its
+        # own `API_FATAL`, which is not counted again (#900's review).
+        elif "panicked" in line or "INVARIANT" in line or re.search(r"\tFATAL\b", line):
             h["panics"] += 1
         # A game seat's answer the harness could not use and chose for.
         elif re.search(r"\t(MALFORMED|NO_ANSWER) \[", line):

@@ -43,9 +43,10 @@ fn the_ledger_counts_every_reask_unreadable_reply_and_call_the_log_holds() {
     assert_eq!(h["game_calls"], 2, "{h}");
     assert_eq!(h["out"], 11, "{h}");
     assert_eq!(h["thinking"], 3, "{h}");
-    // A worker's panic is its FATAL line, a backend that gave up API_FATAL;
-    // a game answer the harness chose for is MALFORMED or NO_ANSWER.
-    assert_eq!(h["panics"], 2, "{h}");
+    // A stop is its FATAL line; a backend that gave up writes API_FATAL
+    // before it, the same stop. A game answer the harness chose for is
+    // MALFORMED or NO_ANSWER.
+    assert_eq!(h["panics"], 1, "{h}");
     assert_eq!(h["harness_chose"], 2, "{h}");
     let _ = std::fs::remove_dir_all(&dir);
 }
