@@ -11,7 +11,9 @@
 //! tapped or with counters, power and toughness defined by a count, an
 //! enters trigger whose effect is one of the spell templates — into the
 //! permanent it becomes and what its triggers do as it enters and as it
-//! dies. A reference semantics,
+//! dies, and each enchantment it can read — an Aura's "Enchant creature" or
+//! "Enchant player", and static changes to power, toughness and keywords —
+//! into what it does while it is on the battlefield. A reference semantics,
 //! written from the
 //! Comprehensive Rules and sharing no code with `src/cards/`, says what
 //! those effects do to a board described by the Oracle data of the cards on
@@ -226,6 +228,8 @@ struct Clause {
     with: Vec<Keyword>,
     /// "another": not the source of the ability (CR 109.5).
     other: bool,
+    /// "Creature tokens": only tokens (CR 111.1).
+    token: bool,
     /// "you control" (Some(true)), "you don't control" / "your opponents
     /// control" (Some(false)).
     yours: Option<bool>,
@@ -324,6 +328,26 @@ struct Spec {
     /// "When this creature dies, ..." (CR 700.4, 603.6c): a leaves-the-
     /// battlefield trigger, which looks back at the creature as it was.
     dies: Option<Box<Trigger>>,
+    /// An Aura's "Enchant creature" / "Enchant player" (CR 303.4a, 702.5):
+    /// the slot its spell targets, the first of `slots`.
+    enchants: bool,
+    /// Static abilities: continuous effects while it is on the battlefield
+    /// (CR 604.1, 611.3).
+    statics: Vec<Static>,
+}
+
+/// A static ability that changes power, toughness or keywords (CR 613.4c,
+/// 613.1f).
+#[derive(Debug, Clone, PartialEq)]
+enum Static {
+    /// "Enchanted creature gets +P/+T [and has K]", "Enchanted creature has
+    /// K", and "+X/+X, where X is the number of creature cards in your
+    /// graveyard".
+    Enchanted { power: i32, toughness: i32, has: Vec<Keyword>, per_creature_card: bool },
+    /// "<creatures> get +P/+T [and have K]"; with `enchanted_player`, the
+    /// creatures that player controls ("Creatures enchanted player controls
+    /// get -1/-1").
+    Group { filter: Filter, enchanted_player: bool, power: i32, toughness: i32, has: Vec<Keyword> },
 }
 
 /// An enters-the-battlefield trigger.
@@ -809,6 +833,76 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
     Ok(spec)
 }
 
+/// "gets +2/+2 and has flying", "has intimidate", "get +1/+1 and have
+/// vigilance": a static change, with no duration.
+fn static_change(text: &str) -> Option<((i32, i32), Vec<Keyword>)> {
+    let (change, has) = if let Some(k) = text.strip_prefix("has ").or_else(|| text.strip_prefix("have ")) {
+        ("+0/+0", Some(k))
+    } else {
+        let rest = text.strip_prefix("gets ").or_else(|| text.strip_prefix("get "))?;
+        match rest.split_once(" and ") {
+            Some((c, h)) => (c, Some(h.strip_prefix("has ").or_else(|| h.strip_prefix("have "))?)),
+            None => (rest, None),
+        }
+    };
+    let keywords = match has {
+        Some(h) => h.split(" and ").map(keyword_named).collect::<Option<Vec<_>>>()?,
+        None => Vec::new(),
+    };
+    Some((pt_change(change)?, keywords))
+}
+
+/// Read an enchantment: an Aura's "Enchant creature" or "Enchant player"
+/// and the static abilities the grammar knows, line by line.
+fn read_enchantment(card: &Printed) -> Result<Spec, String> {
+    let text = without_reminders(&card.oracle_text).replace(&card.name, "~");
+    let mut spec = Spec { permanent: true, ..Spec::default() };
+    for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        let unread = || format!("cannot read {line:?}");
+        let body = line.strip_suffix('.').unwrap_or(line);
+        match body {
+            "Enchant creature" | "Enchant player" if spec.slots.is_empty() => {
+                spec.enchants = true;
+                let slot = if body == "Enchant player" { Slot::Player } else { Slot::Permanent(filter("creature").expect("a filter")) };
+                spec.slots.push(slot);
+                continue;
+            }
+            _ => {}
+        }
+        if let Some(rest) = body.strip_prefix("Enchanted creature ") {
+            let (rest, per_creature_card) = match rest.strip_suffix(", where X is the number of creature cards in your graveyard") {
+                Some(r) => (r.replace("+X/+X", "+1/+1"), true),
+                None => (rest.to_string(), false),
+            };
+            let ((power, toughness), has) = static_change(&rest).ok_or_else(unread)?;
+            spec.statics.push(Static::Enchanted { power, toughness, has, per_creature_card });
+            continue;
+        }
+        if let Some(rest) = body.strip_prefix("Creatures enchanted player controls ") {
+            let ((power, toughness), has) = static_change(rest).ok_or_else(unread)?;
+            spec.statics.push(Static::Group { filter: filter("creature").expect("a filter"), enchanted_player: true, power, toughness, has });
+            continue;
+        }
+        let group = |who: &str, rest: &str| -> Option<Static> {
+            let ((power, toughness), has) = static_change(rest)?;
+            let filter = if who == "Creature tokens you control" {
+                Filter(vec![Clause { head: Some("creature".to_string()), yours: Some(true), token: true, ..Clause::default() }])
+            } else {
+                filter(who)?
+            };
+            Some(Static::Group { filter, enchanted_player: false, power, toughness, has })
+        };
+        let parsed = ["get ", "have "].iter()
+            .find_map(|verb| body.split_once(&format!(" {verb}")).map(|(who, rest)| (who, format!("{verb}{rest}"))))
+            .and_then(|(who, rest)| group(who, &rest));
+        spec.statics.push(parsed.ok_or_else(unread)?);
+    }
+    if spec.enchants != spec.slots.first().is_some() || spec.statics.is_empty() {
+        return Err("not an enchantment the grammar reads".to_string());
+    }
+    Ok(spec)
+}
+
 // ---- the board ----
 
 /// The board every card is cast on: P0 casts, in their precombat main
@@ -918,6 +1012,8 @@ struct Model {
     /// Power and toughness are the number of creatures its controller
     /// controls, counted when observed (CR 604.3).
     counts_creatures: bool,
+    /// What an Aura enchants (CR 303.4).
+    attached: Option<Target>,
 }
 
 impl Model {
@@ -937,6 +1033,7 @@ impl Model {
             tapped: false,
             counters: (0, 0),
             counts_creatures: false,
+            attached: None,
         }
     }
 
@@ -958,6 +1055,7 @@ impl Model {
                 && c.min_power.is_none_or(|n| self.power.is_some_and(|p| p >= n))
                 && !c.without.iter().any(|k| self.keywords.contains(k))
                 && c.with.iter().all(|k| self.keywords.contains(k))
+                && (!c.token || self.name.is_none())
                 && c.yours.is_none_or(|y| (self.controller == caster) == y)
                 // Nothing on the board is attacking: it is the precombat
                 // main phase.
@@ -1016,6 +1114,8 @@ struct PermanentSeen {
     colors: Vec<char>,
     subtypes: Vec<String>,
     counters: (u32, u32),
+    /// What it is attached to: a permanent by name, or "player N".
+    attached_to: Option<String>,
 }
 
 fn seen(m: &Model) -> PermanentSeen {
@@ -1037,6 +1137,7 @@ fn seen(m: &Model) -> PermanentSeen {
         colors,
         subtypes,
         counters: m.counters,
+        attached_to: None,
     }
 }
 
@@ -1061,6 +1162,11 @@ impl World {
                     seen.power = Some(n);
                     seen.toughness = Some(n);
                 }
+                seen.attached_to = match &m.attached {
+                    Some(Target::Object(id)) => self.permanents.get(id).and_then(|a| a.name.clone()),
+                    Some(Target::Player(p)) => Some(format!("player {}", p.0)),
+                    _ => None,
+                };
                 seen
             })
             .collect();
@@ -1118,12 +1224,23 @@ impl World {
                 .collect();
             let before = self.tokens.len();
             self.tokens.retain(|m| m.toughness.is_none_or(|t| t > 0 && m.damage < t as u32));
-            if dying.is_empty() && before == self.tokens.len() {
+            let falls = self.permanents.values()
+                .any(|m| matches!(m.attached, Some(Target::Object(a)) if !self.permanents.contains_key(&a)));
+            if dying.is_empty() && before == self.tokens.len() && !falls {
                 return;
             }
             for id in dying {
                 self.leave(id, Dest::Graveyard);
                 self.a_creature_died = true;
+            }
+            // An Aura attached to nothing goes to its owner's graveyard
+            // (CR 704.5m).
+            let fallen: Vec<ObjectId> = self.permanents.iter()
+                .filter(|(_, m)| matches!(m.attached, Some(Target::Object(a)) if !self.permanents.contains_key(&a)))
+                .map(|(id, _)| *id)
+                .collect();
+            for id in fallen {
+                self.leave(id, Dest::Graveyard);
             }
         }
     }
@@ -1217,6 +1334,8 @@ fn observe(state: &GameState, registry: &CardRegistry) -> Observed {
                     o.counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0),
                     o.counters.get(&CounterType::MinusOneMinusOne).copied().unwrap_or(0),
                 ),
+                attached_to: o.attached_to.map(name_of)
+                    .or_else(|| o.attached_to_player.map(|p| format!("player {}", p.0))),
             }
         })
         .collect();
@@ -1541,6 +1660,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                         tapped: *tapped,
                         counters: (0, 0),
                         counts_creatures: false,
+                        attached: None,
                     });
                 }
             }
@@ -1561,10 +1681,43 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
 /// What resolving the instant or sorcery `card`, read as `spec`, with
 /// `targets` does to `world`: its effects, state-based actions (CR 704.3),
 /// and the card put into its owner's graveyard (CR 608.2n).
-fn resolve(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId, card: &Printed) -> World {
+fn resolve(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId, card: &Printed, id: ObjectId) -> World {
     let mut w = apply(spec, world, targets, caster);
+    if spec.permanent {
+        // An enchantment: it enters, an Aura attached to what its spell
+        // targeted (CR 303.4f), and its static abilities apply at once.
+        let attached = spec.enchants.then(|| targets[0].clone());
+        w.permanents.insert(id, Model { attached: attached.clone(), ..Model::printed(card, caster) });
+        let creature_cards = i32::try_from(w.creature_cards_in_graveyard(caster)).expect("a few");
+        for st in &spec.statics {
+            match st {
+                Static::Enchanted { power, toughness, has, per_creature_card } => {
+                    let k = if *per_creature_card { creature_cards } else { 1 };
+                    if let Some(Target::Object(e)) = &attached {
+                        let m = w.permanents.get_mut(e).expect("an enchanted creature");
+                        change(m, power * k, toughness * k);
+                        m.keywords.extend(has);
+                    }
+                }
+                Static::Group { filter, enchanted_player, power, toughness, has } => {
+                    let whose = match &attached {
+                        Some(Target::Player(p)) if *enchanted_player => Some(*p),
+                        _ => None,
+                    };
+                    for m in w.permanents.values_mut().chain(w.tokens.iter_mut()) {
+                        if m.is_creature() && m.matches(filter, caster) && whose.is_none_or(|p| m.controller == p) {
+                            change(m, *power, *toughness);
+                            m.keywords.extend(has);
+                        }
+                    }
+                }
+            }
+        }
+    }
     w.state_based_actions();
-    w.graveyard[caster.0 as usize].push(card.name.clone());
+    if !spec.permanent {
+        w.graveyard[caster.0 as usize].push(card.name.clone());
+    }
     assert!(w.stack.is_empty(), "the reference resolves only what it counters; {:?} is left", w.stack);
     w
 }
@@ -1843,6 +1996,8 @@ fn readable(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (Vec<
             read(card)
         } else if card.has_type("Creature") && !card.type_line.contains("//") {
             read_creature(card)
+        } else if card.has_type("Enchantment") {
+            read_enchantment(card)
         } else {
             continue;
         };
@@ -1860,7 +2015,7 @@ fn readable(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (Vec<
 /// How many cards the grammar read when this was last raised. A change
 /// that reads more raises it; one that reads fewer fails here, so coverage
 /// is never lost without someone deciding to lose it.
-const CARDS_READ: usize = 76;
+const CARDS_READ: usize = 85;
 
 // ---- the properties ----
 
@@ -1937,7 +2092,7 @@ fn every_readable_card_does_what_its_text_says() {
             // A creature spell: every way it can end, against every way the
             // engine lets it end; then, if its text says what its death
             // does, every way that can end.
-            if spec.permanent {
+            if spec.permanent && card.has_type("Creature") {
                 casts += 1;
                 let entering = creature_outcomes(spec, &world, P0, card, spell);
                 let endings = every_ending(&state, &registry, Some(spell));
@@ -1980,7 +2135,7 @@ fn every_readable_card_does_what_its_text_says() {
             }
             for targets in expected_sets {
                 casts += 1;
-                let want = resolve(spec, &world, &targets, P0, card).observed();
+                let want = resolve(spec, &world, &targets, P0, card, spell).observed();
                 match cast_and_let_resolve(&state, &registry, spell, targets.clone()) {
                     Ok(after) => {
                         let got = observe(&after, &registry);
@@ -2111,6 +2266,18 @@ fn the_grammar_reads_its_templates() {
     let etb = read_creature(&hunter).unwrap().etb.expect("an enters trigger");
     let Slot::Permanent(Filter(clauses)) = &etb.spec.slots[0] else { panic!("a permanent slot") };
     assert!(clauses[0].other, "\"another\" excludes the source");
+
+    let aura = |text: &str| Printed { oracle_text: text.to_string(), type_line: "Enchantment — Aura".to_string(), ..card("Aura", "") };
+    let flight = read_enchantment(&aura("Enchant creature\nEnchanted creature gets +2/+2 and has flying.")).unwrap();
+    assert!(flight.enchants);
+    assert_eq!(flight.statics, vec![Static::Enchanted { power: 2, toughness: 2, has: vec![Keyword::Flying], per_creature_card: false }]);
+    let hold = read_enchantment(&aura("Enchant player\nCreatures enchanted player controls get -1/-1.")).unwrap();
+    assert_eq!(hold.slots, vec![Slot::Player]);
+    assert!(matches!(hold.statics[..], [Static::Group { enchanted_player: true, power: -1, toughness: -1, .. }]));
+    let virtue = read_enchantment(&Printed { type_line: "Enchantment".to_string(), ..aura("Creature tokens you control get +1/+1 and have vigilance.") }).unwrap();
+    let [Static::Group { filter: Filter(clauses), has, .. }] = &virtue.statics[..] else { panic!("one group static") };
+    assert!(clauses[0].token && has == &vec![Keyword::Vigilance]);
+    assert!(read_enchantment(&aura("Enchant creature\nEnchanted creature can't attack or block.")).is_err());
 
     let viper = Printed { oracle_text: "Flash\nDeathtouch".to_string(), type_line: "Creature — Snake".to_string(), ..card("Viper", "") };
     assert!(read_creature(&viper).is_ok_and(|s| s.permanent && s.flash));
