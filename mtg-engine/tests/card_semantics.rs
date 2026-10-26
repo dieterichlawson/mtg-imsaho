@@ -648,6 +648,15 @@ struct CombatText {
     /// "Whenever this creature attacks or blocks, other Humans you control
     /// get +1/+1 until end of turn." (CR 508.3a, 509.3a)
     attack_or_block_pump: Option<(Filter, (i32, i32))>,
+    /// An Equipment's "Whenever equipped creature attacks, defending player
+    /// reveals cards from the top of their library until they reveal a land
+    /// card. The creature gets +1/+0 until end of turn for each card
+    /// revealed this way. That player puts the revealed cards into their
+    /// graveyard."
+    reveal_until_land: bool,
+    /// An Aura's "Whenever enchanted creature deals damage to an opponent,
+    /// you may draw a card."
+    may_draw_on_damage_to_opponent: bool,
     /// An Equipment's "Whenever equipped creature blocks or becomes blocked
     /// by a <type>, destroy that creature. It can't be regenerated."
     stake: Option<String>,
@@ -731,6 +740,10 @@ impl CombatText {
                         return None;
                     };
                     self.on_attack_tokens = Some(AttackTokens { power, toughness, colors, subtypes, keywords, per_creature_card, exile_at_end_of_combat });
+                } else if line == "Whenever equipped creature attacks, defending player reveals cards from the top of their library until they reveal a land card. The creature gets +1/+0 until end of turn for each card revealed this way. That player puts the revealed cards into their graveyard." {
+                    self.reveal_until_land = true;
+                } else if line == "Whenever enchanted creature deals damage to an opponent, you may draw a card." {
+                    self.may_draw_on_damage_to_opponent = true;
                 } else if let Some((who, pt)) = line.strip_prefix("Whenever this creature attacks or blocks, ")
                     .and_then(|r| r.strip_suffix(" until end of turn."))
                     .and_then(|r| r.split_once(" get "))
@@ -2230,6 +2243,10 @@ fn read_enchantment(card: &Printed) -> Result<Spec, String> {
                 continue;
             }
             _ => {}
+        }
+        if line.starts_with("Whenever enchanted creature ") && spec.enchants {
+            spec.combat.read(line).ok_or_else(unread)?;
+            continue;
         }
         if line.starts_with("Whenever a creature deals combat damage to enchanted player, ") && spec.slots == [Slot::Player] {
             spec.combat.read(line).ok_or_else(unread)?;
@@ -4961,31 +4978,32 @@ const READ: &[&str] = &[
     "Caravan Vigil", "Cellar Door", "Champion of the Parish", "Chapel Geist",
     "Charmbreaker Devils", "Civilized Scholar", "Claustrophobia", "Clifftop Retreat",
     "Cloistered Youth", "Cobbled Wings", "Coral Merfolk", "Corpse Lunge", "Counterspell",
-    "Creeping Renaissance", "Crossway Vampire", "Curse of Death's Hold", "Curse of Oblivion",
-    "Curse of Stalked Prey", "Curse of the Bloody Tome", "Curse of the Nightly Hunt",
-    "Curse of the Pierced Heart", "Darkthicket Wolf", "Daybreak Ranger", "Dead Weight",
-    "Delver of Secrets", "Demonmail Hauberk", "Deranged Assistant", "Desperate Ravings",
-    "Devil's Play", "Diregraf Ghoul", "Disciple of Griselbrand", "Dissipate", "Divination",
-    "Divine Reckoning", "Doom Blade", "Doomed Traveler", "Dream Twist", "Elder Cathar",
-    "Elder of Laurels", "Elite Inquisitor", "Endless Ranks of the Dead", "Falkenrath Marauders",
-    "Falkenrath Noble", "Feeling of Dread", "Feral Ridgewolf", "Festerhide Boar",
-    "Forbidden Alchemy", "Forest", "Fortress Crab", "Full Moon's Rise", "Furor of the Bitten",
-    "Gallows Warden", "Galvanic Juggernaut", "Gatstaf Shepherd", "Gavony Township",
-    "Geist of Saint Traft", "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame",
-    "Ghost Quarter", "Ghostly Possession", "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth",
-    "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms", "Grave Bramble",
-    "Graveyard Shovel", "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity",
-    "Hamlet Captain", "Hanweir Watchkeep", "Harvest Pyre", "Heretic's Punishment",
-    "Hinterland Harbor", "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness",
-    "Infernal Plunge", "Instigator Gang", "Intangible Virtue", "Into the Maw of Hell",
-    "Invisible Stalker", "Island", "Isolated Chapel", "Kalonian Tusker", "Kessig Cagebreakers",
-    "Kessig Wolf", "Kessig Wolf Run", "Kindercatch", "Kruin Outlaw", "Lantern Spirit",
-    "Lava Axe", "Lightning Bolt", "Lost in the Mist", "Lumberknot", "Make a Wish",
-    "Makeshift Mauler", "Manor Skeleton", "Markov Patrician", "Mask of Avacyn",
-    "Mausoleum Guard", "Maw of the Mire", "Mayor of Avabruck", "Mentor of the Meek",
-    "Midnight Haunting", "Mindshrieker", "Moan of the Unhallowed", "Moldgraf Monstrosity",
-    "Moment of Heroism", "Moon Heron", "Moorland Haunt", "Morkrut Banshee", "Mountain", "Mulch",
-    "Murder of Crows", "Naturalize", "Nephalia Drownyard", "Night Revelers", "Night Terrors",
+    "Creeping Renaissance", "Crossway Vampire", "Curiosity", "Curse of Death's Hold",
+    "Curse of Oblivion", "Curse of Stalked Prey", "Curse of the Bloody Tome",
+    "Curse of the Nightly Hunt", "Curse of the Pierced Heart", "Darkthicket Wolf",
+    "Daybreak Ranger", "Dead Weight", "Delver of Secrets", "Demonmail Hauberk",
+    "Deranged Assistant", "Desperate Ravings", "Devil's Play", "Diregraf Ghoul",
+    "Disciple of Griselbrand", "Dissipate", "Divination", "Divine Reckoning", "Doom Blade",
+    "Doomed Traveler", "Dream Twist", "Elder Cathar", "Elder of Laurels", "Elite Inquisitor",
+    "Endless Ranks of the Dead", "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread",
+    "Feral Ridgewolf", "Festerhide Boar", "Forbidden Alchemy", "Forest", "Fortress Crab",
+    "Full Moon's Rise", "Furor of the Bitten", "Gallows Warden", "Galvanic Juggernaut",
+    "Gatstaf Shepherd", "Gavony Township", "Geist of Saint Traft", "Geist-Honored Monk",
+    "Geistcatcher's Rig", "Geistflame", "Ghost Quarter", "Ghostly Possession",
+    "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth", "Glorious Anthem", "Gnaw to the Bone",
+    "Goblin Piker", "Grasp of Phantoms", "Grave Bramble", "Graveyard Shovel",
+    "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Hamlet Captain",
+    "Hanweir Watchkeep", "Harvest Pyre", "Heretic's Punishment", "Hinterland Harbor",
+    "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness", "Infernal Plunge",
+    "Instigator Gang", "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker",
+    "Island", "Isolated Chapel", "Kalonian Tusker", "Kessig Cagebreakers", "Kessig Wolf",
+    "Kessig Wolf Run", "Kindercatch", "Kruin Outlaw", "Lantern Spirit", "Lava Axe",
+    "Lightning Bolt", "Lost in the Mist", "Lumberknot", "Make a Wish", "Makeshift Mauler",
+    "Manor Skeleton", "Markov Patrician", "Mask of Avacyn", "Mausoleum Guard",
+    "Maw of the Mire", "Mayor of Avabruck", "Mentor of the Meek", "Midnight Haunting",
+    "Mindshrieker", "Moan of the Unhallowed", "Moldgraf Monstrosity", "Moment of Heroism",
+    "Moon Heron", "Moorland Haunt", "Morkrut Banshee", "Mountain", "Mulch", "Murder of Crows",
+    "Naturalize", "Nephalia Drownyard", "Night Revelers", "Night Terrors",
     "Nightbird's Clutches", "Olivia Voldaren", "One-Eyed Scarecrow", "Orchard Spirit",
     "Pacifism", "Paraselene", "Pitchburn Devils", "Plains", "Prey Upon", "Purify the Grave",
     "Rage Thrower", "Rakish Heir", "Rally the Peasants", "Ranger's Guile",
@@ -4999,8 +5017,8 @@ const READ: &[&str] = &[
     "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist",
     "Sulfur Falls", "Swamp", "Swords to Plowshares", "Think Twice", "Thraben Purebloods",
     "Thraben Sentry", "Tormented Pariah", "Traitorous Blood", "Travel Preparations",
-    "Traveler's Amulet", "Tree of Redemption", "Tribute to Hunger", "Typhoid Rats",
-    "Ulvenwald Mystics", "Unburial Rites", "Unruly Mob", "Urgent Exorcism",
+    "Traveler's Amulet", "Tree of Redemption", "Trepanation Blade", "Tribute to Hunger",
+    "Typhoid Rats", "Ulvenwald Mystics", "Unburial Rites", "Unruly Mob", "Urgent Exorcism",
     "Vampire Interloper", "Vampiric Fury", "Victim of Night", "Village Bell-Ringer",
     "Village Cannibals", "Village Ironsmith", "Villagers of Estwald", "Voiceless Spirit",
     "Walking Corpse", "Wooden Stake", "Woodland Cemetery", "Woodland Sleuth",
@@ -5857,6 +5875,22 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
         }
         w.state_based_actions();
     }
+    // An Equipment's reveal as its creature attacks: the defending player's
+    // cards from the top until a land, each +1/+0, all to their graveyard.
+    let blades = w.permanents.values().filter(|e| e.combat.reveal_until_land && e.attached == Some(Target::Object(a))).count();
+    for _ in 0..blades {
+        let mut revealed = 0;
+        while !w.library[1].is_empty() {
+            let card = w.library[1].remove(0);
+            let land = cached_oracle().get(&card).is_some_and(|c| c.has_type("Land"));
+            w.graveyard[1].push(card);
+            revealed += 1;
+            if land {
+                break;
+            }
+        }
+        w.permanents.get_mut(&a).expect("the attacker").temp.0 += revealed;
+    }
     // "Whenever this creature attacks or blocks, other Humans you control
     // get +1/+1 until end of turn", as it attacks and as it blocks.
     for (fighter, declared) in [(Some(a), true), (blocker, blocker.is_some())] {
@@ -5989,6 +6023,16 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
                 let tokens_before = w2.tokens.len();
                 w2.state_based_actions();
                 assert_eq!(tokens_before, w2.tokens.len(), "no token here dies of combat damage");
+                // An Aura's "you may draw a card" for each source of damage
+                // to the opponent it enchants, its controller choosing.
+                let mut may_draw: Vec<PlayerId> = Vec::new();
+                for (from, _) in &to_players {
+                    if let Src::Permanent(id) = from {
+                        may_draw.extend(w2.permanents.values()
+                            .filter(|e| e.combat.may_draw_on_damage_to_opponent && e.attached == Some(Target::Object(*id)) && e.controller != P1)
+                            .map(|e| e.controller));
+                    }
+                }
                 for (from, dealt) in to_players {
                     let source = from.model(&w).clone();
                     if from == Src::Permanent(a) {
@@ -6008,7 +6052,18 @@ fn combat_outcomes(world: &World, a: ObjectId, blocker: Option<ObjectId>) -> Vec
                     }
                 }
                 w2.state_based_actions();
-                next.push(w2);
+                let mut drawn = vec![w2];
+                for p in may_draw {
+                    drawn = drawn.into_iter()
+                        .flat_map(|w| {
+                            let mut took = w.clone();
+                            let card = took.library[p.0 as usize].remove(0);
+                            took.hand[p.0 as usize].push(card);
+                            [w, took]
+                        })
+                        .collect();
+                }
+                next.extend(drawn);
             }
         }
         worlds = next;
@@ -6230,6 +6285,9 @@ fn combat_questions(state: &GameState, registry: &CardRegistry, a: ObjectId) -> 
                 asked.blocks = Some((legal_blocks.clone(), min_blockers.clone()));
                 Action::AbandonGame
             }
+            // A question on the way, such as the order of two attack
+            // triggers: any answer, as only the declarations are asked about.
+            None if legal.resolution_prompt.is_some() => legal.actions.first().cloned().unwrap_or(Action::AbandonGame),
             None => Action::PassPriority,
         }
     });
@@ -6823,12 +6881,22 @@ fn standing_fights(registry: &CardRegistry, fighters: &[(&Printed, &Spec)], stan
     let kinds = if std::env::var_os("CARD_SEMANTICS_EVERY_FIGHT").is_some() { fighters.to_vec() } else { kinds(fighters) };
     let fighters = &kinds[..];
     for &by in standing {
-        for side in [P0, P1] {
+        // An Aura on a creature also on the other side's combatant, its
+        // controller casting it on an opponent's creature.
+        let acrosses: &[bool] = if by.1.enchants && by.1.slots.first() != Some(&Slot::Player) { &[false, true] } else { &[false] };
+        for (side, &across) in [P0, P1].into_iter().flat_map(|s| acrosses.iter().map(move |a| (s, a))) {
             let attackers = match probes { Some(p) if side == P1 => p, _ => fighters };
             let blockers = match probes { Some(p) if side == P0 => p, _ => fighters };
             for &attacker in attackers {
                 for blocker in std::iter::once(None).chain(blockers.iter().copied().map(Some)) {
-                    let (state, mut world, a, b, s) = arena_with(registry, attacker, blocker, Some((by, side)));
+                    let (mut state, mut world, a, b, s) = arena_with(registry, attacker, blocker, Some((by, side)));
+                    if across {
+                        let Some(host) = (if side == P0 { b } else { Some(a) }) else { continue };
+                        let aura = s.expect("standing by");
+                        state.attach(aura, host);
+                        world.permanents.get_mut(&aura).expect("placed").attached = Some(Target::Object(host));
+                        world.refresh();
+                    }
                     // A combatant the static kills before combat does not
                     // fight; the cast test sees that death.
                     world.state_based_actions();
@@ -6847,12 +6915,16 @@ fn standing_fights(registry: &CardRegistry, fighters: &[(&Printed, &Spec)], stan
                     // type, standing by for the attacker, or a Curse on the
                     // defending player.
                     let watches = (side == P0 && by.1.combat.counters_on_yours.as_ref().is_some_and(|t| attacker.0.types().1.contains(t)))
-                        || (side == P1 && by.1.combat.counters_on_damage_to_enchanted);
+                        || (side == P1 && by.1.combat.counters_on_damage_to_enchanted)
+                        // An Aura's or Equipment's combat text on a combatant.
+                        || (by.1.combat != CombatText::default()
+                            && matches!(world.permanents[&s.expect("standing by")].attached, Some(Target::Object(o)) if o == a || Some(o) == b));
                     if !(changed(a) || b.is_some_and(changed) || watches) {
                         continue;
                     }
-                    let name = format!("{} attacking{}, {} standing by for player {}", attacker.0.name,
-                        blocker.map_or(String::new(), |(b, _)| format!(", {} blocking", b.name)), by.0.name, side.0);
+                    let name = format!("{} attacking{}, {} standing by for player {}{}", attacker.0.name,
+                        blocker.map_or(String::new(), |(b, _)| format!(", {} blocking", b.name)), by.0.name, side.0,
+                        if across { " on the other's creature" } else { "" });
                     let (n, why) = fight(registry, &state, &world, a, b, &name);
                     combats += n;
                     failures.extend(why);
@@ -6941,7 +7013,7 @@ fn every_equipment_reaches_the_combats_it_is_in() {
     let backs = back_faces(&cards);
     let fighters = fighters(&cards, &backs);
     let standing: Vec<(&Printed, &Spec)> = cards.iter()
-        .filter(|(c, s)| c.type_line.contains("Equipment") && !s.statics.is_empty())
+        .filter(|(c, s)| c.type_line.contains("Equipment") && (!s.statics.is_empty() || s.combat != CombatText::default()))
         .map(|(c, s)| (c, s))
         .collect();
     let (combats, failures) = standing_fights(&registry, &fighters, &standing, probes(&fighters).as_deref());
