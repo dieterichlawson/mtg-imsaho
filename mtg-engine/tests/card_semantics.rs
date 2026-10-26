@@ -10,7 +10,8 @@
 //! flying"), and each creature whose text it can read — keywords, entering
 //! tapped or with counters, power and toughness defined by a count, an
 //! enters trigger whose effect is one of the spell templates — into the
-//! permanent it becomes and what its trigger does. A reference semantics,
+//! permanent it becomes and what its triggers do as it enters and as it
+//! dies. A reference semantics,
 //! written from the
 //! Comprehensive Rules and sharing no code with `src/cards/`, says what
 //! those effects do to a board described by the Oracle data of the cards on
@@ -221,6 +222,10 @@ struct Clause {
     min_power: Option<i32>,
     /// "without flying".
     without: Vec<Keyword>,
+    /// "with flying".
+    with: Vec<Keyword>,
+    /// "another": not the source of the ability (CR 109.5).
+    other: bool,
     /// "you control" (Some(true)), "you don't control" / "your opponents
     /// control" (Some(false)).
     yours: Option<bool>,
@@ -316,6 +321,9 @@ struct Spec {
     /// "When this creature enters, ..." (CR 603.6a), read as a spec of its
     /// own: its targets are chosen as it is put on the stack (603.3d).
     etb: Option<Box<Trigger>>,
+    /// "When this creature dies, ..." (CR 700.4, 603.6c): a leaves-the-
+    /// battlefield trigger, which looks back at the creature as it was.
+    dies: Option<Box<Trigger>>,
 }
 
 /// An enters-the-battlefield trigger.
@@ -395,10 +403,16 @@ fn filter(text: &str) -> Option<Filter> {
             clause.without.push(keyword_named(k)?);
             rest = r;
         }
+        if let Some((r, k)) = rest.split_once(" with ") {
+            clause.with.push(keyword_named(k)?);
+            rest = r;
+        }
         let words: Vec<&str> = rest.split_whitespace().map(|w| w.trim_end_matches(',')).collect();
         let (head, quals) = words.split_last()?;
         for q in quals {
-            if *q == "attacking" {
+            if *q == "another" {
+                clause.other = true;
+            } else if *q == "attacking" {
                 clause.attacking = true;
             } else if let Some(sub) = q.strip_prefix("non-") {
                 clause.not_types.push(sub.to_string());
@@ -463,6 +477,8 @@ impl Spec {
     /// Read one sentence, `name` already replaced by `~`. None if no
     /// template matches.
     fn sentence(&mut self, s: &str) -> Option<()> {
+        // "another target creature" is a target that is another creature.
+        let s = s.replace("another target ", "target another ");
         let s = s.trim().strip_suffix('.')?;
         // CR 701.12a: "Target creature you control fights target creature
         // you don't control".
@@ -542,8 +558,9 @@ impl Spec {
                 return Some(());
             }
         }
-        // CR 120.3: "~ deals N damage to ...".
-        if let Some(rest) = s.strip_prefix("~ deals ") {
+        // CR 120.3: "~ deals N damage to ...", and "it" for a permanent's
+        // own trigger ("it deals 3 damage", "you may have it deal 4").
+        if let Some(rest) = s.strip_prefix("~ deals ").or_else(|| s.strip_prefix("It deals ")).or_else(|| s.strip_prefix("Have it deal ")) {
             let (n, to) = rest.split_once(" damage to ")?;
             let amount = number(n)?;
             let effect = match to {
@@ -756,6 +773,14 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
             spec.pt_is_creatures_you_control = true;
             continue;
         }
+        if let Some(rest) = line.strip_prefix("When this creature dies, ") {
+            let mut chars = rest.chars();
+            let sentence: String = chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default();
+            let mut trigger = Trigger::default();
+            trigger.spec.sentence(&sentence).ok_or_else(unread)?;
+            spec.dies = Some(Box::new(trigger));
+            continue;
+        }
         let (if_morbid, rest) = match line.strip_prefix("Morbid — When this creature enters, if a creature died this turn, ") {
             Some(r) => (true, Some(r)),
             None => (false, line.strip_prefix("When this creature enters, ")),
@@ -932,6 +957,7 @@ impl Model {
                 && c.subtypes.iter().all(|t| self.subtypes.contains(t))
                 && c.min_power.is_none_or(|n| self.power.is_some_and(|p| p >= n))
                 && !c.without.iter().any(|k| self.keywords.contains(k))
+                && c.with.iter().all(|k| self.keywords.contains(k))
                 && c.yours.is_none_or(|y| (self.controller == caster) == y)
                 // Nothing on the board is attacking: it is the precombat
                 // main phase.
@@ -953,6 +979,8 @@ struct World {
     /// Spells on the stack below the one being checked, by id, last cast
     /// last (CR 405.2).
     stack: Vec<(ObjectId, Model)>,
+    /// The permanent whose ability is being read, which "another" excludes.
+    source: Option<ObjectId>,
     /// Permanents the reference has no engine id for: tokens, and the
     /// permanent a creature spell becomes.
     tokens: Vec<Model>,
@@ -1110,6 +1138,7 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
         yard: BTreeMap::new(),
         a_creature_died: false,
         stack: Vec::new(),
+        source: None,
         tokens: Vec::new(),
         life: [20, 20],
         hand: [Vec::new(), Vec::new()],
@@ -1256,7 +1285,8 @@ fn candidates(slot: &Slot, world: &World, caster: PlayerId) -> Vec<Target> {
         Slot::PlayerOrPlaneswalker | Slot::Player => players(&|_| true),
         Slot::Opponent => players(&|p| p != caster),
         Slot::Permanent(f) | Slot::UpTo { filter: f, .. } => world.permanents.iter()
-            .filter(|(_, m)| m.matches(f, caster))
+            .filter(|(id, m)| m.matches(f, caster)
+                && !(f.0.iter().all(|c| c.other) && world.source == Some(**id)))
             .map(|(id, _)| Target::Object(*id))
             .collect(),
         Slot::Spell(f) => world.stack.iter()
@@ -1560,25 +1590,47 @@ fn creature_outcomes(spec: &Spec, world: &World, caster: PlayerId, card: &Printe
         m.counters.0 += n as u32;
     }
     w.permanents.insert(id, m);
+    w.source = Some(id);
     w.state_based_actions();
-    let Some(trigger) = &spec.etb else { return vec![w] };
-    if trigger.if_morbid && !w.a_creature_died {
-        return vec![w];
+    match &spec.etb {
+        Some(trigger) if !(trigger.if_morbid && !w.a_creature_died) => trigger_outcomes(trigger, &w, caster),
+        _ => vec![w],
     }
-    let sets = target_sets(&trigger.spec, &w, caster);
+}
+
+/// Every way `trigger`, controlled by `caster`, can resolve on `world`:
+/// each set of targets it allows, and declining when it says "you may". No
+/// legal target and it is removed from the stack (CR 603.3d).
+fn trigger_outcomes(trigger: &Trigger, world: &World, caster: PlayerId) -> Vec<World> {
+    let sets = target_sets(&trigger.spec, world, caster);
     if sets.is_empty() {
-        return vec![w];
+        return vec![world.clone()];
     }
     let mut out = Vec::new();
     for targets in sets {
-        let mut after = apply(&trigger.spec, &w, &targets, caster);
+        let mut after = apply(&trigger.spec, world, &targets, caster);
         after.state_based_actions();
         out.push(after);
         if trigger.optional {
-            out.push(w.clone());
+            out.push(world.clone());
         }
     }
     out
+}
+
+/// Every way the creature `id` dying on `world` can end: lethal damage,
+/// state-based actions put it into its owner's graveyard (CR 704.5g), and
+/// its dies trigger resolves each way it can.
+fn death_outcomes(spec: &Spec, world: &World, caster: PlayerId, id: ObjectId) -> Vec<World> {
+    let mut w = world.clone();
+    let m = w.permanents.get_mut(&id).expect("the creature is on the battlefield");
+    m.damage = u32::try_from(m.toughness.expect("a creature").max(1)).expect("positive");
+    w.state_based_actions();
+    assert!(!w.permanents.contains_key(&id), "lethal damage kills it");
+    match &spec.dies {
+        Some(trigger) => trigger_outcomes(trigger, &w, caster),
+        None => vec![w],
+    }
 }
 
 // ---- the engine side ----
@@ -1668,18 +1720,20 @@ enum Played {
 /// players passing priority (CR 117.4, 608.1): the engine's own game loop,
 /// state-based actions and triggers and all. The questions asked after the
 /// cast are answered from `script`, in order.
-fn play(state: &GameState, registry: &CardRegistry, spell: ObjectId, targets: Vec<Target>, script: &[Answer]) -> Result<Played, String> {
+fn play(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>, targets: Vec<Target>, script: &[Answer]) -> Result<Played, String> {
     let mut state = state.clone();
     // A spell that asks for its targets at cast time is cast bare, and each
     // question answered in turn as a player answers them: one target for a
     // single slot, the whole set for an "up to" slot.
     let asks = engine::legal_actions(&state, registry).castable_spells.iter()
-        .any(|c| c.object_id == spell && matches!(c.target_spec, CastTargetSpec::ChosenAtCast));
+        .any(|c| Some(c.object_id) == spell && matches!(c.target_spec, CastTargetSpec::ChosenAtCast));
     let mut answers: std::collections::VecDeque<Target> = if asks { targets.iter().cloned().collect() } else { Default::default() };
     // Until the cast's own questions are answered; an "up to" set may be
     // empty and is still an answer.
     let mut answering_cast = asks;
-    let mut cast = Some(cast_action(spell, if asks { Vec::new() } else { targets }));
+    // No spell: the game is played on from where it stands, as after a
+    // death, which the loop handles before it asks anyone anything.
+    let mut cast = spell.map(|spell| cast_action(spell, if asks { Vec::new() } else { targets }));
     let mut script = script.iter();
     let mut trouble = None;
     let mut unanswered = None;
@@ -1747,7 +1801,7 @@ fn play(state: &GameState, registry: &CardRegistry, spell: ObjectId, targets: Ve
     if let Some(all) = unanswered {
         return Ok(Played::Asks(all));
     }
-    if state.objects.get(&spell).is_some_and(|o| o.zone == Zone::Hand) {
+    if spell.is_some_and(|spell| state.objects.get(&spell).is_some_and(|o| o.zone == Zone::Hand)) {
         return Err("the cast was refused".to_string());
     }
     Ok(Played::Done(Box::new(state)))
@@ -1756,7 +1810,7 @@ fn play(state: &GameState, registry: &CardRegistry, spell: ObjectId, targets: Ve
 /// Cast `spell` at `targets` and let it resolve, where the text asks
 /// nothing more of anyone.
 fn cast_and_let_resolve(state: &GameState, registry: &CardRegistry, spell: ObjectId, targets: Vec<Target>) -> Result<GameState, String> {
-    match play(state, registry, spell, targets, &[])? {
+    match play(state, registry, Some(spell), targets, &[])? {
         Played::Done(state) => Ok(*state),
         Played::Asks(options) => Err(format!("the engine asked a question the text does not, answerable {options:?}")),
     }
@@ -1764,7 +1818,7 @@ fn cast_and_let_resolve(state: &GameState, registry: &CardRegistry, spell: Objec
 
 /// Every game the cast can end in: each question asked after it answered
 /// every way the engine allows, replayed from the start for each branch.
-fn every_ending(state: &GameState, registry: &CardRegistry, spell: ObjectId) -> Result<Vec<GameState>, String> {
+fn every_ending(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>) -> Result<Vec<GameState>, String> {
     let mut todo: Vec<Vec<Answer>> = vec![Vec::new()];
     let mut done = Vec::new();
     while let Some(script) = todo.pop() {
@@ -1806,7 +1860,7 @@ fn readable(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (Vec<
 /// How many cards the grammar read when this was last raised. A change
 /// that reads more raises it; one that reads fewer fails here, so coverage
 /// is never lost without someone deciding to lose it.
-const CARDS_READ: usize = 72;
+const CARDS_READ: usize = 76;
 
 // ---- the properties ----
 
@@ -1822,6 +1876,35 @@ fn the_board_is_what_its_cards_print() {
     assert!(got == want, "{}", differences(&got, &want));
     assert!(world.permanents.values().all(|m| !m.keywords.contains(&Keyword::Hexproof)),
         "the reference's targeting assumes nothing on the board has hexproof");
+}
+
+/// Whether the games the engine can end in are the games the text allows,
+/// as observed; and if not, each ending only one side reaches, against the
+/// nearest the other does.
+fn disagreement(want: &[World], got: &Result<Vec<GameState>, String>, registry: &CardRegistry) -> Option<String> {
+    use std::collections::BTreeSet;
+    let got = match got {
+        Ok(endings) => endings,
+        Err(why) => return Some(why.clone()),
+    };
+    let want: BTreeSet<Observed> = want.iter().map(World::observed).collect();
+    let got: BTreeSet<Observed> = got.iter().map(|e| observe(e, registry)).collect();
+    if got == want {
+        return None;
+    }
+    let only_engine: Vec<&Observed> = got.difference(&want).collect();
+    let only_text: Vec<&Observed> = want.difference(&got).collect();
+    let nearest = |o: &Observed, others: &BTreeSet<Observed>, engine_first: bool| others.iter()
+        .map(|x| if engine_first { differences(o, x) } else { differences(x, o) })
+        .min_by_key(String::len)
+        .unwrap_or_default();
+    let mut detail: Vec<String> = only_engine.iter().take(2)
+        .map(|e| format!("an ending only the engine reaches, against the nearest the text allows:\n      {}", nearest(e, &want, true)))
+        .collect();
+    detail.extend(only_text.iter().take(2)
+        .map(|t| format!("an ending only the text allows, against the nearest the engine reaches:\n      {}", nearest(t, &got, false))));
+    Some(format!("{} endings only the engine reaches, {} only the text allows\n    {}",
+        only_engine.len(), only_text.len(), detail.join("\n    ")))
 }
 
 /// Every card the grammar reads offers exactly the targets its text allows,
@@ -1852,32 +1935,33 @@ fn every_readable_card_does_what_its_text_says() {
             let name = format!("{}{}{which}", card.name, if counters { " against Giant Growth" } else { "" });
 
             // A creature spell: every way it can end, against every way the
-            // engine lets it end.
+            // engine lets it end; then, if its text says what its death
+            // does, every way that can end.
             if spec.permanent {
                 casts += 1;
-                let want: std::collections::BTreeSet<Observed> = creature_outcomes(spec, &world, P0, card, spell)
-                    .iter().map(World::observed).collect();
-                match every_ending(&state, &registry, spell) {
-                    Ok(endings) => {
-                        let got: std::collections::BTreeSet<Observed> = endings.iter().map(|e| observe(e, &registry)).collect();
-                        if got != want {
-                            let only_engine: Vec<&Observed> = got.difference(&want).collect();
-                            let only_text: Vec<&Observed> = want.difference(&got).collect();
-                            // Each against the nearest ending on the other side.
-                            let nearest = |o: &Observed, others: &std::collections::BTreeSet<Observed>, engine_first: bool| others.iter()
-                                .map(|x| if engine_first { differences(o, x) } else { differences(x, o) })
-                                .min_by_key(String::len)
-                                .unwrap_or_default();
-                            let mut detail: Vec<String> = only_engine.iter().take(2)
-                                .map(|e| format!("an ending only the engine reaches, against the nearest the text allows:\n      {}", nearest(e, &want, true)))
-                                .collect();
-                            detail.extend(only_text.iter().take(2)
-                                .map(|t| format!("an ending only the text allows, against the nearest the engine reaches:\n      {}", nearest(t, &got, false))));
-                            failures.push(format!("{name}: {} endings only the engine reaches, {} only the text allows\n    {}",
-                                only_engine.len(), only_text.len(), detail.join("\n    ")));
-                        }
+                let entering = creature_outcomes(spec, &world, P0, card, spell);
+                let endings = every_ending(&state, &registry, Some(spell));
+                if let Some(why) = disagreement(&entering, &endings, &registry) {
+                    failures.push(format!("{name}: {why}"));
+                    continue;
+                }
+                if spec.dies.is_some() {
+                    let ([after_entering], Ok([entered])) = (entering.as_slice(), endings.as_deref()) else {
+                        failures.push(format!("{name}: a death is checked from one way of entering"));
+                        continue;
+                    };
+                    casts += 1;
+                    let mut dying = entered.clone();
+                    let id = dying.objects.values()
+                        .find(|o| o.zone == Zone::Battlefield && !o.is_token && o.name == card.name)
+                        .map(|o| o.id)
+                        .expect("the creature is on the battlefield");
+                    let lethal = dying.effective_toughness(id, &registry).expect("a creature").max(1);
+                    dying.get_object_mut(id).expect("on the battlefield").damage_marked = u32::try_from(lethal).expect("positive");
+                    let deaths = death_outcomes(spec, after_entering, P0, spell);
+                    if let Some(why) = disagreement(&deaths, &every_ending(&dying, &registry, None), &registry) {
+                        failures.push(format!("{name} dying: {why}"));
                     }
-                    Err(why) => failures.push(format!("{name}: {why}")),
                 }
                 continue;
             }
@@ -2020,6 +2104,14 @@ fn the_grammar_reads_its_templates() {
     let heads: Vec<Option<String>> = clauses.iter().map(|c| c.head.clone()).collect();
     assert_eq!(heads, ["Vampire", "Werewolf", "Zombie"].map(|h| Some(h.to_string())), "three alternatives, not one with qualifiers");
 
+    let devils = Printed { oracle_text: "When this creature dies, it deals 3 damage to any target.".to_string(), ..slayer.clone() };
+    let dies = read_creature(&devils).unwrap().dies.expect("a dies trigger");
+    assert_eq!((dies.spec.slots.clone(), dies.spec.effects.clone()), (vec![Slot::Any], vec![Effect::Damage { amount: 3, slot: 0 }]));
+    let hunter = Printed { oracle_text: "When this creature enters, you may exile another target creature.".to_string(), ..slayer.clone() };
+    let etb = read_creature(&hunter).unwrap().etb.expect("an enters trigger");
+    let Slot::Permanent(Filter(clauses)) = &etb.spec.slots[0] else { panic!("a permanent slot") };
+    assert!(clauses[0].other, "\"another\" excludes the source");
+
     let viper = Printed { oracle_text: "Flash\nDeathtouch".to_string(), type_line: "Creature — Snake".to_string(), ..card("Viper", "") };
     assert!(read_creature(&viper).is_ok_and(|s| s.permanent && s.flash));
     let not_only_keywords = Printed { oracle_text: "Flying\nThis creature can't block.".to_string(), ..viper };
@@ -2033,4 +2125,5 @@ fn the_grammar_reads_its_templates() {
     assert!(read(&card("X", "Counter target spell unless its controller pays {1}.")).is_err(), "a payment is not a template yet");
     assert!(read(&card("X", "Draw two cards, then discard a card at random.")).is_err());
 }
+
 
