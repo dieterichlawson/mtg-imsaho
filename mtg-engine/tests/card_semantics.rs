@@ -1937,6 +1937,13 @@ fn static_change(text: &str) -> Option<((i32, i32), Vec<Keyword>)> {
 /// get +1/+0", "Creature tokens you control have vigilance": a static that
 /// changes a group, the full stop gone.
 fn group_static(body: &str) -> Option<Static> {
+    // "Each other creature you control that's a Werewolf or a Wolf gets
+    // +1/+1": a creature of either subtype, the source left out.
+    if let Some((kinds, rest)) = body.strip_prefix("Each other creature you control that's a ").and_then(|r| r.split_once(" gets ")) {
+        let who: Vec<String> = kinds.split(" or a ").map(|k| format!("other {k} creature you control")).collect();
+        let ((power, toughness), has) = static_change(&format!("gets {rest}"))?;
+        return Some(Static::Group { filter: filter(&who.join(" or "))?, enchanted_player: false, power, toughness, has });
+    }
     let (who, rest) = ["get ", "have "].iter()
         .find_map(|verb| body.split_once(&format!(" {verb}")).map(|(who, rest)| (who, format!("{verb}{rest}"))))?;
     let ((power, toughness), has) = static_change(&rest)?;
@@ -4451,13 +4458,13 @@ const READ: &[&str] = &[
     "Kessig Wolf Run", "Kindercatch", "Kruin Outlaw", "Lantern Spirit", "Lava Axe",
     "Lightning Bolt", "Lost in the Mist", "Lumberknot", "Make a Wish", "Makeshift Mauler",
     "Manor Skeleton", "Markov Patrician", "Mask of Avacyn", "Mausoleum Guard",
-    "Maw of the Mire", "Midnight Haunting", "Moan of the Unhallowed", "Moldgraf Monstrosity",
-    "Moment of Heroism", "Moon Heron", "Moorland Haunt", "Morkrut Banshee", "Mountain",
-    "Naturalize", "Nephalia Drownyard", "Night Revelers", "Olivia Voldaren",
-    "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism", "Paraselene", "Pitchburn Devils",
-    "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower", "Rakish Heir",
-    "Rally the Peasants", "Ranger's Guile", "Reaper from the Abyss", "Rebuke", "Reckless Waif",
-    "Riot Devils", "Rolling Temblor", "Rotting Fensnake", "Runechanter's Pike",
+    "Maw of the Mire", "Mayor of Avabruck", "Midnight Haunting", "Moan of the Unhallowed",
+    "Moldgraf Monstrosity", "Moment of Heroism", "Moon Heron", "Moorland Haunt",
+    "Morkrut Banshee", "Mountain", "Naturalize", "Nephalia Drownyard", "Night Revelers",
+    "Olivia Voldaren", "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism", "Paraselene",
+    "Pitchburn Devils", "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower",
+    "Rakish Heir", "Rally the Peasants", "Ranger's Guile", "Reaper from the Abyss", "Rebuke",
+    "Reckless Waif", "Riot Devils", "Rolling Temblor", "Rotting Fensnake", "Runechanter's Pike",
     "Savannah Lions", "Scourge of Geier Reach", "Selfless Cathar", "Selhoff Occultist",
     "Sensory Deprivation", "Sever the Bloodline", "Sharpened Pitchfork", "Shimmering Grotto",
     "Silent Departure", "Silver-Inlaid Dagger", "Silverchase Fox", "Skaab Goliath",
