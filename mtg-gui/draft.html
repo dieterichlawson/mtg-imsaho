@@ -67,11 +67,15 @@
   th { color: var(--muted); font-weight: normal; white-space: nowrap; }
   /* A record is one number: "2-1-1" broke at its hyphens (#790). */
   td.num, .rec { white-space: nowrap; }
-  /* Three numbers that may wrap at a phone's width before a name does. */
-  td.tiebreak { padding-left: 0.6em; white-space: normal; }
+  /* Three numbers that may wrap at a phone's width before a name does, and
+     so may their heading: held on one line it kept the column 170px wide
+     and left the names 78px (#881). Each line starts at a "/" (render.ts). */
+  td.tiebreak, th.tiebreak { padding-left: 0.6em; white-space: normal; }
   /* A name is the one cell that may break inside a word: a 24-letter name
-     with no space pushed the table off a phone's screen (#789). */
-  td.name { overflow-wrap: anywhere; }
+     with no space pushed the table off a phone's screen (#789). Its floor
+     keeps an ordinary 8-letter word whole: "anywhere" alone let the table
+     squeeze it to "STRANGE" / "R" (#881). */
+  td.name { overflow-wrap: anywhere; min-width: 9em; }
   tr.me td { color: var(--accent); }
 
   /* --- mana pips and frames --- */

@@ -508,17 +508,56 @@ async function main() {
           await page.waitForTimeout(50);
         }
         // A long one-word name and the #744 tags fit a phone (#789), and a
-        // record is never broken at its hyphen (#790).
+        // record is never broken at its hyphen (#790). The tiebreak heading
+        // may wrap, at a "/", as its numbers do (#881; checked below).
         const wide = JSON.parse(JSON.stringify(byName.playing));
         wide.seats[1].name = "Featherstonehaughmaximus";
         wide.standings.forEach((r, i) => { r.draws = i % 2; r.tags = "[substitute deck] [1 game forfeited]"; });
         await stage(wide);
         await page.waitForTimeout(50);
         const fit = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, w: innerWidth,
-          broken: [...document.querySelectorAll(".standings td.num, .standings th, .rec")].filter(el => { const r = document.createRange(); r.selectNodeContents(el); return new Set([...r.getClientRects()].map(b => Math.round(b.top))).size > 1; }).map(el => el.textContent) }));
+          broken: [...document.querySelectorAll(".standings td.num:not(.tiebreak), .standings th:not(.tiebreak), .rec")].filter(el => { const r = document.createRange(); r.selectNodeContents(el); return new Set([...r.getClientRects()].map(b => Math.round(b.top))).size > 1; }).map(el => el.textContent) }));
         check(fit.sw <= fit.w, `${tag}: a 24-letter name keeps the page on screen (${fit.sw} <= ${fit.w})`);
         check(fit.broken.length === 0, `${tag}: no record or heading breaks across lines (${JSON.stringify(fit.broken)})`);
         check(await page.$$eval(".pairings-list .rec, .match-head .rec", els => els.length) > 0 || !(await page.$(".pairings-list")), `${tag}: the pairings' records are held whole`);
+        // A unit of several words holds together, and an ordinary word is
+        // never broken inside: "STRANGE" / "R ZERO", "[1" / "BYE]", a tiebreak
+        // line ending "/" (#881), "(seat" / "2)" and a line ending "—" (#934).
+        // Only a word too long for any column (the 24 letters of #789) breaks.
+        for (const rot of [0, 1, 2, 3]) {
+          const v = JSON.parse(JSON.stringify(byName.playing));
+          const names = ["Margaret", "Wilhelmina Fitzgerald", "Bartholomewmaximilianjoe", "Stranger Zero"];
+          v.seats.forEach((st, i) => { st.name = names[(i + rot) % names.length]; });
+          v.standings.forEach((r, i) => { r.tags = ["[1 bye]", "[substitute deck] [2 games forfeited]", "", "[1 bye]"][i % 4]; r.omw = 0.415; r.gw = 1; r.ogw = 0.5; });
+          await stage(v);
+          await page.waitForTimeout(50);
+          const split = await page.evaluate(() => {
+            const lines = el => {
+              const out = []; const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT); let n, cur = null, top = null;
+              while ((n = w.nextNode())) for (let i = 0; i < n.data.length; i++) {
+                const rg = document.createRange(); rg.setStart(n, i); rg.setEnd(n, i + 1);
+                const rc = rg.getClientRects()[0]; if (!rc) continue;
+                const t = Math.round(rc.top);
+                if (t !== top) { if (cur !== null) out.push(cur); cur = ""; top = t; }
+                cur += n.data[i];
+              }
+              if (cur !== null) out.push(cur);
+              return out.map(x => x.replace(/\s+/g, " ").trim());
+            };
+            const bad = [];
+            for (const el of document.querySelectorAll(".standings td, .standings th, .pairings-list li, .match-head, #between-head")) {
+              const ls = lines(el); const full = el.textContent.replace(/\s+/g, " ");
+              for (let k = 0; k < ls.length - 1; k++) {
+                const a = ls[k], c = ls[k + 1];
+                const tail = a.split(" ").pop(), head = c.split(" ")[0];
+                const midWord = /[A-Za-z0-9.]$/.test(a) && /^[A-Za-z0-9.]/.test(c) && !full.includes(`${tail} ${head}`) && (tail + head).length < 15;
+                if (midWord || /\/$/.test(a) || /\(seat$/i.test(a) || /\[\d+$/.test(a) || /—$/.test(a)) bad.push(ls.join(" | "));
+              }
+            }
+            return bad;
+          });
+          check(split.length === 0, `${tag}: names, tags, tiebreaks and seat labels hold together, rotation ${rot} (${JSON.stringify(split.slice(0, 3))})`);
+        }
         // A black pip is a disc on the panel, as the other colours are (#793).
         const pip = await page.evaluate(() => { const el = document.createElement("span"); el.className = "pip pip-B"; document.body.append(el); const c = getComputedStyle(el).backgroundColor; el.remove(); return c; });
         check(pip !== "rgb(42, 30, 48)", `${tag}: the B pip is not the panel's colour (${pip})`);
@@ -563,7 +602,7 @@ async function main() {
           const games = (await text(".match-done .match-games")) || "";
           check(games.includes("G1") && games.includes("(you forfeited)"), `${tag}: a forfeited game says who forfeited (${games})`);
           check(games.includes("G2 abandoned") && !games.includes("drawn"), `${tag}: an abandoned game is not a draw (${games})`);
-          const table = (await text(".standings")) || "";
+          const table = ((await text(".standings")) || "").replace(/\u00a0/g, " ");
           check(table.includes("[substitute deck] [1 game forfeited]"), `${tag}: the standings carry the tags`);
           const record = await page.$eval(".standings tbody tr:first-child td.num", td => td.textContent);
           check(table.includes("W-L-D") && /^\d+-\d+-1$/.test(record || ""), `${tag}: a drawn match is in the record (${record})`);

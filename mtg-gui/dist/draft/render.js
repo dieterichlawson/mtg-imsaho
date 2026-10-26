@@ -78,11 +78,25 @@ function poolGroups(pool) {
     }
     return el;
 }
+/** A no-break space: what holds a unit of several words ("(seat 2)",
+ *  "[1 bye]", "— done") on one line at a phone's width (#881, #934). */
+const NBSP = "\u00a0";
 function seatName(view, seat) {
+    const label = `seat${NBSP}${seat}`;
     const s = view.seats.find(x => x.seat === seat);
-    if (!s)
-        return `seat ${seat}`;
-    return s.name === `seat ${seat}` ? s.name : `${s.name} (seat ${seat})`;
+    if (!s || s.name === `seat ${seat}`)
+        return label;
+    return `${s.name} (${label})`;
+}
+/** A standings tag's count stays with its noun: "[1 bye]" split as
+ *  "[1" / "bye]" (#881). */
+export function tagText(tags) {
+    return tags.replace(/(\d) /g, `$1${NBSP}`);
+}
+/** " — status": the dash leads the words it introduces, never ends a line
+ *  above them (#934). */
+function dashed(rest) {
+    return ` —${NBSP}${rest}`;
 }
 /** Where the seat is: the table's own word when it sends one (a person in
  *  a match is wherever their game page is, #822); else "here", "away"
@@ -119,20 +133,21 @@ function standingsTable(view) {
         return h("p", { class: "muted", text: "No results yet." });
     const rows = view.standings.map((s, i) => h("tr", { class: s.seat === view.seat ? "me" : "" }, h("td", { text: String(i + 1) }), 
     // The tags the terminal standings carry, in their words (#744).
-    h("td", { class: "name", text: seatName(view, s.seat) + (s.seat === view.seat ? " (you)" : "") + (s.tags ? ` ${s.tags}` : "") }), 
+    h("td", { class: "name", text: seatName(view, s.seat) + (s.seat === view.seat ? " (you)" : "") + (s.tags ? ` ${tagText(s.tags)}` : "") }), 
     // A drawn match is in the record too: it vanished from "0-0" (#744).
     h("td", { class: "num", text: `${s.wins}-${s.losses}${s.draws ? `-${s.draws}` : ""}` }), h("td", { class: "num", text: String(s.points) }), 
     // The tiebreakers a tie on points is ordered by, first to last.
     h("td", { class: "num tiebreak", text: tiebreakText(s) })));
-    return h("table", { class: "standings" }, h("thead", {}, h("tr", {}, ...["#", "seat", "W-L-D", "points", "OMW / GW / OGW %"].map(t => h("th", { text: t })))), h("tbody", {}, ...rows));
+    return h("table", { class: "standings" }, h("thead", {}, h("tr", {}, ...["#", "seat", "W-L-D", "points"].map(t => h("th", { text: t })), h("th", { class: "tiebreak", text: `OMW /${NBSP}GW /${NBSP}OGW${NBSP}%` }))), h("tbody", {}, ...rows));
 }
 /** "55.6 / 85.7 / 47.2": the tiebreakers as percentages, or "" before a
- *  round has counted. */
+ *  round has counted. Where the three wrap, a line starts with the "/"
+ *  rather than ending with it (#881). */
 export function tiebreakText(s) {
     if (!s.omw)
         return "";
     const pct = (f) => (100 * (f ?? 0)).toFixed(1);
-    return `${pct(s.omw)} / ${pct(s.gw)} / ${pct(s.ogw)}`;
+    return `${pct(s.omw)} /${NBSP}${pct(s.gw)} /${NBSP}${pct(s.ogw)}`;
 }
 function matchRow(view, m) {
     // A forfeit is not a game played and won, and an abandoned game is not a
@@ -153,7 +168,7 @@ function matchRow(view, m) {
             ? h("div", { class: "match-link" }, "Open your game: ", h("a", { href: m.url, target: "_blank", rel: "noopener" }, ...urlPieces(m.url)))
             : h("div", { class: "match-link muted", text: m.status === "waiting" ? "Your game page opens when the match starts." : "No game page for this match." });
     }
-    return h("li", { class: `match match-${m.status}` }, h("div", { class: "match-head" }, h("span", {}, ...withRecords(`Round ${m.round} vs ${seatName(view, m.opponent)} — ${status}`))), link, games ? h("div", { class: "match-games muted", text: games }) : null);
+    return h("li", { class: `match match-${m.status}` }, h("div", { class: "match-head" }, h("span", {}, ...withRecords(`Round ${m.round} vs ${seatName(view, m.opponent)}${dashed(status)}`))), link, games ? h("div", { class: "match-games muted", text: games }) : null);
 }
 /** Every match of the tournament, the whole table's, round by round. */
 function pairingsList(view) {
@@ -162,7 +177,7 @@ function pairingsList(view) {
         return null;
     const rows = pairings.map(p => {
         const who = p.b === null ? `${seatName(view, p.a)} has a bye` : `${seatName(view, p.a)} vs ${seatName(view, p.b)}`;
-        const how = p.b === null ? "" : p.status === "done" ? ` — ${p.result ?? "done"}` : p.status === "playing" ? " — playing" : " — waiting";
+        const how = p.b === null ? "" : dashed(p.status === "done" ? p.result ?? "done" : p.status === "playing" ? "playing" : "waiting");
         const mine = p.a === view.seat || p.b === view.seat;
         return h("li", { class: mine ? "me" : "" }, ...withRecords(`Round ${p.round}: ${who}${how}`));
     });
@@ -364,7 +379,7 @@ function betweenPanel(view, m, b, state, actions) {
     const opponent = seatName(view, m.opponent);
     const ready = b.ready || state.readySent;
     const parts = [
-        h("h3", { id: "between-head" }, ...withRecords(`Before game ${b.game} vs ${opponent}${b.game > 1 ? ` — ${matchScore(view, m)}` : ""}`)),
+        h("h3", { id: "between-head" }, ...withRecords(`Before game ${b.game} vs ${opponent}${b.game > 1 ? dashed(matchScore(view, m)) : ""}`)),
     ];
     if (!ready && b.deadline_ms !== null) {
         parts.push(h("div", { class: "build-timer" }, h("span", { id: "countdown", class: "countdown" }), h("span", { class: "muted", text: " — then the game starts with the deck as it stands" })));
