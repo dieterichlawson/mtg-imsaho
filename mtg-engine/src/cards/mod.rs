@@ -199,7 +199,31 @@ pub const EXILED_TO_COST: &str = "exiled_to_cost";
 /// The `card_state` key naming the `i`th card exiled to pay an additional cost.
 #[must_use]
 pub fn exiled_to_cost_key(i: usize) -> String {
-    format!("{EXILED_TO_COST}_{i}")
+    indexed_key(EXILED_TO_COST, "_", i)
+}
+
+/// `prefix`, `separator` and `i` in decimal, as a `card_state` key.
+///
+/// Spelled out digit by digit rather than with `format!`, because a key is
+/// game data and `format!` is for what a person reads: the proofs stub
+/// `format!` to return nothing (`proofs::cards` says why), which leaves
+/// the log empty and would make every indexed key the same key.
+#[must_use]
+pub fn indexed_key(prefix: &str, separator: &str, i: usize) -> String {
+    let mut digits = Vec::new();
+    let mut n = i;
+    loop {
+        digits.push(b'0' + u8::try_from(n % 10).expect("a digit"));
+        n /= 10;
+        if n == 0 {
+            break;
+        }
+    }
+    let mut key = String::with_capacity(prefix.len() + separator.len() + digits.len());
+    key.push_str(prefix);
+    key.push_str(separator);
+    key.extend(digits.iter().rev().map(|&d| char::from(d)));
+    key
 }
 
 /// A mana ability definition.

@@ -189,11 +189,11 @@ impl LilianaOfTheVeil {
         obj.card_state.retain(|k, _| !k.starts_with("liliana_"));
         obj.card_state.insert(Self::QUEUE_LEN.into(), ObjectId(queue.len() as u64));
         for (i, pid) in queue.iter().enumerate() {
-            obj.card_state.insert(format!("liliana_queue_{i}"), ObjectId(u64::from(pid.0)));
+            obj.card_state.insert(crate::cards::indexed_key("liliana_queue", "_", i), ObjectId(u64::from(pid.0)));
         }
         obj.card_state.insert(Self::CHOSEN_LEN.into(), ObjectId(chosen.len() as u64));
         for (i, cid) in chosen.iter().enumerate() {
-            obj.card_state.insert(format!("liliana_chosen_{i}"), *cid);
+            obj.card_state.insert(crate::cards::indexed_key("liliana_chosen", "_", i), *cid);
         }
     }
 
@@ -202,13 +202,13 @@ impl LilianaOfTheVeil {
         let read = |key: &str, len_key: &str| -> Vec<ObjectId> {
             let len = obj.card_state.get(len_key).map_or(0, |id| usize::try_from(id.0).unwrap_or(0));
             (0..len)
-                .filter_map(|i| obj.card_state.get(&format!("{key}{i}")).copied())
+                .filter_map(|i| obj.card_state.get(&crate::cards::indexed_key(key, "_", i)).copied())
                 .collect()
         };
-        let queue = read("liliana_queue_", Self::QUEUE_LEN).into_iter()
+        let queue = read("liliana_queue", Self::QUEUE_LEN).into_iter()
             .map(|id| PlayerId(u8::try_from(id.0).unwrap_or(u8::MAX)))
             .collect();
-        (queue, read("liliana_chosen_", Self::CHOSEN_LEN))
+        (queue, read("liliana_chosen", Self::CHOSEN_LEN))
     }
 
     fn push_chosen(state: &mut GameState, self_id: ObjectId, card: ObjectId) {
