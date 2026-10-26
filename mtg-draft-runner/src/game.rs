@@ -394,13 +394,14 @@ pub fn play_match(
 /// the face it shows, so a transformed Grizzled Outcasts was recorded as
 /// "Krallenhorde Wantons", a name the card lines do not know, and the AI
 /// seat's sideboard prompt listed it bare, with no cost, type or front
-/// face (#908).
+/// face (#908). A permanent that became a copy (Evil Twin) is the card
+/// it was cast as, not the one it copies (#908's review).
 fn shown_cards(state: &mtg_engine::state::GameState, registry: &CardRegistry) -> [Vec<String>; 2] {
     [PlayerId(0), PlayerId(1)].map(|p| {
         let mut cards: Vec<String> = state.objects.values()
             .filter(|o| o.owner == p && !o.is_token)
             .filter(|o| matches!(o.zone, Zone::Battlefield | Zone::Graveyard | Zone::Exile | Zone::Stack))
-            .map(|o| registry.card_data(o.card_id).map_or_else(|| o.name.clone(), |c| c.name))
+            .map(|o| registry.card_data(o.copy_grantor.unwrap_or(o.card_id)).map_or_else(|| o.name.clone(), |c| c.name))
             .map(|name| mtg_draft::front_face(&name).to_string())
             .collect();
         cards.sort();
@@ -839,5 +840,9 @@ mod shown_cards_tests {
         let hidden = state.create_object(outcasts, PlayerId(1), Zone::Hand, Some(4), Some(4));
         state.get_object_mut(hidden).unwrap().name = "Grizzled Outcasts".to_string();
         assert_eq!(shown_cards(&state, &registry), [Vec::<String>::new(), vec!["Grizzled Outcasts".to_string()]]);
+        // An Evil Twin that became a copy of the Outcasts is an Evil Twin.
+        let twin = state.create_object(outcasts, PlayerId(0), Zone::Battlefield, Some(4), Some(4));
+        state.get_object_mut(twin).unwrap().copy_grantor = registry.get_id_by_name("Evil Twin");
+        assert_eq!(shown_cards(&state, &registry)[0], vec!["Evil Twin".to_string()]);
     }
 }
