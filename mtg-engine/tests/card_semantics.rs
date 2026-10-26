@@ -747,6 +747,9 @@ struct Activated {
     once_each_turn: bool,
     /// "Activate only as a sorcery", and equip (CR 602.5d, 702.6a).
     sorcery: bool,
+    /// "Activate only if you control five or more Vampires" (CR 602.5b):
+    /// how many, and of what subtype.
+    if_you_control: Option<(usize, String)>,
     /// "Sacrifice a creature" or "Sacrifice another creature" in the cost
     /// (CR 602.2b, 601.2h).
     sacrifice: Option<Sacrifice>,
@@ -769,7 +772,7 @@ fn read_activated(line: &str, index: usize) -> Option<Activated> {
     let (cost, effect) = line.split_once(": ")?;
     let mut ability = Activated {
         index, mana: ManaCost::free(), tap: false, sacrifice_self: false, once_each_turn: false, sorcery: false,
-        sacrifice: None, exile_creature_card: false, spec: Spec::default(),
+        sacrifice: None, exile_creature_card: false, if_you_control: None, spec: Spec::default(),
     };
     for part in cost.split(", ") {
         match part {
@@ -787,6 +790,11 @@ fn read_activated(line: &str, index: usize) -> Option<Activated> {
             ability.once_each_turn = true;
         } else if sentence.trim() == "Activate only as a sorcery." {
             ability.sorcery = true;
+        } else if let Some((n, what)) = sentence.trim().strip_prefix("Activate only if you control ")
+            .and_then(|r| r.strip_suffix('.'))
+            .and_then(|r| r.split_once(" or more "))
+        {
+            ability.if_you_control = Some((number(n)? as usize, singular(what)));
         } else {
             ability.spec.sentence(sentence)?;
         }
@@ -1894,7 +1902,7 @@ fn read_artifact(card: &Printed) -> Result<Spec, String> {
             let equip = Spec { slots, effects: vec![Effect::Attach { slot: 0 }], ..Spec::default() };
             spec.activated.insert(0, Activated {
                 index: 0, mana: cost, tap: false, sacrifice_self: false, once_each_turn: false, sorcery: true,
-                sacrifice, exile_creature_card: false, spec: equip,
+                sacrifice, exile_creature_card: false, if_you_control: None, spec: equip,
             });
             for (i, a) in spec.activated.iter_mut().enumerate().skip(1) {
                 a.index = i;
@@ -2089,7 +2097,7 @@ fn read_land(card: &Printed) -> Result<Spec, String> {
 /// phase. Cards whose text is keywords or nothing but a trigger that cannot
 /// fire mid-turn, so nothing on the board changes what a spell does except
 /// through what it is: colour, type, subtype, power, flying, controller.
-const BOARD: [(&str, PlayerId); 14] = [
+const BOARD: [(&str, PlayerId); 15] = [
     ("Grizzly Bears", P0),
     ("Chapel Geist", P0),
     ("Markov Patrician", P0),
@@ -2102,6 +2110,7 @@ const BOARD: [(&str, PlayerId); 14] = [
     ("Goblin Piker", P1),
     ("Rotting Fensnake", P1),
     ("Villagers of Estwald", P1),
+    ("Vampire Interloper", P1),
     ("Forest", P1),
     ("Burning Vengeance", P1),
 ];
@@ -4435,20 +4444,21 @@ const READ: &[&str] = &[
     "Angel of Flight Alabaster", "Angelic Overseer", "Armored Skaab", "Army of the Damned",
     "Ashmouth Hound", "Avacyn's Pilgrim", "Avacynian Priest", "Balefire Dragon",
     "Battleground Geist", "Blasphemous Act", "Bloodcrazed Neonate", "Bloodgift Demon",
-    "Bonds of Faith", "Boneyard Wurm", "Brain Weevil", "Bramblecrush", "Brimstone Volley",
-    "Bump in the Night", "Butcher's Cleaver", "Caravan Vigil", "Cellar Door", "Chapel Geist",
-    "Claustrophobia", "Clifftop Retreat", "Cloistered Youth", "Cobbled Wings", "Coral Merfolk",
-    "Corpse Lunge", "Counterspell", "Curse of Death's Hold", "Curse of Oblivion",
-    "Curse of Stalked Prey", "Curse of the Bloody Tome", "Curse of the Nightly Hunt",
-    "Curse of the Pierced Heart", "Darkthicket Wolf", "Daybreak Ranger", "Dead Weight",
-    "Demonmail Hauberk", "Deranged Assistant", "Desperate Ravings", "Devil's Play",
-    "Diregraf Ghoul", "Disciple of Griselbrand", "Dissipate", "Divination", "Divine Reckoning",
-    "Doom Blade", "Doomed Traveler", "Dream Twist", "Elder Cathar", "Elder of Laurels",
-    "Elite Inquisitor", "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread",
-    "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab", "Full Moon's Rise",
-    "Furor of the Bitten", "Gallows Warden", "Gatstaf Shepherd", "Gavony Township",
-    "Geist of Saint Traft", "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame",
-    "Ghost Quarter", "Ghostly Possession", "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth",
+    "Bloodline Keeper", "Bonds of Faith", "Boneyard Wurm", "Brain Weevil", "Bramblecrush",
+    "Brimstone Volley", "Bump in the Night", "Butcher's Cleaver", "Caravan Vigil",
+    "Cellar Door", "Chapel Geist", "Claustrophobia", "Clifftop Retreat", "Cloistered Youth",
+    "Cobbled Wings", "Coral Merfolk", "Corpse Lunge", "Counterspell", "Curse of Death's Hold",
+    "Curse of Oblivion", "Curse of Stalked Prey", "Curse of the Bloody Tome",
+    "Curse of the Nightly Hunt", "Curse of the Pierced Heart", "Darkthicket Wolf",
+    "Daybreak Ranger", "Dead Weight", "Demonmail Hauberk", "Deranged Assistant",
+    "Desperate Ravings", "Devil's Play", "Diregraf Ghoul", "Disciple of Griselbrand",
+    "Dissipate", "Divination", "Divine Reckoning", "Doom Blade", "Doomed Traveler",
+    "Dream Twist", "Elder Cathar", "Elder of Laurels", "Elite Inquisitor",
+    "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread", "Feral Ridgewolf",
+    "Festerhide Boar", "Forest", "Fortress Crab", "Full Moon's Rise", "Furor of the Bitten",
+    "Gallows Warden", "Gatstaf Shepherd", "Gavony Township", "Geist of Saint Traft",
+    "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame", "Ghost Quarter",
+    "Ghostly Possession", "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth",
     "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms", "Grave Bramble",
     "Graveyard Shovel", "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity",
     "Hanweir Watchkeep", "Harvest Pyre", "Hinterland Harbor", "Hollowhenge Scavenger",
@@ -4779,11 +4789,18 @@ fn every_readable_activated_ability_does_what_its_text_says() {
     let mut checked = 0;
     let backs = back_faces(&cards);
     // Each permanent the grammar reads, either face up, with mana for
-    // anything: it offers no activated ability its text does not print
-    // (CR 602.1, 712.8d-e).
+    // anything and enough of what either face's abilities ask its
+    // controller to control: it offers no activated ability its text does
+    // not print (CR 602.1, 712.8d-e).
     for (card, spec) in cards.iter().chain(&backs).filter(|(c, _)| !c.has_type("Instant") && !c.has_type("Sorcery")) {
         let (mut state, mut world) = board(&registry, &cache);
         let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
+        let front = cached_oracle().values().find(|f| f.back.as_ref().is_some_and(|b| b.name == card.name));
+        let other = front.and_then(|f| read_creature(f).ok()).or_else(|| card.back.as_deref().and_then(back_face_reads));
+        for (n, subtype) in spec.activated.iter().chain(other.iter().flat_map(|o| &o.activated)).filter_map(|a| a.if_you_control.as_ref()) {
+            let have = world.permanents.values().filter(|m| m.controller == P0 && m.subtypes.iter().any(|t| t == subtype)).count();
+            add_creatures_of(&mut state, &mut world, &registry, &cards, subtype, n.saturating_sub(have), P0);
+        }
         fund(&mut state, P0, &mana_cost("{3}{W}{W}{W}{U}{U}{U}{B}{B}{B}{R}{R}{R}{G}{G}{G}").expect("a cost"), 0);
         let printed: Vec<usize> = spec.activated.iter().map(|a| a.index).collect();
         let mut extra: Vec<usize> = engine::legal_actions(&state, &registry).actions.iter()
@@ -4798,11 +4815,22 @@ fn every_readable_activated_ability_does_what_its_text_says() {
         }
     }
     for (card, spec) in cards.iter().chain(&backs) {
-        for ability in &spec.activated {
+        // An ability activated only if its controller controls enough of a
+        // subtype is tried on the board, with one too few, and with enough.
+        let short = |a: &Activated| a.if_you_control.iter().flat_map(move |(n, _)| [n - 1, *n].map(Some)).collect::<Vec<_>>();
+        for (ability, count) in spec.activated.iter().flat_map(|a| std::iter::once((a, None)).chain(short(a).into_iter().map(move |c| (a, c)))) {
             checked += 1;
-            let name = format!("{}'s ability {}", card.name, ability.index);
+            let name = format!("{}'s ability {}{}", card.name, ability.index, count.map_or(String::new(), |c| format!(" with {c} of its controller's")));
             let (mut state, mut world) = board(&registry, &cache);
             let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
+            let of = |world: &World, subtype: &str| world.permanents.values().filter(|m| m.controller == P0 && m.subtypes.iter().any(|t| t == subtype)).count();
+            if let (Some(c), Some((_, subtype))) = (count, &ability.if_you_control) {
+                let more = c.saturating_sub(of(&world, subtype));
+                add_creatures_of(&mut state, &mut world, &registry, &cards, subtype, more, P0);
+                assert_eq!(of(&world, subtype), c, "{name}: the board had more than that already");
+            }
+            let allowed = ability.if_you_control.as_ref().is_none_or(|(n, subtype)| of(&world, subtype) >= *n);
+            world.refresh();
             world.source = Some(id);
             fund(&mut state, P0, &ability.mana, 0);
 
@@ -4827,7 +4855,7 @@ fn every_readable_activated_ability_does_what_its_text_says() {
             let exilable = world.yard.values().any(|m| m.owner == P0 && m.is_creature());
             let key = |(t, s): &(Vec<Target>, Option<ObjectId>)| (t.iter().map(target_key).collect::<Vec<_>>(), s.map(|i| i.0));
             let mut expected_chosen: Vec<(Vec<Target>, Option<ObjectId>)> = expected.iter()
-                .filter(|_| !ability.exile_creature_card || exilable)
+                .filter(|_| (!ability.exile_creature_card || exilable) && allowed)
                 .flat_map(|set| sacrifices.iter().map(|sac| (chosen(set), *sac)))
                 .collect();
             expected_chosen.sort_by_key(key);
@@ -5458,6 +5486,20 @@ fn on_damage_to_player(w2: &mut World, a: ObjectId, attacker: &Model, dealt: u32
                 }
             }
         }
+    }
+}
+
+/// `n` creatures of `subtype` for `owner`, in the engine and in `world`:
+/// copies of the first creature card the grammar reads with that subtype
+/// and no abilities but keywords and combat text.
+fn add_creatures_of(state: &mut GameState, world: &mut World, registry: &CardRegistry, cards: &[(Printed, Spec)], subtype: &str, n: usize, owner: PlayerId) {
+    let (card, spec) = cards.iter()
+        .find(|(c, s)| c.has_type("Creature") && c.back.is_none() && c.types().1.iter().any(|t| t == subtype)
+            && s.etb.is_none() && s.dies.is_none() && s.watch.is_none() && s.upkeep.is_none() && s.end_step.is_none()
+            && s.activated.is_empty() && s.mana.is_empty() && s.statics.is_empty())
+        .expect("a plain creature of the subtype");
+    for _ in 0..n {
+        place_face(state, world, registry, card, spec, owner);
     }
 }
 
