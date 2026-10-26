@@ -455,7 +455,7 @@ impl std::fmt::Display for TargetFilter {
 }
 
 /// Describes what targets a spell needs when cast.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum TargetRequirement {
     /// No targets needed (vanilla creatures, Divination, etc.)
     None,

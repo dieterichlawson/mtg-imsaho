@@ -189,10 +189,7 @@ impl LegalActions {
             Action::BottomCards { cards } => matches!(&self.set_prompt,
                 Some(p) if p.kind == SetPromptKind::BottomAfterMulligan && p.accepts(cards)),
             Action::ResolveChoice { .. } => self.resolution_prompt.is_some(),
-            row => {
-                let row = format!("{row:?}");
-                self.actions.iter().any(|a| format!("{a:?}") == row)
-            }
+            row => self.actions.iter().any(|a| a == row),
         }
     }
 }

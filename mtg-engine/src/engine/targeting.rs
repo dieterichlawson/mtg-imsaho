@@ -319,21 +319,26 @@ pub(crate) fn target_combinations(targets: &[crate::actions::Target], k: usize) 
     result
 }
 /// Whether two target requirements ask for the same thing, so a pair drawn
-/// from them is a set rather than an ordered pair.
+/// from them is a set rather than an ordered pair: both slots draw from one
+/// candidate pool under one restriction.
 ///
-/// Compared by shape rather than by `PartialEq`, which `TargetRequirement`
-/// does not derive: what matters is that both slots draw from one candidate
-/// pool under one restriction.
+/// This compared the two `Debug` strings, from before `TargetRequirement`
+/// derived `PartialEq`; it is the same comparison, without making a game
+/// rule depend on how a value prints.
 fn same_requirement(a: &crate::cards::TargetRequirement, b: &crate::cards::TargetRequirement) -> bool {
-    format!("{a:?}") == format!("{b:?}")
+    a == b
 }
 
 /// Drop cast actions whose target *sets* have already been produced.
+///
+/// A set is its targets sorted, by `Target`'s own order; this used to sort
+/// their `Debug` strings, which says the same about two sets being equal
+/// but makes it depend on how a target prints.
 fn dedup_by_target_set(actions: &mut Vec<Action>) {
-    let mut seen: Vec<Vec<String>> = Vec::new();
+    let mut seen: Vec<Vec<crate::actions::Target>> = Vec::new();
     actions.retain(|a| {
         let Action::CastSpell { targets, .. } = a else { return true };
-        let mut key: Vec<String> = targets.iter().map(|t| format!("{t:?}")).collect();
+        let mut key = targets.clone();
         key.sort();
         if seen.contains(&key) {
             false
