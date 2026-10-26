@@ -910,6 +910,10 @@ mod tests {
         assert!(mine.contains("Bo (seat 1) has shown: Brimstone Volley"), "{mine}");
         assert!(mine.contains(" 23 [side] Card 23"), "{mine}");
         assert!(mine.contains("23 spells + 17 lands = 40 cards"), "{mine}");
+        // The last line says the choice again, under the pool's rows,
+        // where the line above them has scrolled off (#885's review).
+        let last = mine.trim_end().lines().last().unwrap_or("");
+        assert_eq!(last, "type ready to start game 2 (they are still deciding); type play or draw (not chosen yet: you play first)");
 
         let sent = |c: Command| match c { Command::Send(m) => m, Command::Print(p) => panic!("printed {p}"), _ => panic!("nothing") };
         let printed = |c: Command| match c { Command::Print(p) => p, _ => panic!("not printed") };
@@ -1161,7 +1165,16 @@ fn between_listing(v: &Value, m: &Value, b: &Value, build: &Build, who: &dyn Fn(
         if b["opponent_ready"] == true { format!("ready — game {game} is starting\n") } else { format!("ready — waiting for {opponent}\n") }
     } else {
         let them = if b["opponent_ready"] == true { "they are ready" } else { "they are still deciding" };
-        format!("type ready to start game {game} ({them})\n")
+        // Under the pool, the choice is said again beside ready: printed
+        // only above the pool's ~45 rows, it scrolled off an 80x24
+        // terminal, as Ready sat under them on the page (#885's review).
+        let choice = match (b["sideboarding"] == true && b["you_choose"] == true, b["play_first"].as_bool()) {
+            (false, _) => String::new(),
+            (true, None) => "; type play or draw (not chosen yet: you play first)".to_string(),
+            (true, Some(true)) => "; you play first (draw to change it)".to_string(),
+            (true, Some(false)) => "; you draw first (play to change it)".to_string(),
+        };
+        format!("type ready to start game {game} ({them}){choice}\n")
     });
     s
 }
