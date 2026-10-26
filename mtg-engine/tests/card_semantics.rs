@@ -386,6 +386,20 @@ enum Effect {
     /// card's mana value": the card the mill before it took, from the top
     /// of that player's library.
     PumpByMilledManaValue { slot: usize, milled: usize },
+    /// "Target player reveals their hand. You choose a nonland card from
+    /// it. Exile that card." Read a sentence at a time: the reveal, then
+    /// the choice, then what is done with it.
+    RevealHand { slot: usize },
+    ChooseNonlandFromHand { slot: usize },
+    ExileChosenNonlandFromHand { slot: usize },
+    /// "Choose a permanent type. Return all cards of the chosen type from
+    /// your graveyard to your hand." (CR 300.1)
+    ChooseAPermanentType,
+    ReturnAllOfChosenType,
+    /// "... deals damage to that permanent or player equal to the greatest
+    /// mana value among the milled cards": the cards the mill before it
+    /// took from the top of its controller's library.
+    DamageGreatestMilled { slot: usize, milled: usize },
     /// "Regenerate this creature": a shield (CR 701.19a).
     Regenerate { slot: usize },
     /// "Transform this creature": it turns to its other face, unless it has
@@ -1253,6 +1267,40 @@ impl Spec {
         // "another target creature" is a target that is another creature.
         let s = s.replace("another target ", "target another ");
         let s = s.trim().strip_suffix('.')?;
+        if s == "Target player reveals their hand" {
+            let slot = self.slot(Slot::Player);
+            self.effects.push(Effect::RevealHand { slot });
+            return Some(());
+        }
+        if s == "You choose a nonland card from it" {
+            let Some(Effect::RevealHand { slot }) = self.effects.pop() else { return None };
+            self.effects.push(Effect::ChooseNonlandFromHand { slot });
+            return Some(());
+        }
+        if s == "Exile that card" {
+            let Some(Effect::ChooseNonlandFromHand { slot }) = self.effects.pop() else { return None };
+            self.effects.push(Effect::ExileChosenNonlandFromHand { slot });
+            return Some(());
+        }
+        if s == "Choose a permanent type" {
+            self.effects.push(Effect::ChooseAPermanentType);
+            return Some(());
+        }
+        if s == "Return all cards of the chosen type from your graveyard to your hand" {
+            let Some(Effect::ChooseAPermanentType) = self.effects.pop() else { return None };
+            self.effects.push(Effect::ReturnAllOfChosenType);
+            return Some(());
+        }
+        if s == "Choose any target" {
+            self.slot(Slot::Any);
+            return Some(());
+        }
+        if s == "~ deals damage to that permanent or player equal to the greatest mana value among the milled cards" {
+            let milled = self.effects.iter().rev().find_map(|e| match e { Effect::MillYou { n } => Some(*n), _ => None })?;
+            let slot = self.slots.iter().rposition(|s| *s == Slot::Any)?;
+            self.effects.push(Effect::DamageGreatestMilled { slot, milled });
+            return Some(());
+        }
         if s == "This creature gets +X/+X until end of turn, where X is the milled card's mana value" {
             let Some(Effect::Mill { slot: milled, n: 1 }) = self.effects.last() else { return None };
             let milled = *milled;
@@ -2415,9 +2463,11 @@ fn the_opponent_holds_a_spell_on_the_stack(state: &mut GameState, world: &mut Wo
 
 /// Each player's library, top first: distinct names, so a card put on top
 /// or drawn is told apart from the rest; an instant on top, for what looks
-/// at it or mills it, three basic lands, for what searches, and a creature
-/// card at the bottom, for what asks what it is.
-const LIBRARY: [&str; 5] = ["Think Twice", "Island", "Swamp", "Mountain", "Grizzly Bears"];
+/// at it or mills it, basic lands, for what searches, a creature card of
+/// the greatest mana value third, so that "the greatest" among the top
+/// three is neither the first nor their sum, and a creature card at the
+/// bottom, for what asks what it is.
+const LIBRARY: [&str; 5] = ["Think Twice", "Island", "Moon Heron", "Swamp", "Grizzly Bears"];
 
 /// One permanent as the reference sees it: its printed characteristics and
 /// what has happened to it.
@@ -3645,6 +3695,35 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     m.temp.1 += x;
                 }
             }
+            Effect::RevealHand { .. } => {}
+            Effect::ChooseNonlandFromHand { .. } | Effect::ChooseAPermanentType => panic!("read only with what is done with the choice"),
+            Effect::ExileChosenNonlandFromHand { slot } => {
+                if let (Some(p), Some(name)) = (player(*slot), &world.picked) {
+                    let at = w.hand[p].iter().position(|h| h == name).expect("a card in that hand");
+                    let card = w.hand[p].remove(at);
+                    w.exile[p].push(card);
+                }
+            }
+            Effect::ReturnAllOfChosenType => {
+                let kind = world.picked.as_ref().expect("a type chosen, as the ways say");
+                let returning: Vec<ObjectId> = w.yard.iter()
+                    .filter(|(_, m)| m.owner == caster && m.types.contains(kind))
+                    .map(|(id, _)| *id)
+                    .collect();
+                for id in returning {
+                    let card = w.leave_yard(id).expect("in the graveyard");
+                    w.hand[c].push(card.name.expect("a card"));
+                }
+            }
+            Effect::DamageGreatestMilled { slot, milled } => {
+                let x = world.library[c].iter().take(*milled)
+                    .filter_map(|n| cached_oracle().get(n).and_then(|p| mana_cost(&p.mana_cost)))
+                    .map(|cost| cost.mana_value())
+                    .max()
+                    .unwrap_or(0);
+                let damage = Spec { effects: vec![Effect::Damage { amount: x, slot: *slot }], slots: spec.slots.clone(), ..Spec::default() };
+                w = apply(&damage, &w, targets, caster);
+            }
             Effect::CantBlockThisTurn { slot } => {
                 for id in objects(*slot) {
                     if let Some(m) = w.permanents.get_mut(&id) {
@@ -4001,17 +4080,33 @@ fn resolution_ways(spec: &Spec, world: &World, targets: &[Target], caster: Playe
             .flat_map(|w| resolution_choices(spec, w, targets).into_iter().map(move |chosen| World { chosen, ..w.clone() }))
             .collect();
     }
-    ways.iter().flat_map(|w| search_choices(spec, w, targets, caster)).flat_map(|w| look_choices(spec, &w, caster)).collect()
+    ways.iter().flat_map(|w| search_choices(spec, w, targets, caster)).flat_map(|w| look_choices(spec, &w, targets, caster)).collect()
 }
 
 /// Every way its controller can choose among the top of their library as
 /// `spec` resolves: which of the cards looked at goes to the hand, by name;
 /// whether to reveal a top card that would transform the source.
-fn look_choices(spec: &Spec, world: &World, caster: PlayerId) -> Vec<World> {
+fn look_choices(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Vec<World> {
     let c = caster.0 as usize;
     let mut ways = vec![world.clone()];
     for effect in &spec.effects {
         match effect {
+            Effect::ExileChosenNonlandFromHand { slot } => {
+                let Some(Target::Player(p)) = targets.get(*slot) else { continue };
+                let mut names: Vec<String> = world.hand[p.0 as usize].iter()
+                    .filter(|n| cached_oracle().get(*n).is_some_and(|card| !card.has_type("Land")))
+                    .cloned()
+                    .collect();
+                names.sort();
+                names.dedup();
+                if !names.is_empty() {
+                    ways = ways.into_iter().flat_map(|w| names.iter().map(move |n| World { picked: Some(n.clone()), ..w.clone() })).collect();
+                }
+            }
+            Effect::ReturnAllOfChosenType => {
+                let kinds = ["artifact", "creature", "enchantment", "land", "planeswalker"];
+                ways = ways.into_iter().flat_map(|w| kinds.map(|k| World { picked: Some(k.to_string()), ..w.clone() })).collect();
+            }
             Effect::LookTopPickOne { n } => {
                 let mut names: Vec<String> = world.library[c].iter().take(*n).cloned().collect();
                 names.sort();
@@ -4036,7 +4131,7 @@ fn asks_as_it_resolves(spec: &Spec) -> bool {
     is_random(spec) || spec.effects.iter().any(|e| matches!(e,
         Effect::SacrificeOfTheirChoice { .. } | Effect::EachPlayerChoosesACreature | Effect::SearchForBasicLand { .. }
         | Effect::PlayerExilesFromGraveyard { .. } | Effect::Discard { .. } | Effect::LookTopPickOne { .. }
-        | Effect::RevealTopTransformIf { .. }))
+        | Effect::RevealTopTransformIf { .. } | Effect::ExileChosenNonlandFromHand { .. } | Effect::ReturnAllOfChosenType))
 }
 
 /// Whether `spec` does something at random.
@@ -4700,7 +4795,7 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
                     }
                 };
             }
-            Some(ResolutionChoiceKind::AssignCombatDamage { options, .. }) => {
+            Some(ResolutionChoiceKind::AssignCombatDamage { options, .. }) | Some(ResolutionChoiceKind::ChooseCardType { options, .. }) => {
                 return match script.next() {
                     Some(Answer::Index(i, label)) => Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(*i, label.clone()) },
                     Some(other) => {
@@ -4760,6 +4855,23 @@ fn every_ending(state: &GameState, registry: &CardRegistry, spell: Option<Object
 /// [`every_ending`] for `spell` cast at `targets`.
 fn every_ending_at(state: &GameState, registry: &CardRegistry, spell: ObjectId, targets: &[Target]) -> Result<Vec<GameState>, String> {
     every_ending_casting(state, registry, spell, targets, None)
+}
+
+/// Every ending from `state`, `spell` cast at `targets` (or `first` played),
+/// each question answered every way `keep` allows.
+fn every_ending_keeping(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>, targets: &[Target], first: Option<Action>, keep: &dyn Fn(&Answer) -> bool) -> Result<Vec<GameState>, String> {
+    let mut todo: Vec<Vec<Answer>> = vec![Vec::new()];
+    let mut done = Vec::new();
+    while let Some(script) = todo.pop() {
+        if done.len() + todo.len() > 500 {
+            return Err("more than 500 ways to answer".to_string());
+        }
+        match play_from(state, registry, spell, targets.to_vec(), first.clone(), Scene::Main, &script)? {
+            Played::Done(s) => done.push(*s),
+            Played::Asks(options) => todo.extend(options.into_iter().filter(|o| keep(o)).map(|o| [script.clone(), vec![o]].concat())),
+        }
+    }
+    Ok(done)
 }
 
 /// [`every_ending_at`], cast as `first` when it is given: for its
@@ -4849,49 +4961,50 @@ const READ: &[&str] = &[
     "Caravan Vigil", "Cellar Door", "Champion of the Parish", "Chapel Geist",
     "Charmbreaker Devils", "Civilized Scholar", "Claustrophobia", "Clifftop Retreat",
     "Cloistered Youth", "Cobbled Wings", "Coral Merfolk", "Corpse Lunge", "Counterspell",
-    "Crossway Vampire", "Curse of Death's Hold", "Curse of Oblivion", "Curse of Stalked Prey",
-    "Curse of the Bloody Tome", "Curse of the Nightly Hunt", "Curse of the Pierced Heart",
-    "Darkthicket Wolf", "Daybreak Ranger", "Dead Weight", "Delver of Secrets",
-    "Demonmail Hauberk", "Deranged Assistant", "Desperate Ravings", "Devil's Play",
-    "Diregraf Ghoul", "Disciple of Griselbrand", "Dissipate", "Divination", "Divine Reckoning",
-    "Doom Blade", "Doomed Traveler", "Dream Twist", "Elder Cathar", "Elder of Laurels",
-    "Elite Inquisitor", "Endless Ranks of the Dead", "Falkenrath Marauders", "Falkenrath Noble",
-    "Feeling of Dread", "Feral Ridgewolf", "Festerhide Boar", "Forbidden Alchemy", "Forest",
-    "Fortress Crab", "Full Moon's Rise", "Furor of the Bitten", "Gallows Warden",
-    "Galvanic Juggernaut", "Gatstaf Shepherd", "Gavony Township", "Geist of Saint Traft",
-    "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame", "Ghost Quarter",
-    "Ghostly Possession", "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth",
+    "Creeping Renaissance", "Crossway Vampire", "Curse of Death's Hold", "Curse of Oblivion",
+    "Curse of Stalked Prey", "Curse of the Bloody Tome", "Curse of the Nightly Hunt",
+    "Curse of the Pierced Heart", "Darkthicket Wolf", "Daybreak Ranger", "Dead Weight",
+    "Delver of Secrets", "Demonmail Hauberk", "Deranged Assistant", "Desperate Ravings",
+    "Devil's Play", "Diregraf Ghoul", "Disciple of Griselbrand", "Dissipate", "Divination",
+    "Divine Reckoning", "Doom Blade", "Doomed Traveler", "Dream Twist", "Elder Cathar",
+    "Elder of Laurels", "Elite Inquisitor", "Endless Ranks of the Dead", "Falkenrath Marauders",
+    "Falkenrath Noble", "Feeling of Dread", "Feral Ridgewolf", "Festerhide Boar",
+    "Forbidden Alchemy", "Forest", "Fortress Crab", "Full Moon's Rise", "Furor of the Bitten",
+    "Gallows Warden", "Galvanic Juggernaut", "Gatstaf Shepherd", "Gavony Township",
+    "Geist of Saint Traft", "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame",
+    "Ghost Quarter", "Ghostly Possession", "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth",
     "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms", "Grave Bramble",
     "Graveyard Shovel", "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity",
-    "Hamlet Captain", "Hanweir Watchkeep", "Harvest Pyre", "Hinterland Harbor",
-    "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness", "Infernal Plunge",
-    "Instigator Gang", "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker",
-    "Island", "Isolated Chapel", "Kalonian Tusker", "Kessig Cagebreakers", "Kessig Wolf",
-    "Kessig Wolf Run", "Kindercatch", "Kruin Outlaw", "Lantern Spirit", "Lava Axe",
-    "Lightning Bolt", "Lost in the Mist", "Lumberknot", "Make a Wish", "Makeshift Mauler",
-    "Manor Skeleton", "Markov Patrician", "Mask of Avacyn", "Mausoleum Guard",
-    "Maw of the Mire", "Mayor of Avabruck", "Mentor of the Meek", "Midnight Haunting",
-    "Mindshrieker", "Moan of the Unhallowed", "Moldgraf Monstrosity", "Moment of Heroism",
-    "Moon Heron", "Moorland Haunt", "Morkrut Banshee", "Mountain", "Mulch", "Murder of Crows",
-    "Naturalize", "Nephalia Drownyard", "Night Revelers", "Nightbird's Clutches",
-    "Olivia Voldaren", "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism", "Paraselene",
-    "Pitchburn Devils", "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower",
-    "Rakish Heir", "Rally the Peasants", "Ranger's Guile", "Reaper from the Abyss", "Rebuke",
-    "Reckless Waif", "Riot Devils", "Rolling Temblor", "Rotting Fensnake", "Runechanter's Pike",
-    "Savannah Lions", "Scourge of Geier Reach", "Selfless Cathar", "Selhoff Occultist",
-    "Sensory Deprivation", "Sever the Bloodline", "Sharpened Pitchfork", "Shimmering Grotto",
-    "Silent Departure", "Silver-Inlaid Dagger", "Silverchase Fox", "Skaab Goliath",
-    "Skeletal Grimace", "Skirsdag Cultist", "Slayer of the Wicked", "Smite the Monstrous",
-    "Sol Ring", "Somberwald Spider", "Spectral Flight", "Spectral Rider", "Spider Spawning",
-    "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble",
-    "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp", "Swords to Plowshares",
-    "Think Twice", "Thraben Purebloods", "Thraben Sentry", "Tormented Pariah",
-    "Traitorous Blood", "Travel Preparations", "Traveler's Amulet", "Tree of Redemption",
-    "Tribute to Hunger", "Typhoid Rats", "Ulvenwald Mystics", "Unburial Rites", "Unruly Mob",
-    "Urgent Exorcism", "Vampire Interloper", "Vampiric Fury", "Victim of Night",
-    "Village Bell-Ringer", "Village Cannibals", "Village Ironsmith", "Villagers of Estwald",
-    "Voiceless Spirit", "Walking Corpse", "Wooden Stake", "Woodland Cemetery",
-    "Woodland Sleuth", "Wreath of Geists",
+    "Hamlet Captain", "Hanweir Watchkeep", "Harvest Pyre", "Heretic's Punishment",
+    "Hinterland Harbor", "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness",
+    "Infernal Plunge", "Instigator Gang", "Intangible Virtue", "Into the Maw of Hell",
+    "Invisible Stalker", "Island", "Isolated Chapel", "Kalonian Tusker", "Kessig Cagebreakers",
+    "Kessig Wolf", "Kessig Wolf Run", "Kindercatch", "Kruin Outlaw", "Lantern Spirit",
+    "Lava Axe", "Lightning Bolt", "Lost in the Mist", "Lumberknot", "Make a Wish",
+    "Makeshift Mauler", "Manor Skeleton", "Markov Patrician", "Mask of Avacyn",
+    "Mausoleum Guard", "Maw of the Mire", "Mayor of Avabruck", "Mentor of the Meek",
+    "Midnight Haunting", "Mindshrieker", "Moan of the Unhallowed", "Moldgraf Monstrosity",
+    "Moment of Heroism", "Moon Heron", "Moorland Haunt", "Morkrut Banshee", "Mountain", "Mulch",
+    "Murder of Crows", "Naturalize", "Nephalia Drownyard", "Night Revelers", "Night Terrors",
+    "Nightbird's Clutches", "Olivia Voldaren", "One-Eyed Scarecrow", "Orchard Spirit",
+    "Pacifism", "Paraselene", "Pitchburn Devils", "Plains", "Prey Upon", "Purify the Grave",
+    "Rage Thrower", "Rakish Heir", "Rally the Peasants", "Ranger's Guile",
+    "Reaper from the Abyss", "Rebuke", "Reckless Waif", "Riot Devils", "Rolling Temblor",
+    "Rotting Fensnake", "Runechanter's Pike", "Savannah Lions", "Scourge of Geier Reach",
+    "Selfless Cathar", "Selhoff Occultist", "Sensory Deprivation", "Sever the Bloodline",
+    "Sharpened Pitchfork", "Shimmering Grotto", "Silent Departure", "Silver-Inlaid Dagger",
+    "Silverchase Fox", "Skaab Goliath", "Skeletal Grimace", "Skirsdag Cultist",
+    "Slayer of the Wicked", "Smite the Monstrous", "Sol Ring", "Somberwald Spider",
+    "Spectral Flight", "Spectral Rider", "Spider Spawning", "Spidery Grasp", "Splinterfright",
+    "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist",
+    "Sulfur Falls", "Swamp", "Swords to Plowshares", "Think Twice", "Thraben Purebloods",
+    "Thraben Sentry", "Tormented Pariah", "Traitorous Blood", "Travel Preparations",
+    "Traveler's Amulet", "Tree of Redemption", "Tribute to Hunger", "Typhoid Rats",
+    "Ulvenwald Mystics", "Unburial Rites", "Unruly Mob", "Urgent Exorcism",
+    "Vampire Interloper", "Vampiric Fury", "Victim of Night", "Village Bell-Ringer",
+    "Village Cannibals", "Village Ironsmith", "Villagers of Estwald", "Voiceless Spirit",
+    "Walking Corpse", "Wooden Stake", "Woodland Cemetery", "Woodland Sleuth",
+    "Wreath of Geists",
 ];
 
 // ---- the properties ----
@@ -5150,6 +5263,22 @@ fn every_readable_card_does_what_its_text_says() {
                     };
                     if let Some(why) = disagreement(&want, &endings, &registry) {
                         failures.push(format!("{name} at {targets:?}: {why}"));
+                        continue;
+                    }
+                    // A choice of a named type, answer by answer: as a set,
+                    // one type's ending can hide behind another's.
+                    if spec.effects.contains(&Effect::ReturnAllOfChosenType) {
+                        for kind in ["artifact", "creature", "enchantment", "land", "planeswalker"] {
+                            let want: Vec<World> = resolution_ways(spec, &world, &targets, P0).iter()
+                                .filter(|w| w.picked.as_deref() == Some(kind))
+                                .map(|way| resolve(spec, way, &targets, P0, card, spell))
+                                .collect();
+                            let keep = |a: &Answer| !matches!(a, Answer::Index(_, label) if label.to_lowercase() != kind);
+                            let endings = every_ending_keeping(&state, &registry, Some(spell), &targets, None, &keep);
+                            if let Some(why) = disagreement(&want, &endings, &registry) {
+                                failures.push(format!("{name} at {targets:?}, choosing {kind}: {why}"));
+                            }
+                        }
                     }
                 }
                 continue;
