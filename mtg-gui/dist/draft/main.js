@@ -387,6 +387,7 @@ const actions = {
     },
     toggleReview() {
         state.reviewOpen = !state.reviewOpen;
+        state.reviewRead = null;
         // Asked for each time it is opened: a pick made since is in the next one.
         if (state.reviewOpen)
             send({ type: "review" });
@@ -594,6 +595,10 @@ function focusKey(el) {
         return `.tile[data-card-index="${el.dataset.cardIndex}"]`;
     if (el.dataset.poolIndex !== undefined)
         return `.row[data-pool-index="${el.dataset.poolIndex}"]`;
+    // A card of the review: lost, the next Enter was the building page's
+    // and moved a pool card (#889's review).
+    if (el.dataset.reviewCard !== undefined)
+        return `.review-card[data-review-card="${el.dataset.reviewCard}"]`;
     const land = el.closest("[data-land]");
     if (land && el.classList.length)
         return `[data-land="${land.dataset.land}"] > .${CSS.escape(el.classList[0])}`;

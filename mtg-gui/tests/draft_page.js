@@ -749,6 +749,33 @@ async function main() {
         await page.click("#review-toggle");
       }
 
+      // Enter on a focused review card is that card's, twice over, while
+      // building: the redraw dropped the focus, and the second Enter moved
+      // the pool card under the cursor (#889's review, #787's shape).
+      {
+        await stage(byName.building);
+        await page.waitForTimeout(50);
+        await page.keyboard.press("ArrowDown");
+        await page.click("#review-toggle");
+        await page.waitForTimeout(50);
+        const card = (name) => ({ name, line: name, text: `${name} text`, rarity: "common", colors: [] });
+        await page.evaluate((m) => window.mtgDraftDebug.stage(m), { type: "review", picks: [
+          { round: 1, pick: 1, card: "Chapel Geist", auto: false, pack: [card("Doomed Traveler"), card("Chapel Geist")] }] });
+        await page.waitForTimeout(50);
+        const before = (await sent()).length;
+        await page.focus('#review [data-review-card="1.1:0"]');
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(50);
+        const opened = await page.$$eval("#review .review-detail", els => els.length);
+        const focused = await page.evaluate(() => document.activeElement && document.activeElement.dataset.reviewCard);
+        await page.keyboard.press("Enter");
+        await page.waitForTimeout(50);
+        const closed = await page.$$eval("#review .review-detail", els => els.length);
+        check(opened === 1 && focused === "1.1:0", `${tag}: Enter on a review card reads it and keeps the focus (${opened}, ${focused})`);
+        check(closed === 0 && (await sent()).length === before, `${tag}: a second Enter closes it and moves no pool card (${closed}, ${JSON.stringify((await sent()).slice(before))})`);
+        await page.click("#review-toggle");
+      }
+
       // The socket was refused, so the page is retrying with backoff.
       {
         await page.waitForTimeout(1200);
