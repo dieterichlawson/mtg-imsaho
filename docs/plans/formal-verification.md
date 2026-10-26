@@ -205,11 +205,12 @@ Cheapest first: vanilla and keyword-only creatures (all engine, data
 already checked against Scryfall), then the core cards in `src/cards/*.rs`,
 then Innistrad by mechanic, in the groups the `cards_*.rs` files use.
 
-The first family is done in a form that comes before steps 2 and 3: the
-spec language is a grammar over the Oracle text itself rather than a
+The first families are done in a form that comes before steps 2 and 3:
+the spec language is a grammar over the Oracle text itself rather than a
 transcription, the reference semantics is a test-side interpreter rather
-than Verus spec functions, and refinement is checked on a fixed board at
-every legal target rather than proved. See
+than Verus spec functions, and refinement is checked on fixed boards at
+every legal target and every answer to every question rather than
+proved. See
 [cards against their Oracle text](#cards-against-their-oracle-text).
 
 ### Tier 4: whole-game properties
@@ -333,34 +334,50 @@ shapes the pool has.
 
 ### Cards against their Oracle text
 
-`mtg-engine/tests/card_semantics.rs`. A grammar reads each instant's and
-sorcery's Oracle text, as Scryfall prints it, into effects: damage to a
-target or to each of a group, pumps of a target or a group, destroy,
-exile, bounce, put on top, tap and untap, draw, gain and lose life, mill,
-tokens, and "its controller gains life equal to its power". A reference
-semantics written from the CR, sharing no code with `src/cards/`, says what
-those effects do to a board described by its cards' Oracle data, and
-applies state-based actions. Each card the grammar reads is cast through
-the engine's game loop at every set of targets the engine offers, on a
-board of fourteen permanents chosen for their differences, and the engine
-must offer exactly the target sets the text allows and leave every zone and
-every permanent's characteristics where the reference says.
+`mtg-engine/tests/card_semantics.rs`. A grammar reads each card's Oracle
+text, as Scryfall prints it, into effects; a reference semantics written
+from the CR, sharing no code with `src/cards/`, says what those effects do
+to a board described by its cards' Oracle data, state-based actions
+included; and the engine is held to it on a board of fourteen permanents
+and four graveyard cards chosen for their differences.
 
-31 of the pool's 69 instants and sorceries are read, and all 31 agree at
-every target. With Lightning Bolt dealing 2, Doom Blade sparing green
-rather than black, or Midnight Haunting's Spirits without flying, the check
-fails and names the difference. What it does not yet read: counterspells
-(no spell on the stack to target), "up to N" targets, fights, morbid,
-additional costs, graveyard targets, counts ("for each creature card in
-your graveyard"), choices and randomness. Each is a template, or a board
-variant, to add; `CARDS_READ` keeps the number read from falling.
+- **Instants and sorceries**: damage to a target or to each of a group;
+  pumps of a target or a group (subtype-qualified too); destroy, destroy
+  all, exile, bounce, put on top, tap and untap, "up to N" targets;
+  +1/+1 counters; fights, with lifelink; draw, gain and lose life, mill;
+  tokens, also "for each creature card in your graveyard"; graveyard
+  targets and reanimation; counterspells, against a spell the opponent
+  has cast; morbid, on a second board where a creature has died; a cost
+  reduction. Each is cast at every set of targets the engine offers, and
+  the engine must offer exactly the sets the text allows and leave every
+  zone and every permanent's characteristics where the reference says.
+- **Creatures**: keywords, entering tapped or with counters, power and
+  toughness defined by a count, and enters and dies triggers whose effect
+  is one of the spell templates, with "you may", intervening "if"s and
+  "another". A trigger asks its own questions, so the engine is replayed
+  every way they can be answered, and the set of games that can result
+  must be the set the text allows. Flash is held to the timing rule.
+
+76 of the pool's 201 instants, sorceries and creatures are read, and all
+agree: 373 casts and deaths. Every template has been shown to catch a
+deliberate bug in a card that uses it (Lightning Bolt dealing 2, Doom Blade
+sparing green, Midnight Haunting's Spirits without flying, Brimstone
+Volley's morbid amount, Travel Preparations' counter, Gnaw to the Bone's
+count, Dissipate countering to the graveyard, Morkrut Banshee's -4/-4,
+Slayer of the Wicked sparing Zombies, Pitchburn Devils' death damage), and
+the failure names the cast and the difference. Not yet read: activated
+abilities, upkeep and combat triggers, static abilities other than
+keywords, additional costs, X, choices made by an opponent, randomness,
+copies and transformations, and every land, artifact and enchantment.
+Each is a template, or a board, to add; `CARDS_READ` keeps the number read
+from falling.
 
 ### The whole engine under libFuzzer
 
-`fuzz/fuzz_targets/game.rs`. The first campaign ran for 75 minutes across
-three workers: about 13,400 whole games, a corpus of 2,600 inputs reaching
-26,700 code edges (still climbing), and no finding: no invariant broken, no
-panic, no overflow, no stall. The nightly job keeps the corpus from night to night,
+`fuzz/fuzz_targets/game.rs`. The first campaign has run for 94 minutes
+across three workers: about 17,800 whole games, a corpus of 3,100 inputs
+reaching 27,000 code edges (still climbing slowly), and no finding: no
+invariant broken, no panic, no overflow, no stall. The nightly job keeps the corpus from night to night,
 so each night starts from everything the last one reached.
 
 ### Defects found
