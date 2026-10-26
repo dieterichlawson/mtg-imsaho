@@ -13,9 +13,10 @@
 //! permanent it becomes and what its triggers do as it enters and as it
 //! dies, and each enchantment it can read — an Aura's "Enchant creature" or
 //! "Enchant player", and static changes to power, toughness and keywords —
-//! into what it does while it is on the battlefield, and each land it can
-//! read into whether it enters tapped and what mana it makes. A reference
-//! semantics,
+//! into what it does while it is on the battlefield, each land it can read
+//! into whether it enters tapped and what mana it makes, and the activated
+//! abilities it can read ("{1}{W}, Sacrifice this creature: Exile target
+//! enchantment.") into their costs and effects. A reference semantics,
 //! written from the
 //! Comprehensive Rules and sharing no code with `src/cards/`, says what
 //! those effects do to a board described by the Oracle data of the cards on
@@ -202,6 +203,9 @@ enum Slot {
     /// "target spell", "target noncreature spell": a spell on the stack
     /// (CR 115.1, 405).
     Spell(Filter),
+    /// "this creature", "this land": the ability's own source. Not a
+    /// target; its place in a target list is filled with the source.
+    This,
 }
 
 /// A description of permanents: any one of the alternatives ("artifact or
@@ -297,6 +301,11 @@ enum Effect {
     MillYou { n: usize },
     /// "Untap all <filter>".
     UntapAll { filter: Filter },
+    /// "Each player mills N cards", in turn order from the active player
+    /// (CR 101.4).
+    MillEach { n: usize },
+    /// "Put a +1/+1 counter on each <filter>".
+    PlusCountersEach { filter: Filter },
 }
 
 /// A card's text, read.
@@ -340,6 +349,47 @@ struct Spec {
     /// and the basic land types that let it enter untapped ("This land
     /// enters tapped unless you control a Mountain or a Plains").
     land: Option<(Vec<ManaType>, Option<Vec<String>>)>,
+    /// Activated abilities other than mana abilities (CR 602).
+    activated: Vec<Activated>,
+}
+
+/// "<cost>: <effect>" (CR 602.1).
+#[derive(Debug, Clone, PartialEq)]
+struct Activated {
+    /// Its place among the card's abilities, mana abilities included, in
+    /// the order the text prints them: the engine's `ability_index`.
+    index: usize,
+    mana: ManaCost,
+    /// "{T}" (CR 107.5).
+    tap: bool,
+    /// "Sacrifice this creature" (CR 602.1a, 701.21).
+    sacrifice_self: bool,
+    /// "Activate only once each turn" (CR 602.5b).
+    once_each_turn: bool,
+    spec: Spec,
+}
+
+/// Read "<cost>: <effect>" when the cost is mana, {T} and sacrificing the
+/// source, and the effect is sentences the grammar reads.
+fn read_activated(line: &str, index: usize) -> Option<Activated> {
+    let (cost, effect) = line.split_once(": ")?;
+    let mut ability = Activated { index, mana: ManaCost::free(), tap: false, sacrifice_self: false, once_each_turn: false, spec: Spec::default() };
+    for part in cost.split(", ") {
+        match part {
+            "{T}" => ability.tap = true,
+            "Sacrifice this creature" | "Sacrifice this land" | "Sacrifice this artifact" => ability.sacrifice_self = true,
+            _ if part.starts_with('{') => ability.mana = mana_cost(part)?,
+            _ => return None,
+        }
+    }
+    for sentence in effect.split_inclusive(". ") {
+        if sentence.trim() == "Activate only once each turn." {
+            ability.once_each_turn = true;
+        } else {
+            ability.spec.sentence(sentence)?;
+        }
+    }
+    (!ability.spec.effects.is_empty()).then_some(ability)
 }
 
 /// A static ability that changes power, toughness or keywords (CR 613.4c,
@@ -510,6 +560,36 @@ impl Spec {
         // "another target creature" is a target that is another creature.
         let s = s.replace("another target ", "target another ");
         let s = s.trim().strip_suffix('.')?;
+        // The ability's source ("This creature gets +2/+0 until end of
+        // turn", "Return this creature to its owner's hand").
+        for this in ["This creature ", "This land ", "This artifact "] {
+            if let Some(rest) = s.strip_prefix(this) {
+                if let Some(rest) = rest.strip_prefix("deals ") {
+                    return self.sentence(&format!("~ deals {rest}."));
+                }
+                let ((power, toughness), gains) = match rest.strip_prefix("gains ") {
+                    Some(k) => ((0, 0), k.strip_suffix(" until end of turn")?.split(" and ").map(keyword_named).collect::<Option<Vec<_>>>()?),
+                    None => pump(rest)?,
+                };
+                let slot = self.slot(Slot::This);
+                self.effects.push(Effect::Pump { slot, power, toughness, gains });
+                return Some(());
+            }
+        }
+        if s == "Return this creature to its owner's hand" {
+            let slot = self.slot(Slot::This);
+            self.effects.push(Effect::ToHand { slot });
+            return Some(());
+        }
+        if let Some(n) = s.strip_prefix("Each player mills ") {
+            let n = number(n.strip_suffix(" cards").or_else(|| n.strip_suffix(" card"))?)? as usize;
+            self.effects.push(Effect::MillEach { n });
+            return Some(());
+        }
+        if let Some(f) = s.strip_prefix("Put a +1/+1 counter on each ").filter(|f| !f.starts_with("of up to ")) {
+            self.effects.push(Effect::PlusCountersEach { filter: filter(f)? });
+            return Some(());
+        }
         // CR 701.12a: "Target creature you control fights target creature
         // you don't control".
         if let Some((a, b)) = s.split_once(" fights ") {
@@ -831,10 +911,29 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
             spec.etb = Some(Box::new(trigger));
             continue;
         }
+        if line.contains(": ") {
+            let index = spec.activated.len();
+            spec.activated.push(read_activated(line, index).ok_or_else(unread)?);
+            continue;
+        }
         for word in line.split(',').map(str::trim) {
             let k = keyword_named(word).ok_or_else(unread)?;
             spec.flash |= k == Keyword::Flash;
         }
+    }
+    Ok(spec)
+}
+
+/// Read an artifact that is nothing but activated abilities the grammar
+/// reads.
+fn read_artifact(card: &Printed) -> Result<Spec, String> {
+    let text = without_reminders(&card.oracle_text).replace(&card.name, "~");
+    let mut spec = Spec { permanent: true, ..Spec::default() };
+    for (index, line) in text.lines().map(str::trim).filter(|l| !l.is_empty()).enumerate() {
+        spec.activated.push(read_activated(line, index).ok_or_else(|| format!("cannot read {line:?}"))?);
+    }
+    if spec.activated.is_empty() {
+        return Err("no abilities".to_string());
     }
     Ok(spec)
 }
@@ -932,12 +1031,19 @@ fn read_land(card: &Printed) -> Result<Spec, String> {
         })
         .collect();
     let mut unless = None;
+    let mut activated = Vec::new();
+    // A basic land's ability is its type's, and comes first.
+    let mut index = usize::from(!mana.is_empty());
     for line in without_reminders(&card.oracle_text).lines().map(str::trim).filter(|l| !l.is_empty()) {
         let unread = || format!("cannot read {line:?}");
         if let Some(rest) = line.strip_prefix("{T}: Add ").and_then(|r| r.strip_suffix('.')) {
             for sym in rest.split(" or ") {
                 mana.push(mana_named(sym).ok_or_else(unread)?);
+                index += 1;
             }
+        } else if line.contains(": ") {
+            activated.push(read_activated(line, index).ok_or_else(unread)?);
+            index += 1;
         } else if let Some(rest) = line.strip_prefix("This land enters tapped unless you control ").and_then(|r| r.strip_suffix('.')) {
             let types: Vec<String> = rest.split(" or ")
                 .map(|t| t.trim_start_matches("a ").trim_start_matches("an ").to_string())
@@ -950,7 +1056,7 @@ fn read_land(card: &Printed) -> Result<Spec, String> {
     if mana.is_empty() {
         return Err("no mana ability".to_string());
     }
-    Ok(Spec { permanent: true, land: Some((mana, unless)), ..Spec::default() })
+    Ok(Spec { permanent: true, land: Some((mana, unless)), activated, ..Spec::default() })
 }
 
 // ---- the board ----
@@ -1458,6 +1564,7 @@ fn candidates(slot: &Slot, world: &World, caster: PlayerId) -> Vec<Target> {
                 && !(f.0.iter().all(|c| c.other) && world.source == Some(**id)))
             .map(|(id, _)| Target::Object(*id))
             .collect(),
+        Slot::This => world.source.into_iter().map(Target::Object).collect(),
         Slot::Spell(f) => world.stack.iter()
             .filter(|(_, m)| m.matches(f, caster))
             .map(|(id, _)| Target::Object(*id))
@@ -1634,6 +1741,22 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                         m.counters.1 += 1;
                     }
                     w.permanents.insert(object(*slot).expect("just read"), m);
+                }
+            }
+            Effect::MillEach { n } => {
+                for p in 0..2 {
+                    for _ in 0..*n {
+                        let card = w.library[p].remove(0);
+                        w.graveyard[p].push(card);
+                    }
+                }
+            }
+            Effect::PlusCountersEach { filter } => {
+                for m in w.permanents.values_mut().chain(w.tokens.iter_mut()) {
+                    if m.is_creature() && m.matches(filter, caster) {
+                        change(m, 1, 1);
+                        m.counters.0 += 1;
+                    }
                 }
             }
             Effect::MillYou { n } => {
@@ -1924,6 +2047,12 @@ enum Played {
 /// state-based actions and triggers and all. The questions asked after the
 /// cast are answered from `script`, in order.
 fn play(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>, targets: Vec<Target>, script: &[Answer]) -> Result<Played, String> {
+    play_from(state, registry, spell, targets, None, script)
+}
+
+/// [`play`], starting with `first` instead of a cast when it is given: an
+/// activation, as the engine offered it.
+fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>, targets: Vec<Target>, first: Option<Action>, script: &[Answer]) -> Result<Played, String> {
     let mut state = state.clone();
     // A spell that asks for its targets at cast time is cast bare, and each
     // question answered in turn as a player answers them: one target for a
@@ -1936,7 +2065,7 @@ fn play(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>, tar
     let mut answering_cast = asks;
     // No spell: the game is played on from where it stands, as after a
     // death, which the loop handles before it asks anyone anything.
-    let mut cast = spell.map(|spell| cast_action(spell, if asks { Vec::new() } else { targets }));
+    let mut cast = first.or_else(|| spell.map(|spell| cast_action(spell, if asks { Vec::new() } else { targets })));
     let mut script = script.iter();
     let mut trouble = None;
     let mut unanswered = None;
@@ -2050,6 +2179,8 @@ fn readable(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (Vec<
             read_enchantment(card)
         } else if card.has_type("Land") {
             read_land(card)
+        } else if card.has_type("Artifact") {
+            read_artifact(card)
         } else {
             continue;
         };
@@ -2064,10 +2195,36 @@ fn readable(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (Vec<
     (read_ok, unread)
 }
 
-/// How many cards the grammar read when this was last raised. A change
-/// that reads more raises it; one that reads fewer fails here, so coverage
-/// is never lost without someone deciding to lose it.
-const CARDS_READ: usize = 95;
+/// Every card the grammar read when this was last updated. A change that
+/// reads more adds to it; one that stops reading any of these fails here
+/// and names it, so coverage is never lost without someone deciding to
+/// lose it.
+const READ: &[&str] = &[
+    "Abbey Griffin", "Ambush Viper", "Ancient Grudge", "Armored Skaab", "Army of the Damned",
+    "Avacynian Priest", "Blasphemous Act", "Bramblecrush", "Brimstone Volley",
+    "Bump in the Night", "Chapel Geist", "Clifftop Retreat", "Coral Merfolk", "Counterspell",
+    "Curse of Death's Hold", "Darkthicket Wolf", "Dead Weight", "Diregraf Ghoul", "Dissipate",
+    "Divination", "Doom Blade", "Doomed Traveler", "Dream Twist", "Feeling of Dread",
+    "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab", "Gavony Township",
+    "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame", "Ghoulcaller's Bell",
+    "Giant Growth", "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms",
+    "Grizzly Bears", "Gruesome Deformity", "Hinterland Harbor", "Hollowhenge Scavenger",
+    "Holy Strength", "Hysterical Blindness", "Intangible Virtue", "Into the Maw of Hell",
+    "Island", "Isolated Chapel", "Kalonian Tusker", "Kessig Wolf", "Kindercatch",
+    "Lantern Spirit", "Lava Axe", "Lightning Bolt", "Lost in the Mist", "Markov Patrician",
+    "Mausoleum Guard", "Maw of the Mire", "Midnight Haunting", "Moan of the Unhallowed",
+    "Moment of Heroism", "Moon Heron", "Morkrut Banshee", "Mountain", "Naturalize",
+    "Nephalia Drownyard", "Paraselene", "Pitchburn Devils", "Plains", "Prey Upon",
+    "Purify the Grave", "Rally the Peasants", "Ranger's Guile", "Rebuke", "Riot Devils",
+    "Rolling Temblor", "Rotting Fensnake", "Savannah Lions", "Selfless Cathar",
+    "Sensory Deprivation", "Silent Departure", "Silverchase Fox", "Slayer of the Wicked",
+    "Smite the Monstrous", "Somberwald Spider", "Spectral Flight", "Spectral Rider",
+    "Spider Spawning", "Spidery Grasp", "Stensia Bloodhall", "Sulfur Falls", "Swamp",
+    "Swords to Plowshares", "Think Twice", "Thraben Purebloods", "Travel Preparations",
+    "Typhoid Rats", "Unburial Rites", "Urgent Exorcism", "Vampiric Fury", "Victim of Night",
+    "Village Bell-Ringer", "Voiceless Spirit", "Walking Corpse", "Woodland Cemetery",
+    "Wreath of Geists",
+];
 
 // ---- the properties ----
 
@@ -2205,6 +2362,93 @@ fn every_readable_card_does_what_its_text_says() {
         failures.len(), cards.len(), failures.join("\n  "));
 }
 
+/// Every activated ability the grammar reads, of a permanent its controller
+/// has had since the turn began: the engine offers it at exactly the
+/// targets its text allows, and activated at each of them (its costs paid,
+/// CR 602.2) and resolved it does what its text says. One that may be
+/// activated only once each turn is not offered a second time (602.5b).
+#[test]
+fn every_readable_activated_ability_does_what_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let mut failures = Vec::new();
+    let mut checked = 0;
+    for (card, spec) in &cards {
+        for ability in &spec.activated {
+            checked += 1;
+            let name = format!("{}'s ability {}", card.name, ability.index);
+            let (mut state, mut world) = board(&registry, &cache);
+            let id = named_permanent(&mut state, &registry, &card.name, P0);
+            world.permanents.insert(id, Model::printed(card, P0));
+            world.source = Some(id);
+            fund(&mut state, P0, &ability.mana, 0);
+
+            // The source is not a target: the engine's list leaves it out.
+            let chosen = |set: &[Target]| -> Vec<Target> {
+                set.iter().zip(&ability.spec.slots)
+                    .filter(|(_, s)| !matches!(s, Slot::This))
+                    .map(|(t, _)| t.clone())
+                    .collect()
+            };
+            let expected = target_sets(&ability.spec, &world, P0);
+            let mut expected_chosen: Vec<Vec<Target>> = expected.iter().map(|s| chosen(s)).collect();
+            expected_chosen.sort_by_key(|s| s.iter().map(target_key).collect::<Vec<_>>());
+            let offers: Vec<Action> = engine::legal_actions(&state, &registry).actions.into_iter()
+                .filter(|a| matches!(a, Action::ActivateAbility { object_id, ability_index, .. }
+                    if *object_id == id && *ability_index == ability.index))
+                .collect();
+            let mut offered: Vec<Vec<Target>> = offers.iter()
+                .map(|a| match a { Action::ActivateAbility { targets, .. } => targets.clone(), _ => unreachable!() })
+                .collect();
+            offered.sort_by_key(|s| s.iter().map(target_key).collect::<Vec<_>>());
+            if offered != expected_chosen {
+                failures.push(format!("{name}: offered at {offered:?}, the text allows {expected_chosen:?}"));
+                continue;
+            }
+            for full in &expected {
+                let targets = chosen(full);
+                let act = offers.iter()
+                    .find(|a| matches!(a, Action::ActivateAbility { targets: t, .. } if *t == targets))
+                    .expect("offered, as just compared")
+                    .clone();
+                let mut w = world.clone();
+                if ability.tap {
+                    w.permanents.get_mut(&id).expect("the source").tapped = true;
+                }
+                if ability.sacrifice_self {
+                    w.leave(id, Dest::Graveyard);
+                }
+                let mut w = apply(&ability.spec, &w, full, P0);
+                w.state_based_actions();
+                let want = w.observed();
+                match play_from(&state, &registry, None, Vec::new(), Some(act), &[]) {
+                    Ok(Played::Done(after)) => {
+                        let got = observe(&after, &registry);
+                        if got != want {
+                            failures.push(format!("{name} at {targets:?}:\n      {}", differences(&got, &want)));
+                        } else if ability.once_each_turn {
+                            let mut again = *after;
+                            fund(&mut again, P0, &ability.mana, 0);
+                            let offered_again = engine::legal_actions(&again, &registry).actions.iter()
+                                .any(|a| matches!(a, Action::ActivateAbility { object_id, ability_index, .. }
+                                    if *object_id == id && *ability_index == ability.index));
+                            if offered_again {
+                                failures.push(format!("{name}: offered a second time in the turn"));
+                            }
+                        }
+                    }
+                    Ok(Played::Asks(options)) => failures.push(format!("{name} at {targets:?}: the engine asked a question the text does not, answerable {options:?}")),
+                    Err(why) => failures.push(format!("{name} at {targets:?}: {why}")),
+                }
+            }
+        }
+    }
+    assert!(checked > 0);
+    assert!(failures.is_empty(), "{} of the {checked} abilities read disagree with their text:\n  {}",
+        failures.len(), failures.join("\n  "));
+}
+
 /// A creature spell with Flash can be cast whenever its controller has
 /// priority, and one without only in their own main phase with the stack
 /// empty (CR 702.8a, 307.1): on the opponent's turn, with priority passed
@@ -2298,9 +2542,9 @@ fn the_grammar_reads_at_least_as_many_cards_as_it_did() {
     let cache = oracle_cache();
     let (cards, unread) = readable(&registry, &cache);
     let names: Vec<&str> = cards.iter().map(|(c, _)| c.name.as_str()).collect();
-    assert!(cards.len() >= CARDS_READ,
-        "the grammar reads {} instants and sorceries, fewer than the {CARDS_READ} it did: {names:?}\nunread: {unread:#?}",
-        cards.len());
+    let lost: Vec<&&str> = READ.iter().filter(|n| !names.contains(n)).collect();
+    let why: Vec<&(String, String)> = unread.iter().filter(|(n, _)| lost.contains(&&n.as_str())).collect();
+    assert!(lost.is_empty(), "the grammar no longer reads {lost:?}: {why:?}");
     println!("read {} of {}: {names:?}", cards.len(), cards.len() + unread.len());
     for (name, why) in &unread {
         println!("  unread {name}: {why}");
@@ -2386,6 +2630,17 @@ fn the_grammar_reads_its_templates() {
     let [Static::Group { filter: Filter(clauses), has, .. }] = &virtue.statics[..] else { panic!("one group static") };
     assert!(clauses[0].token && has == &vec![Keyword::Vigilance]);
     assert!(read_enchantment(&aura("Enchant creature\nEnchanted creature can't attack or block.")).is_err());
+
+    let wolf = read_activated("{2}{G}: This creature gets +2/+2 until end of turn. Activate only once each turn.", 0).unwrap();
+    assert!(wolf.once_each_turn && !wolf.tap && wolf.spec.slots == vec![Slot::This]);
+    let fox = read_activated("{1}{W}, Sacrifice this creature: Exile target enchantment.", 0).unwrap();
+    assert!(fox.sacrifice_self && fox.mana.mana_value() == 2);
+    let drownyard = read_land(&Printed {
+        type_line: "Land".to_string(),
+        ..card("Drownyard", "{T}: Add {C}.\n{1}{U}{B}, {T}: Target player mills three cards.")
+    }).unwrap();
+    assert_eq!(drownyard.activated[0].index, 1, "the mana ability is index 0");
+    assert!(read_activated("{1}, Sacrifice a creature: You gain life equal to the sacrificed creature's toughness.", 0).is_none());
 
     let viper = Printed { oracle_text: "Flash\nDeathtouch".to_string(), type_line: "Creature — Snake".to_string(), ..card("Viper", "") };
     assert!(read_creature(&viper).is_ok_and(|s| s.permanent && s.flash));
