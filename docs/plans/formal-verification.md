@@ -130,8 +130,8 @@ values. Each gets a spec written from the CR, proved for every input.
 | X funding: which X can be paid, and the taps that pay it (`fundable_x_values`, `allocate_for_x`) | 107.3, 601.2f-h | **proved** for every board and every X |
 | autotap planner soundness: a plan it returns pays the cost | 601.2g-h, 605.3 | **checked exhaustively** on every board of up to three sources (29.6 million); not yet proved for every board |
 | autotap planner completeness: if some set of sources can pay, it finds one | 601.2g | **checked exhaustively** as above, one defect fixed |
-| power and toughness from counters and effects (layer 7) | 613.4, 704.5q | planned; needs extracting from `state.rs` |
-| lethal damage, deathtouch, and what state-based actions destroy | 704.5f-h, 702.2b | planned |
+| power and toughness from counters and effects (layer 7) | 613.4, 704.5q | **checked** against the card-semantics reference (pumps, counters, Auras, anthems, a count) on every cast; not yet extracted into a kernel |
+| lethal damage, deathtouch, and what state-based actions destroy | 704.5f-h, 704.5m, 702.2b | **checked** against the same reference after every cast and every combat damage step; not yet extracted |
 | the turn's step sequence and who gets priority | 500.1, 117.3-4 | planned |
 
 ### Tier 2: the whole engine, through the fuzz oracle
@@ -367,6 +367,13 @@ and four graveyard cards chosen for their differences.
 - **Activated abilities** on creatures, lands and artifacts, paid with
   mana, {T} and sacrificing the source, at every target the text allows,
   with "activate only once each turn".
+- **The keywords in combat**: every creature whose text is keywords
+  attacks, unblocked and against each of the others as a lone blocker,
+  under a reference model of CR 508-510 (vigilance, defender, flying and
+  reach, intimidate, menace, first strike and double strike, deathtouch,
+  lifelink, and trample with every damage split the attacker may choose):
+  383 combats among 21 creatures. Broken in the engine, reach, deathtouch,
+  lifelink and first strike each fail it.
 
 112 of the pool's 268 instants, sorceries, creatures, enchantments, lands
 and artifacts are read, and all agree. Every template has been shown to
