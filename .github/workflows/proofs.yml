@@ -58,8 +58,8 @@ jobs:
   # The bounded exhaustive checks at the scope `cargo test` is too slow
   # for in a debug build: every board of up to three mana sources, up to
   # two mana floating and every cost shape, the autotap planner held to
-  # tapping by hand; and every Equipment the card grammar reads on every
-  # creature it reads, fought against every other (scripts/prove.sh
+  # tapping by hand; and every Equipment and Aura the card grammar reads on
+  # every creature it reads, fought against every other (scripts/prove.sh
   # exhaustive). GREEN means no board in that space breaks the planner's
   # contract, and no such combat disagrees with the cards' text.
   exhaustive:
@@ -73,5 +73,5 @@ jobs:
         with:
           toolchain: "1.97.0"
 
-      - name: Check every small board and every equipped fight
+      - name: Check every small board and every equipped or enchanted fight
         run: scripts/prove.sh exhaustive
