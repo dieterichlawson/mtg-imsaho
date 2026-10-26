@@ -116,18 +116,20 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
             // (CR 614.12b — the choice is made as it enters, and the entry
             // waits for it), so the 0/0 window this used to carve an
             // exemption for no longer exists.
-            match effective_t {
-                Some(t) if t <= 0 => {
+            // Which of 704.5f-h applies is proved in
+            // `mtg_kernel::sba::creature_fate`.
+            match effective_t.map(|t| mtg_kernel::sba::creature_fate(t, damage, deathtouch)) {
+                Some(mtg_kernel::sba::Fate::ZeroToughness) => {
                     // Rule 704.5f: 0 or less toughness — not destruction,
                     // indestructible and regeneration do NOT prevent this.
                     zero_toughness_ids.push(id);
                 }
-                Some(t) if i32::try_from(damage).unwrap_or(i32::MAX) >= t || (deathtouch && damage > 0) => {
+                Some(mtg_kernel::sba::Fate::Destroyed) => {
                     // Rules 704.5g/h: lethal damage or deathtouch — destruction,
                     // checked via try_destroy (indestructible / regeneration apply).
                     destroyed_ids.push(id);
                 }
-                _ => {}
+                Some(mtg_kernel::sba::Fate::Stays) | None => {}
             }
         }
 
@@ -224,9 +226,11 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
             if let Some(obj) = state.objects.get_mut(&id) {
                 let plus = *obj.counters.get(&crate::types::CounterType::PlusOnePlusOne).unwrap_or(&0);
                 let minus = *obj.counters.get(&crate::types::CounterType::MinusOneMinusOne).unwrap_or(&0);
-                let annihilate = plus.min(minus);
-                *obj.counters.entry(crate::types::CounterType::PlusOnePlusOne).or_insert(0) -= annihilate;
-                *obj.counters.entry(crate::types::CounterType::MinusOneMinusOne).or_insert(0) -= annihilate;
+                // Proved in `mtg_kernel::sba::annihilate`: the smaller number
+                // of each, so the net effect on P/T is unchanged.
+                let (plus_left, minus_left) = mtg_kernel::sba::annihilate(plus, minus);
+                obj.counters.insert(crate::types::CounterType::PlusOnePlusOne, plus_left);
+                obj.counters.insert(crate::types::CounterType::MinusOneMinusOne, minus_left);
                 took_action = true;
             }
         }
