@@ -357,26 +357,39 @@ and four graveyard cards chosen for their differences.
   "another". A trigger asks its own questions, so the engine is replayed
   every way they can be answered, and the set of games that can result
   must be the set the text allows. Flash is held to the timing rule.
+- **Werewolves**, both faces: transformed at an upkeep after a turn with
+  no spells, and back after a turn of two, alongside the two werewolves
+  already on the board.
+- **Enchantments**: Auras on a creature or a player and anthems whose
+  static abilities change power, toughness and keywords, with an Aura
+  attached to nothing put into its owner's graveyard.
+- **Lands**: entering tapped or not, and the mana each tap makes.
+- **Activated abilities** on creatures, lands and artifacts, paid with
+  mana, {T} and sacrificing the source, at every target the text allows,
+  with "activate only once each turn".
 
-76 of the pool's 201 instants, sorceries and creatures are read, and all
-agree: 373 casts and deaths. Every template has been shown to catch a
-deliberate bug in a card that uses it (Lightning Bolt dealing 2, Doom Blade
-sparing green, Midnight Haunting's Spirits without flying, Brimstone
-Volley's morbid amount, Travel Preparations' counter, Gnaw to the Bone's
-count, Dissipate countering to the graveyard, Morkrut Banshee's -4/-4,
-Slayer of the Wicked sparing Zombies, Pitchburn Devils' death damage), and
-the failure names the cast and the difference. Not yet read: activated
-abilities, upkeep and combat triggers, static abilities other than
-keywords, additional costs, X, choices made by an opponent, randomness,
-copies and transformations, and every land, artifact and enchantment.
-Each is a template, or a board, to add; `CARDS_READ` keeps the number read
-from falling.
+112 of the pool's 268 instants, sorceries, creatures, enchantments, lands
+and artifacts are read, and all agree. Every template has been shown to
+catch a deliberate bug in a card that uses it (Lightning Bolt dealing 2,
+Doom Blade sparing green, Midnight Haunting's Spirits without flying,
+Brimstone Volley's morbid amount, Travel Preparations' counter, Gnaw to the
+Bone's count, Dissipate countering to the graveyard, Morkrut Banshee's
+-4/-4, Slayer of the Wicked sparing Zombies, Pitchburn Devils' death
+damage, Dead Weight at -2/-1, Spectral Flight granting reach, Hinterland
+Harbor checking for a Plains, Feral Ridgewolf pumping +1/+0, a werewolf's
+back face one toughness off), and the failure names the cast and the
+difference. Not yet read: combat triggers, upkeep triggers other than
+werewolves', static abilities that are not changes to power, toughness and
+keywords ("can't block"), additional costs, X, choices made by an
+opponent, randomness, copies, equipment, and mana abilities with costs.
+Each is a template, or a board, to add; `READ` lists the cards read, and a
+change that stops reading any of them fails and names it.
 
 ### The whole engine under libFuzzer
 
-`fuzz/fuzz_targets/game.rs`. The first campaign has run for 94 minutes
-across three workers: about 17,800 whole games, a corpus of 3,100 inputs
-reaching 27,000 code edges (still climbing slowly), and no finding: no
+`fuzz/fuzz_targets/game.rs`. The first campaign has run for 109 minutes
+across three workers: about 21,000 whole games, a corpus of 3,400 inputs
+reaching 27,100 code edges (still climbing slowly), and no finding: no
 invariant broken, no panic, no overflow, no stall. The nightly job keeps the corpus from night to night,
 so each night starts from everything the last one reached.
 
