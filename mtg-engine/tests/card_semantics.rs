@@ -53,7 +53,7 @@
 
 mod common;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use common::*;
 use mtg_engine::actions::{Action, CastTargetSpec, CombatPrompt, ResolvedChoice, Target};
@@ -312,6 +312,8 @@ enum Effect {
     Draw { n: usize },
     /// "You gain N life" (CR 119.3).
     GainLife { n: i32 },
+    /// "You lose N life".
+    YouLoseLife { n: i32 },
     /// "<player slot> loses N life".
     LoseLife { slot: usize, n: i32 },
     /// "<player slot> mills N cards" (CR 701.17).
@@ -469,6 +471,8 @@ struct Spec {
     /// "At the beginning of your upkeep, ..." or, on a Curse, "... of
     /// enchanted player's upkeep, ...".
     upkeep: Option<Box<Upkeep>>,
+    /// "At the beginning of your end step, ..." or "... of each end step".
+    end_step: Option<Box<EndStep>>,
     /// An Aura's "Enchant creature" / "Enchant player" (CR 303.4a, 702.5):
     /// the slot its spell targets, the first of `slots`.
     enchants: bool,
@@ -927,11 +931,61 @@ fn read_upkeep(line: &str) -> Option<Upkeep> {
         Some(r) => (false, r),
         None => (true, line.strip_prefix("At the beginning of enchanted player's upkeep, ")?),
     };
-    let mut chars = rest.chars();
-    let sentence: String = chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default();
-    let mut trigger = Trigger::default();
-    trigger.spec.sentence(&sentence)?;
+    let (optional, rest) = match rest.strip_prefix("you may ") {
+        Some(r) => (true, r),
+        None => (false, rest),
+    };
+    let mut trigger = Trigger { optional, ..Trigger::default() };
+    trigger.spec.sentence(&capitalized(rest))?;
     Some(Upkeep { enchanted_player, trigger })
+}
+
+/// "At the beginning of <your|each> end step, [if <condition>,] <effect>"
+/// (CR 513.1a, 603.2): an intervening "if" (603.4) that a creature died
+/// this turn, which "Morbid — " heads, or that this creature didn't
+/// attack.
+#[derive(Debug, Clone, PartialEq)]
+struct EndStep {
+    /// Each player's end step, not only its controller's.
+    each: bool,
+    /// "if this creature didn't attack this turn".
+    unless_attacked: bool,
+    trigger: Trigger,
+}
+
+fn read_end_step(line: &str) -> Option<EndStep> {
+    let (morbid, line) = match line.strip_prefix("Morbid — ") {
+        Some(r) => (true, r),
+        None => (false, line),
+    };
+    let (each, rest) = match line.strip_prefix("At the beginning of your end step, ") {
+        Some(r) => (false, r),
+        None => (true, line.strip_prefix("At the beginning of each end step, ")?),
+    };
+    let (if_morbid, rest) = match rest.strip_prefix("if a creature died this turn, ") {
+        Some(r) => (true, r),
+        None => (false, rest),
+    };
+    if if_morbid != morbid {
+        return None;
+    }
+    let (unless_attacked, rest) = match rest.strip_prefix("if this creature didn't attack this turn, ") {
+        Some(r) => (true, r),
+        None => (false, rest),
+    };
+    // "tap this creature, then transform it": two instructions, in order.
+    let rest = capitalized(rest).replace(", then transform it.", ". Transform this creature.");
+    let mut trigger = Trigger { if_morbid, ..Trigger::default() };
+    for sentence in rest.split_inclusive(". ") {
+        trigger.spec.sentence(sentence)?;
+    }
+    Some(EndStep { each, unless_attacked, trigger })
+}
+
+/// `text` with its first letter a capital, as a sentence of its own.
+fn capitalized(text: &str) -> String {
+    let mut chars = text.chars();
+    chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default()
 }
 
 impl Spec {
@@ -1086,6 +1140,15 @@ impl Spec {
         }
         // The ability's source ("This creature gets +2/+0 until end of
         // turn", "Return this creature to its owner's hand").
+        if s == "Tap this creature" {
+            let slot = self.slot(Slot::This);
+            self.effects.push(Effect::Tap { slot, tapped: true });
+            return Some(());
+        }
+        if let Some(n) = s.strip_prefix("You lose ").and_then(|r| r.strip_suffix(" life")) {
+            self.effects.push(Effect::YouLoseLife { n: number(n)?.try_into().ok()? });
+            return Some(());
+        }
         if s == "Tap enchanted creature" {
             let slot = self.slot(Slot::EnchantedCreature);
             self.effects.push(Effect::Tap { slot, tapped: true });
@@ -1690,6 +1753,10 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
             spec.upkeep = Some(Box::new(read_upkeep(line).ok_or_else(unread)?));
             continue;
         }
+        if line.contains(" end step, ") {
+            spec.end_step = Some(Box::new(read_end_step(line).ok_or_else(unread)?));
+            continue;
+        }
         if let Some((who, rest)) = line.strip_prefix("Whenever ").and_then(|r| r.split_once(" dies, ")) {
             let who = match who {
                 "this creature or another creature" => "creature",
@@ -1786,6 +1853,8 @@ fn back_face_reads(back: &Printed) -> Option<Spec> {
         let index = spec.mana.iter().map(ManaAbility::indices).sum::<usize>() + spec.activated.len();
         if line == "At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature." {
             spec.werewolf = true;
+        } else if line.contains(" end step, ") {
+            spec.end_step = Some(Box::new(read_end_step(line)?));
         } else if line.split(',').map(str::trim).all(|w| keyword_named(w).is_some()) || spec.combat.read(line).is_some() {
         } else if let Some(st) = creature_static(line) {
             spec.statics.push(st);
@@ -2359,6 +2428,12 @@ struct World {
     /// own asks (CR 701.27f); empty for an ability resolving as it was
     /// activated, nothing between.
     faces_put: BTreeMap<ObjectId, bool>,
+    /// The triggered abilities put on the stack (CR 603.3), which the turn
+    /// tests compare with what the engine puts there: one whose
+    /// intervening "if" is false does not trigger at all (603.4). One with
+    /// no legal target is not counted, as the engine never puts it there
+    /// (603.3d).
+    triggered: u32,
     /// Permanents the reference has no engine id for: tokens, and the
     /// permanent a creature spell becomes.
     tokens: Vec<Model>,
@@ -2713,6 +2788,9 @@ impl World {
     }
 }
 
+/// A way to build a board: [`board`], or one of its variants.
+type Build = fn(&CardRegistry, &BTreeMap<String, Printed>) -> (GameState, World);
+
 /// The board, built in the engine, and the same board as the reference
 /// sees it.
 fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameState, World) {
@@ -2731,6 +2809,7 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
         shuffled: [false, false],
         x: 0,
         faces_put: BTreeMap::new(),
+        triggered: 0,
         tokens: Vec::new(),
         life: [20, 20],
         pool: [BTreeMap::new(), BTreeMap::new()],
@@ -3426,6 +3505,7 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 }
             }
             Effect::GainLife { n } => w.life[c] += n,
+            Effect::YouLoseLife { n } => w.life[c] -= n,
             Effect::LoseLife { slot, n } => {
                 if let Some(p) = player(*slot) {
                     w.life[p] -= n;
@@ -3813,6 +3893,24 @@ fn next_turn_outcomes(spec: &Spec, world: &World, id: ObjectId, active: PlayerId
         .collect()
 }
 
+/// Every way the end step of `active`'s turn can go on `world`, where `id`
+/// is the permanent read as `spec`: its end-step trigger, if its text says
+/// this is its end step and its intervening "if" holds, resolves each way
+/// it can (CR 513.1a, 603.4); nothing has attacked this turn. Mana empties
+/// as the main phase ends (500.4).
+fn end_step_outcomes(spec: &Spec, world: &World, id: ObjectId, active: PlayerId) -> Vec<World> {
+    let mut w = world.clone();
+    w.pool = [BTreeMap::new(), BTreeMap::new()];
+    w.source = Some(id);
+    let controller = w.permanents.get(&id).map_or(P0, |m| m.controller);
+    match spec.end_step.as_deref() {
+        Some(end) if (end.each || controller == active) && (!end.trigger.if_morbid || w.a_creature_died) => {
+            triggers_outcomes(&[&end.trigger], &w, controller)
+        }
+        _ => vec![w],
+    }
+}
+
 /// Every way `trigger`, controlled by `caster`, can resolve on `world`:
 /// each set of targets it allows, and declining when it says "you may". No
 /// legal target and it is removed from the stack (CR 603.3d).
@@ -3821,7 +3919,8 @@ fn trigger_outcomes(trigger: &Trigger, world: &World, caster: PlayerId) -> Vec<W
     if sets.is_empty() {
         return vec![world.clone()];
     }
-    let put = world.with_faces_put();
+    let mut put = world.with_faces_put();
+    put.triggered += 1;
     let mut out = Vec::new();
     for targets in sets {
         for way in resolution_ways(&trigger.spec, &put, &targets, caster) {
@@ -3830,7 +3929,7 @@ fn trigger_outcomes(trigger: &Trigger, world: &World, caster: PlayerId) -> Vec<W
             out.push(after);
         }
         if trigger.optional {
-            out.push(world.clone());
+            out.push(put.clone());
         }
     }
     out.into_iter().map(|mut w| { w.faces_put.clear(); w }).collect()
@@ -3859,7 +3958,9 @@ fn triggers_outcomes(triggers: &[&Trigger], world: &World, caster: PlayerId) -> 
                 .collect();
         }
         for chosen in choices {
-            let mut worlds = vec![world.with_faces_put()];
+            let mut put = world.with_faces_put();
+            put.triggered += u32::try_from(chosen.iter().filter(|c| c.is_some()).count()).expect("a few");
+            let mut worlds = vec![put];
             for (k, &i) in order.iter().enumerate().rev() {
                 let Some(targets) = &chosen[k] else { continue };
                 let trigger = triggers[i];
@@ -4329,18 +4430,18 @@ const READ: &[&str] = &[
     "Battleground Geist", "Blasphemous Act", "Bloodcrazed Neonate", "Bloodgift Demon",
     "Bonds of Faith", "Boneyard Wurm", "Brain Weevil", "Bramblecrush", "Brimstone Volley",
     "Bump in the Night", "Butcher's Cleaver", "Caravan Vigil", "Cellar Door", "Chapel Geist",
-    "Claustrophobia", "Clifftop Retreat", "Cobbled Wings", "Coral Merfolk", "Corpse Lunge",
-    "Counterspell", "Curse of Death's Hold", "Curse of Oblivion", "Curse of Stalked Prey",
-    "Curse of the Bloody Tome", "Curse of the Nightly Hunt", "Curse of the Pierced Heart",
-    "Darkthicket Wolf", "Daybreak Ranger", "Dead Weight", "Demonmail Hauberk",
-    "Deranged Assistant", "Desperate Ravings", "Devil's Play", "Diregraf Ghoul",
-    "Disciple of Griselbrand", "Dissipate", "Divination", "Divine Reckoning", "Doom Blade",
-    "Doomed Traveler", "Dream Twist", "Elder Cathar", "Elder of Laurels", "Elite Inquisitor",
-    "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread", "Feral Ridgewolf",
-    "Festerhide Boar", "Forest", "Fortress Crab", "Full Moon's Rise", "Furor of the Bitten",
-    "Gallows Warden", "Gatstaf Shepherd", "Gavony Township", "Geist of Saint Traft",
-    "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame", "Ghost Quarter",
-    "Ghostly Possession", "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth",
+    "Claustrophobia", "Clifftop Retreat", "Cloistered Youth", "Cobbled Wings", "Coral Merfolk",
+    "Corpse Lunge", "Counterspell", "Curse of Death's Hold", "Curse of Oblivion",
+    "Curse of Stalked Prey", "Curse of the Bloody Tome", "Curse of the Nightly Hunt",
+    "Curse of the Pierced Heart", "Darkthicket Wolf", "Daybreak Ranger", "Dead Weight",
+    "Demonmail Hauberk", "Deranged Assistant", "Desperate Ravings", "Devil's Play",
+    "Diregraf Ghoul", "Disciple of Griselbrand", "Dissipate", "Divination", "Divine Reckoning",
+    "Doom Blade", "Doomed Traveler", "Dream Twist", "Elder Cathar", "Elder of Laurels",
+    "Elite Inquisitor", "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread",
+    "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab", "Full Moon's Rise",
+    "Furor of the Bitten", "Gallows Warden", "Gatstaf Shepherd", "Gavony Township",
+    "Geist of Saint Traft", "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame",
+    "Ghost Quarter", "Ghostly Possession", "Ghoulcaller's Bell", "Ghoulraiser", "Giant Growth",
     "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms", "Grave Bramble",
     "Graveyard Shovel", "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity",
     "Hanweir Watchkeep", "Harvest Pyre", "Hinterland Harbor", "Hollowhenge Scavenger",
@@ -4355,22 +4456,22 @@ const READ: &[&str] = &[
     "Naturalize", "Nephalia Drownyard", "Night Revelers", "Olivia Voldaren",
     "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism", "Paraselene", "Pitchburn Devils",
     "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower", "Rakish Heir",
-    "Rally the Peasants", "Ranger's Guile", "Rebuke", "Reckless Waif", "Riot Devils",
-    "Rolling Temblor", "Rotting Fensnake", "Runechanter's Pike", "Savannah Lions",
-    "Scourge of Geier Reach", "Selfless Cathar", "Selhoff Occultist", "Sensory Deprivation",
-    "Sever the Bloodline", "Sharpened Pitchfork", "Shimmering Grotto", "Silent Departure",
-    "Silver-Inlaid Dagger", "Silverchase Fox", "Skaab Goliath", "Skirsdag Cultist",
-    "Slayer of the Wicked", "Smite the Monstrous", "Sol Ring", "Somberwald Spider",
-    "Spectral Flight", "Spectral Rider", "Spider Spawning", "Spidery Grasp", "Splinterfright",
-    "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist",
-    "Sulfur Falls", "Swamp", "Swords to Plowshares", "Think Twice", "Thraben Purebloods",
-    "Thraben Sentry", "Tormented Pariah", "Traitorous Blood", "Travel Preparations",
-    "Traveler's Amulet", "Tree of Redemption", "Tribute to Hunger", "Typhoid Rats",
-    "Ulvenwald Mystics", "Unburial Rites", "Unruly Mob", "Urgent Exorcism",
-    "Vampire Interloper", "Vampiric Fury", "Victim of Night", "Village Bell-Ringer",
-    "Village Cannibals", "Village Ironsmith", "Villagers of Estwald", "Voiceless Spirit",
-    "Walking Corpse", "Wooden Stake", "Woodland Cemetery", "Woodland Sleuth",
-    "Wreath of Geists",
+    "Rally the Peasants", "Ranger's Guile", "Reaper from the Abyss", "Rebuke", "Reckless Waif",
+    "Riot Devils", "Rolling Temblor", "Rotting Fensnake", "Runechanter's Pike",
+    "Savannah Lions", "Scourge of Geier Reach", "Selfless Cathar", "Selhoff Occultist",
+    "Sensory Deprivation", "Sever the Bloodline", "Sharpened Pitchfork", "Shimmering Grotto",
+    "Silent Departure", "Silver-Inlaid Dagger", "Silverchase Fox", "Skaab Goliath",
+    "Skirsdag Cultist", "Slayer of the Wicked", "Smite the Monstrous", "Sol Ring",
+    "Somberwald Spider", "Spectral Flight", "Spectral Rider", "Spider Spawning",
+    "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble",
+    "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp", "Swords to Plowshares",
+    "Think Twice", "Thraben Purebloods", "Thraben Sentry", "Tormented Pariah",
+    "Traitorous Blood", "Travel Preparations", "Traveler's Amulet", "Tree of Redemption",
+    "Tribute to Hunger", "Typhoid Rats", "Ulvenwald Mystics", "Unburial Rites", "Unruly Mob",
+    "Urgent Exorcism", "Vampire Interloper", "Vampiric Fury", "Victim of Night",
+    "Village Bell-Ringer", "Village Cannibals", "Village Ironsmith", "Villagers of Estwald",
+    "Voiceless Spirit", "Walking Corpse", "Wooden Stake", "Woodland Cemetery",
+    "Woodland Sleuth", "Wreath of Geists",
 ];
 
 // ---- the properties ----
@@ -4393,7 +4494,6 @@ fn the_board_is_what_its_cards_print() {
 /// as observed; and if not, each ending only one side reaches, against the
 /// nearest the other does.
 fn disagreement(want: &[World], got: &Result<Vec<GameState>, String>, registry: &CardRegistry) -> Option<String> {
-    use std::collections::BTreeSet;
     let got = match got {
         Ok(endings) => endings,
         Err(why) => return Some(why.clone()),
@@ -4431,7 +4531,6 @@ fn disagreement(want: &[World], got: &Result<Vec<GameState>, String>, registry: 
 /// on a board where a creature has died this turn as well.
 #[test]
 fn every_readable_card_does_what_its_text_says() {
-    type Build = fn(&CardRegistry, &BTreeMap<String, Printed>) -> (GameState, World);
     let registry = registry();
     let cache = oracle_cache();
     let (cards, _) = readable(&registry, &cache);
@@ -5011,13 +5110,79 @@ fn every_turn_begins_as_its_text_says() {
             // first question after the draw is the active player's land
             // drop.
             let got = every_scene_ending(&state, &registry, Scene::Until(Step::PrecombatMain));
-            if let Some(why) = disagreement(&want, &got, &registry) {
+            if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &state, &got)) {
                 failures.push(format!("{} in player {}'s turn: {why}", card.name, active.0));
             }
         }
     }
     assert!(upkeeps > 0);
     assert!(failures.is_empty(), "{} of {upkeeps} upkeeps disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+}
+
+/// The number of things the engine put on the stack on the way from `from`
+/// to each of `endings`, against the triggers the reference put there on
+/// the way from `world` to each of `want`: the same, whichever way it went
+/// (CR 603.3, 603.4). None when they agree.
+fn stack_disagreement(want: &[World], world: &World, from: &GameState, endings: &Result<Vec<GameState>, String>) -> Option<String> {
+    let text: Vec<u64> = want.iter().map(|w| u64::from(w.triggered - world.triggered)).collect::<BTreeSet<_>>().into_iter().collect();
+    let engine: Vec<u64> = endings.as_ref().ok()?.iter().map(|s| s.stack_puts - from.stack_puts).collect::<BTreeSet<_>>().into_iter().collect();
+    (text != engine).then(|| format!("the engine put {engine:?} on the stack, and the text triggers {text:?}"))
+}
+
+/// Every permanent the grammar reads with an end-step trigger, either face
+/// up, on the board and on the board after a death: from the postcombat
+/// main phase of each player's turn, in which nothing attacked, the engine
+/// must play on into the next turn's main phase exactly as the reference
+/// does: the trigger resolved every way its text allows in the end step it
+/// names, when its intervening "if" holds, and in no other (CR 513.1a,
+/// 603.4); then the cleanup, and the next turn's untap, upkeep and draw,
+/// with the face that is up by then (514, 502.3, 503.1a, 504.1). One spell
+/// is cast in the turn, so that no werewolf transforms.
+#[test]
+fn every_turn_ends_as_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let backs = back_faces(&cards);
+    let mut failures = Vec::new();
+    let mut ends = 0;
+    let boards: [(&str, Build); 2] = [("", board), (" after a death", board_after_a_death)];
+    for (card, spec) in cards.iter().chain(&backs).filter(|(_, s)| s.end_step.is_some()) {
+        // The other face's text, for the next turn's upkeep if its trigger
+        // turned the permanent over.
+        let front = cached_oracle().values().find(|f| f.back.as_ref().is_some_and(|b| b.name == card.name));
+        let other: Option<Spec> = match front {
+            Some(f) => read_creature(f).ok(),
+            None => card.back.as_deref().and_then(back_face_reads),
+        };
+        for &(which, build) in &boards {
+            for active in [P0, P1] {
+                ends += 1;
+                let (mut state, mut world) = build(&registry, &cache);
+                let id = place_face(&mut state, &mut world, &registry, card, spec, P0);
+                world.refresh();
+                state.step = Step::PostcombatMain;
+                state.active_player = active;
+                state.priority_player = Some(active);
+                state.num_spells_cast_this_turn = BTreeMap::from([(active, 1)]);
+                let next = if active == P0 { P1 } else { P0 };
+                let placed = world.permanents[&id].transformed;
+                let want: Vec<World> = end_step_outcomes(spec, &world, id, active).into_iter()
+                    .flat_map(|w| {
+                        let turned = w.permanents.get(&id).is_some_and(|m| m.transformed != placed);
+                        let now = if turned { other.as_ref().expect("the face it turned to reads") } else { spec };
+                        next_turn_outcomes(now, &w, id, next)
+                    })
+                    .collect();
+                let got = every_scene_ending(&state, &registry, Scene::NextTurn(Step::PrecombatMain));
+                if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &state, &got)) {
+                    failures.push(format!("{} in player {}'s turn{which}: {why}", card.name, active.0));
+                }
+            }
+        }
+    }
+    assert!(ends > 0);
+    assert!(failures.is_empty(), "{} of {ends} end steps disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
 // ---- combat ----
@@ -5338,6 +5503,7 @@ fn arena_with(registry: &CardRegistry, attacker: (&Printed, &Spec), blocker: Opt
         shuffled: [false, false],
         x: 0,
         faces_put: BTreeMap::new(),
+        triggered: 0,
         tokens: Vec::new(),
         life: [20, 20],
         pool: [BTreeMap::new(), BTreeMap::new()],
