@@ -507,6 +507,10 @@ struct Spec {
     on_cast: Option<Box<CastWatch>>,
     /// "Whenever another <creature> enters, ...".
     on_enter: Option<Box<EnterWatch>>,
+    /// An Aura's 'Enchanted creature ... has "{B}: Regenerate this
+    /// creature."': activated abilities of the creature it is attached to,
+    /// "this creature" being that creature (CR 113.2c, 604.1).
+    grants: Vec<Activated>,
     /// An Aura's "Enchant creature" / "Enchant player" (CR 303.4a, 702.5):
     /// the slot its spell targets, the first of `slots`.
     enchants: bool,
@@ -2189,7 +2193,7 @@ fn read_enchantment(card: &Printed) -> Result<Spec, String> {
             spec.statics.extend(statics);
             continue;
         }
-        if line.contains(": ") {
+        if line.contains(": ") && !line.contains(" has \"") {
             let index = spec.activated.len();
             spec.activated.push(read_activated(line, index).ok_or_else(unread)?);
             continue;
@@ -2203,6 +2207,14 @@ fn read_enchantment(card: &Printed) -> Result<Spec, String> {
             continue;
         }
         if let Some(rest) = body.strip_prefix("Enchanted creature ") {
+            // 'gets +1/+1 and has "{B}: Regenerate this creature."'
+            let rest = match rest.split_once(" and has \"").and_then(|(c, a)| Some((c, a.strip_suffix('"')?))) {
+                Some((change, ability)) => {
+                    spec.grants.push(read_activated(ability, 0).ok_or_else(unread)?);
+                    change
+                }
+                None => rest,
+            };
             spec.statics.push(attached_static(rest, None).ok_or_else(unread)?);
             continue;
         }
@@ -4861,8 +4873,8 @@ const READ: &[&str] = &[
     "Savannah Lions", "Scourge of Geier Reach", "Selfless Cathar", "Selhoff Occultist",
     "Sensory Deprivation", "Sever the Bloodline", "Sharpened Pitchfork", "Shimmering Grotto",
     "Silent Departure", "Silver-Inlaid Dagger", "Silverchase Fox", "Skaab Goliath",
-    "Skirsdag Cultist", "Slayer of the Wicked", "Smite the Monstrous", "Sol Ring",
-    "Somberwald Spider", "Spectral Flight", "Spectral Rider", "Spider Spawning",
+    "Skeletal Grimace", "Skirsdag Cultist", "Slayer of the Wicked", "Smite the Monstrous",
+    "Sol Ring", "Somberwald Spider", "Spectral Flight", "Spectral Rider", "Spider Spawning",
     "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble",
     "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp", "Swords to Plowshares",
     "Think Twice", "Thraben Purebloods", "Thraben Sentry", "Tormented Pariah",
@@ -6446,6 +6458,101 @@ fn every_enter_watcher_sees_what_its_text_says() {
     }
     assert!(casts > 0);
     assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+}
+
+/// Every activated ability an Aura the grammar reads grants, on the
+/// caster's Grizzly Bears with the Aura attached: offered on the Bears as
+/// the Aura's (CR 113.2c, 604.1) at exactly the targets its text allows,
+/// and resolving as its text says, "this creature" being the Bears; a
+/// regeneration shield then stopping lethal damage (701.19c); and, with
+/// the Aura gone, offered no longer.
+#[test]
+fn every_granted_ability_does_what_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let mut failures = Vec::new();
+    let mut checked = 0;
+    for (card, spec) in cards.iter().filter(|(_, s)| !s.grants.is_empty()) {
+        let aura_card = registry.get_id_by_name(&card.name).expect("registered");
+        for ability in &spec.grants {
+            checked += 1;
+            let name = format!("{}'s granted ability {}", card.name, ability.index);
+            let (mut state, mut world) = board(&registry, &cache);
+            let bears = world.permanents.iter()
+                .find(|(_, m)| m.name.as_deref() == Some("Grizzly Bears") && m.controller == P0)
+                .map(|(id, _)| *id)
+                .expect("on the board");
+            let aura = named_permanent(&mut state, &registry, &card.name, P0);
+            state.attach(aura, bears);
+            world.permanents.insert(aura, Model { attached: Some(Target::Object(bears)), ..model_of(spec, card, P0) });
+            world.refresh();
+            world.source = Some(bears);
+            fund(&mut state, P0, &ability.mana, 0);
+            let offered_here = |state: &GameState| -> Vec<Action> {
+                engine::legal_actions(state, &registry).actions.into_iter()
+                    .filter(|a| matches!(a, Action::ActivateAbility { object_id, ability_index, source_card_id, .. }
+                        if *object_id == bears && *ability_index == ability.index && *source_card_id == Some(aura_card)))
+                    .collect()
+            };
+            let chosen = |set: &[Target]| -> Vec<Target> {
+                set.iter().zip(&ability.spec.slots).filter(|(_, s)| !matches!(s, Slot::This)).map(|(t, _)| t.clone()).collect()
+            };
+            let expected = target_sets(&ability.spec, &world, P0);
+            let offers = offered_here(&state);
+            let mut offered: Vec<Vec<Target>> = offers.iter()
+                .map(|a| match a { Action::ActivateAbility { targets, .. } => targets.clone(), _ => unreachable!() })
+                .collect();
+            offered.sort_by_key(|t| t.iter().map(target_key).collect::<Vec<_>>());
+            let mut wanted: Vec<Vec<Target>> = expected.iter().map(|s| chosen(s)).collect();
+            wanted.sort_by_key(|t| t.iter().map(target_key).collect::<Vec<_>>());
+            if offered != wanted {
+                failures.push(format!("{name}: offered at {offered:?}, the text allows {wanted:?}"));
+                continue;
+            }
+            for full in &expected {
+                let act = offers.iter()
+                    .find(|a| matches!(a, Action::ActivateAbility { targets, .. } if *targets == chosen(full)))
+                    .expect("offered, as just compared")
+                    .clone();
+                let mut paid = world.clone();
+                if ability.tap {
+                    paid.permanents.get_mut(&bears).expect("the Bears").tapped = true;
+                }
+                let want: Vec<World> = resolution_ways(&ability.spec, &paid, full, P0).iter()
+                    .map(|w| {
+                        let mut after = apply(&ability.spec, w, full, P0);
+                        after.state_based_actions();
+                        after
+                    })
+                    .collect();
+                let endings = every_ending_from(&state, &registry, None, Some(act));
+                if let Some(why) = disagreement(&want, &endings, &registry) {
+                    failures.push(format!("{name} at {full:?}: {why}"));
+                    continue;
+                }
+                // A shield, then lethal damage, which it must stop.
+                if let (true, Ok([after]), [w]) = (ability.spec.effects.iter().any(|e| matches!(e, Effect::Regenerate { .. })), endings.as_deref(), &want[..]) {
+                    let (mut engine_side, mut text) = (after.clone(), w.clone());
+                    let lethal = u32::try_from(w.pt_of(&w.permanents[&bears]).1.unwrap_or(1).max(1)).expect("positive");
+                    engine_side.get_object_mut(bears).expect("on the battlefield").damage_marked = lethal;
+                    text.permanents.get_mut(&bears).expect("on the battlefield").damage = lethal;
+                    text.state_based_actions();
+                    if let Some(why) = disagreement(&[text], &every_ending(&engine_side, &registry, None), &registry) {
+                        failures.push(format!("{name}, then dealt lethal damage: {why}"));
+                    }
+                }
+            }
+            // The Aura gone, the ability goes with it.
+            let mut gone = state.clone();
+            gone.move_object(aura, Zone::Graveyard, &registry);
+            if !offered_here(&gone).is_empty() {
+                failures.push(format!("{name}: still offered with the Aura gone"));
+            }
+        }
+    }
+    assert!(checked > 0);
+    assert!(failures.is_empty(), "{} of {checked} granted abilities disagree with their text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
 /// Every creature the grammar reads that does not fight in the combat
