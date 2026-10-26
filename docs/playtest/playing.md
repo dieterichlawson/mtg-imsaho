@@ -1310,3 +1310,47 @@ illegal or dubious resolutions do.
   the payment, then check the menu still offers that cast; swap the two lands'
   battlefield order and check the answer does not change. Then check each
   such prompt names its tap plan on all four surfaces (#621, #841)
+- L62 [proposed 2026-10-26, from e29fb17; tried 2026-10-26 → held: a 4/5
+  triple-blocked by 2/2s asked the attacker "At least 2 (lethal), at most 4"
+  for the first blocker, 3 was taken, the second was not asked (1 left, below
+  its lethal) and got 1, the third 0; the log's `assigned 3 … (CR 510.1c)`
+  matched. Not yet tried: trample through Kessig Wolf Run, a blocker already
+  damaged (lethal below toughness), a blocker removed by Prey Upon after
+  blocks] every legal division of a blocked attacker's damage can be chosen.
+  Since e29fb17 the attacker is asked about each blocker whenever what is left
+  exceeds its lethal and it is not a non-trampler's last blocker, not only when
+  power exceeds the blockers' total lethal. Hotseat a big non-trampler into a
+  double or triple block of small creatures and pick a non-lethal split (3-1,
+  4-0); then with trample, an already-damaged blocker, and a blocker that left
+  combat. Check the prompt's range, that no blocker past the first short of
+  lethal is asked, the log line, and the page's and LLM prompt's range for the
+  same board. The engine keeps the damage-assignment order (CR 509.2) of the
+  rules it was written to; that is deliberate, not a finding
+- L63 [proposed 2026-10-26, from 1e8cd5a, 029c3c0 and 34f2e0d; tried
+  2026-10-26 → held: with Plains, Plains, Island tapped (White:2 Blue:1
+  floating) and Unruly Mob {1}{W} plus Doomed Traveler {W} in hand, the Mob
+  took the Blue for its {1} and left White:1, and the Traveler stayed on the
+  menu; with one White floating the Mob's row read `(tap Island (your))`,
+  keeping the Plains. Not yet tried: a three-colour cost in a cycle of duals,
+  which no card in the pool has] paying from floating mana around what the
+  hand needs. Tap every land by hand before a cast, holding a second spell
+  whose colour the first could also spend; cast the first and check the pool
+  left still pays the second, and that the row's `(tap …)` names lands that
+  leave it castable
+- L64 [proposed 2026-10-26, from 06928fc; tried 2026-10-26 → held: Mikaeus,
+  the Lunarch at X = 1 from White:2 Blue:1 floating with Doomed Traveler in
+  hand showed "Pool: 1 White, 1 Blue", spent the Blue on X and left White:1.
+  `node mtg-gui/tests/xfunding.js` exits 0. Not yet tried: the page in
+  Chromium on the same board, and X that must spend the hand's colour] X
+  funding from a floating pool spends what the hand does not need first. Set
+  up an X spell with mana of two colours floating and a spell in hand needing
+  one of them; fund X below and at the pool's spare, on the CLI and on the
+  page, and check what is left
+- L65 [proposed 2026-10-26, from 416fc10; tried 2026-10-26 → 200 random v
+  random games over the coverage pairs, seeds 6500-6699, `--check-invariants`
+  on a release build: 0 non-zero exits] release builds now panic on integer
+  overflow where they used to wrap. Look for counts a game can push far:
+  Parallel Lives doubling tokens, life gained in a loop, +1/+1 counters from
+  Mikaeus or Travel Preparations every turn, X as large as the lands allow,
+  a long game's turn number; play them out under a release build and check
+  nothing panics and no number shown wraps
