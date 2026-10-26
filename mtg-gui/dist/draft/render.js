@@ -112,7 +112,7 @@ function presence(s) {
 }
 /** The status word, with the table's hand named when it picks for the seat. */
 function statusWord(s) {
-    return s.auto ? `${s.status} (table picks)` : s.status;
+    return s.auto ? `${s.status} (table${NBSP}picks)` : s.status;
 }
 function seatsTable(view) {
     const rows = view.seats.map((s) => h("tr", { class: s.seat === view.seat ? "me" : "" }, h("td", { text: String(s.seat) }), h("td", { class: "name", text: s.name + (s.seat === view.seat ? " (you)" : "") }), h("td", { text: s.kind }), h("td", { text: presence(s) }), h("td", { text: statusWord(s) }), h("td", { class: "num", text: String(s.picks) })));
@@ -156,9 +156,9 @@ function matchRow(view, m) {
     const games = m.games.map((g, i) => {
         const won = g.winner === null ? (g.abandoned ? "abandoned" : "drawn") : who(g.winner);
         const forfeit = g.forfeited_by !== undefined && g.forfeited_by !== null ? ` (${who(g.forfeited_by)} forfeited)` : "";
-        return `G${i + 1} ${won}${forfeit}`;
+        return `G${i + 1}${NBSP}${won}${forfeit}`;
     }).join(", ");
-    const status = m.status === "done" ? `done${m.result ? `, ${m.result}` : ""}` : m.status === "playing" ? "playing now" : "waiting to start";
+    const status = m.status === "done" ? `done${m.result ? `, ${tagText(m.result)}` : ""}` : m.status === "playing" ? "playing now" : "waiting to start";
     // The link is this seat's own page. It is null until the match's pages
     // are open (a beat after the pairing), and stays null for a match the
     // table settled without one (a forfeit).
@@ -177,7 +177,7 @@ function pairingsList(view) {
         return null;
     const rows = pairings.map(p => {
         const who = p.b === null ? `${seatName(view, p.a)} has a bye` : `${seatName(view, p.a)} vs ${seatName(view, p.b)}`;
-        const how = p.b === null ? "" : dashed(p.status === "done" ? p.result ?? "done" : p.status === "playing" ? "playing" : "waiting");
+        const how = p.b === null ? "" : dashed(p.status === "done" ? tagText(p.result ?? "done") : p.status === "playing" ? "playing" : "waiting");
         const mine = p.a === view.seat || p.b === view.seat;
         return h("li", { class: mine ? "me" : "" }, ...withRecords(`Round ${p.round}: ${who}${how}`));
     });
@@ -214,7 +214,7 @@ function drafting(view, state, actions) {
     const side = h("aside", { class: "side" });
     const grid = h("div", { class: "pack", id: "pack" });
     if (pack) {
-        const waiting = pack.waiting > 0 ? ` — ${pack.waiting} pack${pack.waiting === 1 ? "" : "s"} waiting` : "";
+        const waiting = pack.waiting > 0 ? dashed(`${pack.waiting} pack${pack.waiting === 1 ? "" : "s"} waiting`) : "";
         status.append(h("h2", { id: "pick-line", text: `Pack ${pack.round}, pick ${pack.pick} of ${pack.size}${waiting}` }), h("span", { class: "muted", text: dir }), h("span", { id: "countdown", class: "countdown" }));
         pack.cards.forEach((c, i) => grid.append(tile(c, state, actions, i + 1)));
         const shown = state.hover !== null ? pack.cards.find(c => c.index === state.hover)
@@ -292,7 +292,7 @@ function building(view, state, actions) {
     poolRows(list, view.pool, edit, state, actions, ready);
     const why = problem(edit, view.pool);
     const s = summary(edit, view.pool);
-    panel.append(h("h3", { text: ready ? "Deck — ready" : "Deck" }));
+    panel.append(h("h3", { text: ready ? `Deck${dashed("ready")}` : "Deck" }));
     panel.append(h("div", { class: "count-line", id: "count-line", text: `${c.spells} spells + ${c.lands} lands = ${c.total}` }));
     if (!ready && view.build_deadline_ms != null) {
         panel.append(h("div", { class: "build-timer" }, h("span", { id: "countdown", class: "countdown" }), h("span", { class: "muted", text: " to build; then the deck as you last sent it is played (basics fill a short one, up to 18 lands), or else the table builds one" })));
@@ -314,7 +314,7 @@ function building(view, state, actions) {
         panel.append(h("div", { class: "server-problem", id: "server-problem", text: `The server says: ${view.deck.problem}` }));
     }
     if (ready) {
-        panel.append(h("div", { class: "ready-line", id: "ready-line", text: "Ready — waiting for the others." }));
+        panel.append(h("div", { class: "ready-line", id: "ready-line", text: `Ready${dashed("waiting for the others.")}` }));
     }
     else {
         panel.append(h("button", { type: "button", class: "primary", id: "ready", disabled: !!why, title: why ?? "Send this deck as final", onclick: () => actions.ready() }, "Ready"));
@@ -361,7 +361,7 @@ function reviewSection(state, actions) {
                     rest.forEach((i, n) => { if (n > 0)
                         over.push(", "); over.push(card(i)); });
                     const read = state.reviewRead !== null && state.reviewRead.startsWith(`${at}:`) ? p.pack[Number(state.reviewRead.slice(at.length + 1))] : undefined;
-                    return h("li", { "data-pick": at }, h("span", { class: "review-pick" }, `${at} `, takenAt >= 0 ? card(takenAt) : p.card), p.auto ? h("span", { class: "muted", text: " (the table's pick)" }) : null, rest.length ? h("span", { class: "muted review-rest" }, " — over ", ...over) : null, read ? h("div", { class: "detail review-detail" }, cardDetail(read)) : null);
+                    return h("li", { "data-pick": at }, h("span", { class: "review-pick" }, `${at} `, takenAt >= 0 ? card(takenAt) : p.card), p.auto ? h("span", { class: "muted", text: " (the table's pick)" }) : null, rest.length ? h("span", { class: "muted review-rest" }, `${dashed("over")} `, ...over) : null, read ? h("div", { class: "detail review-detail" }, cardDetail(read)) : null);
                 })));
             }
         }
@@ -395,7 +395,7 @@ function betweenPanel(view, m, b, state, actions) {
         h("h3", { id: "between-head" }, ...withRecords(`Before game ${b.game} vs ${opponent}${b.game > 1 ? dashed(matchScore(view, m)) : ""}`)),
     ];
     if (!ready && b.deadline_ms !== null) {
-        parts.push(h("div", { class: "build-timer" }, h("span", { id: "countdown", class: "countdown" }), h("span", { class: "muted", text: " — then the game starts with the deck as it stands" })));
+        parts.push(h("div", { class: "build-timer" }, h("span", { id: "countdown", class: "countdown" }), h("span", { class: "muted", text: dashed("then the game starts with the deck as it stands") })));
     }
     if (b.you_choose) {
         // The last game's loser chooses; after a draw, whoever chose it (MTR 2.2).
@@ -403,7 +403,7 @@ function betweenPanel(view, m, b, state, actions) {
         const why = b.game === 1 ? "You won the coin flip"
             : last && last.winner === m.opponent ? `You lost game ${b.game - 1}` : `Game ${b.game - 1} was a draw, and the choice is still yours`;
         const chosen = b.play_first;
-        parts.push(h("div", { class: "play-draw", id: "play-draw" }, h("span", { text: `${why}: play first or draw first? ` }), h("button", { type: "button", id: "play-first", class: chosen === true ? "primary" : "", disabled: ready, onclick: () => actions.playDraw(true) }, "Play first"), " ", h("button", { type: "button", id: "draw-first", class: chosen === false ? "primary" : "", disabled: ready, onclick: () => actions.playDraw(false) }, "Draw first"), h("span", { class: "muted", text: chosen === null ? " (not chosen yet: you play first)" : chosen ? " — you play first" : " — you draw first" })));
+        parts.push(h("div", { class: "play-draw", id: "play-draw" }, h("span", { text: `${why}: play first or draw first? ` }), h("button", { type: "button", id: "play-first", class: chosen === true ? "primary" : "", disabled: ready, onclick: () => actions.playDraw(true) }, "Play first"), " ", h("button", { type: "button", id: "draw-first", class: chosen === false ? "primary" : "", disabled: ready, onclick: () => actions.playDraw(false) }, "Draw first"), h("span", { class: "muted", text: chosen === null ? " (not chosen yet: you play first)" : chosen ? dashed("you play first") : dashed("you draw first") })));
     }
     else {
         parts.push(h("p", { class: "muted", id: "play-draw", text: b.game === 1
@@ -416,7 +416,7 @@ function betweenPanel(view, m, b, state, actions) {
     // under the choice.
     const readyEl = ready
         ? h("div", { class: "ready-line", id: "ready-line", text: b.opponent_ready
-                ? `Ready — game ${b.game} is starting.` : `Ready — waiting for ${opponent}.` })
+                ? `Ready${dashed(`game ${b.game} is starting.`)}` : `Ready${dashed(`waiting for ${opponent}.`)}` })
         : h("div", {}, h("button", { type: "button", class: "primary", id: "sideboard-ready", disabled: !!why, title: why ?? `Start game ${b.game}`, onclick: () => actions.sideboardReady() }, `Ready for game ${b.game}`), h("div", { class: "ready-reason", id: "ready-reason", text: why ?? (b.opponent_ready ? `${opponent} is ready.` : `${opponent} is still deciding.`) }));
     if (!(b.sideboarding && edit))
         parts.push(readyEl);
@@ -456,7 +456,7 @@ function playing(view, done, state, actions) {
     }
     const rows = [
         ...view.matches.map(m => ({ round: m.round, el: matchRow(view, m) })),
-        ...byes.map(round => ({ round, el: h("li", { class: "match match-bye" }, h("div", { class: "match-head", text: `Round ${round}: a bye — counted as a match won` })) })),
+        ...byes.map(round => ({ round, el: h("li", { class: "match match-bye" }, h("div", { class: "match-head", text: `Round ${round}: a bye${dashed("counted as a match won")}` })) })),
     ].sort((a, b) => a.round - b.round);
     sections.push(h("h3", { text: "Your matches" }), rows.length ? h("ul", { class: "matches" }, ...rows.map(r => r.el)) : h("p", { class: "muted", text: "No pairings yet." }));
     sections.push(h("h3", { text: done ? "Final standings" : standingsHeading(view.standings_after) }), standingsTable(view));

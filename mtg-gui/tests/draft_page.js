@@ -103,7 +103,9 @@ async function main() {
         scrollW: document.documentElement.scrollWidth, clientW: document.documentElement.clientWidth,
         scrollH: document.documentElement.scrollHeight, clientH: document.documentElement.clientHeight,
       }));
-      const text = (sel) => page.evaluate((s) => { const el = document.querySelector(s); return el ? el.textContent : null; }, sel);
+      // The wording, with the no-break spaces that hold its units on one
+      // line (#881, #934) read as the spaces they are.
+      const text = (sel) => page.evaluate((s) => { const el = document.querySelector(s); return el ? el.textContent.replace(/\u00a0/g, " ") : null; }, sel);
       // Every visible button whose label is under 3:1 against what it is drawn on
       // (#873: a classless button was #eee on the browser's #efefef face).
       const unreadable = () => page.evaluate(() => {
@@ -522,12 +524,13 @@ async function main() {
         check(await page.$$eval(".pairings-list .rec, .match-head .rec", els => els.length) > 0 || !(await page.$(".pairings-list")), `${tag}: the pairings' records are held whole`);
         // A unit of several words holds together, and an ordinary word is
         // never broken inside: "STRANGE" / "R ZERO", "[1" / "BYE]", a tiebreak
-        // line ending "/" (#881), "(seat" / "2)" and a line ending "—" (#934).
+        // line ending "/" (#881), "(seat" / "2)" and a line ending "—" (#934),
+        // "(table" / "picks)" and "G2" / "you" (#934's review).
         // Only a word too long for any column (the 24 letters of #789) breaks.
         for (const rot of [0, 1, 2, 3]) {
           const v = JSON.parse(JSON.stringify(byName.playing));
           const names = ["Margaret", "Wilhelmina Fitzgerald", "Bartholomewmaximilianjoe", "Stranger Zero"];
-          v.seats.forEach((st, i) => { st.name = names[(i + rot) % names.length]; });
+          v.seats.forEach((st, i) => { st.name = names[(i + rot) % names.length]; st.auto = i === rot; });
           v.standings.forEach((r, i) => { r.tags = ["[1 bye]", "[substitute deck] [2 games forfeited]", "", "[1 bye]"][i % 4]; r.omw = 0.415; r.gw = 1; r.ogw = 0.5; });
           await stage(v);
           await page.waitForTimeout(50);
@@ -545,13 +548,14 @@ async function main() {
               return out.map(x => x.replace(/\s+/g, " ").trim());
             };
             const bad = [];
-            for (const el of document.querySelectorAll(".standings td, .standings th, .pairings-list li, .match-head, #between-head")) {
+            for (const el of document.querySelectorAll(".standings td, .standings th, .seats td, .pairings-list li, .match-head, .match-games, #between-head")) {
               const ls = lines(el); const full = el.textContent.replace(/\s+/g, " ");
               for (let k = 0; k < ls.length - 1; k++) {
                 const a = ls[k], c = ls[k + 1];
                 const tail = a.split(" ").pop(), head = c.split(" ")[0];
-                const midWord = /[A-Za-z0-9.]$/.test(a) && /^[A-Za-z0-9.]/.test(c) && !full.includes(`${tail} ${head}`) && (tail + head).length < 15;
-                if (midWord || /\/$/.test(a) || /\(seat$/i.test(a) || /\[\d+$/.test(a) || /—$/.test(a)) bad.push(ls.join(" | "));
+                const midWord = /[A-Za-z0-9.]$/.test(a) && /^[A-Za-z0-9.]/.test(c) && !full.includes(`${tail} ${head}`)
+                  && (full.split(" ").find(w => w.includes(tail + head)) || tail + head).replace(/[()[\]]/g, "").length < 15;
+                if (midWord || /\/$/.test(a) || /\((seat|table)$/i.test(a) || /\[\d+$/.test(a) || /—$/.test(a) || /^G\d+$/.test(tail)) bad.push(ls.join(" | "));
               }
             }
             return bad;
@@ -602,7 +606,7 @@ async function main() {
           const games = (await text(".match-done .match-games")) || "";
           check(games.includes("G1") && games.includes("(you forfeited)"), `${tag}: a forfeited game says who forfeited (${games})`);
           check(games.includes("G2 abandoned") && !games.includes("drawn"), `${tag}: an abandoned game is not a draw (${games})`);
-          const table = ((await text(".standings")) || "").replace(/\u00a0/g, " ");
+          const table = (await text(".standings")) || "";
           check(table.includes("[substitute deck] [1 game forfeited]"), `${tag}: the standings carry the tags`);
           const record = await page.$eval(".standings tbody tr:first-child td.num", td => td.textContent);
           check(table.includes("W-L-D") && /^\d+-\d+-1$/.test(record || ""), `${tag}: a drawn match is in the record (${record})`);
@@ -706,7 +710,7 @@ async function main() {
           { round: 2, pick: 1, card: "Brimstone Volley", auto: false, pack: [card("Brimstone Volley"), card("Geistflame")] },
         ] });
         await page.waitForTimeout(50);
-        const rows = await page.$$eval("#review li", els => els.map(e => e.textContent));
+        const rows = await page.$$eval("#review li", els => els.map(e => e.textContent.replace(/\u00a0/g, " ")));
         check(await page.$$eval("#review ol", els => els.length) === 0, `${tag}: the review's rows carry their pick and no second counter (#889)`);
         check(rows.length === 3 && rows[0] === "1.1 Chapel Geist — over Doomed Traveler, Moan of the Unhallowed",
           `${tag}: each pick is the card taken over the rest of its pack (${JSON.stringify(rows)})`);
