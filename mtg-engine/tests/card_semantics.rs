@@ -270,8 +270,9 @@ struct Clause {
     not_types: Vec<String>,
     /// "Vampire creatures": subtypes it must have.
     subtypes: Vec<String>,
-    /// "with power 4 or greater".
+    /// "with power 4 or greater", "with power 2 or less".
     min_power: Option<i32>,
+    max_power: Option<i32>,
     /// "without flying".
     without: Vec<Keyword>,
     /// "with flying".
@@ -489,6 +490,8 @@ struct Spec {
     end_step: Option<Box<EndStep>>,
     /// "Whenever you cast <a spell>, ...".
     on_cast: Option<Box<CastWatch>>,
+    /// "Whenever another <creature> enters, ...".
+    on_enter: Option<Box<EnterWatch>>,
     /// An Aura's "Enchant creature" / "Enchant player" (CR 303.4a, 702.5):
     /// the slot its spell targets, the first of `slots`.
     enchants: bool,
@@ -930,6 +933,9 @@ struct Trigger {
     /// "Morbid — When this creature enters, if a creature died this turn,
     /// ...": an intervening "if" (CR 603.4).
     if_morbid: bool,
+    /// "you may pay {1}. If you do, ...": what taking the "may" costs, paid
+    /// from its controller's pool (CR 118.3).
+    pay: Option<ManaCost>,
 }
 
 /// "Whenever <creatures> die, ...": a leaves-the-battlefield trigger of a
@@ -1038,6 +1044,33 @@ fn read_cast_watch(line: &str) -> Option<CastWatch> {
     Some(CastWatch { kinds, from_graveyard, trigger })
 }
 
+/// "Whenever another <creature> enters, <effect>" (CR 603.2, 603.6a): a
+/// creature entering, as it is on the battlefield, that its filter names.
+#[derive(Debug, Clone, PartialEq)]
+struct EnterWatch {
+    entering: Filter,
+    trigger: Trigger,
+}
+
+fn read_enter_watch(line: &str) -> Option<EnterWatch> {
+    let (who, rest) = line.strip_prefix("Whenever ")?.split_once(" enters, ")?;
+    let entering = filter(who)?;
+    let (optional, rest) = match rest.strip_prefix("you may ") {
+        Some(r) => (true, r),
+        None => (false, rest),
+    };
+    // "you may pay {1}. If you do, draw a card."
+    let (pay, rest) = match rest.strip_prefix("pay ").and_then(|r| r.split_once(". If you do, ")).filter(|_| optional) {
+        Some((cost, then)) => (Some(mana_cost(cost)?), then),
+        None => (None, rest),
+    };
+    let mut trigger = Trigger { optional, pay, ..Trigger::default() };
+    for sentence in capitalized(rest).split_inclusive(". ") {
+        trigger.spec.sentence(sentence)?;
+    }
+    Some(EnterWatch { entering, trigger })
+}
+
 /// `text` with its first letter a capital, as a sentence of its own.
 fn capitalized(text: &str) -> String {
     let mut chars = text.chars();
@@ -1089,13 +1122,18 @@ fn filter(text: &str) -> Option<Filter> {
     // "power 4 or greater" is one phrase, not two alternatives; "Vampire,
     // Werewolf, or Zombie" is three, where "non-Vampire, non-Werewolf
     // creature" is one with two qualifiers.
-    let mut text = text.replace(" or greater", " or_greater");
+    let mut text = text.replace(" or greater", " or_greater").replace(" or less", " or_less");
     if text.contains(", or ") {
         text = text.replace(", or ", " or ").replace(", ", " or ");
     }
     for alt in text.split(" or ") {
         let mut clause = Clause::default();
         let mut rest = alt.trim();
+        // "creature you control with power 2 or less": the power last.
+        if let Some((r, n)) = rest.split_once(" with power ").filter(|(_, n)| n.ends_with(" or_less")) {
+            clause.max_power = Some(n.strip_suffix(" or_less")?.parse().ok()?);
+            rest = r;
+        }
         for (suffix, yours) in [(" you control", Some(true)), (" you don't control", Some(false)), (" your opponents control", Some(false))] {
             if let Some(r) = rest.strip_suffix(suffix) {
                 rest = r;
@@ -1847,6 +1885,10 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
             spec.on_cast = Some(Box::new(read_cast_watch(line).ok_or_else(unread)?));
             continue;
         }
+        if line.starts_with("Whenever another ") && line.contains(" enters, ") {
+            spec.on_enter = Some(Box::new(read_enter_watch(line).ok_or_else(unread)?));
+            continue;
+        }
         if let Some((who, rest)) = line.strip_prefix("Whenever ").and_then(|r| r.split_once(" dies, ")) {
             let who = match who {
                 "this creature or another creature" => "creature",
@@ -2473,6 +2515,7 @@ impl Model {
                 && !c.not_types.iter().any(|t| self.types.contains(t) || self.subtypes.contains(t))
                 && c.subtypes.iter().all(|t| self.subtypes.contains(t))
                 && c.min_power.is_none_or(|n| self.power.is_some_and(|p| p + self.boost.0 + self.temp.0 >= n))
+                && c.max_power.is_none_or(|n| self.power.is_some_and(|p| p + self.boost.0 + self.temp.0 <= n))
                 && !c.without.iter().any(has)
                 && c.with.iter().all(has)
                 && !(c.other && is_source)
@@ -4073,7 +4116,18 @@ fn trigger_outcomes(trigger: &Trigger, world: &World, caster: PlayerId) -> Vec<W
     put.triggered += 1;
     let mut out = Vec::new();
     for targets in sets {
-        for way in resolution_ways(&trigger.spec, &put, &targets, caster) {
+        // A "may" with a cost is taken only if it can be paid.
+        let paid = match &trigger.pay {
+            Some(cost) => match paid_from_pool(&put, caster, cost) {
+                Some(w) => w,
+                None => {
+                    out.push(put.clone());
+                    continue;
+                }
+            },
+            None => put.clone(),
+        };
+        for way in resolution_ways(&trigger.spec, &paid, &targets, caster) {
             let mut after = apply(&trigger.spec, &way, &targets, caster);
             after.state_based_actions();
             out.push(after);
@@ -4083,6 +4137,30 @@ fn trigger_outcomes(trigger: &Trigger, world: &World, caster: PlayerId) -> Vec<W
         }
     }
     out.into_iter().map(|mut w| { w.faces_put.clear(); w }).collect()
+}
+
+/// `world` with `cost` paid from `player`'s mana pool, generic from what is
+/// left once the coloured pips are paid (CR 118.3, 601.2h); None if it
+/// cannot be.
+fn paid_from_pool(world: &World, player: PlayerId, cost: &ManaCost) -> Option<World> {
+    let mut w = world.clone();
+    let pool = &mut w.pool[player.0 as usize];
+    let mut generic = 0;
+    for sym in &cost.symbols {
+        match sym {
+            ManaSymbol::Colored(c) => {
+                let n = pool.get_mut(&ManaType::from(*c)).filter(|n| **n > 0)?;
+                *n -= 1;
+            }
+            ManaSymbol::Generic(n) => generic += n,
+            other => panic!("no trigger read here costs {other:?}"),
+        }
+    }
+    for _ in 0..generic {
+        let (_, n) = pool.iter_mut().find(|(_, n)| **n > 0)?;
+        *n -= 1;
+    }
+    Some(w)
 }
 
 /// Every way `triggers`, controlled by `caster` and set off at once, can
@@ -4627,15 +4705,15 @@ const READ: &[&str] = &[
     "Battleground Geist", "Blasphemous Act", "Bloodcrazed Neonate", "Bloodgift Demon",
     "Bloodline Keeper", "Bonds of Faith", "Boneyard Wurm", "Brain Weevil", "Bramblecrush",
     "Brimstone Volley", "Bump in the Night", "Burning Vengeance", "Butcher's Cleaver",
-    "Caravan Vigil", "Cellar Door", "Chapel Geist", "Charmbreaker Devils", "Civilized Scholar",
-    "Claustrophobia", "Clifftop Retreat", "Cloistered Youth", "Cobbled Wings", "Coral Merfolk",
-    "Corpse Lunge", "Counterspell", "Crossway Vampire", "Curse of Death's Hold",
-    "Curse of Oblivion", "Curse of Stalked Prey", "Curse of the Bloody Tome",
-    "Curse of the Nightly Hunt", "Curse of the Pierced Heart", "Darkthicket Wolf",
-    "Daybreak Ranger", "Dead Weight", "Demonmail Hauberk", "Deranged Assistant",
-    "Desperate Ravings", "Devil's Play", "Diregraf Ghoul", "Disciple of Griselbrand",
-    "Dissipate", "Divination", "Divine Reckoning", "Doom Blade", "Doomed Traveler",
-    "Dream Twist", "Elder Cathar", "Elder of Laurels", "Elite Inquisitor",
+    "Caravan Vigil", "Cellar Door", "Champion of the Parish", "Chapel Geist",
+    "Charmbreaker Devils", "Civilized Scholar", "Claustrophobia", "Clifftop Retreat",
+    "Cloistered Youth", "Cobbled Wings", "Coral Merfolk", "Corpse Lunge", "Counterspell",
+    "Crossway Vampire", "Curse of Death's Hold", "Curse of Oblivion", "Curse of Stalked Prey",
+    "Curse of the Bloody Tome", "Curse of the Nightly Hunt", "Curse of the Pierced Heart",
+    "Darkthicket Wolf", "Daybreak Ranger", "Dead Weight", "Demonmail Hauberk",
+    "Deranged Assistant", "Desperate Ravings", "Devil's Play", "Diregraf Ghoul",
+    "Disciple of Griselbrand", "Dissipate", "Divination", "Divine Reckoning", "Doom Blade",
+    "Doomed Traveler", "Dream Twist", "Elder Cathar", "Elder of Laurels", "Elite Inquisitor",
     "Endless Ranks of the Dead", "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread",
     "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab", "Full Moon's Rise",
     "Furor of the Bitten", "Gallows Warden", "Galvanic Juggernaut", "Gatstaf Shepherd",
@@ -4650,27 +4728,28 @@ const READ: &[&str] = &[
     "Kessig Wolf Run", "Kindercatch", "Kruin Outlaw", "Lantern Spirit", "Lava Axe",
     "Lightning Bolt", "Lost in the Mist", "Lumberknot", "Make a Wish", "Makeshift Mauler",
     "Manor Skeleton", "Markov Patrician", "Mask of Avacyn", "Mausoleum Guard",
-    "Maw of the Mire", "Mayor of Avabruck", "Midnight Haunting", "Moan of the Unhallowed",
-    "Moldgraf Monstrosity", "Moment of Heroism", "Moon Heron", "Moorland Haunt",
-    "Morkrut Banshee", "Mountain", "Murder of Crows", "Naturalize", "Nephalia Drownyard",
-    "Night Revelers", "Nightbird's Clutches", "Olivia Voldaren", "One-Eyed Scarecrow",
-    "Orchard Spirit", "Pacifism", "Paraselene", "Pitchburn Devils", "Plains", "Prey Upon",
-    "Purify the Grave", "Rage Thrower", "Rakish Heir", "Rally the Peasants", "Ranger's Guile",
-    "Reaper from the Abyss", "Rebuke", "Reckless Waif", "Riot Devils", "Rolling Temblor",
-    "Rotting Fensnake", "Runechanter's Pike", "Savannah Lions", "Scourge of Geier Reach",
-    "Selfless Cathar", "Selhoff Occultist", "Sensory Deprivation", "Sever the Bloodline",
-    "Sharpened Pitchfork", "Shimmering Grotto", "Silent Departure", "Silver-Inlaid Dagger",
-    "Silverchase Fox", "Skaab Goliath", "Skirsdag Cultist", "Slayer of the Wicked",
-    "Smite the Monstrous", "Sol Ring", "Somberwald Spider", "Spectral Flight", "Spectral Rider",
-    "Spider Spawning", "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake",
-    "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp",
-    "Swords to Plowshares", "Think Twice", "Thraben Purebloods", "Thraben Sentry",
-    "Tormented Pariah", "Traitorous Blood", "Travel Preparations", "Traveler's Amulet",
-    "Tree of Redemption", "Tribute to Hunger", "Typhoid Rats", "Ulvenwald Mystics",
-    "Unburial Rites", "Unruly Mob", "Urgent Exorcism", "Vampire Interloper", "Vampiric Fury",
-    "Victim of Night", "Village Bell-Ringer", "Village Cannibals", "Village Ironsmith",
-    "Villagers of Estwald", "Voiceless Spirit", "Walking Corpse", "Wooden Stake",
-    "Woodland Cemetery", "Woodland Sleuth", "Wreath of Geists",
+    "Maw of the Mire", "Mayor of Avabruck", "Mentor of the Meek", "Midnight Haunting",
+    "Moan of the Unhallowed", "Moldgraf Monstrosity", "Moment of Heroism", "Moon Heron",
+    "Moorland Haunt", "Morkrut Banshee", "Mountain", "Murder of Crows", "Naturalize",
+    "Nephalia Drownyard", "Night Revelers", "Nightbird's Clutches", "Olivia Voldaren",
+    "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism", "Paraselene", "Pitchburn Devils",
+    "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower", "Rakish Heir",
+    "Rally the Peasants", "Ranger's Guile", "Reaper from the Abyss", "Rebuke", "Reckless Waif",
+    "Riot Devils", "Rolling Temblor", "Rotting Fensnake", "Runechanter's Pike",
+    "Savannah Lions", "Scourge of Geier Reach", "Selfless Cathar", "Selhoff Occultist",
+    "Sensory Deprivation", "Sever the Bloodline", "Sharpened Pitchfork", "Shimmering Grotto",
+    "Silent Departure", "Silver-Inlaid Dagger", "Silverchase Fox", "Skaab Goliath",
+    "Skirsdag Cultist", "Slayer of the Wicked", "Smite the Monstrous", "Sol Ring",
+    "Somberwald Spider", "Spectral Flight", "Spectral Rider", "Spider Spawning",
+    "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble",
+    "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp", "Swords to Plowshares",
+    "Think Twice", "Thraben Purebloods", "Thraben Sentry", "Tormented Pariah",
+    "Traitorous Blood", "Travel Preparations", "Traveler's Amulet", "Tree of Redemption",
+    "Tribute to Hunger", "Typhoid Rats", "Ulvenwald Mystics", "Unburial Rites", "Unruly Mob",
+    "Urgent Exorcism", "Vampire Interloper", "Vampiric Fury", "Victim of Night",
+    "Village Bell-Ringer", "Village Cannibals", "Village Ironsmith", "Villagers of Estwald",
+    "Voiceless Spirit", "Walking Corpse", "Wooden Stake", "Woodland Cemetery",
+    "Woodland Sleuth", "Wreath of Geists",
 ];
 
 // ---- the properties ----
@@ -6156,6 +6235,80 @@ fn every_cast_watcher_sees_what_its_text_says() {
         from.stack_puts += 1;
         if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &from, &got)) {
             failures.push(format!("{} as the opponent casts Giant Growth: {why}", card.name));
+        }
+    }
+    assert!(casts > 0);
+    assert!(failures.is_empty(), "{} of {casts} casts disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
+}
+
+/// Every permanent the grammar reads with a trigger on other creatures
+/// entering, on the board under the caster, who casts the Grizzly Bears in
+/// their hand and an Elite Inquisitor, a Human, and the opponent casts an
+/// Elite Inquisitor too, in their own turn (CR 307.1). A creature its text
+/// names entering under it sets
+/// the trigger off, judged as the creature is on the battlefield (CR
+/// 603.6a), and it resolves every way it can, a "may" with a cost taken
+/// only if the mana floating pays it; any other sets off nothing, which the
+/// stack count sees.
+#[test]
+fn every_enter_watcher_sees_what_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let mut failures = Vec::new();
+    let mut casts = 0;
+    for (card, spec) in cards.iter().filter(|(_, s)| s.on_enter.is_some()) {
+        let watch = spec.on_enter.as_deref().expect("filtered");
+        // And the Bears once more with the caster's mana sources all tapped
+        // and nothing floating, so that a "may" with a cost cannot be paid.
+        for (creature, caster, broke) in [("Grizzly Bears", P0, false), ("Elite Inquisitor", P0, false), ("Elite Inquisitor", P1, false), ("Grizzly Bears", P0, true)] {
+            casts += 1;
+            let (printed, creature_spec) = (&cache[creature], read_creature(&cache[creature]).expect("reads"));
+            let (mut state, mut world) = board(&registry, &cache);
+            let watcher = place_face(&mut state, &mut world, &registry, card, spec, P0);
+            world.refresh();
+            let spell = match state.objects.values().find(|o| o.zone == Zone::Hand && o.owner == caster && o.name == creature) {
+                Some(o) => {
+                    let at = world.hand[caster.0 as usize].iter().position(|h| h == creature).expect("in the reference's hand");
+                    world.hand[caster.0 as usize].remove(at);
+                    o.id
+                }
+                None => spell_in_hand(&mut state, &registry, creature, caster),
+            };
+            fund(&mut state, caster, &mana_cost(&printed.mana_cost).expect("a cost"), 0);
+            // What the trigger's "may" costs, floating, so that its payment
+            // has one way to go.
+            if broke {
+                for (id, m) in world.permanents.iter_mut().filter(|(_, m)| m.controller == P0 && !m.is_creature()) {
+                    m.tapped = true;
+                    state.get_object_mut(*id).expect("on the battlefield").tapped = true;
+                }
+            }
+            if let Some(cost) = watch.trigger.pay.as_ref().filter(|_| caster == P0 && !broke) {
+                fund(&mut state, P0, cost, 0);
+                for sym in &cost.symbols {
+                    match sym {
+                        ManaSymbol::Generic(n) => *world.pool[0].entry(ManaType::Colorless).or_insert(0) += n,
+                        ManaSymbol::Colored(c) => *world.pool[0].entry(ManaType::from(*c)).or_insert(0) += 1,
+                        other => panic!("no trigger read here costs {other:?}"),
+                    }
+                }
+            }
+            state.active_player = caster;
+            state.priority_player = Some(caster);
+            let want: Vec<World> = creature_outcomes(&creature_spec, &world, caster, printed, spell).into_iter()
+                .flat_map(|mut w| {
+                    let entered = w.permanents.get(&spell).is_some_and(|m| m.matches_from(&watch.entering, P0, spell == watcher));
+                    w.source = Some(watcher);
+                    if entered { trigger_outcomes(&watch.trigger, &w, P0) } else { vec![w] }
+                })
+                .collect();
+            let got = every_ending_from(&state, &registry, Some(spell), Some(cast_action(spell, Vec::new())));
+            let mut from = state.clone();
+            from.stack_puts += 1;
+            if let Some(why) = disagreement(&want, &got, &registry).or_else(|| stack_disagreement(&want, &world, &from, &got)) {
+                failures.push(format!("{} as player {} casts {creature}{}: {why}", card.name, caster.0, if broke { " with no mana left" } else { "" }));
+            }
         }
     }
     assert!(casts > 0);
