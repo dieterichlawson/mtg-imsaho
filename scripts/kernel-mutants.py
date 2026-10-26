@@ -14,8 +14,11 @@ cargo-mutants cannot do this: it does not mutate inside macro bodies, and
 everything in mtg-kernel is inside `verus!`. So the mutants are listed here
 by hand, one or more per executable statement.
 
-Usage: scripts/kernel-mutants.py        (needs Verus on PATH; scripts/prove.sh
-                                         says how to install it)
+Usage: scripts/kernel-mutants.py [PREFIX...]  only the mutants whose id
+                                              starts with a PREFIX (M, C, F:
+                                              payment, combat, funding; or
+                                              F09), or all
+        (needs Verus on PATH; scripts/prove.sh says how to install it)
 
 Runs in a scratch git worktree of HEAD, so the working tree is never
 touched; results go to logs/kernel-mutants/<timestamp>/results.jsonl. A
@@ -58,10 +61,31 @@ M = [
  ("C11","mtg-kernel/src/combat.rs","        } else if remaining == least {","        } else if remaining <= least + 1 {","a choice of exactly two amounts is not asked"),
  ("C12","mtg-kernel/src/combat.rs","        let least = remaining.min(lethal_here);","        let least = remaining.min(lethal_here.saturating_sub(1));","lethal is counted one short"),
 ]
+F = "mtg-kernel/src/funding.rs"
+M += [
+ ("F01",F,"Some(d) => d <= max_taps as usize, None => false","Some(d) => d < max_taps as usize, None => false","a group's last source is never tapped"),
+ ("F02",F,"                    Some(d + 1)","                    Some(d)","a group has as many sources as it likes"),
+ ("F03",F,"        let next = step(&rows[0], q, count);","        let next = step(&rows[0], q, count.saturating_add(1));","a group has one source more than it does"),
+ ("F04",F,"        } else if s >= q as usize {","        } else if s > q as usize {","one tap more than a reachable sum is missed when it starts from nothing"),
+ ("F05",F,"    last.set(0, true);","    last.set(0, false);","tapping nothing is not a way to pay nothing"),
+ ("F06",F,"    let floor = mana.saturating_sub(pool);","    let floor = mana;","the pool only tops up what taps cannot pay exactly"),
+ ("F07",F,"    let mut sum: u64 = u64::from(floor);","    let mut sum: u64 = u64::from(floor) + 1;","a tap sum the whole pool tops up exactly is passed over"),
+ ("F08",F,"        while below > 0 && !rows[0][below as usize]","        while below > 1 && !rows[0][below as usize]","a short X stops looking below one"),
+ ("F09",F,"    let from_pool = if rest < pool { rest } else { pool };","    let from_pool = if rest < pool { rest } else { pool.saturating_sub(1) };","a short X leaves a point in the pool"),
+ ("F10",F,"        let taken: u32 = if quantum == 0 || left == 0 {","        let taken: u32 = if quantum == 0 || left == 0 || i == 0 {","the first group is never tapped"),
+ ("F11",F,"            let mut found = rows[i + 1][(left - taken * quantum) as usize];","            let mut found = true;","a group takes the most it can whether or not the rest can finish"),
+ ("F12",F,"            let mut taken = if left / quantum < count { left / quantum } else { count };","            let mut taken = if left / quantum < count { left / quantum } else { count.saturating_sub(1) };","a group holds back its last source"),
+ ("F13",F,"        if rows[0][m as usize] {","        if rows[0][m as usize] && best.is_none() {","a fundable X is measured from the smallest tap sum, not the nearest"),
+ ("F14",F,"            Some(b) => (m as u32) - b <= pool,","            Some(b) => (m as u32) - b < pool,","the whole pool never counts towards a fundable X"),
+]
 
 FOCUSED = ["lands_and_mana", "mana_filters", "autotap_brute_force", "autotap_beyond_the_hand",
            "x_cost_funding_flow", "xcost_mana", "spell_costs", "combat_damage_division",
-           "combat", "combat_rules", "planeswalker_combat", "damage_assignment_order"]
+           "combat", "combat_rules", "planeswalker_combat", "damage_assignment_order",
+           "funding_build_options", "x_cost_spells"]
+# The page's X-funding fixture: 168 boards whose answers the engine must
+# still give (`x-funding-cases.jsonl`).
+FOCUSED_PLAYER = ["gui_protocol"]
 
 
 def main():
@@ -78,7 +102,8 @@ def main():
         return p.returncode, p.stdout + p.stderr
 
     try:
-        for (mid, f, old, new, what) in M:
+        prefixes = sys.argv[1:] or [""]
+        for (mid, f, old, new, what) in (m for m in M if any(m[0].startswith(p) for p in prefixes)):
             path = os.path.join(wt, f)
             src = open(path).read()
             if src.count(old) != 1:
@@ -93,8 +118,13 @@ def main():
                     for t in FOCUSED:
                         cmd += ["--test", t]
                     rc_e, o_e = run(cmd)
-                    compiled = "test result" in o_k and "test result" in o_e
-                    tests = "caught" if rc_k or rc_e else "missed"
+                    cmd = ["cargo", "test", "-p", "mtg-player"]
+                    for t in FOCUSED_PLAYER:
+                        cmd += ["--test", t]
+                    rc_p, o_p = run(cmd)
+                    o_e += o_p
+                    compiled = "test result" in o_k and "test result" in o_e and "test result" in o_p
+                    tests = "caught" if rc_k or rc_e or rc_p else "missed"
                     if not compiled:
                         tests = "does not compile"
                     full = None
