@@ -19,6 +19,7 @@
 //!
 //! [Verus]: https://github.com/verus-lang/verus
 
+pub mod blocks;
 pub mod combat;
 pub mod funding;
 pub mod mana;
