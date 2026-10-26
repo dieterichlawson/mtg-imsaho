@@ -351,6 +351,12 @@ enum Effect {
     DamageX { slot: usize },
     /// "Regenerate this creature": a shield (CR 701.19a).
     Regenerate { slot: usize },
+    /// "Gain control of target creature until end of turn" or "for as long
+    /// as you control ~" (CR 613.2, 611.2b).
+    GainControl { slot: usize, until_end_of_turn: bool },
+    /// "That creature becomes a Vampire in addition to its other types"
+    /// (CR 205.1b): for good.
+    BecomesSubtype { slot: usize, subtype: String },
     /// "If that creature is a <subtype>, put N +1/+1 counters on it
     /// instead": the counters of the `PlusCounters` before it, `n_if` of
     /// them for a creature of that subtype.
@@ -1221,7 +1227,32 @@ impl Spec {
             self.effects.push(Effect::GainLifeEqualToSacrificedToughness);
             return Some(());
         }
-        if s == "Put a +1/+1 counter on this creature" {
+        if let Some(rest) = s.strip_prefix("Gain control of target ") {
+            let (f, until_end_of_turn) = match rest.strip_suffix(" until end of turn") {
+                Some(f) => (f, true),
+                None => (rest.strip_suffix(" for as long as you control ~")?, false),
+            };
+            let slot = self.slot(Slot::Permanent(filter(f)?));
+            self.effects.push(Effect::GainControl { slot, until_end_of_turn });
+            return Some(());
+        }
+        if s == "Untap it" {
+            let slot = self.slots.len().checked_sub(1)?;
+            self.effects.push(Effect::Tap { slot, tapped: false });
+            return Some(());
+        }
+        if let Some(gains) = s.strip_prefix("It gains ").and_then(|r| r.strip_suffix(" until end of turn")) {
+            let slot = self.slots.len().checked_sub(1)?;
+            let gains = gains.split(" and ").map(keyword_named).collect::<Option<Vec<_>>>()?;
+            self.effects.push(Effect::Pump { slot, power: 0, toughness: 0, gains });
+            return Some(());
+        }
+        if let Some(t) = s.strip_prefix("That creature becomes a ").and_then(|r| r.strip_suffix(" in addition to its other types")) {
+            let slot = self.slots.len().checked_sub(1)?;
+            self.effects.push(Effect::BecomesSubtype { slot, subtype: t.to_string() });
+            return Some(());
+        }
+        if s == "Put a +1/+1 counter on this creature" || s == "Put a +1/+1 counter on ~" {
             let slot = self.slot(Slot::This);
             self.effects.push(Effect::PlusCounters { slot, n: 1 });
             return Some(());
@@ -1966,6 +1997,9 @@ const BOARD: [(&str, PlayerId); 14] = [
     ("Burning Vengeance", P1),
 ];
 
+/// The creature on the board that starts tapped.
+const TAPPED_ON_THE_BOARD: &str = "Goblin Piker";
+
 /// What is in each graveyard to begin with, for what targets, counts or
 /// exiles cards there: three creature cards of different powers and an
 /// instant on the caster's side, a creature card and a land on the other.
@@ -2118,6 +2152,9 @@ struct Model {
     /// 514.2, 611.2a).
     temp: (i32, i32),
     temp_keywords: Vec<Keyword>,
+    /// Who controlled it before an effect that gives it back in the
+    /// cleanup step took it (CR 514.2).
+    stolen_from: Option<PlayerId>,
     /// A token that entered attacking (CR 508.4), and whether its text
     /// exiles it at end of combat.
     attacking: bool,
@@ -2155,6 +2192,7 @@ impl Model {
             shields: 0,
             temp: (0, 0),
             temp_keywords: Vec::new(),
+            stolen_from: None,
             attacking: false,
             exile_at_end_of_combat: false,
         }
@@ -2655,6 +2693,12 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
     for (name, owner) in BOARD {
         let id = named_permanent(&mut state, registry, name, owner);
         world.permanents.insert(id, Model::printed_with_faces(&cache[name], owner));
+        // One of the opponent's creatures tapped, as by an attack, so an
+        // untap has something to do.
+        if name == TAPPED_ON_THE_BOARD {
+            state.get_object_mut(id).expect("just placed").tapped = true;
+            world.permanents.get_mut(&id).expect("just placed").tapped = true;
+        }
     }
     for (name, owner) in GRAVEYARDS {
         let id = card_in_graveyard(&mut state, registry, name, owner);
@@ -2919,6 +2963,7 @@ fn creature_token((power, toughness): (i32, i32), colors: &[Color], subtypes: &[
         shields: 0,
         temp: (0, 0),
         temp_keywords: Vec::new(),
+        stolen_from: None,
         attacking: false,
         exile_at_end_of_combat: false,
     }
@@ -3023,6 +3068,23 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                     .map(|(id, _)| *id)
                     .collect();
                 destroyed = doomed.into_iter().filter(|id| w.destroy(*id)).count();
+            }
+            Effect::GainControl { slot, until_end_of_turn } => {
+                if let Some(m) = object(*slot).and_then(|id| w.permanents.get_mut(&id)) {
+                    if m.controller != caster {
+                        if *until_end_of_turn {
+                            m.stolen_from = Some(m.controller);
+                        }
+                        m.controller = caster;
+                    }
+                }
+            }
+            Effect::BecomesSubtype { slot, subtype } => {
+                if let Some(m) = object(*slot).and_then(|id| w.permanents.get_mut(&id)) {
+                    if !m.subtypes.contains(subtype) {
+                        m.subtypes.push(subtype.clone());
+                    }
+                }
             }
             Effect::PlusCountersIfSubtype { slot, n, subtype, n_if } => {
                 if let Some(m) = object(*slot).and_then(|id| w.permanents.get_mut(&id)) {
@@ -3531,7 +3593,8 @@ fn over_seeds(state: &GameState, play: impl Fn(&GameState) -> Result<Vec<GameSta
 fn lasts_the_turn(spec: &Spec) -> bool {
     spec.effects.iter().any(|e| matches!(e,
         Effect::Damage { .. } | Effect::DamageEach { .. } | Effect::DamageX { .. } | Effect::Pump { .. } | Effect::PumpEach { .. }
-        | Effect::PumpX { .. } | Effect::Fight { .. } | Effect::Tap { .. } | Effect::Regenerate { .. } | Effect::RegenerateAll { .. }))
+        | Effect::PumpX { .. } | Effect::Fight { .. } | Effect::Tap { .. } | Effect::Regenerate { .. } | Effect::RegenerateAll { .. }
+        | Effect::GainControl { .. } | Effect::PumpPerCount { .. }))
 }
 
 /// Every way the players can make the choices `spec` asks for as it
@@ -3654,6 +3717,9 @@ fn next_turn_outcomes(spec: &Spec, world: &World, id: ObjectId, active: PlayerId
         m.temp = (0, 0);
         m.temp_keywords.clear();
         m.shields = 0;
+        if let Some(owner) = m.stolen_from.take() {
+            m.controller = owner;
+        }
         if m.controller == active && !restricted(m, Restriction::DoesntUntap) {
             m.tapped = false;
         }
@@ -4205,23 +4271,24 @@ const READ: &[&str] = &[
     "Manor Skeleton", "Markov Patrician", "Mask of Avacyn", "Mausoleum Guard",
     "Maw of the Mire", "Midnight Haunting", "Moan of the Unhallowed", "Moldgraf Monstrosity",
     "Moment of Heroism", "Moon Heron", "Moorland Haunt", "Morkrut Banshee", "Mountain",
-    "Naturalize", "Nephalia Drownyard", "Night Revelers", "One-Eyed Scarecrow",
-    "Orchard Spirit", "Pacifism", "Paraselene", "Pitchburn Devils", "Plains", "Prey Upon",
-    "Purify the Grave", "Rage Thrower", "Rakish Heir", "Rally the Peasants", "Ranger's Guile",
-    "Rebuke", "Reckless Waif", "Riot Devils", "Rolling Temblor", "Rotting Fensnake",
-    "Runechanter's Pike", "Savannah Lions", "Scourge of Geier Reach", "Selfless Cathar",
-    "Selhoff Occultist", "Sensory Deprivation", "Sever the Bloodline", "Sharpened Pitchfork",
-    "Shimmering Grotto", "Silent Departure", "Silver-Inlaid Dagger", "Silverchase Fox",
-    "Skaab Goliath", "Skirsdag Cultist", "Slayer of the Wicked", "Smite the Monstrous",
-    "Sol Ring", "Somberwald Spider", "Spectral Flight", "Spectral Rider", "Spider Spawning",
-    "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble",
-    "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp", "Swords to Plowshares",
-    "Think Twice", "Thraben Purebloods", "Tormented Pariah", "Travel Preparations",
-    "Traveler's Amulet", "Tree of Redemption", "Tribute to Hunger", "Typhoid Rats",
-    "Unburial Rites", "Unruly Mob", "Urgent Exorcism", "Vampire Interloper", "Vampiric Fury",
-    "Victim of Night", "Village Bell-Ringer", "Village Cannibals", "Village Ironsmith",
-    "Villagers of Estwald", "Voiceless Spirit", "Walking Corpse", "Wooden Stake",
-    "Woodland Cemetery", "Woodland Sleuth", "Wreath of Geists",
+    "Naturalize", "Nephalia Drownyard", "Night Revelers", "Olivia Voldaren",
+    "One-Eyed Scarecrow", "Orchard Spirit", "Pacifism", "Paraselene", "Pitchburn Devils",
+    "Plains", "Prey Upon", "Purify the Grave", "Rage Thrower", "Rakish Heir",
+    "Rally the Peasants", "Ranger's Guile", "Rebuke", "Reckless Waif", "Riot Devils",
+    "Rolling Temblor", "Rotting Fensnake", "Runechanter's Pike", "Savannah Lions",
+    "Scourge of Geier Reach", "Selfless Cathar", "Selhoff Occultist", "Sensory Deprivation",
+    "Sever the Bloodline", "Sharpened Pitchfork", "Shimmering Grotto", "Silent Departure",
+    "Silver-Inlaid Dagger", "Silverchase Fox", "Skaab Goliath", "Skirsdag Cultist",
+    "Slayer of the Wicked", "Smite the Monstrous", "Sol Ring", "Somberwald Spider",
+    "Spectral Flight", "Spectral Rider", "Spider Spawning", "Spidery Grasp", "Splinterfright",
+    "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble", "Stromkirk Patrol", "Sturmgeist",
+    "Sulfur Falls", "Swamp", "Swords to Plowshares", "Think Twice", "Thraben Purebloods",
+    "Tormented Pariah", "Traitorous Blood", "Travel Preparations", "Traveler's Amulet",
+    "Tree of Redemption", "Tribute to Hunger", "Typhoid Rats", "Unburial Rites", "Unruly Mob",
+    "Urgent Exorcism", "Vampire Interloper", "Vampiric Fury", "Victim of Night",
+    "Village Bell-Ringer", "Village Cannibals", "Village Ironsmith", "Villagers of Estwald",
+    "Voiceless Spirit", "Walking Corpse", "Wooden Stake", "Woodland Cemetery",
+    "Woodland Sleuth", "Wreath of Geists",
 ];
 
 // ---- the properties ----
@@ -5884,6 +5951,10 @@ fn the_grammar_reads_its_templates() {
     assert!(clauses[0].attacking && clauses[0].subtypes.is_empty(), "\"Attacking\" qualifies; it is not a subtype");
     let terror = Printed { name: "Terror of Kruin Pass".to_string(), oracle_text: "Double strike\nWerewolves you control have menace.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.".to_string(), ..slayer.clone() };
     assert_eq!(back_face_reads(&terror).expect("a back face").statics.len(), 1);
+
+    let blood = read(&card("X", "Gain control of target creature until end of turn. Untap it. It gains trample and haste until end of turn.")).unwrap();
+    assert_eq!(blood.effects, vec![Effect::GainControl { slot: 0, until_end_of_turn: true }, Effect::Tap { slot: 0, tapped: false },
+        Effect::Pump { slot: 0, power: 0, toughness: 0, gains: vec![Keyword::Trample, Keyword::Haste] }]);
 
     let mut tribute = Spec::default();
     for sentence in ["Target opponent sacrifices a creature of their choice. ", "You gain life equal to that creature's toughness."] {
