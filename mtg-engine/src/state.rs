@@ -145,6 +145,18 @@ pub struct EndOfCombatExileEntry {
     pub description: String,
 }
 
+/// Every object in the game, by id, in id order.
+///
+/// A `BTreeMap`, except in the proofs: CBMC does not finish inserting one
+/// `GameObject` into a `BTreeMap` (`crate::vec_map` says why), so a Kani
+/// build keeps the objects in a vector in id order instead, which answers
+/// the same. The engine asks this map only for `get`, `get_mut`, `insert`,
+/// `remove`, `values` and `values_mut`.
+#[cfg(not(kani))]
+pub type ObjectMap = std::collections::BTreeMap<ObjectId, GameObject>;
+#[cfg(kani)]
+pub type ObjectMap = crate::vec_map::VecMap<ObjectId, GameObject>;
+
 /// The complete, immutable game state. Clone to produce new states.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameState {
@@ -155,7 +167,7 @@ pub struct GameState {
     /// matched (issue #199). Same reason `ManaPool` is a `BTreeMap`. Also
     /// makes every iteration over the objects deterministic rather than
     /// merely usually-consistent.
-    pub objects: std::collections::BTreeMap<ObjectId, GameObject>,
+    pub objects: ObjectMap,
     /// Monotonic counter for generating unique `ObjectIds`.
     pub next_object_id: u64,
 
@@ -669,7 +681,7 @@ impl GameState {
             .collect();
 
         Self {
-            objects: std::collections::BTreeMap::new(),
+            objects: ObjectMap::new(),
             next_object_id: 1,
             rng_state: default_rng_seed(),
             players,

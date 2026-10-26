@@ -25,6 +25,7 @@ pub mod coral_merfolk;
 pub mod isd;
 pub use isd::*;
 
+#[cfg(not(kani))]
 use std::collections::HashMap;
 
 use crate::actions::Target;
@@ -1046,11 +1047,21 @@ pub trait CardBehavior: Send + Sync {
     }
 }
 
+/// A card name to the card that prints it: a `HashMap`, except in the
+/// proofs, where a `HashMap` cannot be built at all (it seeds its hasher
+/// from the operating system) and `crate::vec_map::VecMap` stands in.
+#[cfg(not(kani))]
+type NameMap = HashMap<String, CardId>;
+#[cfg(kani)]
+type NameMap = crate::vec_map::VecMap<String, CardId>;
+
 /// Registry mapping `CardIds` to their behavior implementations.
 pub struct CardRegistry {
-    cards: HashMap<CardId, Box<dyn CardBehavior>>,
+    /// Indexed by `CardId.0 - 1`, as `printed` is: ids are handed out in
+    /// order, by `register` alone.
+    cards: Vec<Box<dyn CardBehavior>>,
     next_id: u32,
-    name_to_id: HashMap<String, CardId>,
+    name_to_id: NameMap,
     /// BACK-face names, to the card that prints them.
     ///
     /// A card is named by its front face (CR 712.3), so that is what
@@ -1065,7 +1076,7 @@ pub struct CardRegistry {
     /// name and only `face_data_by_name` asks the wider question. It also
     /// means the two faces are told apart by which map answered, rather than
     /// by comparing a name against a name.
-    back_name_to_id: HashMap<String, CardId>,
+    back_name_to_id: NameMap,
     /// The continuous effects printed on each registered card's faces, built
     /// once at registration and indexed by `CardId.0 - 1`.
     ///
@@ -1101,10 +1112,10 @@ struct PrintedFace {
 impl Default for CardRegistry {
     fn default() -> Self {
         Self {
-            cards: HashMap::new(),
+            cards: Vec::new(),
             next_id: 1,
-            name_to_id: HashMap::new(),
-            back_name_to_id: HashMap::new(),
+            name_to_id: NameMap::new(),
+            back_name_to_id: NameMap::new(),
             printed: Vec::new(),
         }
     }
@@ -1124,10 +1135,11 @@ impl CardRegistry {
         let name = data.name.clone();
         let back = card.back_face_data();
         let back_name = back.as_ref().map(|d| d.name.clone());
-        // `printed` is indexed by `id.0 - 1`, which holds because this is
-        // the only way a card enters the registry and ids are handed out
-        // in order.
+        // `printed` and `cards` are indexed by `id.0 - 1`, which holds
+        // because this is the only way a card enters the registry and ids
+        // are handed out in order.
         debug_assert_eq!(self.printed.len(), (id.0 - 1) as usize);
+        debug_assert_eq!(self.cards.len(), (id.0 - 1) as usize);
         self.printed.push(PrintedCard {
             front: PrintedFace {
                 continuous_effects: data.continuous_effects,
@@ -1138,7 +1150,7 @@ impl CardRegistry {
                 keywords: d.keywords,
             }),
         });
-        self.cards.insert(id, card);
+        self.cards.push(card);
         self.name_to_id.insert(name, id);
         if let Some(back_name) = back_name {
             self.back_name_to_id.insert(back_name, id);
@@ -1148,7 +1160,8 @@ impl CardRegistry {
 
     /// Look up a card's behavior by ID.
     pub fn get(&self, id: CardId) -> Option<&dyn CardBehavior> {
-        self.cards.get(&id).map(AsRef::as_ref)
+        let index = usize::try_from(id.0).ok()?.checked_sub(1)?;
+        self.cards.get(index).map(AsRef::as_ref)
     }
 
     /// Look up a card ID by name.
