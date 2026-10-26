@@ -414,6 +414,10 @@ enum Effect {
     /// "Put a hatchling counter on this creature": one counter of a kind
     /// with no rules of its own, which its text counts (CR 122.1).
     NamedCounter { slot: usize, kind: String },
+    /// "Put all creature cards from all graveyards onto the battlefield
+    /// under your control. They're black Zombies in addition to their other
+    /// colors and types" (CR 110.2, 205.1b): for good.
+    ReanimateAll { becomes: Option<(Color, String)> },
     /// "Then if there are five or more hatchling counters on it, remove all
     /// of them and transform it": the `NamedCounter` before it, counted
     /// after it is put there (CR 608.2c, 122.8), and the transform as
@@ -842,6 +846,11 @@ struct Activated {
     sacrifice: Option<Sacrifice>,
     /// "Exile a creature card from your graveyard" in the cost.
     exile_creature_card: bool,
+    /// "Discard a card" in the cost: any card in its controller's hand.
+    discard: bool,
+    /// "Remove three study counters from ~" in the cost (CR 122.1): what
+    /// kind, and how many.
+    remove_counters: Option<(String, u32)>,
     spec: Spec,
 }
 
@@ -859,11 +868,24 @@ fn read_activated(line: &str, index: usize) -> Option<Activated> {
     let (cost, effect) = line.split_once(": ")?;
     let mut ability = Activated {
         index, mana: ManaCost::free(), tap: false, sacrifice_self: false, once_each_turn: false, sorcery: false,
-        sacrifice: None, exile_creature_card: false, if_you_control: None, spec: Spec::default(),
+        sacrifice: None, exile_creature_card: false, discard: false, remove_counters: None, if_you_control: None, spec: Spec::default(),
     };
     for part in cost.split(", ") {
+        // "Remove three study counters from ~ and sacrifice it".
+        let part = match part.strip_suffix(" and sacrifice it") {
+            Some(p) => {
+                ability.sacrifice_self = true;
+                p
+            }
+            None => part,
+        };
+        if let Some((n, kind)) = part.strip_prefix("Remove ").and_then(|r| r.strip_suffix(" counters from ~")).and_then(|r| r.split_once(' ')) {
+            ability.remove_counters = Some((kind.to_string(), number(n)?));
+            continue;
+        }
         match part {
             "{T}" => ability.tap = true,
+            "Discard a card" => ability.discard = true,
             "Sacrifice this creature" | "Sacrifice this land" | "Sacrifice this artifact" | "Sacrifice this enchantment" => ability.sacrifice_self = true,
             "Sacrifice a creature" => ability.sacrifice = Some(Sacrifice::AnyCreature),
             "Sacrifice another creature" => ability.sacrifice = Some(Sacrifice::AnotherCreature),
@@ -1314,6 +1336,15 @@ impl Spec {
             self.effects.push(Effect::ExileChosenNonlandFromHand { slot });
             return Some(());
         }
+        if s == "Put all creature cards from all graveyards onto the battlefield under your control" {
+            self.effects.push(Effect::ReanimateAll { becomes: None });
+            return Some(());
+        }
+        if let Some((color, subtype)) = s.strip_prefix("They're ").and_then(|r| r.strip_suffix("s in addition to their other colors and types")).and_then(|r| r.split_once(' ')) {
+            let Some(Effect::ReanimateAll { becomes: None }) = self.effects.pop() else { return None };
+            self.effects.push(Effect::ReanimateAll { becomes: Some((color_named(color)?, subtype.to_string())) });
+            return Some(());
+        }
         if let Some(f) = s.strip_prefix("Transform all ") {
             self.effects.push(Effect::TransformAll { filter: filter(f)? });
             return Some(());
@@ -1569,7 +1600,9 @@ impl Spec {
             self.effects.push(Effect::PlusCounters { slot, n: 1 });
             return Some(());
         }
-        if let Some(kind) = s.strip_prefix("Put a ").and_then(|r| r.strip_suffix(" counter on this creature")).filter(|k| k.chars().all(char::is_alphabetic)) {
+        if let Some(kind) = s.strip_prefix("Put a ").and_then(|r| r.strip_suffix(" counter on this creature").or_else(|| r.strip_suffix(" counter on ~")))
+            .filter(|k| k.chars().all(char::is_alphabetic))
+        {
             let slot = self.slot(Slot::This);
             self.effects.push(Effect::NamedCounter { slot, kind: kind.to_string() });
             return Some(());
@@ -2193,7 +2226,7 @@ fn read_artifact(card: &Printed) -> Result<Spec, String> {
             let equip = Spec { slots, effects: vec![Effect::Attach { slot: 0 }], ..Spec::default() };
             spec.activated.insert(0, Activated {
                 index: 0, mana: cost, tap: false, sacrifice_self: false, once_each_turn: false, sorcery: true,
-                sacrifice, exile_creature_card: false, if_you_control: None, spec: equip,
+                sacrifice, exile_creature_card: false, discard: false, remove_counters: None, if_you_control: None, spec: equip,
             });
             for (i, a) in spec.activated.iter_mut().enumerate().skip(1) {
                 a.index = i;
@@ -2973,9 +3006,10 @@ impl World {
         let owner = m.owner.0 as usize;
         match to {
             Dest::Graveyard => {
+                // A new object, with its printed characteristics (CR 400.7):
+                // no counters, nothing an effect gave it.
+                self.yard.insert(id, Model::printed_with_faces(&cached_oracle()[&name], m.owner));
                 self.graveyard[owner].push(name);
-                // A new object, with its printed characteristics (CR 400.7).
-                self.yard.insert(id, Model { controller: m.owner, damage: 0, tapped: false, counters: (0, 0), granted: Vec::new(), boost: (0, 0), restricted: Vec::new(), shields: 0, temp: (0, 0), temp_keywords: Vec::new(), temp_restricted: Vec::new(), ..m });
             }
             Dest::Exile => self.exile[owner].push(name),
             Dest::Hand => self.hand[owner].push(name),
@@ -3846,6 +3880,22 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
                 let id = object(*slot).expect("its source");
                 if let Some(m) = w.permanents.get_mut(&id).filter(|m| world.faces_put.get(&id).is_none_or(|t| *t == m.transformed)) {
                     m.transform();
+                }
+            }
+            Effect::ReanimateAll { becomes } => {
+                let cards: Vec<ObjectId> = w.yard.iter().filter(|(_, m)| m.is_creature()).map(|(id, _)| *id).collect();
+                for id in cards {
+                    let mut m = w.leave_yard(id).expect("in a graveyard");
+                    m.controller = caster;
+                    if let Some((color, subtype)) = becomes {
+                        if !m.colors.contains(color) {
+                            m.colors.push(*color);
+                        }
+                        if !m.subtypes.contains(subtype) {
+                            m.subtypes.push(subtype.clone());
+                        }
+                    }
+                    w.permanents.insert(id, m);
                 }
             }
             Effect::NamedCounter { slot, kind } => {
