@@ -187,8 +187,9 @@ fn kind_colors(kind: SourceKind) -> Vec<Color> {
 // ---- the boards ----
 
 struct Board {
-    seed: u64,
-    index: u64,
+    /// Where the board came from, so a failure can rebuild it: a seed and
+    /// an index, or a place in the exhaustive enumeration.
+    origin: String,
     kinds: Vec<SourceKind>,
     sources: Vec<ManaSource>,
     pool: ManaPool,
@@ -198,7 +199,7 @@ struct Board {
 
 impl std::fmt::Display for Board {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "board {} of seed {:#x}: sources [", self.index, self.seed)?;
+        write!(f, "{}: sources [", self.origin)?;
         for (i, kind) in self.kinds.iter().enumerate() {
             if i > 0 { write!(f, ", ")?; }
             write!(f, "#{} {}", self.sources[i].object_id.0, kind_name(*kind))?;
@@ -295,7 +296,7 @@ fn board(seed: u64, index: u64, shapes: Shapes) -> Board {
     };
     let cost = cost_of(&mut rng);
     let hand = (0..rng.below(4)).map(|_| cost_of(&mut rng)).collect();
-    Board { seed, index, kinds, sources, pool, cost, hand }
+    Board { origin: format!("board {index} of seed {seed:#x}"), kinds, sources, pool, cost, hand }
 }
 
 /// A cost shaped like one a card in the pool has: generic `{0}`–`{4}`, then
@@ -721,4 +722,198 @@ fn a_plan_strands_no_more_of_the_hand_than_any_hand_tap_would() {
 fn a_plan_for_an_unmet_cost_shape_keeps_the_whole_contract() {
     report(&sweep(Shapes::Unmet, Checks { completeness: true, stranding: true }),
         "the planner broke its contract on an unmet shape");
+}
+
+// ---- every small board ----
+//
+// The sweeps above sample boards. The tests below take every board of a
+// bounded size instead, and so hold the contract for the whole of that
+// space: every multiset of source kinds up to a number of sources, every
+// floating pool up to a number of mana, and every cost of a shape — the
+// small-scope hypothesis (most bugs have a small counterexample) turned
+// into a check, the way `every_division_obeys_cr_510_1c` takes every small
+// combat. Debug builds take the bound below; `AUTOTAP_EXHAUSTIVE_SOURCES`
+// and `AUTOTAP_EXHAUSTIVE_POOL` raise it (`scripts/prove.sh exhaustive`
+// runs the larger scope in release).
+
+const DEFAULT_EXHAUSTIVE_SOURCES: usize = 2;
+const DEFAULT_EXHAUSTIVE_POOL: usize = 1;
+
+/// Every kind of source the generator above draws from, once each.
+fn every_kind() -> Vec<SourceKind> {
+    let mut kinds: Vec<SourceKind> = Color::ALL.into_iter().map(SourceKind::Basic).collect();
+    for (i, &a) in Color::ALL.iter().enumerate() {
+        for &b in &Color::ALL[i + 1..] {
+            kinds.push(SourceKind::Dual(a, b));
+        }
+    }
+    kinds.push(SourceKind::SolRing);
+    kinds.extend(Color::ALL.into_iter().map(SourceKind::Creature));
+    kinds.extend([SourceKind::Grotto, SourceKind::Assistant]);
+    kinds
+}
+
+/// Every multiset of at most `n` of `items`, each in `items`' order.
+fn every_multiset<T: Copy>(items: &[T], n: usize) -> Vec<Vec<T>> {
+    fn go<T: Copy>(items: &[T], from: usize, left: usize, current: &mut Vec<T>, out: &mut Vec<Vec<T>>) {
+        out.push(current.clone());
+        if left == 0 {
+            return;
+        }
+        for i in from..items.len() {
+            current.push(items[i]);
+            go(items, i, left - 1, current, out);
+            current.pop();
+        }
+    }
+    let mut out = Vec::new();
+    go(items, 0, n, &mut Vec::new(), &mut out);
+    out
+}
+
+/// Every cost [`pool_shaped_cost`] can draw, once each.
+fn every_pool_shaped_cost() -> Vec<ManaCost> {
+    let mut costs = Vec::new();
+    for generic in 0..=4 {
+        let base: Vec<ManaSymbol> = if generic > 0 { vec![ManaSymbol::Generic(generic)] } else { vec![] };
+        let mut pips: Vec<Vec<ManaSymbol>> = vec![vec![]];
+        for c in Color::ALL {
+            for n in 1..=3 {
+                pips.push(vec![ManaSymbol::Colored(c); n]);
+            }
+        }
+        for a in Color::ALL {
+            for b in Color::ALL {
+                if a != b {
+                    pips.push(vec![ManaSymbol::Colored(a), ManaSymbol::Colored(b)]);
+                }
+            }
+        }
+        for p in pips {
+            let symbols: Vec<ManaSymbol> = base.iter().cloned().chain(p).collect();
+            // The generator turns the empty cost into {1}, which generic 1
+            // already gives.
+            if !symbols.is_empty() {
+                costs.push(ManaCost::new(symbols));
+            }
+        }
+    }
+    costs
+}
+
+/// Every cost [`unmet_shape_cost`] can draw, once each.
+fn every_unmet_shape_cost() -> Vec<ManaCost> {
+    let mut costs = Vec::new();
+    for generic in 0..=2 {
+        let base: Vec<ManaSymbol> = if generic > 0 { vec![ManaSymbol::Generic(generic)] } else { vec![] };
+        let mut pips: Vec<Vec<ManaSymbol>> = Vec::new();
+        for a in Color::ALL {
+            for b in Color::ALL {
+                if a == b {
+                    continue;
+                }
+                for c in Color::ALL {
+                    if c != a && c != b {
+                        pips.push(vec![ManaSymbol::Colored(a), ManaSymbol::Colored(b), ManaSymbol::Colored(c)]);
+                    }
+                }
+                pips.push(vec![ManaSymbol::Colored(a), ManaSymbol::Colored(a), ManaSymbol::Colored(b)]);
+            }
+        }
+        for n in 1..=2 {
+            pips.push(vec![ManaSymbol::Colorless(n)]);
+            for a in Color::ALL {
+                pips.push(vec![ManaSymbol::Colorless(n), ManaSymbol::Colored(a)]);
+            }
+        }
+        for p in pips {
+            costs.push(ManaCost::new(base.iter().cloned().chain(p).collect()));
+        }
+    }
+    costs
+}
+
+fn exhaustive_bound(var: &str, default: usize) -> usize {
+    std::env::var(var).ok().map_or(default, |s| s.parse().expect("a bound"))
+}
+
+/// Every board of at most `AUTOTAP_EXHAUSTIVE_SOURCES` sources and
+/// `AUTOTAP_EXHAUSTIVE_POOL` floating mana, paying each of `costs` with an
+/// empty hand: how many there were, and every violation.
+fn every_small_board(costs: &[ManaCost], checks: Checks) -> (u64, Vec<String>) {
+    let max_sources = exhaustive_bound("AUTOTAP_EXHAUSTIVE_SOURCES", DEFAULT_EXHAUSTIVE_SOURCES);
+    let max_pool = exhaustive_bound("AUTOTAP_EXHAUSTIVE_POOL", DEFAULT_EXHAUSTIVE_POOL);
+    let pools: Vec<ManaPool> = every_multiset(&ALL_MANA, max_pool).into_iter()
+        .map(|types| {
+            let mut pool = ManaPool::new();
+            for mt in types {
+                pool.add(mt, 1);
+            }
+            pool
+        })
+        .collect();
+    let mut boards = 0;
+    let mut found = Vec::new();
+    for (k, kinds) in every_multiset(&every_kind(), max_sources).into_iter().enumerate() {
+        let sources: Vec<ManaSource> = kinds.iter().enumerate()
+            .map(|(i, &kind)| source(i as u64 + 1, kind))
+            .collect();
+        for (p, pool) in pools.iter().enumerate() {
+            for (c, cost) in costs.iter().enumerate() {
+                let board = Board {
+                    origin: format!("exhaustive board {k}/{p}/{c}"),
+                    kinds: kinds.clone(),
+                    sources: sources.clone(),
+                    pool: pool.clone(),
+                    cost: cost.clone(),
+                    hand: Vec::new(),
+                };
+                boards += 1;
+                found.extend(violations(&board, checks));
+            }
+        }
+    }
+    (boards, found)
+}
+
+/// On every board of up to two sources (any of the 23 kinds above) with at
+/// most one mana floating, for every cost of a shape the card pool has, the
+/// planner offers a plan exactly when tapping by hand would pay, and the
+/// plan executes, names each source once and taps nothing it did not need.
+#[test]
+fn the_planner_matches_tapping_by_hand_on_every_small_board() {
+    let costs = every_pool_shaped_cost();
+    let (boards, found) = every_small_board(&costs, Checks { completeness: true, stranding: false });
+    assert!(boards > 0);
+    report(&found, "the planner broke its contract on a small board");
+}
+
+/// The same for every cost of a shape no card in the pool has yet.
+#[test]
+fn the_planner_matches_tapping_by_hand_on_every_small_board_for_unmet_shapes() {
+    let costs = every_unmet_shape_cost();
+    let (boards, found) = every_small_board(&costs, Checks { completeness: true, stranding: false });
+    assert!(boards > 0);
+    report(&found, "the planner broke its contract on a small board, for an unmet shape");
+}
+
+/// The enumerations are what they say: every cost each generator can draw
+/// is enumerated, and nothing else is.
+#[test]
+fn the_exhaustive_costs_are_the_generators_costs() {
+    let pool_shaped = every_pool_shaped_cost();
+    let unmet = every_unmet_shape_cost();
+    let mut rng = Rng::new(DEFAULT_SEED);
+    for _ in 0..20_000 {
+        let mut color = |rng: &mut Rng| rng.pick(&Color::ALL);
+        let c = pool_shaped_cost(&mut rng, &mut color);
+        assert!(pool_shaped.contains(&c), "{c} is drawn but not enumerated");
+        let u = unmet_shape_cost(&mut rng, &mut color);
+        assert!(unmet.contains(&u), "{u} is drawn but not enumerated");
+    }
+    assert_eq!(pool_shaped.len(), 5 * (1 + 15 + 20) - 1);
+    assert_eq!(unmet.len(), 3 * (60 + 20 + 12));
+    assert_eq!(every_kind().len(), 23);
+    // Multisets of at most two of 23 kinds: none, 23 singles, 276 pairs.
+    assert_eq!(every_multiset(&every_kind(), 2).len(), 1 + 23 + 276);
 }
