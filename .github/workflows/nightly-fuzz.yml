@@ -193,3 +193,92 @@ jobs:
             logs/fuzz-reach-*.md
           if-no-files-found: ignore
           retention-days: 14
+
+  # Coverage-guided: fuzz/fuzz_targets/game.rs under libFuzzer, every
+  # choice in the game drawn from the fuzzer's input and every invariant
+  # above checked at every decision (scripts/fuzz-engine.sh). libFuzzer
+  # keeps inputs that reach new code and mutates those, so it goes where
+  # seeded random games rarely do. The corpus is cached from night to
+  # night, so each night starts from everything the last one reached.
+  #
+  # Same colours as the shards: GREEN means it ran, and a finding is filed
+  # as an issue with the input that causes it; RED means the instrument
+  # itself broke.
+  coverage-guided:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore the corpus
+        uses: actions/cache@v4
+        with:
+          path: fuzz/corpus/game
+          key: engine-corpus-${{ github.run_id }}
+          restore-keys: engine-corpus-
+
+      - name: Install cargo-fuzz
+        run: |
+          rustup toolchain install "$(sed -n 's/^TOOLCHAIN=//p' scripts/fuzz-engine.sh)" --profile minimal
+          cargo install --locked cargo-fuzz --version "$(sed -n 's/^CARGO_FUZZ_VERSION=//p' scripts/fuzz-engine.sh)"
+
+      - name: Fuzz
+        run: |
+          set +e
+          scripts/fuzz-engine.sh 3000
+          status=$?
+          set -e
+          findings=$(ls fuzz/artifacts/game/crash-* 2>/dev/null | wc -l)
+          {
+            echo "### Coverage-guided fuzz"
+            echo "- findings: $findings"
+            echo "- corpus: $(ls fuzz/corpus/game | wc -l) inputs"
+          } >> "$GITHUB_STEP_SUMMARY"
+          # libFuzzer exits nonzero on a finding; that is a finding, filed
+          # below. Red only when it failed without one.
+          if [ "$status" -ne 0 ] && [ "$findings" -eq 0 ]; then
+            exit "$status"
+          fi
+
+      - name: File an issue for a finding
+        if: success() || failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          for crash in fuzz/artifacts/game/crash-*; do
+            [ -e "$crash" ] || { echo "no findings — nothing to file"; break; }
+            name=$(basename "$crash")
+            symptom=$(scripts/fuzz-engine.sh repro "$crash" 2>&1 \
+              | grep -m1 -A1 -E "panicked at" | tail -1 | sed 's/^ *//' | cut -c1-120)
+            title="[fuzz] coverage-guided $name: ${symptom:-the engine panicked}"
+            if [ -n "$(gh issue list --state open --search "\"$name\" in:title" --json number --jq '.[0].number // empty')" ]; then
+              echo "dedupe: open issue already covers $name"
+              continue
+            fi
+            body=$(printf '%s\n' \
+              "**Found-by**: phase:fuzz — nightly-fuzz coverage-guided job, run $RUN_URL" \
+              "" \
+              "**Repro** (needs the nightly and cargo-fuzz that scripts/fuzz-engine.sh names):" \
+              '```' \
+              "base64 -d > $name <<'INPUT'" \
+              "$(base64 -w 76 "$crash")" \
+              "INPUT" \
+              "scripts/fuzz-engine.sh repro $name" \
+              '```' \
+              "" \
+              "**Evidence**:" \
+              '```' \
+              "$(scripts/fuzz-engine.sh repro "$crash" 2>&1 | grep -A20 -m1 'panicked at' | head -24)" \
+              '```')
+            gh issue create --title "$title" --body "$body" --label bug --label phase:fuzz
+          done
+
+      - name: Upload findings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-guided-findings
+          path: fuzz/artifacts/game
+          if-no-files-found: ignore
+          retention-days: 14
