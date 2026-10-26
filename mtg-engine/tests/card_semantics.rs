@@ -224,6 +224,10 @@ enum Slot {
     /// "this creature", "this land": the ability's own source. Not a
     /// target; its place in a target list is filled with the source.
     This,
+    /// "that player" in a Curse's trigger: the player it enchants; with
+    /// `or_planeswalker`, "that player or a planeswalker that player
+    /// controls", which its controller chooses. Not a target.
+    EnchantedPlayer { or_planeswalker: bool },
 }
 
 /// A description of permanents: any one of the alternatives ("artifact or
@@ -327,6 +331,11 @@ enum Effect {
     /// "~ deals damage equal to the exiled card's power to <slot>": the
     /// card exiled to pay for it (CR 601.2h, 608.2h).
     DamageEqualToExiledPower { slot: usize },
+    /// "<player slot> draws N cards".
+    PlayerDraws { slot: usize, n: usize },
+    /// "That player exiles N cards from their graveyard": of their choice,
+    /// all of them when they have no more than N.
+    ExileFromGraveyard { slot: usize, n: usize },
 }
 
 /// A card's text, read.
@@ -362,6 +371,9 @@ struct Spec {
     dies: Option<Box<Trigger>>,
     /// "Whenever another creature dies, ...": a trigger on other deaths.
     watch: Option<Box<Watch>>,
+    /// "At the beginning of your upkeep, ..." or, on a Curse, "... of
+    /// enchanted player's upkeep, ...".
+    upkeep: Option<Box<Upkeep>>,
     /// An Aura's "Enchant creature" / "Enchant player" (CR 303.4a, 702.5):
     /// the slot its spell targets, the first of `slots`.
     enchants: bool,
@@ -640,6 +652,27 @@ struct Watch {
     trigger: Trigger,
 }
 
+/// "At the beginning of <whose> upkeep, <effect>" (CR 503.1a, 603.2).
+#[derive(Debug, Clone, PartialEq)]
+struct Upkeep {
+    /// The enchanted player's upkeep, not its controller's.
+    enchanted_player: bool,
+    trigger: Trigger,
+}
+
+/// An upkeep trigger's effect, read as a sentence of its own.
+fn read_upkeep(line: &str) -> Option<Upkeep> {
+    let (enchanted_player, rest) = match line.strip_prefix("At the beginning of your upkeep, ") {
+        Some(r) => (false, r),
+        None => (true, line.strip_prefix("At the beginning of enchanted player's upkeep, ")?),
+    };
+    let mut chars = rest.chars();
+    let sentence: String = chars.next().map(|c| c.to_uppercase().chain(chars).collect()).unwrap_or_default();
+    let mut trigger = Trigger::default();
+    trigger.spec.sentence(&sentence)?;
+    Some(Upkeep { enchanted_player, trigger })
+}
+
 impl Spec {
     /// Whether the board after a death can read differently.
     fn reads_morbid(&self) -> bool {
@@ -791,6 +824,26 @@ impl Spec {
         }
         // The ability's source ("This creature gets +2/+0 until end of
         // turn", "Return this creature to its owner's hand").
+        if let Some(rest) = s.strip_prefix("This Aura deals ") {
+            let (n, to) = rest.split_once(" damage to ")?;
+            if to != "that player or a planeswalker that player controls" {
+                return None;
+            }
+            let slot = self.slot(Slot::EnchantedPlayer { or_planeswalker: true });
+            self.effects.push(Effect::Damage { amount: number(n)?, slot });
+            return Some(());
+        }
+        if let Some(rest) = s.strip_prefix("That player ") {
+            let slot = self.slot(Slot::EnchantedPlayer { or_planeswalker: false });
+            if let Some(n) = rest.strip_prefix("mills ") {
+                let n = number(n.strip_suffix(" cards").or_else(|| n.strip_suffix(" card"))?)? as usize;
+                self.effects.push(Effect::Mill { slot, n });
+                return Some(());
+            }
+            let n = rest.strip_prefix("exiles ")?.strip_suffix(" cards from their graveyard")?;
+            self.effects.push(Effect::ExileFromGraveyard { slot, n: number(n)? as usize });
+            return Some(());
+        }
         for this in ["This creature ", "This land ", "This artifact "] {
             if let Some(rest) = s.strip_prefix(this) {
                 if let Some(rest) = rest.strip_prefix("deals ") {
@@ -885,6 +938,11 @@ impl Spec {
             return Some(());
         }
         if let Some(rest) = s.strip_prefix("Return target ") {
+            if let Some(f) = rest.strip_suffix(" card from your graveyard to your hand") {
+                let slot = self.slot(Slot::GraveyardCard { filter: Some(filter(f)?), yours: true });
+                self.effects.push(Effect::ToHand { slot });
+                return Some(());
+            }
             if let Some((f, how)) = rest.split_once(" card from your graveyard to the battlefield") {
                 let minus_counter = match how {
                     "" => false,
@@ -939,6 +997,21 @@ impl Spec {
                 let ((power, toughness), gains) = pump(&format!("gets {change}"))?;
                 let slot = self.slot(Slot::Permanent(filter(who)?));
                 self.effects.push(Effect::Pump { slot, power, toughness, gains });
+                return Some(());
+            }
+            if let Some((who, rest)) = rest.split_once(" draws ") {
+                // "Target player draws a card and loses 1 life".
+                let (draws, loses) = match rest.split_once(" and loses ") {
+                    Some((d, l)) => (d, Some(l)),
+                    None => (rest, None),
+                };
+                let n = number(draws.strip_suffix(" cards").or_else(|| draws.strip_suffix(" card"))?)? as usize;
+                let slot = self.player_slot(who)?;
+                self.effects.push(Effect::PlayerDraws { slot, n });
+                if let Some(l) = loses {
+                    let n: i32 = number(l.strip_suffix(" life")?)?.try_into().ok()?;
+                    self.effects.push(Effect::LoseLife { slot, n });
+                }
                 return Some(());
             }
             if let Some((who, n)) = rest.split_once(" loses ") {
@@ -1147,6 +1220,10 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
             spec.additional = Some(cost);
             continue;
         }
+        if line.starts_with("At the beginning of your upkeep, ") {
+            spec.upkeep = Some(Box::new(read_upkeep(line).ok_or_else(unread)?));
+            continue;
+        }
         if let Some((who, rest)) = line.strip_prefix("Whenever ").and_then(|r| r.split_once(" dies, ")) {
             let who = match who {
                 "this creature or another creature" => "creature",
@@ -1324,6 +1401,10 @@ fn read_enchantment(card: &Printed) -> Result<Spec, String> {
             }
             _ => {}
         }
+        if line.starts_with("At the beginning of enchanted player's upkeep, ") && spec.slots == [Slot::Player] {
+            spec.upkeep = Some(Box::new(read_upkeep(line).ok_or_else(unread)?));
+            continue;
+        }
         if let Some(rest) = body.strip_prefix("Enchanted creature ") {
             let (rest, per_creature_card) = match rest.strip_suffix(", where X is the number of creature cards in your graveyard") {
                 Some(r) => (r.replace("+X/+X", "+1/+1"), true),
@@ -1340,7 +1421,7 @@ fn read_enchantment(card: &Printed) -> Result<Spec, String> {
         }
         spec.statics.push(group_static(body).ok_or_else(unread)?);
     }
-    if spec.enchants != spec.slots.first().is_some() || spec.statics.is_empty() {
+    if spec.enchants != spec.slots.first().is_some() || (spec.statics.is_empty() && spec.upkeep.is_none()) {
         return Err("not an enchantment the grammar reads".to_string());
     }
     Ok(spec)
@@ -2080,6 +2161,12 @@ fn candidates(slot: &Slot, world: &World, caster: PlayerId) -> Vec<Target> {
             .map(|(id, _)| Target::Object(*id))
             .collect(),
         Slot::This => world.source.into_iter().map(Target::Object).collect(),
+        // No planeswalker is on the board, so "that player or a
+        // planeswalker that player controls" is the player.
+        Slot::EnchantedPlayer { .. } => world.source.and_then(|s| world.permanents.get(&s))
+            .and_then(|m| match m.attached { Some(Target::Player(p)) => Some(Target::Player(p)), _ => None })
+            .into_iter()
+            .collect(),
         Slot::Spell(f) => world.stack.iter()
             .filter(|(_, m)| m.matches(f, caster))
             .map(|(id, _)| Target::Object(*id))
@@ -2316,7 +2403,31 @@ fn apply(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId) -> Wo
             }
             Effect::ToHand { slot } => {
                 if let Some(id) = object(*slot) {
-                    w.leave(id, Dest::Hand);
+                    if let Some(card) = w.leave_yard(id) {
+                        w.hand[card.owner.0 as usize].push(card.name.expect("a card has a name"));
+                    } else {
+                        w.leave(id, Dest::Hand);
+                    }
+                }
+            }
+            Effect::PlayerDraws { slot, n } => {
+                if let Some(p) = player(*slot) {
+                    for _ in 0..*n {
+                        let card = w.library[p].remove(0);
+                        w.hand[p].push(card);
+                    }
+                }
+            }
+            Effect::ExileFromGraveyard { slot, n } => {
+                if let Some(p) = player(*slot) {
+                    assert!(w.graveyard[p].len() <= *n, "the reference exiles a whole graveyard, not a choice from it");
+                    let ids: Vec<ObjectId> = w.yard.iter().filter(|(_, m)| m.owner.0 as usize == p).map(|(id, _)| *id).collect();
+                    for id in ids {
+                        let card = w.leave_yard(id).expect("in the graveyard");
+                        w.exile[p].push(card.name.expect("a card has a name"));
+                    }
+                    let rest = std::mem::take(&mut w.graveyard[p]);
+                    w.exile[p].extend(rest);
                 }
             }
             Effect::ToLibraryTop { slot } => {
@@ -2478,16 +2589,7 @@ fn resolve(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId, car
 /// (603.4).
 fn creature_outcomes(spec: &Spec, world: &World, caster: PlayerId, card: &Printed, id: ObjectId) -> Vec<World> {
     let mut w = world.clone();
-    let mut m = Model {
-        controller: caster,
-        tapped: spec.enters_tapped,
-        counts_creatures: spec.pt_is_creatures_you_control,
-        counts_creature_cards: spec.pt_is_creature_cards,
-        counts_hand: spec.pt_is_cards_in_hand,
-        combat: spec.combat.clone(),
-        statics: spec.statics.clone(),
-        ..Model::printed(card, caster)
-    };
+    let mut m = Model { tapped: spec.enters_tapped, ..model_of(spec, card, caster) };
     if let (Some(n), true) = (spec.enters_with_counters_if_morbid, world.a_creature_died) {
         let n = i32::try_from(n).expect("a few");
         change(&mut m, n, n);
@@ -2500,6 +2602,61 @@ fn creature_outcomes(spec: &Spec, world: &World, caster: PlayerId, card: &Printe
         Some(trigger) if !(trigger.if_morbid && !w.a_creature_died) => trigger_outcomes(trigger, &w, caster),
         _ => vec![w],
     }
+}
+
+/// The permanent `card`, read as `spec`, under `controller`: its printed
+/// characteristics and what its text says it is.
+fn model_of(spec: &Spec, card: &Printed, controller: PlayerId) -> Model {
+    Model {
+        controller,
+        counts_creatures: spec.pt_is_creatures_you_control,
+        counts_creature_cards: spec.pt_is_creature_cards,
+        counts_hand: spec.pt_is_cards_in_hand,
+        combat: spec.combat.clone(),
+        statics: spec.statics.clone(),
+        ..Model::printed(card, controller)
+    }
+}
+
+/// Every way the turn of `active` can begin on `world`, where `id` is the
+/// permanent read as `spec`: the cleanup step of the turn before removes
+/// damage (CR 514.2) and the turn's morbid (700.4); the untap step untaps
+/// the active player's permanents (502.3); the upkeep trigger, if its text
+/// says this is its upkeep, resolves each way it can (503.1a, 603.3); and
+/// the active player draws (504.1).
+fn next_turn_outcomes(spec: &Spec, world: &World, id: ObjectId, active: PlayerId) -> Vec<World> {
+    let mut w = world.clone();
+    for m in w.permanents.values_mut().chain(w.tokens.iter_mut()) {
+        m.damage = 0;
+        m.deathtouched = false;
+        if m.controller == active {
+            m.tapped = false;
+        }
+    }
+    w.a_creature_died = false;
+    w.source = Some(id);
+    let me = &w.permanents[&id];
+    let controller = me.controller;
+    let whose = match spec.upkeep.as_deref() {
+        Some(Upkeep { enchanted_player: true, .. }) => match me.attached {
+            Some(Target::Player(p)) => Some(p),
+            _ => None,
+        },
+        Some(_) => Some(controller),
+        None => None,
+    };
+    let worlds = match spec.upkeep.as_deref() {
+        Some(upkeep) if whose == Some(active) => triggers_outcomes(&[&upkeep.trigger], &w, controller),
+        _ => vec![w],
+    };
+    worlds.into_iter()
+        .map(|mut w| {
+            let a = active.0 as usize;
+            let card = w.library[a].remove(0);
+            w.hand[a].push(card);
+            w
+        })
+        .collect()
 }
 
 /// Every way `trigger`, controlled by `caster`, can resolve on `world`:
@@ -2677,6 +2834,19 @@ enum Answer {
 /// A combat to declare: who attacks whom, and who blocks whom.
 type Combat = (Vec<(ObjectId, PlayerId)>, Vec<(ObjectId, ObjectId)>);
 
+/// How far a scripted game is played.
+#[derive(Clone, Copy)]
+enum Scene<'a> {
+    /// Until the stack is empty in the step it stands in.
+    Main,
+    /// From the main phase through a combat, declared as given, to the
+    /// main phase after.
+    Combat(&'a Combat),
+    /// On through the end of the turn into a step of the next, the stack
+    /// empty there; no one attacks.
+    Until(Step),
+}
+
 /// Where a scripted game stopped.
 enum Played {
     /// The stack emptied: the game at rest.
@@ -2691,14 +2861,13 @@ enum Played {
 /// state-based actions and triggers and all. The questions asked after the
 /// cast are answered from `script`, in order.
 fn play(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>, targets: Vec<Target>, script: &[Answer]) -> Result<Played, String> {
-    play_from(state, registry, spell, targets, None, None, script)
+    play_from(state, registry, spell, targets, None, Scene::Main, script)
 }
 
 /// [`play`], starting with `first` instead of a cast when it is given: an
 /// activation, as the engine offered it.
-/// With `combat`, the game is played from the main phase through combat,
-/// declaring it, and stops in the main phase after.
-fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>, targets: Vec<Target>, first: Option<Action>, combat: Option<&Combat>, script: &[Answer]) -> Result<Played, String> {
+/// It is played as far as `scene` says.
+fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>, targets: Vec<Target>, first: Option<Action>, scene: Scene, script: &[Answer]) -> Result<Played, String> {
     let mut state = state.clone();
     // A spell that asks for its targets at cast time is cast bare, and each
     // question answered in turn as a player answers them: one target for a
@@ -2725,10 +2894,14 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
             trouble = Some("the game did not come to rest".to_string());
             return Action::AbandonGame;
         }
-        if let (Some((attackers, blocks)), Some(prompt)) = (combat, &legal.combat_prompt) {
+        if let Some(prompt) = &legal.combat_prompt {
+            let (attackers, blocks) = match scene {
+                Scene::Combat((attackers, blocks)) => (attackers.clone(), blocks.clone()),
+                _ => (Vec::new(), Vec::new()),
+            };
             return match prompt {
-                CombatPrompt::ChooseAttackers { .. } => Action::DeclareAttackers { attackers: attackers.clone(), planeswalker_attacks: Vec::new() },
-                CombatPrompt::ChooseBlockers { .. } => Action::DeclareBlockers { assignments: blocks.clone() },
+                CombatPrompt::ChooseAttackers { .. } => Action::DeclareAttackers { attackers, planeswalker_attacks: Vec::new() },
+                CombatPrompt::ChooseBlockers { .. } => Action::DeclareBlockers { assignments: blocks },
             };
         }
         match &legal.resolution_prompt {
@@ -2817,7 +2990,11 @@ fn play_from(state: &GameState, registry: &CardRegistry, spell: Option<ObjectId>
             }
             None => {}
         }
-        let at_rest = s.stack.is_empty() && (combat.is_none() || s.step == Step::PostcombatMain);
+        let at_rest = s.stack.is_empty() && match scene {
+            Scene::Main => true,
+            Scene::Combat(_) => s.step == Step::PostcombatMain,
+            Scene::Until(step) => s.step == step,
+        };
         if at_rest {
             return Action::AbandonGame;
         }
@@ -2858,7 +3035,7 @@ fn every_ending_from(state: &GameState, registry: &CardRegistry, spell: Option<O
         if done.len() + todo.len() > 500 {
             return Err("more than 500 ways to answer".to_string());
         }
-        match play_from(state, registry, spell, Vec::new(), first.clone(), None, &script)? {
+        match play_from(state, registry, spell, Vec::new(), first.clone(), Scene::Main, &script)? {
             Played::Done(s) => done.push(*s),
             Played::Asks(options) => todo.extend(options.into_iter().map(|o| [script.clone(), vec![o]].concat())),
         }
@@ -2901,18 +3078,20 @@ fn readable(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (Vec<
 /// and names it, so coverage is never lost without someone deciding to
 /// lose it.
 const READ: &[&str] = &[
-    "Abbey Griffin", "Altar's Reap", "Ambush Viper", "Ancient Grudge", "Angelic Overseer",
-    "Armored Skaab", "Army of the Damned", "Avacyn's Pilgrim", "Avacynian Priest",
-    "Balefire Dragon", "Battleground Geist", "Blasphemous Act", "Bloodcrazed Neonate",
-    "Boneyard Wurm", "Bramblecrush", "Brimstone Volley", "Bump in the Night", "Chapel Geist",
-    "Clifftop Retreat", "Coral Merfolk", "Corpse Lunge", "Counterspell",
-    "Curse of Death's Hold", "Darkthicket Wolf", "Dead Weight", "Deranged Assistant",
-    "Diregraf Ghoul", "Dissipate", "Divination", "Doom Blade", "Doomed Traveler", "Dream Twist",
-    "Elite Inquisitor", "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread",
-    "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab", "Gallows Warden",
-    "Gatstaf Shepherd", "Gavony Township", "Geist-Honored Monk", "Geistcatcher's Rig",
-    "Geistflame", "Ghoulcaller's Bell", "Giant Growth", "Glorious Anthem", "Gnaw to the Bone",
-    "Goblin Piker", "Grasp of Phantoms", "Grave Bramble", "Grizzled Outcasts", "Grizzly Bears",
+    "Abbey Griffin", "Altar's Reap", "Ambush Viper", "Ancient Grudge",
+    "Angel of Flight Alabaster", "Angelic Overseer", "Armored Skaab", "Army of the Damned",
+    "Avacyn's Pilgrim", "Avacynian Priest", "Balefire Dragon", "Battleground Geist",
+    "Blasphemous Act", "Bloodcrazed Neonate", "Bloodgift Demon", "Boneyard Wurm",
+    "Bramblecrush", "Brimstone Volley", "Bump in the Night", "Chapel Geist", "Clifftop Retreat",
+    "Coral Merfolk", "Corpse Lunge", "Counterspell", "Curse of Death's Hold",
+    "Curse of Oblivion", "Curse of the Bloody Tome", "Curse of the Pierced Heart",
+    "Darkthicket Wolf", "Dead Weight", "Deranged Assistant", "Diregraf Ghoul", "Dissipate",
+    "Divination", "Doom Blade", "Doomed Traveler", "Dream Twist", "Elite Inquisitor",
+    "Falkenrath Marauders", "Falkenrath Noble", "Feeling of Dread", "Feral Ridgewolf",
+    "Festerhide Boar", "Forest", "Fortress Crab", "Gallows Warden", "Gatstaf Shepherd",
+    "Gavony Township", "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame",
+    "Ghoulcaller's Bell", "Giant Growth", "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker",
+    "Grasp of Phantoms", "Grave Bramble", "Grizzled Outcasts", "Grizzly Bears",
     "Gruesome Deformity", "Hinterland Harbor", "Hollowhenge Scavenger", "Holy Strength",
     "Hysterical Blindness", "Intangible Virtue", "Into the Maw of Hell", "Invisible Stalker",
     "Island", "Isolated Chapel", "Kalonian Tusker", "Kessig Wolf", "Kindercatch",
@@ -2927,7 +3106,7 @@ const READ: &[&str] = &[
     "Sensory Deprivation", "Shimmering Grotto", "Silent Departure", "Silverchase Fox",
     "Skaab Goliath", "Slayer of the Wicked", "Smite the Monstrous", "Sol Ring",
     "Somberwald Spider", "Spectral Flight", "Spectral Rider", "Spider Spawning",
-    "Spidery Grasp", "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble",
+    "Spidery Grasp", "Splinterfright", "Stensia Bloodhall", "Stitched Drake", "Stromkirk Noble",
     "Stromkirk Patrol", "Sturmgeist", "Sulfur Falls", "Swamp", "Swords to Plowshares",
     "Think Twice", "Thraben Purebloods", "Tormented Pariah", "Travel Preparations",
     "Typhoid Rats", "Unburial Rites", "Unruly Mob", "Urgent Exorcism", "Vampire Interloper",
@@ -3206,7 +3385,7 @@ fn every_readable_activated_ability_does_what_its_text_says() {
                 let mut w = apply(&ability.spec, &w, full, P0);
                 w.state_based_actions();
                 let want = w.observed();
-                match play_from(&state, &registry, None, Vec::new(), Some(act), None, &[]) {
+                match play_from(&state, &registry, None, Vec::new(), Some(act), Scene::Main, &[]) {
                     Ok(Played::Done(after)) => {
                         let got = observe(&after, &registry);
                         if got != want {
@@ -3287,6 +3466,65 @@ fn every_readable_werewolf_transforms_as_its_text_says() {
     }
     assert!(werewolves > 0);
     assert!(failures.is_empty(), "{}", failures.join("\n  "));
+}
+
+/// Every permanent the grammar reads with an upkeep trigger, on the board:
+/// a creature of the caster's, or a Curse the caster put on the opponent.
+/// From the end step of the turn before each player's turn, the engine must
+/// play on into that turn's main phase exactly as the reference does:
+/// damage gone, the active player's permanents untapped and no one else's,
+/// the trigger resolved every way its text allows in the upkeep it names
+/// and in no other, and the active player's draw (CR 514.2, 502.3, 503.1a,
+/// 504.1). One spell is cast in the turn before, so
+/// that neither face of a werewolf on the board transforms: its triggers
+/// ask for no spells last turn, or two.
+#[test]
+fn every_upkeep_trigger_does_what_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let mut failures = Vec::new();
+    let mut upkeeps = 0;
+    for (card, spec) in cards.iter().filter(|(_, s)| s.upkeep.is_some()) {
+        // The upkeep its text names, and the other player's, which it must
+        // leave alone.
+        for active in [P0, P1] {
+            let (mut state, mut world) = board(&registry, &cache);
+            let curse = spec.upkeep.as_ref().is_some_and(|u| u.enchanted_player);
+            let id = if curse {
+                let id = attach_curse_to_player(&mut state, &registry, &card.name, P0, P1);
+                world.permanents.insert(id, Model { attached: Some(Target::Player(P1)), ..model_of(spec, card, P0) });
+                id
+            } else {
+                let id = named_permanent(&mut state, &registry, &card.name, P0);
+                world.permanents.insert(id, model_of(spec, card, P0));
+                id
+            };
+            world.refresh();
+            // Every land tapped in the turn before, so the untap step has
+            // something to untap, and something to leave tapped.
+            for (land, m) in world.permanents.iter_mut().filter(|(_, m)| m.types.iter().any(|t| t == "land")) {
+                m.tapped = true;
+                state.get_object_mut(*land).expect("on the battlefield").tapped = true;
+            }
+            let before = if active == P0 { P1 } else { P0 };
+            state.step = Step::EndStep;
+            state.active_player = before;
+            state.priority_player = Some(before);
+            state.num_spells_cast_this_turn = BTreeMap::from([(before, 1)]);
+            upkeeps += 1;
+            let want = next_turn_outcomes(spec, &world, id, active);
+            // The engine passes for a player with nothing to do, so the
+            // first question after the draw is the active player's land
+            // drop.
+            let got = every_scene_ending(&state, &registry, Scene::Until(Step::PrecombatMain));
+            if let Some(why) = disagreement(&want, &got, &registry) {
+                failures.push(format!("{} in player {}'s turn: {why}", card.name, active.0));
+            }
+        }
+    }
+    assert!(upkeeps > 0);
+    assert!(failures.is_empty(), "{} of {upkeeps} upkeeps disagree with the text:\n  {}", failures.len(), failures.join("\n  "));
 }
 
 // ---- combat ----
@@ -3557,13 +3795,19 @@ fn combat_questions(state: &GameState, registry: &CardRegistry, a: ObjectId) -> 
 /// Every game a combat can end in: each damage assignment it asks for
 /// answered every way, replayed from the start for each.
 fn every_combat_ending(state: &GameState, registry: &CardRegistry, combat: &Combat) -> Result<Vec<GameState>, String> {
+    every_scene_ending(state, registry, Scene::Combat(combat))
+}
+
+/// Every game `scene` can end in, played on from `state` with no cast:
+/// each question answered every way, replayed from the start for each.
+fn every_scene_ending(state: &GameState, registry: &CardRegistry, scene: Scene) -> Result<Vec<GameState>, String> {
     let mut todo: Vec<Vec<Answer>> = vec![Vec::new()];
     let mut done = Vec::new();
     while let Some(script) = todo.pop() {
         if done.len() + todo.len() > 200 {
             return Err("more than 200 ways to answer".to_string());
         }
-        match play_from(state, registry, None, Vec::new(), None, Some(combat), &script)? {
+        match play_from(state, registry, None, Vec::new(), None, scene, &script)? {
             Played::Done(s) => done.push(*s),
             Played::Asks(options) => todo.extend(options.into_iter().map(|o| [script.clone(), vec![o]].concat())),
         }
@@ -4018,6 +4262,17 @@ fn the_grammar_reads_its_templates() {
     assert!(!noble.dying.0[0].other, "\"this creature or another\" is every creature");
     assert_eq!(noble.trigger.spec.effects, vec![Effect::LoseLife { slot: 0, n: 1 }, Effect::GainLife { n: 1 }]);
     assert_eq!(watcher("Whenever another Human creature dies, put a +1/+1 counter on this creature.").dying.0[0].subtypes, ["Human"]);
+
+    let demon = read_upkeep("At the beginning of your upkeep, target player draws a card and loses 1 life.").expect("an upkeep trigger");
+    assert!(!demon.enchanted_player);
+    assert_eq!(demon.trigger.spec.effects, vec![Effect::PlayerDraws { slot: 0, n: 1 }, Effect::LoseLife { slot: 0, n: 1 }]);
+    let tome = read_upkeep("At the beginning of enchanted player's upkeep, that player mills two cards.").expect("an upkeep trigger");
+    assert!(tome.enchanted_player);
+    assert_eq!(tome.trigger.spec.slots, vec![Slot::EnchantedPlayer { or_planeswalker: false }]);
+    let heart = read_upkeep("At the beginning of enchanted player's upkeep, this Aura deals 1 damage to that player or a planeswalker that player controls.").expect("an upkeep trigger");
+    assert_eq!(heart.trigger.spec.slots, vec![Slot::EnchantedPlayer { or_planeswalker: true }]);
+    let angel = read_upkeep("At the beginning of your upkeep, return target Spirit card from your graveyard to your hand.").expect("an upkeep trigger");
+    assert!(matches!(&angel.trigger.spec.slots[..], [Slot::GraveyardCard { yours: true, .. }]));
 
     let wolf = read_activated("{2}{G}: This creature gets +2/+2 until end of turn. Activate only once each turn.", 0).unwrap();
     assert!(wolf.once_each_turn && !wolf.tap && wolf.spec.slots == vec![Slot::This]);
