@@ -13,7 +13,9 @@
 //! permanent it becomes and what its triggers do as it enters and as it
 //! dies, and each enchantment it can read — an Aura's "Enchant creature" or
 //! "Enchant player", and static changes to power, toughness and keywords —
-//! into what it does while it is on the battlefield. A reference semantics,
+//! into what it does while it is on the battlefield, and each land it can
+//! read into whether it enters tapped and what mana it makes. A reference
+//! semantics,
 //! written from the
 //! Comprehensive Rules and sharing no code with `src/cards/`, says what
 //! those effects do to a board described by the Oracle data of the cards on
@@ -334,6 +336,10 @@ struct Spec {
     /// Static abilities: continuous effects while it is on the battlefield
     /// (CR 604.1, 611.3).
     statics: Vec<Static>,
+    /// A land: each kind of mana one tap of it can make (CR 106.1, 305.6),
+    /// and the basic land types that let it enter untapped ("This land
+    /// enters tapped unless you control a Mountain or a Plains").
+    land: Option<(Vec<ManaType>, Option<Vec<String>>)>,
 }
 
 /// A static ability that changes power, toughness or keywords (CR 613.4c,
@@ -901,6 +907,50 @@ fn read_enchantment(card: &Printed) -> Result<Spec, String> {
         return Err("not an enchantment the grammar reads".to_string());
     }
     Ok(spec)
+}
+
+fn mana_named(sym: &str) -> Option<ManaType> {
+    if sym == "{C}" {
+        return Some(ManaType::Colorless);
+    }
+    Color::ALL.into_iter().find(|c| sym == format!("{{{}}}", color_letter(*c))).map(ManaType::from)
+}
+
+/// Read a land: a basic land's ability from its type (CR 305.6), "{T}:
+/// Add {R} or {W}.", and "This land enters tapped unless you control a
+/// Mountain or a Plains." Anything else is another family's.
+fn read_land(card: &Printed) -> Result<Spec, String> {
+    let (_, subtypes) = card.types();
+    let mut mana: Vec<ManaType> = subtypes.iter()
+        .filter_map(|t| match t.as_str() {
+            "Plains" => Some(ManaType::White),
+            "Island" => Some(ManaType::Blue),
+            "Swamp" => Some(ManaType::Black),
+            "Mountain" => Some(ManaType::Red),
+            "Forest" => Some(ManaType::Green),
+            _ => None,
+        })
+        .collect();
+    let mut unless = None;
+    for line in without_reminders(&card.oracle_text).lines().map(str::trim).filter(|l| !l.is_empty()) {
+        let unread = || format!("cannot read {line:?}");
+        if let Some(rest) = line.strip_prefix("{T}: Add ").and_then(|r| r.strip_suffix('.')) {
+            for sym in rest.split(" or ") {
+                mana.push(mana_named(sym).ok_or_else(unread)?);
+            }
+        } else if let Some(rest) = line.strip_prefix("This land enters tapped unless you control ").and_then(|r| r.strip_suffix('.')) {
+            let types: Vec<String> = rest.split(" or ")
+                .map(|t| t.trim_start_matches("a ").trim_start_matches("an ").to_string())
+                .collect();
+            unless = Some(types);
+        } else {
+            return Err(unread());
+        }
+    }
+    if mana.is_empty() {
+        return Err("no mana ability".to_string());
+    }
+    Ok(Spec { permanent: true, land: Some((mana, unless)), ..Spec::default() })
 }
 
 // ---- the board ----
@@ -1998,6 +2048,8 @@ fn readable(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (Vec<
             read_creature(card)
         } else if card.has_type("Enchantment") {
             read_enchantment(card)
+        } else if card.has_type("Land") {
+            read_land(card)
         } else {
             continue;
         };
@@ -2015,7 +2067,7 @@ fn readable(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (Vec<
 /// How many cards the grammar read when this was last raised. A change
 /// that reads more raises it; one that reads fewer fails here, so coverage
 /// is never lost without someone deciding to lose it.
-const CARDS_READ: usize = 85;
+const CARDS_READ: usize = 95;
 
 // ---- the properties ----
 
@@ -2074,7 +2126,7 @@ fn every_readable_card_does_what_its_text_says() {
     let mut failures = Vec::new();
     let mut casts = 0;
     let boards: [(&str, Build); 2] = [("", board), (" after a death", board_after_a_death)];
-    for (card, spec) in &cards {
+    for (card, spec) in cards.iter().filter(|(_, s)| s.land.is_none()) {
         let boards = if spec.reads_morbid() { &boards[..] } else { &boards[..1] };
         let counters = spec.slots.iter().any(|s| matches!(s, Slot::Spell(_)));
         for (which, build) in boards {
@@ -2164,7 +2216,7 @@ fn flash_is_exactly_the_creatures_that_print_it() {
     let (cards, _) = readable(&registry, &cache);
     let mut wrong = Vec::new();
     let mut flash = 0;
-    for (card, spec) in cards.iter().filter(|(_, s)| s.permanent) {
+    for (card, spec) in cards.iter().filter(|(c, s)| s.permanent && c.has_type("Creature")) {
         let (mut state, _) = board(&registry, &cache);
         // The opponent's precombat main phase; they have passed, so the
         // caster holds priority with the stack empty.
@@ -2181,6 +2233,62 @@ fn flash_is_exactly_the_creatures_that_print_it() {
         }
     }
     assert!(flash > 0, "the pool has a Flash creature to check");
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
+
+/// A land played from hand enters tapped exactly when its text says (CR
+/// 614.1c; the caster controls a Plains and no other land), and tapped for
+/// mana it can make exactly the mana its text says, one kind per tap (CR
+/// 106.1, 305.6): every way the engine offers to tap it, against the kinds
+/// the text names.
+#[test]
+fn every_readable_land_enters_and_taps_as_its_text_says() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let mut wrong = Vec::new();
+    let mut lands = 0;
+    for (card, spec) in &cards {
+        let Some((mana, unless)) = &spec.land else { continue };
+        lands += 1;
+        let (mut state, world) = board(&registry, &cache);
+        let land = spell_in_hand(&mut state, &registry, &card.name, P0);
+        let played = engine::submit_action(&state, &Action::PlayLand { object_id: land }, &registry);
+        let caster_has = |t: &String| world.permanents.values().any(|m| m.controller == P0 && m.subtypes.contains(t));
+        let tapped = unless.as_ref().is_some_and(|types| !types.iter().any(caster_has));
+        let obj = played.get_object(land).expect("the land exists");
+        if obj.zone != Zone::Battlefield || obj.tapped != tapped {
+            wrong.push(format!("{}: {:?}, tapped {}, where its text has it enter {}", card.name, obj.zone, obj.tapped,
+                if tapped { "tapped" } else { "untapped" }));
+            continue;
+        }
+        // Untapped, so it can be tapped for mana every way it allows.
+        let mut ready = played.clone();
+        ready.get_object_mut(land).expect("on the battlefield").tapped = false;
+        // The menu shows one row per card and ability, however many copies
+        // are untapped (a second Plains shares the first's row); the row's
+        // ability is tapped on this copy.
+        let card_id = ready.get_object(land).expect("on the battlefield").card_id;
+        let mut made: Vec<Vec<(ManaType, u32)>> = engine::legal_actions(&ready, &registry).actions.iter()
+            .filter_map(|a| match a {
+                Action::ActivateManaAbility { object_id, ability_index }
+                    if ready.get_object(*object_id).is_some_and(|o| o.card_id == card_id) =>
+                    Some(Action::ActivateManaAbility { object_id: land, ability_index: *ability_index }),
+                _ => None,
+            })
+            .map(|a| {
+                let after = engine::submit_action(&ready, &a, &registry);
+                after.get_player(P0).mana_pool.mana.iter().filter(|(_, n)| **n > 0).map(|(t, n)| (*t, *n)).collect()
+            })
+            .collect();
+        made.sort();
+        let mut want: Vec<Vec<(ManaType, u32)>> = mana.iter().map(|t| vec![(*t, 1)]).collect();
+        want.sort();
+        if made != want {
+            wrong.push(format!("{}: tapping it makes {made:?}, its text {want:?}", card.name));
+        }
+    }
+    assert!(lands >= 10, "the basics and the check lands are read");
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
 
