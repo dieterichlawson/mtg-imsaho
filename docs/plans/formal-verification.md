@@ -397,10 +397,10 @@ change that stops reading any of them fails and names it.
 
 ### The whole engine under libFuzzer
 
-`fuzz/fuzz_targets/game.rs`. The first campaign has run for 109 minutes
-across three workers: about 21,000 whole games, a corpus of 3,400 inputs
-reaching 27,100 code edges (still climbing slowly), and no finding: no
-invariant broken, no panic, no overflow, no stall. The nightly job keeps the corpus from night to night,
+`fuzz/fuzz_targets/game.rs`. The first campaign ran for 118 minutes
+across three workers: 22,906 whole games, a corpus of 3,515 inputs reaching
+27,178 code edges (still climbing slowly when it stopped), and no finding:
+no invariant broken, no panic, no overflow, no stall. The nightly job keeps the corpus from night to night,
 so each night starts from everything the last one reached.
 
 ### Defects found
