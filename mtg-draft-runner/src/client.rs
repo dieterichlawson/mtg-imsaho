@@ -17,7 +17,8 @@ use serde_json::Value;
 macro_rules! seat_commands {
     () => {
 "While drafting, type a card's number to pick it (a number typed before a
-new pack has been up 300 ms is not taken: type it again). While building:
+new pack has been up 300 ms is not taken: type it again); pool lists what
+you have drafted. While building:
 add <n>, drop <n> (by the pool numbers shown), lands plains=7 island=10,
 show, ready.
 Between games of a match: play or draw (when the choice is yours), the
@@ -346,6 +347,7 @@ pub fn command(line: &str, view: Option<&Value>, build: &mut Build, early: Optio
         "quit" | "q" | "exit" => Command::Quit,
         "name" => Command::Send(vec![serde_json::json!({"type": "name", "name": words[1..].join(" ")})]),
         "show" => view.map_or(Command::Nothing, |v| Command::Print({ let (t, m) = render(v, build); format!("{t}{m}") })),
+        "pool" => view.map_or(Command::Print("no view yet".into()), |v| Command::Print(pool_listing(v))),
         "ready" => {
             let Some(v) = view else { return Command::Print("no view yet".into()) };
             if let Some((_, b)) = between(v) {
@@ -435,7 +437,14 @@ pub fn table_line(v: &Value) -> String {
         };
         format!("{who} {} {}p{joined}{auto}", x["status"].as_str().unwrap_or("?"), x["picks"])
     }).collect();
-    format!("[{}]", parts.join("; "))
+    // The packs queued behind the one on screen: printed in the seat's own
+    // part, a new count reprinted the whole pack and scrolled it off (#894).
+    let queued = match v["pack"]["waiting"].as_u64().unwrap_or(0) {
+        0 => String::new(),
+        1 => " 1 more pack waiting for you".to_string(),
+        n => format!(" {n} more packs waiting for you"),
+    };
+    format!("[{}]{queued}", parts.join("; "))
 }
 
 /// The view as the terminal shows it: the table (everybody's state) and
@@ -479,11 +488,19 @@ pub fn render(v: &Value, build: &Build) -> (String, String) {
         "lobby" => s.push_str("waiting for everybody to join\n"),
         "drafting" => {
             if let Some(pack) = v["pack"].as_object() {
+                // The pool goes above the pack as one line (`pool` lists
+                // it), so the pack and the question are the last thing on
+                // screen: listed under them, ~40 rows scrolled the pack
+                // off an 80x24 terminal from mid-draft on (#894). The
+                // count of packs queued is the table's, for the same
+                // reason: it changes often and reprinted the pack.
+                s.push_str(&pool_line(v));
                 let waiting = pack["waiting"].as_u64().unwrap_or(0);
+                if waiting > 0 {
+                    table.push_str(&format!("  {waiting} more pack{} waiting for you\n", if waiting == 1 { "" } else { "s" }));
+                }
                 let dir = v["pass_direction"].as_str().unwrap_or("");
-                s.push_str(&format!("\nPack {} pick {} of {}, {waiting} waiting, passing {dir}",
-                    pack["round"], pack["pick"], pack["size"]));
-                s.push('\n');
+                s.push_str(&format!("\nPack {} pick {} of {}, passing {dir}\n", pack["round"], pack["pick"], pack["size"]));
                 if let Some(ms) = pack["deadline_ms"].as_u64() {
                     table.push_str(&format!("  {}s left to pick\n", ms / 1000));
                 }
@@ -492,9 +509,9 @@ pub fn render(v: &Value, build: &Build) -> (String, String) {
                 }
                 s.push_str("type a number to pick, or text <n> to read the card\n");
             } else {
+                s.push_str(&pool_line(v));
                 s.push_str("\nno pack in front of you; waiting on the seat upstream\n");
             }
-            s.push_str(&pool_listing(v));
         }
         "building" => {
             // The clock the page shows beside the deck, and what happens
@@ -969,6 +986,32 @@ mod tests {
             "{}", review_listing(&comma));
     }
 
+    /// #894: while drafting, the pack and the question are the last thing
+    /// on screen. The pool (~40 rows by pack 3) was listed under them and
+    /// scrolled the pack off an 80x24 terminal; it is one line above the
+    /// pack, and `pool` lists it. The count of packs queued is the table's,
+    /// so a new count does not reprint the pack.
+    #[test]
+    fn while_drafting_the_pack_is_the_last_thing_on_screen() {
+        let card = |n: String| serde_json::json!({"name": n, "line": format!("{n} {{1}}{{R}}"), "text": ""});
+        let mut v = serde_json::json!({"type": "view", "phase": "drafting", "seat": 0, "set": "isd", "pass_direction": "left",
+            "seats": [{"seat": 0, "name": "seat 0", "kind": "human", "status": "picking", "picks": 30, "joined": true}],
+            "pool": (0..30).map(|i| card(format!("Card {i}"))).collect::<Vec<_>>(),
+            "pack": {"id": 7, "round": 3, "pick": 3, "size": 14, "waiting": 0, "deadline_ms": null,
+                     "cards": (0..12).map(|i| { let mut c = card(format!("Pack card {i}")); c["index"] = i.into(); c }).collect::<Vec<_>>()}});
+        let (table, mine) = render(&v, &Build::default());
+        assert!(mine.ends_with("type a number to pick, or text <n> to read the card\n"), "{mine}");
+        assert!(mine.contains("your pool: 30 cards (type pool to list them)\n") && !mine.contains("Card 29 {1}{R}"), "{mine}");
+        assert!(mine.lines().count() <= 16, "{mine}");
+        let Command::Print(listed) = command("pool", Some(&v), &mut Build::default(), None) else { panic!("pool prints") };
+        assert!(listed.contains("your pool (30 cards):") && listed.contains("1x Card 29 {1}{R}"), "{listed}");
+        v["pack"]["waiting"] = 2.into();
+        let (table2, mine2) = render(&v, &Build::default());
+        assert_eq!(mine2, mine, "a new count of packs queued is not a new screen");
+        assert!(table2 != table && table2.contains("2 more packs waiting for you"), "{table2}");
+        assert!(table_line(&v).ends_with("] 2 more packs waiting for you"), "{}", table_line(&v));
+    }
+
     /// #914: a seat with one pick reads "1 pick", as #874 made the page's
     /// counts read; the client said "1 picks".
     #[test]
@@ -1036,6 +1079,16 @@ fn games_so_far(m: &Value, me: u64, who: &dyn Fn(u64) -> String) -> Option<Strin
     }).collect();
     let on = format!("game {}", games.len() + 1);
     Some(if done.is_empty() { on } else { format!("{on}; {}", done.join(", ")) })
+}
+
+/// While drafting, the pool in one line above the pack: its size, and the
+/// command that lists it.
+fn pool_line(v: &Value) -> String {
+    match v["pool"].as_array().map_or(0, Vec::len) {
+        0 => "your pool is empty\n".to_string(),
+        1 => "your pool: 1 card (type pool to list it)\n".to_string(),
+        n => format!("your pool: {n} cards (type pool to list them)\n"),
+    }
 }
 
 fn pool_listing(v: &Value) -> String {

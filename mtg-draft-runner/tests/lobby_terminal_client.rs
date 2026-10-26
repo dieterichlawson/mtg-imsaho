@@ -67,7 +67,8 @@ fn the_terminal_client_drafts_builds_and_names_the_game_link() {
     }
     let text = out.lock().unwrap().clone();
     assert!(text.contains("no pack in front of you") || text.contains("Pack 1 pick 2 of 14"), "{text}");
-    assert!(text.contains("your pool (") , "the pool is listed while drafting:\n{text}");
+    // The pool is one line above the pack, listed by `pool` (#894).
+    assert!(text.contains("your pool: "), "the pool is counted while drafting:\n{text}");
     assert!(server.log_text().contains("[Seat 0] PICK Pack 3 Pick 14 |"), "every pick was the person's");
 
     // Build: 23 spells, 17 lands, ready.
