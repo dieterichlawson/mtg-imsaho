@@ -362,10 +362,12 @@ struct Spec {
     /// Static abilities: continuous effects while it is on the battlefield
     /// (CR 604.1, 611.3).
     statics: Vec<Static>,
-    /// A land: each kind of mana one tap of it can make (CR 106.1, 305.6),
-    /// and the basic land types that let it enter untapped ("This land
-    /// enters tapped unless you control a Mountain or a Plains").
-    land: Option<(Vec<ManaType>, Option<Vec<String>>)>,
+    /// A land, and the basic land types that let it enter untapped ("This
+    /// land enters tapped unless you control a Mountain or a Plains"; none
+    /// for a land that always enters untapped).
+    land: Option<Option<Vec<String>>>,
+    /// Mana abilities (CR 605.1a), a basic land's from its type (305.6).
+    mana: Vec<ManaAbility>,
     /// Activated abilities other than mana abilities (CR 602).
     activated: Vec<Activated>,
     /// "As an additional cost to cast this spell, sacrifice a creature" or
@@ -379,6 +381,62 @@ struct Spec {
     /// text is read too, "... if a player cast two or more spells last
     /// turn, transform this creature" (CR 603.4, 701.27, 712).
     werewolf: bool,
+}
+
+/// A mana ability: "{T}: Add {R} or {W}.", "{T}: Add {C}{C}.", "{1}, {T}:
+/// Add one mana of any color.", "{T}, Mill a card: Add {C}." (CR 605.1a).
+#[derive(Debug, Clone, PartialEq)]
+struct ManaAbility {
+    /// Mana paid to activate it, all generic here.
+    cost: u32,
+    /// Cards its controller mills to activate it.
+    mill: usize,
+    /// What one activation can make: one choice of these.
+    options: Vec<Vec<(ManaType, u32)>>,
+}
+
+impl ManaAbility {
+    /// Read "<cost>: Add <mana>.", or nothing if the line is not a mana
+    /// ability the grammar knows.
+    fn read(line: &str) -> Option<ManaAbility> {
+        let (cost, add) = line.split_once(": Add ")?;
+        let add = add.strip_suffix('.')?;
+        let mut ability = ManaAbility { cost: 0, mill: 0, options: Vec::new() };
+        let mut tap = false;
+        for part in cost.split(", ") {
+            match part {
+                "{T}" => tap = true,
+                "Mill a card" => ability.mill = 1,
+                _ => ability.cost = part.strip_prefix('{')?.strip_suffix('}')?.parse().ok()?,
+            }
+        }
+        if !tap {
+            return None;
+        }
+        if add == "one mana of any color" {
+            ability.options = Color::ALL.into_iter().map(|c| vec![(ManaType::from(c), 1)]).collect();
+        } else {
+            for option in add.split(" or ") {
+                // "{C}{C}" is two of one kind in one activation.
+                let mut made: Vec<(ManaType, u32)> = Vec::new();
+                for sym in option.split_inclusive('}') {
+                    let mt = mana_named(sym)?;
+                    match made.iter_mut().find(|(t, _)| *t == mt) {
+                        Some((_, n)) => *n += 1,
+                        None => made.push((mt, 1)),
+                    }
+                }
+                ability.options.push(made);
+            }
+        }
+        Some(ability)
+    }
+
+    /// How many of the engine's ability indices it takes: one per option,
+    /// as the cards declare them (Shimmering Grotto's "any color" is five).
+    fn indices(&self) -> usize {
+        self.options.len()
+    }
 }
 
 /// An additional cost to cast a spell.
@@ -986,8 +1044,12 @@ fn read_creature(card: &Printed) -> Result<Spec, String> {
             spec.werewolf = true;
             continue;
         }
+        let index = spec.mana.iter().map(ManaAbility::indices).sum::<usize>() + spec.activated.len();
+        if let Some(ability) = ManaAbility::read(line) {
+            spec.mana.push(ability);
+            continue;
+        }
         if line.contains(": ") {
-            let index = spec.activated.len();
             spec.activated.push(read_activated(line, index).ok_or_else(unread)?);
             continue;
         }
@@ -1018,10 +1080,15 @@ fn back_face_reads(back: &Printed) -> Option<Vec<Keyword>> {
 fn read_artifact(card: &Printed) -> Result<Spec, String> {
     let text = without_reminders(&card.oracle_text).replace(&card.name, "~");
     let mut spec = Spec { permanent: true, ..Spec::default() };
-    for (index, line) in text.lines().map(str::trim).filter(|l| !l.is_empty()).enumerate() {
-        spec.activated.push(read_activated(line, index).ok_or_else(|| format!("cannot read {line:?}"))?);
+    for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        let index = spec.mana.iter().map(ManaAbility::indices).sum::<usize>() + spec.activated.len();
+        if let Some(ability) = ManaAbility::read(line) {
+            spec.mana.push(ability);
+        } else {
+            spec.activated.push(read_activated(line, index).ok_or_else(|| format!("cannot read {line:?}"))?);
+        }
     }
-    if spec.activated.is_empty() {
+    if spec.activated.is_empty() && spec.mana.is_empty() {
         return Err("no abilities".to_string());
     }
     Ok(spec)
@@ -1109,7 +1176,7 @@ fn mana_named(sym: &str) -> Option<ManaType> {
 /// Mountain or a Plains." Anything else is another family's.
 fn read_land(card: &Printed) -> Result<Spec, String> {
     let (_, subtypes) = card.types();
-    let mut mana: Vec<ManaType> = subtypes.iter()
+    let mut mana: Vec<ManaAbility> = subtypes.iter()
         .filter_map(|t| match t.as_str() {
             "Plains" => Some(ManaType::White),
             "Island" => Some(ManaType::Blue),
@@ -1118,18 +1185,17 @@ fn read_land(card: &Printed) -> Result<Spec, String> {
             "Forest" => Some(ManaType::Green),
             _ => None,
         })
+        .map(|t| ManaAbility { cost: 0, mill: 0, options: vec![vec![(t, 1)]] })
         .collect();
     let mut unless = None;
     let mut activated = Vec::new();
     // A basic land's ability is its type's, and comes first.
-    let mut index = usize::from(!mana.is_empty());
+    let mut index: usize = mana.iter().map(ManaAbility::indices).sum();
     for line in without_reminders(&card.oracle_text).lines().map(str::trim).filter(|l| !l.is_empty()) {
         let unread = || format!("cannot read {line:?}");
-        if let Some(rest) = line.strip_prefix("{T}: Add ").and_then(|r| r.strip_suffix('.')) {
-            for sym in rest.split(" or ") {
-                mana.push(mana_named(sym).ok_or_else(unread)?);
-                index += 1;
-            }
+        if let Some(ability) = ManaAbility::read(line) {
+            index += ability.indices();
+            mana.push(ability);
         } else if line.contains(": ") {
             activated.push(read_activated(line, index).ok_or_else(unread)?);
             index += 1;
@@ -1145,7 +1211,7 @@ fn read_land(card: &Printed) -> Result<Spec, String> {
     if mana.is_empty() {
         return Err("no mana ability".to_string());
     }
-    Ok(Spec { permanent: true, land: Some((mana, unless)), activated, ..Spec::default() })
+    Ok(Spec { permanent: true, land: Some(unless), mana, activated, ..Spec::default() })
 }
 
 // ---- the board ----
@@ -2460,28 +2526,29 @@ fn readable(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (Vec<
 /// lose it.
 const READ: &[&str] = &[
     "Abbey Griffin", "Altar's Reap", "Ambush Viper", "Ancient Grudge", "Armored Skaab",
-    "Army of the Damned", "Avacynian Priest", "Blasphemous Act", "Boneyard Wurm",
-    "Bramblecrush", "Brimstone Volley", "Bump in the Night", "Chapel Geist", "Clifftop Retreat",
-    "Coral Merfolk", "Corpse Lunge", "Counterspell", "Curse of Death's Hold",
-    "Darkthicket Wolf", "Dead Weight", "Diregraf Ghoul", "Dissipate", "Divination",
-    "Doom Blade", "Doomed Traveler", "Dream Twist", "Feeling of Dread", "Feral Ridgewolf",
-    "Festerhide Boar", "Forest", "Fortress Crab", "Gatstaf Shepherd", "Gavony Township",
-    "Geist-Honored Monk", "Geistcatcher's Rig", "Geistflame", "Ghoulcaller's Bell",
-    "Giant Growth", "Glorious Anthem", "Gnaw to the Bone", "Goblin Piker", "Grasp of Phantoms",
-    "Grizzled Outcasts", "Grizzly Bears", "Gruesome Deformity", "Hinterland Harbor",
-    "Hollowhenge Scavenger", "Holy Strength", "Hysterical Blindness", "Intangible Virtue",
-    "Into the Maw of Hell", "Island", "Isolated Chapel", "Kalonian Tusker", "Kessig Wolf",
-    "Kindercatch", "Lantern Spirit", "Lava Axe", "Lightning Bolt", "Lost in the Mist",
-    "Makeshift Mauler", "Markov Patrician", "Mausoleum Guard", "Maw of the Mire",
-    "Midnight Haunting", "Moan of the Unhallowed", "Moment of Heroism", "Moon Heron",
-    "Morkrut Banshee", "Mountain", "Naturalize", "Nephalia Drownyard", "Paraselene",
-    "Pitchburn Devils", "Plains", "Prey Upon", "Purify the Grave", "Rally the Peasants",
-    "Ranger's Guile", "Rebuke", "Reckless Waif", "Riot Devils", "Rolling Temblor",
-    "Rotting Fensnake", "Savannah Lions", "Selfless Cathar", "Sensory Deprivation",
-    "Silent Departure", "Silverchase Fox", "Skaab Goliath", "Slayer of the Wicked",
-    "Smite the Monstrous", "Somberwald Spider", "Spectral Flight", "Spectral Rider",
-    "Spider Spawning", "Spidery Grasp", "Stensia Bloodhall", "Stitched Drake", "Sulfur Falls",
-    "Swamp", "Swords to Plowshares", "Think Twice", "Thraben Purebloods", "Tormented Pariah",
+    "Army of the Damned", "Avacyn's Pilgrim", "Avacynian Priest", "Blasphemous Act",
+    "Boneyard Wurm", "Bramblecrush", "Brimstone Volley", "Bump in the Night", "Chapel Geist",
+    "Clifftop Retreat", "Coral Merfolk", "Corpse Lunge", "Counterspell",
+    "Curse of Death's Hold", "Darkthicket Wolf", "Dead Weight", "Deranged Assistant",
+    "Diregraf Ghoul", "Dissipate", "Divination", "Doom Blade", "Doomed Traveler", "Dream Twist",
+    "Feeling of Dread", "Feral Ridgewolf", "Festerhide Boar", "Forest", "Fortress Crab",
+    "Gatstaf Shepherd", "Gavony Township", "Geist-Honored Monk", "Geistcatcher's Rig",
+    "Geistflame", "Ghoulcaller's Bell", "Giant Growth", "Glorious Anthem", "Gnaw to the Bone",
+    "Goblin Piker", "Grasp of Phantoms", "Grizzled Outcasts", "Grizzly Bears",
+    "Gruesome Deformity", "Hinterland Harbor", "Hollowhenge Scavenger", "Holy Strength",
+    "Hysterical Blindness", "Intangible Virtue", "Into the Maw of Hell", "Island",
+    "Isolated Chapel", "Kalonian Tusker", "Kessig Wolf", "Kindercatch", "Lantern Spirit",
+    "Lava Axe", "Lightning Bolt", "Lost in the Mist", "Makeshift Mauler", "Markov Patrician",
+    "Mausoleum Guard", "Maw of the Mire", "Midnight Haunting", "Moan of the Unhallowed",
+    "Moment of Heroism", "Moon Heron", "Morkrut Banshee", "Mountain", "Naturalize",
+    "Nephalia Drownyard", "Paraselene", "Pitchburn Devils", "Plains", "Prey Upon",
+    "Purify the Grave", "Rally the Peasants", "Ranger's Guile", "Rebuke", "Reckless Waif",
+    "Riot Devils", "Rolling Temblor", "Rotting Fensnake", "Savannah Lions", "Selfless Cathar",
+    "Sensory Deprivation", "Shimmering Grotto", "Silent Departure", "Silverchase Fox",
+    "Skaab Goliath", "Slayer of the Wicked", "Smite the Monstrous", "Sol Ring",
+    "Somberwald Spider", "Spectral Flight", "Spectral Rider", "Spider Spawning",
+    "Spidery Grasp", "Stensia Bloodhall", "Stitched Drake", "Sulfur Falls", "Swamp",
+    "Swords to Plowshares", "Think Twice", "Thraben Purebloods", "Tormented Pariah",
     "Travel Preparations", "Typhoid Rats", "Unburial Rites", "Urgent Exorcism", "Vampiric Fury",
     "Victim of Night", "Village Bell-Ringer", "Village Ironsmith", "Villagers of Estwald",
     "Voiceless Spirit", "Walking Corpse", "Woodland Cemetery", "Wreath of Geists",
@@ -2545,6 +2612,8 @@ fn every_readable_card_does_what_its_text_says() {
     let mut casts = 0;
     let boards: [(&str, Build); 2] = [("", board), (" after a death", board_after_a_death)];
     for (card, spec) in cards.iter().filter(|(_, s)| s.land.is_none()) {
+        // A mana ability is not cast-and-resolve material (CR 605.3b): the
+        // mana test checks it.
         let boards = if spec.reads_morbid() { &boards[..] } else { &boards[..1] };
         let counters = spec.slots.iter().any(|s| matches!(s, Slot::Spell(_)));
         for (which, build) in boards {
@@ -3103,58 +3172,113 @@ fn flash_is_exactly_the_creatures_that_print_it() {
 }
 
 /// A land played from hand enters tapped exactly when its text says (CR
-/// 614.1c; the caster controls a Plains and no other land), and tapped for
-/// mana it can make exactly the mana its text says, one kind per tap (CR
-/// 106.1, 305.6): every way the engine offers to tap it, against the kinds
-/// the text names.
+/// 614.1c; the caster controls a Plains and no other land), and every
+/// permanent with mana abilities, tapped for mana every way the engine
+/// offers, makes exactly the mana its text says, one option of one ability
+/// per tap, having paid that ability's cost (CR 106.1, 305.6, 605): any
+/// mana it costs out of a floating {C}, and any card it mills from the top
+/// of the library. A creature that came under its controller's control
+/// this turn cannot be tapped for mana at all (CR 302.6).
 #[test]
-fn every_readable_land_enters_and_taps_as_its_text_says() {
+fn every_readable_mana_ability_makes_what_its_text_says() {
     let registry = registry();
     let cache = oracle_cache();
     let (cards, _) = readable(&registry, &cache);
     let mut wrong = Vec::new();
     let mut lands = 0;
+    let mut sources = 0;
     for (card, spec) in &cards {
-        let Some((mana, unless)) = &spec.land else { continue };
-        lands += 1;
-        let (mut state, world) = board(&registry, &cache);
-        let land = spell_in_hand(&mut state, &registry, &card.name, P0);
-        let played = engine::submit_action(&state, &Action::PlayLand { object_id: land }, &registry);
-        let caster_has = |t: &String| world.permanents.values().any(|m| m.controller == P0 && m.subtypes.contains(t));
-        let tapped = unless.as_ref().is_some_and(|types| !types.iter().any(caster_has));
-        let obj = played.get_object(land).expect("the land exists");
-        if obj.zone != Zone::Battlefield || obj.tapped != tapped {
-            wrong.push(format!("{}: {:?}, tapped {}, where its text has it enter {}", card.name, obj.zone, obj.tapped,
-                if tapped { "tapped" } else { "untapped" }));
+        if spec.mana.is_empty() {
             continue;
         }
-        // Untapped, so it can be tapped for mana every way it allows.
-        let mut ready = played.clone();
-        ready.get_object_mut(land).expect("on the battlefield").tapped = false;
+        sources += 1;
+        let (mut state, mut world) = board(&registry, &cache);
+        let id = if let Some(unless) = &spec.land {
+            lands += 1;
+            let land = spell_in_hand(&mut state, &registry, &card.name, P0);
+            let played = engine::submit_action(&state, &Action::PlayLand { object_id: land }, &registry);
+            let caster_has = |t: &String| world.permanents.values().any(|m| m.controller == P0 && m.subtypes.contains(t));
+            let tapped = unless.as_ref().is_some_and(|types| !types.iter().any(caster_has));
+            let obj = played.get_object(land).expect("the land exists");
+            if obj.zone != Zone::Battlefield || obj.tapped != tapped {
+                wrong.push(format!("{}: {:?}, tapped {}, where its text has it enter {}", card.name, obj.zone, obj.tapped,
+                    if tapped { "tapped" } else { "untapped" }));
+                continue;
+            }
+            state = played;
+            // Untapped, so it can be tapped for mana every way it allows.
+            state.get_object_mut(land).expect("on the battlefield").tapped = false;
+            land
+        } else {
+            named_permanent(&mut state, &registry, &card.name, P0)
+        };
+        world.permanents.insert(id, Model::printed(card, P0));
+        let card_id = state.get_object(id).expect("on the battlefield").card_id;
+        if card.has_type("Creature") {
+            let mut sick = state.clone();
+            sick.get_object_mut(id).expect("on the battlefield").summoning_sick = true;
+            let offered = engine::legal_actions(&sick, &registry).actions.iter()
+                .any(|a| matches!(a, Action::ActivateManaAbility { object_id, .. } if *object_id == id));
+            if offered {
+                wrong.push(format!("{}: tapped for mana the turn it came under its controller's control", card.name));
+            }
+        }
+        // A floating {C} pays any ability's {1}.
+        let costs = spec.mana.iter().any(|m| m.cost > 0);
+        if costs {
+            state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+        }
         // The menu shows one row per card and ability, however many copies
         // are untapped (a second Plains shares the first's row); the row's
         // ability is tapped on this copy.
-        let card_id = ready.get_object(land).expect("on the battlefield").card_id;
-        let mut made: Vec<Vec<(ManaType, u32)>> = engine::legal_actions(&ready, &registry).actions.iter()
+        let observe_pool = |s: &GameState| -> Vec<(ManaType, u32)> {
+            s.get_player(P0).mana_pool.mana.iter().filter(|(_, n)| **n > 0).map(|(t, n)| (*t, *n)).collect()
+        };
+        let mut made: Vec<(Vec<(ManaType, u32)>, Observed)> = engine::legal_actions(&state, &registry).actions.iter()
             .filter_map(|a| match a {
                 Action::ActivateManaAbility { object_id, ability_index }
-                    if ready.get_object(*object_id).is_some_and(|o| o.card_id == card_id) =>
-                    Some(Action::ActivateManaAbility { object_id: land, ability_index: *ability_index }),
+                    if state.get_object(*object_id).is_some_and(|o| o.card_id == card_id) =>
+                    Some(Action::ActivateManaAbility { object_id: id, ability_index: *ability_index }),
                 _ => None,
             })
             .map(|a| {
-                let after = engine::submit_action(&ready, &a, &registry);
-                after.get_player(P0).mana_pool.mana.iter().filter(|(_, n)| **n > 0).map(|(t, n)| (*t, *n)).collect()
+                let after = engine::submit_action(&state, &a, &registry);
+                (observe_pool(&after), observe(&after, &registry))
             })
             .collect();
         made.sort();
-        let mut want: Vec<Vec<(ManaType, u32)>> = mana.iter().map(|t| vec![(*t, 1)]).collect();
+        let mut want: Vec<(Vec<(ManaType, u32)>, Observed)> = Vec::new();
+        for ability in &spec.mana {
+            let mut w = world.clone();
+            w.permanents.get_mut(&id).expect("on the battlefield").tapped = true;
+            for _ in 0..ability.mill {
+                let top = w.library[0].remove(0);
+                w.graveyard[0].push(top);
+            }
+            for option in &ability.options {
+                let mut pool: BTreeMap<ManaType, u32> = BTreeMap::new();
+                if costs {
+                    pool.insert(ManaType::Colorless, 1 - ability.cost);
+                }
+                for &(t, n) in option {
+                    *pool.entry(t).or_insert(0) += n;
+                }
+                let pool: Vec<(ManaType, u32)> = pool.into_iter().filter(|(_, n)| *n > 0).collect();
+                want.push((pool, w.observed()));
+            }
+        }
         want.sort();
         if made != want {
-            wrong.push(format!("{}: tapping it makes {made:?}, its text {want:?}", card.name));
+            let made_pools: Vec<_> = made.iter().map(|(p, _)| p.clone()).collect();
+            let want_pools: Vec<_> = want.iter().map(|(p, _)| p.clone()).collect();
+            let detail = made.iter().zip(&want).find(|(m, w)| m.1 != w.1)
+                .map(|(m, w)| differences(&m.1, &w.1))
+                .unwrap_or_default();
+            wrong.push(format!("{}: tapping it makes {made_pools:?}, its text {want_pools:?}\n      {detail}", card.name));
         }
     }
     assert!(lands >= 10, "the basics and the check lands are read");
+    assert!(sources > lands, "and sources that are not lands");
     assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
 
@@ -3269,6 +3393,13 @@ fn the_grammar_reads_its_templates() {
     assert_eq!(Additional::read("As an additional cost to cast this spell, exile two creature cards from your graveyard."), Some(Additional::ExileCreatureCards(2)));
     assert_eq!(Additional::read("As an additional cost to cast this spell, exile a creature card from your graveyard."), Some(Additional::ExileCreatureCards(1)));
     assert_eq!(Additional::read("As an additional cost to cast this spell, exile X cards from your graveyard."), None);
+
+    let grotto = ManaAbility::read("{1}, {T}: Add one mana of any color.").unwrap();
+    assert_eq!((grotto.cost, grotto.mill, grotto.options.len()), (1, 0, 5));
+    assert_eq!(ManaAbility::read("{T}: Add {C}{C}.").unwrap().options, vec![vec![(ManaType::Colorless, 2)]]);
+    assert_eq!(ManaAbility::read("{T}, Mill a card: Add {C}.").unwrap().mill, 1);
+    assert_eq!(ManaAbility::read("{T}: Add {R} or {W}.").unwrap().indices(), 2);
+    assert!(ManaAbility::read("{2}{G}: This creature gets +2/+2 until end of turn.").is_none());
 
     let viper = Printed { oracle_text: "Flash\nDeathtouch".to_string(), type_line: "Creature — Snake".to_string(), ..card("Viper", "") };
     assert!(read_creature(&viper).is_ok_and(|s| s.permanent && s.flash));
