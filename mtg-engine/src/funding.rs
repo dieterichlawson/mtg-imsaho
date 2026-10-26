@@ -163,48 +163,13 @@ impl FundingResponse {
     }
 }
 
-/// Tap sums groups `i..` can produce exactly, as one reachability row per
-/// suffix: `rows[i][s]` is true iff some choice of taps among groups `i..`
-/// sums to exactly `s`. `rows[n]` is `{0}` — no groups, no mana.
-///
-/// Bounded at `limit` because an allocation may never overshoot the X the
-/// player announced, and computed per residue class so a group of 4,000
-/// one-mana lands costs `O(limit)` rather than `O(limit * 4000)`.
-fn tap_reachability(groups: &[FundingGroup], limit: u32) -> Vec<Vec<bool>> {
-    let width = limit as usize + 1;
-    let mut rows: Vec<Vec<bool>> = vec![Vec::new(); groups.len() + 1];
-    let mut row = vec![false; width];
-    row[0] = true;
-    rows[groups.len()] = row;
-    for i in (0..groups.len()).rev() {
-        let prev = &rows[i + 1];
-        let g = &groups[i];
-        // A group that produces nothing contributes nothing (`build_options`
-        // filters these out; a hand-built `FundingOptions` may not).
-        if g.mana_per_tap == 0 {
-            rows[i] = prev.clone();
-            continue;
-        }
-        let q = g.mana_per_tap as usize;
-        let max_taps = usize::try_from(g.source_ids.len()).unwrap_or(usize::MAX);
-        let mut next = vec![false; width];
-        for r in 0..q.min(width) {
-            // Steps of `q` back to the nearest reachable sum. The nearest is
-            // the criterion: if it is more taps than the group has sources,
-            // so is every one behind it.
-            let mut taps_back: Option<usize> = None;
-            let mut s = r;
-            while s < width {
-                taps_back = if prev[s] { Some(0) } else { taps_back.map(|t| t + 1) };
-                if taps_back.is_some_and(|t| t <= max_taps) {
-                    next[s] = true;
-                }
-                s += q;
-            }
-        }
-        rows[i] = next;
-    }
-    rows
+/// The groups as the proved kernel takes them (`mtg_kernel::funding`):
+/// mana per tap, and how many sources tap for it.
+fn quanta_and_counts(groups: &[FundingGroup]) -> (Vec<u32>, Vec<u32>) {
+    groups
+        .iter()
+        .map(|g| (g.mana_per_tap, u32::try_from(g.source_ids.len()).unwrap_or(u32::MAX)))
+        .unzip()
 }
 
 /// Every X the player may announce that some allocation of `options` funds
@@ -217,27 +182,12 @@ fn tap_reachability(groups: &[FundingGroup], limit: u32) -> Vec<Vec<bool>> {
 #[must_use]
 pub fn fundable_x_values(options: &FundingOptions) -> Vec<u32> {
     let pool_total: u32 = options.pool.values().sum();
-    let rows = tap_reachability(&options.groups, options.max_x);
-    let reachable = &rows[0];
-    // The largest tap sum at or below each mana amount, so "can the pool
-    // top some tap sum up to exactly `m`?" is one comparison.
-    let mut largest_at_or_below: Vec<Option<u32>> = vec![None; reachable.len()];
-    let mut best: Option<u32> = None;
-    for (s, &ok) in reachable.iter().enumerate() {
-        if ok {
-            best = Some(u32::try_from(s).unwrap_or(u32::MAX));
-        }
-        largest_at_or_below[s] = best;
-    }
+    let (quanta, counts) = quanta_and_counts(&options.groups);
+    // Proved: `ok[m]` iff some tap sum the board has, topped up from the
+    // pool, comes to exactly `m`.
+    let ok = mtg_kernel::funding::fundable_amounts(pool_total, &quanta, &counts, options.max_x);
     (0..=options.max_announceable_x())
-        .filter(|&x| {
-            let mana = options.mana_for_x(x);
-            largest_at_or_below
-                .get(mana as usize)
-                .copied()
-                .flatten()
-                .is_some_and(|s| mana - s <= pool_total)
-        })
+        .filter(|&x| ok.get(options.mana_for_x(x) as usize).copied().unwrap_or(false))
         .collect()
 }
 
@@ -275,23 +225,13 @@ pub fn allocate_for_x(options: &FundingOptions, x: u32) -> (FundingResponse, u32
     let target = options.mana_for_x(x);
     let pool_total: u32 = options.pool.values().sum();
 
-    let rows = tap_reachability(&options.groups, target);
-    let reachable = &rows[0];
-
-    // The pool can top any tap sum up by 0..=pool_total, so `target` is
-    // exactly fundable iff some reachable tap sum sits in this window.
-    let floor = target.saturating_sub(pool_total);
-    let exact = (floor..=target).find(|&s| reachable[s as usize]);
-    // Exactness outranks the preference for pool over taps: the smallest
-    // tap sum in the window leaves the most of the pool intact, but if the
-    // window holds none, spend the whole pool behind the largest tap sum
-    // there is and report what is left over.
-    let tap_sum = exact.unwrap_or_else(|| {
-        (0..floor)
-            .rev()
-            .find(|&s| reachable[s as usize])
-            .unwrap_or(0)
-    });
+    // Proved (`mtg_kernel::funding::fund`): the taps are ones the board
+    // has, they fund `target` exactly whenever any allocation does, an
+    // exact one taps as little as any exact one (the pool is drained before
+    // anything is tapped), and nothing funds more of `target` than this.
+    let (quanta, counts) = quanta_and_counts(&options.groups);
+    let funding = mtg_kernel::funding::fund(pool_total, &quanta, &counts, target);
+    let tap_sum = funding.tap_sum;
 
     // Pool: around `pool_keep` when the engine gave it, through the proved
     // `pay_around`: what is spare first, in `pool_order`, and what the rest
@@ -324,27 +264,13 @@ pub fn allocate_for_x(options: &FundingOptions, x: u32) -> (FundingResponse, u32
         }
     }
 
-    // Taps: walk the groups in their given order (`order_around_demands`:
-    // what nothing else needs first, creatures last), taking the most each
-    // can contribute that still leaves `left` reachable by the groups
-    // behind it, among the allocations summing to `tap_sum`.
-    let mut left = tap_sum;
-    for (i, g) in options.groups.iter().enumerate() {
-        if left == 0 {
-            break;
-        }
-        if g.mana_per_tap == 0 {
-            continue;
-        }
-        let max_taps = u32::try_from(g.source_ids.len()).unwrap_or(u32::MAX);
-        let take_taps = (0..=(left / g.mana_per_tap).min(max_taps))
-            .rev()
-            .find(|&t| rows[i + 1][(left - t * g.mana_per_tap) as usize])
-            .unwrap_or(0);
-        if take_taps > 0 {
-            let amount = take_taps * g.mana_per_tap;
-            response.taps.insert(g.name.clone(), amount);
-            left -= amount;
+    // Taps, group by group in their given order (`order_around_demands`:
+    // what nothing else needs first, creatures last): the kernel has each
+    // group give the most it can among the allocations summing to
+    // `tap_sum`.
+    for (g, &taps) in options.groups.iter().zip(&funding.taps) {
+        if taps > 0 {
+            response.taps.insert(g.name.clone(), taps * g.mana_per_tap);
         }
     }
 
