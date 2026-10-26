@@ -138,6 +138,9 @@ pub struct BetweenGames<'a> {
     pub last: Option<String>,
     /// This seat chooses whether to play or draw the next game.
     pub chooses: bool,
+    /// The last game had no winner (a draw, or abandoned), so the seat that
+    /// chose it chooses again (MTR 2.2); it did not lose it (#913).
+    pub last_no_winner: bool,
     /// The cards the opponent has shown in the match so far.
     pub opponent_showed: &'a [String],
 }
@@ -287,7 +290,11 @@ your opponent {their_wins}.");
     }
     prompt.push('\n');
     if situation.chooses {
-        let why = if game == 1 { "you won the coin flip" } else { "you lost the last game" };
+        let why = match game {
+            1 => "you won the coin flip".to_string(),
+            _ if situation.last_no_winner => format!("game {} had no winner, and the choice is still yours", game - 1),
+            _ => "you lost the last game".to_string(),
+        };
         let _ = writeln!(prompt, "You choose whether to play first or draw first in game {game} ({why}). \
 Playing first is the usual choice in Limited; drawing first suits a slow deck that wins the long game.");
     }
@@ -338,7 +345,34 @@ pub fn write_deck_file(path: &std::path::Path, deck: &DraftDeck) -> std::io::Res
 
 #[cfg(test)]
 mod deck_prompt_tests {
-    use super::{build_deck_prompt, CardLines, CardRegistry};
+    use super::{build_deck_prompt, build_sideboard_prompt, BetweenGames, CardLines, CardRegistry};
+
+    /// #913: after a game with no winner the chooser chose last game and
+    /// chooses again (MTR 2.2); the prompt told it "you lost the last game"
+    /// beside "Last game: you drew game 1".
+    #[test]
+    fn the_sideboard_prompt_says_why_the_seat_chooses() {
+        let set_data = mtg_draft::set_data::SetData::load(std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../data/sets/isd.json"
+        )))
+        .expect("ISD set data");
+        let registry = CardRegistry::with_all_cards();
+        let cards = CardLines::new(&set_data.all_card_names(), &set_data.rarities(), &registry);
+        let pool = vec!["Chapel Geist".to_string()];
+        let deck = mtg_draft::deckbuilding::DraftDeck {
+            maindeck: pool.clone(), lands: std::collections::HashMap::new(), sideboard: Vec::new(),
+        };
+        let ask = |last: &str, last_no_winner: bool| build_sideboard_prompt(&pool, &deck, &cards, &BetweenGames {
+            game: 2, best_of: 3, your_wins: 0, their_wins: if last_no_winner { 0 } else { 1 },
+            last: Some(last.to_string()), chooses: true, last_no_winner, opponent_showed: &[],
+        });
+        for last in ["you drew game 1 on turn 14", "no winner in game 1 on turn 14"] {
+            let prompt = ask(last, true);
+            assert!(prompt.contains("in game 2 (game 1 had no winner, and the choice is still yours)") && !prompt.contains("you lost"), "{prompt}");
+        }
+        assert!(ask("you lost game 1 on turn 9", false).contains("in game 2 (you lost the last game)"));
+    }
 
     /// #487: the whole prompt used to be one sentence and a `Nx Name` list —
     /// no colour or cost to build on, no land target, no statement of the

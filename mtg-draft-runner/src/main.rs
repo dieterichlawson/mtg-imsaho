@@ -1610,6 +1610,7 @@ and the FINAL STANDINGS below record none",
                                     game: bg.game, best_of, your_wins: you, their_wins: them,
                                     last: bg.games.last().map(|g| last_game_line(g, seat, bg.games.len())),
                                     chooses: bg.chooser == seat,
+                                    last_no_winner: bg.games.last().is_some_and(|g| g.winner.is_none()),
                                     opponent_showed: &bg.shown[1 - i],
                                 };
                                 let decision = sideboard_with_llm(client, pools[i], &current[i], card_lines, &situation);
