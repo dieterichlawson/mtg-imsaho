@@ -7,11 +7,14 @@
 //! sorcery's Oracle text, as Scryfall prints it (`data/oracle_cache.json`),
 //! into a list of effects ("deals 3 damage to any target", "destroy target
 //! nonblack creature", "create two 1/1 white Spirit creature tokens with
-//! flying"). A reference semantics, written from the Comprehensive Rules
-//! and sharing no code with `src/cards/`, says what those effects do to a
-//! board described by the Oracle data of the cards on it. Then every card
-//! the grammar reads is cast at every set of targets the engine offers on a
-//! board of a dozen permanents, and the engine is held to two things:
+//! flying"), and each creature whose text is nothing but keywords into the
+//! permanent it becomes. A reference semantics, written from the
+//! Comprehensive Rules and sharing no code with `src/cards/`, says what
+//! those effects do to a board described by the Oracle data of the cards on
+//! it. Then every card the grammar reads is cast at every set of targets
+//! the engine offers on a board of fourteen permanents and four graveyard
+//! cards (and, for morbid, on the same board after a creature has died),
+//! and the engine is held to two things:
 //!
 //! - **the targets**: the engine offers exactly the target sets the text
 //!   allows (CR 115.1, 601.2c) — a Doom Blade that offers a black creature,
@@ -176,6 +179,13 @@ enum Slot {
     Opponent,
     /// "target <permanents>".
     Permanent(Filter),
+    /// "up to N target <permanents>": any set of at most N of them
+    /// (CR 601.2c). Only ever a card's one slot here, so its targets are
+    /// the cast's whole target list.
+    UpTo { n: usize, filter: Filter },
+    /// "target card from a graveyard", "target creature card from your
+    /// graveyard": a card, not a permanent (CR 115.1, 404).
+    GraveyardCard { filter: Option<Filter>, yours: bool },
 }
 
 /// A description of permanents: any one of the alternatives ("artifact or
@@ -191,8 +201,11 @@ struct Clause {
     head: Option<String>,
     /// "nonblack": colours it must not have.
     not_colors: Vec<Color>,
-    /// "noncreature", "non-Vampire": types and subtypes it must not have.
+    /// "noncreature", "nonlegendary", "non-Vampire": types, supertypes
+    /// and subtypes it must not have.
     not_types: Vec<String>,
+    /// "Vampire creatures": subtypes it must have.
+    subtypes: Vec<String>,
     /// "with power 4 or greater".
     min_power: Option<i32>,
     /// "without flying".
@@ -235,10 +248,26 @@ enum Effect {
     Mill { slot: usize, n: usize },
     /// "Create N [tapped] P/T <colour> <subtypes> creature tokens [with K]"
     /// (CR 111.2).
-    Tokens { n: usize, power: i32, toughness: i32, colors: Vec<Color>, subtypes: Vec<String>, keywords: Vec<Keyword>, tapped: bool },
+    /// "... for each creature card in your graveyard": `n` that many times.
+    Tokens { n: usize, power: i32, toughness: i32, colors: Vec<Color>, subtypes: Vec<String>, keywords: Vec<Keyword>, tapped: bool, per_creature_card: bool },
     /// "Its controller gains life equal to its power": the power the
     /// object last had on the battlefield (CR 608.2h).
     ControllerGainsLifeEqualToPower { slot: usize },
+    /// "Put a +1/+1 counter on each of <slot>" (CR 122.1a).
+    PlusCounters { slot: usize, n: u32 },
+    /// "<slot a> fights <slot b>": each deals damage equal to its power to
+    /// the other (CR 701.12a).
+    Fight { a: usize, b: usize },
+    /// "Destroy all <filter>".
+    DestroyAll { filter: Filter },
+    /// "You gain N life for each <thing> destroyed this way".
+    GainLifePerDestroyed { n: i32 },
+    /// "You gain N life for each creature card in your graveyard".
+    GainLifePerCreatureCard { n: i32 },
+    /// "Return target ... card from your graveyard to the battlefield
+    /// [with a -1/-1 counter on it]" (CR 110.2: under its owner's, the
+    /// caster's, control).
+    Reanimate { slot: usize, minus_counter: bool },
 }
 
 /// A card's text, read.
@@ -249,6 +278,15 @@ struct Spec {
     /// "This spell costs {1} less to cast for each creature on the
     /// battlefield" (CR 601.2f).
     cheaper_per_creature: bool,
+    /// "Morbid — ~ deals N damage instead if a creature died this turn":
+    /// which effect's amount, and what it becomes (CR 207.2c: an ability
+    /// word has no rules meaning; the condition is the text after it).
+    morbid: Option<(usize, u32)>,
+    /// A creature spell whose text is only keywords: it resolves into a
+    /// permanent with its printed characteristics (CR 608.3).
+    permanent: bool,
+    /// "Flash" (CR 702.8): castable whenever its controller has priority.
+    flash: bool,
 }
 
 fn number(word: &str) -> Option<u32> {
@@ -313,11 +351,13 @@ fn filter(text: &str) -> Option<Filter> {
             } else if let Some(neg) = q.strip_prefix("non") {
                 if let Some(c) = color_named(neg) {
                     clause.not_colors.push(c);
-                } else if CARD_TYPES.contains(&neg) {
+                } else if CARD_TYPES.contains(&neg) || neg == "legendary" {
                     clause.not_types.push(neg.to_string());
                 } else {
                     return None;
                 }
+            } else if q.chars().next().is_some_and(char::is_uppercase) {
+                clause.subtypes.push((*q).to_string());
             } else {
                 return None;
             }
@@ -368,6 +408,65 @@ impl Spec {
     /// template matches.
     fn sentence(&mut self, s: &str) -> Option<()> {
         let s = s.trim().strip_suffix('.')?;
+        // CR 701.12a: "Target creature you control fights target creature
+        // you don't control".
+        if let Some((a, b)) = s.split_once(" fights ") {
+            let a = self.slot(Slot::Permanent(filter(a.strip_prefix("Target ")?)?));
+            let b = self.slot(Slot::Permanent(filter(b.strip_prefix("target ")?)?));
+            self.effects.push(Effect::Fight { a, b });
+            return Some(());
+        }
+        // "up to N target ..." (CR 601.2c).
+        if let Some(rest) = s.strip_prefix("Tap up to ") {
+            let slot = self.up_to(rest)?;
+            self.effects.push(Effect::Tap { slot, tapped: true });
+            return Some(());
+        }
+        if let Some(rest) = s.strip_prefix("Put a +1/+1 counter on each of up to ") {
+            let slot = self.up_to(rest)?;
+            self.effects.push(Effect::PlusCounters { slot, n: 1 });
+            return Some(());
+        }
+        if let Some(f) = s.strip_prefix("Destroy all ") {
+            self.effects.push(Effect::DestroyAll { filter: filter(f)? });
+            return Some(());
+        }
+        // Cards in graveyards (CR 404), before the permanent templates
+        // below would take "target card" for a permanent.
+        if s == "Exile target card from a graveyard" {
+            let slot = self.slot(Slot::GraveyardCard { filter: None, yours: false });
+            self.effects.push(Effect::Exile { slot });
+            return Some(());
+        }
+        if let Some(rest) = s.strip_prefix("Return target ") {
+            if let Some((f, how)) = rest.split_once(" card from your graveyard to the battlefield") {
+                let minus_counter = match how {
+                    "" => false,
+                    " with a -1/-1 counter on it" => true,
+                    _ => return None,
+                };
+                let slot = self.slot(Slot::GraveyardCard { filter: Some(filter(f)?), yours: true });
+                self.effects.push(Effect::Reanimate { slot, minus_counter });
+                return Some(());
+            }
+        }
+        if let Some(rest) = s.strip_prefix("You gain ") {
+            if let Some((n, per)) = rest.split_once(" life for each ") {
+                let n: i32 = number(n)?.try_into().ok()?;
+                if per == "creature card in your graveyard" {
+                    self.effects.push(Effect::GainLifePerCreatureCard { n });
+                    return Some(());
+                }
+                // "for each enchantment destroyed this way": the last
+                // "Destroy all" (CR 608.2c reads "this way" as that one).
+                per.strip_suffix(" destroyed this way")?;
+                if !matches!(self.effects.last(), Some(Effect::DestroyAll { .. })) {
+                    return None;
+                }
+                self.effects.push(Effect::GainLifePerDestroyed { n });
+                return Some(());
+            }
+        }
         // CR 120.3: "~ deals N damage to ...".
         if let Some(rest) = s.strip_prefix("~ deals ") {
             let (n, to) = rest.split_once(" damage to ")?;
@@ -463,6 +562,13 @@ impl Spec {
         None
     }
 
+    /// "two target creatures": an "up to" slot of that many.
+    fn up_to(&mut self, rest: &str) -> Option<usize> {
+        let (n, f) = rest.split_once(" target ")?;
+        let n = number(n)? as usize;
+        Some(self.slot(Slot::UpTo { n, filter: filter(f)? }))
+    }
+
     fn player_slot(&mut self, who: &str) -> Option<usize> {
         match who {
             "player" => Some(self.slot(Slot::Player)),
@@ -474,6 +580,10 @@ impl Spec {
     /// "two 1/1 white Spirit creature tokens with flying", "thirteen tapped
     /// 2/2 black Zombie creature tokens", "a 1/1 ... token".
     fn tokens(&mut self, rest: &str) -> Option<()> {
+        let (rest, per_creature_card) = match rest.strip_suffix(" for each creature card in your graveyard") {
+            Some(r) => (r, true),
+            None => (rest, false),
+        };
         let (rest, keywords) = match rest.split_once(" with ") {
             Some((r, k)) => (r, k.split(" and ").map(keyword_named).collect::<Option<Vec<_>>>()?),
             None => (rest, Vec::new()),
@@ -503,7 +613,7 @@ impl Spec {
         }
         let mut keywords = keywords;
         keywords.sort_by_key(|k| k.label());
-        self.effects.push(Effect::Tokens { n, power, toughness, colors, subtypes, keywords, tapped });
+        self.effects.push(Effect::Tokens { n, power, toughness, colors, subtypes, keywords, tapped, per_creature_card });
         Some(())
     }
 }
@@ -523,12 +633,36 @@ fn read(card: &Printed) -> Result<Spec, String> {
             spec.cheaper_per_creature = true;
             continue;
         }
+        if let Some(rest) = line.strip_prefix("Morbid — ~ deals ") {
+            let n = rest.strip_suffix(" damage instead if a creature died this turn.")
+                .and_then(number)
+                .ok_or_else(|| format!("cannot read {line:?}"))?;
+            let which = spec.effects.iter().rposition(|e| matches!(e, Effect::Damage { .. }))
+                .ok_or("morbid with no damage to replace")?;
+            spec.morbid = Some((which, n));
+            continue;
+        }
         for sentence in line.split_inclusive(". ") {
             spec.sentence(sentence).ok_or_else(|| format!("cannot read {sentence:?}"))?;
         }
     }
     if spec.effects.is_empty() {
         return Err("no effects".to_string());
+    }
+    Ok(spec)
+}
+
+/// Read a creature card whose text is nothing but keywords the engine
+/// models, one list per line ("Flying, vigilance"; "Flash" then
+/// "Deathtouch"), or none at all.
+fn read_creature(card: &Printed) -> Result<Spec, String> {
+    let text = without_reminders(&card.oracle_text);
+    let mut spec = Spec { permanent: true, ..Spec::default() };
+    for line in text.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        for word in line.split(',').map(str::trim) {
+            let k = keyword_named(word).ok_or_else(|| format!("cannot read {line:?}"))?;
+            spec.flash |= k == Keyword::Flash;
+        }
     }
     Ok(spec)
 }
@@ -556,6 +690,39 @@ const BOARD: [(&str, PlayerId); 14] = [
     ("Burning Vengeance", P1),
 ];
 
+/// What is in each graveyard to begin with: a creature card and something
+/// else on each side, for what targets or counts cards there.
+const GRAVEYARDS: [(&str, PlayerId); 4] = [
+    ("Walking Corpse", P0),
+    ("Think Twice", P0),
+    ("Grizzly Bears", P1),
+    ("Forest", P1),
+];
+
+/// Put `name` straight into its owner's graveyard, on top of the pile: not
+/// by dying, which would count for morbid.
+fn card_in_graveyard(state: &mut GameState, registry: &CardRegistry, name: &str, owner: PlayerId) -> ObjectId {
+    let card_id = registry.get_id_by_name(name).expect("a card in the registry");
+    let data = registry.card_data(card_id).expect("card data");
+    let id = state.create_object(card_id, owner, Zone::Graveyard, data.power, data.toughness);
+    state.get_object_mut(id).expect("just created").name = name.into();
+    state.get_player_mut(owner).graveyard_order.push(id);
+    id
+}
+
+/// The board, after a creature of the opponent's (Savannah Lions) has died
+/// this turn: what morbid is read against.
+fn board_after_a_death(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameState, World) {
+    let (mut state, mut world) = board(registry, cache);
+    let lions = named_permanent(&mut state, registry, "Savannah Lions", P1);
+    kill_by_damage(&mut state, registry, lions);
+    assert!(state.creature_died_this_turn, "the engine records the death");
+    world.yard.insert(lions, Model::printed(&cache["Savannah Lions"], P1));
+    world.graveyard[1].push("Savannah Lions".to_string());
+    world.a_creature_died = true;
+    (state, world)
+}
+
 /// Each player's library, top first: distinct names, so a card put on top
 /// or drawn is told apart from the rest.
 const LIBRARY: [&str; 5] = ["Island", "Swamp", "Mountain", "Plains", "Forest"];
@@ -576,6 +743,9 @@ struct Model {
     toughness: Option<i32>,
     damage: u32,
     tapped: bool,
+    /// +1/+1 and -1/-1 counters (CR 122.1a), already counted in power
+    /// and toughness.
+    counters: (u32, u32),
 }
 
 impl Model {
@@ -593,6 +763,7 @@ impl Model {
             toughness: p.toughness,
             damage: 0,
             tapped: false,
+            counters: (0, 0),
         }
     }
 
@@ -610,6 +781,7 @@ impl Model {
             head
                 && !c.not_colors.iter().any(|col| self.colors.contains(col))
                 && !c.not_types.iter().any(|t| self.types.contains(t) || self.subtypes.contains(t))
+                && c.subtypes.iter().all(|t| self.subtypes.contains(t))
                 && c.min_power.is_none_or(|n| self.power.is_some_and(|p| p >= n))
                 && !c.without.iter().any(|k| self.keywords.contains(k))
                 && c.yours.is_none_or(|y| (self.controller == caster) == y)
@@ -625,6 +797,13 @@ impl Model {
 #[derive(Debug, Clone)]
 struct World {
     permanents: BTreeMap<ObjectId, Model>,
+    /// The cards in graveyards, by id, for what targets them and counts
+    /// them; `graveyard` is the same cards by name.
+    yard: BTreeMap<ObjectId, Model>,
+    /// A creature died this turn (CR 700.4), which morbid reads.
+    a_creature_died: bool,
+    /// Permanents the reference has no engine id for: tokens, and the
+    /// permanent a creature spell becomes.
     tokens: Vec<Model>,
     life: [i32; 2],
     hand: [Vec<String>; 2],
@@ -657,6 +836,7 @@ struct PermanentSeen {
     keywords: Vec<&'static str>,
     colors: Vec<char>,
     subtypes: Vec<String>,
+    counters: (u32, u32),
 }
 
 fn seen(m: &Model) -> PermanentSeen {
@@ -677,7 +857,18 @@ fn seen(m: &Model) -> PermanentSeen {
         keywords,
         colors,
         subtypes,
+        counters: m.counters,
     }
+}
+
+/// Where a permanent goes when it leaves the battlefield: one of its
+/// owner's zones.
+#[derive(Clone, Copy)]
+enum Dest {
+    Graveyard,
+    Exile,
+    Hand,
+    LibraryTop,
 }
 
 impl World {
@@ -697,16 +888,33 @@ impl World {
 
     /// A permanent leaves the battlefield for one of its owner's zones; a
     /// token leaves the game (CR 111.7, 704.5d).
-    fn leave(&mut self, id: ObjectId, to: fn(&mut World) -> &mut [Vec<String>; 2], top: bool) {
+    fn leave(&mut self, id: ObjectId, to: Dest) {
         let Some(m) = self.permanents.remove(&id) else { return };
-        let Some(name) = m.name else { return };
+        let Some(name) = m.name.clone() else { return };
         let owner = m.owner.0 as usize;
-        let zone = &mut to(self)[owner];
-        if top {
-            zone.insert(0, name);
-        } else {
-            zone.push(name);
+        match to {
+            Dest::Graveyard => {
+                self.graveyard[owner].push(name);
+                // A new object, with its printed characteristics (CR 400.7).
+                self.yard.insert(id, Model { controller: m.owner, damage: 0, tapped: false, counters: (0, 0), ..m });
+            }
+            Dest::Exile => self.exile[owner].push(name),
+            Dest::Hand => self.hand[owner].push(name),
+            Dest::LibraryTop => self.library[owner].insert(0, name),
         }
+    }
+
+    /// A card leaves a graveyard for `to`, by id.
+    fn leave_yard(&mut self, id: ObjectId) -> Option<Model> {
+        let m = self.yard.remove(&id)?;
+        let names = &mut self.graveyard[m.owner.0 as usize];
+        let at = names.iter().position(|n| Some(n) == m.name.as_ref()).expect("a yard card is in its graveyard");
+        names.remove(at);
+        Some(m)
+    }
+
+    fn creature_cards_in_graveyard(&self, p: PlayerId) -> u32 {
+        u32::try_from(self.yard.values().filter(|m| m.owner == p && m.is_creature()).count()).expect("a few")
     }
 
     /// State-based actions, as CR 704.5f-g state them: a creature with
@@ -724,7 +932,8 @@ impl World {
                 return;
             }
             for id in dying {
-                self.leave(id, |w| &mut w.graveyard, false);
+                self.leave(id, Dest::Graveyard);
+                self.a_creature_died = true;
             }
         }
     }
@@ -736,6 +945,8 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let mut world = World {
         permanents: BTreeMap::new(),
+        yard: BTreeMap::new(),
+        a_creature_died: false,
         tokens: Vec::new(),
         life: [20, 20],
         hand: [Vec::new(), Vec::new()],
@@ -746,6 +957,11 @@ fn board(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (GameSta
     for (name, owner) in BOARD {
         let id = named_permanent(&mut state, registry, name, owner);
         world.permanents.insert(id, Model::printed(&cache[name], owner));
+    }
+    for (name, owner) in GRAVEYARDS {
+        let id = card_in_graveyard(&mut state, registry, name, owner);
+        world.yard.insert(id, Model::printed(&cache[name], owner));
+        world.graveyard[owner.0 as usize].push(name.to_string());
     }
     // A land the caster could play, so that once the spell has resolved the
     // game loop has something to ask them: it passes priority on its own
@@ -805,6 +1021,10 @@ fn observe(state: &GameState, registry: &CardRegistry) -> Observed {
                 keywords,
                 colors,
                 subtypes,
+                counters: (
+                    o.counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0),
+                    o.counters.get(&CounterType::MinusOneMinusOne).copied().unwrap_or(0),
+                ),
             }
         })
         .collect();
@@ -872,8 +1092,13 @@ fn candidates(slot: &Slot, world: &World, caster: PlayerId) -> Vec<Target> {
         Slot::Any => [creatures(), players(&|_| true)].concat(),
         Slot::PlayerOrPlaneswalker | Slot::Player => players(&|_| true),
         Slot::Opponent => players(&|p| p != caster),
-        Slot::Permanent(f) => world.permanents.iter()
+        Slot::Permanent(f) | Slot::UpTo { filter: f, .. } => world.permanents.iter()
             .filter(|(_, m)| m.matches(f, caster))
+            .map(|(id, _)| Target::Object(*id))
+            .collect(),
+        Slot::GraveyardCard { filter, yours } => world.yard.iter()
+            .filter(|(_, m)| !*yours || m.owner == caster)
+            .filter(|(_, m)| filter.as_ref().is_none_or(|f| m.matches(f, caster)))
             .map(|(id, _)| Target::Object(*id))
             .collect(),
     };
@@ -889,11 +1114,30 @@ fn target_key(t: &Target) -> (u8, u64) {
     }
 }
 
+/// Every set of at most `n` of `options`, each in `options`' order.
+fn subsets(options: &[Target], n: usize) -> Vec<Vec<Target>> {
+    let mut out = vec![Vec::new()];
+    for t in options {
+        let grown: Vec<Vec<Target>> = out.iter()
+            .filter(|s| s.len() < n)
+            .map(|s| [s.clone(), vec![t.clone()]].concat())
+            .collect();
+        out.extend(grown);
+    }
+    out
+}
+
 /// Every set of targets the text allows: one from each slot, the same
 /// object at most once per slot (CR 115.3) and allowed across slots,
 /// which is what the spells here would need (none shares a candidate
-/// between slots).
+/// between slots). An "up to N" slot is any set of at most N.
 fn target_sets(spec: &Spec, world: &World, caster: PlayerId) -> Vec<Vec<Target>> {
+    if let [Slot::UpTo { n, .. }] = spec.slots.as_slice() {
+        let mut sets = subsets(&candidates(&spec.slots[0], world, caster), *n);
+        sets.sort_by_key(|s| s.iter().map(target_key).collect::<Vec<_>>());
+        return sets;
+    }
+    assert!(!spec.slots.iter().any(|s| matches!(s, Slot::UpTo { .. })), "an up-to slot is a card's only slot here");
     let mut sets: Vec<Vec<Target>> = vec![Vec::new()];
     for slot in &spec.slots {
         let options = candidates(slot, world, caster);
@@ -908,27 +1152,41 @@ fn target_sets(spec: &Spec, world: &World, caster: PlayerId) -> Vec<Vec<Target>>
     sets
 }
 
-/// What resolving `spec` with `targets` does to `world`, then state-based
-/// actions (CR 608.2, 704.3), with the spell itself put into its owner's
-/// graveyard last (CR 608.2n).
-fn resolve(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId, name: &str) -> World {
+/// A creature's power, toughness and counters changed by `by` (CR 613.4).
+fn change(m: &mut Model, power: i32, toughness: i32) {
+    m.power = m.power.map(|p| p + power);
+    m.toughness = m.toughness.map(|t| t + toughness);
+}
+
+/// What resolving `card`, read as `spec`, with `targets` does to `world`,
+/// then state-based actions (CR 608.2, 704.3). An instant or sorcery is put
+/// into its owner's graveyard last (CR 608.2n); a creature spell becomes a
+/// permanent with its printed characteristics (CR 608.3).
+fn resolve(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId, card: &Printed) -> World {
     let mut w = world.clone();
     let c = caster.0 as usize;
-    let object = |slot: usize| match &targets[slot] {
-        Target::Object(id) => Some(*id),
-        _ => None,
+    // An "up to" slot's targets are the whole list; any other slot is one.
+    let objects = |slot: usize| -> Vec<ObjectId> {
+        let ts: &[Target] = if matches!(spec.slots[slot], Slot::UpTo { .. }) { targets } else { &targets[slot..=slot] };
+        ts.iter().filter_map(|t| match t { Target::Object(id) => Some(*id), _ => None }).collect()
     };
+    let object = |slot: usize| objects(slot).first().copied();
     let player = |slot: usize| match &targets[slot] {
         Target::Player(p) => Some(p.0 as usize),
         _ => None,
     };
-    for effect in &spec.effects {
+    let mut destroyed = 0;
+    for (i, effect) in spec.effects.iter().enumerate() {
         match effect {
             Effect::Damage { amount, slot } => {
+                let amount = match spec.morbid {
+                    Some((which, instead)) if which == i && world.a_creature_died => instead,
+                    _ => *amount,
+                };
                 if let Some(id) = object(*slot) {
                     w.permanents.get_mut(&id).expect("a target on the board").damage += amount;
                 } else if let Some(p) = player(*slot) {
-                    w.life[p] -= *amount as i32;
+                    w.life[p] -= amount as i32;
                 }
             }
             Effect::DamageEach { amount, filter } => {
@@ -940,43 +1198,95 @@ fn resolve(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId, nam
             }
             Effect::Pump { slot, power, toughness, gains } => {
                 if let Some(m) = object(*slot).and_then(|id| w.permanents.get_mut(&id)) {
-                    m.power = m.power.map(|p| p + power);
-                    m.toughness = m.toughness.map(|t| t + toughness);
+                    change(m, *power, *toughness);
                     m.keywords.extend(gains);
                 }
             }
             Effect::PumpEach { filter, power, toughness, gains } => {
                 for m in w.permanents.values_mut().chain(w.tokens.iter_mut()) {
                     if m.is_creature() && m.matches(filter, caster) {
-                        m.power = m.power.map(|p| p + power);
-                        m.toughness = m.toughness.map(|t| t + toughness);
+                        change(m, *power, *toughness);
                         m.keywords.extend(gains);
+                    }
+                }
+            }
+            Effect::PlusCounters { slot, n } => {
+                for id in objects(*slot) {
+                    if let Some(m) = w.permanents.get_mut(&id) {
+                        let n = i32::try_from(*n).expect("a few");
+                        change(m, n, n);
+                        m.counters.0 += n as u32;
+                    }
+                }
+            }
+            Effect::Fight { a, b } => {
+                // Each deals damage equal to its power to the other, at
+                // once; a creature with lifelink gains its controller that
+                // much (CR 701.12a, 702.15b).
+                let (Some(ia), Some(ib)) = (object(*a), object(*b)) else { continue };
+                let (ma, mb) = (w.permanents[&ia].clone(), w.permanents[&ib].clone());
+                let dealt = |m: &Model| u32::try_from(m.power.unwrap_or(0).max(0)).expect("non-negative");
+                w.permanents.get_mut(&ib).expect("on the board").damage += dealt(&ma);
+                w.permanents.get_mut(&ia).expect("on the board").damage += dealt(&mb);
+                for m in [&ma, &mb] {
+                    if m.keywords.contains(&Keyword::Lifelink) {
+                        w.life[m.controller.0 as usize] += dealt(m) as i32;
                     }
                 }
             }
             Effect::Destroy { slot } => {
                 if let Some(id) = object(*slot) {
-                    w.leave(id, |w| &mut w.graveyard, false);
+                    w.leave(id, Dest::Graveyard);
                 }
+            }
+            Effect::DestroyAll { filter } => {
+                let doomed: Vec<ObjectId> = w.permanents.iter()
+                    .filter(|(_, m)| m.matches(filter, caster))
+                    .map(|(id, _)| *id)
+                    .collect();
+                destroyed = doomed.len();
+                for id in doomed {
+                    w.leave(id, Dest::Graveyard);
+                }
+            }
+            Effect::GainLifePerDestroyed { n } => w.life[c] += n * i32::try_from(destroyed).expect("a few"),
+            Effect::GainLifePerCreatureCard { n } => {
+                w.life[c] += n * i32::try_from(w.creature_cards_in_graveyard(caster)).expect("a few");
             }
             Effect::Exile { slot } => {
                 if let Some(id) = object(*slot) {
-                    w.leave(id, |w| &mut w.exile, false);
+                    if let Some(card) = w.leave_yard(id) {
+                        w.exile[card.owner.0 as usize].push(card.name.expect("a card has a name"));
+                    } else {
+                        w.leave(id, Dest::Exile);
+                    }
+                }
+            }
+            Effect::Reanimate { slot, minus_counter } => {
+                if let Some(mut m) = object(*slot).and_then(|id| w.leave_yard(id)) {
+                    m.controller = caster;
+                    if *minus_counter {
+                        change(&mut m, -1, -1);
+                        m.counters.1 += 1;
+                    }
+                    w.permanents.insert(object(*slot).expect("just read"), m);
                 }
             }
             Effect::ToHand { slot } => {
                 if let Some(id) = object(*slot) {
-                    w.leave(id, |w| &mut w.hand, false);
+                    w.leave(id, Dest::Hand);
                 }
             }
             Effect::ToLibraryTop { slot } => {
                 if let Some(id) = object(*slot) {
-                    w.leave(id, |w| &mut w.library, true);
+                    w.leave(id, Dest::LibraryTop);
                 }
             }
             Effect::Tap { slot, tapped } => {
-                if let Some(m) = object(*slot).and_then(|id| w.permanents.get_mut(&id)) {
-                    m.tapped = *tapped;
+                for id in objects(*slot) {
+                    if let Some(m) = w.permanents.get_mut(&id) {
+                        m.tapped = *tapped;
+                    }
                 }
             }
             Effect::Draw { n } => {
@@ -999,8 +1309,9 @@ fn resolve(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId, nam
                     }
                 }
             }
-            Effect::Tokens { n, power, toughness, colors, subtypes, keywords, tapped } => {
-                for _ in 0..*n {
+            Effect::Tokens { n, power, toughness, colors, subtypes, keywords, tapped, per_creature_card } => {
+                let times = if *per_creature_card { *n * w.creature_cards_in_graveyard(caster) as usize } else { *n };
+                for _ in 0..times {
                     w.tokens.push(Model {
                         name: None,
                         owner: caster,
@@ -1013,6 +1324,7 @@ fn resolve(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId, nam
                         toughness: Some(*toughness),
                         damage: 0,
                         tapped: *tapped,
+                        counters: (0, 0),
                     });
                 }
             }
@@ -1027,8 +1339,13 @@ fn resolve(spec: &Spec, world: &World, targets: &[Target], caster: PlayerId, nam
             }
         }
     }
+    if spec.permanent {
+        w.tokens.push(Model { controller: caster, ..Model::printed(card, caster) });
+    }
     w.state_based_actions();
-    w.graveyard[c].push(name.to_string());
+    if !spec.permanent {
+        w.graveyard[c].push(card.name.clone());
+    }
     w
 }
 
@@ -1073,17 +1390,23 @@ fn offered(state: &GameState, registry: &CardRegistry, spell: ObjectId) -> Resul
 }
 
 /// Every target set reachable by answering the cast-time target questions
-/// one target at a time, as a player would.
+/// as a player would: one target at a time for a single slot, and any set
+/// the question allows for an "up to" slot.
 fn asked_at_cast(state: &GameState, registry: &CardRegistry) -> Result<Vec<Vec<Target>>, String> {
     match &state.awaiting_action {
         None => Ok(vec![Vec::new()]),
-        Some(AwaitingAction::ResolutionChoice { choice: ResolutionChoiceKind::ChooseTargetSet { options, min: 1, max: 1, .. }, .. }) => {
+        Some(AwaitingAction::ResolutionChoice { choice: ResolutionChoiceKind::ChooseTargetSet { options, min, max, by_count, .. }, .. })
+            if by_count.is_empty() =>
+        {
+            let mut sorted = options.clone();
+            sorted.sort_by_key(target_key);
             let mut sets = Vec::new();
-            for t in options {
-                let answer = Action::ResolveChoice { choice: ResolvedChoice::ChosenTargetSet(vec![t.clone()]) };
-                let next = engine::submit_action(state, &answer, registry);
+            for answer in subsets(&sorted, *max).into_iter().filter(|s| s.len() >= *min) {
+                let next = engine::submit_action(state, &Action::ResolveChoice {
+                    choice: ResolvedChoice::ChosenTargetSet(answer.clone()),
+                }, registry);
                 for rest in asked_at_cast(&next, registry)? {
-                    sets.push([vec![t.clone()], rest].concat());
+                    sets.push([answer.clone(), rest].concat());
                 }
             }
             Ok(sets)
@@ -1098,16 +1421,11 @@ fn asked_at_cast(state: &GameState, registry: &CardRegistry) -> Result<Vec<Vec<T
 fn cast_and_let_resolve(state: &GameState, registry: &CardRegistry, spell: ObjectId, targets: Vec<Target>) -> Result<GameState, String> {
     let mut state = state.clone();
     // A spell that asks for its targets at cast time is cast bare, and each
-    // question answered in turn, one target each, as a player answers them.
+    // question answered in turn as a player answers them: one target for a
+    // single slot, the whole set for an "up to" slot.
     let asks = engine::legal_actions(&state, registry).castable_spells.iter()
         .any(|c| c.object_id == spell && matches!(c.target_spec, CastTargetSpec::ChosenAtCast));
-    let mut answers: Vec<Action> = if asks {
-        targets.iter().rev()
-            .map(|t| Action::ResolveChoice { choice: ResolvedChoice::ChosenTargetSet(vec![t.clone()]) })
-            .collect()
-    } else {
-        Vec::new()
-    };
+    let mut answers: std::collections::VecDeque<Target> = if asks { targets.iter().cloned().collect() } else { Default::default() };
     let mut cast = Some(cast_action(spell, if asks { Vec::new() } else { targets }));
     let mut trouble = None;
     let mut decisions = 0;
@@ -1116,10 +1434,9 @@ fn cast_and_let_resolve(state: &GameState, registry: &CardRegistry, spell: Objec
         if let Some(c) = cast.take() {
             return c;
         }
-        if matches!(legal.resolution_prompt, Some(ResolutionChoiceKind::ChooseTargetSet { .. })) {
-            if let Some(a) = answers.pop() {
-                return a;
-            }
+        if let Some(ResolutionChoiceKind::ChooseTargetSet { max, .. }) = &legal.resolution_prompt {
+            let take = if *max == 1 { 1.min(answers.len()) } else { answers.len() };
+            return Action::ResolveChoice { choice: ResolvedChoice::ChosenTargetSet(answers.drain(..take).collect()) };
         }
         if s.stack.is_empty() || decisions > 20 {
             if decisions > 20 {
@@ -1146,10 +1463,18 @@ fn readable(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (Vec<
     let mut unread = Vec::new();
     for name in registry.all_names() {
         let Some(card) = cache.get(name) else { continue };
-        if !(card.has_type("Instant") || card.has_type("Sorcery")) {
+        let reading = if card.has_type("Instant") || card.has_type("Sorcery") {
+            read(card)
+        } else if card.has_type("Creature") && !card.type_line.contains("//") {
+            match read_creature(card) {
+                Ok(spec) => Ok(spec),
+                // A creature with more than keywords is another family's.
+                Err(_) => continue,
+            }
+        } else {
             continue;
-        }
-        match read(card) {
+        };
+        match reading {
             Ok(spec) if mana_cost(&card.mana_cost).is_some() => read_ok.push((card.clone(), spec)),
             Ok(_) => unread.push((name.to_string(), format!("cannot read the cost {}", card.mana_cost))),
             Err(why) => unread.push((name.to_string(), why)),
@@ -1163,7 +1488,7 @@ fn readable(registry: &CardRegistry, cache: &BTreeMap<String, Printed>) -> (Vec<
 /// How many cards the grammar read when this was last raised. A change
 /// that reads more raises it; one that reads fewer fails here, so coverage
 /// is never lost without someone deciding to lose it.
-const CARDS_READ: usize = 31;
+const CARDS_READ: usize = 60;
 
 // ---- the properties ----
 
@@ -1182,54 +1507,88 @@ fn the_board_is_what_its_cards_print() {
 }
 
 /// Every card the grammar reads offers exactly the targets its text allows,
-/// and at each of them does what its text says.
+/// and at each of them does what its text says. A card with morbid is read
+/// on a board where a creature has died this turn as well.
 #[test]
 fn every_readable_card_does_what_its_text_says() {
+    type Build = fn(&CardRegistry, &BTreeMap<String, Printed>) -> (GameState, World);
     let registry = registry();
     let cache = oracle_cache();
     let (cards, _) = readable(&registry, &cache);
     let mut failures = Vec::new();
     let mut casts = 0;
+    let boards: [(&str, Build); 2] = [("", board), (" after a death", board_after_a_death)];
     for (card, spec) in &cards {
-        let (mut state, world) = board(&registry, &cache);
-        let spell = spell_in_hand(&mut state, &registry, &card.name, P0);
-        let cost = mana_cost(&card.mana_cost).expect("read above");
-        let creatures = u32::try_from(world.permanents.values().filter(|m| m.is_creature()).count()).expect("a few");
-        fund(&mut state, P0, &cost, if spec.cheaper_per_creature { creatures } else { 0 });
-        let mut before = world.clone();
-        before.hand[0].push(card.name.clone());
+        let boards = if spec.morbid.is_some() { &boards[..] } else { &boards[..1] };
+        for (which, build) in boards {
+            let (mut state, world) = build(&registry, &cache);
+            let spell = spell_in_hand(&mut state, &registry, &card.name, P0);
+            let cost = mana_cost(&card.mana_cost).expect("read above");
+            let creatures = u32::try_from(world.permanents.values().filter(|m| m.is_creature()).count()).expect("a few");
+            fund(&mut state, P0, &cost, if spec.cheaper_per_creature { creatures } else { 0 });
+            let name = format!("{}{which}", card.name);
 
-        let expected_sets = target_sets(spec, &before, P0);
-        let offered_sets = match offered(&state, &registry, spell) {
-            Ok(sets) => sets,
-            Err(why) => {
-                failures.push(format!("{}: {why}", card.name));
+            let expected_sets = target_sets(spec, &world, P0);
+            let offered_sets = match offered(&state, &registry, spell) {
+                Ok(sets) => sets,
+                Err(why) => {
+                    failures.push(format!("{name}: {why}"));
+                    continue;
+                }
+            };
+            if offered_sets != expected_sets {
+                failures.push(format!("{name}: offers targets {offered_sets:?}, the text allows {expected_sets:?} ({spec:?})"));
                 continue;
             }
-        };
-        if offered_sets != expected_sets {
-            failures.push(format!("{}: offers targets {offered_sets:?}, the text allows {expected_sets:?} ({spec:?})", card.name));
-            continue;
-        }
-        for targets in expected_sets {
-            casts += 1;
-            let mut cast_from = before.clone();
-            cast_from.hand[0].retain(|n| *n != card.name);
-            let want = resolve(spec, &cast_from, &targets, P0, &card.name).observed();
-            match cast_and_let_resolve(&state, &registry, spell, targets.clone()) {
-                Ok(after) => {
-                    let got = observe(&after, &registry);
-                    if got != want {
-                        failures.push(format!("{} at {targets:?}:\n      {}", card.name, differences(&got, &want)));
+            for targets in expected_sets {
+                casts += 1;
+                let want = resolve(spec, &world, &targets, P0, card).observed();
+                match cast_and_let_resolve(&state, &registry, spell, targets.clone()) {
+                    Ok(after) => {
+                        let got = observe(&after, &registry);
+                        if got != want {
+                            failures.push(format!("{name} at {targets:?}:\n      {}", differences(&got, &want)));
+                        }
                     }
+                    Err(why) => failures.push(format!("{name} at {targets:?}: {why}")),
                 }
-                Err(why) => failures.push(format!("{} at {targets:?}: {why}", card.name)),
             }
         }
     }
     assert!(casts > 0);
-    assert!(failures.is_empty(), "{} of {} cards' casts disagree with their text:\n  {}",
+    assert!(failures.is_empty(), "{} of {casts} casts, across the {} cards read, disagree with their text:\n  {}",
         failures.len(), cards.len(), failures.join("\n  "));
+}
+
+/// A creature spell with Flash can be cast whenever its controller has
+/// priority, and one without only in their own main phase with the stack
+/// empty (CR 702.8a, 307.1): on the opponent's turn, with priority passed
+/// to the caster, exactly the Flash creatures are offered.
+#[test]
+fn flash_is_exactly_the_creatures_that_print_it() {
+    let registry = registry();
+    let cache = oracle_cache();
+    let (cards, _) = readable(&registry, &cache);
+    let mut wrong = Vec::new();
+    let mut flash = 0;
+    for (card, spec) in cards.iter().filter(|(_, s)| s.permanent) {
+        let (mut state, _) = board(&registry, &cache);
+        // The opponent's precombat main phase; they have passed, so the
+        // caster holds priority with the stack empty.
+        state.active_player = P1;
+        state.priority_player = Some(P0);
+        state.consecutive_passes = 1;
+        let spell = spell_in_hand(&mut state, &registry, &card.name, P0);
+        fund(&mut state, P0, &mana_cost(&card.mana_cost).expect("read"), 0);
+        let offered = engine::legal_actions(&state, &registry).castable_spells.iter().any(|c| c.object_id == spell);
+        flash += usize::from(spec.flash);
+        if offered != spec.flash {
+            wrong.push(format!("{}: {} on the opponent's turn, and its text {} Flash",
+                card.name, if offered { "offered" } else { "not offered" }, if spec.flash { "has" } else { "does not have" }));
+        }
+    }
+    assert!(flash > 0, "the pool has a Flash creature to check");
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
 }
 
 #[test]
@@ -1272,11 +1631,34 @@ fn the_grammar_reads_its_templates() {
     let spec = read(&card("X", "Create thirteen tapped 2/2 black Zombie creature tokens.")).unwrap();
     assert_eq!(spec.effects, vec![Effect::Tokens {
         n: 13, power: 2, toughness: 2, colors: vec![Color::Black], subtypes: vec!["Zombie".to_string()],
-        keywords: vec![], tapped: true,
+        keywords: vec![], tapped: true, per_creature_card: false,
     }]);
 
     let spec = read(&card("X", "Exile target creature. Its controller gains life equal to its power.")).unwrap();
     assert_eq!(spec.effects, vec![Effect::Exile { slot: 0 }, Effect::ControllerGainsLifeEqualToPower { slot: 0 }]);
+
+    let spec = read(&card("X", "Target creature you control fights target creature you don't control.")).unwrap();
+    assert_eq!(spec.effects, vec![Effect::Fight { a: 0, b: 1 }]);
+    let Slot::Permanent(Filter(clauses)) = &spec.slots[1] else { panic!("a permanent slot") };
+    assert_eq!(clauses[0].yours, Some(false));
+
+    let spec = read(&card("X", "Put a +1/+1 counter on each of up to two target creatures.")).unwrap();
+    assert!(matches!(spec.slots[..], [Slot::UpTo { n: 2, .. }]));
+
+    let spec = read(&card("Volley", "Volley deals 3 damage to any target.\nMorbid — Volley deals 5 damage instead if a creature died this turn.")).unwrap();
+    assert_eq!(spec.morbid, Some((0, 5)));
+
+    let spec = read(&card("X", "Vampire creatures you control get +2/+0 and gain first strike until end of turn.")).unwrap();
+    let Effect::PumpEach { filter: Filter(clauses), gains, .. } = &spec.effects[0] else { panic!("a group pump") };
+    assert_eq!((clauses[0].subtypes.clone(), gains.clone()), (vec!["Vampire".to_string()], vec![Keyword::FirstStrike]));
+
+    let spec = read(&card("X", "Return target nonlegendary creature card from your graveyard to the battlefield with a -1/-1 counter on it.")).unwrap();
+    assert_eq!(spec.effects, vec![Effect::Reanimate { slot: 0, minus_counter: true }]);
+
+    let viper = Printed { oracle_text: "Flash\nDeathtouch".to_string(), type_line: "Creature — Snake".to_string(), ..card("Viper", "") };
+    assert!(read_creature(&viper).is_ok_and(|s| s.permanent && s.flash));
+    let not_only_keywords = Printed { oracle_text: "Flying\nThis creature can't block.".to_string(), ..viper };
+    assert!(read_creature(&not_only_keywords).is_err());
 
     assert!(read(&card("X", "Counter target spell.")).is_err(), "a spell target is not a template here yet");
     assert!(read(&card("X", "Draw two cards, then discard a card at random.")).is_err());
