@@ -1897,18 +1897,34 @@ impl GameState {
         // Built in that order rather than sorted into it, and every other zone
         // read in id order straight off the map, which is ordered by id: the
         // same list, without a sort the proofs cannot get through (a general
-        // sort over a list whose length the solver leaves open).
+        // sort over a list whose length the solver leaves open). And
+        // allocated once, at the most it can hold, rather than grown: a list
+        // that may or may not have reallocated by each push is one the solver
+        // follows into every buffer it might be in, which it did not finish.
+        let mut result = Vec::with_capacity(self.objects.len());
         if zone == Zone::Graveyard {
             let pile = &self.get_player(player).graveyard_order;
-            let mut result: Vec<&GameObject> = pile.iter().enumerate()
-                .filter(|&(i, id)| !pile[..i].contains(id))
-                .filter_map(|(_, id)| self.objects.get(id))
-                .filter(|obj| belongs(obj))
-                .collect();
-            result.extend(self.objects.values().filter(|obj| belongs(obj) && !pile.contains(&obj.id)));
+            for (i, id) in pile.iter().enumerate() {
+                if pile[..i].contains(id) {
+                    continue;
+                }
+                if let Some(obj) = self.objects.get(id).filter(|obj| belongs(obj)) {
+                    result.push(obj);
+                }
+            }
+            for obj in self.objects.values() {
+                if belongs(obj) && !pile.contains(&obj.id) {
+                    result.push(obj);
+                }
+            }
             return result;
         }
-        self.objects.values().filter(|obj| belongs(obj)).collect()
+        for obj in self.objects.values() {
+            if belongs(obj) {
+                result.push(obj);
+            }
+        }
+        result
     }
 
     /// Every object in the game, in object-id order.
@@ -1929,7 +1945,14 @@ impl GameState {
     /// Get all objects in a zone (regardless of player), in id order.
     #[must_use]
     pub fn all_objects_in_zone(&self, zone: Zone) -> Vec<&GameObject> {
-        self.objects.values().filter(|obj| obj.zone == zone).collect()
+        // Allocated at the most it can hold, as `objects_in_zone` says why.
+        let mut result = Vec::with_capacity(self.objects.len());
+        for obj in self.objects.values() {
+            if obj.zone == zone {
+                result.push(obj);
+            }
+        }
+        result
     }
 
     /// Get the next player after the given player (turn order).
