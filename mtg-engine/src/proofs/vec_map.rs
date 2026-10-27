@@ -33,7 +33,7 @@ use crate::vec_map::VecMap;
 const KEYS: usize = 3;
 
 fn agrees(map: &VecMap<u8, u8>, reference: &[Option<u8>; KEYS]) -> bool {
-    let mut expected: Vec<(u8, u8)> = Vec::new();
+    let mut expected: Vec<(u8, u8)> = Vec::with_capacity(KEYS);
     for (k, v) in reference.iter().enumerate() {
         if let Some(v) = v {
             expected.push((u8::try_from(k).expect("a few keys"), *v));
@@ -47,10 +47,13 @@ fn agrees(map: &VecMap<u8, u8>, reference: &[Option<u8>; KEYS]) -> bool {
 }
 
 /// Any map holding any reference's entries: each of [`KEYS`] keys held or
-/// not, with any value, put in in key order.
+/// not, with any value, put in in key order. Room for every key is
+/// reserved first, which changes nothing a map's operations return, so
+/// that no insert reallocates (`proofs::cards::no_growing` says why).
 fn any_map() -> (VecMap<u8, u8>, [Option<u8>; KEYS]) {
     let mut reference: [Option<u8>; KEYS] = [None; KEYS];
     let mut map: VecMap<u8, u8> = VecMap::new();
+    map.reserve(KEYS);
     for (k, slot) in reference.iter_mut().enumerate() {
         if kani::any() {
             let v: u8 = kani::any();
@@ -73,6 +76,7 @@ fn any_key() -> (usize, u8) {
 /// one, in its place in the order.
 #[kani::proof]
 #[kani::unwind(5)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
 fn inserting_into_a_vec_map_is_inserting_into_an_ordered_map() {
     let (mut map, mut reference) = any_map();
     let (k, key) = any_key();
@@ -85,6 +89,7 @@ fn inserting_into_a_vec_map_is_inserting_into_an_ordered_map() {
 /// `remove` returns the value the key held, and the key then holds none.
 #[kani::proof]
 #[kani::unwind(5)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
 fn removing_from_a_vec_map_is_removing_from_an_ordered_map() {
     let (mut map, mut reference) = any_map();
     let (k, key) = any_key();
@@ -96,6 +101,7 @@ fn removing_from_a_vec_map_is_removing_from_an_ordered_map() {
 /// `get` and `contains_key` read what the key holds, and change nothing.
 #[kani::proof]
 #[kani::unwind(5)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
 fn reading_a_vec_map_is_reading_an_ordered_map() {
     let (map, reference) = any_map();
     let (k, key) = any_key();
@@ -107,6 +113,7 @@ fn reading_a_vec_map_is_reading_an_ordered_map() {
 /// through it is the key's new value.
 #[kani::proof]
 #[kani::unwind(5)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
 fn writing_through_get_mut_writes_the_keys_value() {
     let (mut map, mut reference) = any_map();
     let (k, key) = any_key();
@@ -127,6 +134,7 @@ fn writing_through_get_mut_writes_the_keys_value() {
 /// `values_mut` reaches every value, each once, in key order.
 #[kani::proof]
 #[kani::unwind(5)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
 fn values_mut_reaches_every_value_in_key_order() {
     let (mut map, mut reference) = any_map();
     let add: u8 = kani::any();
