@@ -158,6 +158,15 @@ pub type ObjectMap = std::collections::BTreeMap<ObjectId, GameObject>;
 #[cfg(kani)]
 pub type ObjectMap = crate::vec_map::VecMap<ObjectId, GameObject>;
 
+/// The counters on an object: a `BTreeMap`, except in the proofs, for the
+/// reason `ObjectMap` gives (adding one counter to a `BTreeMap` ran CBMC out
+/// of memory). The engine asks it for `get`, `get_mut`, `insert`, `remove`,
+/// `entry(..).or_insert(..)`, `clear` and iteration in counter order.
+#[cfg(not(kani))]
+pub type CounterMap = std::collections::BTreeMap<crate::types::CounterType, u32>;
+#[cfg(kani)]
+pub type CounterMap = crate::vec_map::VecMap<crate::types::CounterType, u32>;
+
 /// The complete, immutable game state. Clone to produce new states.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameState {
@@ -795,7 +804,7 @@ impl GameState {
             instance_oracle_text: None,
             instance_continuous_effects: None,
             card_state: std::collections::BTreeMap::new(),
-            counters: std::collections::BTreeMap::new(),
+            counters: CounterMap::new(),
             regeneration_shields: 0,
             is_transformed: false,
             transforms: 0,
@@ -1097,7 +1106,7 @@ impl GameState {
             card_state: pt_defined_by.map_or_else(
                 std::collections::BTreeMap::new,
                 |src| std::iter::once((crate::cards::PT_DEFINED_BY.to_string(), src)).collect()),
-            counters: std::collections::BTreeMap::new(),
+            counters: CounterMap::new(),
             regeneration_shields: 0,
             // CR 707.8a: a copy of a permanent with its back face up shows
             // that face too, and the flag is what makes every accessor agree.
@@ -4219,7 +4228,7 @@ pub struct GameObject {
     pub card_state: std::collections::BTreeMap<String, ObjectId>,
 
     /// Counters on this permanent (+1/+1, -1/-1, etc.).
-    pub counters: std::collections::BTreeMap<crate::types::CounterType, u32>,
+    pub counters: CounterMap,
 
     /// Number of regeneration shields (consumed instead of destruction).
     #[serde(default)]
