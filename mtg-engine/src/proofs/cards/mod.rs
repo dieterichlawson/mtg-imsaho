@@ -1109,6 +1109,7 @@ pub fn blank_board() -> (CardRegistry, GameState, CardId) {
 /// unconditionally first, every later push lands in the one buffer.
 pub(crate) fn new_game() -> GameState {
     let mut state = GameState::new(2);
+    state.objects.reserve(8);
     state.until_end_of_turn.reserve(8);
     state.events.reserve(8);
     state.pending_damage.reserve(4);

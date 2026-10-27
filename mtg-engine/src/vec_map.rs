@@ -101,6 +101,12 @@ impl<K: Ord, V> VecMap<K, V> {
         self.find(key).ok().map(|i| self.entries.remove(i).1)
     }
 
+    /// Room for `additional` more entries without reallocating, as
+    /// `Vec::reserve`.
+    pub fn reserve(&mut self, additional: usize) {
+        self.entries.reserve(additional);
+    }
+
     pub fn len(&self) -> usize {
         self.entries.len()
     }
