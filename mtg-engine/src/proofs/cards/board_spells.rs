@@ -8,7 +8,7 @@
 //!   until end of turn. Flashback {2}{R}"
 //! - Vampiric Fury, {1}{R} Instant: "Vampire creatures you control get
 //!   +2/+0 and gain first strike until end of turn."
-//! - Spare from Evil, {W} Instant: "Creatures you control gain protection
+//! - Spare from Evil, {1}{W} Instant: "Creatures you control gain protection
 //!   from non-Human creatures until end of turn."
 //! - Rolling Temblor, {2}{R} Sorcery: "Rolling Temblor deals 2 damage to
 //!   each creature without flying. Flashback {4}{R}{R}"
