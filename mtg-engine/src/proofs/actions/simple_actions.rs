@@ -1,14 +1,21 @@
 //! The actions that change one thing: a player's life total (`change_life`
 //! and the four other ways a card asks for it), a permanent's tapped
-//! status (`tap` and `untap`, with their logging forms), the counters on a
-//! permanent (`add_counters`, `remove_counters`), what a permanent is
-//! attached to (`attach`), and a card's place in a hand (`discard_card`).
-//! A card proof's recorder stands in for each.
+//! status (`tap` and `untap`, with their logging forms, and
+//! `arrives_tapped`), the counters on a permanent (`add_counters`,
+//! `remove_counters`), its regeneration shields
+//! (`add_regeneration_shield`), what it is attached to (`attach`), who
+//! controls it (`change_control`, `gain_control_while_source_controlled`),
+//! its power and toughness as set in layer
+//! 7b (`set_base_pt`), a card's place in a hand (`discard_card`), a
+//! player's mana pool (`add_mana`), whether a player has lost
+//! (`player_loses`) and whether the game is over (`end_game`). A card
+//! proof's recorder stands in for each.
 
-use crate::events::GameEvent;
+use crate::events::{GameEvent, LossReason};
 use crate::ids::{ObjectId, PlayerId};
 use crate::proofs::cards::{acted, asked_for, blank_board, new_game, Act, Snapshot};
-use crate::types::{CounterType, Zone};
+use crate::state::{ControlEffect, GameResult, SetPtEffect};
+use crate::types::{CounterType, ManaType, Zone};
 
 #[kani::proof]
 #[kani::unwind(7)]
@@ -296,4 +303,317 @@ fn attaching_puts_it_onto_that_object_from_wherever_it_was() {
     }
     kani::cover!(moves && on_player.is_some(), "taken off a player");
     std::mem::forget((registry, state));
+}
+
+#[kani::proof]
+#[kani::unwind(7)]
+#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+/// "Regenerate it" (CR 701.15a) sets up a shield on a permanent: it has
+/// one more regeneration shield, and nothing else changes; anything else
+/// (a card off the battlefield, which would carry the shield through a
+/// graveyard and back, an object no longer in the game) gets none. For a
+/// permanent with up to two shields already.
+fn a_regeneration_shield_goes_on_a_permanent() {
+    let (registry, mut state, id, asked, zone, _) = one_object();
+    let shields = u32::from(kani::any::<u8>() % 3);
+    state.get_object_mut(id).expect("just created").regeneration_shields = shields;
+    let before = Snapshot::of(&state);
+
+    state.add_regeneration_shield(asked);
+
+    let gets = asked == id && zone == Zone::Battlefield;
+    assert!(state.get_object(id).expect("still there").regeneration_shields == shields + u32::from(gets));
+    assert!(Snapshot::of(&state) == before);
+    kani::cover!(gets && shields > 0, "a second shield");
+    std::mem::forget((registry, state));
+}
+
+#[kani::proof]
+#[kani::unwind(7)]
+#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+/// "Enters tapped" (CR 614.1c), "put onto the battlefield tapped", "tapped
+/// and attacking": the permanent is tapped, and since nothing tapped it,
+/// no tap is announced; anything else (a card off the battlefield, an
+/// object no longer in the game) is left as it was.
+fn arriving_tapped_taps_a_permanent_unannounced() {
+    let (registry, mut state, id, asked, zone, _) = one_object();
+    let before = Snapshot::of(&state);
+
+    state.arrives_tapped(asked);
+
+    if asked == id && zone == Zone::Battlefield {
+        assert!(Snapshot::of(&state) == before.with_tapped(id, true));
+    } else {
+        assert!(Snapshot::of(&state) == before);
+    }
+    std::mem::forget((registry, state));
+}
+
+#[kani::proof]
+#[kani::unwind(7)]
+#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+/// "Gain control of target permanent" (CR 110.2, 613.1b): a permanent
+/// another player controls comes under the new controller's control, is
+/// summoning sick for them (302.6), and the change is announced once,
+/// naming both. One they control already, a card off the battlefield (whose
+/// owner is its controller, 108.4) and an object no longer in the game are
+/// left as they were, unannounced. For a permanent either player controls,
+/// summoning sick or not, and either new controller.
+fn control_changes_only_of_a_permanent_to_another_player() {
+    let (registry, mut state, id, asked, zone, _) = one_object();
+    let owner = state.get_object(id).expect("just created").owner;
+    let controller = if zone == Zone::Battlefield && kani::any() { PlayerId(1 - owner.0) } else { owner };
+    let sick: bool = kani::any();
+    let o = state.get_object_mut(id).expect("just created");
+    o.controller = controller;
+    o.summoning_sick = sick;
+    let to = PlayerId(u8::from(kani::any::<bool>()));
+    let before = Snapshot::of(&state);
+
+    state.change_control(asked, to);
+
+    let changes = asked == id && zone == Zone::Battlefield && controller != to;
+    let o = state.get_object(id).expect("still there");
+    if changes {
+        assert!(matches!(state.events.as_slice(),
+            [GameEvent::ControlChanged { object, from, to: t }] if *object == id && *from == controller && *t == to));
+        assert!(Snapshot::of(&state).without_events() == before.with_controller(id, to).without_events());
+        assert!(o.summoning_sick);
+    } else {
+        assert!(Snapshot::of(&state) == before && o.summoning_sick == sick);
+    }
+    kani::cover!(changes && to == owner, "it goes back to its owner");
+    std::mem::forget((registry, state));
+}
+
+#[kani::proof]
+#[kani::unwind(7)]
+#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+/// "Gain control of target creature for as long as you control this"
+/// (CR 611.2b, 613.1b): for a permanent and a source on the battlefield,
+/// the effect is kept, naming both, the source's controller, and the
+/// permanent's default controller to return it to (110.2a), with a
+/// timestamp later than every one handed out, in place of an earlier one
+/// for the same two (a second activation is the same effect again); and,
+/// it being the latest, the permanent's controller is then the source's,
+/// as `change_control` makes it. For either player controlling each, with
+/// or without such an effect already, and alongside one from another
+/// source. (The card asks only while it controls the source, which its
+/// own proof shows; the duration is then `expire_control_effects`'s.)
+fn gaining_control_while_controlling_a_source_keeps_one_effect_and_takes_control() {
+    let (registry, mut state, blank) = blank_board();
+    let [owner, sc] = [kani::any::<bool>(), kani::any::<bool>()].map(|b| PlayerId(u8::from(b)));
+    let it = state.create_object(blank, owner, Zone::Battlefield, None, None);
+    let source = state.create_object(blank, sc, Zone::Battlefield, None, None);
+    let elsewhere = state.create_object(blank, sc, Zone::Battlefield, None, None);
+    let controller = if kani::any() { PlayerId(1 - owner.0) } else { owner };
+    state.get_object_mut(it).expect("just created").controller = controller;
+    let issued: u64 = kani::any();
+    kani::assume(issued < u64::MAX);
+    state.next_effect_timestamp = issued;
+    let effect = |source, timestamp| ControlEffect {
+        object: it, controller, original_controller: owner, source, source_controller: controller, timestamp,
+    };
+    let (t0, t1): (u64, u64) = (kani::any(), kani::any());
+    kani::assume(t0 <= issued && t1 <= issued);
+    let again: bool = kani::any();
+    state.control_effects.reserve(3);
+    state.control_effects.push(effect(elsewhere, t0));
+    if again {
+        state.control_effects.push(effect(source, t1));
+    }
+    let before = Snapshot::of(&state);
+
+    state.gain_control_while_source_controlled(it, source, &registry);
+
+    let effects = &state.control_effects;
+    assert!(effects.len() == 2 && effects[0] == effect(elsewhere, t0));
+    assert!(effects[1] == ControlEffect {
+        object: it, controller: sc, original_controller: owner, source, source_controller: sc, timestamp: issued + 1,
+    });
+    let changes = controller != sc;
+    if changes {
+        assert!(matches!(state.events.as_slice(),
+            [GameEvent::ControlChanged { object, from, to }] if *object == it && *from == controller && *to == sc));
+        assert!(Snapshot::of(&state).without_events() == before.with_controller(it, sc).without_events());
+    } else {
+        assert!(Snapshot::of(&state) == before);
+    }
+    kani::cover!(again && changes, "activated again, it takes control");
+    std::mem::forget((registry, state));
+}
+
+/// Any setting of power and toughness, on either of two objects, with a
+/// timestamp up to `issued`.
+fn a_setting(issued: u64) -> SetPtEffect {
+    let timestamp: u64 = kani::any();
+    kani::assume(timestamp <= issued);
+    SetPtEffect {
+        object: ObjectId(u64::from(kani::any::<bool>())),
+        power: kani::any::<bool>().then(|| i32::from(kani::any::<i8>())),
+        toughness: kani::any::<bool>().then(|| i32::from(kani::any::<i8>())),
+        timestamp,
+    }
+}
+
+#[kani::proof]
+#[kani::unwind(7)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+/// "Its toughness becomes N" (CR 613.4b, layer 7b): the setting is kept
+/// for that permanent with a timestamp later than every one the game has
+/// handed out (613.7a: of two, the later applies last and so wins), after
+/// the settings there were, which are as they were; nothing else changes.
+/// For up to two settings before it, of either of two permanents.
+fn setting_power_and_toughness_keeps_the_latest_setting() {
+    let mut state = new_game();
+    let issued: u64 = kani::any();
+    kani::assume(issued < u64::MAX);
+    state.next_effect_timestamp = issued;
+    let earlier = [a_setting(issued), a_setting(issued)];
+    let k: usize = kani::any();
+    kani::assume(k <= 2);
+    state.set_pt_effects.reserve(3);
+    for e in &earlier[..k] {
+        state.set_pt_effects.push(e.clone());
+    }
+    let object = ObjectId(u64::from(kani::any::<bool>()));
+    let (power, toughness) = (kani::any::<bool>().then_some(1), kani::any::<bool>().then_some(5));
+    let before = Snapshot::of(&state);
+
+    state.set_base_pt(object, power, toughness);
+
+    let effects = &state.set_pt_effects;
+    assert!(effects.len() == k + 1 && (0..k).all(|i| effects[i] == earlier[i]));
+    let set = &effects[k];
+    assert!(set.object == object && set.power == power && set.toughness == toughness);
+    assert!(set.timestamp > issued && state.next_effect_timestamp == set.timestamp);
+    assert!(Snapshot::of(&state) == before);
+    std::mem::forget(state);
+}
+
+#[kani::proof]
+#[kani::unwind(7)]
+#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+/// A player loses the game (CR 104.3): a player still in it is out of it,
+/// with the reason kept and the loss announced once; a player who has
+/// lost already is left as they were, the first reason standing, and
+/// nothing is announced. The other player is unchanged. For either
+/// player and four reasons.
+fn a_player_loses_the_game_once() {
+    let mut state = new_game();
+    let who = PlayerId(u8::from(kani::any::<bool>()));
+    let lost: bool = kani::any();
+    // A branch on the player, not an index by it: `any_object` says why.
+    let p = if who == PlayerId(0) { &mut state.players[0] } else { &mut state.players[1] };
+    p.lost = lost;
+    p.loss_reason = lost.then_some(LossReason::Conceded);
+    let reason = match kani::any::<u8>() % 4 {
+        0 => LossReason::LifeReachedZero,
+        1 => LossReason::DrewFromEmptyLibrary,
+        2 => LossReason::Conceded,
+        _ => LossReason::Forfeited,
+    };
+    let before = Snapshot::of(&state);
+
+    state.player_loses(who, reason);
+
+    for q in [PlayerId(0), PlayerId(1)] {
+        let p = state.get_player(q);
+        if q != who {
+            assert!(!p.lost && p.loss_reason.is_none());
+        } else {
+            assert!(p.lost && p.loss_reason == Some(if lost { LossReason::Conceded } else { reason }));
+        }
+    }
+    if lost {
+        assert!(state.events.is_empty());
+    } else {
+        assert!(matches!(state.events.as_slice(), [GameEvent::PlayerLost { player, reason: r }] if *player == who && *r == reason));
+    }
+    assert!(Snapshot::of(&state).without_events() == before.without_events());
+    std::mem::forget(state);
+}
+
+#[kani::proof]
+#[kani::unwind(7)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+/// The game ends (CR 104.1), once: a game in progress takes the result, a
+/// win for either player or a draw (104.4a), announced once, and keeps the
+/// game as it was then as its final state; a game over already keeps the
+/// result it had, and nothing is announced.
+fn a_game_ends_once() {
+    let mut state = new_game();
+    let over: bool = kani::any();
+    if over {
+        state.result = Some(GameResult::Draw);
+    }
+    let result = if kani::any() { GameResult::Winner(PlayerId(u8::from(kani::any::<bool>()))) } else { GameResult::Draw };
+    let before = Snapshot::of(&state);
+
+    state.end_game(result.clone());
+
+    if over {
+        assert!(state.result == Some(GameResult::Draw) && state.events.is_empty() && state.final_state.is_none());
+    } else {
+        assert!(state.result.as_ref() == Some(&result));
+        assert!(matches!(state.events.as_slice(), [GameEvent::GameEnded { result: r }] if *r == result));
+        let last = state.final_state.as_deref().expect("the game as it ended");
+        assert!(last.result.as_ref() == Some(&result) && last.events.len() == 1);
+    }
+    assert!(Snapshot::of(&state).without_events() == before.without_events());
+    std::mem::forget((state, result));
+}
+
+#[kani::proof]
+#[kani::unwind(7)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+/// "Add {G}" (CR 106.4): that much mana of that type joins what that
+/// player's pool holds of it, the pool's other types and the other
+/// player's pool are unchanged, and the mana is announced once. For either
+/// player, every type, up to three of it in the pool before and up to
+/// three added.
+fn adding_mana_adds_it_to_that_players_pool() {
+    let mut state = new_game();
+    let who = PlayerId(u8::from(kani::any::<bool>()));
+    let kind = match kani::any::<u8>() % 6 {
+        0 => ManaType::White,
+        1 => ManaType::Blue,
+        2 => ManaType::Black,
+        3 => ManaType::Red,
+        4 => ManaType::Green,
+        _ => ManaType::Colorless,
+    };
+    let (had, n) = (kani::any::<u32>(), kani::any::<u32>());
+    kani::assume(had <= 3 && n <= 3);
+    if had > 0 {
+        // A branch on the player, not an index by it: `any_object` says why.
+        let p = if who == PlayerId(0) { &mut state.players[0] } else { &mut state.players[1] };
+        p.mana_pool.add(kind, had);
+    }
+    let before = Snapshot::of(&state);
+
+    state.add_mana(who, kind, n);
+
+    for q in [PlayerId(0), PlayerId(1)] {
+        let pool = &state.get_player(q).mana_pool.mana;
+        if q == who {
+            assert!(pool.len() == 1 && pool.get(&kind) == Some(&(had + n)));
+        } else {
+            assert!(pool.is_empty());
+        }
+    }
+    assert!(matches!(state.events.as_slice(),
+        [GameEvent::ManaAdded { player, mana_type, amount }] if *player == who && *mana_type == kind && *amount == n));
+    assert!(Snapshot::of(&state).without_events() == before.without_events());
+    std::mem::forget(state);
 }

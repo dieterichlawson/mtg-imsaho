@@ -22,6 +22,7 @@ pub enum Question {
     IsValidTarget,
     HasHexproof,
     HasProtection,
+    IsIndestructible,
 }
 
 /// The answers given so far: a fixed array and a count rather than a

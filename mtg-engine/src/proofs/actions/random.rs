@@ -136,3 +136,17 @@ fn shuffling_a_library_reorders_it_and_announces_it() {
     assert!(matches!(state.events.as_slice(), [GameEvent::LibraryShuffled { player }] if *player == who));
     std::mem::forget((state, theirs));
 }
+
+#[kani::proof]
+#[kani::unwind(3)]
+/// "Flip a coin" (CR 705.2): the flip is won for some states of the game's
+/// random numbers and lost for others, which is all a card proof's
+/// `record_flip`, answering either, takes of it.
+fn a_coin_flip_can_be_won_and_can_be_lost() {
+    let mut state = new_game();
+    state.rng_state = kani::any();
+    let won = state.flip_coin();
+    kani::cover!(won, "won");
+    kani::cover!(!won, "lost");
+    std::mem::forget(state);
+}

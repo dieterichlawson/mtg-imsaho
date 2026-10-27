@@ -1139,6 +1139,76 @@ impl Snapshot {
         s
     }
 
+    /// This snapshot with `id` in `zone`, and nothing else changed.
+    pub fn with_zone(&self, id: ObjectId, zone: Zone) -> Self {
+        let mut s = self.clone();
+        for row in &mut s.objects {
+            if row.id == id {
+                row.zone = zone;
+            }
+        }
+        s
+    }
+
+    /// This snapshot with `n` damage marked on `id`, and nothing else
+    /// changed.
+    pub fn with_damage(&self, id: ObjectId, n: u32) -> Self {
+        let mut s = self.clone();
+        for row in &mut s.objects {
+            if row.id == id {
+                row.damage = n;
+            }
+        }
+        s
+    }
+
+    /// This snapshot with `id` controlled by `p`, and nothing else changed.
+    pub fn with_controller(&self, id: ObjectId, p: PlayerId) -> Self {
+        let mut s = self.clone();
+        for row in &mut s.objects {
+            if row.id == id {
+                row.controller = p;
+            }
+        }
+        s
+    }
+
+    /// This snapshot with `id` as a permanent that has left the battlefield
+    /// is (CR 400.7): controlled by its owner `owner` (108.4), untapped,
+    /// undamaged, with no counters, attached to nothing and on its front
+    /// face (712.8a); nothing else changed.
+    pub fn as_a_new_object(&self, id: ObjectId, owner: PlayerId) -> Self {
+        let mut s = self.clone();
+        for row in &mut s.objects {
+            if row.id == id {
+                *row = ObjectRow {
+                    id,
+                    zone: row.zone,
+                    controller: owner,
+                    tapped: false,
+                    damage: 0,
+                    counters: [0; COUNTER_KINDS.len()],
+                    attached_to: None,
+                    attached_to_player: None,
+                    transformed: false,
+                };
+            }
+        }
+        s
+    }
+
+    /// This snapshot with player `p`'s graveyard `cards`, bottom first, and
+    /// nothing else changed.
+    pub fn with_graveyard(&self, p: PlayerId, cards: &[ObjectId]) -> Self {
+        let mut s = self.clone();
+        for (i, row) in s.players.iter_mut().enumerate() {
+            if usize::from(p.0) == i {
+                row.2 = zone_rows(cards);
+            }
+        }
+        s
+    }
+
     pub fn of(state: &GameState) -> Self {
         Snapshot {
             objects: state.objects_in_id_order().into_iter()

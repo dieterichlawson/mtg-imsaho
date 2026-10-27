@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """scripts/kani-bounded.py [NAME...] [--results FILE] [--batch N] [--timeout S] [--bound B] [--as-built]
-                          [--start-unwind U] [--loops FILE]
+                          [--start-unwind U] [--loops FILE] [--jobs J --mem-cap GB]
 
 Run the Kani proofs in mtg-engine/src/proofs/ the way `cargo kani` does,
 with one addition: every function in a harness's final goto program that
@@ -36,13 +36,19 @@ harness: Kani's goto-cc link and goto-instrument passes, the rewrite,
 then cbmc with Kani's flags, the bounds and --json-ui. A result is read as Kani reads
 it: reachability checks are not failures, and covers are counted.
 
+With --jobs J, J harnesses of a batch are verified at once, each cbmc
+held to GB gigabytes of address space; one that runs out of it is run
+again alone, with no cap, once the rest are done. Kept to one at a time
+by default: two solvers sharing memory the kernel runs out of are both
+at risk, not only the one that needed it.
+
 A NAME is a harness's path or last part, or a module (`vec_map`,
 `cards::auras`) for every harness in it; with none, every harness the
 proofs define. One line per harness
 goes to RESULTS (default logs/kani/results.txt):
     RESULT  SECONDS  NAME  [bounds, covers, size, or what failed]
 """
-import argparse, glob, json, os, re, subprocess, sys, time
+import argparse, concurrent.futures, glob, json, os, re, subprocess, sys, threading, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 K = os.path.expanduser('~/.kani/kani-0.68.0')
@@ -54,7 +60,7 @@ KANI_LIB = f'{K}/library/kani/kani_lib.c'
 # harnesses with (abilities!, statics!, equipment!, ...). `cargo kani list`
 # says the same at the price of building every harness, gigabytes of goto
 # files.
-TABLES = {'abilities', 'declares', 'werewolves', 'mana', 'statics', 'check_land', 'choosing_at_random', 'for_each_size'}
+TABLES = {'abilities', 'declares', 'werewolves', 'mana', 'statics', 'check_land', 'choosing_at_random', 'for_each_size', 'from_each_zone'}
 FORMS = {'reaches_what_it_describes', 'holds_exactly_then'}
 def block(text, i):
     # text[i] is an opening bracket; return the index of its match
@@ -162,7 +168,7 @@ def bounds(out, bound):
     return ids
 
 
-def verify(h, goto, unwind, mangled, bound, timeout, precise=True):
+def verify(h, goto, unwind, mangled, bound, timeout, precise=True, cap=None):
     symtab = goto if goto.endswith('.symtab.out') else goto[:-len('.out')] + '.symtab.out'
     out = symtab[:-len('.symtab.out')] + '.out'
     steps = [
@@ -192,6 +198,8 @@ def verify(h, goto, unwind, mangled, bound, timeout, precise=True):
                                                 out, '--verbosity', '9', '--json-ui']
         with open(out + '.cmd', 'w') as f:
             f.write(' '.join(f"'{c}'" if ',' in c or '*' in c else c for c in cmd) + '\n')
+        if cap:
+            cmd = ['prlimit', f'--as={int(cap * 2**30)}', '--'] + cmd
         result, why, seconds, loops, others = solve(cmd, timeout, len(rec))
         took += seconds
         new = loops - learned
@@ -204,17 +212,29 @@ def verify(h, goto, unwind, mangled, bound, timeout, precise=True):
         save_loops(learned)
 
 
+LOOPS_LOCK = threading.Lock()
+
+
 def load_loops():
+    with LOOPS_LOCK:
+        return read_loops()
+
+
+def read_loops():
     if not os.path.exists(LOOPS):
         return set()
     return {tuple(l.rsplit(' ', 1)) for l in open(LOOPS).read().splitlines() if l.strip()}
 
 
 def save_loops(loops):
-    os.makedirs(os.path.dirname(LOOPS), exist_ok=True)
-    with open(LOOPS, 'w') as f:
-        for name, n in sorted(loops):
-            f.write(f'{name} {n}\n')
+    # Merged with what is there: a harness verified alongside may have
+    # raised loops of its own since this one read the file.
+    with LOOPS_LOCK:
+        os.makedirs(os.path.dirname(LOOPS), exist_ok=True)
+        merged = read_loops() | loops
+        with open(LOOPS, 'w') as f:
+            for name, n in sorted(merged):
+                f.write(f'{name} {n}\n')
 
 
 def pretty_names(out):
@@ -244,6 +264,9 @@ def solve(cmd, timeout, nrec):
     seconds = time.time() - start
     if p.returncode in (-9, 137):
         return ('OOM', f'{nrec} bounded', seconds, set(), [])
+    if p.returncode != 0 and re.search(r'[Oo]ut of memory|bad_alloc', p.stdout[-2000:] + p.stderr[-2000:]):
+        # Under --mem-cap: the cap, not the machine, ran out.
+        return ('OOM', f'{nrec} bounded; over the cap', seconds, set(), [])
     try:
         doc = json.loads(p.stdout)
     except json.JSONDecodeError:
@@ -303,6 +326,8 @@ def main():
     ap.add_argument('--as-built', action='store_true', help='skip the precise-enums rewrite')
     ap.add_argument('--start-unwind', type=int, default=4)
     ap.add_argument('--loops', default=f'{ROOT}/logs/kani/loop-bounds.txt')
+    ap.add_argument('--jobs', type=int, default=1)
+    ap.add_argument('--mem-cap', type=float, default=None, help='gigabytes of address space per cbmc, with --jobs')
     a = ap.parse_args()
     global START_UNWIND, LOOPS
     START_UNWIND, LOOPS = a.start_unwind, a.loops
@@ -316,24 +341,40 @@ def main():
     if os.path.exists(a.results):
         done = {l.split()[2] for l in open(a.results) if len(l.split()) > 2}
     todo = [h for h in wanted if h not in done]
+    cap = a.mem_cap if a.jobs > 1 else None
+    written = threading.Lock()
+
+    def write(line):
+        with written, open(a.results, 'a') as res:
+            res.write(line + '\n')
+
+    def one(h, goto, unwind, mangled, cap):
+        result, took, why = verify(h, goto, unwind, mangled, a.bound, a.timeout, precise=not a.as_built, cap=cap)
+        if result == 'OOM' and cap:
+            return h
+        write(f'{result:10s} {took:>8s}  {h}  {why}')
+        print(f'{result:10s} {took:>8s}  {h}', flush=True)
+        base = goto[:-len('.symtab.out')] if goto.endswith('.symtab.out') else goto[:-len('.out')]
+        if os.path.exists(base + '.out') and not os.environ.get('KANI_BOUNDED_KEEP'):
+            os.remove(base + '.out')
+        return None
+
     for i in range(0, len(todo), a.batch):
         batch = todo[i:i + a.batch]
         found = codegen(batch, a.crate, a.target)
-        with open(a.results, 'a') as res:
-            if found is None:
-                for h in batch:
-                    res.write(f"{'NOT_RUN':10s} {'-':>8s}  {h}  codegen failed\n")
-                continue
+        if found is None:
             for h in batch:
-                if h not in found:
-                    res.write(f"{'NOT_RUN':10s} {'-':>8s}  {h}  no goto file\n"); res.flush(); continue
-                goto, unwind, mangled = found[h]
-                result, took, why = verify(h, goto, unwind, mangled, a.bound, a.timeout, precise=not a.as_built)
-                res.write(f'{result:10s} {took:>8s}  {h}  {why}\n'); res.flush()
-                print(f'{result:10s} {took:>8s}  {h}', flush=True)
-                base = goto[:-len('.symtab.out')] if goto.endswith('.symtab.out') else goto[:-len('.out')]
-                if os.path.exists(base + '.out') and not os.environ.get('KANI_BOUNDED_KEEP'):
-                    os.remove(base + '.out')
+                write(f"{'NOT_RUN':10s} {'-':>8s}  {h}  codegen failed")
+            continue
+        for h in batch:
+            if h not in found:
+                write(f"{'NOT_RUN':10s} {'-':>8s}  {h}  no goto file")
+        here = [h for h in batch if h in found]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=a.jobs) as pool:
+            again = [h for h in pool.map(lambda h: one(h, *found[h], cap), here) if h]
+        # What ran out of its share of memory, alone and with all of it.
+        for h in again:
+            one(h, *found[h], None)
 
 
 if __name__ == '__main__':

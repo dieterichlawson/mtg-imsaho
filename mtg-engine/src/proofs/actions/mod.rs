@@ -3,8 +3,10 @@
 //! halves fit). Each action is proved with the actions *it* asks for
 //! recorded in turn, so each proof is of one function's own logic.
 
+mod destruction;
 mod effects;
 mod library;
+mod moving;
 mod pending_effects;
 mod predicates;
 mod random;
