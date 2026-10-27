@@ -175,40 +175,27 @@ impl CardBehavior for LilianaOfTheVeil {
 }
 
 impl LilianaOfTheVeil {
-    // The +1's intermediate state lives in `card_state`, which maps
-    // String -> ObjectId: a queue of players who have yet to choose, and the
-    // cards chosen so far. Both are counted lists rather than one packed
-    // value — the previous encoding parsed a comma-joined string of player ids
-    // *as a u64*, which silently became 0 for any game with more than one
-    // player left to ask.
-    const QUEUE_LEN: &'static str = "liliana_queue_len";
-    const CHOSEN_LEN: &'static str = "liliana_chosen_len";
+    // The +1's intermediate state lives in `card_state`: a queue of players
+    // who have yet to choose, and the cards chosen so far, each a counted
+    // list (`cards::store_ids`) rather than one packed value — the previous
+    // encoding parsed a comma-joined string of player ids *as a u64*, which
+    // silently became 0 for any game with more than one player left to ask.
+    const QUEUE: &'static str = "liliana_queue";
+    const CHOSEN: &'static str = "liliana_chosen";
 
     fn store_queue(state: &mut GameState, self_id: ObjectId, queue: &[PlayerId], chosen: &[ObjectId]) {
         let Some(obj) = state.get_object_mut(self_id) else { return };
-        obj.card_state.retain(|k, _| !k.starts_with("liliana_"));
-        obj.card_state.insert(Self::QUEUE_LEN.into(), ObjectId(queue.len() as u64));
-        for (i, pid) in queue.iter().enumerate() {
-            obj.card_state.insert(crate::cards::indexed_key("liliana_queue", "_", i), ObjectId(u64::from(pid.0)));
-        }
-        obj.card_state.insert(Self::CHOSEN_LEN.into(), ObjectId(chosen.len() as u64));
-        for (i, cid) in chosen.iter().enumerate() {
-            obj.card_state.insert(crate::cards::indexed_key("liliana_chosen", "_", i), *cid);
-        }
+        let players: Vec<ObjectId> = queue.iter().map(|p| ObjectId(u64::from(p.0))).collect();
+        crate::cards::store_ids(&mut obj.card_state, Self::QUEUE, &players);
+        crate::cards::store_ids(&mut obj.card_state, Self::CHOSEN, chosen);
     }
 
     fn load_queue(state: &GameState, self_id: ObjectId) -> (Vec<PlayerId>, Vec<ObjectId>) {
         let Some(obj) = state.get_object(self_id) else { return (vec![], vec![]) };
-        let read = |key: &str, len_key: &str| -> Vec<ObjectId> {
-            let len = obj.card_state.get(len_key).map_or(0, |id| usize::try_from(id.0).unwrap_or(0));
-            (0..len)
-                .filter_map(|i| obj.card_state.get(&crate::cards::indexed_key(key, "_", i)).copied())
-                .collect()
-        };
-        let queue = read("liliana_queue", Self::QUEUE_LEN).into_iter()
+        let queue = crate::cards::load_ids(&obj.card_state, Self::QUEUE).into_iter()
             .map(|id| PlayerId(u8::try_from(id.0).unwrap_or(u8::MAX)))
             .collect();
-        (queue, read("liliana_chosen", Self::CHOSEN_LEN))
+        (queue, crate::cards::load_ids(&obj.card_state, Self::CHOSEN))
     }
 
     fn push_chosen(state: &mut GameState, self_id: ObjectId, card: ObjectId) {
@@ -261,7 +248,8 @@ impl LilianaOfTheVeil {
             state.discard_card_for(*card, "Liliana +1", registry);
         }
         if let Some(obj) = state.get_object_mut(self_id) {
-            obj.card_state.retain(|k, _| !k.starts_with("liliana_"));
+            crate::cards::clear_ids(&mut obj.card_state, Self::QUEUE);
+            crate::cards::clear_ids(&mut obj.card_state, Self::CHOSEN);
         }
     }
 }
