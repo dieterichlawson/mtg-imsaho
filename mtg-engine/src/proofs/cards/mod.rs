@@ -47,15 +47,24 @@ use crate::ids::{CardId, ObjectId, PlayerId};
 use crate::state::{GameState, LibraryPosition, PendingEffect};
 use crate::types::{CardType, Color, CounterType, Keyword, ManaType, Zone};
 
+mod activated;
+mod auras;
 mod board_spells;
+mod check_lands;
 mod choices;
+mod counted_pt;
+mod curses;
 mod damage_spells;
 mod destroy_spells;
 mod doom_blade;
 mod effect_spells;
+mod enters;
+mod equipment;
 mod graveyard_spells;
 mod looking;
+mod mana;
 mod simple_spells;
+mod statics;
 mod targeted_spells;
 mod targets;
 
