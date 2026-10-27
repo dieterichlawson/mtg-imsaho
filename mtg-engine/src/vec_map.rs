@@ -52,12 +52,25 @@ impl<K: Ord, V> VecMap<K, V> {
         Err(self.entries.len())
     }
 
+    // `get` and `get_mut` return the entry from inside the search rather
+    // than its index from `find`: a reference taken at an index the solver
+    // leaves open is one into the whole buffer at an offset it leaves open,
+    // which it reads byte by byte across every entry, where one returned
+    // from each step of the search is one of a few known places.
+
     pub fn get<Q>(&self, key: &Q) -> Option<&V>
     where
         K: Borrow<Q>,
         Q: Ord + ?Sized,
     {
-        self.find(key).ok().map(|i| &self.entries[i].1)
+        for (k, v) in &self.entries {
+            match k.borrow().cmp(key) {
+                std::cmp::Ordering::Less => {}
+                std::cmp::Ordering::Equal => return Some(v),
+                std::cmp::Ordering::Greater => return None,
+            }
+        }
+        None
     }
 
     pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>
@@ -65,7 +78,14 @@ impl<K: Ord, V> VecMap<K, V> {
         K: Borrow<Q>,
         Q: Ord + ?Sized,
     {
-        self.find(key).ok().map(|i| &mut self.entries[i].1)
+        for (k, v) in &mut self.entries {
+            match (*k).borrow().cmp(key) {
+                std::cmp::Ordering::Less => {}
+                std::cmp::Ordering::Equal => return Some(v),
+                std::cmp::Ordering::Greater => return None,
+            }
+        }
+        None
     }
 
     pub fn contains_key<Q>(&self, key: &Q) -> bool
