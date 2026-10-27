@@ -648,7 +648,11 @@ stops here — pass --save {path} to keep writing it");
                     mtg_player::llm::PASS_UNTIL_ENV, on_off(!pass_until), on_off(pass_until))),
         ];
         for (_, why) in unlike.iter().filter(|(differs, _)| *differs) {
-            mtg_player::stderr_line!("note: --resume {path}: its system prompt is not the live one: {why}");
+            let note = format!("--resume {path}: its system prompt is not the live one: {why}");
+            mtg_player::stderr_line!("note: {note}");
+            // And in the log, which outlives the terminal, as the draft
+            // runners' resumes write theirs (#949's review).
+            mtg_player::game_log::write(file!(), line!(), "NOTE", &note);
         }
         banner = format!("MTG Engine — resuming from {} (turn {}, {} vs {}) — p0: {}, p1: {}",
             path, save.state.turn_number, save.player_names[0], save.player_names[1],
@@ -973,8 +977,17 @@ stops here — pass --save {path} to keep writing it");
         } else {
             choose_action(player, &view, legal)
         };
-        decisions_made.set(decisions_made.get() + 1);
-        if stop_after == Some(decisions_made.get()) {
+        // A pass or an empty attack shown only because something watches
+        // every submit is no decision: unwatched, the loop makes it and no
+        // seat is asked, and `--stop-after N` stopped at another decision
+        // under `--check-invariants` (#956's review).
+        let observed_only = legal.is_observed_pass() || matches!(&legal.combat_prompt,
+            Some(mtg_engine::actions::CombatPrompt::ChooseAttackers { eligible, must_attack, .. })
+                if eligible.is_empty() && must_attack.is_empty());
+        if !observed_only {
+            decisions_made.set(decisions_made.get() + 1);
+        }
+        if !observed_only && stop_after == Some(decisions_made.get()) {
             let json = serde_json::to_string(&answer).unwrap_or_else(|e| format!("\"unserializable: {e}\""));
             leave_game();
             write_decision_stats();
