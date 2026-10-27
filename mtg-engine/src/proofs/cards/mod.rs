@@ -739,36 +739,28 @@ fn any_destroy_result() -> DestroyResult {
     }
 }
 
-/// Whether `o` is in `player`'s `zone`, as `GameState::objects_in_zone`
-/// reads it: a library, hand or graveyard by owner, the battlefield by
-/// controller (CR 400.3, 108.4), any other zone whoever's it is.
-fn in_zone_of(o: &crate::state::GameObject, zone: Zone, player: PlayerId) -> bool {
-    o.zone == zone && match zone {
-        Zone::Library | Zone::Hand | Zone::Graveyard => o.owner == player,
-        Zone::Battlefield => o.controller == player,
-        _ => true,
-    }
-}
-
-/// Stands in for `GameState::objects_in_zone`: the zone's objects in id
-/// order, on a board whose graveyard piles each list a first run of that
-/// graveyard's cards in id order and nothing else, which it asserts. That
-/// is every board here, `any_object` putting each graveyard card on its
-/// pile as it makes it, and on every such board of no more objects than
-/// it is proved for, which it also asserts, it is what `objects_in_zone`
-/// returns (`proofs::actions::zones`).
+/// Stands in for `GameState::objects_in_zone`: the zone's objects, by the
+/// engine's own `in_zone_of`, in id order, on a board whose graveyard
+/// piles each list a first run of that graveyard's cards in id order and
+/// nothing else, which it asserts. That is every board here, `any_object`
+/// putting each graveyard card on its pile as it makes it; and on every
+/// such board it is what `objects_in_zone` returns, which hands
+/// `mtg_kernel::zones::zone_order` every object in id order: that order is
+/// proved with Verus for every board, and
+/// `lemma_a_pile_in_order_lists_in_order` there is this case (a pile that
+/// is the first of the zone's cards in id order has its entries in their
+/// order, and every card it does not list after every card it does).
 ///
-/// Why: `objects_in_zone` puts a graveyard in pile order, and CBMC follows
-/// a list of references it built in a data-dependent order into every
-/// object each one might be, which ran the solver out of memory on a board
-/// of three objects. A list built in one pass in id order it reads
-/// without that.
+/// Why: CBMC does not get through `zone_order`. A list built at positions
+/// the data decides is a write at a position the solver leaves open, into
+/// a buffer it models byte by byte, and a proof of the order alone over
+/// eight objects ran it out of memory. A list built in one pass in id
+/// order it reads without that.
 #[allow(dead_code)] // named only by `kani::stub`
 pub fn objects_in_zone_in_id_order(state: &GameState, zone: Zone, player: PlayerId) -> Vec<&crate::state::GameObject> {
-    assert!(state.objects.len() <= crate::proofs::actions::zones::N, "a board larger than objects_in_zone is proved for");
     let mut found = Vec::with_capacity(state.objects.len());
     for o in state.objects_in_id_order() {
-        if in_zone_of(o, zone, player) {
+        if crate::state::in_zone_of(o, zone, player) {
             found.push(o);
         }
     }

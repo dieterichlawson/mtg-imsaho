@@ -8,7 +8,6 @@ mod pending_effects;
 mod predicates;
 mod scopes;
 mod targeting;
-pub(crate) mod zones;
 
 /// An action proof: the stubs and bounds of a card proof, so that one
 /// action's proof uses the next action's recorder.
