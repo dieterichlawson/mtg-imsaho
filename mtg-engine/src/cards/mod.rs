@@ -226,6 +226,43 @@ pub fn indexed_key(prefix: &str, separator: &str, i: usize) -> String {
     key
 }
 
+/// The `card_state` key holding how many ids a list stored under `prefix`
+/// has: `<prefix>_len`.
+fn ids_len_key(prefix: &str) -> String {
+    let mut key = String::with_capacity(prefix.len() + 4);
+    key.push_str(prefix);
+    key.push_str("_len");
+    key
+}
+
+/// Keeps `ids` in `card_state` under `prefix`, in order, in place of
+/// whatever list was there: how many at `<prefix>_len`, and each at
+/// `<prefix>_<i>` ([`indexed_key`]). For a card whose resolution stops to
+/// ask a player something and has to pick up where it left off when the
+/// answer comes back.
+pub fn store_ids(card_state: &mut std::collections::BTreeMap<String, ObjectId>, prefix: &str, ids: &[ObjectId]) {
+    clear_ids(card_state, prefix);
+    card_state.insert(ids_len_key(prefix), ObjectId(ids.len() as u64));
+    for (i, id) in ids.iter().enumerate() {
+        card_state.insert(indexed_key(prefix, "_", i), *id);
+    }
+}
+
+/// The list [`store_ids`] kept under `prefix`; empty if there is none.
+#[must_use]
+pub fn load_ids(card_state: &std::collections::BTreeMap<String, ObjectId>, prefix: &str) -> Vec<ObjectId> {
+    let len = card_state.get(&ids_len_key(prefix)).map_or(0, |n| usize::try_from(n.0).unwrap_or(0));
+    (0..len).filter_map(|i| card_state.get(&indexed_key(prefix, "_", i)).copied()).collect()
+}
+
+/// Removes the list [`store_ids`] kept under `prefix`.
+pub fn clear_ids(card_state: &mut std::collections::BTreeMap<String, ObjectId>, prefix: &str) {
+    let len = card_state.remove(&ids_len_key(prefix)).map_or(0, |n| usize::try_from(n.0).unwrap_or(0));
+    for i in 0..len {
+        card_state.remove(&indexed_key(prefix, "_", i));
+    }
+}
+
 /// A mana ability definition.
 #[derive(Debug, Clone)]
 pub struct ManaAbilityDef {

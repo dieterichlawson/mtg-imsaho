@@ -40,9 +40,9 @@ impl CardBehavior for DivineReckoning {
     }
 
     /// Continue the chain after a player picked the creature they keep.
-    fn resolve_card_effect(&self, state: &mut GameState, source_id: ObjectId, key: &str, target: &Target, registry: &CardRegistry) {
+    fn resolve_card_effect(&self, state: &mut GameState, source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
         let Target::Object(id) = target else { return };
-        let (mut kept, remaining) = Self::decode(key);
+        let (mut kept, remaining) = Self::load(state, source_id);
         let chooser = crate::cards::helpers::controller_of(state, *id);
         state.log(LogLevel::Event,
             format!("Divine Reckoning: p{} keeps {}", chooser.0, state.obj_name(*id)));
@@ -53,27 +53,28 @@ impl CardBehavior for DivineReckoning {
 
 impl DivineReckoning {
     /// The chain state — which creatures are already spoken for, and which
-    /// players have yet to choose — round-trips through the `CardEffect` key.
-    /// The key is opaque to the engine by design: the shape of a card's
-    /// intermediate state is the card's business, not something the engine
-    /// should carry a variant for.
-    fn encode(kept: &[ObjectId], remaining: &[PlayerId]) -> String {
-        let k: Vec<String> = kept.iter().map(|o| o.0.to_string()).collect();
-        let r: Vec<String> = remaining.iter().map(|p| p.0.to_string()).collect();
-        format!("{}|{}", k.join(","), r.join(","))
+    /// players have yet to choose — kept on the spell while a player
+    /// chooses (`cards::store_ids`), as Liliana of the Veil keeps hers.
+    ///
+    /// It used to round-trip through the `CardEffect` key as text built with
+    /// `format!`, which is for what a person reads: the proofs stub it to
+    /// return nothing (`proofs::cards` says why), and a chain whose state
+    /// is lost between choices is not one they can follow.
+    const KEPT: &'static str = "reckoning_kept";
+    const QUEUE: &'static str = "reckoning_queue";
+
+    fn store(state: &mut GameState, source_id: ObjectId, kept: &[ObjectId], remaining: &[PlayerId]) {
+        let Some(obj) = state.get_object_mut(source_id) else { return };
+        crate::cards::store_ids(&mut obj.card_state, Self::KEPT, kept);
+        let players: Vec<ObjectId> = remaining.iter().map(|p| ObjectId(u64::from(p.0))).collect();
+        crate::cards::store_ids(&mut obj.card_state, Self::QUEUE, &players);
     }
 
-    fn decode(key: &str) -> (Vec<ObjectId>, Vec<PlayerId>) {
-        let mut parts = key.splitn(2, '|');
-        let kept = parts.next().unwrap_or("").split(',')
-            .filter(|s| !s.is_empty())
-            .filter_map(|s| s.parse().ok())
-            .map(ObjectId)
-            .collect();
-        let remaining = parts.next().unwrap_or("").split(',')
-            .filter(|s| !s.is_empty())
-            .filter_map(|s| s.parse().ok())
-            .map(PlayerId)
+    fn load(state: &GameState, source_id: ObjectId) -> (Vec<ObjectId>, Vec<PlayerId>) {
+        let Some(obj) = state.get_object(source_id) else { return (Vec::new(), Vec::new()) };
+        let kept = crate::cards::load_ids(&obj.card_state, Self::KEPT);
+        let remaining = crate::cards::load_ids(&obj.card_state, Self::QUEUE).into_iter()
+            .map(|id| PlayerId(u8::try_from(id.0).unwrap_or(u8::MAX)))
             .collect();
         (kept, remaining)
     }
@@ -115,6 +116,7 @@ impl DivineReckoning {
                     }
                 }
                 _ => {
+                    Self::store(state, source_id, &kept, &queue);
                     state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
                         player,
                         source: source_id,
@@ -124,7 +126,7 @@ impl DivineReckoning {
                             optional: false,
                             effect: PendingEffect::CardEffect {
                                 source_id,
-                                key: Self::encode(&kept, &queue),
+                                key: String::new(),
                             },
                         },
                     });
@@ -134,6 +136,10 @@ impl DivineReckoning {
         }
 
         // Everyone has chosen — destroy the rest.
+        if let Some(obj) = state.get_object_mut(source_id) {
+            crate::cards::clear_ids(&mut obj.card_state, Self::KEPT);
+            crate::cards::clear_ids(&mut obj.card_state, Self::QUEUE);
+        }
         // Sorted by id (`all_objects_in_zone`) for a reproducible log; the
         // destruction itself is simultaneous so the order does not affect the
         // outcome.
