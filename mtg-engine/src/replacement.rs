@@ -60,6 +60,7 @@ pub enum ReplaceableEvent {
 }
 
 /// What a replacement effect did to an event.
+#[derive(Debug, Clone, PartialEq)]
 pub enum Replacement {
     /// The event happens, but like this instead.
     Modified(ReplaceableEvent),

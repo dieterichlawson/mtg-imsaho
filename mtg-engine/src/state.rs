@@ -503,7 +503,7 @@ pub struct LogEntry {
 }
 
 /// A temporary effect that expires during the cleanup step.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum TemporaryEffect {
     /// Modify power and/or toughness (e.g., Giant Growth +3/+3).
     ModifyPT { target: ObjectId, power_mod: i32, toughness_mod: i32 },
@@ -5007,7 +5007,7 @@ pub enum ResolutionChoiceKind {
 }
 
 /// What happens to the chosen target when a `ResolutionChoice` is resolved.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum PendingEffect {
     /// Deal N damage to the chosen target.
     /// CR 119.3: damage has a source, and the source is an object — not its
