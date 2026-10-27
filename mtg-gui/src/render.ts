@@ -691,7 +691,9 @@ function drawBand(ctx: Ctx, hits: Hit[], state: LiveState): void {
   // source: Moonmist's prevention was in the log only (#953). Its card is
   // in a graveyard to read; clipped short of the stack like the rest.
   const inForce = bandTurnEffects(view).join(" ");
-  if (inForce && flagX < 170) text(ctx, clip(ctx, inForce, 176 - flagX, "7px Silkscreen"), flagX, y + 3, { color: "#a0c0e0", font: "7px Silkscreen" });
+  // Only where a name can be read: `clip` keeps a letter and its ellipsis
+  // however narrow the room, and those ran into "STACK →" (#953's review).
+  if (inForce && 176 - flagX >= 24) text(ctx, clip(ctx, inForce, 176 - flagX, "7px Silkscreen"), flagX, y + 3, { color: "#a0c0e0", font: "7px Silkscreen" });
   // The stack: the top (next to resolve) on the left, as the view lists it.
   const sx0 = 180;
   text(ctx, view.stack.length ? "STACK →" : "stack empty", sx0, y + 2, { color: "#8a8090", font: "7px Silkscreen" });

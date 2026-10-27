@@ -1194,6 +1194,39 @@ async function main() {
         else ok(`inspector-fit: all ${inBox.length} lines in the inspector's text box stay in it`);
       }
     }
+    // 24c. An effect in force for the rest of the turn is named in the band
+    // by its source, beside "creature died" and short of the stack (#953).
+    {
+      const drawn = await page.evaluate(() => {
+        const m = window.mtg;
+        const keep = JSON.parse(JSON.stringify([m.view.creature_died_this_turn, m.view.first_strike_damage_step, m.view.turn_effects || []]));
+        const orig = CanvasRenderingContext2D.prototype.fillText;
+        const out = [];
+        try {
+          CanvasRenderingContext2D.prototype.fillText = function (s, x) {
+            const w = this.measureText(String(s)).width;
+            const left = this.textAlign === "center" ? x - w / 2 : this.textAlign === "right" ? x - w : x;
+            out.push({ s: String(s), left, right: left + w });
+            return orig.apply(this, arguments);
+          };
+          m.view.creature_died_this_turn = true;
+          m.view.first_strike_damage_step = false;
+          m.view.turn_effects = ["Moonmist: combat damage that would be dealt this turn by creatures other than Wolves or Werewolves is prevented"];
+          window.mtgDebug.render();
+        } finally {
+          CanvasRenderingContext2D.prototype.fillText = orig;
+          [m.view.creature_died_this_turn, m.view.first_strike_damage_step, m.view.turn_effects] = keep;
+          window.mtgDebug.render();
+        }
+        return out;
+      });
+      const died = drawn.find(d => d.s === "creature died");
+      const moon = drawn.find(d => d.s.startsWith("Moon"));
+      if (!moon) fail(`turn-effects: the band does not name Moonmist: ${JSON.stringify(drawn.filter(d => d.left < 180 && d.left >= 40).slice(0, 6))}`);
+      else if (moon.right > 180) fail(`turn-effects: it runs into the stack: ${JSON.stringify(moon)}`);
+      else if (died && moon.left < died.right) fail(`turn-effects: drawn over "creature died": ${JSON.stringify([died, moon])}`);
+      else ok("turn-effects: the band names the effect in force");
+    }
     // 24b. What this turn has done that no zone shows is on the board
     // (#832): "creature died" in the band for morbid, short of the stack
     // at x=180, and each player's "Cast N" in their strip for werewolves,
@@ -1218,11 +1251,13 @@ async function main() {
           m.view.first_strike_damage_step = true;
           m.view.spells_cast_this_turn = [[you, 2], [opp, 1]];
           m.view.your_mana_pool = { mana: { White: 19, Blue: 19, Black: 19, Red: 19, Green: 19, Colorless: 19 } };
+          m.view.turn_effects = ["Moonmist: combat damage that would be dealt this turn by creatures other than Wolves or Werewolves is prevented"];
           window.mtgDebug.render();
         } finally {
           CanvasRenderingContext2D.prototype.fillText = orig;
           [m.view.creature_died_this_turn, m.view.spells_cast_this_turn,
             m.view.first_strike_damage_step, m.view.your_mana_pool] = keep;
+          m.view.turn_effects = [];
           window.mtgDebug.render();
         }
         return out;
@@ -1233,6 +1268,9 @@ async function main() {
       else if (drawn.some(d => d.s === "first strike" && d.right > died.left))
         fail(`turn-facts: "creature died" is drawn over "first strike": ${JSON.stringify(drawn.filter(d => d.s === "first strike" || d === died))}`);
       else ok("turn-facts: the band says a creature died");
+      // Where the band has no readable room left, the effect is not drawn
+      // as a letter and an ellipsis over the stack (#953).
+      if (drawn.some(d => d.s.startsWith("Moon") && d.right > 180)) fail(`turn-facts: the effect runs into the stack: ${JSON.stringify(drawn.filter(d => d.s.startsWith("Moon")))}`);
       const casts = drawn.filter(d => d.s === "Cast 2" || d.s === "Cast 1");
       if (casts.length !== 2) fail(`turn-facts: each strip says its spells cast, got ${JSON.stringify(casts)}`);
       else if (casts.some(d => d.right > 480)) fail(`turn-facts: a strip's cast count leaves the board: ${JSON.stringify(casts)}`);

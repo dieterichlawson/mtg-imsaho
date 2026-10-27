@@ -4872,12 +4872,17 @@ impl CliPlayer {
     /// here too, by its source's name — Moonmist's prevention was one LOG
     /// line that scrolled away (#953); the card is in its graveyard to read.
     fn battlefield_rule(view: &GameView, width: usize) -> String {
-        let mut facts: Vec<String> = Vec::new();
+        // The effects first: a 58-column pane cuts the end of the label,
+        // and the death is also in the LOG pane's history of the turn.
+        let mut facts: Vec<String> = view.turn_effects.iter()
+            .map(|e| format!("{} in force", e.split_once(':').map_or(e.as_str(), |(source, _)| source)))
+            .collect();
         if view.creature_died_this_turn {
-            facts.push("a creature died this turn".into());
+            facts.push("a creature died".into());
         }
-        facts.extend(view.turn_effects.iter()
-            .map(|e| format!("{} in force this turn", e.split_once(':').map_or(e.as_str(), |(source, _)| source))));
+        if let Some(last) = facts.last_mut() {
+            last.push_str(" this turn");
+        }
         let label = if facts.is_empty() {
             "─── BATTLEFIELD ".to_string()
         } else {
@@ -5546,7 +5551,8 @@ impl CliPlayer {
         }
         // Homicidal Brute's end step reads the attack, and a spent
         // once-each-turn ability is a row the menu stopped offering (#954).
-        if perm.attacked_this_turn {
+        // Still attacking says so below, as the LLM board and the page do.
+        if perm.attacked_this_turn && perm.attacking.is_none() {
             let _ = execute!(out, Print("  Attacked this turn: true\n".to_string()));
         }
         if perm.once_per_turn_used {
@@ -9907,7 +9913,9 @@ Mark 1 of the 1 cards below to exile.");
         v.turn_effects = vec!["Moonmist: combat damage that would be dealt this turn by creatures other than \
 Wolves or Werewolves is prevented".into()];
         assert!(CliPlayer::battlefield_rule(&v, 90)
-            .contains("(a creature died this turn; Moonmist in force this turn)"), "{}", CliPlayer::battlefield_rule(&v, 90));
+            .contains("(Moonmist in force; a creature died this turn)"), "{}", CliPlayer::battlefield_rule(&v, 90));
+        // At a 100-column terminal's 58-column pane, the effect survives the cut.
+        assert!(CliPlayer::battlefield_rule(&v, 58).contains("Moonmist in force"), "{}", CliPlayer::battlefield_rule(&v, 58));
         for width in [90, 58, 30, 12] {
             let rule = CliPlayer::battlefield_rule(&v, width);
             assert!(str_cols(&rule) <= width, "{rule:?} in {width} columns");
