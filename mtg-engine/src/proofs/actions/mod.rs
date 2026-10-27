@@ -7,6 +7,7 @@ mod effects;
 mod pending_effects;
 mod predicates;
 mod scopes;
+mod simple_actions;
 mod targeting;
 
 /// An action proof: the stubs and bounds of a card proof, so that one

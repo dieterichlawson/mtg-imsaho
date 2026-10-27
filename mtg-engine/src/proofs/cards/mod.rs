@@ -1052,6 +1052,52 @@ impl Snapshot {
         Snapshot { until_end_of_turn: 0, ..self.clone() }
     }
 
+    /// This snapshot without its count of events, for a proof that reads
+    /// which events were added itself.
+    pub fn without_events(&self) -> Self {
+        Snapshot { events: 0, ..self.clone() }
+    }
+
+    /// This snapshot with player `p`'s life total `life`, and nothing else
+    /// changed.
+    pub fn with_life(&self, p: PlayerId, life: i32) -> Self {
+        let mut s = self.clone();
+        for (i, row) in s.players.iter_mut().enumerate() {
+            if usize::from(p.0) == i {
+                row.0 = life;
+            }
+        }
+        s
+    }
+
+    /// This snapshot with `id` tapped or untapped as `tapped` says, and
+    /// nothing else changed.
+    pub fn with_tapped(&self, id: ObjectId, tapped: bool) -> Self {
+        let mut s = self.clone();
+        for row in &mut s.objects {
+            if row.id == id {
+                row.tapped = tapped;
+            }
+        }
+        s
+    }
+
+    /// This snapshot with `n` counters of `kind` on `id`, and nothing else
+    /// changed.
+    pub fn with_counters(&self, id: ObjectId, kind: CounterType, n: u32) -> Self {
+        let mut s = self.clone();
+        for row in &mut s.objects {
+            if row.id == id {
+                for (i, k) in COUNTER_KINDS.iter().enumerate() {
+                    if *k == kind {
+                        row.counters[i] = n;
+                    }
+                }
+            }
+        }
+        s
+    }
+
     /// This snapshot with `id` attached to player `p`, and nothing else
     /// changed.
     pub fn with_attached_player(&self, id: ObjectId, p: PlayerId) -> Self {
