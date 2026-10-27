@@ -670,6 +670,46 @@ sits in memory. What was measured, and what the proofs do about each:
 - **The zone order** itself is proved with Verus, for every board, not
   with Kani (above).
 
+- **Loops whose count the solver leaves open**, such as collecting the
+  creatures a player controls, were unwound to the harness's bound of
+  seven however few objects a board held, each pass scanning the board
+  again. `kani-bounded.py` unwinds every loop to four first and gives the
+  harness's bound only to a loop whose unwinding assertion fails there,
+  keeping the loops so raised for the harnesses after; the assertions
+  stay on, so a harness passes only with every loop unwound as far as it
+  goes.
+- **Counters.** Adding a counter to a `BTreeMap`, and then to a `VecMap`
+  whose two kinds of counter sat in an order the solver left open, ran
+  CBMC out of memory: a write at an offset it leaves open makes it follow
+  the buffer as a whole. A Kani build keeps an object's counters in one
+  field per kind (`counter_map`), held to an ordered map keyed by kind
+  by `proofs::counter_map`, and every access is to a field it knows.
+- **Which side of `==`.** A derived `==` branches on its left operand's
+  variant, and an action recorded at a place in the log the solver leaves
+  open is of a variant it leaves open: with it on the left, every
+  variant's fields were compared, two thirds of the mill proof's work.
+  The proofs put the expected value, whose variant is known, on the left.
+
+The engine actions these card proofs stand in for, proved so far (each
+for both players and boards as its doc comment states):
+
+| Action | Result |
+|---|---|
+| `change_life` and its four other forms (CR 119.3, 119.10) | proved, 57 s |
+| `tap`, `tap_for` (701.21a, 110.5) | proved, 73 s |
+| `untap`, `untap_for` (701.21b, 110.5) | proved, 72 s |
+| `discard_card`, `discard_card_for` (701.8a) | proved, 110 s |
+| `attach` (701.3a, 701.3b, 702.6c) | proved, 118 s |
+| `add_counters`, `add_counters_quiet` (122.1) | proved, 96 s |
+| `remove_counters` | proved, 88 s |
+| `draw_cards` (121.1, 121.2, 704.5b, 614.1) | proved, 300 s |
+
+Three of these held only once the function asked what the rule says:
+`untap` untapped a card off the battlefield, `discard_card` discarded a
+permanent, and `attach` left an Aura attached to the player it came off;
+no game reached any of them, every caller offering only what the rule
+allows, and each has a regular test besides.
+
 The effects proofs, which read an effect printed on a card back from the
 registry, are where these costs meet: they do not yet finish. The rest
 of the pool's proofs are being run under these measures, and this
