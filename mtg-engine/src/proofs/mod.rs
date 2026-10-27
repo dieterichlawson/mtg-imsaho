@@ -15,3 +15,4 @@
 //! [Kani]: https://model-checking.github.io/kani/
 
 mod mana_payment;
+mod vec_map;
