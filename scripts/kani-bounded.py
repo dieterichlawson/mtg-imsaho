@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """scripts/kani-bounded.py [NAME...] [--results FILE] [--batch N] [--timeout S] [--bound B] [--as-built]
+                          [--start-unwind U] [--loops FILE]
 
 Run the Kani proofs in mtg-engine/src/proofs/ the way `cargo kani` does,
 with one addition: every function in a harness's final goto program that
@@ -18,6 +19,17 @@ Rust program can observe does: with Kani's encoding of enums as it is,
 CBMC loses every pointer stored in an enum written to the heap, and
 explores every variant of what it might point to. `--as-built` leaves the
 program as Kani built it, to compare.
+
+Loops are unwound to U (default 4) first, not to the harness's bound: a
+board of three objects needs no more, and a loop whose count the solver
+leaves open (collecting the creatures a player controls) is otherwise
+unwound to the harness's bound, each pass scanning the board again. A
+loop whose unwinding assertion fails at U is given the harness's bound
+and the harness is run again; one that fails at the harness's bound is
+a failure, as with Kani. The loops so raised are kept in FILE (default
+logs/kani/loop-bounds.txt), by function name and loop number, for the
+harnesses after. The unwinding assertions stay on throughout, so a
+harness passes only with every loop unwound as far as it goes.
 
 Per batch: `cargo kani --only-codegen` for the batch's harnesses; per
 harness: Kani's goto-cc link and goto-instrument passes, the rewrite,
@@ -168,10 +180,57 @@ def verify(h, goto, unwind, mangled, bound, timeout, precise=True):
         if p.returncode != 0:
             return ('ERROR', '-', f'{os.path.basename(cmd[1] if cmd[0] == sys.executable else cmd[0])} failed: {p.stderr[-200:]}')
     rec = bounds(out, bound)
-    unwindset = ','.join(['memcmp.0:33'] + [f'{r}:{bound}' for r in rec])
-    cmd = [f'{K}/bin/cbmc'] + CBMC_FLAGS + ['--unwind', str(unwind or 7), '--unwindset', unwindset, out, '--verbosity', '9', '--json-ui']
-    with open(out + '.cmd', 'w') as f:
-        f.write(' '.join(f"'{c}'" if ',' in c or '*' in c else c for c in cmd) + '\n')
+    by_name = pretty_names(out)
+    full = unwind or 7
+    learned = load_loops()
+    took, rounds = 0.0, 0
+    while True:
+        rounds += 1
+        raised = sorted({f'{m}.{n}' for name, n in learned for m in by_name.get(name, [])})
+        unwindset = ','.join(['memcmp.0:33'] + [f'{r}:{bound}' for r in rec] + [f'{l}:{full}' for l in raised])
+        cmd = [f'{K}/bin/cbmc'] + CBMC_FLAGS + ['--unwind', str(min(START_UNWIND, full)), '--unwindset', unwindset,
+                                                out, '--verbosity', '9', '--json-ui']
+        with open(out + '.cmd', 'w') as f:
+            f.write(' '.join(f"'{c}'" if ',' in c or '*' in c else c for c in cmd) + '\n')
+        result, why, seconds, loops, others = solve(cmd, timeout, len(rec))
+        took += seconds
+        new = loops - learned
+        # Again with the loops that needed more than the starting bound at
+        # the harness's own, until none does; a loop at the harness's bound
+        # that still needs more, or any other failure, is the result.
+        if result != 'FAILED' or not new or others:
+            return (result, f'{took:.0f}s', why + (f' rounds {rounds}' if rounds > 1 else ''))
+        learned |= new
+        save_loops(learned)
+
+
+def load_loops():
+    if not os.path.exists(LOOPS):
+        return set()
+    return {tuple(l.rsplit(' ', 1)) for l in open(LOOPS).read().splitlines() if l.strip()}
+
+
+def save_loops(loops):
+    os.makedirs(os.path.dirname(LOOPS), exist_ok=True)
+    with open(LOOPS, 'w') as f:
+        for name, n in sorted(loops):
+            f.write(f'{name} {n}\n')
+
+
+def pretty_names(out):
+    """Each function name a result names, with the identifiers it has in `out`."""
+    pretty = json.load(open(out[:-len('.out')] + '.pretty_name_map.json'))
+    present = set(re.findall(r'/\* ([^ ,]+)', run([f'{K}/bin/goto-instrument', '--list-goto-functions', out]).stdout))
+    by = {}
+    for k, v in pretty.items():
+        if v and k in present:
+            by.setdefault(v, []).append(k)
+    return by
+
+
+def solve(cmd, timeout, nrec):
+    """Run cbmc: the result, what to say of it, its seconds, the loops whose
+    unwinding assertions failed, and every other failure."""
     start = time.time()
     try:
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
@@ -181,15 +240,15 @@ def verify(h, goto, unwind, mangled, bound, timeout, precise=True):
         sym = re.search(r'Runtime Symex: ([0-9.]+)s', partial)
         where = (f' {m.group(1)} steps symex {float(sym.group(1)):.0f}s, then solving' if m and sym
                  else ' still in symbolic execution')
-        return ('TIMEOUT', f'{time.time() - start:.0f}s', f'{len(rec)} bounded;{where}')
-    took = f'{time.time() - start:.0f}s'
+        return ('TIMEOUT', f'{nrec} bounded;{where}', time.time() - start, set(), [])
+    seconds = time.time() - start
     if p.returncode in (-9, 137):
-        return ('OOM', took, f'{len(rec)} bounded')
+        return ('OOM', f'{nrec} bounded', seconds, set(), [])
     try:
         doc = json.loads(p.stdout)
     except json.JSONDecodeError:
-        return ('ERROR', took, (p.stdout[-300:] + p.stderr[-300:]).replace('\n', ' '))
-    failed, covers, covered = [], 0, 0
+        return ('ERROR', (p.stdout[-300:] + p.stderr[-300:]).replace('\n', ' '), seconds, set(), [])
+    failed, others, loops, covers, covered = [], [], set(), 0, 0
     for item in doc:
         for r in item.get('result', []):
             prop, status = r.get('property', ''), r.get('status')
@@ -201,8 +260,14 @@ def verify(h, goto, unwind, mangled, bound, timeout, precise=True):
                 continue
             if status == 'FAILURE':
                 failed.append(r.get('description', prop))
+                m = re.match(r'(.*)\.unwind\.(\d+)$', prop)
+                if m:
+                    loops.add((m.group(1), m.group(2)))
+                else:
+                    others.append(prop)
         if 'messageText' in item and 'Invalid User Input' in item.get('messageText', ''):
             failed.append(item['messageText'])
+            others.append(item['messageText'])
     errors = [i.get('messageText', '') for i in doc if i.get('messageType') == 'ERROR']
     size = ''
     for i in doc:
@@ -216,11 +281,14 @@ def verify(h, goto, unwind, mangled, bound, timeout, precise=True):
         elif t.startswith('Runtime decision procedure') and 'solve' not in size:
             size += f" solve {float(t.split(':')[1].strip().rstrip('s')):.0f}s"
     if errors and not failed:
-        return ('ERROR', took, ' '.join(errors)[:300])
+        return ('ERROR', ' '.join(errors)[:300], seconds, set(), ['error'])
     cov = (f' covers {covered}/{covers}' if covers else '') + size
     if failed:
-        return ('FAILED', took, f'{len(rec)} bounded{cov}; ' + ' | '.join(sorted(set(failed)))[:400])
-    return ('SUCCESSFUL', took, f'{len(rec)} bounded{cov}')
+        return ('FAILED', f'{nrec} bounded{cov}; ' + ' | '.join(sorted(set(failed)))[:400], seconds, loops, others)
+    return ('SUCCESSFUL', f'{nrec} bounded{cov}', seconds, set(), [])
+
+
+START_UNWIND, LOOPS = 4, None
 
 
 def main():
@@ -233,7 +301,11 @@ def main():
     ap.add_argument('--timeout', type=int, default=1800)
     ap.add_argument('--bound', type=int, default=3)
     ap.add_argument('--as-built', action='store_true', help='skip the precise-enums rewrite')
+    ap.add_argument('--start-unwind', type=int, default=4)
+    ap.add_argument('--loops', default=f'{ROOT}/logs/kani/loop-bounds.txt')
     a = ap.parse_args()
+    global START_UNWIND, LOOPS
+    START_UNWIND, LOOPS = a.start_unwind, a.loops
     os.makedirs(os.path.dirname(a.results), exist_ok=True)
     every = list_harnesses(f'{a.crate}/src')
     # A name selects a harness by its full path or its last part, or every
