@@ -227,9 +227,9 @@ card_proof! {
         if returnable.is_empty() {
             assert!(acted() == 0);
         } else {
-            assert!(acted() == 2 && super::act(0) == Some(Act::Random(returnable.clone(), 1)));
+            assert!(acted() == 2 && super::act(0) == Some(&Act::Random(super::listed(&returnable), 1)));
             let Some(Act::Move(id, Zone::Hand)) = super::act(1) else { panic!("returns it to the hand") };
-            assert!(returnable.contains(&id));
+            assert!(returnable.contains(id));
         }
         assert!(Snapshot::of(&state) == before);
         std::mem::forget((registry, state, returnable));

@@ -1218,7 +1218,7 @@ card_proof! {
         b.state.resolving_ability_activator = Some(activator);
         let n = acted();
         b.registry.get(card).expect("registered").resolve_activated_ability(&mut b.state, b.me, index, &[], &b.registry);
-        assert!(acted() == n + 1 && super::act(n) == Some(Act::TokenCopy(named, activator)));
+        assert!(acted() == n + 1 && super::act(n) == Some(&Act::TokenCopy(named, activator)));
         assert!(Snapshot::of(&b.state) == before);
         std::mem::forget(b);
     }
@@ -1550,17 +1550,16 @@ card_proof! {
                 let Some(Act::Choose { source, player, options, effect: PendingEffect::CardEffect { source_id, .. }, optional: false }) = super::act(0) else {
                     panic!("asks which card")
                 };
-                assert!(acted() == 1 && source == b.me && player == you && source_id == b.me);
+                assert!(acted() == 1 && *source == b.me && *player == you && *source_id == b.me);
                 assert!(options.len() == 2 && options[0] == Target::Object(exilable[0]) && options[1] == Target::Object(exilable[1]));
                 let chosen = exilable[usize::from(kani::any::<bool>())];
                 b.registry.get(haunt).expect("registered").resolve_card_effect(&mut b.state, b.me, "", &Target::Object(chosen), &b.registry);
-                assert!(acted() == 2 && super::act(1) == Some(Act::Move(chosen, Zone::Exile)));
-                std::mem::forget(options);
+                assert!(acted() == 2 && super::act(1) == Some(&Act::Move(chosen, Zone::Exile)));
             }
         }
         let n = acted();
         b.registry.get(haunt).expect("registered").resolve_activated_ability(&mut b.state, b.me, 1, &[], &b.registry);
-        assert!(acted() == n + 1 && super::act(n) == Some(Act::Tokens {
+        assert!(acted() == n + 1 && super::act(n) == Some(&Act::Tokens {
             n: 1, controller: b.you, power: 1, toughness: 1, colors: vec![Color::White],
             types: vec![CardType::Creature], keywords: vec![Keyword::Flying], subtypes: vec!["Spirit".into()],
         }));

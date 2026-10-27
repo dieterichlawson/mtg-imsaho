@@ -392,12 +392,11 @@ card_proof! {
                 let Some(Act::Choose { source, player, options, effect: PendingEffect::SacrificeCreature { source_name }, optional: false }) = act(0) else {
                     panic!("asks which creature")
                 };
-                assert!(acted() == 1 && source == b.me && player == p && source_name == "Liliana of the Veil");
+                assert!(acted() == 1 && *source == b.me && *player == p && source_name == "Liliana of the Veil");
                 assert!(options.len() == creatures.len());
                 for (o, c) in options.iter().zip(&creatures) {
                     assert!(*o == Target::Object(*c));
                 }
-                std::mem::forget((options, source_name));
             }
             _ => {
                 assert!(acted() == 0);

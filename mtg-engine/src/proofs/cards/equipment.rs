@@ -228,7 +228,7 @@ card_proof! {
         };
         match to {
             Some(to) => {
-                assert!(acted() == 2 && act(1) == Some(Act::Damage { source: torch, target: to, amount: 2, kind: DamageKind::NonCombat }));
+                assert!(acted() == 2 && act(1) == Some(&Act::Damage { source: torch, target: to, amount: 2, kind: DamageKind::NonCombat }));
             }
             None => {
                 assert!(acted() == 1);

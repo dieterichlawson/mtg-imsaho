@@ -228,10 +228,29 @@ pub fn asked_for(expected: &[Act]) -> bool {
     n == expected.len() && acts.iter().zip(expected).all(|(a, e)| a.as_ref() == Some(e))
 }
 
-/// The `i`th action asked for, if there were that many.
-pub fn act(i: usize) -> Option<Act> {
-    // SAFETY: as in `acts`.
-    unsafe { (*std::ptr::addr_of!(ACTS)).get(i).cloned().flatten() }
+/// The `i`th action asked for, if there were that many: the action
+/// itself, not a copy, since copying a list whose length the solver
+/// leaves open allocates a buffer of that open size, which it models byte
+/// by byte.
+pub fn act(i: usize) -> Option<&'static Act> {
+    // SAFETY: as in `acts`; the log is only written by the recorders, and
+    // a proof reads it once the card is done asking.
+    unsafe { (*std::ptr::addr_of!(ACTS)).get(i).and_then(Option::as_ref) }
+}
+
+/// The most objects a list a recorder keeps holds.
+const MAX_LISTED: usize = 8;
+
+/// `ids`, as a list of [`MAX_LISTED`] allocated up front and filled entry
+/// by entry: one buffer of a size the solver knows, where `to_vec` would
+/// allocate one of the open length of `ids`.
+pub fn listed(ids: &[ObjectId]) -> Vec<ObjectId> {
+    assert!(ids.len() <= MAX_LISTED, "a list longer than a recorder keeps");
+    let mut list = Vec::with_capacity(MAX_LISTED);
+    for id in ids {
+        list.push(*id);
+    }
+    list
 }
 
 /// How many actions were asked for.
@@ -648,18 +667,20 @@ pub fn record_discard_for(_: &mut GameState, id: ObjectId, _: &str, _: &CardRegi
 /// is chance's to say. Up to two chosen, which is every board here.
 #[allow(dead_code)] // named only by `kani::stub`
 pub fn record_random(_: &mut GameState, candidates: &[ObjectId], n: usize) -> Vec<ObjectId> {
-    record(Act::Random(candidates.to_vec(), n));
+    record(Act::Random(listed(candidates), n));
     let want = n.min(candidates.len());
     assert!(want <= 2, "more chosen at random than a proof here orders");
-    let mut chosen = Vec::with_capacity(candidates.len());
-    for c in candidates {
-        if chosen.len() < want && kani::any() {
-            chosen.push(*c);
+    // Each one chosen at a position Kani picks, the second not the first's.
+    let mut chosen = Vec::with_capacity(2);
+    if want >= 1 {
+        let first: usize = kani::any();
+        kani::assume(first < candidates.len());
+        chosen.push(candidates[first]);
+        if want == 2 {
+            let second: usize = kani::any();
+            kani::assume(second < candidates.len() && second != first);
+            chosen.push(candidates[second]);
         }
-    }
-    kani::assume(chosen.len() == want);
-    if kani::any() {
-        chosen.reverse();
     }
     chosen
 }

@@ -37,7 +37,7 @@
 //! all the same), under either player's control, beside a card and a
 //! token of any characteristics.
 
-use super::{act, acted, any_object, any_target, asked_for, board, card_proof, triggers, Act, Form, Kinds, Snapshot};
+use super::{act, acted, any_object, any_target, asked_for, board, card_proof, listed, triggers, Act, Form, Kinds, Snapshot};
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardRegistry, TargetFilter, TargetRequirement as R, TriggerKind};
 use crate::ids::{CardId, ObjectId, PlayerId};
@@ -296,7 +296,7 @@ fn returned_one_at_random(returnable: &[ObjectId]) -> bool {
         return acted() == 0;
     }
     let Some(Act::Move(id, Zone::Hand)) = act(1) else { return false };
-    acted() == 2 && act(0) == Some(Act::Random(returnable.to_vec(), 1)) && returnable.contains(&id)
+    acted() == 2 && act(0) == Some(&Act::Random(listed(returnable), 1)) && returnable.contains(id)
 }
 
 card_proof! {
@@ -427,14 +427,14 @@ card_proof! {
         let Some(Act::Choose { source, player, options, effect: PendingEffect::CardEffect { source_id, key }, optional: true }) = act(0) else {
             panic!("asks whether to exile it")
         };
-        assert!(source == b.me && player == b.you && source_id == b.me && key.is_empty() && options.len() == 1 && options[0] == target);
+        assert!(*source == b.me && *player == b.you && *source_id == b.me && key.is_empty() && options.len() == 1 && options[0] == target);
         let Target::Object(id) = target else { unreachable!() };
         let card = b.card();
         b.registry.get(card).expect("registered").resolve_card_effect(&mut b.state, b.me, "", &target, &b.registry);
-        assert!(acted() == 2 && act(1) == Some(Act::Move(id, Zone::Exile)));
+        assert!(acted() == 2 && act(1) == Some(&Act::Move(id, Zone::Exile)));
         assert!(b.get(b.me).card_state.get("exiled_creature") == Some(&id) && b.get(b.me).card_state.len() == 1);
         assert!(Snapshot::of(&b.state) == before);
-        std::mem::forget((b, options, key));
+        std::mem::forget(b);
     }
 }
 

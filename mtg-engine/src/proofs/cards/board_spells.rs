@@ -44,7 +44,7 @@
 //! permanents that are creatures (CR 110.1, 302); "each" is every one,
 //! in the order the game lists them.
 
-use super::{act, acted, any_object, asked_for, board, both, card_proof, each_is, either, has_subtype, new_ids, Act, Blank, Form, Kinds, Snapshot};
+use super::{act, acted, any_object, asked_for, board, both, card_proof, each_is, either, has_subtype, listed, new_ids, Act, Blank, Form, Kinds, Snapshot};
 use crate::cards::{AdditionalCost, CardBehavior, CardRegistry};
 use crate::damage::DamageKind;
 use crate::destruction::DestroyResult;
@@ -215,7 +215,7 @@ card_proof! {
         assert!(outcomes.iter().map(|(id, _)| *id).eq(enchantments.iter().copied()));
         let died = outcomes.iter().filter(|(_, o)| *o == DestroyResult::Died).count();
         if died > 0 {
-            assert!(acted() == 2 && act(1) == Some(Act::Life(PlayerId(0), i32::try_from(died).expect("small"))));
+            assert!(acted() == 2 && act(1) == Some(&Act::Life(PlayerId(0), i32::try_from(died).expect("small"))));
         } else {
             assert!(acted() == 1);
         }
@@ -263,11 +263,11 @@ card_proof! {
     fn make_a_wish_returns_two_at_random() {
         let r = resolve(Box::new(isd::make_a_wish::MakeAWish), &CREATURES);
         let graveyard = r.those(|o| o.zone == Zone::Graveyard && o.owner == PlayerId(0));
-        assert!(act(0) == Some(Act::Random(graveyard.clone(), 2)));
+        assert!(act(0) == Some(&Act::Random(listed(&graveyard), 2)));
         assert!(acted() == 1 + graveyard.len().min(2));
         for i in 1..acted() {
             let Some(Act::Move(id, Zone::Hand)) = act(i) else { panic!("returns to the hand") };
-            assert!(graveyard.contains(&id));
+            assert!(graveyard.contains(id));
             assert!(i == 1 || act(1) != act(i));
         }
         assert!(r.added().is_empty() && r.nothing_else_changed());
@@ -343,12 +343,12 @@ card_proof! {
         registry.get(state.get_object(spell).expect("on the stack").card_id).expect("registered")
             .on_resolve(&mut state, spell, &[], &registry);
         let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, PlayerId(0)).iter().map(|o| o.id).collect();
-        assert!(act(0) == Some(Act::Draw(PlayerId(0), 2)) && act(1) == Some(Act::Random(hand.clone(), 1)));
+        assert!(act(0) == Some(&Act::Draw(PlayerId(0), 2)) && act(1) == Some(&Act::Random(listed(&hand), 1)));
         if hand.is_empty() {
             assert!(acted() == 2);
         } else {
             let Some(Act::Discard(id)) = act(2) else { panic!("discards") };
-            assert!(acted() == 3 && hand.contains(&id));
+            assert!(acted() == 3 && hand.contains(id));
         }
         std::mem::forget((registry, state));
     }
