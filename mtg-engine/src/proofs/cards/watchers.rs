@@ -136,7 +136,7 @@ card_proof! {
         if yes {
             match act(0) {
                 Some(Act::Pay(p, cost, true)) => {
-                    assert!(*p == b.you && *cost == one && acted() == 2 && act(1) == Some(&Act::Draw(b.you, 1)));
+                    assert!(*p == b.you && *cost == one && acted() == 2 && Some(&Act::Draw(b.you, 1)) == act(1));
                 }
                 Some(Act::Pay(p, cost, false)) => {
                     assert!(*p == b.you && *cost == one && acted() == 1);

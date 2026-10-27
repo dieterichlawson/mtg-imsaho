@@ -152,7 +152,7 @@ card_proof! {
         registry.get(card).expect("registered").on_deals_combat_damage_to_creature(&mut state, me, damaged, amount, &registry);
         match act(0) {
             Some(Act::FlipCoin(true)) => {
-                assert!(acted() == 2 && act(1) == Some(&Act::Destroy(damaged)));
+                assert!(acted() == 2 && Some(&Act::Destroy(damaged)) == act(1));
             }
             Some(Act::FlipCoin(false)) => {
                 assert!(acted() == 1);

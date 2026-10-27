@@ -187,7 +187,7 @@ card_proof! {
         // Each index below written out, not computed: an action read at an
         // index Kani leaves open is a read of every recorded action at once.
         let returned_from = |first: usize| {
-            act(first) == Some(&Act::Random(listed(&returnable), 2))
+            Some(&Act::Random(listed(&returnable), 2)) == act(first)
                 && acted() == first + 1 + returnable.len().min(2)
                 && (1..=returnable.len().min(2)).all(|k| {
                     matches!(act(first + k), Some(Act::MoveUnder(id, Zone::Battlefield, controller)) if returnable.contains(id) && *controller == b.you)
@@ -195,7 +195,7 @@ card_proof! {
                 && (returnable.len() < 2 || act(first + 1) != act(first + 2))
         };
         if in_graveyard {
-            assert!(act(0) == Some(&Act::Move(b.me, Zone::Exile)) && returned_from(1));
+            assert!(Some(&Act::Move(b.me, Zone::Exile)) == act(0) && returned_from(1));
         } else {
             assert!(returned_from(0));
         }
@@ -503,7 +503,7 @@ card_proof! {
         let effect = PendingEffect::CardEffect { source_id: b.me, key: String::new() };
         match &target {
             Some(t) => {
-                assert!(acted() == 1 && act(0) == Some(&Act::Effect(t.clone(), effect)));
+                assert!(acted() == 1 && Some(&Act::Effect(t.clone(), effect)) == act(0));
             }
             None => {
                 assert!(acted() == 0);
@@ -514,8 +514,8 @@ card_proof! {
         behavior.resolve_card_effect(&mut b.state, b.me, "", &target, &b.registry);
         match target {
             Target::Object(id) => {
-                assert!(acted() == n + 2 && act(n) == Some(&Act::Destroy(id)));
-                assert!(act(n + 1) == Some(&Act::Counters(b.me, crate::types::CounterType::PlusOnePlusOne, 1)));
+                assert!(acted() == n + 2 && Some(&Act::Destroy(id)) == act(n));
+                assert!(Some(&Act::Counters(b.me, crate::types::CounterType::PlusOnePlusOne, 1)) == act(n + 1));
             }
             _ => {
                 assert!(acted() == n);

@@ -296,7 +296,7 @@ fn returned_one_at_random(returnable: &[ObjectId]) -> bool {
         return acted() == 0;
     }
     let Some(Act::Move(id, Zone::Hand)) = act(1) else { return false };
-    acted() == 2 && act(0) == Some(&Act::Random(listed(returnable), 1)) && returnable.contains(id)
+    acted() == 2 && Some(&Act::Random(listed(returnable), 1)) == act(0) && returnable.contains(id)
 }
 
 card_proof! {
@@ -431,7 +431,7 @@ card_proof! {
         let Target::Object(id) = target else { unreachable!() };
         let card = b.card();
         b.registry.get(card).expect("registered").resolve_card_effect(&mut b.state, b.me, "", &target, &b.registry);
-        assert!(acted() == 2 && act(1) == Some(&Act::Move(id, Zone::Exile)));
+        assert!(acted() == 2 && Some(&Act::Move(id, Zone::Exile)) == act(1));
         assert!(b.get(b.me).card_state.get("exiled_creature") == Some(&id) && b.get(b.me).card_state.len() == 1);
         assert!(Snapshot::of(&b.state) == before);
         std::mem::forget(b);

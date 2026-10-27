@@ -78,7 +78,7 @@ fn drawing_n_puts_the_top_n_cards_into_the_hand_in_order() {
 
     let k = n.min(size);
     assert!(drawn == k);
-    assert!(acted() == k && (0..k).all(|i| act(i) == Some(&Act::Move(cards[i], Zone::Hand))));
+    assert!(acted() == k && (0..k).all(|i| Some(&Act::Move(cards[i], Zone::Hand)) == act(i)));
     assert!(state.events.len() == k && (0..k).all(|i| matches!(state.events[i],
         GameEvent::CardDrawn { player, object } if player == who && object == cards[i])));
     for p in [PlayerId(0), PlayerId(1)] {

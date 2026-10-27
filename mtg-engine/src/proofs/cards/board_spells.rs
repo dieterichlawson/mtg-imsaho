@@ -215,7 +215,7 @@ card_proof! {
         assert!(outcomes.iter().map(|(id, _)| *id).eq(enchantments.iter().copied()));
         let died = outcomes.iter().filter(|(_, o)| *o == DestroyResult::Died).count();
         if died > 0 {
-            assert!(acted() == 2 && act(1) == Some(&Act::Life(PlayerId(0), i32::try_from(died).expect("small"))));
+            assert!(acted() == 2 && Some(&Act::Life(PlayerId(0), i32::try_from(died).expect("small"))) == act(1));
         } else {
             assert!(acted() == 1);
         }
@@ -301,7 +301,7 @@ card_proof! {
         let before = Snapshot::of(&state);
         let card = state.get_object(spell).expect("on the stack").card_id;
         registry.get(card).expect("registered").on_resolve(&mut state, spell, &[], &registry);
-        assert!(act(0) == Some(&Act::Random(listed(&cards), 2)));
+        assert!(Some(&Act::Random(listed(&cards), 2)) == act(0));
         assert!(acted() == 1 + cards.len().min(2));
         for i in 1..acted() {
             let Some(Act::Move(id, Zone::Hand)) = act(i) else { panic!("returns to the hand") };
@@ -382,7 +382,7 @@ card_proof! {
         registry.get(state.get_object(spell).expect("on the stack").card_id).expect("registered")
             .on_resolve(&mut state, spell, &[], &registry);
         let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, PlayerId(0)).iter().map(|o| o.id).collect();
-        assert!(act(0) == Some(&Act::Draw(PlayerId(0), 2)) && act(1) == Some(&Act::Random(listed(&hand), 1)));
+        assert!(Some(&Act::Draw(PlayerId(0), 2)) == act(0) && Some(&Act::Random(listed(&hand), 1)) == act(1));
         if hand.is_empty() {
             assert!(acted() == 2);
         } else {

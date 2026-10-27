@@ -225,7 +225,11 @@ static mut ACTED: usize = 0;
 pub fn asked_for(expected: &[Act]) -> bool {
     // SAFETY: a proof runs on one thread, and only this module names ACTS.
     let (acts, n) = unsafe { (&*std::ptr::addr_of!(ACTS), *std::ptr::addr_of!(ACTED)) };
-    n == expected.len() && acts.iter().zip(expected).all(|(a, e)| a.as_ref() == Some(e))
+    // The expected action on the left: a derived `==` branches on its left
+    // operand's variant, and an action recorded at a place the solver
+    // leaves open is of a variant it leaves open, so on the left it is
+    // compared as every variant there is.
+    n == expected.len() && acts.iter().zip(expected).all(|(a, e)| Some(e) == a.as_ref())
 }
 
 /// The `i`th action asked for, if there were that many: the action
@@ -1343,7 +1347,7 @@ pub fn triggers(card: &dyn CardBehavior) -> Vec<(crate::cards::TriggerKind, Opti
 /// element ([`each_is`]), or is a pattern.
 pub fn prints_effects(card: &dyn CardBehavior, effects: &[crate::types::ContinuousEffect]) -> bool {
     let data = std::mem::ManuallyDrop::new(card.card_data());
-    data.continuous_effects.as_slice() == effects
+    effects == data.continuous_effects.as_slice()
 }
 
 /// Whether `card`'s printed effects are what `shape` says, for effects that
@@ -1358,7 +1362,7 @@ pub fn prints_where(card: &dyn CardBehavior, shape: impl FnOnce(&[crate::types::
 pub fn each_is<T: PartialEq>(actual: &[T], n: usize, expected: impl Fn(usize) -> T) -> bool {
     actual.len() == n && (0..n).all(|i| {
         let e = std::mem::ManuallyDrop::new(expected(i));
-        actual[i] == *e
+        *e == actual[i]
     })
 }
 
