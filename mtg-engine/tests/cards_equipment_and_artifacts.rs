@@ -430,6 +430,27 @@ fn blazing_torch_deals_its_damage_as_the_torch_not_the_creature() {
         "the equipped creature did not deal this damage");
 }
 
+/// "{T}, Sacrifice Blazing Torch: ..." is the equipped creature's ability,
+/// activated by its controller, and its cost sacrifices the Torch, which
+/// only the Torch's controller can do (CR 701.21a). A creature that has
+/// changed hands still wearing the Torch has the ability, but its new
+/// controller cannot pay for it, so it is not offered.
+#[test]
+fn blazing_torch_is_not_offered_to_a_player_who_cannot_sacrifice_it() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let torch = named_permanent(&mut state, &reg, "Blazing Torch", P0);
+    let creature = ready_creature(&mut state, P1, 2, 2);
+    state.get_object_mut(torch).unwrap().attached_to = Some(creature);
+
+    state.priority_player = Some(P1);
+    let legal = engine::legal_actions(&state, &reg);
+    assert!(!legal.actions.iter().any(|a| matches!(a,
+        Action::ActivateAbility { object_id, .. } if *object_id == creature)),
+        "P1 does not control the Torch, so cannot sacrifice it: {:?}", legal.actions);
+}
+
 #[test]
 fn blazing_torch_equip_only_own_creatures() {
     // Equip says "target creature you control" — can't equip opponent's creatures.

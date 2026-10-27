@@ -244,7 +244,7 @@ pub(crate) fn mana_demands(state: &GameState, registry: &CardRegistry, player: P
         if prevent_artifact_abilities && state.has_card_type(obj.id, CardType::Artifact, registry) {
             continue;
         }
-        for (_, ab) in legal::abilities::activated_abilities_of(state, registry, player, obj.id) {
+        for (_, ab) in legal::abilities::activated_abilities_of(state, registry, obj.id) {
             if ab.cost.symbols.is_empty()
                 || (ab.requires_tap && (obj.tapped || state.has_summoning_sickness(obj.id, registry)))
                 || (ab.once_per_turn && obj.abilities_activated_this_turn.contains(&ab.ability_index))

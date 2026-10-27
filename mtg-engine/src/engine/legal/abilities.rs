@@ -25,7 +25,7 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
             if state.has_card_type(obj_id, CardType::Artifact, registry) { continue; }
         }
 
-        let abilities = activated_abilities_of(state, registry, player, obj_id);
+        let abilities = activated_abilities_of(state, registry, obj_id);
         // Every spell in hand is "another spell" to an ability, so the whole
         // hand is the colour demand its tap plan protects — the same map a
         // cast plans against. Planning abilities against an empty hand let
@@ -282,14 +282,13 @@ pub(crate) fn loyalty(ctx: &Ctx, actions: &mut Vec<Action>) {
     }
 }
 
-/// Every activated ability `obj_id` has for `player` to activate: its own,
-/// one a copy effect grants, and one an attachment the player controls
-/// grants — each grant once (issue #533). What the menu offers, and what
-/// the auto-tapper keeps payable while it plans another cost (issue #837).
+/// Every activated ability `obj_id` has for its controller to activate:
+/// its own, one a copy effect grants, and one an attachment grants — each
+/// grant once (issue #533). What the menu offers, and what the auto-tapper
+/// keeps payable while it plans another cost (issue #837).
 pub(crate) fn activated_abilities_of(
     state: &crate::state::GameState,
     registry: &crate::cards::CardRegistry,
-    player: crate::ids::PlayerId,
     obj_id: ObjectId,
 ) -> Vec<(CardId, crate::cards::ActivatedAbilityDef)> {
     // Collect abilities from this permanent's card and attached auras.
@@ -312,16 +311,17 @@ pub(crate) fn activated_abilities_of(
         }
     }
     for attached in state.objects_in_id_order() {
-        // Only offer abilities granted by attachments the acting player
-        // controls. Every granted activated ability in the set includes
-        // sacrificing the attached source as a cost (paid in
-        // `pay_activation_cost`, e.g. Blazing Torch), and a player can
-        // only sacrifice permanents they control (CR 601.2g/701.13) — so
-        // an opponent-controlled attachment's granted ability is
-        // unpayable.
+        // An ability an Aura or Equipment grants is the permanent's own
+        // ("enchanted creature has ..."), so it is its controller's to
+        // activate (CR 602.2), whoever controls the attachment: a Skeletal
+        // Grimace on an opponent's creature gives that opponent its
+        // regeneration. This used to take only attachments the acting
+        // player controls, on the ground that every granted ability
+        // sacrifices its source; one whose cost does (Blazing Torch's) is
+        // offered by its card only when the creature's controller controls
+        // what it would sacrifice (CR 701.21a).
         if attached.zone == Zone::Battlefield
-            && attached.attached_to == Some(obj_id)
-            && attached.controller == player {
+            && attached.attached_to == Some(obj_id) {
             if let Some(behavior) = registry.get(attached.card_id) {
                 for ab in behavior.activated_abilities(state, obj_id, registry) {
                     abilities.push((attached.card_id, ab));
