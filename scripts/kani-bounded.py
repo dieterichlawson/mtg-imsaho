@@ -259,8 +259,8 @@ def solve(cmd, timeout, nrec):
                 covered += status == 'FAILURE'
                 continue
             if status == 'FAILURE':
-                failed.append(r.get('description', prop))
                 m = re.match(r'(.*)\.unwind\.(\d+)$', prop)
+                failed.append(r.get('description', prop) + (f' ({prop})' if m else ''))
                 if m:
                     loops.add((m.group(1), m.group(2)))
                 else:
