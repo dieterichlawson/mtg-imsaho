@@ -12,9 +12,10 @@ drafted with (or that it drafted without one). They go to
 `<out>/nights/<DATE>-lessons.json`.
 
 `curate` hands the guide, tonight's lessons and `<out>/stats.md` (every
-night's tables, `ledger.py stats`) to one call that rewrites the guide,
-held to `GUIDE_WORDS` words: the guide is in every guided seat's system
-prompt, so it is bounded on purpose. The old guide is kept in git.
+night's tables, `ledger.py stats`) to one call that rewrites the guide.
+It is as long as it needs to be: no word count is set, and the curator is
+asked to keep every line earning its place, since the guide is in every
+guided seat's system prompt. The old guide is kept in git.
 
 The seats are `claude -p` on the CLI's own login — plan quota, never a
 metered key: `DRAFT_LOOP_MODEL` (default `claude-haiku-5-5`, the model
@@ -33,7 +34,6 @@ import subprocess
 import sys
 import uuid
 
-GUIDE_WORDS = 700
 SECTIONS = ["## Colours and archetypes", "## Commons that win", "## Uncommons and rares",
             "## Pick order", "## Building", "## Playing"]
 
@@ -147,15 +147,16 @@ def debrief(args):
 
 CURATE_SYSTEM = f"""You keep the draft guide for Innistrad (ISD) booster drafts played by AI drafters, eight to a
 table, three packs of 14, best-of-three Swiss. The guide is put in front of every guided drafter at every
-pick, so it must be short, specific and right: at most {GUIDE_WORDS} words of markdown under exactly these
-headings, in this order: {", ".join(h[3:] for h in SECTIONS)}. Each night you get the guide, the lessons
+pick, so it must be specific and right, and as long as it needs to be and no longer: markdown under exactly
+these headings, in this order: {", ".join(h[3:] for h in SECTIONS)}. Each night you get the guide, the lessons
 tonight's drafters wrote, and the statistics of every night so far, and you write the next guide.
 
 - Keep what the statistics or more than one lesson support; correct or drop what they contradict.
 - A claim that rests on numbers says how many games it rests on, e.g. "(31 games)"; numbers from fewer than
   ten games are anecdotes and are said to be.
 - Name cards exactly as the statistics and lessons spell them, and no others.
-- Write for a drafter at a pick: what to take, what to pass, when to move in, how to build and play the deck."""
+- Write for a drafter at a pick: what to take, what to pass, when to move in, how to build and play the deck.
+- Length is yours to judge: add what the data supports, and cut what no longer earns its place."""
 
 
 def sections(text):
@@ -177,10 +178,10 @@ def curate(args):
     message = (f"The guide now:\n\n{guide or '(none yet: write the first one)'}\n\n"
                f"Tonight's lessons ({args.night}):\n{told or '(none)'}\n\n"
                f"The statistics of every night so far:\n\n{stats}\n\n"
-               f"Write the next guide: only the markdown, starting with the first heading, at most {GUIDE_WORDS} words.")
+               f"Write the next guide: only the markdown, starting with the first heading.")
     model = os.environ.get("DRAFT_LOOP_CURATOR", "claude-sonnet-5-5")
-    # One more try for an answer that is not a guide (headings missing,
-    # too long), told why: the night's lessons are not spent on a format slip.
+    # One more try for an answer that is not a guide (headings missing),
+    # told why: the night's lessons are not spent on a format slip.
     refused = []
     for attempt in range(2):
         text, usage = claude(CURATE_SYSTEM, message, model)
@@ -188,15 +189,15 @@ def curate(args):
         new = sections(re.sub(r"^```(?:markdown)?\n|\n```$", "", new).strip())
         words = len(new.split())
         missing = [h for h in SECTIONS if h not in new]
-        if new and not missing and words <= GUIDE_WORDS * 1.25:
+        if new and not missing:
             break
         refused.append({"words": words, "missing_sections": missing, "usage": usage})
-        message += (f"\n\nYour last answer was not taken: it had {words} words"
-                    + (f" and lacked the headings {', '.join(missing)}" if missing else "")
+        message += (f"\n\nYour last answer was not taken: it "
+                    + (f"lacked the headings {', '.join(missing)}" if new else "was empty")
                     + ". Use exactly the six `## ` headings, in order.")
     record = {"night": args.night, "model": model, "attempts": attempt + 1, "words": words,
               "missing_sections": missing, "usage": usage, "refused": refused}
-    if not new or missing or words > GUIDE_WORDS * 1.25:
+    if not new or missing:
         record["kept_old_guide"] = True
         record["rejected"] = new
         print(f"the new guide was not taken ({words} words, missing {missing}); the guide stays as it was", file=sys.stderr)

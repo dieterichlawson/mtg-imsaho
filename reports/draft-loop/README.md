@@ -34,9 +34,9 @@ commits what is here.
    the guide it drafted with, asked for up to three lessons grounded in
    what happened.
 4. `reflect.py curate` — one call (Sonnet 5.5) with the guide, the lessons
-   and the tables, asked for the next guide: six fixed headings, at most
-   700 words, numbers with their sample sizes, no card the data does not
-   name. An answer that is not a guide is tried once more, then the old
+   and the tables, asked for the next guide: six fixed headings, as long
+   as it needs to be, numbers with their sample sizes, no card the data
+   does not name. An answer that is not a guide is tried once more, then the old
    guide stands.
 5. `report.py` — `nights/DATE.md`, with what went wrong (re-asks, replies
    no answer could be read from, panics, substituted picks and decks)
