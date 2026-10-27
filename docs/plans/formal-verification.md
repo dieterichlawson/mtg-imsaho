@@ -55,7 +55,7 @@ reasons about integers rather than bits, so a proof holds for every amount.
 The proved code lives in the `mtg-kernel` crate, inside `verus!` blocks.
 `cargo build` erases the contracts and compiles the rest as ordinary Rust,
 so the engine runs the code that was proved, not a copy of it. Only
-`mtg-kernel` depends on `vstd`. The three kernels (59 obligations) verify in
+`mtg-kernel` depends on `vstd`. Its kernels (109 obligations) verify in
 about three seconds, once `vstd` is built. Verus has no specification for some of `std` (it rejected
 `slice::swap` and `sort_by_key`); the kernels write those few lines out.
 
@@ -367,6 +367,34 @@ menace). Proved for every submission (92 obligations, no assumptions):
 
 Each of the three kernels rejects each of four one-line breaks
 (`reports/verification-mutants.md`).
+
+### The order a zone is listed in
+
+`mtg-kernel/src/zones.rs`, called by `GameState::objects_in_zone`, which
+every card that reads a hand, a library, a graveyard or the battlefield
+reads it through. Given every object's id in the map's (id) order,
+whether each is in the zone (`in_zone_of`, CR 400.3: a library, hand or
+graveyard by owner, the battlefield by controller) and, for a
+graveyard, its pile, `zone_order` lists the zone. Proved for any number
+of objects and any pile, repeated entries and ids of no object
+included (17 obligations):
+
+- every object listed is in the zone, and every object in the zone is
+  listed;
+- each is listed before every one after it, by where its id first
+  appears in the pile and, among those the pile does not list, by id; so
+  each once, and in the one order there is (CR 404.2: a graveyard's
+  order is its pile's).
+
+A lemma covers the boards the card proofs build, whose piles are the
+first of the graveyard's cards in id order: those zones are listed in id
+order, which is how the card proofs' stand-in for `objects_in_zone`
+lists them (CBMC does not get through the kernel itself: a bounded Kani
+proof of the same order over eight objects ran out of memory, each
+object being written at a position the data decides). The kernel
+rejects each of three one-line breaks: a repeated pile entry listed
+again, a member the pile lists listed a second time, and an object
+listed for having a member's id without being one.
 
 ### The autotap planner, every small board
 
