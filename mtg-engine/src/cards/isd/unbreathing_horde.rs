@@ -48,8 +48,13 @@ impl CardBehavior for UnbreathingHorde {
         event: &crate::replacement::ReplaceableEvent,
         registry: &CardRegistry,
     ) -> Option<crate::replacement::Replacement> {
+        // "You" is the player it enters under (CR 614.12: the permanent as
+        // it would exist on the battlefield), not whoever controlled the
+        // card last: Grimoire of the Dead returns an opponent's Horde under
+        // its own controller, whose Zombies are the ones it counts.
+        let crate::replacement::ReplaceableEvent::EntersBattlefield(entering) = event else { return None };
+        let controller = entering.controller;
         crate::cards::helpers::enters_with_counters(self_id, event, || {
-        let controller = crate::cards::helpers::controller_of(state, self_id);
 
         // Count other Zombies on the battlefield.
         let bf_count = u32::try_from(state.objects_in_zone(Zone::Battlefield, controller).into_iter()

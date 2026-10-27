@@ -3775,6 +3775,39 @@ fn a_horde_entering_from_the_graveyard_counts_the_graveyard_it_leaves() {
          it came out of, got {counters}");
 }
 
+/// "Each other Zombie YOU control and each Zombie card in YOUR graveyard":
+/// "you" is the player the Horde enters under (CR 614.12, the permanent as
+/// it would exist on the battlefield), which is not its owner when Grimoire
+/// of the Dead returns an opponent's Horde under its own controller.
+///
+/// The count was of the Horde's last controller, read off the card in the
+/// graveyard: an opponent's Horde that had died under them and was
+/// reanimated by P0 counted the opponent's Zombies and graveyard, not P0's.
+/// Found by the card's proof (`proofs::cards::replacements`).
+#[test]
+fn a_horde_entering_under_another_player_counts_that_players_zombies() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    // P1's Horde, dead under P1.
+    let horde = named_permanent(&mut state, &reg, "Unbreathing Horde", P1);
+    state.move_object(horde, Zone::Graveyard, &reg);
+    // P0 controls two Zombies; P1 controls none, and has no other Zombie
+    // card in their graveyard.
+    for _ in 0..2 {
+        named_permanent(&mut state, &reg, "Walking Corpse", P0);
+    }
+    state.events.clear();
+
+    // Grimoire of the Dead's "under your control".
+    state.move_object_under_control(horde, Zone::Battlefield, P0, &reg);
+
+    let counters = state.get_object(horde).unwrap().counters
+        .get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0);
+    assert_eq!(counters, 2,
+        "the Horde entered under P0 counts P0's two Zombies and P0's graveyard, \
+         where it is not; it counted its last controller's instead");
+}
+
 /// One study counter is one line: `add_counters`' "gets a study counter
 /// (now 1)", not that and the card's own "study counter added (1/3)" (#762).
 #[test]
