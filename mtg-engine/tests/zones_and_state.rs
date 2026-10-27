@@ -249,6 +249,23 @@ fn untapping_a_card_off_the_battlefield_does_nothing() {
     assert!(state.events.is_empty(), "nothing untapped, nothing announced");
 }
 
+/// CR 701.8a: a discard moves a card from its owner's hand to their
+/// graveyard. Asked of a permanent, `discard_card` put it into the
+/// graveyard and announced a discard; every caller offers only a hand's
+/// cards, so no game reached it, and the discard proof in
+/// `proofs::actions` holds for every object now that the function asks.
+#[test]
+fn discarding_a_card_not_in_a_hand_does_nothing() {
+    let registry = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let c = ready_creature(&mut state, P0, 2, 2);
+
+    state.events.clear();
+    state.discard_card(c, &registry);
+    assert_eq!(state.get_object(c).unwrap().zone, Zone::Battlefield, "a permanent is not discarded");
+    assert!(state.events.is_empty(), "nothing discarded, nothing announced");
+}
+
 /// The leaves-the-battlefield log line names the destination: "died" for the
 /// graveyard, "was exiled" for exile — and only for a creature leaving the
 /// BATTLEFIELD. A card moving hand → graveyard did not die.

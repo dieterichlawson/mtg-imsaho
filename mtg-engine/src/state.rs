@@ -3526,7 +3526,11 @@ impl GameState {
         source: Option<&str>,
         registry: &crate::cards::CardRegistry,
     ) {
-        let Some(player) = self.get_object(id).map(|o| o.owner) else { return; };
+        // CR 701.8a: a discard moves a card from its owner's hand, and a
+        // card anywhere else is not one that can be discarded. Every caller
+        // offers only a hand's cards, so this asks what the rule says
+        // rather than relying on each of them.
+        let Some(player) = self.get_object(id).filter(|o| o.zone == Zone::Hand).map(|o| o.owner) else { return; };
         // A discard is public: the card moves into a public zone (CR 400.2),
         // and CR 701.8a's discard is not a hidden action. Logged HERE rather
         // than at each caller, because a caller that forgets loses the line
