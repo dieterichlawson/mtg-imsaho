@@ -11,7 +11,7 @@ use crate::proofs::cards::{acted, asked_for, blank_board, new_game, Act, Snapsho
 use crate::types::{CounterType, Zone};
 
 #[kani::proof]
-#[kani::unwind(4)]
+#[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
@@ -79,7 +79,7 @@ fn one_object() -> (crate::cards::CardRegistry, crate::state::GameState, ObjectI
 }
 
 #[kani::proof]
-#[kani::unwind(4)]
+#[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
@@ -107,7 +107,7 @@ fn tapping_taps_exactly_an_untapped_permanent() {
 }
 
 #[kani::proof]
-#[kani::unwind(4)]
+#[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
@@ -134,7 +134,7 @@ fn untapping_untaps_exactly_a_tapped_permanent() {
 }
 
 #[kani::proof]
-#[kani::unwind(4)]
+#[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
@@ -193,7 +193,7 @@ fn with_counters(state: &mut crate::state::GameState, id: ObjectId) -> (CounterT
 }
 
 #[kani::proof]
-#[kani::unwind(4)]
+#[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
@@ -228,7 +228,7 @@ fn counters_go_on_a_permanent_and_only_of_their_kind() {
 }
 
 #[kani::proof]
-#[kani::unwind(4)]
+#[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
