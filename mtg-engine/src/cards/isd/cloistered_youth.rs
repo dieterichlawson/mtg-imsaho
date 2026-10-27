@@ -113,8 +113,4 @@ impl CardBehavior for CloisteredYouth {
         let controller = state.last_known_controller(self_id);
         state.change_life_for(controller, -1, "Unholy Fiend");
     }
-
-    fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool {
-        false
-    }
 }

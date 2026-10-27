@@ -98,8 +98,4 @@ impl CardBehavior for ThrabenSentry {
         // Transform using the helper so that keywords and subtypes are updated correctly.
         helpers::apply_transform(state, self_id, registry);
     }
-
-    fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool {
-        false
-    }
 }

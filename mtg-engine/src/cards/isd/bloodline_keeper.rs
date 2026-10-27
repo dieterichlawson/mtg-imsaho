@@ -151,8 +151,4 @@ impl CardBehavior for BloodlineKeeper {
             _ => {}
         }
     }
-
-    fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool {
-        false
-    }
 }

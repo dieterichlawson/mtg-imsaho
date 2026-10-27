@@ -196,8 +196,4 @@ impl CardBehavior for CivilizedScholar {
             crate::cards::helpers::apply_transform(state, self_id, _registry);
         }
     }
-
-    fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool {
-        false
-    }
 }
