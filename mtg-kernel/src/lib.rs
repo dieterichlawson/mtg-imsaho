@@ -25,6 +25,7 @@ pub mod funding;
 pub mod mana;
 pub mod sba;
 pub mod turn;
+pub mod zones;
 
 // `verus!` erases the directive below to an empty block under rustc.
 #[allow(unused_braces)]
