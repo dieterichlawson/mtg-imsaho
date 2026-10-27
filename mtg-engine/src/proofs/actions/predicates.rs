@@ -81,16 +81,22 @@ for_each_form! {
     fn the_subtype_filters_match_their_subtypes(form) {
         let (registry, mut state, blank) = blank_board();
         let id = any_object(&mut state, blank, &FILTERED, form);
-        let o = state.get_object(id).expect("on the board").clone();
+        // What the object is, read off it rather than off a copy of it:
+        // copying an object copies its subtype strings, and the copy cost
+        // more than every comparison here.
+        let o = state.get_object(id).expect("on the board");
         let sub = |s: &str| o.subtypes.iter().any(|t| t == s);
+        let (spirit, enchantment) = (sub("Spirit"), has_type(o, CardType::Enchantment));
+        let tribal = sub("Vampire") || sub("Werewolf") || sub("Zombie");
         let spirit_or_enchantment = TargetFilter::SubtypeOrCardType {
             subtypes: vec!["Spirit".into()],
             card_types: vec![CardType::Enchantment],
         };
-        assert!(matches(&state, id, &spirit_or_enchantment, &registry) == (sub("Spirit") || has_type(&o, CardType::Enchantment)));
+        assert!(matches(&state, id, &spirit_or_enchantment, &registry) == (spirit || enchantment));
         let not = TargetFilter::NotSubtypes(vec!["Vampire".into(), "Werewolf".into(), "Zombie".into()]);
-        assert!(matches(&state, id, &not, &registry) == !(sub("Vampire") || sub("Werewolf") || sub("Zombie")));
-        std::mem::forget((registry, state, o));
+        assert!(matches(&state, id, &not, &registry) == !tribal);
+        std::mem::forget((spirit_or_enchantment, not));
+        std::mem::forget((registry, state));
     }
 }
 
