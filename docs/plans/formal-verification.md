@@ -637,7 +637,33 @@ sits in memory. What was measured, and what the proofs do about each:
   function over those types (the deepest filter in the pool nests two
   deep), with CBMC's recursion unwinding assertions left on, so a bound
   too small for the data fails the proof rather than passing it; that
-  took the drop to eight thousand steps.
+  took the drop to eight thousand steps. The bound limits the search;
+  the next item is why there was a search at all.
+- **Enums written to the heap.** Kani encodes an enum as its tag beside a
+  union of its variants, and builds a variant with its padding left
+  nondeterministic and assigns it as one member of that union, over the
+  union's bytes as they were. CBMC propagates a value only when it knows
+  all of it, so neither is propagated: a variant copied to the heap
+  through a parameter (`Box::new(x)`, `Vec::push(x)`) reaches memory as
+  bytes CBMC cannot trace to the pointers inside it, and a pointer read
+  back from there dereferences to an unconstrained object. The answer is
+  unchanged, but every branch on what that object holds is explored, and
+  a recursive function over a filter explores every variant at every
+  level. Reproduced in eight lines of C: a variant written over a union
+  with unknown padding loses its pointer; with zero padding it keeps it.
+  `scripts/precise-enums.py`, which `kani-bounded.py` applies before CBMC
+  reads a harness, zeroes that padding and makes each variant write a
+  write of the whole union, as the bytes of the variant followed by zeros.
+  Neither is observable by the program: safe Rust never reads padding or
+  a variant other than the one its tag names, and the engine has no
+  `unsafe`. Niche-encoded enums and Rust `union`s, whose other bytes a
+  write keeps, are left alone. Cloning `And(vec![Not(Box(Ty))])` went
+  from three million steps and out of memory to under a second; a
+  recursive walk of a boxed filter from a five-minute timeout to three
+  seconds. Spare from Evil's proof now finishes symbolic execution
+  (1.7 million steps, 800 seconds), where it did not before, and runs
+  out of memory in the solver; what is left of its cost is being
+  measured.
 - **Lists of a length the solver leaves open.** Cloning one allocates a
   buffer of that open size; the action log is read in place and the
   recorders keep their lists at a fixed size.
