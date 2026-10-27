@@ -8,7 +8,7 @@ use mtg_draft::pack::{generate_draft_packs, SheetData};
 use mtg_draft::set_data::SetData;
 use mtg_draft_runner::card_lines::CardLines;
 use mtg_draft_runner::draft_log::DraftLogger;
-use mtg_draft_runner::lobby::{parse_seats, Lobby, LobbyConfig, SeatKind, TableSave};
+use mtg_draft_runner::lobby::{parse_seats, Lobby, LobbyConfig, SeatKind, TablePrompt, TableSave};
 use mtg_draft_runner::server::{self, ServerConfig, Shared};
 use mtg_draft_runner::{die, install_panic_hook, llm_client};
 use mtg_engine::cards::CardRegistry;
@@ -301,6 +301,7 @@ root or set {} to the mtg-gui directory", web_dir.display(), mtg_player::gui::WE
         best_of: args.best_of,
         seed: args.seed,
         guide_path: args.guide.clone(),
+        guide_hash: guide.as_deref().map(llm_client::guide_digest),
         pick_seconds: args.pick_seconds,
         build_seconds: args.build_seconds,
         sideboard_seconds: args.sideboard_seconds,
@@ -312,6 +313,7 @@ root or set {} to the mtg-gui directory", web_dir.display(), mtg_player::gui::WE
     // taken port it went into the log of the table still running there,
     // beside the FATAL (#893, as #745 for a fresh table).
     let mut resumed_note = None;
+    let mut resumed_warnings: Vec<String> = Vec::new();
     if let (Some(save), Some(path)) = (&save, &args.resume) {
         lobby.restore(save).unwrap_or_else(|e| die(&format!("--resume {path}: {e}")));
         resumed_note = Some(format!("the table carries on from the snapshot {path} (seed {}, seats {}): {}, {} \
@@ -319,6 +321,15 @@ and {} replayed; a match that was in progress is played again from its first gam
             save.seed, save.seats.iter().map(|s| s.kind.as_str()).collect::<Vec<_>>().join(","),
             mtg_draft_runner::count(save.picks.len(), "pick", "picks"), mtg_draft_runner::count(save.decks.len(), "deck", "decks"),
             mtg_draft_runner::count(save.matches.len(), "finished match", "finished matches")));
+        // The batch runner's resume says a changed guide (#579); the
+        // table's did not, nor a changed history or answer format (#948,
+        // #949). Said on stderr and in the log, as the note above is.
+        if let Some(was) = save.prompt.as_ref().filter(|_| !save.picks.is_empty()) {
+            let live = TablePrompt::live(&args.seats, args.guide.as_deref(), guide.as_deref().map(llm_client::guide_digest).as_deref());
+            for why in was.unlike(&live) {
+                resumed_warnings.push(format!("WARN --resume {path}: {why} — this draft is a mixture of the two"));
+            }
+        }
     }
     let save_path = args.save.as_ref().map_or_else(|| out_dir.join("table.save.json"), PathBuf::from);
 
@@ -350,6 +361,10 @@ and {} replayed; a match that was in progress is played again from its first gam
         let _ = DraftLogger::new(&log_path);
         mtg_player::game_log::write(file!(), line!(), &format!("NOTE {note}"), "");
         mtg_player::stderr_line!("{note}");
+    }
+    for warning in &resumed_warnings {
+        mtg_player::game_log::write(file!(), line!(), warning, "");
+        mtg_player::stderr_line!("{warning}");
     }
     // A snapshot that cannot be written is refused now, before anybody
     // joins, rather than promised and never made (#891). After the bind: a

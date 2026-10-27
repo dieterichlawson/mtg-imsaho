@@ -35,7 +35,7 @@ fn table(save: PathBuf) -> Arc<Shared> {
     let lines = CardLines::new(&set_data.all_card_names(), &set_data.rarities(), &registry);
     let config = LobbyConfig {
         set_code: "isd".into(), set_name: set_data.set_name.clone(),
-        seats: vec![SeatKind::Human, SeatKind::Human], best_of: 3, seed: 1, guide_path: None,
+        seats: vec![SeatKind::Human, SeatKind::Human], best_of: 3, seed: 1, guide_path: None, guide_hash: None,
         pick_seconds: None, build_seconds: None, sideboard_seconds: None, out_dir: None,
     };
     let lobby = Lobby::new(config, &packs, &set_data, Arc::clone(&registry), &lines, DraftLogger::silent()).unwrap();

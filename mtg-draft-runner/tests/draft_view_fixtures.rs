@@ -86,7 +86,7 @@ fn lobby_dealt(
         seats,
         best_of: 3,
         seed: 1,
-        guide_path: None,
+        guide_path: None, guide_hash: None,
         pick_seconds,
         build_seconds,
         sideboard_seconds,
@@ -107,7 +107,7 @@ fn a_table_dealt_for_the_wrong_number_of_seats_is_refused() {
     let config = LobbyConfig {
         set_code: "isd".into(), set_name: set_data.set_name.clone(),
         seats: vec![SeatKind::Human, SeatKind::Ai("cc".into())],
-        best_of: 1, seed: 1, guide_path: None, pick_seconds: None, build_seconds: None, sideboard_seconds: None,
+        best_of: 1, seed: 1, guide_path: None, guide_hash: None, pick_seconds: None, build_seconds: None, sideboard_seconds: None,
         out_dir: None,
     };
     let err = Lobby::new(config, &packs, &set_data, registry, &lines, DraftLogger::silent()).err()

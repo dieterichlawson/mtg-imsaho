@@ -501,6 +501,63 @@ pub struct TableSave {
     /// it was recorded, where the taken cards are all there is to check.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deal: Option<String>,
+    /// What the AI seats' system prompts were made under. The batch
+    /// runner's snapshot recorded the guide (#579) and this one did not, so
+    /// a table resumed with another `--guide`, or none, drafted the rest
+    /// under another system prompt in silence (#948, #949). Absent in a
+    /// snapshot written before it was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prompt: Option<TablePrompt>,
+}
+
+/// The guide and the settings an AI seat's system prompt is made under at
+/// a hosted table: one guide for every AI seat, as `--guide` gives it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TablePrompt {
+    pub guide_path: Option<String>,
+    /// [`crate::llm_client::guide_digest`] of the guide's contents: a guide
+    /// edited in place between two runs keeps its path.
+    pub guide_hash: Option<String>,
+    #[serde(flatten)]
+    pub settings: crate::llm_client::DraftPromptSettings,
+}
+
+impl TablePrompt {
+    /// What this process asks `seats`' AI seats under.
+    #[must_use]
+    pub fn live(seats: &[SeatKind], guide_path: Option<&str>, guide_hash: Option<&str>) -> Self {
+        Self {
+            guide_path: guide_path.map(str::to_string),
+            guide_hash: guide_hash.map(str::to_string),
+            settings: crate::llm_client::DraftPromptSettings::live(seats.iter().filter_map(|k| match k {
+                SeatKind::Ai(model) => Some(model.as_str()),
+                _ => None,
+            })),
+        }
+    }
+
+    /// How `live` differs from what the replayed picks were asked under,
+    /// one line each; nothing when no seat is an AI seat.
+    #[must_use]
+    pub fn unlike(&self, live: &Self) -> Vec<String> {
+        let mut out = Vec::new();
+        if live.settings.history.is_none() {
+            return out;
+        }
+        if self.guide_hash != live.guide_hash {
+            let describe = |p: &Self| match (&p.guide_path, &p.guide_hash) {
+                (Some(path), _) => format!("guide {path}"),
+                (None, _) => "no guide".to_string(),
+            };
+            let (was, now) = (describe(self), describe(live));
+            // The same path on both sides: the file was edited in place,
+            // and naming it twice says nothing (#950).
+            let (was, now) = if was == now { (format!("{was} as it was"), format!("{now} as it is now")) } else { (was, now) };
+            out.push(format!("the AI seats' replayed picks were made under {was}, and the rest of this draft will be made under {now}"));
+        }
+        out.extend(self.settings.unlike(&live.settings));
+        out
+    }
 }
 
 /// The snapshot format this build writes and reads.
@@ -645,6 +702,9 @@ pub struct LobbyConfig {
     pub best_of: usize,
     pub seed: u64,
     pub guide_path: Option<String>,
+    /// [`crate::llm_client::guide_digest`] of the guide at `guide_path`,
+    /// for the snapshot.
+    pub guide_hash: Option<String>,
     pub pick_seconds: Option<u64>,
     pub build_seconds: Option<u64>,
     /// Seconds a person has between games to sideboard and, when it is
@@ -2002,6 +2062,8 @@ for the seat from here, and its games are forfeit"), ""));
                 .filter_map(|m| m.result.clone().map(|result| SavedMatch { round: m.round, a: m.a, b: m.b, result }))
                 .collect(),
             deal: Some(self.deal.clone()),
+            prompt: Some(TablePrompt::live(&self.config.seats, self.config.guide_path.as_deref(),
+                self.config.guide_hash.as_deref())),
         }
     }
 
