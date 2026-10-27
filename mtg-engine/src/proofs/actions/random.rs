@@ -66,26 +66,45 @@ fn a_shuffle_reorders_and_keeps_every_item() {
     std::mem::forget(state);
 }
 
-#[kani::proof]
-#[kani::unwind(6)]
-#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
-#[kani::stub(crate::state::GameState::random_below, any_below)]
-/// "Choose N at random": N of the candidates, or all of them if there are
-/// fewer, none twice and none not offered; and any of them may be among
-/// those chosen. For up to four candidates and N up to four.
-fn choosing_at_random_chooses_that_many_of_the_candidates() {
+/// "Choose N at random", for `LEN` candidates: N of them, or all if there
+/// are fewer, none twice and none not offered. The list is copied as it is
+/// chosen from, and a copy of a length the solver leaves open is an
+/// allocation of a size it leaves open, so each length has a proof of its
+/// own.
+fn choosing_at_random_from<const LEN: usize>() {
     let mut state = new_game();
-    let (ids, len) = some_ids();
+    let ids: [ObjectId; LEN] = core::array::from_fn(|i| ObjectId(10 + i as u64));
     let n: usize = kani::any();
     kani::assume(n <= 4);
 
-    let chosen = state.choose_at_random(&ids[..len], n);
+    let chosen = state.choose_at_random(&ids, n);
 
-    assert!(chosen.len() == n.min(len));
-    assert!(chosen.iter().all(|c| ids[..len].contains(c)));
+    assert!(chosen.len() == n.min(LEN));
+    assert!(chosen.iter().all(|c| ids.contains(c)));
     assert!(chosen.iter().enumerate().all(|(i, c)| !chosen[..i].contains(c)));
-    kani::cover!(len == 3 && n == 1 && chosen[0] == ids[2], "the last chosen of three");
+    kani::cover!(n == 1 && LEN > 0 && chosen[0] == ids[LEN - 1], "the last chosen");
     std::mem::forget((state, chosen));
+}
+
+macro_rules! choosing_at_random {
+    ($($name:ident: $len:literal,)*) => {$(
+        #[kani::proof]
+        #[kani::unwind(6)]
+        #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+        #[kani::stub(crate::state::GameState::random_below, any_below)]
+        /// "Choose N at random", from that many candidates, N up to four.
+        fn $name() {
+            choosing_at_random_from::<$len>();
+        }
+    )*};
+}
+
+choosing_at_random! {
+    choosing_at_random_from_none: 0,
+    choosing_at_random_from_one: 1,
+    choosing_at_random_from_two: 2,
+    choosing_at_random_from_three: 3,
+    choosing_at_random_from_four: 4,
 }
 
 #[kani::proof]

@@ -54,7 +54,7 @@ KANI_LIB = f'{K}/library/kani/kani_lib.c'
 # harnesses with (abilities!, statics!, equipment!, ...). `cargo kani list`
 # says the same at the price of building every harness, gigabytes of goto
 # files.
-TABLES = {'abilities', 'declares', 'werewolves', 'mana', 'statics', 'check_land'}
+TABLES = {'abilities', 'declares', 'werewolves', 'mana', 'statics', 'check_land', 'choosing_at_random'}
 FORMS = {'reaches_what_it_describes', 'holds_exactly_then'}
 def block(text, i):
     # text[i] is an opening bracket; return the index of its match
