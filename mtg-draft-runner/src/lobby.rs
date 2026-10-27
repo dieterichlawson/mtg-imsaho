@@ -553,7 +553,7 @@ impl TablePrompt {
             // The same path on both sides: the file was edited in place,
             // and naming it twice says nothing (#950).
             let (was, now) = if was == now { (format!("{was} as it was"), format!("{now} as it is now")) } else { (was, now) };
-            out.push(format!("the AI seats' replayed picks were made under {was}, and the rest of this draft will be made under {now}"));
+            out.push(format!("the AI seats' replayed picks were made under {was}, and the rest of this draft will be made under {now}: this draft is a mixture of the two"));
         }
         out.extend(self.settings.unlike(&live.settings));
         out

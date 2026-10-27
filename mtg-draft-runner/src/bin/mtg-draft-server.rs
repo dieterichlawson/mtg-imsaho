@@ -57,6 +57,9 @@ Options:
                          links, every pick, deck and finished match; a match
                          that was in progress is played again. Its seed, set,
                          seats and match length win over the flags
+                         (--ai too); --guide and the MTG_LLM_HISTORY,
+                         answer-format and pass-until settings are this
+                         run's, and a difference from the snapshot's is said
   --quiet, -q            No event lines on the terminal
   --help, -h             Print this help and exit
   --version              Print the version and exit
@@ -324,11 +327,17 @@ and {} replayed; a match that was in progress is played again from its first gam
         // The batch runner's resume says a changed guide (#579); the
         // table's did not, nor a changed history or answer format (#948,
         // #949). Said on stderr and in the log, as the note above is.
-        if let Some(was) = save.prompt.as_ref().filter(|_| !save.picks.is_empty()) {
-            let live = TablePrompt::live(&args.seats, args.guide.as_deref(), guide.as_deref().map(llm_client::guide_digest).as_deref());
+        let live = TablePrompt::live(&args.seats, args.guide.as_deref(), guide.as_deref().map(llm_client::guide_digest).as_deref());
+        if save.picks.is_empty() || live.settings.history.is_none() {
+            // Nothing was asked yet, or no AI seat is asked anything.
+        } else if let Some(was) = &save.prompt {
+            // In the words `mtg-draft-replay` and scripts/decision-eval read.
             for why in was.unlike(&live) {
-                resumed_warnings.push(format!("WARN --resume {path}: {why} — this draft is a mixture of the two"));
+                resumed_warnings.push(format!("WARN --resume {path}: its system prompt is not the live one: {why}"));
             }
+        } else {
+            resumed_warnings.push(format!("note: --resume {path}: this snapshot predates the guide and settings \
+record, so what its AI seats' replayed picks were made under is unknown"));
         }
     }
     let save_path = args.save.as_ref().map_or_else(|| out_dir.join("table.save.json"), PathBuf::from);

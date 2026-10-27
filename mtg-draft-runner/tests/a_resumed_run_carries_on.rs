@@ -105,6 +105,8 @@ impl Pod {
             .env("CALLS", self.path(counter))
             .env_remove("MTG_LLM_HISTORY")
             .env_remove("MTG_CLAUDE_CODE_DRAFT_ANSWERS")
+            .env_remove("MTG_CLAUDE_CODE_ANSWERS")
+            .env_remove("MTG_LLM_PASS_UNTIL")
             .envs(env.iter().copied())
             .output()
             .expect("the runner runs")
@@ -454,8 +456,11 @@ fn a_resume_under_other_prompt_settings_says_so() {
     }
     let pod = Pod::new("settings");
     let saved = pod.finished_snapshot("snap.json");
-    assert_eq!(saved["prompt"], serde_json::json!({"history": 0, "text_answers": false}),
-        "the snapshot records what the seats were asked under");
+    for key in ["history", "text_answers", "game_text_answers", "pass_until"] {
+        assert!(!saved["prompt"][key].is_null(), "the snapshot records {key}: {}", saved["prompt"]);
+    }
+    let game_text = saved["prompt"]["game_text_answers"].as_bool().unwrap();
+    let pass_until = saved["prompt"]["pass_until"].as_bool().unwrap();
     let snap = pod.path("snap.json");
     let snap = snap.to_str().unwrap();
 
@@ -463,6 +468,13 @@ fn a_resume_under_other_prompt_settings_says_so() {
         ("MTG_LLM_HISTORY", "2", "made under MTG_LLM_HISTORY=0, and the rest of this draft is made under 2"),
         ("MTG_CLAUDE_CODE_DRAFT_ANSWERS", "text",
             "made under MTG_CLAUDE_CODE_DRAFT_ANSWERS=schema, and the rest of this draft is asked in text"),
+        // The tournament's games are asked under the game seat's settings.
+        ("MTG_CLAUDE_CODE_ANSWERS", if game_text { "schema" } else { "text" },
+            if game_text { "played under MTG_CLAUDE_CODE_ANSWERS=text, and the rest of this tournament is asked in the schema" }
+            else { "played under MTG_CLAUDE_CODE_ANSWERS=schema, and the rest of this tournament is asked in text" }),
+        ("MTG_LLM_PASS_UNTIL", if pass_until { "0" } else { "1" },
+            if pass_until { "played under MTG_LLM_PASS_UNTIL=1, and the rest of this tournament is played with the pass-until row off" }
+            else { "played under MTG_LLM_PASS_UNTIL=0, and the rest of this tournament is played with the pass-until row on" }),
     ] {
         let log = format!("{var}.log");
         let out = pod.run_env(&["--resume", snap], &format!("{var}.calls"), &log, &[(var, value)]);
@@ -478,6 +490,16 @@ fn a_resume_under_other_prompt_settings_says_so() {
     let stderr = String::from_utf8_lossy(&same.stderr);
     assert!(same.status.success(), "{stderr}");
     assert!(!stderr.contains("not the live one"), "the same settings say nothing:\n{stderr}");
+
+    // A snapshot from before the record, with its guides recorded: the
+    // rest is said to be unknown, not taken as agreement.
+    let mut old = saved.clone();
+    old.as_object_mut().unwrap().remove("prompt");
+    let old = pod.write("old.json", &old);
+    let out = pod.run(&["--resume", &old], "old.calls", "old.log");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{stderr}");
+    assert!(stderr.contains("predates the MTG_LLM_HISTORY / answer-format / pass-until record"), "{stderr}");
 }
 
 /// #950: a guide edited in place keeps its path, and the warning named the

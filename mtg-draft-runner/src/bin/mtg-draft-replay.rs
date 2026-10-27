@@ -82,7 +82,7 @@ fn main() {
     // a kind, by the line it was first seen on.
     let mut said: Vec<&str> = Vec::new();
     let (history, text_answers) = (mtg_player::llm::history_exchanges(), llm_client::draft_text_answers());
-    let asks_in_text = matches!(model.split(':').next(), Some("cc" | "claude-code"));
+    let asks_in_text = llm_client::asks_in_text(&model);
 
     let registry = CardRegistry::with_all_cards();
     let mut sets: HashMap<String, LoadedSet> = HashMap::new();

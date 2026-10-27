@@ -899,20 +899,27 @@ pub fn asks_in_text(spec: &str) -> bool {
     matches!(spec.split(':').next(), Some("cc" | "claude-code"))
 }
 
-/// The settings outside a seat's own flags that change what an AI draft
-/// seat's system prompt says: `MTG_LLM_HISTORY` for any AI seat, and
-/// `MTG_CLAUDE_CODE_DRAFT_ANSWERS` for a `claude -p` one. Kept positions
-/// recorded them (#920) and neither draft snapshot did, so a `--resume`
-/// under the other value asked every later pick another question with no
-/// note (#949). `None` where no seat's prompt carries it. `MTG_LLM_THINKING`
-/// is not one, as on the game save (#931): it changes the request, not
-/// what the seat is told.
+/// The settings outside a seat's own flags that change what an AI seat's
+/// system prompt says: `MTG_LLM_HISTORY` for any AI seat and
+/// `MTG_CLAUDE_CODE_DRAFT_ANSWERS` for a `claude -p` one at the picks and
+/// the deck build, and at the tournament's games `MTG_LLM_PASS_UNTIL` and
+/// `MTG_CLAUDE_CODE_ANSWERS`, which the game save records (#931). Kept
+/// positions recorded the draft's (#920) and neither draft snapshot
+/// recorded any, so a `--resume` under another value asked every later
+/// pick, and played every later match, under another system prompt with
+/// no note (#949). `None` where no seat's prompt carries it, or in a
+/// snapshot written before it was recorded. `MTG_LLM_THINKING` is not one,
+/// as on the game save: it changes the request, not what the seat is told.
 #[derive(serde::Serialize, serde::Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub struct DraftPromptSettings {
     #[serde(default)]
     pub history: Option<usize>,
     #[serde(default)]
     pub text_answers: Option<bool>,
+    #[serde(default)]
+    pub game_text_answers: Option<bool>,
+    #[serde(default)]
+    pub pass_until: Option<bool>,
 }
 
 impl DraftPromptSettings {
@@ -920,28 +927,45 @@ impl DraftPromptSettings {
     #[must_use]
     pub fn live<'a>(models: impl IntoIterator<Item = &'a str>) -> Self {
         let models: Vec<&str> = models.into_iter().collect();
+        let (ai, cc) = (!models.is_empty(), models.iter().any(|m| asks_in_text(m)));
         Self {
-            history: (!models.is_empty()).then(mtg_player::llm::history_exchanges),
-            text_answers: models.iter().any(|m| asks_in_text(m)).then(draft_text_answers),
+            history: ai.then(mtg_player::llm::history_exchanges),
+            text_answers: cc.then(draft_text_answers),
+            game_text_answers: cc.then(mtg_player::llm::answer_text::text_answers),
+            pass_until: ai.then(mtg_player::llm::pass_until_enabled),
         }
     }
 
-    /// How `live` differs from what the replayed picks were asked under, in
+    /// How `live` differs from what the snapshot was made under, in
     /// `mtg-draft-replay`'s words; nothing where either side does not say.
     #[must_use]
     pub fn unlike(&self, live: &Self) -> Vec<String> {
         let mut out = Vec::new();
+        let how = |text: bool| if text { "in text" } else { "in the schema" };
+        let format = |text: bool| if text { "text" } else { "schema" };
+        let on_off = |on: bool| if on { "on" } else { "off" };
         if let (Some(was), Some(now)) = (self.history, live.history) {
             if was != now {
-                out.push(format!("its picks were made under MTG_LLM_HISTORY={was}, and the rest of this draft \
+                out.push(format!("it was made under MTG_LLM_HISTORY={was}, and the rest of this draft \
 is made under {now}"));
             }
         }
         if let (Some(was), Some(now)) = (self.text_answers, live.text_answers) {
             if was != now {
-                let how = |text: bool| if text { "in text" } else { "in the schema" };
                 out.push(format!("its picks were made under {DRAFT_ANSWERS_ENV}={}, and the rest of this draft \
-is asked {}", if was { "text" } else { "schema" }, how(now)));
+is asked {}", format(was), how(now)));
+            }
+        }
+        if let (Some(was), Some(now)) = (self.game_text_answers, live.game_text_answers) {
+            if was != now {
+                out.push(format!("its games were played under {}={}, and the rest of this tournament is \
+asked {}", mtg_player::llm::answer_text::ANSWERS_ENV, format(was), how(now)));
+            }
+        }
+        if let (Some(was), Some(now)) = (self.pass_until, live.pass_until) {
+            if was != now {
+                out.push(format!("its games were played under {}={}, and the rest of this tournament is \
+played with the pass-until row {}", mtg_player::llm::PASS_UNTIL_ENV, if was { "1" } else { "0" }, on_off(now)));
             }
         }
         out

@@ -51,10 +51,23 @@ fn a_table_resumed_without_its_guide_says_so() {
         &["--quiet", "--pick-seconds", "600", "--resume", &save, "--save", resumed.to_str().unwrap()]);
     let said = format!("made under guide {guide}, and the rest of this draft will be made under no guide");
     let stderr = second.wait_for_stderr("WARN --resume", Duration::from_secs(30));
-    assert!(stderr.contains(&said), "the terminal names both:\n{stderr}");
+    assert!(stderr.contains(&said) && stderr.contains("its system prompt is not the live one"),
+        "the terminal names both, in mtg-draft-replay's words:\n{stderr}");
     let log = second.wait_for_log("WARN --resume", Duration::from_secs(30));
     assert!(log.contains(&said), "and the log, which outlives it:\n{log}");
     drop(second);
+
+    // A snapshot from before the record says what it cannot know.
+    let mut old = saved.clone();
+    old.as_object_mut().unwrap().remove("prompt");
+    let old_path = files.join("old.save.json");
+    std::fs::write(&old_path, old.to_string()).unwrap();
+    let third = Server::start("guide-resume-c", "cli,ai:cc",
+        &["--quiet", "--pick-seconds", "600", "--resume", old_path.to_str().unwrap(),
+          "--save", files.join("old-resumed.save.json").to_str().unwrap()]);
+    let stderr = third.wait_for_stderr("predates the guide and settings record", Duration::from_secs(30));
+    assert!(!stderr.contains("WARN --resume"), "{stderr}");
+    drop(third);
     let _ = std::fs::remove_dir_all(&files);
 }
 

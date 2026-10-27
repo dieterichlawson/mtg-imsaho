@@ -112,6 +112,10 @@ Options:
                          that deals other packs from it is refused.
                          Its decks are used as built, and its finished matches
                          are counted, not replayed: the standings mark them
+                         The guides and the MTG_LLM_HISTORY, answer-format and
+                         pass-until settings are this run's; the snapshot
+                         records the ones it was made under, and a difference
+                         is said on stderr and in the log
   --log <path>           Write the run log here  (default draft.log)
   --quiet, -q            Suppress progress output
   --help, -h             Print this help and exit
@@ -905,14 +909,21 @@ this draft will be made under {} — this draft is a mixture of the two",
         // The settings besides the guide that change a seat's system prompt,
         // said in the words `mtg-draft-replay` uses for kept positions (#949).
         if !save.picks.is_empty() {
-            if let Some(was) = &save.prompt {
-                let live = llm_client::DraftPromptSettings::live(args.models.iter().map(String::as_str));
-                for why in was.unlike(&live) {
-                    let note = format!("--resume {}: its system prompt is not the live one: {why}",
-                        args.resume.as_deref().unwrap_or_default());
-                    mtg_player::stderr_line!("note: {note}");
-                    resume_notes.push(note);
-                }
+            let path = args.resume.as_deref().unwrap_or_default();
+            let notes = match &save.prompt {
+                Some(was) => was.unlike(&llm_client::DraftPromptSettings::live(args.models.iter().map(String::as_str)))
+                    .into_iter()
+                    .map(|why| format!("--resume {path}: its system prompt is not the live one: {why}"))
+                    .collect(),
+                // Its guides are checked above; the rest is unknown.
+                None if !save.seats.is_empty() => vec![format!("--resume {path}: this snapshot predates the \
+MTG_LLM_HISTORY / answer-format / pass-until record, so whether its replayed picks and matches were made \
+under these settings is unknown")],
+                None => Vec::new(),
+            };
+            for note in notes {
+                mtg_player::stderr_line!("note: {note}");
+                resume_notes.push(note);
             }
         }
     }
@@ -1331,7 +1342,7 @@ substituting {} (the first card). Response: {}",
                         // from the set file it finds (#951).
                         "reference": reference_digest,
                         // Only a `claude -p` seat's prompt says how it answers.
-                        "text_answers": matches!(args.models[seat].split(':').next(), Some("cc" | "claude-code"))
+                        "text_answers": llm_client::asks_in_text(&args.models[seat])
                             .then(llm_client::draft_text_answers),
                     }));
                 }
