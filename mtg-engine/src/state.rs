@@ -580,6 +580,78 @@ pub fn default_rng_seed() -> u64 {
     0x2545_F491_4F6C_DD1D
 }
 
+/// What a zone listing reads of an object: its id, its zone, and who owns
+/// and who controls it.
+pub(crate) trait Zoned {
+    fn id(&self) -> ObjectId;
+    fn zone(&self) -> Zone;
+    fn owner(&self) -> PlayerId;
+    fn controller(&self) -> PlayerId;
+}
+
+impl Zoned for GameObject {
+    fn id(&self) -> ObjectId { self.id }
+    fn zone(&self) -> Zone { self.zone }
+    fn owner(&self) -> PlayerId { self.owner }
+    fn controller(&self) -> PlayerId { self.controller }
+}
+
+/// Where in `objects` (every object, in id order) each object in
+/// `player`'s `zone` is, in the order `GameState::objects_in_zone` lists
+/// them: a library, a hand or a graveyard by owner, the battlefield by
+/// controller, any other zone whoever's (CR 400.3, 108.4); a graveyard in
+/// the order of its `pile`, and every other zone in id order.
+///
+/// Positions rather than the objects themselves, and generic over what it
+/// lists, so that it can be proved apart from the game: `proofs::actions::
+/// zones` proves it on objects that are the four things it reads and
+/// nothing else, which is all a generic function can read of a
+/// `GameObject` too. A list of references put in an order the data
+/// decides is one CBMC follows into every object each might be, which ran
+/// the solver out of memory on four of them; a list of positions it reads
+/// as numbers.
+pub(crate) fn zone_order<O: Zoned>(objects: &[&O], zone: Zone, player: PlayerId, pile: &[ObjectId]) -> Vec<usize> {
+    let belongs = |obj: &O| obj.zone() == zone && match zone {
+        Zone::Library | Zone::Hand | Zone::Graveyard => obj.owner() == player,
+        Zone::Battlefield => obj.controller() == player,
+        _ => true,
+    };
+    // CR 404.2: a graveyard is an ordered pile, and its order is arrival
+    // order — not the order the cards happened to be created in when the
+    // decklist was built, which is what id order gives (issue #222).
+    // Anything not in the recorded pile (a card put there by a path that
+    // predates the order) comes after what is, by id.
+    //
+    // Built in that order rather than sorted into it, and every other zone
+    // read in id order: the same list, without a sort the proofs cannot get
+    // through (a general sort over a list whose length the solver leaves
+    // open). And allocated once, at the most it can hold, rather than
+    // grown.
+    let mut order = Vec::with_capacity(objects.len());
+    if zone == Zone::Graveyard {
+        for (i, id) in pile.iter().enumerate() {
+            if pile[..i].contains(id) {
+                continue;
+            }
+            if let Some(k) = objects.iter().position(|obj| obj.id() == *id && belongs(obj)) {
+                order.push(k);
+            }
+        }
+        for (k, obj) in objects.iter().enumerate() {
+            if belongs(obj) && !pile.contains(&obj.id()) {
+                order.push(k);
+            }
+        }
+        return order;
+    }
+    for (k, obj) in objects.iter().enumerate() {
+        if belongs(obj) {
+            order.push(k);
+        }
+    }
+    order
+}
+
 impl GameState {
     /// Put an entry on top of the stack (CR 405.1), counting it.
     pub fn put_on_stack(&mut self, mut entry: StackEntry) {
@@ -1883,48 +1955,10 @@ impl GameState {
     /// For Battlefield: filter by controller.
     #[must_use]
     pub fn objects_in_zone(&self, zone: Zone, player: PlayerId) -> Vec<&GameObject> {
-        let belongs = |obj: &GameObject| obj.zone == zone && match zone {
-            Zone::Library | Zone::Hand | Zone::Graveyard => obj.owner == player,
-            Zone::Battlefield => obj.controller == player,
-            _ => true,
-        };
-        // CR 404.2: a graveyard is an ordered pile, and its order is arrival
-        // order — not the order the cards happened to be created in when the
-        // decklist was built, which is what id order gives (issue #222).
-        // Anything not in the recorded pile (a card put there by a path that
-        // predates the order) comes after what is, by id.
-        //
-        // Built in that order rather than sorted into it, and every other zone
-        // read in id order straight off the map, which is ordered by id: the
-        // same list, without a sort the proofs cannot get through (a general
-        // sort over a list whose length the solver leaves open). And
-        // allocated once, at the most it can hold, rather than grown: a list
-        // that may or may not have reallocated by each push is one the solver
-        // follows into every buffer it might be in, which it did not finish.
-        let mut result = Vec::with_capacity(self.objects.len());
-        if zone == Zone::Graveyard {
-            let pile = &self.get_player(player).graveyard_order;
-            for (i, id) in pile.iter().enumerate() {
-                if pile[..i].contains(id) {
-                    continue;
-                }
-                if let Some(obj) = self.objects.get(id).filter(|obj| belongs(obj)) {
-                    result.push(obj);
-                }
-            }
-            for obj in self.objects.values() {
-                if belongs(obj) && !pile.contains(&obj.id) {
-                    result.push(obj);
-                }
-            }
-            return result;
-        }
-        for obj in self.objects.values() {
-            if belongs(obj) {
-                result.push(obj);
-            }
-        }
-        result
+        // Only a graveyard has an order of its own (CR 404.2): its pile.
+        let pile: &[ObjectId] = if zone == Zone::Graveyard { &self.get_player(player).graveyard_order } else { &[] };
+        let all: Vec<&GameObject> = self.objects.values().collect();
+        zone_order(&all, zone, player, pile).into_iter().map(|k| all[k]).collect()
     }
 
     /// Every object in the game, in object-id order.
