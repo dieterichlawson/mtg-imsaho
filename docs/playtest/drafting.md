@@ -1131,3 +1131,13 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   `mtg-draft-replay`. Do this on the hosted table and in the batch
   runner. Each change must be refused or recorded. Use a stub that hashes
   `--system-prompt` and stdin, so that a drift changes the pick.
+  — **played 2026-10-27: five gaps (#948-#952).** With nothing changed,
+  all three surfaces are exact (48/48, 48/48, 10/10 calls), so any
+  difference is the input. The hosted snapshot has no guide. Neither
+  snapshot records `MTG_LLM_HISTORY`, the answer format or
+  `MTG_LLM_THINKING`. Positions do not record the set file. The batch
+  runner reads a repeated flag from its first occurrence, the server
+  from its last. A stub that hangs after N picks (`time.sleep` once its
+  call record holds N) gives a mid-draft snapshot in seconds. Next
+  time, try the timer flags with a person at the table, and the
+  draft-loop's `night.sh` resume path
