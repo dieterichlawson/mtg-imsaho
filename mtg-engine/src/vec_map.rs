@@ -20,8 +20,15 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VecMap<K, V> {
-    /// Sorted by key, each key once.
-    entries: Vec<(K, V)>,
+    /// Sorted by key, each key once; each value in an allocation of its
+    /// own. CBMC models a heap allocation as bytes, and a reference read
+    /// back from bytes (a list of `&GameObject`, say) is one whose offset
+    /// it no longer knows: into a buffer holding every value, each read
+    /// through it chose among every byte of every value, and resolving a
+    /// card that lists a graveyard ran out of memory. Into a value of its
+    /// own, it chooses among those values only, at known offsets; the
+    /// same resolution proved in under seven minutes.
+    entries: Vec<(K, Box<V>)>,
 }
 
 impl<K, V> Default for VecMap<K, V> {
@@ -66,7 +73,7 @@ impl<K: Ord, V> VecMap<K, V> {
         for (k, v) in &self.entries {
             match k.borrow().cmp(key) {
                 std::cmp::Ordering::Less => {}
-                std::cmp::Ordering::Equal => return Some(v),
+                std::cmp::Ordering::Equal => return Some(&**v),
                 std::cmp::Ordering::Greater => return None,
             }
         }
@@ -81,7 +88,7 @@ impl<K: Ord, V> VecMap<K, V> {
         for (k, v) in &mut self.entries {
             match (*k).borrow().cmp(key) {
                 std::cmp::Ordering::Less => {}
-                std::cmp::Ordering::Equal => return Some(v),
+                std::cmp::Ordering::Equal => return Some(&mut **v),
                 std::cmp::Ordering::Greater => return None,
             }
         }
@@ -101,13 +108,13 @@ impl<K: Ord, V> VecMap<K, V> {
     /// are, goes on the end without moving anything.
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         match self.find(&key) {
-            Ok(i) => Some(std::mem::replace(&mut self.entries[i].1, value)),
+            Ok(i) => Some(std::mem::replace(&mut *self.entries[i].1, value)),
             Err(i) if i == self.entries.len() => {
-                self.entries.push((key, value));
+                self.entries.push((key, Box::new(value)));
                 None
             }
             Err(i) => {
-                self.entries.insert(i, (key, value));
+                self.entries.insert(i, (key, Box::new(value)));
                 None
             }
         }
@@ -118,7 +125,7 @@ impl<K: Ord, V> VecMap<K, V> {
         K: Borrow<Q>,
         Q: Ord + ?Sized,
     {
-        self.find(key).ok().map(|i| self.entries.remove(i).1)
+        self.find(key).ok().map(|i| *self.entries.remove(i).1)
     }
 
     /// Room for `additional` more entries without reallocating, as
@@ -136,7 +143,7 @@ impl<K: Ord, V> VecMap<K, V> {
     }
 
     pub fn iter(&self) -> impl Iterator<Item = (&K, &V)> {
-        self.entries.iter().map(|(k, v)| (k, v))
+        self.entries.iter().map(|(k, v)| (k, &**v))
     }
 
     pub fn keys(&self) -> impl Iterator<Item = &K> {
@@ -144,10 +151,10 @@ impl<K: Ord, V> VecMap<K, V> {
     }
 
     pub fn values(&self) -> impl Iterator<Item = &V> {
-        self.entries.iter().map(|(_, v)| v)
+        self.entries.iter().map(|(_, v)| &**v)
     }
 
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut V> {
-        self.entries.iter_mut().map(|(_, v)| v)
+        self.entries.iter_mut().map(|(_, v)| &mut **v)
     }
 }
