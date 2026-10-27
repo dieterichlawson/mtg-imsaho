@@ -1623,12 +1623,12 @@ Every prompt restates the whole position, in this order:
 - `Turn N - <step> (your turn|opp's turn)`. Steps: Untap, Upkeep, Draw, Main Phase 1, Begin Combat, Declare Attackers, Declare Blockers, First-Strike Combat Damage, Combat Damage, End Combat, Main Phase 2, End Step, Cleanup.
 - `Your notes from your last decision:` your own thoughts from the last prompt. No earlier prompt is kept, so this is how a plan carries over; trust the board over them.
 - `Recent events:` what happened since your last prompt, at most the most recent 80 entries (a marker such as `… 227 earlier entries omitted, through turn 94 …` says when older ones were dropped).
-- `You:`/`Opp:` life (hp), hand, library, graveyard and exile counts; `This turn:` spells each side cast (werewolves transform on these) and `a creature died` (morbid).
+- `You:`/`Opp:` life (hp), hand, library, graveyard and exile counts; `This turn:` spells each side cast (werewolves transform on these), `a creature died` (morbid) and each effect in force until end of turn that is on no one permanent (Moonmist's prevention).
 - `Mana pool:` yours and `Opp mana pool:` (when not empty); `Your board:` and `Opp board:`; `Stack:` (top first, with controller and targets); `Hand:` (cost, and base P/T for creatures); graveyards; exile; `Flashback available`.
 - `Opp's cards in view:` rules text for the opponent's cards on the battlefield, on the stack, in exile or revealed, and for a graveyard card that works from there (flashback; cast or returned from a graveyard) or that the question or a stack object points at. You learn them as they come into view, never before. `(×N)` ends a line repeated N times; `3x` is three of a card.
 - A context line (`[MAIN PHASE 1]`, `[RESPOND TO opp's <spell>]`, `[AFTER BLOCKERS DECLARED]`, ...) and the question.
 
-Boards group lands (`2x Forest (1 tapped)`); any other permanent is `Name (#id) P/T keywords [flags]`. The `#id` tells apart permanents of one name. P/T is current, bonuses included, and a creature has exactly the keywords printed after it. Status flags after a permanent, in one bracket: `T` tapped; `S` summoning sick (no attacking or {T} abilities until its controller's next turn; it can block); `attacking you`/`attacking Opp`/`attacking <planeswalker> (#id)`; `blocking <attacker> (#id)`; `blocked by <blocker> (#id)`; `blocked (no blockers left)` (deals no combat damage unless it has trample); `Ndmg` damage marked; `damaged this turn by <permanent> (#id)` (what on the battlefield has dealt it damage this turn, marked or since removed); `regen shield`/`N regen shields`; `token`; `copy`; `owned by opponent`/`owned by you` (it returns to its owner when the control effect ends, and goes to its owner's graveyard); `+1+1xN`, `-1-1xN`, `LOYxN` or another counter by kind (`Slimex2`); `names: <card>`; `enchanting you`/`enchanting opponent` (a Curse's player); `legendary` (CR 704.5j: of two with one name under your control, you keep one). Elsewhere an object carries its id and whose it is: `(your)`, `(opponent's)`, `(in your graveyard)`, `(in opponent's exile)`.
+Boards group lands (`2x Forest (1 tapped)`); any other permanent is `Name (#id) P/T keywords [flags]`. The `#id` tells apart permanents of one name. P/T is current, bonuses included, and a creature has exactly the keywords printed after it. Status flags after a permanent, in one bracket: `T` tapped; `S` summoning sick (no attacking or {T} abilities until its controller's next turn; it can block); `attacking you`/`attacking Opp`/`attacking <planeswalker> (#id)`; `blocking <attacker> (#id)`; `blocked by <blocker> (#id)`; `blocked (no blockers left)` (deals no combat damage unless it has trample); `Ndmg` damage marked; `damaged this turn by <permanent> (#id)` (what on the battlefield has dealt it damage this turn, marked or since removed); `regen shield`/`N regen shields`; `attacked this turn` (no longer attacking); `once-per-turn ability used` (its "only once each turn" or loyalty ability is spent this turn); `token`; `copy`; `owned by opponent`/`owned by you` (it returns to its owner when the control effect ends, and goes to its owner's graveyard); `+1+1xN`, `-1-1xN`, `LOYxN` or another counter by kind (`Slimex2`); `names: <card>`; `enchanting you`/`enchanting opponent` (a Curse's player); `legendary` (CR 704.5j: of two with one name under your control, you keep one). Elsewhere an object carries its id and whose it is: `(your)`, `(opponent's)`, `(in your graveyard)`, `(in opponent's exile)`.
 
 ## Answering
 
@@ -3345,7 +3345,11 @@ impl LlmPlayer {
                 .filter(|(p, _)| (*p == view.you) == mine)
                 .map(|(_, n)| n).sum()
         };
-        writeln!(s, "This turn: spells cast — you {}, opp {}{}",
+        // And an effect in force for the rest of the turn on no one
+        // permanent: Moonmist's prevention was said in one prompt's recent
+        // events, and every later prompt of the turn read without it (#953).
+        let in_force: String = view.turn_effects.iter().map(|e| format!("; {e}")).collect();
+        writeln!(s, "This turn: spells cast — you {}, opp {}{}{in_force}",
             cast(true), cast(false),
             if view.creature_died_this_turn { "; a creature died" } else { "" }).unwrap();
 
@@ -3682,6 +3686,16 @@ impl LlmPlayer {
                 .map(|id| named(*id)).collect();
             if !from.is_empty() {
                 flag_parts.push(format!("damaged this turn by {}", from.join(" and ")));
+            }
+            // Facts of this turn no other flag carries: Homicidal Brute's
+            // end step reads the attack, and a spent once-each-turn ability
+            // is only a row the menu stopped offering (#954). An attacker
+            // still in combat says so already.
+            if c.attacked_this_turn && c.attacking.is_none() {
+                flag_parts.push("attacked this turn".into());
+            }
+            if c.once_per_turn_used {
+                flag_parts.push("once-per-turn ability used".into());
             }
             // A live regeneration shield (CR 701.15a), which decides whether
             // removal is worth casting and whether an attack trades. The seat
@@ -9224,6 +9238,7 @@ pub(crate) mod tests {
             first_strike_damage_step: false,
             creature_died_this_turn: false,
             spells_cast_this_turn: vec![],
+            turn_effects: vec![],
             double_faces: Default::default(),
             nameable_cards: Default::default(),
             exile: vec![],
@@ -9411,6 +9426,43 @@ pub(crate) mod tests {
         assert!(view.creature_died_this_turn);
         let body = LlmPlayer::format_state_body(&view);
         assert!(body.contains("This turn: spells cast — you 0, opp 2; a creature died\n"), "{body}");
+
+        // #953: Moonmist's prevention holds for the rest of the turn, and
+        // was said once, in the recent events after it resolved.
+        state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::PreventCombatDamageExcept {
+            filter: mtg_engine::types::CreatureFilter::Or(vec![
+                mtg_engine::types::CreatureFilter::HasSubtype("Wolf".into()),
+                mtg_engine::types::CreatureFilter::HasSubtype("Werewolf".into()),
+            ]),
+            source_name: "Moonmist".into(),
+        });
+        let view = GameView::for_player(&state, PlayerId(0), &registry);
+        let body = LlmPlayer::format_state_body(&view);
+        assert!(body.contains("This turn: spells cast — you 0, opp 2; a creature died; Moonmist: combat damage that \
+would be dealt this turn by creatures other than Wolves or Werewolves is prevented\n"), "{body}");
+    }
+
+    /// Issue #954: an attacker that has left combat, and a creature whose
+    /// once-each-turn ability is spent, say so on the board; one still
+    /// attacking says only that.
+    #[test]
+    fn the_board_says_what_a_permanent_did_this_turn() {
+        use mtg_engine::view::AttackTarget;
+        let (you, opp) = (PlayerId(0), PlayerId(1));
+        let mut brute = perm(34, "Homicidal Brute", 5, 1, you);
+        brute.attacked_this_turn = true;
+        let mut attacking = perm(35, "Homicidal Brute", 5, 1, you);
+        attacking.attacked_this_turn = true;
+        attacking.attacking = Some(AttackTarget::Player(opp));
+        let mut wolf = perm(36, "Darkthicket Wolf", 2, 2, you);
+        wolf.once_per_turn_used = true;
+        let owned = vec![brute, attacking, wolf];
+        let all: Vec<&PermanentView> = owned.iter().collect();
+        let board = LlmPlayer::format_perms_compact(&all, &all, you);
+        let line = |id: u32| board.lines().find(|l| l.contains(&format!("(#{id})"))).unwrap_or_default().to_string();
+        assert!(line(34).ends_with("[attacked this turn]"), "{board}");
+        assert!(!line(35).contains("attacked this turn"), "{board}");
+        assert!(line(36).ends_with("[once-per-turn ability used]"), "{board}");
     }
 
     /// Issue #835: two of Rakish Heir's triggers, one for the Heir and one
@@ -9788,6 +9840,8 @@ pub(crate) mod tests {
             effective_toughness: Some(toughness),
             damage_marked: 0,
             damaged_by: Vec::new(),
+            attacked_this_turn: false,
+            once_per_turn_used: false,
             regeneration_shields: 0,
             affected_by_summoning_sickness: false,
             attached_to: None,
@@ -10197,9 +10251,14 @@ this Aura deals 1 damage to that player.";
         let mut g = perm(54, "Forest", 0, 0, you);
         g.card_types = vec![CardType::Land];
         g.owner = opp;
-        let all = vec![&a, &alone, &b, &c, &d, &e, &f, &g];
+        // An attack made and a pump spent this turn (#954).
+        let mut h = perm(55, "Homicidal Brute", 5, 1, you);
+        h.attacked_this_turn = true;
+        h.once_per_turn_used = true;
+        let all = vec![&a, &alone, &b, &c, &d, &e, &f, &g, &h];
         let board = LlmPlayer::format_perms_compact(&all, &all, you);
         assert!(board.contains("blocked (no blockers left)"), "{board}");
+        assert!(board.contains("[attacked this turn,once-per-turn ability used]"), "{board}");
         assert!(board.contains("enchanting you") && board.contains("enchanting opponent"), "{board}");
         assert!(board.contains("1x Forest [owned by opponent]"), "{board}");
         let legend_start = GAME_RULES.find("Status flags after a permanent").expect("the legend");
@@ -10279,6 +10338,8 @@ this Aura deals 1 damage to that player.";
             effective_toughness: None,
             damage_marked: 0,
             damaged_by: Vec::new(),
+            attacked_this_turn: false,
+            once_per_turn_used: false,
             regeneration_shields: 0,
             affected_by_summoning_sickness: false,
             attached_to: Some(ObjectId(attached_to)),

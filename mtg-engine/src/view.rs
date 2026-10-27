@@ -49,6 +49,13 @@ pub struct GameView {
     /// next upkeep on this count (no spells cast; two or more by one
     /// player). Every player is listed, with 0 for none (#832).
     pub spells_cast_this_turn: Vec<(PlayerId, u32)>,
+    /// The until-end-of-turn effects in force that belong to no one
+    /// permanent, each said as a sentence: Moonmist's "prevent all combat
+    /// damage that would be dealt this turn by creatures other than
+    /// Werewolves and Wolves" (CR 615). It decides attacks, blocks and
+    /// tricks for the rest of the turn, and was said once, in the recent
+    /// events of the prompt after it resolved (#953).
+    pub turn_effects: Vec<String>,
     /// Both faces of every double-faced card in this view, keyed by card
     /// (CR 712.2): what a Delver of Secrets transforms into, and what an
     /// Insectile Aberration was. A view showed only the face up, so the
@@ -187,6 +194,16 @@ pub struct PermanentView {
     /// spell for the rest of the turn; no surface could say it after the
     /// damage line left the recent events (issue #932).
     pub damaged_by: Vec<ObjectId>,
+    /// It was declared as an attacker this turn (CR 508.1;
+    /// `GameState::attacked_this_turn`). Homicidal Brute's end-step "if this
+    /// creature didn't attack this turn" reads it, and an untapped Brute
+    /// read the same in every prompt whether it had attacked or not (#954).
+    pub attacked_this_turn: bool,
+    /// An "activate only once each turn" ability of it, or a loyalty
+    /// ability (CR 606.3), has been activated this turn: Darkthicket Wolf's
+    /// pump is spent. The menu stops offering it, and nothing said why
+    /// (#954).
+    pub once_per_turn_used: bool,
     /// Regeneration shields waiting to be spent (CR 701.15a). Public
     /// information that decides whether removal is worth casting and whether
     /// an attack trades, and no surface could read it — the field existed on
@@ -515,6 +532,8 @@ impl GameView {
                     effective_toughness: state.effective_toughness(obj.id, registry),
                     damage_marked: obj.damage_marked,
                     damaged_by: obj.damaged_by.clone(),
+                    attacked_this_turn: state.attacked_this_turn(obj.id),
+                    once_per_turn_used: !obj.abilities_activated_this_turn.is_empty(),
                     regeneration_shields: obj.regeneration_shields,
                     affected_by_summoning_sickness:
                         state.has_summoning_sickness(obj.id, registry),
@@ -827,6 +846,7 @@ impl GameView {
             spells_cast_this_turn: state.players.iter()
                 .map(|p| (p.id, state.num_spells_cast_this_turn.get(&p.id).copied().unwrap_or(0)))
                 .collect(),
+            turn_effects: turn_effects(state),
             step: state.step,
             first_strike_damage_step: state.step == crate::types::Step::CombatDamage
                 && state.combat_damage_step_pending,
@@ -847,6 +867,30 @@ impl GameView {
             revealed_names,
         }
     }
+}
+
+/// [`GameView::turn_effects`]. Exhaustive, as `until_eot_object_target` is:
+/// a new kind of until-end-of-turn effect is placed here, on a permanent's
+/// own row, or on the card it is about.
+fn turn_effects(state: &GameState) -> Vec<String> {
+    use crate::state::TemporaryEffect;
+    let mut out: Vec<String> = state.until_end_of_turn.iter().filter_map(|e| match e {
+        TemporaryEffect::PreventCombatDamageExcept { filter, source_name } => {
+            let source = if source_name.is_empty() { "an effect" } else { source_name.as_str() };
+            Some(format!("{source}: combat damage that would be dealt this turn by creatures other than {} \
+is prevented", filter.describe()))
+        }
+        // A permanent's own: on its row (P/T, keywords, restrictions,
+        // protection, controller).
+        TemporaryEffect::ModifyPT { .. } | TemporaryEffect::GrantKeyword { .. }
+        | TemporaryEffect::RemoveKeyword { .. } | TemporaryEffect::CantBlock { .. }
+        | TemporaryEffect::GrantProtection { .. } | TemporaryEffect::ChangeControl { .. }
+        | TemporaryEffect::ModifyPTWhileSourceInPlay { .. }
+        // A graveyard card's: its flashback costs.
+        | TemporaryEffect::GrantFlashback { .. } => None,
+    }).collect();
+    out.dedup();
+    out
 }
 
 fn card_view(state: &GameState, obj: &crate::state::GameObject, registry: &CardRegistry) -> CardView {

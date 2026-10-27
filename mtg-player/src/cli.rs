@@ -4867,11 +4867,21 @@ impl CliPlayer {
     /// a creature has died this turn — what morbid reads, and nothing on
     /// the board shows it once the log has scrolled past the death (#832).
     /// The header row above is already full on turn 1, so it rides here.
+    ///
+    /// An effect in force for the rest of the turn on no one permanent rides
+    /// here too, by its source's name — Moonmist's prevention was one LOG
+    /// line that scrolled away (#953); the card is in its graveyard to read.
     fn battlefield_rule(view: &GameView, width: usize) -> String {
-        let label = if view.creature_died_this_turn {
-            "─── BATTLEFIELD (a creature died this turn) "
+        let mut facts: Vec<String> = Vec::new();
+        if view.creature_died_this_turn {
+            facts.push("a creature died this turn".into());
+        }
+        facts.extend(view.turn_effects.iter()
+            .map(|e| format!("{} in force this turn", e.split_once(':').map_or(e.as_str(), |(source, _)| source))));
+        let label = if facts.is_empty() {
+            "─── BATTLEFIELD ".to_string()
         } else {
-            "─── BATTLEFIELD "
+            format!("─── BATTLEFIELD ({}) ", facts.join("; "))
         };
         let line = format!("{label}{}", "─".repeat(width.saturating_sub(label.chars().count())));
         // Closed when the pane is narrower than the label (#781's review).
@@ -5533,6 +5543,14 @@ impl CliPlayer {
             for line in Self::wrap_indented(&format!("  Damaged this turn by: {}", from.join(" and ")), Self::term_width().saturating_sub(1)) {
                 let _ = execute!(out, Print(format!("{line}\n")));
             }
+        }
+        // Homicidal Brute's end step reads the attack, and a spent
+        // once-each-turn ability is a row the menu stopped offering (#954).
+        if perm.attacked_this_turn {
+            let _ = execute!(out, Print("  Attacked this turn: true\n".to_string()));
+        }
+        if perm.once_per_turn_used {
+            let _ = execute!(out, Print("  Once-per-turn ability used this turn: true\n".to_string()));
         }
         if perm.card_types.contains(&CardType::Planeswalker) {
             let l = perm.counters.get(&mtg_engine::types::CounterType::Loyalty)
@@ -9883,6 +9901,17 @@ Mark 1 of the 1 cards below to exile.");
             assert!(str_cols(&rule) <= width, "{rule:?} in {width} columns");
         }
         assert!(CliPlayer::battlefield_rule(&v, 58).contains("(a creature died this turn)"));
+
+        // #953: an effect in force for the rest of the turn rides on the
+        // rule by its source, closed or cut to the pane like the rest.
+        v.turn_effects = vec!["Moonmist: combat damage that would be dealt this turn by creatures other than \
+Wolves or Werewolves is prevented".into()];
+        assert!(CliPlayer::battlefield_rule(&v, 90)
+            .contains("(a creature died this turn; Moonmist in force this turn)"), "{}", CliPlayer::battlefield_rule(&v, 90));
+        for width in [90, 58, 30, 12] {
+            let rule = CliPlayer::battlefield_rule(&v, width);
+            assert!(str_cols(&rule) <= width, "{rule:?} in {width} columns");
+        }
     }
 
     /// Issue #352: a combat prompt's creature list is the content the prompt
@@ -11210,6 +11239,7 @@ Mark 1 of the 1 cards below to exile.");
             first_strike_damage_step: false,
             creature_died_this_turn: false,
             spells_cast_this_turn: vec![],
+            turn_effects: vec![],
             double_faces: Default::default(),
             nameable_cards: Default::default(),
             step,
@@ -11860,6 +11890,8 @@ Mark 1 of the 1 cards below to exile.");
             effective_toughness: None,
             damage_marked: 0,
             damaged_by: Vec::new(),
+            attacked_this_turn: false,
+            once_per_turn_used: false,
             regeneration_shields: 0,
             affected_by_summoning_sickness: false,
             attached_to: None,
@@ -11973,6 +12005,8 @@ Mark 1 of the 1 cards below to exile.");
             effective_toughness: Some(2),
             damage_marked: 0,
             damaged_by: Vec::new(),
+            attacked_this_turn: false,
+            once_per_turn_used: false,
             regeneration_shields: 0,
             affected_by_summoning_sickness: false,
             attached_to: None,

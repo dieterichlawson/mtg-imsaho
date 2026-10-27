@@ -85,6 +85,10 @@ export interface PermanentView {
    * Abattoir Ghoul's trigger reads it when the creature dies.
    */
   damaged_by: ObjectId[];
+  /** Declared as an attacker this turn (#954). */
+  attacked_this_turn: boolean;
+  /** An "only once each turn" or loyalty ability of it is spent this turn (#954). */
+  once_per_turn_used: boolean;
   regeneration_shields: number;
   /**
    * Whether summoning sickness is stopping this permanent doing anything
@@ -185,6 +189,8 @@ export interface GameView {
   nameable_cards: Record<string, CardText>;
   creature_died_this_turn: boolean;
   spells_cast_this_turn: [PlayerId, number][];
+  /** Until-end-of-turn effects in force on no one permanent, each a sentence `Source: what it does` (#953). */
+  turn_effects: string[];
   step: Step;
   active_player: PlayerId;
   priority_player: PlayerId | null;

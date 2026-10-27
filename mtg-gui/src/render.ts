@@ -682,7 +682,16 @@ function drawBand(ctx: Ctx, hits: Hit[], state: LiveState): void {
   // What morbid reads, which nothing on the board shows once the log has
   // moved past the death (#832). After "first strike" — after first-strike
   // damage is exactly when both are on — and clipped short of the stack.
-  if (view.creature_died_this_turn) text(ctx, clip(ctx, "creature died", 176 - flagX, "7px Silkscreen"), flagX, y + 3, { color: "#e09080", font: "7px Silkscreen" });
+  if (view.creature_died_this_turn) {
+    const t = clip(ctx, "creature died", 176 - flagX, "7px Silkscreen");
+    text(ctx, t, flagX, y + 3, { color: "#e09080", font: "7px Silkscreen" });
+    ctx.font = "7px Silkscreen"; flagX += ctx.measureText(t).width + 6;
+  }
+  // An effect in force for the rest of the turn on no one permanent, by its
+  // source: Moonmist's prevention was in the log only (#953). Its card is
+  // in a graveyard to read; clipped short of the stack like the rest.
+  const inForce = bandTurnEffects(view).join(" ");
+  if (inForce && flagX < 170) text(ctx, clip(ctx, inForce, 176 - flagX, "7px Silkscreen"), flagX, y + 3, { color: "#a0c0e0", font: "7px Silkscreen" });
   // The stack: the top (next to resolve) on the left, as the view lists it.
   const sx0 = 180;
   text(ctx, view.stack.length ? "STACK →" : "stack empty", sx0, y + 2, { color: "#8a8090", font: "7px Silkscreen" });
@@ -731,6 +740,11 @@ function drawBand(ctx: Ctx, hits: Hit[], state: LiveState): void {
  * `l` drawer is worth opening; there is no room on this line to say so in
  * words.
  */
+/** The band's name for each effect in force this turn: its source, the part of the sentence before the colon (#953). */
+export function bandTurnEffects(view: { turn_effects?: string[] }): string[] {
+  return (view.turn_effects || []).map(e => e.split(":")[0]);
+}
+
 export function bandLogLines(state: LiveState): string[] {
   const log = state.view.display_log;
   const fresh = log.slice(state.logSince ?? 0);
@@ -939,6 +953,11 @@ export function inspectorFacts(state: LiveState, e: IndexEntry): string[] {
   const dealtBy = ((o.card_types || []).includes("Creature") ? o.damaged_by || [] : [])
     .filter(id => state.view.battlefield.some(p => p.object_id === id)).map(id => nameOf(state, id));
   if (dealtBy.length) out.push(`Damaged this turn by ${dealtBy.join(" and ")}`);
+  // Homicidal Brute's end step reads the attack; a spent once-each-turn
+  // ability is a row the menu stopped offering (#954). An attacker still in
+  // combat says "Attacking" below.
+  if (e.zone === "battlefield" && o.attacked_this_turn && !o.attacking) out.push("Attacked this turn");
+  if (e.zone === "battlefield" && o.once_per_turn_used) out.push("Once-per-turn ability used this turn");
   if (o.attached_to !== undefined && o.attached_to !== null) out.push(`Attached to ${nameOf(state, o.attached_to)}`);
   // And the other direction, which is the one #83 is about: hovering the
   // Equipment said "Attached to Sturmgeist" while hovering the Sturmgeist
