@@ -47,6 +47,17 @@ use crate::ids::{CardId, ObjectId, PlayerId};
 use crate::state::{GameState, LibraryPosition, PendingEffect};
 use crate::types::{CardType, Color, CounterType, Keyword, ManaType, Zone};
 
+mod board_spells;
+mod choices;
+mod damage_spells;
+mod destroy_spells;
+mod doom_blade;
+mod effect_spells;
+mod graveyard_spells;
+mod looking;
+mod simple_spells;
+mod targeted_spells;
+mod targets;
 
 /// An action a card asked the engine for.
 #[derive(Debug, Clone, PartialEq)]
