@@ -28,6 +28,7 @@ pub mod invariants;
 pub mod replacement;
 pub mod attachment;
 #[cfg(kani)]
+pub mod counter_map;
 pub mod vec_map;
 #[cfg(kani)]
 mod proofs;

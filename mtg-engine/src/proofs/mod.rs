@@ -16,6 +16,7 @@
 
 mod actions;
 mod cards;
+mod counter_map;
 mod decide;
 mod mana_payment;
 mod vec_map;
