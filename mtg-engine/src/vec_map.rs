@@ -109,12 +109,8 @@ impl<K: Ord, V> VecMap<K, V> {
     pub fn insert(&mut self, key: K, value: V) -> Option<V> {
         match self.find(&key) {
             Ok(i) => Some(std::mem::replace(&mut *self.entries[i].1, value)),
-            Err(i) if i == self.entries.len() => {
-                self.entries.push((key, Box::new(value)));
-                None
-            }
             Err(i) => {
-                self.entries.insert(i, (key, Box::new(value)));
+                self.insert_at(i, (key, Box::new(value)));
                 None
             }
         }
@@ -125,7 +121,33 @@ impl<K: Ord, V> VecMap<K, V> {
         K: Borrow<Q>,
         Q: Ord + ?Sized,
     {
-        self.find(key).ok().map(|i| *self.entries.remove(i).1)
+        self.find(key).ok().map(|i| *self.remove_at(i).1)
+    }
+
+    // `Vec::insert` and `Vec::remove` move the entries after `i` in one
+    // copy, of a length that depends on where `i` is; CBMC encodes a copy of
+    // a length it leaves open over the whole buffer, and adding one counter
+    // to an object ran it out of memory. One entry moved one place at a
+    // time is a swap of two known places at each step.
+
+    /// As `Vec::insert(i, entry)`.
+    fn insert_at(&mut self, i: usize, entry: (K, Box<V>)) {
+        self.entries.push(entry);
+        let mut j = self.entries.len() - 1;
+        while j > i {
+            self.entries.swap(j - 1, j);
+            j -= 1;
+        }
+    }
+
+    /// As `Vec::remove(i)`.
+    fn remove_at(&mut self, i: usize) -> (K, Box<V>) {
+        let mut j = i;
+        while j + 1 < self.entries.len() {
+            self.entries.swap(j, j + 1);
+            j += 1;
+        }
+        self.entries.pop().expect("an entry at i")
     }
 
     /// Room for `additional` more entries without reallocating, as
@@ -180,7 +202,7 @@ impl<'a, K: Ord, V> Entry<'a, K, V> {
         let i = match self.map.find(&self.key) {
             Ok(i) => i,
             Err(i) => {
-                self.map.entries.insert(i, (self.key, Box::new(default)));
+                self.map.insert_at(i, (self.key, Box::new(default)));
                 i
             }
         };
