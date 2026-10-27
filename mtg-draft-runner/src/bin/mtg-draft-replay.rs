@@ -116,7 +116,7 @@ fn main() {
                 format!("it was kept under {}={}, and this replay asks {}", llm_client::DRAFT_ANSWERS_ENV,
                     if text_answers { "schema" } else { "text" }, if text_answers { "in text" } else { "in the schema" })),
             ("reference", p["reference"].as_str().is_some_and(|d| d != set.digest),
-                llm_client::OTHER_SET.replace("<set>", &set_key)),
+                format!("{} (set {set_key})", llm_client::OTHER_SET)),
         ];
         for (kind, differs, why) in unlike {
             // Once a kind; a set, once a set: a file can mix them.

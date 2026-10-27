@@ -897,10 +897,13 @@ length its matches were played at", args.best_of);
         .unwrap_or_default();
     for (seat, was, now) in &replayed_under {
         let (was, now) = SeatPolicy::describe_pair(was, now);
-        // The phrase `mtg-draft-replay` and the hosted table use (#948's review).
-        mtg_player::stderr_line!("WARN: seat {seat}: its system prompt is not the live one: its replayed picks \
-were made under {}, and the rest of this draft will be made under {} — this draft is a mixture of the two",
-            was, now);
+        // The phrase `mtg-draft-replay` and the hosted table use (#948's
+        // review), and in the log beside the header's line, where the
+        // readers of that phrase look.
+        let warning = format!("seat {seat}: its system prompt is not the live one: its replayed picks were made \
+under {was}, and the rest of this draft will be made under {now} — this draft is a mixture of the two");
+        mtg_player::stderr_line!("WARN: {warning}");
+        resume_notes.push(warning);
     }
     if let Some(save) = &resumed {
         if save.seats.is_empty() && !save.picks.is_empty() {

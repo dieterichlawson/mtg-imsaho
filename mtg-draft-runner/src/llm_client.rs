@@ -1024,7 +1024,7 @@ pub fn reference_digest(set: &mtg_draft::set_data::SetData, card_reference: &str
 
 /// Why a set digest that moved is another question, as the replay and
 /// both resumes say it.
-pub const OTHER_SET: &str = "the set this build reads (data/sets/<set>.json and the cards it implements) is not \
+pub const OTHER_SET: &str = "the set this build reads (its data/sets file and the cards it implements) is not \
 the one it was asked about: another card list, card text, rarity or set name";
 
 /// The draft rules' answer note for a seat asked in text: the CLI has no

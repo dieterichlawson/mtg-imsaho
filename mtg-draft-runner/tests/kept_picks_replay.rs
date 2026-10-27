@@ -84,7 +84,7 @@ fn every_kept_pick_replays_as_the_pick_it_was_live() {
     assert!(moved.status.success(), "{stderr}");
     let said: Vec<&str> = stderr.lines().filter(|l| l.contains("its system prompt is not the live one")).collect();
     assert_eq!(said.len(), 1, "said once, by the line it was first seen on: {stderr}");
-    assert!(said[0].contains("line 1") && said[0].contains("data/sets/isd.json and the cards it implements) is not the one it was asked about"),
+    assert!(said[0].contains("line 1") && said[0].contains("is not the one it was asked about") && said[0].ends_with("(set isd)"),
         "{stderr}");
 
     // A metered seat is refused, not spent on.

@@ -499,7 +499,8 @@ fn a_resume_under_other_prompt_settings_says_so() {
     let out = pod.run(&["--resume", &other], "other.calls", "other.log");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "{stderr}");
-    assert!(stderr.contains("its system prompt is not the live one: the set this build reads"), "{stderr}");
+    assert!(stderr.contains("its system prompt is not the live one: the set this build reads (its data/sets file"), "{stderr}");
+    assert!(!stderr.contains('<'), "no placeholder is left in it: {stderr}");
 
     // A snapshot from before the record, with its guides recorded: the
     // rest is said to be unknown, not taken as agreement.
