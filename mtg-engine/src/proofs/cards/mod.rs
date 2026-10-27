@@ -1110,6 +1110,19 @@ impl Snapshot {
         s
     }
 
+    /// This snapshot with `id` attached to `host` and to no player, and
+    /// nothing else changed.
+    pub fn with_attached(&self, id: ObjectId, host: ObjectId) -> Self {
+        let mut s = self.clone();
+        for row in &mut s.objects {
+            if row.id == id {
+                row.attached_to = Some(host);
+                row.attached_to_player = None;
+            }
+        }
+        s
+    }
+
     /// This snapshot with `id` attached to player `p`, and nothing else
     /// changed.
     pub fn with_attached_player(&self, id: ObjectId, p: PlayerId) -> Self {

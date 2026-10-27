@@ -1,8 +1,9 @@
 //! The actions that change one thing: a player's life total (`change_life`
 //! and the four other ways a card asks for it), a permanent's tapped
 //! status (`tap` and `untap`, with their logging forms), the counters on a
-//! permanent (`add_counters`, `remove_counters`), and a card's place in a
-//! hand (`discard_card`). A card proof's recorder stands in for each.
+//! permanent (`add_counters`, `remove_counters`), what a permanent is
+//! attached to (`attach`), and a card's place in a hand (`discard_card`).
+//! A card proof's recorder stands in for each.
 
 use crate::events::GameEvent;
 use crate::ids::{ObjectId, PlayerId};
@@ -252,5 +253,47 @@ fn removing_counters_removes_up_to_that_many_of_their_kind() {
         assert!(Snapshot::of(&state) == before);
     }
     kani::cover!(asked == id && kind == had && had_n > 0 && had_n <= n, "every counter of the kind comes off");
+    std::mem::forget((registry, state));
+}
+
+#[kani::proof]
+#[kani::unwind(7)]
+#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+/// "Attach it to that object" (CR 701.3a): it is taken from where it is,
+/// the object or the player it was attached to (702.6c), and put onto that
+/// object; attached to it already, nothing happens at all (701.3b). The
+/// answer is whether anything changed, and nothing else does. For a
+/// permanent on nothing, on either of two objects or on either player,
+/// attached to either object, or asked about when no longer in the game.
+fn attaching_puts_it_onto_that_object_from_wherever_it_was() {
+    let (registry, mut state, blank) = blank_board();
+    let hosts = [PlayerId(0), PlayerId(1)].map(|p| state.create_object(blank, p, Zone::Battlefield, None, None));
+    let it = state.create_object(blank, PlayerId(u8::from(kani::any::<bool>())), Zone::Battlefield, None, None);
+    let (on, on_player) = match kani::any::<u8>() % 5 {
+        0 => (None, None),
+        1 => (Some(hosts[0]), None),
+        2 => (Some(hosts[1]), None),
+        3 => (None, Some(PlayerId(0))),
+        _ => (None, Some(PlayerId(1))),
+    };
+    let o = state.get_object_mut(it).expect("just created");
+    o.attached_to = on;
+    o.attached_to_player = on_player;
+    let host = if kani::any() { hosts[0] } else { hosts[1] };
+    let asked = if kani::any() { it } else { ObjectId(it.0 + 1) };
+    let before = Snapshot::of(&state);
+
+    let changed = state.attach(asked, host);
+
+    let moves = asked == it && on != Some(host);
+    assert!(changed == moves);
+    if moves {
+        assert!(Snapshot::of(&state) == before.with_attached(it, host));
+    } else {
+        assert!(Snapshot::of(&state) == before);
+    }
+    kani::cover!(moves && on_player.is_some(), "taken off a player");
     std::mem::forget((registry, state));
 }
