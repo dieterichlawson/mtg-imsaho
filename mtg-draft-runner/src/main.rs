@@ -296,7 +296,7 @@ impl Args {
             .map(|seat| SeatPolicy {
                 model: self.models[seat].clone(),
                 guide_path: self.guide_paths[seat].clone(),
-                guide_hash: self.guides[seat].as_deref().map(guide_digest),
+                guide_hash: self.guides[seat].as_deref().map(llm_client::guide_digest),
             })
             .collect()
     }
@@ -483,21 +483,13 @@ impl SeatPolicy {
             (None, _) => format!("model {}, no guide", self.model),
         }
     }
-}
 
-/// A 64-bit FNV-1a of a guide's contents, rendered hex.
-///
-/// Only has to notice an edit, so it is arithmetic rather than a
-/// dependency — and, like `match_seed`, it must not depend on a hasher
-/// whose output may change between compiler versions and silently
-/// invalidate every snapshot written before the upgrade.
-fn guide_digest(text: &str) -> String {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in text.as_bytes() {
-        h ^= u64::from(*b);
-        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    /// `was` and `now` as a mismatch reads: a guide edited in place keeps
+    /// its path, and naming it twice said nothing of what changed (#950).
+    fn describe_pair(was: &Self, now: &Self) -> (String, String) {
+        let (a, b) = (was.describe(), now.describe());
+        if a == b { (format!("{a} as it was"), format!("{b} as it is now")) } else { (a, b) }
     }
-    format!("{h:016x}")
 }
 
 /// Each seat's notes, in seat order, for the snapshot.
@@ -550,6 +542,11 @@ struct DraftSave {
     /// snapshot written before it was recorded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     deal: Option<String>,
+    /// The settings the seats' system prompts were made under besides their
+    /// guides (#949). `None` in a snapshot written before they were
+    /// recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    prompt: Option<llm_client::DraftPromptSettings>,
 }
 
 /// A seat's deck as the snapshot keeps it.
@@ -888,14 +885,28 @@ length its matches were played at", args.best_of);
         })
         .unwrap_or_default();
     for (seat, was, now) in &replayed_under {
+        let (was, now) = SeatPolicy::describe_pair(was, now);
         mtg_player::stderr_line!("WARN: seat {seat}'s replayed picks were made under {}, and the rest of \
 this draft will be made under {} — this draft is a mixture of the two",
-            was.describe(), now.describe());
+            was, now);
     }
     if let Some(save) = &resumed {
         if save.seats.is_empty() && !save.picks.is_empty() {
             mtg_player::stderr_line!("note: this snapshot predates the guide/model record, so what its \
 {} replayed picks were made under is unknown", save.picks.len());
+        }
+        // The settings besides the guide that change a seat's system prompt,
+        // said in the words `mtg-draft-replay` uses for kept positions (#949).
+        if !save.picks.is_empty() {
+            if let Some(was) = &save.prompt {
+                let live = llm_client::DraftPromptSettings::live(args.models.iter().map(String::as_str));
+                for why in was.unlike(&live) {
+                    let note = format!("--resume {}: its system prompt is not the live one: {why}",
+                        args.resume.as_deref().unwrap_or_default());
+                    mtg_player::stderr_line!("note: {note}");
+                    resume_notes.push(note);
+                }
+            }
         }
     }
 
@@ -1020,7 +1031,7 @@ resume with the --best-of its run was played at)", args.best_of) };
     let resumed_from = args.resume.as_deref().map(|path| (path, replaying.len()));
     let replayed_note: Vec<(usize, String, String)> = replayed_under
         .iter()
-        .map(|(seat, was, now)| (*seat, was.describe(), now.describe()))
+        .map(|(seat, was, now)| { let (was, now) = SeatPolicy::describe_pair(was, now); (*seat, was, now) })
         .collect();
     log_header!(log, &set_data.set_name, args.players, args.best_of,
         args.models.as_slice(), args.guide_paths.as_slice(), args.seed, resumed_from,
@@ -1121,6 +1132,7 @@ resume with the --best-of its run was played at)", args.best_of) };
             best_of: Some(args.best_of),
             notes,
             deal: Some(deal.clone()),
+            prompt: Some(llm_client::DraftPromptSettings::live(args.models.iter().map(String::as_str))),
         };
         // Write-then-rename: a snapshot half-written when the run dies is
         // worse than none, because it looks resumable.

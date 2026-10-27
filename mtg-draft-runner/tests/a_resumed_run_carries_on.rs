@@ -88,6 +88,12 @@ impl Pod {
 
     /// `--players 2 --best-of 1 --seed 7`, each unless `extra` names it.
     fn run(&self, extra: &[&str], counter: &str, log: &str) -> std::process::Output {
+        self.run_env(extra, counter, log, &[])
+    }
+
+    /// As [`Pod::run`], with the settings that change a seat's system
+    /// prompt at their defaults unless `env` sets them.
+    fn run_env(&self, extra: &[&str], counter: &str, log: &str, env: &[(&str, &str)]) -> std::process::Output {
         let defaults = [("--players", "2"), ("--best-of", "1"), ("--seed", "7")];
         std::process::Command::new(env!("CARGO_BIN_EXE_mtg-draft-runner"))
             .args(["--model", "cc"])
@@ -97,6 +103,9 @@ impl Pod {
             .current_dir(concat!(env!("CARGO_MANIFEST_DIR"), "/.."))
             .env("CLAUDE_CODE_BIN", &self.bin)
             .env("CALLS", self.path(counter))
+            .env_remove("MTG_LLM_HISTORY")
+            .env_remove("MTG_CLAUDE_CODE_DRAFT_ANSWERS")
+            .envs(env.iter().copied())
             .output()
             .expect("the runner runs")
     }
@@ -431,4 +440,67 @@ fn a_snapshot_of_another_deal_is_refused() {
     let path = pod.write("old.json", &save);
     let out = pod.run(&["--resume", &path], "old.calls", "old.log");
     assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+}
+
+/// #949: the snapshot records the settings besides the guide that change a
+/// seat's system prompt, and a resume under others says so on stderr and
+/// in the log, as `mtg-draft-replay` does for kept positions. It said
+/// nothing, and every later pick was asked another question.
+#[test]
+fn a_resume_under_other_prompt_settings_says_so() {
+    if !have_python() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let pod = Pod::new("settings");
+    let saved = pod.finished_snapshot("snap.json");
+    assert_eq!(saved["prompt"], serde_json::json!({"history": 0, "text_answers": false}),
+        "the snapshot records what the seats were asked under");
+    let snap = pod.path("snap.json");
+    let snap = snap.to_str().unwrap();
+
+    for (var, value, said) in [
+        ("MTG_LLM_HISTORY", "2", "made under MTG_LLM_HISTORY=0, and the rest of this draft is made under 2"),
+        ("MTG_CLAUDE_CODE_DRAFT_ANSWERS", "text",
+            "made under MTG_CLAUDE_CODE_DRAFT_ANSWERS=schema, and the rest of this draft is asked in text"),
+    ] {
+        let log = format!("{var}.log");
+        let out = pod.run_env(&["--resume", snap], &format!("{var}.calls"), &log, &[(var, value)]);
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(out.status.success(), "{stderr}");
+        assert!(stderr.contains("its system prompt is not the live one") && stderr.contains(said),
+            "{var}={value} is said on stderr:\n{stderr}");
+        let logged = std::fs::read_to_string(pod.path(&log)).unwrap();
+        assert!(logged.contains(said), "and in the log:\n{logged}");
+    }
+
+    let same = pod.run(&["--resume", snap], "same.calls", "same.log");
+    let stderr = String::from_utf8_lossy(&same.stderr);
+    assert!(same.status.success(), "{stderr}");
+    assert!(!stderr.contains("not the live one"), "the same settings say nothing:\n{stderr}");
+}
+
+/// #950: a guide edited in place keeps its path, and the warning named the
+/// same guide on both sides of "and the rest of this draft".
+#[test]
+fn a_guide_edited_in_place_is_named_as_it_was_and_as_it_is() {
+    if !have_python() {
+        eprintln!("skipping: no python3 to run the stub seat with");
+        return;
+    }
+    let pod = Pod::new("edited-guide");
+    let guide = pod.path("guide.md");
+    std::fs::write(&guide, "Take red cards.\n").unwrap();
+    let guide = guide.to_str().unwrap();
+    let snap = pod.path("snap.json");
+    let first = pod.run(&["--guide", guide, "--save", snap.to_str().unwrap()], "first.calls", "first.log");
+    assert!(first.status.success(), "{}", String::from_utf8_lossy(&first.stderr));
+
+    std::fs::write(guide, "Take green cards.\n").unwrap();
+    let out = pod.run(&["--guide", guide, "--resume", snap.to_str().unwrap()], "second.calls", "second.log");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{stderr}");
+    let warn = stderr.lines().find(|l| l.starts_with("WARN: seat 0")).unwrap_or_else(|| panic!("no warning:\n{stderr}"));
+    assert!(warn.contains(&format!("guide {guide} as it was")) && warn.contains(&format!("guide {guide} as it is now")),
+        "the warning says what changed: {warn}");
 }

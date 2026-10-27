@@ -892,6 +892,78 @@ pub fn draft_text_answers() -> bool {
     }
 }
 
+/// Whether a seat spec is a `claude -p` one, the only seat whose prompt
+/// says how it answers.
+#[must_use]
+pub fn asks_in_text(spec: &str) -> bool {
+    matches!(spec.split(':').next(), Some("cc" | "claude-code"))
+}
+
+/// The settings outside a seat's own flags that change what an AI draft
+/// seat's system prompt says: `MTG_LLM_HISTORY` for any AI seat, and
+/// `MTG_CLAUDE_CODE_DRAFT_ANSWERS` for a `claude -p` one. Kept positions
+/// recorded them (#920) and neither draft snapshot did, so a `--resume`
+/// under the other value asked every later pick another question with no
+/// note (#949). `None` where no seat's prompt carries it. `MTG_LLM_THINKING`
+/// is not one, as on the game save (#931): it changes the request, not
+/// what the seat is told.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct DraftPromptSettings {
+    #[serde(default)]
+    pub history: Option<usize>,
+    #[serde(default)]
+    pub text_answers: Option<bool>,
+}
+
+impl DraftPromptSettings {
+    /// The settings this process asks the AI seats among `models` under.
+    #[must_use]
+    pub fn live<'a>(models: impl IntoIterator<Item = &'a str>) -> Self {
+        let models: Vec<&str> = models.into_iter().collect();
+        Self {
+            history: (!models.is_empty()).then(mtg_player::llm::history_exchanges),
+            text_answers: models.iter().any(|m| asks_in_text(m)).then(draft_text_answers),
+        }
+    }
+
+    /// How `live` differs from what the replayed picks were asked under, in
+    /// `mtg-draft-replay`'s words; nothing where either side does not say.
+    #[must_use]
+    pub fn unlike(&self, live: &Self) -> Vec<String> {
+        let mut out = Vec::new();
+        if let (Some(was), Some(now)) = (self.history, live.history) {
+            if was != now {
+                out.push(format!("its picks were made under MTG_LLM_HISTORY={was}, and the rest of this draft \
+is made under {now}"));
+            }
+        }
+        if let (Some(was), Some(now)) = (self.text_answers, live.text_answers) {
+            if was != now {
+                let how = |text: bool| if text { "in text" } else { "in the schema" };
+                out.push(format!("its picks were made under {DRAFT_ANSWERS_ENV}={}, and the rest of this draft \
+is asked {}", if was { "text" } else { "schema" }, how(now)));
+            }
+        }
+        out
+    }
+}
+
+/// A 64-bit FNV-1a of a guide's contents, rendered hex.
+///
+/// Only has to notice an edit, so it is arithmetic rather than a
+/// dependency — and, like `match_seed`, it must not depend on a hasher
+/// whose output may change between compiler versions and silently
+/// invalidate every snapshot written before the upgrade.
+#[must_use]
+pub fn guide_digest(text: &str) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in text.as_bytes() {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{h:016x}")
+}
+
 /// The draft rules' answer note for a seat asked in text: the CLI has no
 /// schema to hold the answer to, so it is told the shape is the whole reply.
 const TEXT_ANSWER_NOTE: &str = "\nReply with only that JSON object — no words before or after it, no code \
