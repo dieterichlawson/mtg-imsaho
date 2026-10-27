@@ -776,24 +776,55 @@ fn any_destroy_result() -> DestroyResult {
 /// the data decides is a write at a position the solver leaves open, into
 /// a buffer it models byte by byte, and a proof of the order alone over
 /// eight objects ran it out of memory. A list built in one pass in id
-/// order it reads without that.
+/// order it reads without that. And the list is handed out from static
+/// memory, which CBMC keeps as references, rather than from the heap,
+/// which it keeps as bytes: a reference read back from bytes is one whose
+/// offset it has lost, and every read through it chose among every byte
+/// of every object the list might hold. Resolving Make a Wish took 15.7
+/// million clauses with the list on the heap and 5.8 million with it here.
+/// The list is never freed (`no_freeing`).
 #[allow(dead_code)] // named only by `kani::stub`
 pub fn objects_in_zone_in_id_order(state: &GameState, zone: Zone, player: PlayerId) -> Vec<&crate::state::GameObject> {
-    let mut found = Vec::with_capacity(state.objects.len());
-    for o in state.objects_in_id_order() {
+    // SAFETY: a proof runs on one thread, and only this function names the
+    // pool.
+    let slot = unsafe { *std::ptr::addr_of!(LISTINGS_HANDED) };
+    assert!(slot < LISTINGS, "more zone listings than a proof here holds");
+    unsafe { *std::ptr::addr_of_mut!(LISTINGS_HANDED) = slot + 1 };
+    let list = unsafe { &mut (*std::ptr::addr_of_mut!(LISTING_POOL))[slot] };
+    let mut len = 0;
+    // The map's own order is id order (`ObjectMap`).
+    for o in state.objects.values() {
         if crate::state::in_zone_of(o, zone, player) {
-            found.push(o);
+            assert!(len < LISTED, "a zone longer than a listing holds");
+            list[len] = o as *const _;
+            len += 1;
         }
     }
     if zone == Zone::Graveyard {
         let pile = if player == PlayerId(0) { &state.players[0].graveyard_order } else { &state.players[1].graveyard_order };
-        assert!(pile.len() <= found.len(), "a graveyard pile listing more than the graveyard");
+        assert!(pile.len() <= len, "a graveyard pile listing more than the graveyard");
         for (i, id) in pile.iter().enumerate() {
-            assert!(*id == found[i].id, "a graveyard pile out of id order");
+            // SAFETY: the first `len` entries are references into `state`.
+            assert!(*id == unsafe { &*list[i] }.id, "a graveyard pile out of id order");
         }
     }
-    found
+    // SAFETY: the pool's first `len` entries are references into `state`,
+    // which outlives the list, and the list is never freed.
+    unsafe { Vec::from_raw_parts(list.as_mut_ptr().cast::<&crate::state::GameObject>(), len, LISTED) }
 }
+
+/// How many zone listings a proof may hold, and how long each may be: more
+/// of either fails the proof, naming which.
+const LISTINGS: usize = 4;
+const LISTED: usize = 8;
+static mut LISTING_POOL: [[*const crate::state::GameObject; LISTED]; LISTINGS] = [[std::ptr::null(); LISTED]; LISTINGS];
+static mut LISTINGS_HANDED: usize = 0;
+
+/// Stands in for the global allocator's freeing: nothing. A proof's memory
+/// lasts the proof, and freeing decides nothing a proof asserts; and the
+/// lists `objects_in_zone_in_id_order` hands out are static.
+#[allow(dead_code)] // named only by `kani::stub`
+pub fn no_freeing(_: std::ptr::NonNull<u8>, _: std::alloc::Layout) {}
 
 /// Stands in for `GameState::log`: the game log is for people, and no rule
 /// reads it (the view shows it; `invariants::transition` checks it only
@@ -861,6 +892,7 @@ macro_rules! card_proof {
         #[kani::unwind($n)]
         #[kani::stub(std::fmt::format, $crate::proofs::cards::no_format)]
         #[kani::stub(alloc::alloc::Global::grow_impl_runtime, $crate::proofs::cards::no_growing)]
+        #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, $crate::proofs::cards::no_freeing)]
         #[kani::stub($crate::state::GameState::log, $crate::proofs::cards::no_log)]
         #[kani::stub($crate::state::GameState::objects_in_zone, $crate::proofs::cards::objects_in_zone_in_id_order)]
         #[kani::stub($crate::engine::apply_pending_effect, $crate::proofs::cards::record_effect)]

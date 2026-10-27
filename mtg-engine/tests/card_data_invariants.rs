@@ -600,7 +600,10 @@ fn no_card_hardcodes_a_derivable_token_name() {
 ///
 /// `state.rs` is exempt: it is where those accessors are built, and where the
 /// genuinely order-free walks live (summing continuous effects over every
-/// source reaches the same total in any order).
+/// source reaches the same total in any order). So is `src/proofs/`, which
+/// only Kani builds and no game runs: its stand-in for `objects_in_zone`
+/// reads the map in the map's own order, which is id order, as the accessor
+/// it stands in for does.
 #[test]
 fn nothing_iterates_the_object_map_in_map_order() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -611,7 +614,9 @@ fn nothing_iterates_the_object_map_in_map_order() {
     while let Some(dir) = stack.pop() {
         for entry in std::fs::read_dir(&dir).unwrap().flatten() {
             let p = entry.path();
-            if p.is_dir() { stack.push(p); }
+            if p.is_dir() {
+                if p != root.join("src/proofs") { stack.push(p); }
+            }
             else if p.extension().is_some_and(|e| e == "rs") { files.push(p); }
         }
     }
