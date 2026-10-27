@@ -5382,6 +5382,14 @@ impl Player for LlmPlayer {
     }
 
     fn choose_action(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
+        // A pass the game loop shows the seat only because something is
+        // watching every submit. Unwatched, the loop passes and the seat is
+        // never called; consulted, the plan stopped here with another
+        // reason, the next prompt said so, and the same seed played another
+        // game under `--check-invariants` (#956).
+        if legal.is_observed_pass() {
+            return Action::PassPriority;
+        }
         let action = self.decide(view, legal, true);
         if std::mem::take(&mut self.plan_done_pending) && self.pass_until.is_none() {
             self.pass_until = Some(PassUntil::done_at(view));

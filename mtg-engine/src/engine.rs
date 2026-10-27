@@ -113,6 +113,40 @@ pub struct LegalActions {
 }
 
 impl LegalActions {
+    /// The offer the game loop makes in place of a pass it would make on a
+    /// player's behalf, when [`crate::state::GameState::observe_every_submit`] asks to see
+    /// every submitted action: the pass (and the ever-present concede), and
+    /// nothing else — not even a context line, which every real priority
+    /// offer carries.
+    #[must_use]
+    pub fn observed_pass() -> Self {
+        LegalActions {
+            actions: vec![Action::PassPriority, Action::Concede],
+            combat_prompt: None,
+            castable_spells: vec![],
+            activatable_abilities: vec![],
+            context: None,
+            resolution_prompt: None,
+            set_prompt: None,
+        }
+    }
+
+    /// Whether this is [`LegalActions::observed_pass`]: a pass the loop
+    /// would have made itself had nobody been watching. A player whose own
+    /// bookkeeping reacts to every offer it sees has to answer it as the
+    /// loop would, without being moved by it, or watching a game
+    /// (`--check-invariants`, a gui seat) changes it (#956).
+    #[must_use]
+    pub fn is_observed_pass(&self) -> bool {
+        self.context.is_none()
+            && matches!(self.actions.as_slice(), [Action::PassPriority, Action::Concede])
+            && self.combat_prompt.is_none()
+            && self.castable_spells.is_empty()
+            && self.activatable_abilities.is_empty()
+            && self.resolution_prompt.is_none()
+            && self.set_prompt.is_none()
+    }
+
     /// Whether this offers the acting player nothing at all — no menu and
     /// no prompt of any kind.
     ///
@@ -1606,16 +1640,7 @@ fn run_game_loop_inner<F>(
             if state.observe_every_submit {
                 // An observer wants to see this pass as a decision of its
                 // own; the menu is the pass (and the ever-present concede).
-                let pass_only = LegalActions {
-                    actions: vec![Action::PassPriority, Action::Concede],
-                    combat_prompt: None,
-                    castable_spells: vec![],
-                    activatable_abilities: vec![],
-                    context: None,
-                    resolution_prompt: None,
-                    set_prompt: None,
-                };
-                choose_action(state, acting_player, &pass_only)
+                choose_action(state, acting_player, &LegalActions::observed_pass())
             } else {
                 Action::PassPriority
             }
