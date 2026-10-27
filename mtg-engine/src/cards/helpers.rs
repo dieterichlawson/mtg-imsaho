@@ -426,17 +426,28 @@ pub fn tokens_enter_combat_attacking(
 
 /// Put a list of targets into a stable order.
 ///
-/// Every list below is built by iterating `state.objects`, which is a HashMap
-/// and yields in arbitrary order. Players — and the LLM player especially —
-/// pick from these lists by position, so an unstable order means the same game
-/// replays differently and a recorded decision means something else on the way
-/// back. Objects sort by id, players after objects and by id among themselves.
+/// Players — and the LLM player especially — pick from these lists by
+/// position, so an unstable order means the same game replays differently
+/// and a recorded decision means something else on the way back. Objects
+/// sort by id, players after objects and by id among themselves.
+///
+/// An insertion sort, which is stable as `sort_by_key` is and gives the same
+/// list: these are a board's worth of targets, and a general sort over a
+/// list of a length the solver leaves open is one the proofs do not get
+/// through.
 fn stable(mut targets: Vec<Target>) -> Vec<Target> {
-    targets.sort_by_key(|t| match t {
+    let key = |t: &Target| match t {
         Target::Object(id) => (0u8, id.0),
         Target::Player(p) => (1u8, u64::from(p.0)),
         Target::Illegal => (2u8, 0),
-    });
+    };
+    for i in 1..targets.len() {
+        let mut j = i;
+        while j > 0 && key(&targets[j - 1]) > key(&targets[j]) {
+            targets.swap(j - 1, j);
+            j -= 1;
+        }
+    }
     targets
 }
 

@@ -151,7 +151,8 @@ pub struct EndOfCombatExileEntry {
 /// `GameObject` into a `BTreeMap` (`crate::vec_map` says why), so a Kani
 /// build keeps the objects in a vector in id order instead, which answers
 /// the same. The engine asks this map only for `get`, `get_mut`, `insert`,
-/// `remove`, `values` and `values_mut`.
+/// `remove`, `values` and `values_mut`. Both iterate in id order, which the
+/// zone listings (`objects_in_zone` and the rest) rely on.
 #[cfg(not(kani))]
 pub type ObjectMap = std::collections::BTreeMap<ObjectId, GameObject>;
 #[cfg(kani)]
@@ -1882,49 +1883,53 @@ impl GameState {
     /// For Battlefield: filter by controller.
     #[must_use]
     pub fn objects_in_zone(&self, zone: Zone, player: PlayerId) -> Vec<&GameObject> {
-        let mut result: Vec<_> = self.objects.values().filter(|obj| {
-            obj.zone == zone && match zone {
-                Zone::Library | Zone::Hand | Zone::Graveyard => obj.owner == player,
-                Zone::Battlefield => obj.controller == player,
-                _ => true,
-            }
-        }).collect();
+        let belongs = |obj: &GameObject| obj.zone == zone && match zone {
+            Zone::Library | Zone::Hand | Zone::Graveyard => obj.owner == player,
+            Zone::Battlefield => obj.controller == player,
+            _ => true,
+        };
         // CR 404.2: a graveyard is an ordered pile, and its order is arrival
         // order — not the order the cards happened to be created in when the
-        // decklist was built, which is what sorting by id gives (issue #222).
+        // decklist was built, which is what id order gives (issue #222).
         // Anything not in the recorded pile (a card put there by a path that
-        // predates the order) sorts after what is, by id.
+        // predates the order) comes after what is, by id.
+        //
+        // Built in that order rather than sorted into it, and every other zone
+        // read in id order straight off the map, which is ordered by id: the
+        // same list, without a sort the proofs cannot get through (a general
+        // sort over a list whose length the solver leaves open).
         if zone == Zone::Graveyard {
             let pile = &self.get_player(player).graveyard_order;
-            result.sort_by_key(|o| (pile.iter().position(|&id| id == o.id).unwrap_or(usize::MAX), o.id));
-        } else {
-            result.sort_by_key(|o| o.id);
+            let mut result: Vec<&GameObject> = pile.iter().enumerate()
+                .filter(|&(i, id)| !pile[..i].contains(id))
+                .filter_map(|(_, id)| self.objects.get(id))
+                .filter(|obj| belongs(obj))
+                .collect();
+            result.extend(self.objects.values().filter(|obj| belongs(obj) && !pile.contains(&obj.id)));
+            return result;
         }
-        result
+        self.objects.values().filter(|obj| belongs(obj)).collect()
     }
 
     /// Every object in the game, in object-id order.
     ///
-    /// `self.objects` is a `HashMap`, and its iteration order is seeded per
-    /// process: a scan that stops at the first match, or whose result is
-    /// offered to a player as a list, gives a different answer on a replay of
-    /// the same game. Anything that cares about order goes through this or
-    /// through `objects_in_zone` / `all_objects_in_zone`, which sort the same
-    /// way. `card_data_invariants::nothing_iterates_the_object_map_in_map_order`
-    /// keeps card code out of the raw map.
+    /// A scan that stops at the first match, or whose result is offered to a
+    /// player as a list, has to see the objects in an order the game fixes,
+    /// or a replay of the same game gives a different answer. Anything that
+    /// cares about order goes through this or through `objects_in_zone` /
+    /// `all_objects_in_zone`, which list the same way.
+    /// `card_data_invariants::nothing_iterates_the_object_map_in_map_order`
+    /// keeps card code out of the raw map. The map is ordered by id
+    /// (`ObjectMap`), so its own order is this one.
     #[must_use]
     pub fn objects_in_id_order(&self) -> Vec<&GameObject> {
-        let mut result: Vec<_> = self.objects.values().collect();
-        result.sort_by_key(|o| o.id);
-        result
+        self.objects.values().collect()
     }
 
-    /// Get all objects in a zone (regardless of player).
+    /// Get all objects in a zone (regardless of player), in id order.
     #[must_use]
     pub fn all_objects_in_zone(&self, zone: Zone) -> Vec<&GameObject> {
-        let mut result: Vec<_> = self.objects.values().filter(|obj| obj.zone == zone).collect();
-        result.sort_by_key(|o| o.id);
-        result
+        self.objects.values().filter(|obj| obj.zone == zone).collect()
     }
 
     /// Get the next player after the given player (turn order).
@@ -2390,17 +2395,24 @@ impl GameState {
     /// timestamp wins).
     #[must_use]
     fn set_pt_for(&self, object: ObjectId) -> (Option<i32>, Option<i32>) {
-        let mut power = None;
-        let mut toughness = None;
-        let mut applicable: Vec<&SetPtEffect> = self.set_pt_effects.iter()
-            .filter(|e| e.object == object)
-            .collect();
-        applicable.sort_by_key(|e| e.timestamp);
-        for effect in applicable {
-            if effect.power.is_some() { power = effect.power; }
-            if effect.toughness.is_some() { toughness = effect.toughness; }
+        // The latest timestamp for each of the two, and of two with the same
+        // timestamp the one set later: what applying them in timestamp order
+        // (a stable sort) leaves standing, read off in one pass.
+        let mut power: Option<(u64, i32)> = None;
+        let mut toughness: Option<(u64, i32)> = None;
+        for effect in self.set_pt_effects.iter().filter(|e| e.object == object) {
+            if let Some(p) = effect.power {
+                if power.is_none_or(|(t, _)| effect.timestamp >= t) {
+                    power = Some((effect.timestamp, p));
+                }
+            }
+            if let Some(t) = effect.toughness {
+                if toughness.is_none_or(|(ts, _)| effect.timestamp >= ts) {
+                    toughness = Some((effect.timestamp, t));
+                }
+            }
         }
-        (power, toughness)
+        (power.map(|(_, p)| p), toughness.map(|(_, t)| t))
     }
 
     /// Check if a creature is prevented from attacking (e.g., by Pacifism).

@@ -581,19 +581,22 @@ fn no_card_hardcodes_a_derivable_token_name() {
         offenders.len(), offenders.join("\n  "));
 }
 
-/// `GameState::objects` is a `HashMap`, and its iteration order is seeded per
-/// process. Card code that scans it directly gets a different order on every
-/// run of the same game, which shows up in three ways: a list of options
-/// offered to a player by position (Curse of the Pierced Heart's planeswalkers,
-/// Divine Reckoning's creatures), a `find`/`any` that stops at the first match,
-/// and a log that reports the same board in a different order.
+/// `GameState::objects` was a `HashMap`, whose iteration order is seeded per
+/// process, and card code that scanned it directly got a different order on
+/// every run of the same game, which showed up in three ways: a list of
+/// options offered to a player by position (Curse of the Pierced Heart's
+/// planeswalkers, Divine Reckoning's creatures), a `find`/`any` that stops at
+/// the first match, and a log that reports the same board in a different
+/// order. It is an ordered map now (`ObjectMap`), and the rule stands: the
+/// order a scan sees is one the accessors define, not whatever map the
+/// objects happen to be kept in.
 ///
 /// The reach is the whole crate, because every layer of it has an
 /// order-sensitive scan: which creature the player is offered first, which of
 /// two simultaneous triggers goes on the stack first, which of two creatures
 /// dying together is reported first, which state trigger fires when several
-/// are ready at once. Everything goes through the accessors that sort by id —
-/// `objects_in_zone`, `all_objects_in_zone`, `objects_in_id_order`.
+/// are ready at once. Everything goes through the accessors that list in id
+/// order — `objects_in_zone`, `all_objects_in_zone`, `objects_in_id_order`.
 ///
 /// `state.rs` is exempt: it is where those accessors are built, and where the
 /// genuinely order-free walks live (summing continuous effects over every
@@ -635,10 +638,9 @@ fn nothing_iterates_the_object_map_in_map_order() {
         }
     }
     assert!(offenders.is_empty(),
-        "{} site(s) iterate the raw object map, whose order is \
-         seeded per process:\n  {}\n\n\
+        "{} site(s) iterate the raw object map:\n  {}\n\n\
          Use objects_in_zone / all_objects_in_zone / objects_in_id_order, \
-         which sort by id.",
+         which list in id order.",
         offenders.len(), offenders.join("\n  "));
 }
 
