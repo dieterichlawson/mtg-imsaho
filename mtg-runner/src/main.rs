@@ -328,11 +328,14 @@ fn sweep_stale_hot_reload_saves() {
 /// lookup in `main` is an exact-match position scan, so an unrecognized or
 /// misspelled flag used to be silently dropped and its default silently used —
 /// a typo'd --deck1 quietly played the wrong deck (issue #55).
-fn validate_args(args: &[String]) {
+///
+/// Hands back every flag with its value, in order, for [`flag_value`].
+fn validate_args(args: &[String]) -> Vec<(String, String)> {
     const VALUE_FLAGS: &[&str] = &["--p1", "--p2", "--deck1", "--deck2",
         "--seed", "--log", "--save", "--resume", "--on-the-play", "--decision-stats",
         "--stop-after"];
     const BOOL_FLAGS: &[&str] = &["--check-invariants", "--quiet", "-q"];
+    let mut values = Vec::new();
     let mut i = 1;
     while i < args.len() {
         let a = args[i].as_str();
@@ -341,6 +344,7 @@ fn validate_args(args: &[String]) {
                 mtg_player::stderr_line!("Error: {a} requires a value\n\n{USAGE}");
                 std::process::exit(2);
             }
+            values.push((a.to_string(), args[i + 1].clone()));
             i += 2;
         } else if BOOL_FLAGS.contains(&a) {
             i += 1;
@@ -349,6 +353,15 @@ fn validate_args(args: &[String]) {
             std::process::exit(2);
         }
     }
+    values
+}
+
+/// The value of `flag`: its last, as `mtg-draft-server` reads one. The
+/// first was taken in silence, so `$BASE_FLAGS --p1 cc` played
+/// `$BASE_FLAGS`'s seat (#952). Looked up among the flags `validate_args`
+/// walked, so a value spelled like a flag is never read as one.
+fn flag_value<'a>(values: &'a [(String, String)], flag: &str) -> Option<&'a String> {
+    values.iter().rev().find(|(f, _)| f == flag).map(|(_, v)| v)
 }
 
 fn main() {
@@ -362,7 +375,7 @@ fn main() {
         mtg_player::stdout_line!("mtg-runner {}", env!("CARGO_PKG_VERSION"));
         return;
     }
-    validate_args(&args);
+    let values = validate_args(&args);
 
     // Parse player specs: --p1 <spec> --p2 <spec>
     // Spec formats:
@@ -372,21 +385,16 @@ fn main() {
     //   claude:claude-haiku-4-5-20251001  — Claude with specific model
     //   gemini                       — Gemini with default model (2.0-flash)
     //   gemini:gemini-2.5-flash      — Gemini with specific model
-    let p1_flag = args.iter().position(|a| a == "--p1")
-        .and_then(|i| args.get(i + 1)).cloned();
-    let p2_flag = args.iter().position(|a| a == "--p2")
-        .and_then(|i| args.get(i + 1)).cloned();
+    let p1_flag = flag_value(&values, "--p1").cloned();
+    let p2_flag = flag_value(&values, "--p2").cloned();
     let mut p1_spec = p1_flag.clone().unwrap_or_else(|| "cli".to_string());
     let mut p2_spec = p2_flag.clone().unwrap_or_else(|| "random".to_string());
 
-    let log_file = args.iter().position(|a| a == "--log")
-        .and_then(|i| args.get(i + 1))
+    let log_file = flag_value(&values, "--log")
         .map(std::string::String::as_str);
-    let decision_stats_file = args.iter().position(|a| a == "--decision-stats")
-        .and_then(|i| args.get(i + 1))
+    let decision_stats_file = flag_value(&values, "--decision-stats")
         .cloned();
-    let stop_after: Option<u64> = args.iter().position(|a| a == "--stop-after")
-        .and_then(|i| args.get(i + 1))
+    let stop_after: Option<u64> = flag_value(&values, "--stop-after")
         .map(|v| match v.parse::<u64>() {
             Ok(n) if n > 0 => n,
             _ => die(&format!("--stop-after takes a positive number of decisions, not '{v}'")),
@@ -396,33 +404,27 @@ fn main() {
     // Built-in deck names: red-green, white-black, blue-white,
     //   black-aggro, innistrad-white, innistrad-blue
     // Or a path to a deck file (one "COUNT CARD NAME" per line).
-    let deck1_spec = args.iter().position(|a| a == "--deck1")
-        .and_then(|i| args.get(i + 1))
+    let deck1_spec = flag_value(&values, "--deck1")
         .map_or("red-green", std::string::String::as_str);
 
-    let deck2_spec = args.iter().position(|a| a == "--deck2")
-        .and_then(|i| args.get(i + 1))
+    let deck2_spec = flag_value(&values, "--deck2")
         .map_or("white-black", std::string::String::as_str);
 
-    let save_file = args.iter().position(|a| a == "--save")
-        .and_then(|i| args.get(i + 1))
+    let save_file = flag_value(&values, "--save")
         .cloned();
 
-    let resume_file = args.iter().position(|a| a == "--resume")
-        .and_then(|i| args.get(i + 1))
+    let resume_file = flag_value(&values, "--resume")
         .cloned();
 
     // --seed N makes the whole game deterministic: the engine's shuffles and
     // the random players' picks all derive from it, so a failure replays.
-    let seed: Option<u64> = args.iter().position(|a| a == "--seed")
-        .and_then(|i| args.get(i + 1))
+    let seed: Option<u64> = flag_value(&values, "--seed")
         .map(|s| s.parse().unwrap_or_else(|_| die(&format!("--seed takes a number, got '{s}'"))));
 
     // --on-the-play 1|2 pins which seat takes the first turn; without it the
     // opening player is randomized per CR 103.1 (seeded, so reproducible) —
     // p0-always-on-the-play biased every recorded match (issue #112).
-    let starting_player: Option<PlayerId> = args.iter().position(|a| a == "--on-the-play")
-        .and_then(|i| args.get(i + 1))
+    let starting_player: Option<PlayerId> = flag_value(&values, "--on-the-play")
         .map(|v| match v.as_str() {
             "1" => PlayerId(0),
             "2" => PlayerId(1),

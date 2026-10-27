@@ -58,7 +58,8 @@ fn load_set(key: &str, registry: &CardRegistry) -> LoadedSet {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let get = |flag: &str| args.iter().position(|a| a == flag).and_then(|i| args.get(i + 1)).cloned();
+    // A repeated flag's last value, as the runner and the server read one (#952).
+    let get = |flag: &str| args.iter().rposition(|a| a == flag).and_then(|i| args.get(i + 1)).cloned();
     let positions = get("--positions").unwrap_or_else(|| die("--positions <file> is required"));
     let model = get("--model").unwrap_or_else(|| die("--model <spec> is required"));
     if !args.iter().any(|a| a == "--metered") && !matches!(model.split(':').next(), Some("cc" | "claude-code")) {

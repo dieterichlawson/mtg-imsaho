@@ -574,10 +574,13 @@ struct SavedMatch {
 /// exact-match position scan, so an unrecognized or misspelled flag was
 /// silently dropped and its default silently used — a typo'd `--model` drafted
 /// with a model nobody asked for, on a seat that bills per token.
-fn validate_args(args: &[String]) -> Vec<(String, usize)> {
+///
+/// Also hands back every flag with its value, in order, for [`flag_value`].
+fn validate_args(args: &[String]) -> (Vec<(String, String)>, Vec<(String, usize)>) {
     const VALUE_FLAGS: &[&str] = &["--set", "--players", "--model", "--best-of", "--guide", "--log", "--seed", "--save", "--resume"];
     const BOOL_FLAGS: &[&str] = &["--quiet", "-q"];
     let mut indexed = Vec::new();
+    let mut values = Vec::new();
     let mut i = 1;
     while i < args.len() {
         let a = args[i].as_str();
@@ -587,9 +590,10 @@ fn validate_args(args: &[String]) -> Vec<(String, usize)> {
                 mtg_player::stderr_line!("Error: {a} requires a value\n\n{USAGE}");
                 std::process::exit(2);
             }
-            if let Some(index) = per_seat {
+            if let Some(index) = per_seat.filter(|_| !indexed.iter().any(|(f, _)| f == a)) {
                 indexed.push((a.to_string(), index));
             }
+            values.push((a.to_string(), args[i + 1].clone()));
             i += 2;
         } else if BOOL_FLAGS.contains(&a) {
             i += 1;
@@ -598,7 +602,16 @@ fn validate_args(args: &[String]) -> Vec<(String, usize)> {
             std::process::exit(2);
         }
     }
-    indexed
+    (values, indexed)
+}
+
+/// The value of `flag`: its last, as `mtg-draft-server` reads one. The
+/// first was taken in silence, so `$BASE_FLAGS --seed 2` drafted
+/// `$BASE_FLAGS`'s seed and the two programs read one command line two
+/// ways (#952). Looked up among the flags `validate_args` walked, so a
+/// value spelled like a flag is never read as one.
+fn flag_value(values: &[(String, String)], flag: &str) -> Option<String> {
+    values.iter().rev().find(|(f, _)| f == flag).map(|(_, v)| v.clone())
 }
 
 /// The seat number of a `--model-N` / `--guide-N` flag, if it is one.
@@ -620,13 +633,9 @@ fn parse_args() -> Args {
         mtg_player::stdout_line!("mtg-draft-runner {}", env!("CARGO_PKG_VERSION"));
         std::process::exit(0);
     }
-    let per_seat_flags = validate_args(&args);
+    let (values, per_seat_flags) = validate_args(&args);
 
-    let get = |flag: &str| -> Option<String> {
-        args.iter()
-            .position(|a| a == flag)
-            .and_then(|i| args.get(i + 1)).cloned()
-    };
+    let get = |flag: &str| -> Option<String> { flag_value(&values, flag) };
     let count = |flag: &str, default: usize| -> usize {
         get(flag).map_or(default, |s| {
             let n = s.parse().unwrap_or_else(|_| die(&format!("{flag} takes a number, got '{s}'")));
