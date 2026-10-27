@@ -236,9 +236,13 @@ fn auto_paying_an_exile_cost_ranks_by_the_power_after_the_exile() {
 fn spell_costs_are_determined_in_one_place() {
     let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut files = Vec::new();
+    // `src/proofs` is left out: the proofs, built only under Kani, read a
+    // card's printed additional cost to pin it to its Oracle text, which is
+    // not deciding what the spell costs.
     fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
         for e in std::fs::read_dir(dir).expect("readable").flatten() {
             let p = e.path();
+            if p.is_dir() && p.ends_with("src/proofs") { continue; }
             if p.is_dir() { walk(&p, out); }
             else if p.extension().is_some_and(|x| x == "rs") { out.push(p); }
         }

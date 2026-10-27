@@ -518,6 +518,11 @@ fn crate_sources() -> Vec<(String, String)> {
     files.iter()
         .filter_map(|p| {
             let rel = p.strip_prefix(&src).ok()?.to_string_lossy().replace('\\', "/");
+            // The proofs, built only under Kani, set their boards up by
+            // writing the fields these guards keep card and engine code off.
+            if rel.starts_with("proofs/") {
+                return None;
+            }
             Some((rel, fs::read_to_string(p).ok()?))
         })
         .collect()

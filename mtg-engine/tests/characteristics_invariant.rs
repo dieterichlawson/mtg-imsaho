@@ -90,10 +90,16 @@ fn is_face_binding(line: &str, pat: &str) -> bool {
         .any(|b| before.ends_with(b))
 }
 
+// `src/proofs` is left out: the proofs, built only under Kani, set their
+// boards up by writing the raw fields and state what a card must do in
+// terms of them, which is what this guards card and engine code against.
 fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
     for entry in std::fs::read_dir(dir).expect("src dir should be readable").flatten() {
         let p = entry.path();
         if p.is_dir() {
+            if p.ends_with("src/proofs") {
+                continue;
+            }
             walk(&p, out);
         } else if p.extension().is_some_and(|e| e == "rs") {
             out.push(p);
