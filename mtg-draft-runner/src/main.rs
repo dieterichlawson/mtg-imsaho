@@ -570,8 +570,8 @@ struct SavedMatch {
 
 /// Refuse an argument vector `parse_args` wouldn't fully consume, and hand
 /// back the `--model-N` / `--guide-N` flags it saw so their seat numbers can
-/// be range-checked once `--players` is known. Every lookup below is an
-/// exact-match position scan, so an unrecognized or misspelled flag was
+/// be range-checked once `--players` is known. Every lookup below is by
+/// exact name, so an unrecognized or misspelled flag was
 /// silently dropped and its default silently used — a typo'd `--model` drafted
 /// with a model nobody asked for, on a seat that bills per token.
 ///
@@ -695,11 +695,9 @@ fn parse_args() -> Args {
         model_overrides,
         guide_overrides,
         per_seat_flags,
-        supplied: args
-            .iter()
-            .filter(|a| a.starts_with("--"))
-            .cloned()
-            .collect(),
+        // The flags `validate_args` walked, not every word spelled like one:
+        // `--log --seed` gave no seed.
+        supplied: values.iter().map(|(flag, _)| flag.clone()).collect(),
     };
     parsed.resolve_seats(players);
     parsed

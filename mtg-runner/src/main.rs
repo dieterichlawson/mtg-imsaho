@@ -325,7 +325,7 @@ fn sweep_stale_hot_reload_saves() {
 }
 
 /// Refuse an argument vector the parser below wouldn't fully consume. Every
-/// lookup in `main` is an exact-match position scan, so an unrecognized or
+/// lookup in `main` is by exact name, so an unrecognized or
 /// misspelled flag used to be silently dropped and its default silently used —
 /// a typo'd --deck1 quietly played the wrong deck (issue #55).
 ///
