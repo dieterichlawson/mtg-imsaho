@@ -30,6 +30,10 @@ fn the_ledger_counts_every_reask_unreadable_reply_and_call_the_log_holds() {
         format!("{at}NO_ANSWER [Seat0]\tthe backend never answered"),
         format!("{at}FATAL seat 1, pack 2 pick 3: the worker panicked\t"),
         format!("{at}API_FATAL\tclaude -p failed after 6 attempts"),
+        // A resume under another setting, and the header's line for one
+        // under another guide (#948, #949).
+        format!("{at}NOTE --resume s.json: its system prompt is not the live one: it was made under MTG_LLM_HISTORY=0\t"),
+        "  ! seat 2: those picks were made under model cc, guide a.md, not model cc, no guide".to_string(),
     ].join("\n") + "\n").unwrap();
     let script = concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/draft-loop");
     let out = Command::new("python3")
@@ -48,5 +52,6 @@ fn the_ledger_counts_every_reask_unreadable_reply_and_call_the_log_holds() {
     // MALFORMED or NO_ANSWER.
     assert_eq!(h["panics"], 1, "{h}");
     assert_eq!(h["harness_chose"], 2, "{h}");
+    assert_eq!(h["prompt_unlike"], 2, "{h}");
     let _ = std::fs::remove_dir_all(&dir);
 }

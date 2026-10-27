@@ -456,7 +456,7 @@ fn a_resume_under_other_prompt_settings_says_so() {
     }
     let pod = Pod::new("settings");
     let saved = pod.finished_snapshot("snap.json");
-    for key in ["history", "text_answers", "game_text_answers", "pass_until"] {
+    for key in ["history", "text_answers", "game_text_answers", "pass_until", "reference"] {
         assert!(!saved["prompt"][key].is_null(), "the snapshot records {key}: {}", saved["prompt"]);
     }
     let game_text = saved["prompt"]["game_text_answers"].as_bool().unwrap();
@@ -473,8 +473,8 @@ fn a_resume_under_other_prompt_settings_says_so() {
             if game_text { "played under MTG_CLAUDE_CODE_ANSWERS=text, and the rest of this tournament is asked in the schema" }
             else { "played under MTG_CLAUDE_CODE_ANSWERS=schema, and the rest of this tournament is asked in text" }),
         ("MTG_LLM_PASS_UNTIL", if pass_until { "0" } else { "1" },
-            if pass_until { "played under MTG_LLM_PASS_UNTIL=1, and the rest of this tournament is played with the pass-until row off" }
-            else { "played under MTG_LLM_PASS_UNTIL=0, and the rest of this tournament is played with the pass-until row on" }),
+            if pass_until { "played under MTG_LLM_PASS_UNTIL=on, and the rest of this tournament is played with the pass-until row off" }
+            else { "played under MTG_LLM_PASS_UNTIL=off, and the rest of this tournament is played with the pass-until row on" }),
     ] {
         let log = format!("{var}.log");
         let out = pod.run_env(&["--resume", snap], &format!("{var}.calls"), &log, &[(var, value)]);
@@ -490,6 +490,16 @@ fn a_resume_under_other_prompt_settings_says_so() {
     let stderr = String::from_utf8_lossy(&same.stderr);
     assert!(same.status.success(), "{stderr}");
     assert!(!stderr.contains("not the live one"), "the same settings say nothing:\n{stderr}");
+
+    // #951: drafted about another set — a card's text, rarity or the set's
+    // name edited, a build with another card pool.
+    let mut other = saved.clone();
+    other["prompt"]["reference"] = "0000000000000000".into();
+    let other = pod.write("other-set.json", &other);
+    let out = pod.run(&["--resume", &other], "other.calls", "other.log");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(out.status.success(), "{stderr}");
+    assert!(stderr.contains("its system prompt is not the live one: the set this build reads"), "{stderr}");
 
     // A snapshot from before the record, with its guides recorded: the
     // rest is said to be unknown, not taken as agreement.

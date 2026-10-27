@@ -58,7 +58,10 @@ def main():
         out.append(f"\nWhat went wrong: {h['reasks']} re-asks, {h['unreadable']} replies no answer could be read from, "
                    f"{h['panics']} panics, fatal stops or invariant breaks, "
                    f"{h.get('harness_chose', 0)} game answers the harness chose for a seat, "
-                   f"{subs} picks and {decks} decks substituted for a seat. "
+                   f"{subs} picks and {decks} decks substituted for a seat"
+                   # A resume under another guide, setting or set (#948, #949).
+                   + (f", {h['prompt_unlike']} resume lines saying the night was asked under two system prompts"
+                      if h.get("prompt_unlike") else "") + ". "
                    f"The games made {h['game_calls']} calls: {h['out']} output tokens ({h['thinking']} thinking), "
                    f"{h['cache_read']} read from the cache, {h['cache_write']} written to it.")
     out += ["", "## Lessons", ""]

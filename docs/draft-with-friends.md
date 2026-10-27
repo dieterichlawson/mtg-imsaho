@@ -268,8 +268,9 @@ snapshot's seed, set, seats and match length win over the flags, and are
 checked as the flags would be. `--guide` and the `MTG_LLM_HISTORY`,
 `MTG_CLAUDE_CODE_DRAFT_ANSWERS`, `MTG_CLAUDE_CODE_ANSWERS` and
 `MTG_LLM_PASS_UNTIL` settings are not: pass `--guide` again on the resume.
-The snapshot records the guide (its path and a digest of its contents) and
-the settings the AI seats were asked under, and a resume under any other
+The snapshot records the guide (its path and a digest of its contents),
+the settings the AI seats were asked under and a digest of the set data
+(its name, card text and rarities), and a resume under any other
 prints `WARN --resume …: its system prompt is not the live one: …` on the
 terminal and in the log. The snapshot records a digest of the whole
 deal and each pick the card it took, so a build whose card pool has

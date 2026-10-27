@@ -523,23 +523,25 @@ pub struct TablePrompt {
 }
 
 impl TablePrompt {
-    /// What this process asks `seats`' AI seats under.
+    /// What this process asks `seats`' AI seats under, about the set
+    /// `reference` ([`crate::llm_client::reference_digest`]) names.
     #[must_use]
-    pub fn live(seats: &[SeatKind], guide_path: Option<&str>, guide_hash: Option<&str>) -> Self {
+    pub fn live(seats: &[SeatKind], guide_path: Option<&str>, guide_hash: Option<&str>, reference: &str) -> Self {
         Self {
             guide_path: guide_path.map(str::to_string),
             guide_hash: guide_hash.map(str::to_string),
             settings: crate::llm_client::DraftPromptSettings::live(seats.iter().filter_map(|k| match k {
                 SeatKind::Ai(model) => Some(model.as_str()),
                 _ => None,
-            })),
+            })).about(reference),
         }
     }
 
     /// How `live` differs from what the replayed picks were asked under,
-    /// one line each; nothing when no seat is an AI seat.
+    /// one line each; nothing when no seat is an AI seat. The game settings
+    /// only once a game was played (`games_played`).
     #[must_use]
-    pub fn unlike(&self, live: &Self) -> Vec<String> {
+    pub fn unlike(&self, live: &Self, games_played: bool) -> Vec<String> {
         let mut out = Vec::new();
         if live.settings.history.is_none() {
             return out;
@@ -555,7 +557,7 @@ impl TablePrompt {
             let (was, now) = if was == now { (format!("{was} as it was"), format!("{now} as it is now")) } else { (was, now) };
             out.push(format!("the AI seats' replayed picks were made under {was}, and the rest of this draft will be made under {now}: this draft is a mixture of the two"));
         }
-        out.extend(self.settings.unlike(&live.settings));
+        out.extend(self.settings.unlike(&live.settings, games_played));
         out
     }
 }
@@ -839,6 +841,9 @@ pub struct Lobby {
     ai_notes: Vec<Option<String>>,
     /// [`mtg_draft::pack::deal_digest`] of the packs dealt, for the snapshot.
     deal: String,
+    /// [`crate::llm_client::reference_digest`] of the set the AI seats are
+    /// asked about, for the snapshot (#951).
+    reference: String,
 }
 
 impl Lobby {
@@ -860,6 +865,8 @@ impl Lobby {
         }
         let table = Table::new(packs)?;
         let deal = mtg_draft::pack::deal_digest(packs);
+        let reference = crate::llm_client::reference_digest(set_data,
+            &crate::llm_client::build_card_reference(&set_data.all_card_names(), &registry));
         let book = CardBook::new(set_data, &registry, lines);
         let seats: Vec<SeatState> = config.seats.iter().enumerate().map(|(i, kind)| SeatState {
             kind: kind.clone(),
@@ -916,6 +923,7 @@ the order they happened, not in seat order", "");
             pick_log: Vec::new(),
             ai_notes: vec![None; pod],
             deal,
+            reference,
         })
     }
 
@@ -2063,7 +2071,7 @@ for the seat from here, and its games are forfeit"), ""));
                 .collect(),
             deal: Some(self.deal.clone()),
             prompt: Some(TablePrompt::live(&self.config.seats, self.config.guide_path.as_deref(),
-                self.config.guide_hash.as_deref())),
+                self.config.guide_hash.as_deref(), &self.reference)),
         }
     }
 

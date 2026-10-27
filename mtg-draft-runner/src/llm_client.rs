@@ -910,7 +910,7 @@ pub fn asks_in_text(spec: &str) -> bool {
 /// no note (#949). `None` where no seat's prompt carries it, or in a
 /// snapshot written before it was recorded. `MTG_LLM_THINKING` is not one,
 /// as on the game save: it changes the request, not what the seat is told.
-#[derive(serde::Serialize, serde::Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
+#[derive(serde::Serialize, serde::Deserialize, Clone, PartialEq, Eq, Debug, Default)]
 pub struct DraftPromptSettings {
     #[serde(default)]
     pub history: Option<usize>,
@@ -920,6 +920,9 @@ pub struct DraftPromptSettings {
     pub game_text_answers: Option<bool>,
     #[serde(default)]
     pub pass_until: Option<bool>,
+    /// [`reference_digest`] of the set the seats were asked about (#951).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference: Option<String>,
 }
 
 impl DraftPromptSettings {
@@ -933,13 +936,23 @@ impl DraftPromptSettings {
             text_answers: cc.then(draft_text_answers),
             game_text_answers: cc.then(mtg_player::llm::answer_text::text_answers),
             pass_until: ai.then(mtg_player::llm::pass_until_enabled),
+            reference: None,
         }
+    }
+
+    /// These settings, asked about the set `digest` names.
+    #[must_use]
+    pub fn about(mut self, digest: &str) -> Self {
+        self.reference = Some(digest.to_string());
+        self
     }
 
     /// How `live` differs from what the snapshot was made under, in
     /// `mtg-draft-replay`'s words; nothing where either side does not say.
+    /// The game settings only once a game was played (`games_played`): a
+    /// match in progress is played again from its first game.
     #[must_use]
-    pub fn unlike(&self, live: &Self) -> Vec<String> {
+    pub fn unlike(&self, live: &Self, games_played: bool) -> Vec<String> {
         let mut out = Vec::new();
         let how = |text: bool| if text { "in text" } else { "in the schema" };
         let format = |text: bool| if text { "text" } else { "schema" };
@@ -956,6 +969,14 @@ is made under {now}"));
 is asked {}", format(was), how(now)));
             }
         }
+        if let (Some(was), Some(now)) = (&self.reference, &live.reference) {
+            if was != now {
+                out.push(OTHER_SET.to_string());
+            }
+        }
+        if !games_played {
+            return out;
+        }
         if let (Some(was), Some(now)) = (self.game_text_answers, live.game_text_answers) {
             if was != now {
                 out.push(format!("its games were played under {}={}, and the rest of this tournament is \
@@ -965,7 +986,7 @@ asked {}", mtg_player::llm::answer_text::ANSWERS_ENV, format(was), how(now)));
         if let (Some(was), Some(now)) = (self.pass_until, live.pass_until) {
             if was != now {
                 out.push(format!("its games were played under {}={}, and the rest of this tournament is \
-played with the pass-until row {}", mtg_player::llm::PASS_UNTIL_ENV, if was { "1" } else { "0" }, on_off(now)));
+played with the pass-until row {}", mtg_player::llm::PASS_UNTIL_ENV, on_off(was), on_off(now)));
             }
         }
         out
@@ -988,14 +1009,23 @@ pub fn guide_digest(text: &str) -> String {
     format!("{h:016x}")
 }
 
-/// A digest of the set a draft seat's system prompt describes: its name and
-/// its card reference. Kept pick positions record it so a replay against
-/// another set file — a card removed, the name edited — says its system
-/// prompt is not the live one (#951).
+/// A digest of the set a draft seat is asked about: the set's name and
+/// card reference (the system prompt) and its rarities (the pack lines).
+/// Kept pick positions and both draft snapshots record it, so a replay or
+/// a resume against another set file or card pool — a card removed, its
+/// text or rarity changed, the name edited — says its system prompt is not
+/// the live one (#951).
 #[must_use]
-pub fn reference_digest(set_name: &str, card_reference: &str) -> String {
-    guide_digest(&format!("{set_name}\0{card_reference}"))
+pub fn reference_digest(set: &mtg_draft::set_data::SetData, card_reference: &str) -> String {
+    let mut rarities: Vec<String> = set.rarities().into_iter().map(|(name, r)| format!("{name}={r:?}")).collect();
+    rarities.sort();
+    guide_digest(&format!("{}\0{card_reference}\0{}", set.set_name, rarities.join("\0")))
 }
+
+/// Why a set digest that moved is another question, as the replay and
+/// both resumes say it.
+pub const OTHER_SET: &str = "the set this build reads (data/sets/<set>.json and the cards it implements) is not \
+the one it was asked about: another card list, card text, rarity or set name";
 
 /// The draft rules' answer note for a seat asked in text: the CLI has no
 /// schema to hold the answer to, so it is told the shape is the whole reply.

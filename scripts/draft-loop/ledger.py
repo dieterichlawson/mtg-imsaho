@@ -171,7 +171,7 @@ def log_health(path):
     if not path or not os.path.exists(path):
         return None
     h = {"reasks": 0, "unreadable": 0, "panics": 0, "harness_chose": 0, "game_calls": 0,
-         "out": 0, "thinking": 0, "cache_read": 0, "cache_write": 0}
+         "out": 0, "thinking": 0, "cache_read": 0, "cache_write": 0, "prompt_unlike": 0}
     # A game seat's re-ask is `REASK [SeatN]`, a pick's a bare `REASK`; a
     # draft reply with no answer in it is the backend's `API_WARN ... no
     # structured object`, the game seat's `UNREADABLE`; and a call whose
@@ -179,7 +179,11 @@ def log_health(path):
     # so the night said "0 calls" beside the runner's 1274 (#900).
     usage = re.compile(r"\tUSAGE \[.*out (\d+) thinking (\d+|n/a) cache_read (\d+) cache_write (\d+)")
     for line in open(path, encoding="utf-8", errors="replace"):
-        if re.search(r"\tREASK(\t| \[|$)", line):
+        # A resume under another guide, setting or set file: picks or
+        # matches of one night made under two system prompts (#948, #949).
+        if "its system prompt is not the live one" in line or "those picks were made under" in line:
+            h["prompt_unlike"] += 1
+        elif re.search(r"\tREASK(\t| \[|$)", line):
             h["reasks"] += 1
         elif "UNREADABLE" in line or ("API_WARN" in line and "no structured object" in line):
             h["unreadable"] += 1

@@ -71,24 +71,31 @@ fn a_table_resumed_without_its_guide_says_so() {
     let _ = std::fs::remove_dir_all(&files);
 }
 
-/// The settings besides the guide, said in `mtg-draft-replay`'s words; and
-/// a table with no AI seat has nothing to say about any of them.
+/// The settings besides the guide, said in `mtg-draft-replay`'s words; the
+/// game settings only once a game was played; and a table with no AI seat
+/// has nothing to say about any of them.
 #[test]
 fn a_table_prompt_names_each_setting_that_moved() {
     let ai = [SeatKind::Human, SeatKind::Ai("cc".into())];
-    let live = TablePrompt::live(&ai, None, None);
+    let live = TablePrompt::live(&ai, None, None, "set-a");
     let mut was = live.clone();
     was.settings.history = Some(live.settings.history.unwrap() + 2);
     was.settings.text_answers = live.settings.text_answers.map(|t| !t);
-    let said = was.unlike(&live);
-    assert_eq!(said.len(), 2, "{said:?}");
+    was.settings.pass_until = live.settings.pass_until.map(|p| !p);
+    was.settings.reference = Some("set-b".into());
+    let said = was.unlike(&live, false);
+    assert_eq!(said.len(), 3, "the draft's three, not the games' before a game was played: {said:?}");
     assert!(said[0].contains("MTG_LLM_HISTORY="), "{said:?}");
     assert!(said[1].contains("MTG_CLAUDE_CODE_DRAFT_ANSWERS="), "{said:?}");
-    assert!(live.unlike(&live).is_empty(), "the same settings say nothing");
+    assert!(said[2].contains("not the one it was asked about"), "{said:?}");
+    let said = was.unlike(&live, true);
+    assert_eq!(said.len(), 4, "{said:?}");
+    assert!(said[3].contains("MTG_LLM_PASS_UNTIL="), "{said:?}");
+    assert!(live.unlike(&live, true).is_empty(), "the same settings say nothing");
 
     let people = [SeatKind::Human, SeatKind::Human];
-    let mut was = TablePrompt::live(&people, Some("g.md"), Some("0123456789abcdef"));
+    let mut was = TablePrompt::live(&people, Some("g.md"), Some("0123456789abcdef"), "set-b");
     was.settings.history = Some(5);
-    assert!(was.unlike(&TablePrompt::live(&people, None, None)).is_empty(),
-        "no AI seat is asked anything: {:?}", was.unlike(&TablePrompt::live(&people, None, None)));
+    let said = was.unlike(&TablePrompt::live(&people, None, None, "set-a"), true);
+    assert!(said.is_empty(), "no AI seat is asked anything: {said:?}");
 }

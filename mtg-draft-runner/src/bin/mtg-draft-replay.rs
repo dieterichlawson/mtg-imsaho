@@ -54,7 +54,7 @@ fn load_set(key: &str, registry: &CardRegistry) -> LoadedSet {
     set.filter_implemented(registry);
     let reference = llm_client::build_card_reference(&set.all_card_names(), registry);
     LoadedSet {
-        digest: llm_client::reference_digest(&set.set_name, &reference),
+        digest: llm_client::reference_digest(&set, &reference),
         name: set.set_name.clone(),
         reference,
         lines: CardLines::new(&set.all_card_names(), &set.rarities(), registry),
@@ -80,7 +80,7 @@ fn main() {
         .unwrap_or_else(|e| die(&format!("cannot read --guide {p}: {e}"))));
     // What a line's system prompt was that this replay's is not: said once
     // a kind, by the line it was first seen on.
-    let mut said: Vec<&str> = Vec::new();
+    let mut said: Vec<String> = Vec::new();
     let (history, text_answers) = (mtg_player::llm::history_exchanges(), llm_client::draft_text_answers());
     let asks_in_text = llm_client::asks_in_text(&model);
 
@@ -116,12 +116,13 @@ fn main() {
                 format!("it was kept under {}={}, and this replay asks {}", llm_client::DRAFT_ANSWERS_ENV,
                     if text_answers { "schema" } else { "text" }, if text_answers { "in text" } else { "in the schema" })),
             ("reference", p["reference"].as_str().is_some_and(|d| d != set.digest),
-                format!("data/sets/{set_key}.json is not the set file it was kept under (another card list, card text \
-                         or set name), so its card reference and pack lines are another set's")),
+                llm_client::OTHER_SET.replace("<set>", &set_key)),
         ];
         for (kind, differs, why) in unlike {
-            if differs && !said.contains(&kind) {
-                said.push(kind);
+            // Once a kind; a set, once a set: a file can mix them.
+            let key = if kind == "reference" { format!("{kind} {set_key}") } else { kind.to_string() };
+            if differs && !said.contains(&key) {
+                said.push(key);
                 eprintln!("mtg-draft-replay: {positions} line {}: its system prompt is not the live one: {why}", id + 1);
             }
         }

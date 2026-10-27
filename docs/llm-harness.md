@@ -534,9 +534,9 @@ round, the deck builds and every match, and `--resume <path>` carries on
 from one: the recorded picks are replayed without a model call, the decks
 are used as built and the finished matches are counted. A build that deals
 other packs from the snapshot's seed (its card pool changed) is refused.
-The guides and the `MTG_LLM_HISTORY`, answer-format and pass-until settings
-are the resuming run's; the snapshot records what its picks and matches
-were made under, and a difference is said on stderr and in the log (a
+The guides, the `MTG_LLM_HISTORY`, answer-format and pass-until settings
+and the set data are the resuming run's; the snapshot records what its
+picks and matches were made under, and a difference is said on stderr and in the log (a
 guide as a `WARN`, a setting as "its system prompt is not the live one").
 
 `scripts/draft-loop/night.sh` is this run as a nightly routine plays it:
@@ -582,8 +582,8 @@ one outright. A pick replays as the prompt it was live on any build that
 renders pick prompts as the drafting build did
 (`mtg-draft-runner/tests/kept_picks_replay.rs`). A position records its
 seat's guide, the `MTG_LLM_HISTORY` and the `MTG_CLAUDE_CODE_DRAFT_ANSWERS`
-it was asked under and a digest of the set it described (its name and card
-reference), and is asked again under that guide;
+it was asked under and a digest of the set it described (its name, card
+reference and rarities), and is asked again under that guide;
 `mtg-draft-replay --guide FILE` asks every position under one file instead.
 A position whose system prompt the replay cannot make as it was live (kept
 before guides were recorded, or replayed under another history, answer

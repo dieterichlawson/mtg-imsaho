@@ -111,11 +111,11 @@ Options:
                          re-dealt from the seed, so the position is exact; a build
                          that deals other packs from it is refused.
                          Its decks are used as built, and its finished matches
-                         are counted, not replayed: the standings mark them
-                         The guides and the MTG_LLM_HISTORY, answer-format and
-                         pass-until settings are this run's; the snapshot
-                         records the ones it was made under, and a difference
-                         is said on stderr and in the log
+                         are counted, not replayed: the standings mark them.
+                         The guides, the MTG_LLM_HISTORY, answer-format and
+                         pass-until settings and the set data are this run's;
+                         the snapshot records the ones it was made under, and
+                         a difference is said on stderr and in the log
   --log <path>           Write the run log here  (default draft.log)
   --quiet, -q            Suppress progress output
   --help, -h             Print this help and exit
@@ -897,34 +897,17 @@ length its matches were played at", args.best_of);
         .unwrap_or_default();
     for (seat, was, now) in &replayed_under {
         let (was, now) = SeatPolicy::describe_pair(was, now);
-        mtg_player::stderr_line!("WARN: seat {seat}'s replayed picks were made under {}, and the rest of \
-this draft will be made under {} — this draft is a mixture of the two",
+        // The phrase `mtg-draft-replay` and the hosted table use (#948's review).
+        mtg_player::stderr_line!("WARN: seat {seat}: its system prompt is not the live one: its replayed picks \
+were made under {}, and the rest of this draft will be made under {} — this draft is a mixture of the two",
             was, now);
     }
     if let Some(save) = &resumed {
         if save.seats.is_empty() && !save.picks.is_empty() {
-            mtg_player::stderr_line!("note: this snapshot predates the guide/model record, so what its \
-{} replayed picks were made under is unknown", save.picks.len());
-        }
-        // The settings besides the guide that change a seat's system prompt,
-        // said in the words `mtg-draft-replay` uses for kept positions (#949).
-        if !save.picks.is_empty() {
-            let path = args.resume.as_deref().unwrap_or_default();
-            let notes = match &save.prompt {
-                Some(was) => was.unlike(&llm_client::DraftPromptSettings::live(args.models.iter().map(String::as_str)))
-                    .into_iter()
-                    .map(|why| format!("--resume {path}: its system prompt is not the live one: {why}"))
-                    .collect(),
-                // Its guides are checked above; the rest is unknown.
-                None if !save.seats.is_empty() => vec![format!("--resume {path}: this snapshot predates the \
-MTG_LLM_HISTORY / answer-format / pass-until record, so whether its replayed picks and matches were made \
-under these settings is unknown")],
-                None => Vec::new(),
-            };
-            for note in notes {
-                mtg_player::stderr_line!("note: {note}");
-                resume_notes.push(note);
-            }
+            let note = format!("this snapshot predates the guide/model record, so what its {} replayed \
+picks were made under is unknown", save.picks.len());
+            mtg_player::stderr_line!("note: {note}");
+            resume_notes.push(note);
         }
     }
 
@@ -945,6 +928,32 @@ under these settings is unknown")],
             "Warning: {} not implemented, removed from draft pool",
             mtg_draft_runner::count(removed.len(), "card", "cards")
         );
+    }
+
+    // What the seats are asked under now, set included: the settings
+    // besides the guide that change a seat's system prompt, said in the
+    // words `mtg-draft-replay` uses for kept positions (#949, #951).
+    let card_reference = llm_client::build_card_reference(&set_data.all_card_names(), &registry);
+    let reference_digest = llm_client::reference_digest(&set_data, &card_reference);
+    let live_prompt = llm_client::DraftPromptSettings::live(args.models.iter().map(String::as_str))
+        .about(&reference_digest);
+    if let Some(save) = resumed.as_ref().filter(|s| !s.picks.is_empty()) {
+        let path = args.resume.as_deref().unwrap_or_default();
+        let notes = match &save.prompt {
+            Some(was) => was.unlike(&live_prompt, !save.matches.is_empty())
+                .into_iter()
+                .map(|why| format!("--resume {path}: its system prompt is not the live one: {why}"))
+                .collect(),
+            // Its guides are checked above; the rest is unknown.
+            None if !save.seats.is_empty() => vec![format!("--resume {path}: this snapshot predates the \
+MTG_LLM_HISTORY / answer-format / pass-until / set record, so whether its replayed picks and matches were \
+made under these is unknown")],
+            None => Vec::new(),
+        };
+        for note in notes {
+            mtg_player::stderr_line!("note: {note}");
+            resume_notes.push(note);
+        }
     }
 
     let sheets = SheetData::from_set_data(&set_data).unwrap_or_else(|e| {
@@ -1073,8 +1082,6 @@ resume with the --best-of its run was played at)", args.best_of) };
     }
 
     // Build card reference with oracle text for all cards in the set
-    let card_reference = llm_client::build_card_reference(&set_data.all_card_names(), &registry);
-    let reference_digest = llm_client::reference_digest(&set_data.set_name, &card_reference);
 
     // Create LLM clients for each drafter (each may use a different model)
     // What a seat has to know about the table it is at, which used to be an
@@ -1151,7 +1158,7 @@ resume with the --best-of its run was played at)", args.best_of) };
             best_of: Some(args.best_of),
             notes,
             deal: Some(deal.clone()),
-            prompt: Some(llm_client::DraftPromptSettings::live(args.models.iter().map(String::as_str))),
+            prompt: Some(live_prompt.clone()),
         };
         // Write-then-rename: a snapshot half-written when the run dies is
         // worse than none, because it looks resumable.
