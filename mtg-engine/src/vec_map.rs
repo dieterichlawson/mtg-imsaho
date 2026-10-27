@@ -157,4 +157,45 @@ impl<K: Ord, V> VecMap<K, V> {
     pub fn values_mut(&mut self) -> impl Iterator<Item = &mut V> {
         self.entries.iter_mut().map(|(_, v)| &mut **v)
     }
+
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
+    /// As `BTreeMap::entry`, for `or_insert`, the one use the engine has.
+    pub fn entry(&mut self, key: K) -> Entry<'_, K, V> {
+        Entry { map: self, key }
+    }
+}
+
+/// A place in a [`VecMap`] for a key, there or not, as `BTreeMap`'s entry.
+pub struct Entry<'a, K, V> {
+    map: &'a mut VecMap<K, V>,
+    key: K,
+}
+
+impl<'a, K: Ord, V> Entry<'a, K, V> {
+    /// The key's value, `default` inserted first if there was none.
+    pub fn or_insert(self, default: V) -> &'a mut V {
+        let i = match self.map.find(&self.key) {
+            Ok(i) => i,
+            Err(i) => {
+                self.map.entries.insert(i, (self.key, Box::new(default)));
+                i
+            }
+        };
+        &mut *self.map.entries[i].1
+    }
+}
+
+impl<'a, K, V> IntoIterator for &'a VecMap<K, V> {
+    type Item = (&'a K, &'a V);
+    type IntoIter = std::iter::Map<std::slice::Iter<'a, (K, Box<V>)>, fn(&'a (K, Box<V>)) -> (&'a K, &'a V)>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        fn pair<K, V>(e: &(K, Box<V>)) -> (&K, &V) {
+            (&e.0, &*e.1)
+        }
+        self.entries.iter().map(pair as fn(&'a (K, Box<V>)) -> (&'a K, &'a V))
+    }
 }

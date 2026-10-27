@@ -1,5 +1,5 @@
-//! `VecMap`, which a Kani build keeps the engine's objects and card names
-//! in, is an ordered map: what `BTreeMap` is documented to be.
+//! `VecMap`, which a Kani build keeps the engine's objects, card names and
+//! counters in, is an ordered map: what `BTreeMap` is documented to be.
 //!
 //! The reference is the plainest ordered map there is, an array indexed by
 //! key: a key holds the value last inserted for it until it is removed, and
@@ -10,7 +10,8 @@
 //! map built by `new` does. Each proof here starts from any map holding any
 //! reference's entries (every subset of [`KEYS`] keys, any values, put in
 //! in key order) and applies one operation (an insert, a remove, a lookup,
-//! a write through `get_mut` or through `values_mut`) on any key and value. The operation returns what the reference says
+//! a write through `get_mut`, `values_mut` or `entry(..).or_insert(..)`, a
+//! `clear`) on any key and value. The operation returns what the reference says
 //! (`insert` and `remove` the value that was there), and the map holds the
 //! changed reference's entries afterwards, as `iter`, `keys`, `values` and
 //! `len` read them. So every sequence of operations, of any length, answers
@@ -145,4 +146,41 @@ fn values_mut_reaches_every_value_in_key_order() {
         *v = v.wrapping_add(add);
     }
     assert!(agrees(&map, &reference));
+}
+
+/// `entry(key).or_insert(default)` reaches the key's value, `default` put
+/// there first when it held none, and a write through it is the key's new
+/// value.
+#[kani::proof]
+#[kani::unwind(5)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+fn or_insert_reaches_the_keys_value_inserting_the_default_first() {
+    let (mut map, mut reference) = any_map();
+    let (k, key) = any_key();
+    let (default, value): (u8, u8) = (kani::any(), kani::any());
+    let v = map.entry(key).or_insert(default);
+    assert!(*v == reference[k].unwrap_or(default));
+    *v = value;
+    reference[k] = Some(value);
+    assert!(agrees(&map, &reference));
+    kani::cover!(map.len() == KEYS, "every key held");
+}
+
+/// `clear` leaves no key holding a value.
+#[kani::proof]
+#[kani::unwind(5)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+fn clearing_a_vec_map_leaves_it_empty() {
+    let (mut map, _) = any_map();
+    map.clear();
+    assert!(agrees(&map, &[None; KEYS]));
+}
+
+/// Iterating `&map` is iterating `map.iter()`.
+#[kani::proof]
+#[kani::unwind(5)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+fn iterating_a_reference_is_iter() {
+    let (map, _) = any_map();
+    assert!((&map).into_iter().eq(map.iter()));
 }
