@@ -227,7 +227,7 @@ card_proof! {
         if returnable.is_empty() {
             assert!(acted() == 0);
         } else {
-            assert!(acted() == 2 && super::Some(&Act::Random(super::listed(&returnable), 1)) == act(0));
+            assert!(acted() == 2 && Some(&Act::Random(super::listed(&returnable), 1)) == super::act(0));
             let Some(Act::Move(id, Zone::Hand)) = super::act(1) else { panic!("returns it to the hand") };
             assert!(returnable.contains(id));
         }

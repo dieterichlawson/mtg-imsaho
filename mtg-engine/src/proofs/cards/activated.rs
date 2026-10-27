@@ -1218,7 +1218,7 @@ card_proof! {
         b.state.resolving_ability_activator = Some(activator);
         let n = acted();
         b.registry.get(card).expect("registered").resolve_activated_ability(&mut b.state, b.me, index, &[], &b.registry);
-        assert!(acted() == n + 1 && super::Some(&Act::TokenCopy(named, activator)) == act(n));
+        assert!(acted() == n + 1 && Some(&Act::TokenCopy(named, activator)) == super::act(n));
         assert!(Snapshot::of(&b.state) == before);
         std::mem::forget(b);
     }
@@ -1554,15 +1554,15 @@ card_proof! {
                 assert!(options.len() == 2 && options[0] == Target::Object(exilable[0]) && options[1] == Target::Object(exilable[1]));
                 let chosen = exilable[usize::from(kani::any::<bool>())];
                 b.registry.get(haunt).expect("registered").resolve_card_effect(&mut b.state, b.me, "", &Target::Object(chosen), &b.registry);
-                assert!(acted() == 2 && super::Some(&Act::Move(chosen, Zone::Exile)) == act(1));
+                assert!(acted() == 2 && Some(&Act::Move(chosen, Zone::Exile)) == super::act(1));
             }
         }
         let n = acted();
         b.registry.get(haunt).expect("registered").resolve_activated_ability(&mut b.state, b.me, 1, &[], &b.registry);
-        assert!(acted() == n + 1 && super::Some(&Act::Tokens {
+        assert!(acted() == n + 1 && Some(&Act::Tokens {
             n: 1, controller: b.you, power: 1, toughness: 1, colors: vec![Color::White],
             types: vec![CardType::Creature], keywords: vec![Keyword::Flying], subtypes: vec!["Spirit".into()],
-        }) == act(n));
+        }) == super::act(n));
         assert!(Snapshot::of(&b.state) == before);
         std::mem::forget((b, exilable));
     }

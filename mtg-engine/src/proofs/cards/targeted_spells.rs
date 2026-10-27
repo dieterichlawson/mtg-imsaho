@@ -545,7 +545,7 @@ card_proof! {
                 let chosen = if kani::any() { *a } else { *c };
                 let card = b.get(b.spell).card_id;
                 b.registry.get(card).expect("registered").resolve_card_effect(&mut b.state, b.spell, "", &Target::Object(chosen), &b.registry);
-                assert!(super::Some(&Act::Move(chosen, Zone::Exile)) == act(1) && acted() == 2);
+                assert!(Some(&Act::Move(chosen, Zone::Exile)) == super::act(1) && acted() == 2);
             }
             _ => {
                 assert!(acted() == 0);
@@ -583,9 +583,9 @@ card_proof! {
             let toughness = b.state.effective_toughness(chosen, &b.registry).unwrap_or(0);
             let card = b.get(b.spell).card_id;
             b.registry.get(card).expect("registered").resolve_card_effect(&mut b.state, b.spell, "", &Target::Object(chosen), &b.registry);
-            assert!(super::Some(&Act::Sacrifice(chosen)) == act(1));
+            assert!(Some(&Act::Sacrifice(chosen)) == super::act(1));
             if toughness > 0 {
-                assert!(acted() == 3 && super::Some(&Act::Life(PlayerId(0), toughness)) == act(2));
+                assert!(acted() == 3 && Some(&Act::Life(PlayerId(0), toughness)) == super::act(2));
             } else {
                 assert!(acted() == 2);
             }

@@ -195,7 +195,7 @@ card_proof! {
                 Some(Act::Pay(p, paid_cost, paid)) => {
                     assert!(yes && *p == b.you && *paid_cost == cost);
                     if *paid {
-                        assert!(acted() == 2 && super::Some(&Act::Transform(b.me)) == act(1));
+                        assert!(acted() == 2 && Some(&Act::Transform(b.me)) == super::act(1));
                     } else {
                         assert!(acted() == 1);
                     }
@@ -301,7 +301,7 @@ card_proof! {
         let hand: Vec<ObjectId> = b.state.objects_in_zone(Zone::Hand, b.you).iter().map(|o| o.id).collect();
         let bears_in_hand: Vec<bool> = hand.iter().map(|id| b.state.get_object(*id).expect("on the board").card_id == bears).collect();
         let creature_card = |id: ObjectId| hand.iter().zip(&bears_in_hand).any(|(h, is)| *h == id && *is);
-        assert!(super::Some(&Act::Draw(b.you, 1)) == act(0));
+        assert!(Some(&Act::Draw(b.you, 1)) == super::act(0));
         match hand.as_slice() {
             [] => {
                 assert!(acted() == 1);
