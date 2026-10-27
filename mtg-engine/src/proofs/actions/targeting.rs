@@ -67,6 +67,7 @@ fn two_objects(state: &mut GameState, blank: crate::ids::CardId) -> [ObjectId; 2
 
 #[kani::proof]
 #[kani::unwind(7)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(crate::state::GameState::is_creature, is_creature)]
 #[kani::stub(crate::engine::matches_target_filter, matches_filter)]
@@ -106,6 +107,7 @@ fn on_battlefield(state: &GameState, id: ObjectId) -> bool {
 
 #[kani::proof]
 #[kani::unwind(7)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(crate::engine::matches_target_filter, matches_filter)]
 #[kani::stub(crate::engine::can_be_targeted_by, can_be_targeted)]
@@ -138,6 +140,7 @@ fn a_filtered_permanent_requirement_offers_the_permanents_that_pass() {
 
 #[kani::proof]
 #[kani::unwind(7)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(crate::state::GameState::is_creature, is_creature)]
 #[kani::stub(crate::state::GameState::has_card_type, has_card_type)]
@@ -179,6 +182,7 @@ fn any_target_offers_creatures_planeswalkers_and_players_that_pass() {
 
 #[kani::proof]
 #[kani::unwind(7)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(crate::state::GameState::has_card_type, has_card_type)]
 #[kani::stub(crate::engine::can_be_targeted_by, can_be_targeted)]

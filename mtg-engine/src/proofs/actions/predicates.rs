@@ -200,6 +200,7 @@ fn has_protection_from(_: &GameState, target: ObjectId, _: ObjectId, _: &crate::
 
 #[kani::proof]
 #[kani::unwind(7)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(crate::state::GameState::has_keyword, has_keyword)]
 #[kani::stub(crate::state::GameState::has_protection_from, has_protection_from)]
