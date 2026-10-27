@@ -62,9 +62,9 @@ def list_harnesses(src):
             if t[m.start()-13:m.start()].endswith('macro_rules! '): continue
             body = t[m.end()-1:block(t, m.end()-1)+1]
             n = re.search(r'\bfn (\w+)\(\)', body)
-            if n and not body.lstrip('{').strip().startswith('('):
-                # skip the definitions' own `fn $name()` patterns
-                if '$' not in n.group(0): out.append(path + '::' + n.group(1))
+            # A body with a `$` is a macro's own use of the macro, not a proof.
+            if n and not body.lstrip('{').strip().startswith('(') and '$' not in body:
+                out.append(path + '::' + n.group(1))
         for m in re.finditer(r'#\[kani::proof\][^\n]*\n(?:\s*#\[[^\n]*\n)*\s*(?:pub )?fn (\w+)', t):
             out.append(path + '::' + m.group(1))
         for m in re.finditer(r'\bfor_each_form!\s*\{', t):
