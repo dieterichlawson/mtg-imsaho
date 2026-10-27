@@ -54,7 +54,7 @@ KANI_LIB = f'{K}/library/kani/kani_lib.c'
 # harnesses with (abilities!, statics!, equipment!, ...). `cargo kani list`
 # says the same at the price of building every harness, gigabytes of goto
 # files.
-TABLES = {'abilities', 'declares', 'werewolves', 'mana', 'statics', 'check_land', 'choosing_at_random'}
+TABLES = {'abilities', 'declares', 'werewolves', 'mana', 'statics', 'check_land', 'choosing_at_random', 'for_each_size'}
 FORMS = {'reaches_what_it_describes', 'holds_exactly_then'}
 def block(text, i):
     # text[i] is an opening bracket; return the index of its match
@@ -91,7 +91,7 @@ def list_harnesses(src):
             n = re.search(r'\bfn (\w+)\(form\)', body)
             if n: out += [path + '::' + n.group(1) + '::of_a_card', path + '::' + n.group(1) + '::of_a_token']
         for name in TABLES | FORMS:
-            for m in re.finditer(r'(?<!macro_rules! )\b' + name + r'!\s*\{', t):
+            for m in re.finditer(r'(?<!macro_rules! )\b' + name + r'!\s*[{(]', t):
                 body = t[m.end()-1:block(t, m.end()-1)+1]
                 for e in re.finditer(r'(?m)^\s{4}(\w+):', body):
                     if name in FORMS:
