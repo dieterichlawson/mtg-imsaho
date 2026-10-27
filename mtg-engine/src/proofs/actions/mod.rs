@@ -7,6 +7,7 @@ mod effects;
 mod library;
 mod pending_effects;
 mod predicates;
+mod random;
 mod scopes;
 mod simple_actions;
 mod targeting;
