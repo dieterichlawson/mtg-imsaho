@@ -266,6 +266,25 @@ fn discarding_a_card_not_in_a_hand_does_nothing() {
     assert!(state.events.is_empty(), "nothing discarded, nothing announced");
 }
 
+/// CR 701.3a: attaching takes the permanent "from where it currently is"
+/// and puts it onto the new object. `attach` took it off an object it was
+/// on but not off a player, so one attached to a player came out on both.
+/// Only Auras and Equipment are attached with it, never something on a
+/// player, so no game reached it; the attach proof in `proofs::actions`
+/// holds for every object now that the function does what the rule says.
+#[test]
+fn attaching_takes_it_off_the_player_it_was_on() {
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    let aura = ready_creature(&mut state, P0, 1, 1);
+    state.get_object_mut(aura).unwrap().attached_to_player = Some(P1);
+
+    assert!(state.attach(aura, creature));
+    let o = state.get_object(aura).unwrap();
+    assert_eq!(o.attached_to, Some(creature));
+    assert_eq!(o.attached_to_player, None, "taken from where it was, a player");
+}
+
 /// The leaves-the-battlefield log line names the destination: "died" for the
 /// graveyard, "was exiled" for exile — and only for a creature leaving the
 /// BATTLEFIELD. A card moving hand → graveyard did not die.

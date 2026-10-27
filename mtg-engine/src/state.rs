@@ -3826,7 +3826,9 @@ impl GameState {
     ///
     /// Otherwise CR 702.6c: attaching it to a second object moves it off the
     /// first. That is the same "stop being attached" event, so it goes
-    /// through `unattach` and gets the same line.
+    /// through `unattach` and gets the same line. And CR 701.3a takes it
+    /// "from where it currently is", which may be a player (a Curse) as
+    /// well as an object, so it comes off a player the same way.
     ///
     /// Returns whether the attachment changed.
     pub fn attach(&mut self, id: ObjectId, host: ObjectId) -> bool {
@@ -3835,6 +3837,7 @@ impl GameState {
             return false;
         }
         self.unattach(id);
+        self.unattach_from_player(id);
         if let Some(obj) = self.get_object_mut(id) {
             obj.attached_to = Some(host);
         }
