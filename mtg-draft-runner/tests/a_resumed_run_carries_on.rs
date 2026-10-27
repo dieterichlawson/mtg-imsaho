@@ -510,7 +510,7 @@ fn a_resume_under_other_prompt_settings_says_so() {
     let out = pod.run(&["--resume", &old], "old.calls", "old.log");
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(out.status.success(), "{stderr}");
-    assert!(stderr.contains("predates the MTG_LLM_HISTORY / answer-format / pass-until record"), "{stderr}");
+    assert!(stderr.contains("predates the MTG_LLM_HISTORY / answer-format / pass-until / set record"), "{stderr}");
 }
 
 /// #950: a guide edited in place keeps its path, and the warning named the
