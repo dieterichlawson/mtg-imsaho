@@ -1109,7 +1109,12 @@ pub fn blank_board() -> (CardRegistry, GameState, CardId) {
 /// unconditionally first, every later push lands in the one buffer.
 pub(crate) fn new_game() -> GameState {
     let mut state = GameState::new(2);
-    state.objects.reserve(8);
+    // Seven, not eight: an object's entry is 568 bytes, and a buffer of
+    // more than 4096 is one CBMC no longer follows field by field
+    // (`--max-field-sensitivity-array-size`, `scripts/prove.sh`), which
+    // made every read of an object one of the whole buffer; a board-only
+    // proof went from seconds to past fifteen minutes.
+    state.objects.reserve(7);
     state.until_end_of_turn.reserve(8);
     state.events.reserve(8);
     state.pending_damage.reserve(4);
