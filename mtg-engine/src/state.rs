@@ -3614,12 +3614,13 @@ impl GameState {
     /// granted at runtime. Union, not override — see the module rule above.
     #[must_use]
     pub fn card_types_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<crate::types::CardType> {
-        let mut types = self.get_object(id).map(|o| o.card_types.clone()).unwrap_or_default();
-        if let Some(data) = self.face_data(id, registry) {
-            for t in data.card_types {
-                if !types.contains(&t) {
-                    types.push(t);
-                }
+        let Some(obj) = self.get_object(id) else { return Vec::new() };
+        let face = registry.printed_card_types(obj.card_id, obj.is_transformed);
+        let mut types = Vec::with_capacity(obj.card_types.len() + face.len() + 1);
+        types.extend_from_slice(&obj.card_types);
+        for t in face {
+            if !types.contains(t) {
+                types.push(*t);
             }
         }
         // CR 205.1b: power and toughness belong to creatures, so an object
@@ -3641,7 +3642,12 @@ impl GameState {
     /// Whether the object has the given card type on its active face.
     #[must_use]
     pub fn has_card_type(&self, id: ObjectId, card_type: crate::types::CardType, registry: &crate::cards::CardRegistry) -> bool {
-        self.card_types_of(id, registry).contains(&card_type)
+        // `card_types_of(id).contains(card_type)`, asked of each part of the
+        // union without building it.
+        let Some(obj) = self.get_object(id) else { return false };
+        obj.card_types.contains(&card_type)
+            || registry.printed_card_types(obj.card_id, obj.is_transformed).contains(&card_type)
+            || (card_type == crate::types::CardType::Creature && obj.power.is_some())
     }
 
     /// The player a Curse is attached to, falling back to the player it was
@@ -3747,9 +3753,9 @@ impl GameState {
     /// Whether the object has the given subtype on its active face.
     #[must_use]
     pub fn has_subtype(&self, id: ObjectId, subtype: &str, registry: &crate::cards::CardRegistry) -> bool {
-        self.get_object(id).is_some_and(|o| o.subtypes.iter().any(|s| s == subtype))
-            || self.face_data(id, registry)
-                .is_some_and(|d| d.subtypes.iter().any(|s| s == subtype))
+        let Some(obj) = self.get_object(id) else { return false };
+        obj.subtypes.iter().any(|s| s == subtype)
+            || registry.printed_subtypes(obj.card_id, obj.is_transformed).iter().any(|s| s == subtype)
     }
 
     /// CR 301.5: an Equipment is an artifact with the Equipment subtype.

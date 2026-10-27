@@ -1131,6 +1131,8 @@ struct PrintedCard {
 struct PrintedFace {
     continuous_effects: Vec<ContinuousEffect>,
     keywords: Vec<Keyword>,
+    card_types: Vec<CardType>,
+    subtypes: Vec<String>,
 }
 
 impl Default for CardRegistry {
@@ -1168,10 +1170,14 @@ impl CardRegistry {
             front: PrintedFace {
                 continuous_effects: data.continuous_effects,
                 keywords: data.keywords,
+                card_types: data.card_types,
+                subtypes: data.subtypes,
             },
             back: back.map(|d| PrintedFace {
                 continuous_effects: d.continuous_effects,
                 keywords: d.keywords,
+                card_types: d.card_types,
+                subtypes: d.subtypes,
             }),
         });
         self.cards.push(card);
@@ -1244,6 +1250,29 @@ impl CardRegistry {
             return Some(card.back.as_ref().map_or(&[], |b| b.keywords.as_slice()));
         }
         Some(&card.front.keywords)
+    }
+
+    /// The card types printed on the face `GameState::face_data` reads: the
+    /// back face when `transformed` and the card has one, the front face
+    /// otherwise; none for a card not in the registry. Read off the faces
+    /// kept at registration rather than by building the card's data again,
+    /// which the characteristics layer did once per question.
+    #[must_use]
+    pub fn printed_card_types(&self, id: CardId, transformed: bool) -> &[CardType] {
+        self.printed_face(id, transformed).map_or(&[], |f| f.card_types.as_slice())
+    }
+
+    /// The subtypes printed on that face, as [`Self::printed_card_types`].
+    #[must_use]
+    pub fn printed_subtypes(&self, id: CardId, transformed: bool) -> &[String] {
+        self.printed_face(id, transformed).map_or(&[], |f| f.subtypes.as_slice())
+    }
+
+    /// The face `GameState::face_data` reads (CR 712.8a, and a transformed
+    /// card with no back face showing its front).
+    fn printed_face(&self, id: CardId, transformed: bool) -> Option<&PrintedFace> {
+        let card = self.printed_card(id)?;
+        Some(if transformed { card.back.as_ref().unwrap_or(&card.front) } else { &card.front })
     }
 
     fn printed_card(&self, id: CardId) -> Option<&PrintedCard> {
