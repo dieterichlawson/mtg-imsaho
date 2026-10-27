@@ -94,16 +94,17 @@ fn drawing_n_puts_the_top_n_cards_into_the_hand_in_order() {
 
 /// Stands in for `GameState::move_object` for a card leaving a library:
 /// recorded, and gone from its owner's library order, as `move_object`
-/// takes it (its own proof says so), and nothing else.
+/// takes it (its own proof says so), and nothing else. A library lists a
+/// card once, so taking out the one place it is is `move_object`'s
+/// `retain`, which CBMC follows far less cheaply.
 #[allow(dead_code)] // named only by `kani::stub`
 fn move_off_the_library(state: &mut GameState, id: ObjectId, to: Zone, registry: &CardRegistry) -> bool {
     crate::proofs::cards::record_move(state, id, to, registry);
     let owner = state.get_object(id).expect("a card in a library").owner;
     // A branch on the player, not an index by it: `any_object` says why.
-    if owner == PlayerId(0) {
-        state.players[0].library_order.retain(|c| *c != id);
-    } else {
-        state.players[1].library_order.retain(|c| *c != id);
+    let library = if owner == PlayerId(0) { &mut state.players[0].library_order } else { &mut state.players[1].library_order };
+    if let Some(i) = library.iter().position(|c| *c == id) {
+        library.remove(i);
     }
     true
 }
