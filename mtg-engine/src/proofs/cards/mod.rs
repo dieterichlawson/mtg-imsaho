@@ -780,6 +780,29 @@ pub fn objects_in_zone_in_id_order(state: &GameState, zone: Zone, player: Player
 #[allow(dead_code)] // named only by `kani::stub`
 pub fn no_log(_: &mut GameState, _: crate::state::LogLevel, _: String) {}
 
+/// Stands in for the global allocator's growing an allocation, which every
+/// `Vec` and `String` that outgrows its capacity asks for: a failure, so
+/// that a proof that passes is one in which no list outgrew the capacity
+/// it was given, and this was never called.
+///
+/// Why: whether a list is full is a question CBMC cannot answer before it
+/// encodes the answer yes. `push` and `extend` grow a list that is full,
+/// so at every push it cannot prove lands in room it encodes the growing:
+/// a buffer of a size the data decides, and a copy into it of a length the
+/// data decides. Collecting a filtered list of three numbers took 59
+/// million clauses with that and 0.7 million with this; a proof whose
+/// lists do need to grow fails, naming this, rather than passing.
+#[allow(dead_code)] // named only by `kani::stub`
+pub fn no_growing(
+    _: &std::alloc::Global,
+    _: std::ptr::NonNull<u8>,
+    _: std::alloc::Layout,
+    _: std::alloc::Layout,
+    _: bool,
+) -> Result<std::ptr::NonNull<[u8]>, std::alloc::AllocError> {
+    panic!("a list grew past the capacity it was given")
+}
+
 /// Stands in for `std::fmt::format`: the game log is for people, and no
 /// rule reads it.
 #[allow(dead_code)] // named only by `kani::stub`
@@ -816,6 +839,7 @@ macro_rules! card_proof {
         #[kani::proof]
         #[kani::unwind($n)]
         #[kani::stub(std::fmt::format, $crate::proofs::cards::no_format)]
+        #[kani::stub(alloc::alloc::Global::grow_impl_runtime, $crate::proofs::cards::no_growing)]
         #[kani::stub($crate::state::GameState::log, $crate::proofs::cards::no_log)]
         #[kani::stub($crate::state::GameState::objects_in_zone, $crate::proofs::cards::objects_in_zone_in_id_order)]
         #[kani::stub($crate::engine::apply_pending_effect, $crate::proofs::cards::record_effect)]

@@ -17,6 +17,7 @@ macro_rules! action_proof {
         #[kani::proof]
         #[kani::unwind(7)]
         #[kani::stub(std::fmt::format, $crate::proofs::cards::no_format)]
+        #[kani::stub(alloc::alloc::Global::grow_impl_runtime, $crate::proofs::cards::no_growing)]
         #[kani::stub($crate::damage::deal_damage, $crate::proofs::cards::record_damage)]
         #[kani::stub($crate::destruction::try_destroy, $crate::proofs::cards::record_destroy)]
         fn $name() $body
