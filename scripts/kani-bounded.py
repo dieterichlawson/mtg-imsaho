@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/kani-bounded.py [NAME...] [--results FILE] [--batch N] [--timeout S] [--bound B]
+"""scripts/kani-bounded.py [NAME...] [--results FILE] [--batch N] [--timeout S] [--bound B] [--as-built]
 
 Run the Kani proofs in mtg-engine/src/proofs/ the way `cargo kani` does,
 with one addition: every function in a harness's final goto program that
@@ -12,9 +12,16 @@ bound too small for the data fails the proof rather than passing it.
 without the bound, dropping one filter read from the heap explored every
 variant of every filter it might hold, to the unwinding depth.
 
+And one rewrite of the goto program before cbmc reads it,
+`scripts/precise-enums.py`, which says what it changes and why nothing a
+Rust program can observe does: with Kani's encoding of enums as it is,
+CBMC loses every pointer stored in an enum written to the heap, and
+explores every variant of what it might point to. `--as-built` leaves the
+program as Kani built it, to compare.
+
 Per batch: `cargo kani --only-codegen` for the batch's harnesses; per
-harness: Kani's goto-cc link and goto-instrument passes, then cbmc with
-Kani's flags, the bounds and --json-ui. A result is read as Kani reads
+harness: Kani's goto-cc link and goto-instrument passes, the rewrite,
+then cbmc with Kani's flags, the bounds and --json-ui. A result is read as Kani reads
 it: reachability checks are not failures, and covers are counted.
 
 A NAME is a harness's path or last part, or a module (`vec_map`,
@@ -143,7 +150,7 @@ def bounds(out, bound):
     return ids
 
 
-def verify(h, goto, unwind, mangled, bound, timeout):
+def verify(h, goto, unwind, mangled, bound, timeout, precise=True):
     symtab = goto if goto.endswith('.symtab.out') else goto[:-len('.out')] + '.symtab.out'
     out = symtab[:-len('.symtab.out')] + '.out'
     steps = [
@@ -154,10 +161,12 @@ def verify(h, goto, unwind, mangled, bound, timeout):
          '--generate-function-body', '.*', '--drop-unused-functions', out, out],
         [f'{K}/bin/goto-instrument', '--ensure-one-backedge-per-target', out, out],
     ]
+    if precise:
+        steps.append([sys.executable, f'{ROOT}/scripts/precise-enums.py', out, out])
     for cmd in steps:
         p = run(cmd)
         if p.returncode != 0:
-            return ('ERROR', '-', f'{os.path.basename(cmd[0])} failed: {p.stderr[-200:]}')
+            return ('ERROR', '-', f'{os.path.basename(cmd[1] if cmd[0] == sys.executable else cmd[0])} failed: {p.stderr[-200:]}')
     rec = bounds(out, bound)
     unwindset = ','.join(['memcmp.0:33'] + [f'{r}:{bound}' for r in rec])
     cmd = [f'{K}/bin/cbmc'] + CBMC_FLAGS + ['--unwind', str(unwind or 7), '--unwindset', unwindset, out, '--verbosity', '9', '--json-ui']
@@ -223,6 +232,7 @@ def main():
     ap.add_argument('--batch', type=int, default=8)
     ap.add_argument('--timeout', type=int, default=1800)
     ap.add_argument('--bound', type=int, default=3)
+    ap.add_argument('--as-built', action='store_true', help='skip the precise-enums rewrite')
     a = ap.parse_args()
     os.makedirs(os.path.dirname(a.results), exist_ok=True)
     every = list_harnesses(f'{a.crate}/src')
@@ -246,7 +256,7 @@ def main():
                 if h not in found:
                     res.write(f"{'NOT_RUN':10s} {'-':>8s}  {h}  no goto file\n"); res.flush(); continue
                 goto, unwind, mangled = found[h]
-                result, took, why = verify(h, goto, unwind, mangled, a.bound, a.timeout)
+                result, took, why = verify(h, goto, unwind, mangled, a.bound, a.timeout, precise=not a.as_built)
                 res.write(f'{result:10s} {took:>8s}  {h}  {why}\n'); res.flush()
                 print(f'{result:10s} {took:>8s}  {h}', flush=True)
                 base = goto[:-len('.symtab.out')] if goto.endswith('.symtab.out') else goto[:-len('.out')]
