@@ -232,6 +232,23 @@ fn untapping_an_untapped_permanent_emits_nothing() {
     assert!(!state.get_object(c).unwrap().tapped);
 }
 
+/// CR 110.5: only a permanent is tapped or untapped. `tap` asked of a
+/// card off the battlefield already did nothing; `untap` untapped it and
+/// announced it, which no game reached only because leaving the
+/// battlefield clears the flag. The untap proof in `proofs::actions`
+/// holds for every object, so the function now asks what the rule says.
+#[test]
+fn untapping_a_card_off_the_battlefield_does_nothing() {
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let c = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(c).unwrap().zone = Zone::Graveyard;
+    state.get_object_mut(c).unwrap().tapped = true;
+
+    state.events.clear();
+    assert!(!state.untap(c), "a card in a graveyard is not a permanent, and does not untap");
+    assert!(state.events.is_empty(), "nothing untapped, nothing announced");
+}
+
 /// The leaves-the-battlefield log line names the destination: "died" for the
 /// graveyard, "was exiled" for exile — and only for a creature leaving the
 /// BATTLEFIELD. A card moving hand → graveyard did not die.

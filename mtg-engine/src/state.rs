@@ -2848,7 +2848,11 @@ impl GameState {
     /// untapped it, and not for one entering tapped, which was never untapped.
     pub fn untap(&mut self, id: ObjectId) -> bool {
         match self.get_object_mut(id) {
-            Some(obj) if obj.tapped => obj.tapped = false,
+            // CR 110.5, as for `tap`: tapped is a status of permanents, and
+            // only a permanent is untapped. Leaving the battlefield clears
+            // the flag (`move_object`), so this asks what the rule says
+            // rather than relying on every path that writes it.
+            Some(obj) if obj.zone == crate::types::Zone::Battlefield && obj.tapped => obj.tapped = false,
             _ => return false,
         }
         self.events.push(crate::events::GameEvent::Untapped { object: id });
