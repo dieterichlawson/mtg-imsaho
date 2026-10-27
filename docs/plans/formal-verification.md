@@ -85,7 +85,7 @@ and writes the result back small, with unit tests on it.
 
     scripts/prove.sh                   # Verus, then Kani: about four minutes
     scripts/prove.sh verus             # mtg-kernel only: seconds once vstd is built
-    scripts/prove.sh kani [HARNESS...] # the Kani proofs, or the named ones
+    scripts/prove.sh kani [NAME...]    # the Kani proofs, or the named ones or modules
     scripts/prove.sh exhaustive        # the bounded exhaustive checks, in release
     scripts/kernel-mutants.py [ID...]  # what the proofs and the tests each catch
     scripts/fuzz-engine.sh [SECONDS]   # the whole engine under libFuzzer (tier 2)
@@ -590,6 +590,64 @@ with targets, links between abilities ("the exiled card"), and costs of
 tapping other creatures or removing counters. Each is a template, or a
 board, to add; `READ` lists the cards read, and a change that stops
 reading any of them fails and names it.
+
+### Cards proved with Kani
+
+`mtg-engine/src/proofs/cards/` and `proofs/actions/`. A card proof runs
+the card's own code, unchanged, on a board Kani leaves open (which
+target, who owns and controls what, which zone each object is in, what
+died this turn), with each engine action the card can ask for (destroy,
+move, deal damage, draw, add counters, choose at random and some forty
+others) replaced by a recorder. It asserts the exact list of actions the
+card's text asks for, under the conditions it states, and by snapshot
+that nothing else changed. What each action does is the other half,
+proved once per action in `proofs::actions`: what the targeting
+predicates answer, which targets a requirement offers, what a pending
+effect does, which creature an Aura's or Equipment's effect reaches.
+Every card with a hook of its own has a proof that calls it.
+
+Kani proves these by bounded model checking through CBMC, and on this
+engine's data CBMC's cost is set less by the code than by how the data
+sits in memory. What was measured, and what the proofs do about each:
+
+- **A list's growth.** CBMC cannot tell that a list has room before it
+  encodes the answer that it has none, so every push encoded a
+  reallocation of a size the data decides. Collecting a filtered list of
+  three numbers took 59 million clauses with that and 0.7 million
+  without. Every proof stands in for growing an allocation with a
+  failure (`no_growing`): a proof that passes is one in which no list
+  grew, and one whose lists must grow fails, naming it. Boards reserve
+  their lists up front.
+- **References kept on the heap.** CBMC keeps a heap allocation as bytes,
+  and a reference read back from bytes is one whose offset it has lost:
+  every read through it chose among every byte of every value it might
+  point into. Under Kani the engine's map keeps each object in an
+  allocation of its own (`vec_map`), so such a read chooses among
+  objects at known offsets, and the stand-in for `objects_in_zone` hands
+  its list out of static memory, which CBMC keeps as references.
+  Resolving Make a Wish went from out of memory to 5.8 million clauses.
+- **A heap buffer over 4096 bytes** is one CBMC no longer follows field
+  by field (`--max-field-sensitivity-array-size`); eight objects in one
+  buffer made a board-only proof take fifteen minutes.
+- **Self-referring types.** Dropping, cloning or matching a filter or an
+  effect read from the heap goes into every variant, recursively, to
+  the unwinding bound: dropping a one-element list of a filter took a
+  million steps. The proofs are run (`scripts/kani-bounded.py`, which
+  `scripts/prove.sh kani` calls) with a recursion bound of three on every
+  function over those types (the deepest filter in the pool nests two
+  deep), with CBMC's recursion unwinding assertions left on, so a bound
+  too small for the data fails the proof rather than passing it; that
+  took the drop to eight thousand steps.
+- **Lists of a length the solver leaves open.** Cloning one allocates a
+  buffer of that open size; the action log is read in place and the
+  recorders keep their lists at a fixed size.
+- **The zone order** itself is proved with Verus, for every board, not
+  with Kani (above).
+
+The effects proofs, which read an effect printed on a card back from the
+registry, are where these costs meet: they do not yet finish. The rest
+of the pool's proofs are being run under these measures, and this
+section will record which hold.
 
 ### The whole engine under libFuzzer
 

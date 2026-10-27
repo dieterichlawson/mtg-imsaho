@@ -67,22 +67,15 @@ Kani is not installed. Install the version CI uses:
 EOF
         exit 2
     fi
-    local args=()
-    for h in "$@"; do
-        args+=(--harness "$h")
-    done
-    # -Z stubbing: the card proofs replace `format!` and the engine's
-    # actions with stand-ins (mtg-engine/src/proofs/cards/mod.rs says why).
-    # The field-sensitivity bound lets CBMC follow a value through a heap
-    # allocation as large as a `GameState`; at its default (64) every enum
-    # read back from a `Vec` was unknown, and dropping one explored every
-    # variant's drop, recursively, until memory ran out.
-    # memcmp's loop runs once per byte of the shorter string compared, and a
-    # card name is up to 31 bytes, so it has its own bound above every
-    # proof's own.
-    cargo kani -p mtg-engine --output-format terse "${args[@]}" \
-        -Z stubbing -Z unstable-options \
-        --cbmc-args --max-field-sensitivity-array-size 4096 --unwindset memcmp.0:33
+    # Through scripts/kani-bounded.py, which runs each harness as `cargo
+    # kani` does (-Z stubbing for the card proofs' stand-ins, a
+    # field-sensitivity bound so CBMC follows a value through a heap
+    # allocation, memcmp's own unwinding bound for card names) and adds a
+    # recursion bound on the functions over the engine's self-referring
+    # types, without which dropping one filter read from the heap explored
+    # every variant it might be. Results, one line a harness, go to
+    # logs/kani/results.txt; a harness already there is skipped.
+    python3 scripts/kani-bounded.py "$@"
 }
 
 check_exhaustively() {
