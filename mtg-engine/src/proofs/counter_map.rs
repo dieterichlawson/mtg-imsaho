@@ -105,7 +105,9 @@ fn writing_counters_through_get_mut_writes_that_kind() {
             *c = n;
             reference[i] = Some(n);
         }
-        None => assert!(reference[i].is_none()),
+        None => {
+            assert!(reference[i].is_none());
+        }
     }
     assert!(agrees(&map, &reference));
 }
