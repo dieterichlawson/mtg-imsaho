@@ -1076,6 +1076,48 @@ fn garruk_back_face_tutor_presents_sacrifice_choice() {
         "Non-chosen creature should remain on battlefield");
 }
 
+/// Garruk, the Veil-Cursed's -1 searches the library of the player who
+/// activated it (CR 602.2a: "you" is the ability's controller), not of
+/// whoever controls Garruk by the time it resolves. It sacrificed the
+/// activator's creature and then searched the new controller's library.
+#[test]
+fn garruk_back_face_tutor_searches_the_activators_library() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
+    set_loyalty(&mut state, garruk, 3);
+    helpers::apply_transform(&mut state, garruk, &reg);
+    let sac_target = ready_creature(&mut state, P0, 1, 1);
+    state.get_object_mut(sac_target).unwrap().card_types = vec![CardType::Creature];
+    let mut in_library = |player| {
+        let card = spell_in_hand(&mut state, &reg, "Grizzly Bears", player);
+        state.move_object(card, Zone::Library, &reg);
+        state.get_player_mut(player).library_order.push(card);
+        card
+    };
+    let ours = in_library(P0);
+    let theirs = in_library(P1);
+
+    // P0 activated the -1; P1 took Garruk before it resolved.
+    state.get_object_mut(garruk).unwrap().controller = P1;
+    state.resolving_ability_activator = Some(P0);
+    let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
+    behavior.on_loyalty_ability(&mut state, garruk, 11, &[], &reg);
+
+    assert_eq!(state.get_object(sac_target).unwrap().zone, Zone::Graveyard,
+        "the activator's creature is sacrificed");
+    match &state.awaiting_action {
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            player, choice: mtg_engine::state::ResolutionChoiceKind::ChooseFromLibrary { options, searcher, .. }, ..
+        }) => {
+            assert_eq!((*player, *searcher), (P0, P0), "the activator searches");
+            assert_eq!(options, &vec![ours], "in their own library; {theirs:?} is in the other player's");
+        }
+        other => panic!("expected a library search, got {other:?}"),
+    }
+}
+
 /// Garruk, the Veil-Cursed's -1: "Search your library for a creature card, reveal
 /// it, put it into your hand, then shuffle." The shuffle is the part that is easy
 /// to leave out, so assert it: over repeated runs the remaining library must come

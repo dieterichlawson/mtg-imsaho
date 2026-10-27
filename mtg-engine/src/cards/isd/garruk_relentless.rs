@@ -265,7 +265,11 @@ impl CardBehavior for GarrukRelentless {
     /// The sacrifice, the search and the shuffle are all this card's text.
     fn resolve_card_effect(&self, state: &mut GameState, source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
         let Target::Object(id) = target else { return };
-        let controller = crate::cards::helpers::controller_of(state, source_id);
+        // "Your library" is the activator's (CR 602.2a), which the engine
+        // holds across the sacrifice choice. Reading the permanent's
+        // controller instead sacrificed the activator's creature and then
+        // searched the library of whoever had taken Garruk in response.
+        let controller = crate::cards::helpers::ability_controller(state, source_id);
 
         crate::destruction::sacrifice_by(
             state, *id, "to Garruk, the Veil-Cursed", registry);
