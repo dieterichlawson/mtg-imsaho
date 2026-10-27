@@ -4,6 +4,7 @@
 //! recorded in turn, so each proof is of one function's own logic.
 
 mod effects;
+mod library;
 mod pending_effects;
 mod predicates;
 mod scopes;

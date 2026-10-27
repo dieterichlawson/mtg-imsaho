@@ -1082,6 +1082,18 @@ impl Snapshot {
         s
     }
 
+    /// This snapshot with player `p`'s library `cards`, top first, and
+    /// nothing else changed.
+    pub fn with_library(&self, p: PlayerId, cards: &[ObjectId]) -> Self {
+        let mut s = self.clone();
+        for (i, row) in s.players.iter_mut().enumerate() {
+            if usize::from(p.0) == i {
+                row.1 = zone_rows(cards);
+            }
+        }
+        s
+    }
+
     /// This snapshot with `n` counters of `kind` on `id`, and nothing else
     /// changed.
     pub fn with_counters(&self, id: ObjectId, kind: CounterType, n: u32) -> Self {
