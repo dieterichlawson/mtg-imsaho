@@ -256,22 +256,61 @@ card_proof! {
     }
 }
 
+/// A board for the spells that read their caster's graveyard: the spell,
+/// cast by player 0, and `N` objects, each either player's, in their
+/// graveyard or on the battlefield, a card or a token (a token in a
+/// graveyard is one state-based actions have yet to see, CR 704.5d); each
+/// object in a graveyard put on its pile as it arrives (CR 404.2). The
+/// objects' ids, in order.
+fn graveyard_board<const N: usize>(card: Box<dyn CardBehavior>) -> (CardRegistry, GameState, ObjectId, [ObjectId; N]) {
+    let (registry, mut state, blank, card) = board(card);
+    let mut ids = [ObjectId(0); N];
+    for slot in &mut ids {
+        let owner = PlayerId(u8::from(kani::any::<bool>()));
+        let zone = if kani::any() { Zone::Graveyard } else { Zone::Battlefield };
+        let id = state.create_object(blank, owner, zone, None, None);
+        state.get_object_mut(id).expect("just created").is_token = kani::any();
+        if zone == Zone::Graveyard {
+            if owner == PlayerId(0) {
+                state.players[0].graveyard_order.push(id);
+            } else {
+                state.players[1].graveyard_order.push(id);
+            }
+        }
+        *slot = id;
+    }
+    let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
+    (registry, state, spell, ids)
+}
+
 card_proof! {
     /// Make a Wish: two of the cards in its controller's graveyard (all of
     /// them, if fewer) chosen at random and returned to their hand, and
-    /// nothing else.
+    /// nothing else. A token there is not a card (CR 111.1), and the other
+    /// player's graveyard is not "your graveyard" (404.1). On a board of
+    /// four objects, so that two are chosen of as many as three.
     fn make_a_wish_returns_two_at_random() {
-        let r = resolve(Box::new(isd::make_a_wish::MakeAWish), &CREATURES);
-        let graveyard = r.those(|o| o.zone == Zone::Graveyard && o.owner == PlayerId(0));
-        assert!(act(0) == Some(&Act::Random(listed(&graveyard), 2)));
-        assert!(acted() == 1 + graveyard.len().min(2));
+        let (registry, mut state, spell, ids) = graveyard_board::<4>(Box::new(isd::make_a_wish::MakeAWish));
+        let mut cards = Vec::with_capacity(4);
+        for id in ids {
+            let o = state.get_object(id).expect("on the board");
+            if o.zone == Zone::Graveyard && o.owner == PlayerId(0) && !o.is_token {
+                cards.push(id);
+            }
+        }
+        let before = Snapshot::of(&state);
+        let card = state.get_object(spell).expect("on the stack").card_id;
+        registry.get(card).expect("registered").on_resolve(&mut state, spell, &[], &registry);
+        assert!(act(0) == Some(&Act::Random(listed(&cards), 2)));
+        assert!(acted() == 1 + cards.len().min(2));
         for i in 1..acted() {
             let Some(Act::Move(id, Zone::Hand)) = act(i) else { panic!("returns to the hand") };
-            assert!(graveyard.contains(id));
+            assert!(cards.contains(id));
             assert!(i == 1 || act(1) != act(i));
         }
-        assert!(r.added().is_empty() && r.nothing_else_changed());
-        std::mem::forget(r);
+        assert!(Snapshot::of(&state) == before);
+        kani::cover!(cards.len() == 3, "two chosen of three");
+        std::mem::forget((registry, state, cards, before));
     }
 }
 
