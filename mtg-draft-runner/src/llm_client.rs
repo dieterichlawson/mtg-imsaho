@@ -964,6 +964,15 @@ pub fn guide_digest(text: &str) -> String {
     format!("{h:016x}")
 }
 
+/// A digest of the set a draft seat's system prompt describes: its name and
+/// its card reference. Kept pick positions record it so a replay against
+/// another set file — a card removed, the name edited — says its system
+/// prompt is not the live one (#951).
+#[must_use]
+pub fn reference_digest(set_name: &str, card_reference: &str) -> String {
+    guide_digest(&format!("{set_name}\0{card_reference}"))
+}
+
 /// The draft rules' answer note for a seat asked in text: the CLI has no
 /// schema to hold the answer to, so it is told the shape is the whole reply.
 const TEXT_ANSWER_NOTE: &str = "\nReply with only that JSON object — no words before or after it, no code \

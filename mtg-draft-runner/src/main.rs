@@ -1065,6 +1065,7 @@ resume with the --best-of its run was played at)", args.best_of) };
 
     // Build card reference with oracle text for all cards in the set
     let card_reference = llm_client::build_card_reference(&set_data.all_card_names(), &registry);
+    let reference_digest = llm_client::reference_digest(&set_data.set_name, &card_reference);
 
     // Create LLM clients for each drafter (each may use a different model)
     // What a seat has to know about the table it is at, which used to be an
@@ -1328,6 +1329,9 @@ substituting {} (the first card). Response: {}",
                         // prompt: a guided seat's picks replayed without
                         // its guide were another question (#920).
                         "guide": args.guides[seat], "history": mtg_player::llm::history_exchanges(),
+                        // And the set it describes, which a replay rebuilds
+                        // from the set file it finds (#951).
+                        "reference": reference_digest,
                         // Only a `claude -p` seat's prompt says how it answers.
                         "text_answers": matches!(args.models[seat].split(':').next(), Some("cc" | "claude-code"))
                             .then(llm_client::draft_text_answers),

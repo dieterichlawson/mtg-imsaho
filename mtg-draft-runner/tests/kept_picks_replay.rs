@@ -60,6 +60,32 @@ fn every_kept_pick_replays_as_the_pick_it_was_live() {
         assert_eq!(r["chosen"], r["live"], "position {} was asked as another prompt: {r}", r["id"]);
         assert_eq!(r["usage"]["calls"], 1, "one call a pick: {r}");
     }
+    assert!(!String::from_utf8_lossy(&replay.stderr).contains("not the live one"),
+        "the same set file says nothing: {}", String::from_utf8_lossy(&replay.stderr));
+
+    // #951: a position kept under another set file — a card removed, the
+    // set's name edited — is said, as another history is.
+    assert!(kept.iter().all(|p| p["reference"].as_str().is_some_and(|d| d.len() == 16)),
+        "each position records the set its system prompt described");
+    let other = dir.join("other-set.jsonl");
+    std::fs::write(&other, kept.iter().take(2).map(|p| {
+        let mut p = p.clone();
+        p["reference"] = "0000000000000000".into();
+        format!("{p}\n")
+    }).collect::<String>()).unwrap();
+    let moved = Command::new(env!("CARGO_BIN_EXE_mtg-draft-replay"))
+        .current_dir(repo_root())
+        .env("CLAUDE_CODE_BIN", &stub)
+        .env("STUB_CALLS", "/dev/null")
+        .args(["--positions", other.to_str().unwrap(), "--model", "cc"])
+        .output()
+        .expect("the replay runs");
+    let stderr = String::from_utf8_lossy(&moved.stderr);
+    assert!(moved.status.success(), "{stderr}");
+    let said: Vec<&str> = stderr.lines().filter(|l| l.contains("its system prompt is not the live one")).collect();
+    assert_eq!(said.len(), 1, "said once, by the line it was first seen on: {stderr}");
+    assert!(said[0].contains("line 1") && said[0].contains("data/sets/isd.json is not the set file it was kept under"),
+        "{stderr}");
 
     // A metered seat is refused, not spent on.
     let metered = Command::new(env!("CARGO_BIN_EXE_mtg-draft-replay"))

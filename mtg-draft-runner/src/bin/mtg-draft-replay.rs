@@ -17,8 +17,9 @@
 //! Each position is asked under the guide its seat drafted with, which the
 //! position records (#920); `--guide` asks every position under that one
 //! file instead. A position kept before guides were recorded, or under
-//! another `MTG_LLM_HISTORY` or `MTG_CLAUDE_CODE_DRAFT_ANSWERS`, is said
-//! once on stderr: its system prompt is not the one it was live.
+//! another `MTG_LLM_HISTORY`, `MTG_CLAUDE_CODE_DRAFT_ANSWERS` or set file
+//! (#951), is said once on stderr: its system prompt is not the one it was
+//! live.
 //!
 //! Every position is a real model call. A `claude` or `gemini` seat is a
 //! metered one, refused unless `--metered` says it is meant.
@@ -42,6 +43,8 @@ fn die(msg: &str) -> ! {
 struct LoadedSet {
     name: String,
     reference: String,
+    /// [`llm_client::reference_digest`] of the two above.
+    digest: String,
     lines: CardLines,
 }
 
@@ -49,9 +52,11 @@ fn load_set(key: &str, registry: &CardRegistry) -> LoadedSet {
     let path = std::path::PathBuf::from(format!("data/sets/{key}.json"));
     let mut set = SetData::load(&path).unwrap_or_else(|e| die(&format!("cannot load {}: {e}", path.display())));
     set.filter_implemented(registry);
+    let reference = llm_client::build_card_reference(&set.all_card_names(), registry);
     LoadedSet {
+        digest: llm_client::reference_digest(&set.set_name, &reference),
         name: set.set_name.clone(),
-        reference: llm_client::build_card_reference(&set.all_card_names(), registry),
+        reference,
         lines: CardLines::new(&set.all_card_names(), &set.rarities(), registry),
     }
 }
@@ -100,7 +105,7 @@ fn main() {
             continue;
         }
 
-        let unlike: [(&str, bool, String); 3] = [
+        let unlike: [(&str, bool, String); 4] = [
             ("guide", override_guide.is_none() && p.get("guide").is_none(),
                 "it records no guide (kept before #920) and is asked with none: if its seat drafted with one, \
                  this is another question".into()),
@@ -109,6 +114,9 @@ fn main() {
             ("answers", asks_in_text && p["text_answers"].as_bool().is_some_and(|t| t != text_answers),
                 format!("it was kept under {}={}, and this replay asks {}", llm_client::DRAFT_ANSWERS_ENV,
                     if text_answers { "schema" } else { "text" }, if text_answers { "in text" } else { "in the schema" })),
+            ("reference", p["reference"].as_str().is_some_and(|d| d != set.digest),
+                format!("data/sets/{set_key}.json is not the set file it was kept under (another card list, card text \
+                         or set name), so its card reference and pack lines are another set's")),
         ];
         for (kind, differs, why) in unlike {
             if differs && !said.contains(&kind) {
