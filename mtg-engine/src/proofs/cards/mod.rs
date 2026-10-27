@@ -52,9 +52,12 @@ mod auras;
 mod board_spells;
 mod check_lands;
 mod choices;
+mod combat_triggers;
 mod counted_pt;
 mod curses;
 mod damage_spells;
+mod death_and_attack_triggers;
+mod death_watchers;
 mod destroy_spells;
 mod doom_blade;
 mod effect_spells;
@@ -63,10 +66,16 @@ mod equipment;
 mod graveyard_spells;
 mod looking;
 mod mana;
+mod planeswalkers;
+mod replacements;
 mod simple_spells;
 mod statics;
+mod steps;
 mod targeted_spells;
 mod targets;
+mod transforming;
+mod watchers;
+mod werewolves;
 
 /// An action a card asked the engine for.
 #[derive(Debug, Clone, PartialEq)]
