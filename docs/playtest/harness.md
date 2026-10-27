@@ -1023,6 +1023,16 @@ say what your stub says.
   in `GameView`); 16 stub games with Ghouls against Bears/Spiders never
   reached it. Stage it by save edit next time rather than hoping combat
   logs it
+  — **played 2026-10-27: `This turn:` held over 7,452 prompts; three
+  facts are on no surface (#953, #954).** #932 reached all three
+  surfaces. Two kinds of fact are still in no `GameView` field:
+  until-end-of-turn global effects (Moonmist's prevention), and per-object
+  turn history (`attacked_on_turn`, `abilities_activated_this_turn`). The
+  gap is wider than conditions in rules text: any continuous effect that
+  lasts the turn is a fact of the same kind. A save edit of
+  `attacked_on_turn`, giving two byte-identical prompts with different
+  outcomes, is the quickest proof. Compare games with and without
+  `--check-invariants`: the flag changes a `cc` game (#956)
 - H31 [proposed 2026-10-18, from reports/llm-cost.md phase 3] the turn
   that is one answer. A main-phase answer now carries `then` (cards to
   play after `action`), `ask_again` and `attack` (creatures to attack with,
