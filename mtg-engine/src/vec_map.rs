@@ -196,17 +196,15 @@ pub struct Entry<'a, K, V> {
     key: K,
 }
 
-impl<'a, K: Ord, V> Entry<'a, K, V> {
-    /// The key's value, `default` inserted first if there was none.
+impl<'a, K: Ord + Clone, V> Entry<'a, K, V> {
+    /// The key's value, `default` inserted first if there was none. The
+    /// value is reached through `get_mut`, for the reason `get_mut` gives,
+    /// not at the index the search found.
     pub fn or_insert(self, default: V) -> &'a mut V {
-        let i = match self.map.find(&self.key) {
-            Ok(i) => i,
-            Err(i) => {
-                self.map.insert_at(i, (self.key, Box::new(default)));
-                i
-            }
-        };
-        &mut *self.map.entries[i].1
+        if let Err(i) = self.map.find(&self.key) {
+            self.map.insert_at(i, (self.key.clone(), Box::new(default)));
+        }
+        self.map.get_mut(&self.key).expect("there, or just put there")
     }
 }
 
