@@ -299,7 +299,7 @@ pub enum SacrificeCost {
 }
 
 /// An additional cost required to cast a spell (beyond mana).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AdditionalCost {
     /// Sacrifice a creature you control (Altar's Reap, Infernal Plunge).
     SacrificeCreature,

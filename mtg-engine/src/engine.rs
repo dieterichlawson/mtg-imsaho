@@ -12,7 +12,7 @@
 //! - [`effects`] — applying a resolved effect.
 //! - [`cards_flow`] — drawing, milling, discarding.
 
-mod actions;
+pub(crate) mod actions;
 mod legal;
 pub(crate) mod cards_flow;
 mod costs;

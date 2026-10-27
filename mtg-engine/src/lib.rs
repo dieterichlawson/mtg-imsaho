@@ -1,3 +1,7 @@
+// A card proof stands in for over forty engine actions, each a
+// `kani::stub` attribute, and each attribute is expanded inside the last.
+#![cfg_attr(kani, recursion_limit = "4096")]
+
 pub mod ids;
 pub mod types;
 pub mod state;

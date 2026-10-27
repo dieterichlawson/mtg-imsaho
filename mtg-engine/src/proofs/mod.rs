@@ -14,4 +14,8 @@
 //!
 //! [Kani]: https://model-checking.github.io/kani/
 
+mod actions;
+mod cards;
+mod decide;
 mod mana_payment;
+mod vec_map;
