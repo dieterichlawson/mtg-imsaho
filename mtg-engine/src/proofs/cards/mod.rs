@@ -955,6 +955,7 @@ macro_rules! card_proof {
         #[kani::stub($crate::state::GameState::arrives_tapped, $crate::proofs::cards::record_arrives_tapped)]
         #[kani::stub($crate::engine::mill_one, $crate::proofs::cards::$mill)]
         #[kani::stub($crate::destruction::try_destroy_no_regen, $crate::proofs::cards::record_destroy_no_regen)]
+        #[kani::stub($crate::damage::deal_damage, $crate::proofs::cards::record_damage)]
         #[kani::stub($crate::damage::queue_damage, $crate::proofs::cards::record_queue)]
         #[kani::stub($crate::damage::process_pending_damage, $crate::proofs::cards::record_deal_queued)]
         #[kani::stub($crate::cards::helpers::transform_quietly, $crate::proofs::cards::record_transform_quietly)]
@@ -1224,6 +1225,12 @@ impl Snapshot {
     /// nothing else changed.
     pub fn with_asking(&self, asking: bool) -> Self {
         Snapshot { asking, ..self.clone() }
+    }
+
+    /// This snapshot with `n` damage events waiting to be dealt, and
+    /// nothing else changed.
+    pub fn with_pending_damage(&self, n: usize) -> Self {
+        Snapshot { pending_damage: n, ..self.clone() }
     }
 
     /// This snapshot with `n` objects on the stack, and nothing else
