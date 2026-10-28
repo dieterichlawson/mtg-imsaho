@@ -27,7 +27,10 @@
 //! when the event happens, with that player and amount, is
 //! `proofs::actions`'.
 
-use super::{act, acted, any_object, asked_for, board, card_proof, has_subtype, prints_effects, prints_where, triggers, were, Act, Form, Kinds, Snapshot};
+use super::{
+    act, acted, any_object, asked_for, board, card_proof, has_subtype, kept, prints_effects, prints_where, triggers,
+    were, Act, Form, Kinds, Snapshot,
+};
 use crate::cards::{CardBehavior, CardRegistry, TriggerKind};
 use crate::damage::DamageKind;
 use crate::events::DamageTarget;
@@ -124,11 +127,9 @@ card_proof! {
         assert!(prints_effects(&isd::balefire_dragon::BalefireDragon, &[]));
         let (registry, state, me, others, player, amount, before) =
             deals_combat_damage_to_a_player(Box::new(isd::balefire_dragon::BalefireDragon));
-        let theirs: Vec<ObjectId> = others.iter().copied()
-            .filter(|id| state.get_object(*id).is_some_and(|o| {
-                o.zone == Zone::Battlefield && o.controller == player && o.card_types.contains(&CardType::Creature)
-            }))
-            .collect();
+        let theirs = kept(&others, |id| state.get_object(id).is_some_and(|o| {
+            o.zone == Zone::Battlefield && o.controller == player && o.card_types.contains(&CardType::Creature)
+        }));
         let n = theirs.len();
         let queued = |i: usize| Act::Queue { source: me, target: DamageTarget::Object(theirs[i]), amount, kind: DamageKind::NonCombat };
         assert!(acted() == n + 1 && were(0, n, queued) && were(n, 1, |_| Act::DealQueued));

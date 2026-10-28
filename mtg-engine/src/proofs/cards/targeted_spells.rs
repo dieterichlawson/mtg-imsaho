@@ -45,7 +45,7 @@
 //! that the proof covers what the card does with one it no longer finds
 //! where it was.
 
-use super::{acted, any_object, asked_each, asked_for, board, card_proof, were, Act, Form, Kinds, Snapshot};
+use super::{acted, any_object, asked_each, asked_for, board, card_proof, kept, picked, were, Act, Form, Kinds, Snapshot};
 use crate::actions::Target;
 use crate::cards::{AdditionalCost, CardBehavior, CardRegistry, TargetFilter, TargetRequirement as R};
 use crate::damage::DamageKind;
@@ -345,12 +345,10 @@ card_proof! {
             && matches!(modes[0], R::GraveyardCreature)
             && matches!(&modes[1], R::TwoTargets(x, y) if zombie(x) && zombie(y))));
         let targets = if kani::any() { vec![b.any_object_target()] } else { vec![b.any_object_target(), b.any_object_target()] };
-        let returned: Vec<ObjectId> = targets.iter()
-            .filter_map(|t| match t {
-                Target::Object(id) if b.get(*id).zone == Zone::Graveyard => Some(*id),
-                _ => None,
-            })
-            .collect();
+        let returned = picked(&targets, |t| match t {
+            Target::Object(id) if b.get(*id).zone == Zone::Graveyard => Some(*id),
+            _ => None,
+        });
         let before = b.resolve(&targets);
         assert!(asked_each(returned.len(), |i| Act::Move(returned[i], Zone::Hand)) && Snapshot::of(&b.state) == before);
         std::mem::forget((b, targets));
@@ -380,12 +378,10 @@ card_proof! {
             Target::Player(p) => Some(p),
             _ => None,
         };
-        let shuffled: Vec<ObjectId> = targets.iter()
-            .filter_map(|t| match (t, p) {
-                (Target::Object(id), Some(p)) if b.get(*id).zone == Zone::Graveyard && b.get(*id).owner == p => Some(*id),
-                _ => None,
-            })
-            .collect();
+        let shuffled = picked(&targets, |t| match (t, p) {
+            (Target::Object(id), Some(p)) if b.get(*id).zone == Zone::Graveyard && b.get(*id).owner == p => Some(*id),
+            _ => None,
+        });
         let before = b.resolve(&targets);
         let n = shuffled.len();
         match p {
@@ -415,11 +411,9 @@ card_proof! {
         let exiled: Vec<ObjectId> = match target {
             Target::Object(id) if b.on(id) => {
                 let name = b.state.name_of(id, &b.registry);
-                b.others.iter().copied()
-                    .filter(|o| b.on(*o) && b.get(*o).card_types.contains(&CardType::Creature) && b.state.name_of(*o, &b.registry) == name)
-                    .collect()
+                kept(&b.others, |o| b.on(o) && b.get(o).card_types.contains(&CardType::Creature) && b.state.name_of(o, &b.registry) == name)
             }
-            _ => vec![],
+            _ => kept(&[], |_: ObjectId| false),
         };
         let before = b.resolve(&[target]);
         assert!(asked_each(exiled.len(), |i| Act::Move(exiled[i], Zone::Exile)) && Snapshot::of(&b.state) == before);
@@ -433,8 +427,7 @@ card_proof! {
     /// damage from it to each creature, all at once; and nothing else.
     fn blasphemous_act_costs_less_and_deals_thirteen_to_each_creature() {
         let mut b = spell(Box::new(isd::blasphemous_act::BlasphemousAct));
-        let creatures: Vec<ObjectId> = b.others.iter().copied()
-            .filter(|id| b.on(*id) && b.get(*id).card_types.contains(&CardType::Creature)).collect();
+        let creatures = kept(&b.others, |id| b.on(id) && b.get(id).card_types.contains(&CardType::Creature));
         let cost = isd::blasphemous_act::BlasphemousAct.modified_cost(&b.state, &b.registry);
         let n = u32::try_from(creatures.len()).expect("small");
         match cost {
@@ -639,15 +632,15 @@ card_proof! {
         let mut b = spell(Box::new(isd::tribute_to_hunger::TributeToHunger));
         assert!(*b.requirement() == R::OpponentOnly);
         let target = if kani::any() { Target::Player(PlayerId(1)) } else { Target::Illegal };
-        let theirs: Vec<ObjectId> = b.others.iter().copied().filter(|id| {
-            let o = b.get(*id);
+        let theirs = kept(&b.others, |id| {
+            let o = b.get(id);
             o.zone == Zone::Battlefield && o.controller == PlayerId(1) && o.card_types.contains(&CardType::Creature)
-        }).collect();
+        });
         let before = b.resolve(&[target.clone()]);
         if target == Target::Illegal || theirs.is_empty() {
             assert!(acted() == 0);
         } else {
-            let options: Vec<Target> = theirs.iter().map(|id| Target::Object(*id)).collect();
+            let options = picked(&theirs, |id| Some(Target::Object(*id)));
             assert!(asked_for(&[Act::Choose {
                 source: b.spell, player: PlayerId(1), options,
                 effect: PendingEffect::CardEffect { source_id: b.spell, key: String::new() }, optional: false,

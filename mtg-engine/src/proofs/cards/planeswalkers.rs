@@ -24,7 +24,7 @@
 //! either player ("you" is the activator, CR 602.2a), beside a card and a
 //! token of any characteristics.
 
-use super::{act, acted, any_object, any_target, asked_each, asked_for, board, card_proof, each_is, Act, Form, Kinds, Snapshot};
+use super::{act, acted, any_object, any_target, asked_each, asked_for, board, card_proof, each_is, picked, Act, Form, Kinds, Snapshot};
 use crate::actions::{ResolvedChoice, Target};
 use crate::cards::{CardBehavior, CardRegistry, LoyaltyAbilityDef, TargetRequirement};
 use crate::ids::{CardId, ObjectId, PlayerId};
@@ -344,7 +344,7 @@ card_proof! {
         let active = state.active_player;
         let mut chosen = Vec::with_capacity(2);
         for p in [active, PlayerId(1 - active.0)] {
-            let hand: Vec<ObjectId> = hands[usize::from(p.0)].iter().flatten().copied().collect();
+            let hand = picked(&hands[usize::from(p.0)], |c| *c);
             let lost = if p == PlayerId(0) { state.players[0].lost } else { state.players[1].lost };
             if lost || hand.is_empty() {
                 continue;

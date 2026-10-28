@@ -26,7 +26,7 @@
 //! own entering ("another") is the engine's (`triggers::collect`), proved
 //! in `proofs::actions`.
 
-use super::{act, acted, any_object, any_target, asked_for, board, card_proof, each_is, triggers, Act, Form, Kinds, Snapshot};
+use super::{act, acted, any_object, any_target, asked_for, board, card_proof, each_is, kept, triggers, Act, Form, Kinds, Snapshot};
 use crate::cards::{AttackInfo, CardBehavior, CardRegistry, TargetRequirement as R, TriggerKind};
 use crate::damage::DamageKind;
 use crate::events::DamageTarget;
@@ -244,12 +244,10 @@ card_proof! {
     fn hamlet_captain_pumps_your_other_humans() {
         assert!(triggers(&isd::hamlet_captain::HamletCaptain) == [(TriggerKind::Attacks, None), (TriggerKind::Blocks, None)]);
         let mut b = watching(Box::new(isd::hamlet_captain::HamletCaptain), true);
-        let humans: Vec<ObjectId> = b.others.iter().copied()
-            .filter(|id| {
-                let o = b.get(*id);
-                o.zone == Zone::Battlefield && o.controller == b.you && o.card_types.contains(&CardType::Creature) && b.is(*id, "Human")
-            })
-            .collect();
+        let humans = kept(&b.others, |id| {
+            let o = b.get(id);
+            o.zone == Zone::Battlefield && o.controller == b.you && o.card_types.contains(&CardType::Creature) && b.is(id, "Human")
+        });
         let before = Snapshot::of(&b.state);
         let card = b.card();
         let captain = b.registry.get(card).expect("registered");

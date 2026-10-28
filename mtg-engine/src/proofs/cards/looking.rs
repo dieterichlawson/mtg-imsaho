@@ -11,7 +11,7 @@
 //! length the solver left open was a list of every length, and every read
 //! of the question and the answer a question of which.
 
-use super::{acted, asked_for, board, card_proof, were, Act, Snapshot};
+use super::{acted, asked_for, board, card_proof, kept, were, Act, Snapshot};
 use crate::actions::ResolvedChoice;
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{AwaitingAction, ResolutionChoiceKind};
@@ -52,7 +52,7 @@ fn forbidden_alchemy(n: u8) {
             let answer = library[usize::from(kani::any::<u8>() % n)];
             let _ = crate::engine::actions::choices::resolve_choice(&mut state, &ResolvedChoice::ChosenCard(answer), &registry);
             if looked.contains(&answer) {
-                let rest: Vec<ObjectId> = looked.iter().copied().filter(|id| *id != answer).collect();
+                let rest = kept(&looked, |id| id != answer);
                 assert!(acted() == 1 + rest.len() && were(0, 1, |_| Act::Move(answer, Zone::Hand))
                     && were(1, rest.len(), |i| Act::MillCard(rest[i])));
                 assert!(state.awaiting_action.is_none());

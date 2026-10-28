@@ -20,7 +20,7 @@
 //! `resolve_card_effect`, through `engine::apply_pending_effect`), the
 //! card's own hook is called with every answer the handler accepts.
 
-use super::{acted, asked_for, board, card_proof, were, Act, Snapshot};
+use super::{acted, asked_for, board, card_proof, picked, were, Act, Snapshot};
 use crate::actions::{ResolvedChoice, Target};
 use crate::cards::{CardBehavior, CardRegistry};
 use crate::ids::{CardId, ObjectId, PlayerId};
@@ -233,7 +233,7 @@ card_proof! {
         let _ = crate::engine::actions::choices::resolve_choice(&mut state, &ResolvedChoice::PayDecision(pay), &registry);
         let paid = pay && matches!(super::act(0), Some(Act::Pay(_, _, true)));
         let hand = if them == PlayerId(0) { hands[0] } else { hands[1] };
-        let cards: Vec<ObjectId> = hand.iter().flatten().copied().collect();
+        let cards = picked(&hand, |c| *c);
         // Each action that may or may not come compared on its own, at
         // its place, rather than through a list of one of four lengths.
         let (p, c) = (usize::from(pay), usize::from(!paid));

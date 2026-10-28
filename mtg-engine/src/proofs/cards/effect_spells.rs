@@ -26,7 +26,7 @@
 //! effects then do, until the cleanup step ends them (CR 514.2), is the
 //! engine's, proved in `proofs::actions`.
 
-use super::{acted, any_object, asked_each, asked_for, board, card_proof, each_is, Act, Form, Snapshot, ANY_PERMANENT};
+use super::{acted, any_object, asked_each, asked_for, board, card_proof, each_is, picked, Act, ANY_PERMANENT, Form, Snapshot};
 use crate::actions::Target;
 use crate::cards::{CardBehavior, TargetFilter, TargetRequirement};
 use crate::ids::{ObjectId, PlayerId};
@@ -71,10 +71,10 @@ fn up_to_two(objects: [ObjectId; 2]) -> Vec<Target> {
 
 /// The permanents among `targets` on the battlefield, in order.
 fn on_battlefield(state: &GameState, targets: &[Target]) -> Vec<ObjectId> {
-    targets.iter()
-        .filter_map(|t| match t { Target::Object(id) => Some(*id), _ => None })
-        .filter(|id| state.get_object(*id).is_some_and(|o| o.zone == Zone::Battlefield))
-        .collect()
+    picked(targets, |t| match t {
+        Target::Object(id) if state.get_object(*id).is_some_and(|o| o.zone == Zone::Battlefield) => Some(*id),
+        _ => None,
+    })
 }
 
 /// `card`, holding one target, adds exactly `effects(target)` until end of
@@ -176,9 +176,7 @@ card_proof! {
     fn travel_preparations_counts_up_to_two() {
         assert!(up_to_two_creatures(&crate::cards::isd::travel_preparations::TravelPreparations));
         let (registry, state, _, targets, before) = resolve_holding(Box::new(crate::cards::isd::travel_preparations::TravelPreparations), up_to_two);
-        let countered: Vec<ObjectId> = targets.iter()
-            .map(|t| match t { Target::Object(id) => *id, _ => unreachable!() })
-            .collect();
+        let countered = picked(&targets, |t| match t { Target::Object(id) => Some(*id), _ => unreachable!() });
         assert!(asked_each(countered.len(), |i| Act::Counters(countered[i], CounterType::PlusOnePlusOne, 1)));
         assert!(Snapshot::of(&state) == before);
         std::mem::forget((registry, state, countered));

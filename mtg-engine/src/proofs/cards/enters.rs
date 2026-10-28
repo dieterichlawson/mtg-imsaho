@@ -37,7 +37,10 @@
 //! all the same), under either player's control, beside a card and a
 //! token of any characteristics.
 
-use super::{act, acted, any_object, any_target, asked_each, asked_for, board, card_proof, listed, triggers, Act, Form, Kinds, Snapshot};
+use super::{
+    act, acted, any_object, any_target, asked_each, asked_for, board, card_proof, kept, listed, triggers, Act, Form,
+    Kinds, Snapshot,
+};
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardRegistry, TargetFilter, TargetRequirement as R, TriggerKind};
 use crate::ids::{CardId, ObjectId, PlayerId};
@@ -86,14 +89,14 @@ impl Board {
     }
 
     fn those(&self, pred: impl Fn(&GameObject) -> bool) -> Vec<ObjectId> {
-        self.others.iter().copied().filter(|id| pred(self.get(*id))).collect()
+        kept(&self.others, |id| pred(self.get(id)))
     }
 
     /// Those of `cards` in `you`'s graveyard that `is` holds for, in the
     /// graveyard's order (CR 404.2), which is the order the board put them
     /// there and so the order given.
     fn in_your_graveyard(&self, cards: [ObjectId; 4], is: impl Fn(ObjectId) -> bool) -> Vec<ObjectId> {
-        cards.into_iter().filter(|id| self.get(*id).zone == Zone::Graveyard && self.get(*id).owner == self.you && is(*id)).collect()
+        kept(&cards, |id| self.get(id).zone == Zone::Graveyard && self.get(id).owner == self.you && is(id))
     }
 
     /// The enters trigger resolving with `targets`; the board before.

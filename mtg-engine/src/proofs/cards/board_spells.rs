@@ -45,8 +45,8 @@
 //! in the order the game lists them.
 
 use super::{
-    act, acted, any_object, any_object_of, asked_each, asked_for, board, both, card_proof, case_by_case, each_is, either,
-    has_subtype, kept, listed, new_ids, were, Act, Form, Kinds, Snapshot,
+    act, acted, any_object, any_object_of, asked_each, asked_for, board, both, card_proof, case_by_case, each_is,
+    either, has_subtype, kept, listed, new_ids, picked, were, Act, Form, Kinds, Snapshot,
 };
 use crate::cards::{AdditionalCost, CardBehavior, CardRegistry};
 use crate::damage::DamageKind;
@@ -437,7 +437,7 @@ card_proof! {
         let (registry, mut state, spell, _) = cards_in_zones(Box::new(isd::desperate_ravings::DesperateRavings), 2, 1);
         registry.get(state.get_object(spell).expect("on the stack").card_id).expect("registered")
             .on_resolve(&mut state, spell, &[], &registry);
-        let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, PlayerId(0)).iter().map(|o| o.id).collect();
+        let hand = picked(&state.objects_in_zone(Zone::Hand, PlayerId(0)), |o| Some(o.id));
         assert!(Some(&Act::Draw(PlayerId(0), 2)) == act(0) && Some(&Act::Random(listed(&hand), 1)) == act(1));
         if hand.is_empty() {
             assert!(acted() == 2);
@@ -461,8 +461,8 @@ card_proof! {
         registry.get(state.get_object(spell).expect("on the stack").card_id).expect("registered")
             .on_resolve(&mut state, spell, &[], &registry);
         let land = |id: &ObjectId| state.get_object(*id).expect("on the board").card_types.contains(&CardType::Land);
-        let lands: Vec<ObjectId> = top.iter().copied().filter(|id| land(id)).collect();
-        let rest: Vec<ObjectId> = top.iter().copied().filter(|id| !land(id)).collect();
+        let lands = kept(&top, |id| land(&id));
+        let rest = kept(&top, |id| !land(&id));
         assert!(acted() == top.len() && were(0, lands.len(), |i| Act::Move(lands[i], Zone::Hand))
             && were(lands.len(), rest.len(), |i| Act::MillCard(rest[i])));
         assert!(Snapshot::of(&state) == before);
@@ -507,9 +507,7 @@ card_proof! {
         let spell = state.create_object(past, PlayerId(0), Zone::Stack, None, None);
         let before = Snapshot::of(&state);
         registry.get(past).expect("registered").on_resolve(&mut state, spell, &[], &registry);
-        let granted_now: Vec<usize> = (0..2)
-            .filter(|i| state.get_object(objects[*i]).expect("on the board").owner == PlayerId(0) && !(*i == 0 && granted))
-            .collect();
+        let granted_now = kept(&[0, 1], |i: usize| state.get_object(objects[i]).expect("on the board").owner == PlayerId(0) && !(i == 0 && granted));
         let costs = [bolt_cost, crate::cards::lava_axe::LavaAxe.card_data().cost.expect("a cost")];
         let added = &state.until_end_of_turn[before.until_end_of_turn()..];
         assert!(each_is(added, granted_now.len(), |k| T::GrantFlashback { target: objects[granted_now[k]], cost: costs[granted_now[k]].clone() }));

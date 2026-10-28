@@ -16,7 +16,7 @@
 //! card is an instant (Lightning Bolt), a sorcery (Lava Axe), the blank
 //! card, or no card at all.
 
-use super::{acted, asked_for, board, card_proof, case_by_case, triggers, Act, Snapshot};
+use super::{acted, asked_for, board, card_proof, case_by_case, picked, triggers, Act, Snapshot};
 use crate::cards::{CardBehavior, CardRegistry, TriggerKind, TriggerScope};
 use crate::ids::{CardId, ObjectId, PlayerId};
 use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind};
@@ -317,8 +317,8 @@ card_proof! {
         b.state.resolving_ability_activator = Some(b.you);
         let card = b.card();
         b.registry.get(card).expect("registered").resolve_activated_ability(&mut b.state, b.me, 0, &[], &b.registry);
-        let hand: Vec<ObjectId> = b.state.objects_in_zone(Zone::Hand, b.you).iter().map(|o| o.id).collect();
-        let bears_in_hand: Vec<bool> = hand.iter().map(|id| b.state.get_object(*id).expect("on the board").card_id == bears).collect();
+        let hand = picked(&b.state.objects_in_zone(Zone::Hand, b.you), |o| Some(o.id));
+        let bears_in_hand = picked(&hand, |id| Some(b.state.get_object(*id).expect("on the board").card_id == bears));
         let creature_card = |id: ObjectId| hand.iter().zip(&bears_in_hand).any(|(h, is)| *h == id && *is);
         assert!(Some(&Act::Draw(b.you, 1)) == super::act(0));
         match hand.as_slice() {

@@ -281,17 +281,25 @@ pub fn listed(ids: &[ObjectId]) -> Vec<ObjectId> {
     list
 }
 
-/// Those of `ids` that `keep` holds for, in order, as a list of
+/// Those of `items` that `keep` holds for, in order, as a list of
 /// [`MAX_LISTED`] allocated up front: `filter` and `collect` allocate at
 /// the first entry kept, which the solver may keep or not, and a list
 /// allocated or not as it chooses is a list it follows into two buffers
 /// from then on.
-pub fn kept(ids: &[ObjectId], keep: impl Fn(ObjectId) -> bool) -> Vec<ObjectId> {
-    assert!(ids.len() <= MAX_LISTED, "a list longer than a recorder keeps");
+pub fn kept<T: Copy>(items: &[T], keep: impl Fn(T) -> bool) -> Vec<T> {
+    picked(items, |x| keep(*x).then_some(*x))
+}
+
+/// What `pick` gives for each of `items` it gives something for, in order,
+/// as [`kept`]'s list. `map` and `collect` over a list of a length the
+/// solver leaves open allocate at that open length, which CBMC hands the
+/// solver as an array of that size (`new_ids` says what that cost).
+pub fn picked<T, U>(items: &[T], pick: impl Fn(&T) -> Option<U>) -> Vec<U> {
+    assert!(items.len() <= MAX_LISTED, "a list longer than a recorder keeps");
     let mut list = Vec::with_capacity(MAX_LISTED);
-    for id in ids {
-        if keep(*id) {
-            list.push(*id);
+    for x in items {
+        if let Some(u) = pick(x) {
+            list.push(u);
         }
     }
     list

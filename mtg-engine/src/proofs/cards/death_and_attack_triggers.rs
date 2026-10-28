@@ -46,7 +46,10 @@
 //! not trigger its watcher, `triggers::collect`), proved in
 //! `proofs::actions`.
 
-use super::{act, acted, any_object, any_target, asked_for, board, card_proof, listed, new_ids, prints_effects, triggers, Act, Form, Kinds, Snapshot};
+use super::{
+    act, acted, any_object, any_target, asked_for, board, card_proof, kept, listed, new_ids, prints_effects, triggers,
+    Act, Form, Kinds, Snapshot,
+};
 use crate::actions::Target;
 use crate::cards::{AttackInfo, CardBehavior, CardRegistry, TargetRequirement, TriggerKind};
 use crate::ids::{ObjectId, PlayerId};
@@ -100,7 +103,7 @@ impl Board {
     }
 
     fn those(&self, pred: impl Fn(&GameObject) -> bool) -> Vec<ObjectId> {
-        self.others.iter().copied().filter(|id| pred(self.state.get_object(*id).expect("on the board"))).collect()
+        kept(&self.others, |id| pred(self.state.get_object(id).expect("on the board")))
     }
 
     /// The creature cards in `you`'s graveyard but the card's own (CR
