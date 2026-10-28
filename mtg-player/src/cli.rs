@@ -1668,7 +1668,7 @@ impl CliPlayer {
     fn clear_mid_from(out: &mut io::Stdout, from: u16) {
         let (term_w, term_h) = terminal::size().unwrap_or((100, 30));
         let w = term_w as usize;
-        let has_right = w >= 100;
+        let has_right = w >= Self::CARD_SEARCH_MIN_COLS;
         let mid_col = u16::try_from(w / 5 + 1).unwrap_or(u16::MAX);
         let sep = u16::try_from(Self::middle_panel_edge_at(w)).unwrap_or(u16::MAX);
         for row in from..term_h {
@@ -1840,7 +1840,7 @@ impl CliPlayer {
         let h = term_h as usize;
 
         // 3-column layout: left (stack+log), middle (game), right (card reference)
-        let has_right = w >= 100;
+        let has_right = w >= Self::CARD_SEARCH_MIN_COLS;
         let gutter_w: usize = w / 5; // 20% each gutter
         let left_w: usize = gutter_w;
         let right_w: usize = if has_right { gutter_w } else { 0 };
@@ -4936,7 +4936,7 @@ impl CliPlayer {
     }
 
     fn middle_panel_width_at(w: usize) -> usize {
-        let has_right = w >= 100;
+        let has_right = w >= Self::CARD_SEARCH_MIN_COLS;
         let gutter_w = w / 5;
         let right_w = if has_right { gutter_w } else { 0 };
         w.saturating_sub(gutter_w + right_w + if has_right { 2 } else { 1 })
@@ -7216,7 +7216,7 @@ impl CliPlayer {
             let side = term_w as usize / 5;
             let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
             let w = term_w as usize;
-            let mid_w = if w >= 100 { w.saturating_sub(2 * side + 2) } else { w.saturating_sub(side + 1) };
+            let mid_w = if w >= Self::CARD_SEARCH_MIN_COLS { w.saturating_sub(2 * side + 2) } else { w.saturating_sub(side + 1) };
             let clip = |s: &str| -> String { Self::clip_closed_or_cut(s, mid_w) };
             let mut r = cursor::position().unwrap_or((0, 20)).1;
             let mut out = stdout();
