@@ -41,7 +41,8 @@ CBMC's pointer and bounds checks are off (`NO_MEMORY_CHECKS` says why);
 
 With --jobs J, J harnesses of a batch are verified at once, each cbmc
 held to GB gigabytes of address space; one that runs out of it is run
-again alone, with no cap, once the rest are done. Kept to one at a time
+again alone, once the rest are done, held to the --solo-cap (12): with
+none, one that ran away took the machine, this driver with it. Kept to one at a time
 by default: two solvers sharing memory the kernel runs out of are both
 at risk, not only the one that needed it.
 
@@ -262,53 +263,79 @@ def pretty_names(out):
 
 def solve(cmd, timeout, nrec):
     """Run cbmc: the result, what to say of it, its seconds, the loops whose
-    unwinding assertions failed, and every other failure."""
+    unwinding assertions failed, and every other failure.
+
+    cbmc's output goes to a file beside its program and is read line by
+    line: at the verbosity the statistics need it runs to gigabytes, and
+    held in memory, then parsed whole, it was this driver that the kernel
+    stopped for want of memory, losing the harnesses it had left."""
+    log = next(c for c in cmd if c.endswith('.out')) + '.json'
     start = time.time()
-    try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
-    except subprocess.TimeoutExpired as e:
-        partial = e.stdout.decode(errors='replace') if isinstance(e.stdout, bytes) else (e.stdout or '')
-        m = re.search(r'size of program expression: (\d+) steps', partial)
-        sym = re.search(r'Runtime Symex: ([0-9.]+)s', partial)
-        where = (f' {m.group(1)} steps symex {float(sym.group(1)):.0f}s, then solving' if m and sym
-                 else ' still in symbolic execution')
-        return ('TIMEOUT', f'{nrec} bounded;{where}', time.time() - start, set(), [])
+    with open(log, 'w') as f:
+        try:
+            p = subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT, timeout=timeout)
+            code, timed_out = p.returncode, False
+        except subprocess.TimeoutExpired:
+            code, timed_out = None, True
     seconds = time.time() - start
-    if p.returncode in (-9, 137):
+    messages, results, size = [], [], ''
+    oom = False
+    prop = desc = None
+    with open(log, errors='replace') as f:
+        for line in f:
+            if re.search(r'[Oo]ut of memory|bad_alloc', line):
+                oom = True
+            if line.startswith('    "messageText": '):
+                text = json.loads(line.split(': ', 1)[1].rstrip().rstrip(','))
+                messages.append([text, None])
+            elif line.startswith('    "messageType": ') and messages:
+                messages[-1][1] = json.loads(line.split(': ', 1)[1].rstrip().rstrip(','))
+                if len(messages) > 400:
+                    # Only what is said of size, time and errors is kept.
+                    messages = [m for m in messages if m[1] == 'ERROR' or re.match(
+                        r'size of program|Runtime|.* variables, .* clauses|Invalid User Input', m[0])]
+            elif line.startswith('        "description": '):
+                desc = json.loads(line.split(': ', 1)[1].rstrip().rstrip(','))
+            elif line.startswith('        "property": '):
+                prop = json.loads(line.split(': ', 1)[1].rstrip().rstrip(','))
+            elif line.startswith('        "status": ') and prop is not None:
+                results.append((prop, json.loads(line.split(': ', 1)[1].rstrip().rstrip(',')), desc))
+                prop = desc = None
+    if not os.environ.get('KANI_BOUNDED_KEEP'):
+        os.remove(log)
+    if timed_out:
+        steps = next((m[0] for m in messages if m[0].startswith('size of program expression')), None)
+        sym = next((m[0] for m in messages if m[0].startswith('Runtime Symex')), None)
+        where = (f" {steps.split(':')[1].split()[0]} steps symex {float(sym.split(':')[1].strip().rstrip('s')):.0f}s, then solving"
+                 if steps and sym else ' still in symbolic execution')
+        return ('TIMEOUT', f'{nrec} bounded;{where}', seconds, set(), [])
+    if code in (-9, 137):
         return ('OOM', f'{nrec} bounded', seconds, set(), [])
-    if re.search(r'[Oo]ut of memory|bad_alloc', p.stdout[-4000:] + p.stderr[-4000:]):
+    if oom:
         # Under --mem-cap: the cap, not the machine, ran out.
         return ('OOM', f'{nrec} bounded; over the cap', seconds, set(), [])
-    try:
-        doc = json.loads(p.stdout)
-    except json.JSONDecodeError:
-        return ('ERROR', (p.stdout[-300:] + p.stderr[-300:]).replace('\n', ' '), seconds, set(), [])
     failed, others, loops, covers, covered = [], [], set(), 0, 0
-    for item in doc:
-        for r in item.get('result', []):
-            prop, status = r.get('property', ''), r.get('status')
-            if '.reachability_check.' in prop:
-                continue
-            if '.cover.' in prop:
-                covers += 1
-                covered += status == 'FAILURE'
-                continue
-            if status == 'FAILURE':
-                m = re.match(r'(.*)\.unwind\.(\d+)$', prop)
-                failed.append(r.get('description', prop) + (f' ({prop})' if m else ''))
-                if m:
-                    loops.add((m.group(1), m.group(2)))
-                else:
-                    others.append(prop)
-        if 'messageText' in item and 'Invalid User Input' in item.get('messageText', ''):
-            failed.append(item['messageText'])
-            others.append(item['messageText'])
-    errors = [i.get('messageText', '') for i in doc if i.get('messageType') == 'ERROR']
-    if any('out of memory' in e.lower() for e in errors):
-        return ('OOM', f'{nrec} bounded; over the cap', seconds, set(), [])
+    for prop, status, desc in results:
+        if '.reachability_check.' in prop:
+            continue
+        if '.cover.' in prop:
+            covers += 1
+            covered += status == 'FAILURE'
+            continue
+        if status == 'FAILURE':
+            m = re.match(r'(.*)\.unwind\.(\d+)$', prop)
+            failed.append((desc or prop) + (f' ({prop})' if m else ''))
+            if m:
+                loops.add((m.group(1), m.group(2)))
+            else:
+                others.append(prop)
+    for text, kind in messages:
+        if 'Invalid User Input' in text:
+            failed.append(text)
+            others.append(text)
+    errors = [t for t, k in messages if k == 'ERROR']
     size = ''
-    for i in doc:
-        t = i.get('messageText', '')
+    for t, _ in messages:
         if t.startswith('size of program expression'):
             size += f" {t.split(':')[1].split()[0]} steps"
         elif t.startswith('Runtime Symex'):
@@ -319,6 +346,8 @@ def solve(cmd, timeout, nrec):
             size += f" solve {float(t.split(':')[1].strip().rstrip('s')):.0f}s"
     if errors and not failed:
         return ('ERROR', ' '.join(errors)[:300], seconds, set(), ['error'])
+    if not results and not errors:
+        return ('ERROR', f'no results (exit {code})', seconds, set(), ['error'])
     cov = (f' covers {covered}/{covers}' if covers else '') + size
     if failed:
         return ('FAILED', f'{nrec} bounded{cov}; ' + ' | '.join(sorted(set(failed)))[:400], seconds, loops, others)
@@ -343,6 +372,7 @@ def main():
     ap.add_argument('--memory-checks', action='store_true', help="keep CBMC's pointer and bounds checks")
     ap.add_argument('--jobs', type=int, default=1)
     ap.add_argument('--mem-cap', type=float, default=None, help='gigabytes of address space per cbmc, with --jobs')
+    ap.add_argument('--solo-cap', type=float, default=12, help='gigabytes for a harness run again alone')
     a = ap.parse_args()
     global START_UNWIND, LOOPS, MEMORY_CHECKS
     START_UNWIND, LOOPS, MEMORY_CHECKS = a.start_unwind, a.loops, a.memory_checks
@@ -365,7 +395,7 @@ def main():
 
     def one(h, goto, unwind, mangled, cap):
         result, took, why = verify(h, goto, unwind, mangled, a.bound, a.timeout, precise=not a.as_built, cap=cap)
-        if result == 'OOM' and cap:
+        if result == 'OOM' and cap and cap != a.solo_cap:
             print(f"{'OVER_CAP':10s} {took:>8s}  {h}  again alone, after the batch", flush=True)
             return h
         write(f'{result:10s} {took:>8s}  {h}  {why}')
@@ -390,7 +420,7 @@ def main():
             again = [h for h in pool.map(lambda h: one(h, *found[h], cap), here) if h]
         # What ran out of its share of memory, alone and with all of it.
         for h in again:
-            one(h, *found[h], None)
+            one(h, *found[h], a.solo_cap)
 
 
 if __name__ == '__main__':
