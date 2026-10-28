@@ -2372,8 +2372,9 @@ fn every_auras_enchant_ability_is_one_the_attachment_rules_model() {
     assert_covers(checked, 15, "are Auras");
 }
 
-/// `face_card_types`, `face_supertypes`, `face_subtypes` and `face_cost` read
-/// the faces the registry kept at registration; `face_data` builds the card's
+/// `face_card_types`, `face_supertypes`, `face_subtypes`, `face_cost`,
+/// `face_name` and `face_color_indicator` read the faces the registry kept
+/// at registration; `face_data` builds the card's
 /// data again. Card code reads the first set, so they have to say what
 /// `face_data` says — for every card, face up and face down, and for a
 /// transformed card with no back face, which shows its front.
@@ -2401,6 +2402,12 @@ fn the_kept_faces_say_what_face_data_says() {
             }
             if state.face_cost(id, &reg) != data.cost.as_ref() {
                 offenders.push(format!("{name} (transformed {transformed}): mana cost"));
+            }
+            if state.face_name(id, &reg) != Some(data.name.as_str()) {
+                offenders.push(format!("{name} (transformed {transformed}): name"));
+            }
+            if state.face_color_indicator(id, &reg) != data.color_indicator.as_slice() {
+                offenders.push(format!("{name} (transformed {transformed}): color indicator"));
             }
         }
     }

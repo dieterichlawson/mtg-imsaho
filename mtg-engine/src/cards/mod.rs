@@ -1084,8 +1084,8 @@ pub trait CardBehavior: Send + Sync {
             // already applied inside `move_object`, and supertypes are
             // copiable values (CR 707.2), so a legend entering as a copy of
             // a non-legend is not legendary.
-            let legendary_now = state.face_data(object_id, registry)
-                .is_some_and(|d| d.supertypes.contains(&crate::types::Supertype::Legendary));
+            let legendary_now = state.face_supertypes(object_id, registry)
+                .contains(&crate::types::Supertype::Legendary);
             if let Some(obj) = state.get_object_mut(object_id) {
                 obj.is_legendary = legendary_now;
             }
@@ -1167,12 +1167,14 @@ struct PrintedCard {
 }
 
 struct PrintedFace {
+    name: String,
     continuous_effects: Vec<ContinuousEffect>,
     keywords: Vec<Keyword>,
     card_types: Vec<CardType>,
     supertypes: Vec<Supertype>,
     subtypes: Vec<String>,
     cost: Option<ManaCost>,
+    color_indicator: Vec<Color>,
 }
 
 impl Default for CardRegistry {
@@ -1201,6 +1203,7 @@ impl CardRegistry {
         let name = data.name.clone();
         let back = card.back_face_data();
         let back_name = back.as_ref().map(|d| d.name.clone());
+        let front_name = name.clone();
         // `printed` and `cards` are indexed by `id.0 - 1`, which holds
         // because this is the only way a card enters the registry and ids
         // are handed out in order.
@@ -1208,20 +1211,24 @@ impl CardRegistry {
         debug_assert_eq!(self.cards.len(), (id.0 - 1) as usize);
         self.printed.push(PrintedCard {
             front: PrintedFace {
+                name: front_name,
                 continuous_effects: data.continuous_effects,
                 keywords: data.keywords,
                 card_types: data.card_types,
                 supertypes: data.supertypes,
                 subtypes: data.subtypes,
                 cost: data.cost,
+                color_indicator: data.color_indicator,
             },
             back: back.map(|d| PrintedFace {
+                name: d.name,
                 continuous_effects: d.continuous_effects,
                 keywords: d.keywords,
                 card_types: d.card_types,
                 supertypes: d.supertypes,
                 subtypes: d.subtypes,
                 cost: d.cost,
+                color_indicator: d.color_indicator,
             }),
         });
         self.cards.push(card);
@@ -1324,6 +1331,21 @@ impl CardRegistry {
     #[must_use]
     pub fn printed_cost(&self, id: CardId, transformed: bool) -> Option<&ManaCost> {
         self.printed_face(id, transformed)?.cost.as_ref()
+    }
+
+    /// The name printed on that face, as [`Self::printed_card_types`];
+    /// `None` for a card not in the registry.
+    #[must_use]
+    pub fn printed_name(&self, id: CardId, transformed: bool) -> Option<&str> {
+        Some(self.printed_face(id, transformed)?.name.as_str())
+    }
+
+    /// The color indicator printed on that face (CR 204), as
+    /// [`Self::printed_card_types`]: empty on a face whose mana cost says
+    /// its colors.
+    #[must_use]
+    pub fn printed_color_indicator(&self, id: CardId, transformed: bool) -> &[Color] {
+        self.printed_face(id, transformed).map_or(&[], |f| f.color_indicator.as_slice())
     }
 
     /// The face `GameState::face_data` reads (CR 712.8a, and a transformed

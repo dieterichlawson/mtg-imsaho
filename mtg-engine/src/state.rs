@@ -1820,8 +1820,7 @@ impl GameState {
         // Legendary is copiable (CR 707.2): the object flag, or the printed
         // supertype when nothing has set one.
         let legendary = src.is_legendary
-            || self.face_data(source, registry)
-                .is_some_and(|d| d.supertypes.contains(&crate::types::Supertype::Legendary));
+            || self.face_supertypes(source, registry).contains(&crate::types::Supertype::Legendary);
         let name = self.name_of(source, registry);
         let (power, toughness) = self.printed_pt_of(source, registry);
         let keywords = self.printed_keywords_of(source, registry);
@@ -3643,14 +3642,30 @@ impl GameState {
         registry.printed_cost(o.card_id, o.is_transformed)
     }
 
+    /// The name printed on the object's active face, as
+    /// [`Self::face_card_types`]; `None` for an object with no registry
+    /// entry.
+    #[must_use]
+    pub fn face_name<'r>(&self, id: ObjectId, registry: &'r crate::cards::CardRegistry) -> Option<&'r str> {
+        let o = self.get_object(id)?;
+        registry.printed_name(o.card_id, o.is_transformed)
+    }
+
+    /// The color indicator printed on the object's active face (CR 204), as
+    /// [`Self::face_card_types`].
+    #[must_use]
+    pub fn face_color_indicator<'r>(&self, id: ObjectId, registry: &'r crate::cards::CardRegistry) -> &'r [crate::types::Color] {
+        self.get_object(id).map_or(&[], |o| registry.printed_color_indicator(o.card_id, o.is_transformed))
+    }
+
     /// The object's name, from its active face — the back face when a DFC is
     /// transformed. `obj.name` is only authoritative for tokens, which have no
     /// registry face; for a real card it is a display cache that goes stale
     /// (CR 712.8a: a DFC outside the battlefield has its front face's name).
     #[must_use]
     pub fn name_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> String {
-        if let Some(data) = self.face_data(id, registry) {
-            return data.name;
+        if let Some(name) = self.face_name(id, registry) {
+            return name.to_string();
         }
         self.get_object(id).map(|o| o.name.clone()).unwrap_or_default()
     }
@@ -3785,11 +3800,9 @@ impl GameState {
     #[must_use]
     pub fn subtypes_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<String> {
         let mut subs = self.get_object(id).map(|o| o.subtypes.clone()).unwrap_or_default();
-        if let Some(data) = self.face_data(id, registry) {
-            for s in data.subtypes {
-                if !subs.contains(&s) {
-                    subs.push(s);
-                }
+        for s in self.face_subtypes(id, registry) {
+            if !subs.contains(s) {
+                subs.push(s.clone());
             }
         }
         subs
@@ -4066,12 +4079,8 @@ impl GameState {
     /// legendary creature is legendary and has no card behind it.
     #[must_use]
     pub fn is_legendary(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
-        if let Some(data) = self.face_data(id, registry) {
-            if data.supertypes.contains(&crate::types::Supertype::Legendary) {
-                return true;
-            }
-        }
-        self.get_object(id).is_some_and(|o| o.is_legendary)
+        self.face_supertypes(id, registry).contains(&crate::types::Supertype::Legendary)
+            || self.get_object(id).is_some_and(|o| o.is_legendary)
     }
 
     /// Colors of the object: the union of any granted at runtime (Grimoire of
@@ -4080,19 +4089,19 @@ impl GameState {
     #[must_use]
     pub fn colors_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<crate::types::Color> {
         let mut cols = self.get_object(id).map(|o| o.colors.clone()).unwrap_or_default();
-        let face = self.face_data(id, registry);
         // CR 204.2: a face with no mana cost states its colors with a color
         // indicator. Reading the cost alone made every transformed permanent
         // colorless, which Gatstaf Howler's intimidate reads directly.
-        if let Some(indicator) = face.as_ref().map(|d| d.color_indicator.clone()).filter(|i| !i.is_empty()) {
+        let indicator = self.face_color_indicator(id, registry);
+        if !indicator.is_empty() {
             for c in indicator {
-                if !cols.contains(&c) {
-                    cols.push(c);
+                if !cols.contains(c) {
+                    cols.push(*c);
                 }
             }
             return cols;
         }
-        if let Some(cost) = face.and_then(|d| d.cost) {
+        if let Some(cost) = self.face_cost(id, registry) {
             for sym in &cost.symbols {
                 if let crate::types::ManaSymbol::Colored(c) = sym {
                     if !cols.contains(c) {
