@@ -40,15 +40,14 @@ impl CardBehavior for Nevermore {
         // Nevermore names a CARD, not a permanent — this reads the registry by
         // name with no game object involved, so the characteristics layer
         // (which resolves an object's active face) does not apply.
-        let mut card_names: Vec<String> = registry.all_names().into_iter()
+        let card_names = crate::cards::helpers::sorted(registry.all_names().into_iter()
             .filter(|name| {
                 registry.get_id_by_name(name)
                     .and_then(|id| registry.card_data(id))
                     .is_some_and(|d| !d.card_types.contains(&CardType::Land))
             })
             .map(std::string::ToString::to_string)
-            .collect();
-        card_names.sort();
+            .collect());
 
         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
             player: controller,

@@ -1127,6 +1127,17 @@ pub fn finish_library_search(
     shuffle_library(state, searcher);
 }
 
+/// `names` in order: card names offered to a player to choose among, in
+/// the order a person reads a list (Nevermore's question). A function of
+/// its own so that a proof can stand in for the sort: with the names on
+/// the heap, Kani could not tell how any two compared, and sorting even
+/// three of them did not finish symbolic execution in half an hour.
+#[must_use]
+pub fn sorted(mut names: Vec<String>) -> Vec<String> {
+    names.sort();
+    names
+}
+
 /// CR 701.20: shuffle a player's library.
 pub fn shuffle_library(state: &mut GameState, player: PlayerId) {
     let mut order = std::mem::take(&mut state.get_player_mut(player).library_order);
