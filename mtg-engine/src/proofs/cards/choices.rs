@@ -308,12 +308,10 @@ impl Reckoning {
                     options, optional: false, effect: PendingEffect::CardEffect { source_id, .. }, ..
                 },
             }) if *source == self.spell && *source_id == self.spell => {
-                let mut ids = Vec::with_capacity(options.len());
-                for t in options {
-                    let Target::Object(id) = t else { return None };
-                    ids.push(*id);
-                }
-                Some((*player, ids))
+                // Not allocated at the length of `options`, which the
+                // solver leaves open (`picked`).
+                let ids = picked(options, |t| match t { Target::Object(id) => Some(*id), _ => None });
+                (ids.len() == options.len()).then_some((*player, ids))
             }
             _ => None,
         }
