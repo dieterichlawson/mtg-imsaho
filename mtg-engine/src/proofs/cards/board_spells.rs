@@ -211,19 +211,41 @@ card_proof! {
     }
 }
 
-card_proof! {
-    /// Moonmist: each Human on the battlefield transformed (whether it can
-    /// be is the action's, CR 701.28c), then combat damage prevented this
-    /// turn from every creature but Wolves and Werewolves, and nothing else.
-    fn moonmist_transforms_humans_and_spares_werewolves_and_wolves() {
-        const HUMANS: Kinds = Kinds { types: &[CardType::Creature], subtypes: &["Human", "Wolf"], keywords: &[] };
-        let r = resolve(Box::new(isd::moonmist::Moonmist), &HUMANS);
-        let humans = r.those(|o| o.zone == Zone::Battlefield && o.subtypes.iter().any(|s| s == "Human"));
-        let prevents = matches!(r.added(), [T::PreventCombatDamageExcept { filter, source_name }]
-            if either(filter, |f| has_subtype(f, "Wolf"), |f| has_subtype(f, "Werewolf")) && source_name == "Moonmist");
-        assert!(asked_each(humans.len(), |i| Act::Transform(humans[i])) && prevents && r.nothing_else_changed());
-        std::mem::forget(r);
-    }
+/// Moonmist: each Human on the battlefield transformed (whether it can be
+/// is the action's, CR 701.28c), then combat damage prevented this turn
+/// from every creature but Wolves and Werewolves, and nothing else. With
+/// each of the other two objects a Human, a Wolf, both or neither (the
+/// subtypes of `SUBTYPES` at `card` and `token`), a constant in each
+/// harness: over subtypes the solver chose, the proof ran out of memory at
+/// four and a half gigabytes.
+fn moonmist_transforms_humans_and_spares_werewolves_and_wolves((card, token): (usize, usize)) {
+    const SUBTYPES: [&[&str]; 4] = [&[], &["Human"], &["Wolf"], &["Human", "Wolf"]];
+    const CREATURE: Kinds = Kinds { types: &[CardType::Creature], subtypes: &[], keywords: &[] };
+    let r = resolve_of(Box::new(isd::moonmist::Moonmist), &CREATURE, [SUBTYPES[card], SUBTYPES[token]]);
+    let humans = r.those(|o| o.zone == Zone::Battlefield && o.subtypes.iter().any(|s| s == "Human"));
+    let prevents = matches!(r.added(), [T::PreventCombatDamageExcept { filter, source_name }]
+        if either(filter, |f| has_subtype(f, "Wolf"), |f| has_subtype(f, "Werewolf")) && source_name == "Moonmist");
+    assert!(asked_each(humans.len(), |i| Act::Transform(humans[i])) && prevents && r.nothing_else_changed());
+    std::mem::forget((r, humans));
+}
+
+case_by_case! { moonmist_transforms_humans_and_spares_werewolves_and_wolves;
+    moonmist_over_a_card_neither_human_nor_wolf_and_a_token_neither_human_nor_wolf: (0, 0),
+    moonmist_over_a_card_neither_human_nor_wolf_and_a_human_token: (0, 1),
+    moonmist_over_a_card_neither_human_nor_wolf_and_a_wolf_token: (0, 2),
+    moonmist_over_a_card_neither_human_nor_wolf_and_a_human_wolf_token: (0, 3),
+    moonmist_over_a_human_card_and_a_token_neither_human_nor_wolf: (1, 0),
+    moonmist_over_a_human_card_and_a_human_token: (1, 1),
+    moonmist_over_a_human_card_and_a_wolf_token: (1, 2),
+    moonmist_over_a_human_card_and_a_human_wolf_token: (1, 3),
+    moonmist_over_a_wolf_card_and_a_token_neither_human_nor_wolf: (2, 0),
+    moonmist_over_a_wolf_card_and_a_human_token: (2, 1),
+    moonmist_over_a_wolf_card_and_a_wolf_token: (2, 2),
+    moonmist_over_a_wolf_card_and_a_human_wolf_token: (2, 3),
+    moonmist_over_a_human_wolf_card_and_a_token_neither_human_nor_wolf: (3, 0),
+    moonmist_over_a_human_wolf_card_and_a_human_token: (3, 1),
+    moonmist_over_a_human_wolf_card_and_a_wolf_token: (3, 2),
+    moonmist_over_a_human_wolf_card_and_a_human_wolf_token: (3, 3),
 }
 
 card_proof! {
