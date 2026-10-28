@@ -360,16 +360,20 @@ struct Reckoning {
     permanents: [ObjectId; 3],
 }
 
-fn reckoning() -> Reckoning {
+/// The board with player `active` active, and each permanent of `shape`
+/// a creature of player 0 (0), of player 1 (1), or not a creature and
+/// either player's (2).
+fn reckoning_of(active: PlayerId, shape: [u8; 3]) -> Reckoning {
     let (registry, mut state, blank, card) = board(Box::new(isd::divine_reckoning::DivineReckoning));
-    state.active_player = any_player();
+    state.active_player = active;
     let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
     let mut permanents = [spell; 3];
-    for slot in &mut permanents {
-        let id = state.create_object(blank, any_player(), Zone::Battlefield, None, None);
+    for (slot, kind) in permanents.iter_mut().zip(shape) {
+        let controller = if kind == 2 { any_player() } else { PlayerId(kind) };
+        let id = state.create_object(blank, controller, Zone::Battlefield, None, None);
         let o = state.get_object_mut(id).expect("just created");
         o.card_types = Vec::with_capacity(1);
-        if kani::any() {
+        if kind != 2 {
             o.card_types.push(CardType::Creature);
         }
         *slot = id;
@@ -407,49 +411,108 @@ impl Reckoning {
     }
 }
 
-card_proof! {
-    /// Divine Reckoning: each player, the active player first and then in
-    /// turn order (CR 101.4), chooses a creature they control: asked when
-    /// they control more than one, the one when they control one, none
-    /// when none; then every creature not chosen is destroyed, all at once
-    /// (CR 701.8a, one event). Over three permanents, each either
-    /// player's and each a creature or not, either player active, and
-    /// every choice of a player asked.
-    fn divine_reckoning_keeps_one_creature_each_and_destroys_the_rest() {
-        let mut r = reckoning();
-        let before = Snapshot::of(&r.state);
-        let spell = r.spell;
-        let active = r.state.active_player;
-        r.registry.get(r.card).expect("registered").on_resolve(&mut r.state, spell, &[], &r.registry);
-        let mut kept = Vec::with_capacity(2);
-        for player in [active, PlayerId(1 - active.0)] {
-            let theirs = r.creatures_of(player);
-            match theirs.len() {
-                0 => {}
-                1 => kept.push(theirs[0]),
-                _ => {
-                    let Some((asked, offered)) = r.asked() else { panic!("a player with a choice is asked it") };
-                    assert!(asked == player && offered == theirs && acted() == 0);
-                    let chosen = theirs[usize::from(kani::any::<bool>()) % theirs.len()];
-                    r.state.awaiting_action = None;
-                    r.registry.get(r.card).expect("registered").resolve_card_effect(&mut r.state, spell, "", &Target::Object(chosen), &r.registry);
-                    kept.push(chosen);
-                }
+/// Divine Reckoning: each player, the active player first and then in
+/// turn order (CR 101.4), chooses a creature they control: asked when
+/// they control more than one, the one when they control one, none when
+/// none; then every creature not chosen is destroyed, all at once (CR
+/// 701.8a, one event). Over three permanents, each a creature of either
+/// player or not a creature, either player active, and every choice of a
+/// player asked. The active player and which permanents are whose
+/// creatures (`reckoning_of`'s shape) are constants in each harness: with
+/// them the solver's, each player's creatures were a list of every length
+/// at once, and the proof ran out of memory at four and a half gigabytes
+/// in symbolic execution.
+fn divine_reckoning_keeps_one_creature_each_and_destroys_the_rest((active, shape): (u8, [u8; 3])) {
+    let mut r = reckoning_of(PlayerId(active), shape);
+    let before = Snapshot::of(&r.state);
+    let spell = r.spell;
+    let active = r.state.active_player;
+    r.registry.get(r.card).expect("registered").on_resolve(&mut r.state, spell, &[], &r.registry);
+    let mut kept = Vec::with_capacity(2);
+    for player in [active, PlayerId(1 - active.0)] {
+        let theirs = r.creatures_of(player);
+        match theirs.len() {
+            0 => {}
+            1 => kept.push(theirs[0]),
+            _ => {
+                let Some((asked, offered)) = r.asked() else { panic!("a player with a choice is asked it") };
+                assert!(asked == player && offered == theirs && acted() == 0);
+                let chosen = theirs[usize::from(kani::any::<bool>()) % theirs.len()];
+                r.state.awaiting_action = None;
+                r.registry.get(r.card).expect("registered").resolve_card_effect(&mut r.state, spell, "", &Target::Object(chosen), &r.registry);
+                kept.push(chosen);
             }
         }
-        assert!(r.state.awaiting_action.is_none());
-        let mut destroyed = Vec::with_capacity(3);
-        for id in r.permanents {
-            if r.state.get_object(id).expect("on the board").card_types.contains(&CardType::Creature) && !kept.contains(&id) {
-                destroyed.push(id);
-            }
-        }
-        let Some(Act::DestroyAll(outcomes)) = super::act(0) else { panic!("destroys the rest") };
-        assert!(acted() == 1 && outcomes.len() == destroyed.len());
-        for (i, (id, _)) in outcomes.iter().enumerate() {
-            assert!(*id == destroyed[i]);
-        }
-        assert!(Snapshot::of(&r.state) == before);
-        std::mem::forget((r, kept, destroyed, outcomes));
     }
+    assert!(r.state.awaiting_action.is_none());
+    let mut destroyed = Vec::with_capacity(3);
+    for id in r.permanents {
+        if r.state.get_object(id).expect("on the board").card_types.contains(&CardType::Creature) && !kept.contains(&id) {
+            destroyed.push(id);
+        }
+    }
+    let Some(Act::DestroyAll(outcomes)) = super::act(0) else { panic!("destroys the rest") };
+    assert!(acted() == 1 && outcomes.len() == destroyed.len());
+    for (i, (id, _)) in outcomes.iter().enumerate() {
+        assert!(*id == destroyed[i]);
+    }
+    assert!(Snapshot::of(&r.state) == before);
+    std::mem::forget((r, kept, destroyed, outcomes));
+}
+
+case_by_case! { divine_reckoning_keeps_one_creature_each_and_destroys_the_rest;
+    divine_reckoning_with_the_first_player_active_over_a_first_players_creature_a_first_players_creature_and_a_first_players_creature: (0, [0, 0, 0]),
+    divine_reckoning_with_the_first_player_active_over_a_first_players_creature_a_first_players_creature_and_a_second_players_creature: (0, [0, 0, 1]),
+    divine_reckoning_with_the_first_player_active_over_a_first_players_creature_a_first_players_creature_and_a_noncreature: (0, [0, 0, 2]),
+    divine_reckoning_with_the_first_player_active_over_a_first_players_creature_a_second_players_creature_and_a_first_players_creature: (0, [0, 1, 0]),
+    divine_reckoning_with_the_first_player_active_over_a_first_players_creature_a_second_players_creature_and_a_second_players_creature: (0, [0, 1, 1]),
+    divine_reckoning_with_the_first_player_active_over_a_first_players_creature_a_second_players_creature_and_a_noncreature: (0, [0, 1, 2]),
+    divine_reckoning_with_the_first_player_active_over_a_first_players_creature_a_noncreature_and_a_first_players_creature: (0, [0, 2, 0]),
+    divine_reckoning_with_the_first_player_active_over_a_first_players_creature_a_noncreature_and_a_second_players_creature: (0, [0, 2, 1]),
+    divine_reckoning_with_the_first_player_active_over_a_first_players_creature_a_noncreature_and_a_noncreature: (0, [0, 2, 2]),
+    divine_reckoning_with_the_first_player_active_over_a_second_players_creature_a_first_players_creature_and_a_first_players_creature: (0, [1, 0, 0]),
+    divine_reckoning_with_the_first_player_active_over_a_second_players_creature_a_first_players_creature_and_a_second_players_creature: (0, [1, 0, 1]),
+    divine_reckoning_with_the_first_player_active_over_a_second_players_creature_a_first_players_creature_and_a_noncreature: (0, [1, 0, 2]),
+    divine_reckoning_with_the_first_player_active_over_a_second_players_creature_a_second_players_creature_and_a_first_players_creature: (0, [1, 1, 0]),
+    divine_reckoning_with_the_first_player_active_over_a_second_players_creature_a_second_players_creature_and_a_second_players_creature: (0, [1, 1, 1]),
+    divine_reckoning_with_the_first_player_active_over_a_second_players_creature_a_second_players_creature_and_a_noncreature: (0, [1, 1, 2]),
+    divine_reckoning_with_the_first_player_active_over_a_second_players_creature_a_noncreature_and_a_first_players_creature: (0, [1, 2, 0]),
+    divine_reckoning_with_the_first_player_active_over_a_second_players_creature_a_noncreature_and_a_second_players_creature: (0, [1, 2, 1]),
+    divine_reckoning_with_the_first_player_active_over_a_second_players_creature_a_noncreature_and_a_noncreature: (0, [1, 2, 2]),
+    divine_reckoning_with_the_first_player_active_over_a_noncreature_a_first_players_creature_and_a_first_players_creature: (0, [2, 0, 0]),
+    divine_reckoning_with_the_first_player_active_over_a_noncreature_a_first_players_creature_and_a_second_players_creature: (0, [2, 0, 1]),
+    divine_reckoning_with_the_first_player_active_over_a_noncreature_a_first_players_creature_and_a_noncreature: (0, [2, 0, 2]),
+    divine_reckoning_with_the_first_player_active_over_a_noncreature_a_second_players_creature_and_a_first_players_creature: (0, [2, 1, 0]),
+    divine_reckoning_with_the_first_player_active_over_a_noncreature_a_second_players_creature_and_a_second_players_creature: (0, [2, 1, 1]),
+    divine_reckoning_with_the_first_player_active_over_a_noncreature_a_second_players_creature_and_a_noncreature: (0, [2, 1, 2]),
+    divine_reckoning_with_the_first_player_active_over_a_noncreature_a_noncreature_and_a_first_players_creature: (0, [2, 2, 0]),
+    divine_reckoning_with_the_first_player_active_over_a_noncreature_a_noncreature_and_a_second_players_creature: (0, [2, 2, 1]),
+    divine_reckoning_with_the_first_player_active_over_a_noncreature_a_noncreature_and_a_noncreature: (0, [2, 2, 2]),
+    divine_reckoning_with_the_second_player_active_over_a_first_players_creature_a_first_players_creature_and_a_first_players_creature: (1, [0, 0, 0]),
+    divine_reckoning_with_the_second_player_active_over_a_first_players_creature_a_first_players_creature_and_a_second_players_creature: (1, [0, 0, 1]),
+    divine_reckoning_with_the_second_player_active_over_a_first_players_creature_a_first_players_creature_and_a_noncreature: (1, [0, 0, 2]),
+    divine_reckoning_with_the_second_player_active_over_a_first_players_creature_a_second_players_creature_and_a_first_players_creature: (1, [0, 1, 0]),
+    divine_reckoning_with_the_second_player_active_over_a_first_players_creature_a_second_players_creature_and_a_second_players_creature: (1, [0, 1, 1]),
+    divine_reckoning_with_the_second_player_active_over_a_first_players_creature_a_second_players_creature_and_a_noncreature: (1, [0, 1, 2]),
+    divine_reckoning_with_the_second_player_active_over_a_first_players_creature_a_noncreature_and_a_first_players_creature: (1, [0, 2, 0]),
+    divine_reckoning_with_the_second_player_active_over_a_first_players_creature_a_noncreature_and_a_second_players_creature: (1, [0, 2, 1]),
+    divine_reckoning_with_the_second_player_active_over_a_first_players_creature_a_noncreature_and_a_noncreature: (1, [0, 2, 2]),
+    divine_reckoning_with_the_second_player_active_over_a_second_players_creature_a_first_players_creature_and_a_first_players_creature: (1, [1, 0, 0]),
+    divine_reckoning_with_the_second_player_active_over_a_second_players_creature_a_first_players_creature_and_a_second_players_creature: (1, [1, 0, 1]),
+    divine_reckoning_with_the_second_player_active_over_a_second_players_creature_a_first_players_creature_and_a_noncreature: (1, [1, 0, 2]),
+    divine_reckoning_with_the_second_player_active_over_a_second_players_creature_a_second_players_creature_and_a_first_players_creature: (1, [1, 1, 0]),
+    divine_reckoning_with_the_second_player_active_over_a_second_players_creature_a_second_players_creature_and_a_second_players_creature: (1, [1, 1, 1]),
+    divine_reckoning_with_the_second_player_active_over_a_second_players_creature_a_second_players_creature_and_a_noncreature: (1, [1, 1, 2]),
+    divine_reckoning_with_the_second_player_active_over_a_second_players_creature_a_noncreature_and_a_first_players_creature: (1, [1, 2, 0]),
+    divine_reckoning_with_the_second_player_active_over_a_second_players_creature_a_noncreature_and_a_second_players_creature: (1, [1, 2, 1]),
+    divine_reckoning_with_the_second_player_active_over_a_second_players_creature_a_noncreature_and_a_noncreature: (1, [1, 2, 2]),
+    divine_reckoning_with_the_second_player_active_over_a_noncreature_a_first_players_creature_and_a_first_players_creature: (1, [2, 0, 0]),
+    divine_reckoning_with_the_second_player_active_over_a_noncreature_a_first_players_creature_and_a_second_players_creature: (1, [2, 0, 1]),
+    divine_reckoning_with_the_second_player_active_over_a_noncreature_a_first_players_creature_and_a_noncreature: (1, [2, 0, 2]),
+    divine_reckoning_with_the_second_player_active_over_a_noncreature_a_second_players_creature_and_a_first_players_creature: (1, [2, 1, 0]),
+    divine_reckoning_with_the_second_player_active_over_a_noncreature_a_second_players_creature_and_a_second_players_creature: (1, [2, 1, 1]),
+    divine_reckoning_with_the_second_player_active_over_a_noncreature_a_second_players_creature_and_a_noncreature: (1, [2, 1, 2]),
+    divine_reckoning_with_the_second_player_active_over_a_noncreature_a_noncreature_and_a_first_players_creature: (1, [2, 2, 0]),
+    divine_reckoning_with_the_second_player_active_over_a_noncreature_a_noncreature_and_a_second_players_creature: (1, [2, 2, 1]),
+    divine_reckoning_with_the_second_player_active_over_a_noncreature_a_noncreature_and_a_noncreature: (1, [2, 2, 2]),
 }
