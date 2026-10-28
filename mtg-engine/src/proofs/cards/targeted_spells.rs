@@ -359,7 +359,9 @@ card_proof! {
     /// Memory's Journey: a player, and up to three cards from that player's
     /// graveyard; each target card still in that graveyard put into its
     /// owner's library, and then that library shuffled. With its player
-    /// target gone illegal, nothing.
+    /// target gone illegal, nothing. Over either player or none as the
+    /// first target, and no card or one, any of the board's objects, as
+    /// the second: the card treats each card target alike.
     fn memorys_journey_shuffles_its_targets_into_their_library() {
         let mut b = spell(Box::new(isd::memorys_journey::MemorysJourney));
         assert!(matches!(&*b.requirement(), R::TwoTargets(player, cards)
@@ -370,7 +372,10 @@ card_proof! {
             1 => Target::Player(PlayerId(1)),
             _ => Target::Illegal,
         };
-        let mut targets = vec![player.clone()];
+        // Allocated for both first: `vec![player]` holds one, and a push
+        // past that grows it, which no proof here lets a list do.
+        let mut targets = Vec::with_capacity(2);
+        targets.push(player.clone());
         if kani::any() {
             targets.push(b.any_object_target());
         }
