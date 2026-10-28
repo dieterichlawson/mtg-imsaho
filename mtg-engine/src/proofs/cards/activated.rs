@@ -702,27 +702,35 @@ card_proof! {
     /// library for a basic land card (the basic lands in it, in library
     /// order) to put into their hand, untapped, and must; the search
     /// reveals and shuffles (`proofs::actions`). Over a library of a Forest
-    /// and a nonbasic land card in either order, either player's.
+    /// and a nonbasic land card in either order, the first player's, the
+    /// player who activated it either. The order, the library's owner and
+    /// the player who activated it are constants in each call: an order the
+    /// solver chose made each card in the library either card, every read
+    /// of it a question of which, and a player it chose an index into the
+    /// players, through which the card reads the library it searches; the
+    /// proof ran out of memory at ten gigabytes, and with the activator
+    /// alone left open, at four.
     fn travelers_amulet_searches_for_a_basic_land() {
-        let mut b = permanent(Box::new(isd::travelers_amulet::TravelersAmulet), &ANY_CREATURE, true);
-        let forest_card = b.registry.register(Box::new(crate::cards::forest::Forest));
-        let blank = CardId(1);
-        let owner = if kani::any() { b.you } else { PlayerId(1 - b.you.0) };
-        let forest = b.state.create_object(forest_card, owner, Zone::Library, None, None);
-        let other = b.state.create_object(blank, owner, Zone::Library, None, None);
-        b.state.get_object_mut(other).expect("just created").card_types = vec![CardType::Land];
-        let order = if kani::any() { vec![forest, other] } else { vec![other, forest] };
-        if owner == PlayerId(0) {
-            b.state.players[0].library_order = order;
-        } else {
-            b.state.players[1].library_order = order;
-        }
-        let before = b.resolve(0, &[]);
-        let candidates = if owner == b.you { vec![forest] } else { vec![] };
-        assert!(asked_for(&[Act::Search { source: b.me, player: b.you, candidates, to: Zone::Hand, tapped: false, optional: false }]));
-        assert!(Snapshot::of(&b.state) == before);
-        std::mem::forget(b);
+        each_case(4, |case| travelers_amulet(case % 2 == 1, PlayerId(case / 2)));
     }
+}
+
+/// `travelers_amulet_searches_for_a_basic_land`, with the Forest on top if
+/// `forest_first`, activated by `you`.
+fn travelers_amulet(forest_first: bool, you: PlayerId) {
+    let mut b = permanent_of(Box::new(isd::travelers_amulet::TravelersAmulet), &ANY_CREATURE, true, you);
+    let forest_card = b.registry.register(Box::new(crate::cards::forest::Forest));
+    let blank = CardId(1);
+    let owner = PlayerId(0);
+    let forest = b.state.create_object(forest_card, owner, Zone::Library, None, None);
+    let other = b.state.create_object(blank, owner, Zone::Library, None, None);
+    b.state.get_object_mut(other).expect("just created").card_types = vec![CardType::Land];
+    b.state.players[0].library_order = if forest_first { vec![forest, other] } else { vec![other, forest] };
+    let before = b.resolve(0, &[]);
+    let candidates = if owner == b.you { vec![forest] } else { vec![] };
+    assert!(asked_for(&[Act::Search { source: b.me, player: b.you, candidates, to: Zone::Hand, tapped: false, optional: false }]));
+    assert!(Snapshot::of(&b.state) == before);
+    std::mem::forget(b);
 }
 
 /// A card in a library a proof makes: Grizzly Bears (a creature card, mana
