@@ -1643,9 +1643,21 @@ card_proof! {
 ///
 /// For the target at place `i` of [`any_target`]'s list, a constant in
 /// each harness: a target the solver chose, beside the libraries' orders,
-/// ran the proof out of memory at ten gigabytes.
-fn ghost_quarter_resolves(i: u8) {
+/// ran the proof out of memory at ten gigabytes. And for a permanent's
+/// target, `of` its controller and whether the Forest is on top of their
+/// library, constants too: with them the solver's, the search was through
+/// an index by that player, of a library in either order, and the proof
+/// ran out of memory at three and a half gigabytes in symbolic execution.
+fn ghost_quarter_resolves((i, of): (u8, Option<(u8, bool)>)) {
     let mut b = permanent(Box::new(isd::ghost_quarter::GhostQuarter), &ANY_CREATURE, true);
+    if let (Some((controller, _)), Some(&id)) = (of, b.others.get(usize::from(i))) {
+        // On the battlefield: a card elsewhere has no controller but its
+        // owner (CR 108.4), and is no target the ability can reach.
+        let o = b.state.get_object_mut(id).expect("on the board");
+        if o.zone == Zone::Battlefield {
+            o.controller = PlayerId(controller);
+        }
+    }
     let forest_card = b.registry.register(Box::new(crate::cards::forest::Forest));
     let township_card = b.registry.register(Box::new(isd::gavony_township::GavonyTownship));
     let mut forests = [b.me; 2];
@@ -1653,7 +1665,11 @@ fn ghost_quarter_resolves(i: u8) {
         let owner = PlayerId(p as u8);
         *forest = b.state.create_object(forest_card, owner, Zone::Library, None, None);
         let other = b.state.create_object(township_card, owner, Zone::Library, None, None);
-        let order = if kani::any() { [*forest, other] } else { [other, *forest] };
+        let forest_first = match of {
+            Some((controller, first)) if usize::from(controller) == p => first,
+            _ => kani::any(),
+        };
+        let order = if forest_first { [*forest, other] } else { [other, *forest] };
         b.state.players[p].library_order.extend_from_slice(&order);
     }
     let target = target_at(b.others, i);
@@ -1682,11 +1698,17 @@ fn ghost_quarter_resolves(i: u8) {
 }
 
 case_by_case! { unwind(8) ghost_quarter_resolves;
-    ghost_quarter_destroys_the_card_it_targets_and_offers_a_basic: 0,
-    ghost_quarter_destroys_the_token_it_targets_and_offers_a_basic: 1,
-    ghost_quarter_targeting_the_first_player_does_nothing: 2,
-    ghost_quarter_targeting_the_second_player_does_nothing: 3,
-    ghost_quarter_with_its_target_gone_does_nothing: 4,
+    ghost_quarter_destroys_the_first_players_card_and_offers_the_forest_on_top: (0, Some((0, true))),
+    ghost_quarter_destroys_the_first_players_card_and_offers_the_forest_under_a_land: (0, Some((0, false))),
+    ghost_quarter_destroys_the_second_players_card_and_offers_the_forest_on_top: (0, Some((1, true))),
+    ghost_quarter_destroys_the_second_players_card_and_offers_the_forest_under_a_land: (0, Some((1, false))),
+    ghost_quarter_destroys_the_first_players_token_and_offers_the_forest_on_top: (1, Some((0, true))),
+    ghost_quarter_destroys_the_first_players_token_and_offers_the_forest_under_a_land: (1, Some((0, false))),
+    ghost_quarter_destroys_the_second_players_token_and_offers_the_forest_on_top: (1, Some((1, true))),
+    ghost_quarter_destroys_the_second_players_token_and_offers_the_forest_under_a_land: (1, Some((1, false))),
+    ghost_quarter_targeting_the_first_player_does_nothing: (2, None),
+    ghost_quarter_targeting_the_second_player_does_nothing: (3, None),
+    ghost_quarter_with_its_target_gone_does_nothing: (4, None),
 }
 
 card_proof! {
