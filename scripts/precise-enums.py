@@ -33,7 +33,16 @@ The rewrite, which changes nothing a Rust program can observe:
   are zero rather than whatever they were. No program reads a variant other
   than the one its tag names. A niche-encoded enum keeps its tag inside a
   variant's bytes and is left alone, as is a Rust `union`, whose other
-  bytes are kept by a write.
+  bytes are kept by a write;
+- every heap allocation (CBMC's `malloc`, which Kani's `__rust_alloc`
+  calls) is zeroed, as `calloc`'s is. Rust's allocator hands out memory of
+  no particular value, and safe Rust never reads memory before writing it
+  (that is undefined behaviour), so zero is a value it may have and no
+  program tells. CBMC's own value is one it leaves open, and a list whose
+  length the solver leaves open is read past its end on paths it cannot
+  rule out: an enum read from there is of every variant, and dropping one
+  of the stack's entries went into every variant of a target requirement,
+  three levels deep. Zeroed, what is read there is one known variant.
 """
 import os
 import sys
@@ -168,14 +177,77 @@ def rewrite(version, strings, symbols, functions):
             whole = gb.Irep(BYTE_EXTRACT, [bytes_of, offset0], [(K_TYPE, ut), (K_BITS_PER_BYTE, leaf('8'))])
             ins[0] = gb.Irep(code.id, [cases, whole], list(code.named))
             variants += 1
-    return padding, variants
+
+    # A niche-encoded enum's variant: `x.V := v` over a union of no known
+    # bytes, then its tag written into the niche, `*(T *)&x := tag`. Made a
+    # write of the whole union, the bytes outside the variant zero.
+    DEREF, TYPECAST, ADDRESS_OF, SYMBOL = sid('dereference'), sid('typecast'), sid('address_of'), sid('symbol')
+
+    def niche_write_to(code, var):
+        if len(code.subs) != 2:
+            return False
+        lhs = code.subs[0]
+        while lhs.id in (DEREF, TYPECAST) and lhs.subs:
+            lhs = lhs.subs[0]
+        return lhs.id == ADDRESS_OF and lhs.subs and lhs.subs[0].id == SYMBOL and named(lhs.subs[0], K_IDENT) is not None \
+            and named(lhs.subs[0], K_IDENT).id == var
+
+    niches = 0
+    for _, instrs in functions:
+        for i, ins in enumerate(instrs[:-1]):
+            code = ins[0]
+            if ins[2] != ASSIGN or len(code.subs) != 2 or instrs[i + 1][2] != ASSIGN:
+                continue
+            lhs, rhs = code.subs
+            if lhs.id != MEMBER or not lhs.subs or lhs.subs[0].id != SYMBOL:
+                continue
+            union = lhs.subs[0]
+            ut, var = named(union, K_TYPE), named(union, K_IDENT)
+            if ut is None or ut.id != UNION_TAG or var is None or not niche_write_to(instrs[i + 1][0], var.id):
+                continue
+            vt = named(rhs, K_TYPE)
+            uw, vw = width(ut), (width(vt) if vt is not None else None)
+            if uw is None or vw is None or vw > uw:
+                continue
+            comps, ops = [gb.Irep(EMPTY, [], [(K_NAME, leaf('v')), (K_TYPE, vt)])], [rhs]
+            if uw > vw:
+                tail = gb.Irep(UNSIGNEDBV, [], [(K_WIDTH, leaf(str(uw - vw)))])
+                comps.append(gb.Irep(EMPTY, [], [(K_NAME, leaf('tail')), (K_TYPE, tail)]))
+                ops.append(zero(tail))
+            bytes_of = gb.Irep(STRUCT, ops, [(K_TYPE, gb.Irep(STRUCT, [], [(K_COMPONENTS, gb.Irep(EMPTY, comps, []))]))])
+            whole = gb.Irep(BYTE_EXTRACT, [bytes_of, offset0], [(K_TYPE, ut), (K_BITS_PER_BYTE, leaf('8'))])
+            ins[0] = gb.Irep(code.id, [union, whole], list(code.named))
+            niches += 1
+
+    # Every allocation zeroed, as `calloc`'s is.
+    ALLOCATE = sid('allocate')
+
+    def allocations(name):
+        for fname, instrs in functions:
+            if fname in (name, name.encode()):
+                for ins in instrs:
+                    code = ins[0]
+                    if ins[2] == ASSIGN and len(code.subs) == 2:
+                        rhs = code.subs[1]
+                        st = named(rhs, K_STATEMENT)
+                        if rhs.id == SIDE_EFFECT and st is not None and st.id == ALLOCATE and len(rhs.subs) == 2:
+                            yield ins, code, rhs
+    zeroed = next((rhs.subs[1] for _, _, rhs in allocations('calloc')), None)
+    if zeroed is None:
+        zeroed = gb.Irep(CONSTANT, [], [(K_TYPE, gb.Irep(BOOL, [], [])), (K_VALUE, leaf('true'))])
+    allocs = 0
+    for ins, code, rhs in list(allocations('malloc')):
+        ins[0] = gb.Irep(code.id, [code.subs[0], gb.Irep(rhs.id, [rhs.subs[0], zeroed], list(rhs.named))], list(code.named))
+        allocs += 1
+    return padding, variants, niches, allocs
 
 
 def main(src, dst):
     model = gb.read(src)
-    padding, variants = rewrite(*model)
+    padding, variants, niches, allocs = rewrite(*model)
     gb.write(dst, *model)
-    print(f'{padding} padding values made zero, {variants} variant writes made whole')
+    print(f'{padding} padding values made zero, {variants} variant writes made whole, '
+          f'{niches} niche variant writes made whole, {allocs} allocations zeroed')
 
 
 if __name__ == '__main__':
