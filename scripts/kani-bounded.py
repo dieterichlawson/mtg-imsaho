@@ -42,7 +42,8 @@ CBMC's pointer and bounds checks are off (`NO_MEMORY_CHECKS` says why);
 With --jobs J, J harnesses of a batch are verified at once, each cbmc
 held to GB gigabytes of address space; one that runs out of it is run
 again alone, once the rest are done, held to the --solo-cap (12): with
-none, one that ran away took the machine, this driver with it. Kept to one at a time
+none, one that ran away took the machine, this driver with it. With one
+at a time, each is held to the --solo-cap. Kept to one at a time
 by default: two solvers sharing memory the kernel runs out of are both
 at risk, not only the one that needed it.
 
@@ -391,7 +392,9 @@ def main():
     if os.path.exists(a.results):
         done = {l.split()[2] for l in open(a.results) if len(l.split()) > 2}
     todo = [h for h in wanted if h not in done]
-    cap = a.mem_cap if a.jobs > 1 else None
+    # One at a time, a harness is held to the cap it would have had alone,
+    # so that a run beside other work cannot take the machine's memory.
+    cap = a.mem_cap if a.jobs > 1 else a.solo_cap
     written = threading.Lock()
 
     def write(line):
