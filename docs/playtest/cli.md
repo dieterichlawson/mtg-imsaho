@@ -1400,3 +1400,18 @@ whether it told the truth.
   outside: `--resume` validates a doctored save (a library id dropped from
   `library_order`) and refuses it before the first frame. When a fuzz seed
   fails, re-run it with `--p1 cli` to see that exit.
+- V60 [tried 2026-10-28, nothing found; from #953/#954, 4d27b89 and 0a5bb4d]
+  the turn's facts on the CLI. The battlefield rule now names each effect
+  in force for the turn by its source and adds "a creature died". The
+  inspector says "Attacked this turn" and "Once-per-turn ability used this
+  turn". `10 Civilized Scholar/10 Darkthicket Wolf/4 Moonmist/8 Forest/8
+  Island` against `20 Grizzly Bears/20 Forest` reaches all three: Moonmist
+  transforms every Human, so it flips the Scholar into Homicidal Brute
+  without a loot. Cast Moonmist in main phase 1 with mana left over, or
+  no screen comes up while it is in force. **Answered 2026-10-28: holds**
+  at 120, 80 and 60 columns, clears at cleanup, and the attack flag shows
+  only once the creature has left combat. Next time:
+  - two facts at once (a death and Moonmist), at 30 columns;
+  - an effect whose `source_name` is empty ("an effect in force");
+  - the CARDS pane, which shows only the hand, so the rule names
+    Moonmist and nothing on screen says what it does.
