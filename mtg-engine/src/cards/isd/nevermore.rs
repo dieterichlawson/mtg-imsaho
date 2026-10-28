@@ -40,14 +40,17 @@ impl CardBehavior for Nevermore {
         // Nevermore names a CARD, not a permanent — this reads the registry by
         // name with no game object involved, so the characteristics layer
         // (which resolves an object's active face) does not apply.
-        let card_names = crate::cards::helpers::sorted(registry.all_names().into_iter()
-            .filter(|name| {
-                registry.get_id_by_name(name)
-                    .and_then(|id| registry.card_data(id))
-                    .is_some_and(|d| !d.card_types.contains(&CardType::Land))
-            })
-            .map(std::string::ToString::to_string)
-            .collect());
+        // A card is named by its front face, so it is the front face's types
+        // that say whether it is a land. The list is allocated at its
+        // largest and filled in a loop: a filtered `collect` allocates when
+        // it keeps its first name, which a proof has to take both ways.
+        let mut names = Vec::with_capacity(registry.card_count());
+        for (name, id) in registry.names_and_ids() {
+            if !registry.printed_card_types(id, false).contains(&CardType::Land) {
+                names.push(name.to_string());
+            }
+        }
+        let card_names = crate::cards::helpers::sorted(names);
 
         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
             player: controller,

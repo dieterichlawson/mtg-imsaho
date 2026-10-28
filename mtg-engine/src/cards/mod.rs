@@ -1452,6 +1452,19 @@ impl CardRegistry {
         self.name_to_id.keys().map(String::as_str).collect()
     }
 
+    /// Every registered card's name with its id, in the order `all_names`
+    /// gives the names: what `all_names` and `get_id_by_name` say together,
+    /// without looking each name up again.
+    pub fn names_and_ids(&self) -> impl Iterator<Item = (&str, CardId)> {
+        self.name_to_id.iter().map(|(name, id)| (name.as_str(), *id))
+    }
+
+    /// How many cards are registered.
+    #[must_use]
+    pub fn card_count(&self) -> usize {
+        self.cards.len()
+    }
+
     /// Every name a card in the registry can have on the battlefield: the
     /// registered names and the back faces of double-faced cards.
     pub fn all_face_names(&self) -> Vec<&str> {
