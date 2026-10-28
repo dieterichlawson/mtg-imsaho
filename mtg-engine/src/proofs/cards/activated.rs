@@ -621,6 +621,11 @@ card_proof! {
     /// nothing else. Gone, nothing: there is no toughness to exchange.
     fn tree_of_redemption_exchanges_your_life_and_its_toughness() {
         let mut b = permanent(Box::new(isd::tree_of_redemption::TreeOfRedemption), &ANY_CREATURE, true);
+        // Its printed 0/13, as every card object is made (`setup_game`).
+        let printed = b.registry.card_data(b.card()).expect("registered");
+        let (power, toughness) = (printed.power, printed.toughness);
+        let o = b.state.get_object_mut(b.me).expect("on the board");
+        (o.power, o.toughness) = (power, toughness);
         let life: i8 = kani::any();
         kani::assume((-2..=30).contains(&life));
         if b.you == PlayerId(0) {
