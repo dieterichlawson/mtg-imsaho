@@ -696,6 +696,24 @@ sits in memory. What was measured, and what the proofs do about each:
   symbolic execution. Making each object's zone and controller constant
   as well would be eight harnesses for each case there is now; these
   are run instead with more memory, alone.
+- **Strings the solver cannot compare.** Nevermore offers every nonland
+  card name in order, and sorts them: with the names on the heap, Kani
+  could not tell how any two compared, and the sort of three did not
+  finish symbolic execution in half an hour. The sort is now
+  `helpers::sorted`, which a card proof stands in for with
+  `names_in_order`, returning the names as they are and asserting they
+  are in order, which is what a sort does to such a list; the proof's
+  registry, kept in key order under Kani, hands them over so.
+- **A case in its own harness, and a board in its own case.** The card
+  proofs that read a list whose length the board decides (the abilities
+  of a card by where it is and which face is up, a hand, a library, the
+  creatures each player controls, the answer to a question) are each a
+  harness for every value of what decides it: Caravan Vigil's search
+  for each of sixteen libraries under either player, Divine Reckoning
+  for each of 27 boards under either active player, Frightful Delusion,
+  Nevermore, Ludevic's Test Subject, Bloodline Keeper, Civilized
+  Scholar, Thraben Sentry, Cloistered Youth, Screeching Bat, Mentor of
+  the Meek and Grimoire of the Dead the same way.
 - **The zone order** itself is proved with Verus, for every board, not
   with Kani (above).
 
@@ -896,16 +914,25 @@ groups that name a subtype, a filtered target requirement, a search's
 question and discarding several cards (past two and a half), and the
 `KindMap` proofs (heavy, to be run alone at a larger cap). Of the cards,
 Full Moon's Rise's ability, Vampiric Fury, Moonmist, Spare from Evil,
-Rolling Temblor, Make a Wish, Mulch and Balefire Dragon are past four
-gigabytes, to be run alone at about ten; the rest of the pool's card
-proofs are being run, and this section will record which hold.
+Rolling Temblor, Make a Wish, Mulch, Balefire Dragon, Hamlet Captain,
+Tribute to Hunger, Sever the Bloodline, Blasphemous Act, Past in Flames,
+Ghoulcaller's Chant, Nevermore, and the ability lists of Grimoire of the
+Dead, Back from the Brink and Moorland Haunt and Ghost Quarter's
+resolution on a permanent, are past four gigabytes even a case to a
+harness, to be run alone at about ten. Of the 691 card harnesses at the
+last count, 207 hold, and the rest of the pool's are being run; this
+section will record which hold.
 
 A counterexample can be of a board no game reaches, which is then the
 board's error and not the card's: the board the counted creatures are
 proved over gave each card a power, a creature or not, and the engine
 takes an object with a power for a creature, so Boneyard Wurm counted a
 non-creature card. A noncreature has no power (CR 208.3); the board now
-gives one only to a creature, and the proof holds.
+gives one only to a creature, and the proof holds. And a failure can be
+the proof's own: Memory's Journey's built its two targets in a list with
+room for one, and failed on the list growing, whatever the card did; and
+holding the ids of new tokens to eight failed Army of the Damned's
+thirteen, until they had room of their own.
 
 ### The whole engine under libFuzzer
 
