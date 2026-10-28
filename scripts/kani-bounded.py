@@ -359,6 +359,18 @@ def solve(cmd, timeout, nrec):
         raw.close()
     timed_out = expired.is_set()
     seconds = time.time() - start
+    # How far it got: symbolic execution's steps and time, and the
+    # formula's clauses and the solver's time, as far as each was reached.
+    size = ''
+    for t, _ in messages:
+        if t.startswith('size of program expression'):
+            size += f" {t.split(':')[1].split()[0]} steps"
+        elif t.startswith('Runtime Symex'):
+            size += f" symex {float(t.split(':')[1].strip().rstrip('s')):.0f}s"
+        elif ' variables, ' in t and 'clauses' in t and 'clauses' not in size:
+            size += f" {t.split(',')[1].split()[0]} clauses"
+        elif t.startswith('Runtime decision procedure') and 'solve' not in size:
+            size += f" solve {float(t.split(':')[1].strip().rstrip('s')):.0f}s"
     if timed_out:
         steps = next((m[0] for m in messages if m[0].startswith('size of program expression')), None)
         sym = next((m[0] for m in messages if m[0].startswith('Runtime Symex')), None)
@@ -369,7 +381,7 @@ def solve(cmd, timeout, nrec):
         return ('OOM', f'{nrec} bounded', seconds, set(), [])
     if oom:
         # Under --mem-cap: the cap, not the machine, ran out.
-        return ('OOM', f'{nrec} bounded; over the cap', seconds, set(), [])
+        return ('OOM', f"{nrec} bounded; over the cap{';' + size if size else ' in symbolic execution'}", seconds, set(), [])
     failed, others, loops, covers, covered = [], [], set(), 0, 0
     for prop, status, desc in results:
         if '.reachability_check.' in prop:
@@ -390,16 +402,6 @@ def solve(cmd, timeout, nrec):
             failed.append(text)
             others.append(text)
     errors = [t for t, k in messages if k == 'ERROR']
-    size = ''
-    for t, _ in messages:
-        if t.startswith('size of program expression'):
-            size += f" {t.split(':')[1].split()[0]} steps"
-        elif t.startswith('Runtime Symex'):
-            size += f" symex {float(t.split(':')[1].strip().rstrip('s')):.0f}s"
-        elif ' variables, ' in t and 'clauses' in t and 'clauses' not in size:
-            size += f" {t.split(',')[1].split()[0]} clauses"
-        elif t.startswith('Runtime decision procedure') and 'solve' not in size:
-            size += f" solve {float(t.split(':')[1].strip().rstrip('s')):.0f}s"
     if errors and not failed:
         return ('ERROR', ' '.join(errors)[:300], seconds, set(), ['error'])
     if not results and not errors:
