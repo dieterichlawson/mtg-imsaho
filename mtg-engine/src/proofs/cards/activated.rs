@@ -132,17 +132,24 @@ impl Default for Ability {
 }
 
 impl Ability {
-    pub fn of(def: &ActivatedAbilityDef) -> Self {
-        Ability {
-            cost: def.cost.clone(),
-            tap: def.requires_tap,
-            sacrifice: def.sacrifice_cost.clone(),
-            remove_counters: def.counter_cost,
-            tap_creatures: def.tap_cost.map(|c| c.count),
-            target: def.target_requirement.clone(),
-            once_per_turn: def.once_per_turn,
-            sorcery_speed: def.sorcery_speed_only,
-        }
+    /// Whether `def` is this ability, each field compared where it lies,
+    /// this (the expected value) on the left.
+    ///
+    /// Not by building an `Ability` of `def` and comparing the two: that
+    /// cloned the engine's target requirement, a type that holds itself,
+    /// and an ability read out of a list built in one branch or another is
+    /// of a variant the solver leaves open, so the clone went down every
+    /// shape a requirement can take. It was half the symbolic execution of
+    /// Moorland Haunt's proof, where it ran out of memory.
+    pub fn describes(&self, def: &ActivatedAbilityDef) -> bool {
+        self.cost == def.cost
+            && self.tap == def.requires_tap
+            && self.sacrifice == def.sacrifice_cost
+            && self.remove_counters == def.counter_cost
+            && self.tap_creatures == def.tap_cost.map(|c| c.count)
+            && self.target == def.target_requirement
+            && self.once_per_turn == def.once_per_turn
+            && self.sorcery_speed == def.sorcery_speed_only
     }
 }
 
@@ -246,7 +253,7 @@ fn has_abilities_when(card: Box<dyn CardBehavior>, died: bool, expected: &impl F
     let expected = std::mem::ManuallyDrop::new(expected(died));
     assert!(defs.len() == expected.len());
     for (i, (def, e)) in defs.iter().zip(expected.iter()).enumerate() {
-        assert!(def.ability_index == i && Ability::of(def) == *e);
+        assert!(def.ability_index == i && e.describes(def));
     }
     std::mem::forget(b);
 }
@@ -263,7 +270,7 @@ fn has_ability_at(card: Box<dyn CardBehavior>, index: usize, expected: Ability) 
     let b = permanent(card, &ANY_CREATURE, false);
     let card = b.card();
     let defs = std::mem::ManuallyDrop::new(b.registry.get(card).expect("registered").activated_abilities(&b.state, b.me, &b.registry));
-    assert!(defs.len() == 1 && defs[0].ability_index == index && Ability::of(&defs[0]) == expected);
+    assert!(defs.len() == 1 && defs[0].ability_index == index && expected.describes(&defs[0]));
     std::mem::forget((b, expected));
 }
 
@@ -781,7 +788,7 @@ fn cellar_door(cards: &[InLibrary]) {
     let card = b.card();
     let defs = std::mem::ManuallyDrop::new(b.registry.get(card).expect("registered").activated_abilities(&b.state, b.me, &b.registry));
     assert!(defs.len() == 1 && defs[0].ability_index == 0
-        && Ability::of(&defs[0]) == Ability { cost: mana(3, &[]), tap: true, target: Some(TargetRequirement::PlayerOnly), ..Ability::default() });
+        && Ability { cost: mana(3, &[]), tap: true, target: Some(TargetRequirement::PlayerOnly), ..Ability::default() }.describes(&defs[0]));
     // The board's controller is either player, so the target is either
     // the controller or the opponent.
     let player = PlayerId(0);
@@ -1201,10 +1208,10 @@ fn grimoire_of_the_dead_has_its_abilities_with((n, you): (usize, u8)) {
         tap: true, sacrifice: SacrificeCost::SacrificeThis, remove_counters: Some((CounterType::Study, 3)), ..Ability::default()
     };
     if hand.is_empty() {
-        assert!(defs.len() == 1 && defs[0].ability_index == 1 && Ability::of(&defs[0]) == sacrifice);
+        assert!(defs.len() == 1 && defs[0].ability_index == 1 && sacrifice.describes(&defs[0]));
     } else {
-        assert!(defs.len() == 2 && defs[0].ability_index == 0 && Ability::of(&defs[0]) == discard);
-        assert!(defs[1].ability_index == 1 && Ability::of(&defs[1]) == sacrifice);
+        assert!(defs.len() == 2 && defs[0].ability_index == 0 && discard.describes(&defs[0]));
+        assert!(defs[1].ability_index == 1 && sacrifice.describes(&defs[1]));
     }
     std::mem::forget((b, hand, discard, sacrifice));
 }
@@ -1392,7 +1399,7 @@ fn back_from_the_brink_has_its_abilities((second_dead, blank_creature, you): (bo
         }
         assert!(defs.len() == expected.len());
         for (def, (id, ability)) in defs.iter().zip(&expected) {
-            assert!(def.ability_index == usize::try_from(id.0).expect("small") && Ability::of(def) == *ability);
+            assert!(def.ability_index == usize::try_from(id.0).expect("small") && ability.describes(def));
         }
         std::mem::forget(expected);
     }
@@ -1534,7 +1541,7 @@ fn evil_twin_has_its_ability((copy, gone): (bool, bool)) {
             target: Some(TargetRequirement::CreatureWithFilter(TargetFilter::SameNameAsSource)),
             ..Ability::default()
         };
-        assert!(defs.len() == 1 && defs[0].ability_index == 0 && Ability::of(&defs[0]) == ability);
+        assert!(defs.len() == 1 && defs[0].ability_index == 0 && ability.describes(&defs[0]));
         std::mem::forget(ability);
     } else {
         assert!(defs.is_empty());
@@ -1808,7 +1815,7 @@ fn haunt_has_its_ability((you, owner, creature): (u8, u8, bool)) {
         assert!(defs.is_empty());
     } else {
         let ability = Ability { cost: mana(0, &[Color::White, Color::Blue]), tap: true, ..Ability::default() };
-        assert!(defs.len() == 1 && defs[0].ability_index == 1 && Ability::of(&defs[0]) == ability);
+        assert!(defs.len() == 1 && defs[0].ability_index == 1 && ability.describes(&defs[0]));
         std::mem::forget(ability);
     }
     std::mem::forget((b, exilable));
@@ -1969,13 +1976,13 @@ fn daybreak_ranger_has_its_abilities_placed(placed: u8) {
         assert!(defs.is_empty());
     } else if transformed {
         let fight = Ability { cost: mana(0, &[Color::Red]), tap: true, target: Some(TargetRequirement::Creature), ..Ability::default() };
-        assert!(defs.len() == 1 && defs[0].ability_index == 0 && Ability::of(&defs[0]) == fight);
+        assert!(defs.len() == 1 && defs[0].ability_index == 0 && fight.describes(&defs[0]));
         std::mem::forget(fight);
     } else {
         let ping = Ability {
             tap: true, target: Some(TargetRequirement::CreatureWithFilter(TargetFilter::HasKeyword(Keyword::Flying))), ..Ability::default()
         };
-        assert!(defs.len() == 1 && defs[0].ability_index == 0 && Ability::of(&defs[0]) == ping);
+        assert!(defs.len() == 1 && defs[0].ability_index == 0 && ping.describes(&defs[0]));
         std::mem::forget(ping);
     }
     std::mem::forget(b);
@@ -2033,7 +2040,7 @@ fn ulvenwald_mystics_placed(placed: u8) {
     let defs = std::mem::ManuallyDrop::new(b.registry.get(card).expect("registered").activated_abilities(&b.state, b.me, &b.registry));
     if transformed {
         let regenerate = Ability { cost: mana(0, &[Color::Green]), ..Ability::default() };
-        assert!(defs.len() == 1 && defs[0].ability_index == 0 && Ability::of(&defs[0]) == regenerate);
+        assert!(defs.len() == 1 && defs[0].ability_index == 0 && regenerate.describes(&defs[0]));
         std::mem::forget(regenerate);
     } else {
         assert!(defs.is_empty());

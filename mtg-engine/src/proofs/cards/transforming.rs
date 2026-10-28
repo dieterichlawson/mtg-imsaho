@@ -317,15 +317,16 @@ case_by_case! { thraben_sentry_may_transform_when_another_creature_of_yours_dies
     thraben_militia_asks_nothing: (2, false),
 }
 
-/// The card's activated abilities as the engine reads them, as the
-/// activated-ability proofs pin them.
-fn abilities(b: &Board) -> std::mem::ManuallyDrop<Vec<super::activated::Ability>> {
+/// The card's activated abilities as the engine reads them, each at its
+/// index; compared with `Ability::describes`, as the activated-ability
+/// proofs pin them.
+fn abilities(b: &Board) -> std::mem::ManuallyDrop<Vec<crate::cards::ActivatedAbilityDef>> {
     let card = b.card();
     let defs = std::mem::ManuallyDrop::new(b.registry.get(card).expect("registered").activated_abilities(&b.state, b.me, &b.registry));
-    std::mem::ManuallyDrop::new(defs.iter().enumerate().map(|(i, d)| {
+    for (i, d) in defs.iter().enumerate() {
         assert!(d.ability_index == i);
-        super::activated::Ability::of(d)
-    }).collect())
+    }
+    defs
 }
 
 /// Puts a card in `you`'s `zone`: Grizzly Bears, a creature card, or the
@@ -356,7 +357,7 @@ fn civilized_scholar_placed(placed: u8) {
     let b = creature_at(Box::new(isd::civilized_scholar::CivilizedScholar), PlayerId(u8::from(kani::any::<bool>())), placed == 0, placed == 2);
     let got = abilities(&b);
     if placed == 1 {
-        assert!(got.len() == 1 && got[0] == super::activated::Ability { tap: true, ..super::activated::Ability::default() });
+        assert!(got.len() == 1 && super::activated::Ability { tap: true, ..super::activated::Ability::default() }.describes(&got[0]));
     } else {
         assert!(got.is_empty());
     }
@@ -516,9 +517,9 @@ fn bloodline_keeper_has_its_abilities((placed, yours): (u8, Option<u8>)) {
     if placed == 0 {
         assert!(got.is_empty());
     } else if placed == 1 && vampires >= 5 {
-        assert!(got.len() == 2 && got[0] == make && got[1] == transform);
+        assert!(got.len() == 2 && make.describes(&got[0]) && transform.describes(&got[1]));
     } else {
-        assert!(got.len() == 1 && got[0] == make);
+        assert!(got.len() == 1 && make.describes(&got[0]));
     }
     std::mem::forget((b, got, make, transform));
 }
@@ -576,12 +577,12 @@ fn ludevics_test_subject_placed(placed: u8) {
     let b = creature_at(Box::new(isd::ludevics_test_subject::LudevicsTestSubject), PlayerId(u8::from(kani::any::<bool>())), placed == 0, placed == 2);
     let got = abilities(&b);
     if placed == 1 {
-        assert!(got.len() == 1 && got[0] == super::activated::Ability {
+        assert!(got.len() == 1 && super::activated::Ability {
             cost: crate::types::ManaCost::new(vec![
                 crate::types::ManaSymbol::Generic(1), crate::types::ManaSymbol::Colored(crate::types::Color::Blue),
             ]),
             ..super::activated::Ability::default()
-        });
+        }.describes(&got[0]));
     } else {
         assert!(got.is_empty());
     }
