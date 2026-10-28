@@ -19,7 +19,7 @@
 //! creature. It can't be regenerated." (Runechanter's Pike's X is
 //! `proofs::cards::counted_pt`'s.)
 
-use super::{act, acted, any_object, any_target, asked_each, asked_for, board, card_proof, prints_effects, triggers, Act, Form, Kinds, Snapshot, ANY_PERMANENT};
+use super::{act, acted, any_object, any_target, asked_each, asked_for, board, card_proof, each_case, prints_effects, triggers, Act, Form, Kinds, Snapshot, ANY_PERMANENT};
 use crate::actions::Target;
 use crate::cards::helpers::EQUIP_ABILITY_INDEX;
 use crate::cards::{AttackInfo, CardBehavior, SacrificeCost, TargetFilter, TargetRequirement, TriggerKind};
@@ -250,60 +250,66 @@ card_proof! { taking_milled
     /// player's library of a land card.
     fn trepanation_blade_mills_to_a_land_and_pumps_for_each() {
         assert!(triggers(&isd::trepanation_blade::TrepanationBlade) == [(TriggerKind::Attacks, None)]);
-        let (mut registry, mut state, blank, card) = board(Box::new(isd::trepanation_blade::TrepanationBlade));
-        let township = registry.register(Box::new(isd::gavony_township::GavonyTownship));
-        let attacker = PlayerId(u8::from(kani::any::<bool>()));
-        let defender = PlayerId(1 - attacker.0);
-        let on: bool = kani::any();
-        let creature = state.create_object(blank, attacker, if on { Zone::Battlefield } else { Zone::Graveyard }, Some(2), Some(2));
-        if !on {
-            if attacker == PlayerId(0) {
-                state.players[0].graveyard_order.push(creature);
-            } else {
-                state.players[1].graveyard_order.push(creature);
+        // The attacker and the defending player's library are constants in
+        // each call: a library the solver chose among these is a list of
+        // every length at once, and a player it chose an index into the
+        // players it leaves open, through which the library is milled.
+        each_case(8, |i| {
+            let (mut registry, mut state, blank, card) = board(Box::new(isd::trepanation_blade::TrepanationBlade));
+            let township = registry.register(Box::new(isd::gavony_township::GavonyTownship));
+            let attacker = PlayerId(i / 4);
+            let defender = PlayerId(1 - attacker.0);
+            let on: bool = kani::any();
+            let creature = state.create_object(blank, attacker, if on { Zone::Battlefield } else { Zone::Graveyard }, Some(2), Some(2));
+            if !on {
+                if attacker == PlayerId(0) {
+                    state.players[0].graveyard_order.push(creature);
+                } else {
+                    state.players[1].graveyard_order.push(creature);
+                }
             }
-        }
-        let blade = state.create_object(card, attacker, Zone::Battlefield, None, None);
-        if on {
-            state.get_object_mut(blade).expect("just created").attached_to = Some(creature);
-        }
-        let n = [state.create_object(blank, defender, Zone::Library, None, None), state.create_object(blank, defender, Zone::Library, None, None)];
-        let land = state.create_object(township, defender, Zone::Library, None, None);
-        let theirs = state.create_object(township, attacker, Zone::Library, None, None);
-        let library: Vec<ObjectId> = match kani::any::<u8>() % 4 {
-            0 => vec![land, n[0], n[1]],
-            1 => vec![n[0], land, n[1]],
-            2 => vec![n[0], n[1], land],
-            _ => vec![n[0], n[1]],
-        };
-        let revealed = library.iter().position(|id| *id == land).map_or(library.len(), |i| i + 1);
-        if defender == PlayerId(0) {
-            state.players[0].library_order = library.clone();
-            state.players[1].library_order.push(theirs);
-        } else {
-            state.players[1].library_order = library.clone();
-            state.players[0].library_order.push(theirs);
-        }
-        let before = Snapshot::of(&state);
-        let attack = AttackInfo::new(creature, defender);
-        registry.get(card).expect("registered").on_attacks(&mut state, blade, attack, &[], &registry);
-        assert!(asked_each(revealed, |i| Act::MillCard(library[i])));
-        let added = &state.until_end_of_turn[before.until_end_of_turn()..];
-        if on {
-            let x = i32::try_from(revealed).expect("small");
-            assert!(added == [T::ModifyPT { target: creature, power_mod: x, toughness_mod: 0 }]);
-        } else {
-            assert!(added.is_empty());
-        }
-        let mut after = before.without_until_end_of_turn();
-        let rest = super::zone_rows(&library[revealed..]);
-        if defender == PlayerId(0) {
-            after.players[0].1 = rest;
-        } else {
-            after.players[1].1 = rest;
-        }
-        assert!(Snapshot::of(&state).without_until_end_of_turn() == after);
-        std::mem::forget((registry, state, library));
+            let blade = state.create_object(card, attacker, Zone::Battlefield, None, None);
+            if on {
+                state.get_object_mut(blade).expect("just created").attached_to = Some(creature);
+            }
+            let n = [state.create_object(blank, defender, Zone::Library, None, None), state.create_object(blank, defender, Zone::Library, None, None)];
+            let land = state.create_object(township, defender, Zone::Library, None, None);
+            let theirs = state.create_object(township, attacker, Zone::Library, None, None);
+            let library: Vec<ObjectId> = match i % 4 {
+                0 => vec![land, n[0], n[1]],
+                1 => vec![n[0], land, n[1]],
+                2 => vec![n[0], n[1], land],
+                _ => vec![n[0], n[1]],
+            };
+            let revealed = library.iter().position(|id| *id == land).map_or(library.len(), |i| i + 1);
+            if defender == PlayerId(0) {
+                state.players[0].library_order = library.clone();
+                state.players[1].library_order.push(theirs);
+            } else {
+                state.players[1].library_order = library.clone();
+                state.players[0].library_order.push(theirs);
+            }
+            let before = Snapshot::of(&state);
+            let attack = AttackInfo::new(creature, defender);
+            registry.get(card).expect("registered").on_attacks(&mut state, blade, attack, &[], &registry);
+            assert!(asked_each(revealed, |i| Act::MillCard(library[i])));
+            let added = &state.until_end_of_turn[before.until_end_of_turn()..];
+            if on {
+                let x = i32::try_from(revealed).expect("small");
+                assert!(added == [T::ModifyPT { target: creature, power_mod: x, toughness_mod: 0 }]);
+            } else {
+                assert!(added.is_empty());
+            }
+            let mut after = before.without_until_end_of_turn();
+            let rest = super::zone_rows(&library[revealed..]);
+            if defender == PlayerId(0) {
+                after.players[0].1 = rest;
+            } else {
+                after.players[1].1 = rest;
+            }
+            assert!(Snapshot::of(&state).without_until_end_of_turn() == after);
+            std::mem::forget((registry, state, library));
+        });
     }
 }
 
