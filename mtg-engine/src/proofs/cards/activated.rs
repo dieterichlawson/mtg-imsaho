@@ -1321,15 +1321,15 @@ struct Brink {
 }
 
 fn brink() -> Brink {
-    brink_shaped(kani::any(), kani::any())
+    brink_shaped(kani::any(), kani::any(), PlayerId(u8::from(kani::any::<bool>())))
 }
 
 /// [`brink`]'s board, with the second Mikaeus in the graveyard if
-/// `second_dead`, and the blank card a creature if `blank_creature`.
-fn brink_shaped(second_dead: bool, blank_creature: bool) -> Brink {
+/// `second_dead`, the blank card a creature if `blank_creature`, and Back
+/// from the Brink controlled by `you`.
+fn brink_shaped(second_dead: bool, blank_creature: bool, you: PlayerId) -> Brink {
     let (mut registry, mut state, blank_card, card) = board(Box::new(isd::back_from_the_brink::BackFromTheBrink));
     let mikaeus_card = registry.register(Box::new(isd::mikaeus_the_lunarch::MikaeusTheLunarch));
-    let you = PlayerId(u8::from(kani::any::<bool>()));
     let me = state.create_object(card, PlayerId(0), Zone::Battlefield, None, None);
     state.get_object_mut(me).expect("just created").controller = you;
     let graveyard = |state: &mut GameState, card: CardId, name: &str, zone: Zone| {
@@ -1373,12 +1373,14 @@ impl Brink {
 /// sorcery; the ability's index names the card. None for a player
 /// with no creature card in their graveyard.
 ///
-/// For one board, a constant in each harness: a board the solver chose had
-/// a graveyard of every length, and so a list of abilities of every
-/// length, each compared, and the proof ran out of memory at ten
-/// gigabytes; the four boards in one harness, at four.
-fn back_from_the_brink_has_its_abilities((second_dead, blank_creature): (bool, bool)) {
-    let b = brink_shaped(second_dead, blank_creature);
+/// For one board and controller, a constant in each harness: a board the
+/// solver chose had a graveyard of every length, and so a list of
+/// abilities of every length, each compared, and the proof ran out of
+/// memory at ten gigabytes; the four boards in one harness, at four; a
+/// harness per board, the controller (whose graveyard the abilities are
+/// of) the solver's, at three and a half.
+fn back_from_the_brink_has_its_abilities((second_dead, blank_creature, you): (bool, bool, u8)) {
+    let b = brink_shaped(second_dead, blank_creature, PlayerId(you));
     let defs = std::mem::ManuallyDrop::new(b.registry.get(b.card()).expect("registered").activated_abilities(&b.state, b.me, &b.registry));
     if b.you == PlayerId(1) {
         assert!(defs.is_empty());
@@ -1398,10 +1400,14 @@ fn back_from_the_brink_has_its_abilities((second_dead, blank_creature): (bool, b
 }
 
 case_by_case! { back_from_the_brink_has_its_abilities;
-    back_from_the_brink_has_an_ability_for_one_mikaeus: (false, false),
-    back_from_the_brink_has_an_ability_for_one_mikaeus_and_a_creature_card: (false, true),
-    back_from_the_brink_has_one_ability_for_two_mikaeus: (true, false),
-    back_from_the_brink_has_one_ability_for_two_mikaeus_and_one_for_a_creature_card: (true, true),
+    back_from_the_brink_has_an_ability_for_one_mikaeus: (false, false, 0),
+    back_from_the_brink_has_an_ability_for_one_mikaeus_and_a_creature_card: (false, true, 0),
+    back_from_the_brink_has_one_ability_for_two_mikaeus: (true, false, 0),
+    back_from_the_brink_has_one_ability_for_two_mikaeus_and_one_for_a_creature_card: (true, true, 0),
+    back_from_the_brink_of_the_other_player_has_none_over_one_mikaeus: (false, false, 1),
+    back_from_the_brink_of_the_other_player_has_none_over_one_mikaeus_and_a_creature_card: (false, true, 1),
+    back_from_the_brink_of_the_other_player_has_none_over_two_mikaeus: (true, false, 1),
+    back_from_the_brink_of_the_other_player_has_none_over_two_mikaeus_and_a_creature_card: (true, true, 1),
 }
 
 card_proof! {
