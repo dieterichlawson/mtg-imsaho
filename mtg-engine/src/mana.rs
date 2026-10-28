@@ -40,38 +40,57 @@ struct RemainingCost {
     generic: u32,
 }
 
+/// A count per color, in `Color::ALL` order. An array rather than a
+/// `HashMap`: five keys, read and written by color and never iterated, and
+/// a `HashMap`'s seeded hashing is most of what a proof of the planner
+/// spends its time on.
+type PerColor = [u32; 5];
+
+/// `color`'s place in a [`PerColor`].
+fn color_slot(color: Color) -> usize {
+    match color {
+        Color::White => 0,
+        Color::Blue => 1,
+        Color::Black => 2,
+        Color::Red => 3,
+        Color::Green => 4,
+    }
+}
+
+/// The color a type of mana is, if it is one.
+fn color_of(mana_type: ManaType) -> Option<Color> {
+    match mana_type {
+        ManaType::White => Some(Color::White),
+        ManaType::Blue => Some(Color::Blue),
+        ManaType::Black => Some(Color::Black),
+        ManaType::Red => Some(Color::Red),
+        ManaType::Green => Some(Color::Green),
+        ManaType::Colorless => None,
+    }
+}
+
 /// Compute the "flexibility" of a mana source: how many distinct colors it can produce.
 /// Colorless-only = 0, mono = 1, dual = 2, etc.
 fn source_flexibility(source: &ManaSource) -> usize {
-    let mut colors = std::collections::HashSet::new();
+    let mut colors = [false; 5];
     for ability in &source.abilities {
         for &(mana_type, _) in &ability.produced {
-            match mana_type {
-                ManaType::White | ManaType::Blue | ManaType::Black
-                | ManaType::Red | ManaType::Green => { colors.insert(mana_type); }
-                ManaType::Colorless => {}
+            if let Some(c) = color_of(mana_type) {
+                colors[color_slot(c)] = true;
             }
         }
     }
-    colors.len()
+    colors.iter().filter(|&&made| made).count()
 }
 
 /// Compute the "hand demand" score for a source: how much other spells in hand
 /// need the colors this source produces. Higher = more demanded = prefer NOT tapping.
-fn hand_demand_score(source: &ManaSource, hand_demand: &std::collections::HashMap<Color, u32>) -> u32 {
+fn hand_demand_score(source: &ManaSource, hand_demand: &PerColor) -> u32 {
     let mut score = 0u32;
     for ability in &source.abilities {
         for &(mana_type, _) in &ability.produced {
-            let color = match mana_type {
-                ManaType::White => Some(Color::White),
-                ManaType::Blue => Some(Color::Blue),
-                ManaType::Black => Some(Color::Black),
-                ManaType::Red => Some(Color::Red),
-                ManaType::Green => Some(Color::Green),
-                ManaType::Colorless => None,
-            };
-            if let Some(c) = color {
-                score += hand_demand.get(&c).copied().unwrap_or(0);
+            if let Some(c) = color_of(mana_type) {
+                score += hand_demand[color_slot(c)];
             }
         }
     }
@@ -84,16 +103,18 @@ fn hand_demand_score(source: &ManaSource, hand_demand: &std::collections::HashMa
 /// by other spells in hand are preferred.
 /// NOTE: If you change this logic, also update the "Auto-tap" bullet in `GAME_RULES`
 /// in mtg-player/src/llm.rs so the agent's system prompt stays accurate.
-fn source_sort_key(source: &ManaSource, hand_demand: &std::collections::HashMap<Color, u32>) -> (ManaSourceKind, usize, u32) {
+fn source_sort_key(source: &ManaSource, hand_demand: &PerColor) -> (ManaSourceKind, usize, u32) {
     (source.source_kind, source_flexibility(source), hand_demand_score(source, hand_demand))
 }
 
 /// Build hand demand map: for each color, how many colored pips across all `hand_costs`.
-fn build_hand_demand(hand_costs: &[ManaCost]) -> std::collections::HashMap<Color, u32> {
-    let mut demand = std::collections::HashMap::new();
+fn build_hand_demand(hand_costs: &[ManaCost]) -> PerColor {
+    let mut demand = [0; 5];
     for cost in hand_costs {
-        for (color, count) in cost.colored_requirements() {
-            *demand.entry(color).or_insert(0) += count;
+        for symbol in &cost.symbols {
+            if let ManaSymbol::Colored(c) = symbol {
+                demand[color_slot(*c)] += 1;
+            }
         }
     }
     demand
@@ -691,17 +712,9 @@ fn greedy_autotap(
                 .filter(|a| ability_total_mana(a) > ability_cost(a))
                 .min_by_key(|ability| {
                     // Score: sum of hand demand for colors produced.
-                    ability.produced.iter().map(|&(mt, _)| {
-                        let color = match mt {
-                            ManaType::White => Some(Color::White),
-                            ManaType::Blue => Some(Color::Blue),
-                            ManaType::Black => Some(Color::Black),
-                            ManaType::Red => Some(Color::Red),
-                            ManaType::Green => Some(Color::Green),
-                            ManaType::Colorless => None,
-                        };
-                        color.and_then(|c| hand_demand.get(&c).copied()).unwrap_or(0)
-                    }).sum::<u32>()
+                    ability.produced.iter()
+                        .map(|&(mt, _)| color_of(mt).map_or(0, |c| hand_demand[color_slot(c)]))
+                        .sum::<u32>()
                 })
                 .map(|a| a.ability_index)
                 .unwrap();
