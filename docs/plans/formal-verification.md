@@ -807,6 +807,7 @@ for both players and boards as its doc comment states):
 | `counter_spell`, `counter_spell_exiling` (701.5a, 702.34a) | proved, 319 s |
 | `apply_pending_effect`: damage, destroy, sacrifice, return to hand, -N/-N, can't block, a card's own effect, a search's answer | proved, 64 to 173 s each |
 | the targeting predicates (`is_creature`, colours, card types, keywords, filters, `can_be_targeted_by`) | proved, 13 to 103 s each |
+| an Aura's or Equipment's printed effect reaching the creature it is attached to (613.1, 611.3a): each P/T change, keyword and Human condition the pool prints, can't attack, can't block, attacks each combat, doesn't untap | proved, 36 to 76 s each |
 
 Three of these held only once the function asked what the rule says:
 `untap` untapped a card off the battlefield, `discard_card` discarded a
@@ -814,9 +815,8 @@ permanent, and `attach` left an Aura attached to the player it came off;
 no game reached any of them, every caller offering only what the rule
 allows, and each has a regular test besides.
 
-Not yet finished: moving a card between zones, and the effects proofs,
-which read an effect printed on a card back from the registry (each
-past five gigabytes); pruning effects on departed permanents, paying a
+Not yet finished: moving a card between zones (each past five
+gigabytes); pruning effects on departed permanents, paying a
 cost, the subtype filters, a filtered target requirement and the
 `KindMap` proofs (heavy, run alone at a larger cap); destroying,
 damage's prevention and replacement, fighting, tokens, transforming,

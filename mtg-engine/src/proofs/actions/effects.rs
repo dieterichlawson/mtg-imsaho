@@ -4,11 +4,19 @@
 //!
 //! Every proof here is over a board of two creatures of the blank card
 //! (either player's, with power and toughness from 0/1 to 3/3) and one
-//! permanent of a card printing exactly the effect under proof, with any
-//! numbers it takes; that permanent on the battlefield or in a graveyard,
-//! and attached to the first creature, the second, or nothing. The effect
-//! reaches a creature exactly when its permanent is on the battlefield and
-//! attached to it (CR 611.3a, 613.1).
+//! permanent of a card printing exactly the effect under proof; that
+//! permanent on the battlefield or in a graveyard, and attached to the
+//! first creature, the second, or nothing. The effect reaches a creature
+//! exactly when its permanent is on the battlefield and attached to it
+//! (CR 611.3a, 613.1).
+//!
+//! An effect that takes a number, a keyword or a condition is proved for
+//! each one an Aura or Equipment in the pool prints, a proof for each and
+//! the effect a constant in it, as a card prints it. One the solver chose
+//! was not a value CBMC propagates (it propagates none holding a symbol),
+//! so the effect copied into its card's `Box` was bytes it could not take
+//! apart, its scope read back as every scope, and each of these proofs ran
+//! out of memory.
 
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
@@ -70,54 +78,29 @@ fn attached(effect: ContinuousEffect, subtypes: &[&str]) -> (Attached, CardRegis
     (Attached { state, creatures: [a, b], reaches, base: [base_a, base_b] }, registry)
 }
 
-/// Any change to power and toughness from -3 to +3 each.
-fn any_change() -> (i32, i32) {
-    let (p, t): (i8, i8) = (kani::any(), kani::any());
-    kani::assume((-3..=3).contains(&p) && (-3..=3).contains(&t));
-    (i32::from(p), i32::from(t))
+/// "Enchanted creature gets +P/+T" (CR 613.4c): the creature it reaches
+/// has its power and toughness changed by that much, and no other
+/// creature's changes.
+fn changing(p: i32, t: i32) {
+    let (a, registry) = attached(ContinuousEffect::ModifyPT { power: p, toughness: t, scope: EffectScope::Attached }, &[]);
+    for i in 0..2 {
+        let (bp, bt) = a.base[i];
+        let (dp, dt) = if a.reaches[i] { (p, t) } else { (0, 0) };
+        assert!(a.state.effective_power(a.creatures[i], &registry) == Some(bp + dp));
+        assert!(a.state.effective_toughness(a.creatures[i], &registry) == Some(bt + dt));
+    }
+    kani::cover!(a.reaches[0], "attached to the first");
+    std::mem::forget((a, registry));
 }
 
-card_proof! {
-    /// "Enchanted creature gets +P/+T" (CR 613.4c): the creature it
-    /// reaches has its power and toughness changed by that much, and no
-    /// other creature's changes, for every change from -3/-3 to +3/+3.
-    fn a_power_and_toughness_change_reaches_the_creature_it_is_attached_to() {
-        let (p, t) = any_change();
-        let (a, registry) = attached(ContinuousEffect::ModifyPT { power: p, toughness: t, scope: EffectScope::Attached }, &[]);
-        for i in 0..2 {
-            let (bp, bt) = a.base[i];
-            let (dp, dt) = if a.reaches[i] { (p, t) } else { (0, 0) };
-            assert!(a.state.effective_power(a.creatures[i], &registry) == Some(bp + dp));
-            assert!(a.state.effective_toughness(a.creatures[i], &registry) == Some(bt + dt));
-        }
-        kani::cover!(a.reaches[0], "attached to the first");
-        std::mem::forget((a, registry));
+/// "Enchanted creature has <keyword>" (CR 613.1f): the creature it
+/// reaches has that keyword, and no other creature has it.
+fn granting(keyword: Keyword) {
+    let (a, registry) = attached(ContinuousEffect::GrantKeyword { keyword, scope: EffectScope::Attached }, &[]);
+    for i in 0..2 {
+        assert!(a.state.has_keyword(a.creatures[i], keyword, &registry) == a.reaches[i]);
     }
-}
-
-/// Any of the keywords an Aura or Equipment in the pool grants.
-fn any_granted_keyword() -> Keyword {
-    match kani::any::<u8>() % 5 {
-        0 => Keyword::Flying,
-        1 => Keyword::Intimidate,
-        2 => Keyword::FirstStrike,
-        3 => Keyword::Vigilance,
-        _ => Keyword::Trample,
-    }
-}
-
-card_proof! {
-    /// "Enchanted creature has <keyword>" (CR 613.1f): the creature it
-    /// reaches has that keyword, and no other creature has it, for each
-    /// keyword an Aura or Equipment in the pool grants.
-    fn a_granted_keyword_reaches_the_creature_it_is_attached_to() {
-        let keyword = any_granted_keyword();
-        let (a, registry) = attached(ContinuousEffect::GrantKeyword { keyword, scope: EffectScope::Attached }, &[]);
-        for i in 0..2 {
-            assert!(a.state.has_keyword(a.creatures[i], keyword, &registry) == a.reaches[i]);
-        }
-        std::mem::forget((a, registry));
-    }
+    std::mem::forget((a, registry));
 }
 
 card_proof! {
@@ -168,23 +151,51 @@ card_proof! {
     }
 }
 
-card_proof! {
-    /// "As long as it's a Human" / "Otherwise" (CR 611.3a): an effect with
-    /// a condition on the enchanted creature's subtype reaches it exactly
-    /// when the condition holds, Human or not, read from the creature as it
-    /// is.
-    fn a_subtype_condition_on_the_enchanted_creature_holds_exactly_when_it_says() {
-        let lacks: bool = kani::any();
-        let condition = if lacks {
-            EffectCondition::AttachedLacksSubtype("Human".into())
-        } else {
-            EffectCondition::AttachedHasSubtype("Human".into())
-        };
-        let (a, registry) = attached(ContinuousEffect::when(condition, ContinuousEffect::PreventAttack { scope: EffectScope::Attached }), &["Human"]);
-        for i in 0..2 {
-            let human = a.state.get_object(a.creatures[i]).expect("on the board").subtypes.iter().any(|s| s == "Human");
-            assert!(a.state.can_attack(a.creatures[i], &registry) == !(a.reaches[i] && human != lacks));
-        }
-        std::mem::forget((a, registry));
+/// "As long as it's a Human" / "Otherwise" (CR 611.3a): an effect with a
+/// condition on the enchanted creature's subtype reaches it exactly when
+/// the condition holds, Human or not, read from the creature as it is.
+fn conditioned(lacks: bool) {
+    let condition = if lacks {
+        EffectCondition::AttachedLacksSubtype("Human".into())
+    } else {
+        EffectCondition::AttachedHasSubtype("Human".into())
+    };
+    let (a, registry) = attached(ContinuousEffect::when(condition, ContinuousEffect::PreventAttack { scope: EffectScope::Attached }), &["Human"]);
+    for i in 0..2 {
+        let human = a.state.get_object(a.creatures[i]).expect("on the board").subtypes.iter().any(|s| s == "Human");
+        assert!(a.state.can_attack(a.creatures[i], &registry) == !(a.reaches[i] && human != lacks));
     }
+    std::mem::forget((a, registry));
+}
+
+/// A proof above for each effect the pool's Auras and Equipment print with
+/// a number, a keyword or a condition.
+macro_rules! each_printed {
+    ($($name:ident: $proof:ident($($arg:expr),*)),* $(,)?) => {$(
+        card_proof! {
+            /// The proof above it, for one effect a card in the pool prints.
+            fn $name() {
+                $proof($($arg),*);
+            }
+        }
+    )*};
+}
+
+each_printed! {
+    plus_2_plus_2_reaches_the_creature_it_is_attached_to: changing(2, 2),
+    plus_1_plus_2_reaches_the_creature_it_is_attached_to: changing(1, 2),
+    plus_1_plus_1_reaches_the_creature_it_is_attached_to: changing(1, 1),
+    plus_1_plus_0_reaches_the_creature_it_is_attached_to: changing(1, 0),
+    plus_2_plus_0_reaches_the_creature_it_is_attached_to: changing(2, 0),
+    plus_3_plus_0_reaches_the_creature_it_is_attached_to: changing(3, 0),
+    plus_4_plus_2_reaches_the_creature_it_is_attached_to: changing(4, 2),
+    minus_2_minus_2_reaches_the_creature_it_is_attached_to: changing(-2, -2),
+    minus_3_plus_0_reaches_the_creature_it_is_attached_to: changing(-3, 0),
+    flying_reaches_the_creature_it_is_attached_to: granting(Keyword::Flying),
+    first_strike_reaches_the_creature_it_is_attached_to: granting(Keyword::FirstStrike),
+    hexproof_reaches_the_creature_it_is_attached_to: granting(Keyword::Hexproof),
+    intimidate_reaches_the_creature_it_is_attached_to: granting(Keyword::Intimidate),
+    lifelink_reaches_the_creature_it_is_attached_to: granting(Keyword::Lifelink),
+    as_long_as_its_a_human_holds_exactly_when_it_is: conditioned(false),
+    unless_its_a_human_holds_exactly_when_it_is_not: conditioned(true),
 }
