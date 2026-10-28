@@ -178,12 +178,15 @@ fn an_effect(kind: u8, target: crate::ids::ObjectId) -> (crate::state::Temporary
 }
 
 /// `prune_effects_on_departed_objects` over effects of the kinds given, in
-/// that order, each about either of two objects (each on the battlefield
-/// or in a graveyard) or one no longer in the game. The kinds are
-/// constants: an effect of a kind the solver left open is dropped, when
-/// pruned, as every kind at once, a creature filter's every variant
-/// included, and the proof ran past eight gigabytes.
-fn pruning<const N: usize>(kinds: [u8; N]) {
+/// that order, effect `j` about object `about[j]`: either of two objects
+/// (each on the battlefield or in a graveyard), or, for 2, one no longer
+/// in the game. The kinds and the objects are constants: an effect of a
+/// kind the solver left open is dropped, when pruned, as every kind at
+/// once, a creature filter's every variant included, and the proof ran
+/// past eight gigabytes; and an effect about an object the solver left
+/// open is about an id it leaves open, which every read of the board is
+/// then a question of, and the proof ran out of memory at five.
+fn pruning<const N: usize>(kinds: [u8; N], about: [u8; N]) {
     let (_registry, mut state, blank) = crate::proofs::cards::blank_board();
     let mut on = [false; 2];
     let mut ids = [crate::ids::ObjectId(0); 3];
@@ -192,8 +195,7 @@ fn pruning<const N: usize>(kinds: [u8; N]) {
         ids[i] = state.create_object(blank, PlayerId(u8::from(kani::any::<bool>())), if *o { Zone::Battlefield } else { Zone::Graveyard }, Some(2), Some(2));
     }
     ids[2] = crate::ids::ObjectId(ids[1].0 + 1);
-    let about: [u8; N] = kani::any();
-    let target = |j: usize| ids[usize::from(about[j] % 3)];
+    let target = |j: usize| ids[usize::from(about[j])];
     for j in 0..N {
         state.until_end_of_turn.push(an_effect(kinds[j], target(j)).0);
     }
@@ -206,7 +208,7 @@ fn pruning<const N: usize>(kinds: [u8; N]) {
     let mut n = 0;
     for j in 0..N {
         let (effect, about_a_permanent) = an_effect(kinds[j], target(j));
-        let on_battlefield = about[j] % 3 < 2 && on[usize::from(about[j] % 3)];
+        let on_battlefield = about[j] < 2 && on[usize::from(about[j])];
         if !about_a_permanent || on_battlefield {
             assert!(state.until_end_of_turn.get(n) == Some(&effect));
             n += 1;
@@ -218,47 +220,80 @@ fn pruning<const N: usize>(kinds: [u8; N]) {
     std::mem::forget(state);
 }
 
-#[kani::proof]
-#[kani::unwind(7)]
-#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
-#[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
-#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
-#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
-/// An effect that lasts the turn on a permanent that has left the
-/// battlefield applies to nothing, and the card it became is a new object
-/// that must not carry it back (CR 400.7): as each action ends, the engine
-/// ends it. One about no permanent stays. For an effect of each of the
-/// nine kinds, about either object or one gone.
-fn an_effect_on_a_departed_permanent_ends() {
-    match kani::any::<u8>() % 9 {
-        0 => pruning([0]),
-        1 => pruning([1]),
-        2 => pruning([2]),
-        3 => pruning([3]),
-        4 => pruning([4]),
-        5 => pruning([5]),
-        6 => pruning([6]),
-        7 => pruning([7]),
-        _ => pruning([8]),
+/// `pruning(kinds, about)` for every `about` that begins with `fixed`, each
+/// a constant in its call.
+fn each_placement<const N: usize>(kinds: [u8; N], fixed: &[u8]) {
+    let rest = 3u8.pow(u32::try_from(N - fixed.len()).expect("small"));
+    let which: u8 = kani::any();
+    for code in 0..rest {
+        if which == code {
+            let mut about = [0; N];
+            about[..fixed.len()].copy_from_slice(fixed);
+            let mut c = code;
+            for slot in about.iter_mut().skip(fixed.len()) {
+                *slot = c % 3;
+                c /= 3;
+            }
+            pruning(kinds, about);
+        }
     }
 }
 
-#[kani::proof]
-#[kani::unwind(7)]
-#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
-#[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
-#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
-#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
-/// Of several effects, those that end end and the rest stay, in the order
-/// they were: up to three, a card's flashback among two about permanents,
-/// each about either object or one gone.
-fn effects_on_departed_permanents_end_and_the_rest_stay_in_order() {
-    match kani::any::<u8>() % 4 {
-        0 => pruning([]),
-        1 => pruning([0, 3]),
-        2 => pruning([7, 0]),
-        _ => pruning([0, 7, 3]),
-    }
+/// `pruning(kinds, about)` for every `about`, each a constant in its call.
+fn every_placement<const N: usize>(kinds: [u8; N]) {
+    each_placement(kinds, &[]);
+}
+
+/// A proof below for each kind of effect, or of effects in an order.
+macro_rules! each_pruning {
+    ($($name:ident: $proof:ident($($arg:expr),*);)*) => {$(
+        #[kani::proof]
+        #[kani::unwind(10)]
+        #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+        #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+        #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+        #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+        /// The proof described above its table, for these effects.
+        fn $name() {
+            $proof($($arg),*);
+        }
+    )*};
+}
+
+// An effect that lasts the turn on a permanent that has left the
+// battlefield applies to nothing, and the card it became is a new object
+// that must not carry it back (CR 400.7): as each action ends, the engine
+// ends it. One about no permanent stays. For an effect of each of the nine
+// kinds, about either object or one gone; the prevention, about no object,
+// once.
+each_pruning! {
+    a_pt_change_on_a_departed_permanent_ends: every_placement([0]);
+    a_granted_keyword_on_a_departed_permanent_ends: every_placement([1]);
+    a_removed_keyword_on_a_departed_permanent_ends: every_placement([2]);
+    cant_block_on_a_departed_permanent_ends: every_placement([3]);
+    a_granted_protection_on_a_departed_permanent_ends: every_placement([4]);
+    a_change_of_control_of_a_departed_permanent_ends: every_placement([5]);
+    a_pt_change_while_its_source_is_in_play_on_a_departed_permanent_ends: every_placement([6]);
+    a_granted_flashback_on_a_card_stays: every_placement([7]);
+    a_prevention_about_no_permanent_stays: each_placement([8], &[0]);
+}
+
+// Of several effects, those that end end and the rest stay, in the order
+// they were: none, two, or three with a card's flashback among two about
+// permanents, each about either object or one gone, but the flashback,
+// which is about no permanent (its own harness above has it about each),
+// about the first. Each harness fixes the object every effect but the
+// last is about: nine placements of two effects in one harness ran out of
+// memory at four gigabytes.
+each_pruning! {
+    pruning_no_effects_leaves_none: every_placement([]);
+    two_effects_the_first_on_the_first_object_end_or_stay_in_order: each_placement([0, 3], &[0]);
+    two_effects_the_first_on_the_second_object_end_or_stay_in_order: each_placement([0, 3], &[1]);
+    two_effects_the_first_on_one_gone_end_or_stay_in_order: each_placement([0, 3], &[2]);
+    flashback_then_an_effect_end_or_stay_in_order: each_placement([7, 0], &[0]);
+    three_effects_the_first_on_the_first_object_end_or_stay_in_order: each_placement([0, 7, 3], &[0, 0]);
+    three_effects_the_first_on_the_second_object_end_or_stay_in_order: each_placement([0, 7, 3], &[1, 0]);
+    three_effects_the_first_on_one_gone_end_or_stay_in_order: each_placement([0, 7, 3], &[2, 0]);
 }
 
 /// What a card's own effect was asked to do: its source, whether its key
