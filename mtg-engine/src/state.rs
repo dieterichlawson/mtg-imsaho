@@ -2949,7 +2949,11 @@ impl GameState {
     /// exactly why they are two named operations rather than one assignment
     /// spelled the same way in sixteen places.
     pub fn arrives_tapped(&mut self, id: ObjectId) {
-        if let Some(obj) = self.get_object_mut(id) {
+        // A permanent, as `tap` asks: a card that never got onto the
+        // battlefield (an entry deferred for a copy choice, CR 614.12b) is
+        // not one, and a card in a graveyard or a library has no tapped
+        // status to give it.
+        if let Some(obj) = self.get_object_mut(id).filter(|o| o.zone == Zone::Battlefield) {
             obj.tapped = true;
         }
     }
@@ -2967,7 +2971,9 @@ impl GameState {
     /// summoning-sickness reset and is a bug.
     pub fn change_control(&mut self, id: ObjectId, new_controller: PlayerId) {
         let changed = match self.get_object_mut(id) {
-            Some(obj) if obj.controller != new_controller => {
+            // Only a permanent changes control: off the battlefield a card's
+            // owner is its controller (CR 108.4), whatever an effect says.
+            Some(obj) if obj.zone == Zone::Battlefield && obj.controller != new_controller => {
                 let from = obj.controller;
                 obj.controller = new_controller;
                 obj.summoning_sick = true;

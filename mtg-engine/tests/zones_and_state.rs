@@ -285,6 +285,38 @@ fn attaching_takes_it_off_the_player_it_was_on() {
     assert_eq!(o.attached_to_player, None, "taken from where it was, a player");
 }
 
+/// CR 614.1c: "enters tapped" is a permanent's state as it arrives.
+/// `arrives_tapped` tapped whatever it was given, a card in a graveyard
+/// included; every caller hands it a permanent that has just entered, so no
+/// game reached it, and the proof in `proofs::actions` holds for every
+/// object now that the function asks.
+#[test]
+fn arriving_tapped_off_the_battlefield_taps_nothing() {
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let c = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(c).unwrap().zone = Zone::Graveyard;
+
+    state.arrives_tapped(c);
+    assert!(!state.get_object(c).unwrap().tapped, "a card in a graveyard has no tapped status to arrive with");
+}
+
+/// CR 108.4: a card off the battlefield is controlled by its owner, so an
+/// effect cannot hand it to another player. `change_control` did, for a
+/// card anywhere; every caller asks it about a permanent, so no game
+/// reached it, and the proof in `proofs::actions` holds for every object
+/// now that the function asks.
+#[test]
+fn control_of_a_card_off_the_battlefield_does_not_change() {
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let c = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(c).unwrap().zone = Zone::Graveyard;
+
+    state.events.clear();
+    state.change_control(c, P1);
+    assert_eq!(state.get_object(c).unwrap().controller, P0, "its owner is its controller");
+    assert!(state.events.is_empty(), "no control changed, none announced");
+}
+
 /// The leaves-the-battlefield log line names the destination: "died" for the
 /// graveyard, "was exiled" for exile — and only for a creature leaving the
 /// BATTLEFIELD. A card moving hand → graveyard did not die.

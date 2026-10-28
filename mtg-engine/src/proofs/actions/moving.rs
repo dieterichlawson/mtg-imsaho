@@ -55,9 +55,8 @@ fn any_zone() -> Zone {
 /// `move_object`, and `move_object_under_control` for a card put onto the
 /// battlefield from elsewhere under either player's control. Nothing else
 /// changes.
-fn moving(from: Zone) {
+fn moving(from: Zone, who: PlayerId) {
     let (registry, mut state, blank) = blank_board();
-    let who = PlayerId(u8::from(kani::any::<bool>()));
     let other = PlayerId(1 - who.0);
     // Its owner's library and graveyard hold a card each besides it.
     let below = state.create_object(blank, who, Zone::Library, None, None);
@@ -65,8 +64,7 @@ fn moving(from: Zone) {
     let creature: bool = kani::any();
     let pt = creature.then_some(2);
     let id = state.create_object(blank, who, from, pt, pt);
-    // A branch on the player, not an index by it: `any_object` says why.
-    let owner = if who == PlayerId(0) { &mut state.players[0] } else { &mut state.players[1] };
+    let owner = &mut state.players[usize::from(who.0)];
     owner.library_order.push(below);
     owner.graveyard_order.push(under);
     if from == Zone::Library {
@@ -216,9 +214,18 @@ macro_rules! from_each_zone {
         #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
         #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
         #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
-        /// The proof above it, for a card leaving that zone.
+        /// The proof above it, for a card leaving that zone, of either
+        /// player's. The owner is a constant in each call, not left to the
+        /// solver: `move_object` reaches the owner's library and graveyard
+        /// through an index by the owner, and a write through an index the
+        /// solver leaves open makes every later read of either player a
+        /// question of which one it was.
         fn $name() {
-            moving(Zone::$zone);
+            if kani::any() {
+                moving(Zone::$zone, PlayerId(0));
+            } else {
+                moving(Zone::$zone, PlayerId(1));
+            }
         }
     )*};
 }
