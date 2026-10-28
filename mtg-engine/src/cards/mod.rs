@@ -1367,6 +1367,20 @@ impl CardRegistry {
         Some((back.power, back.toughness))
     }
 
+    /// Whether the card has a back face — `back_face_data().is_some()`,
+    /// without building it. False for a card not in the registry.
+    #[must_use]
+    pub fn has_back_face(&self, id: CardId) -> bool {
+        self.printed_card(id).is_some_and(|c| c.back.is_some())
+    }
+
+    /// The name printed on the card's back face, or `None` for a card with
+    /// no back face.
+    #[must_use]
+    pub fn printed_back_name(&self, id: CardId) -> Option<&str> {
+        Some(self.printed_card(id)?.back.as_ref()?.name.as_str())
+    }
+
     /// Whether that face prints a triggered ability of this kind, as
     /// [`Self::printed_card_types`].
     #[must_use]

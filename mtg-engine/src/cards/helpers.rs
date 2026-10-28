@@ -717,14 +717,14 @@ pub fn transform_quietly(
         _ => return TransformResult::NotAPermanent,
     };
     let (card_id, was_transformed, copy_grantor) = (card_id.0, card_id.1, card_id.2);
-    let Some(behavior) = registry.get(card_id) else { return TransformResult::SingleFaced; };
+    if registry.get(card_id).is_none() { return TransformResult::SingleFaced; }
 
     // CR 701.28c: it is the *card* that has to be double-faced. A single-faced
     // clone (Evil Twin) copying a werewolf shows the werewolf's face, but the
     // card under it has no other face — nothing happens when it would
     // transform.
     let printed = copy_grantor.unwrap_or(card_id);
-    if registry.get(printed).is_none_or(|b| b.back_face_data().is_none()) {
+    if !registry.has_back_face(printed) {
         return TransformResult::SingleFaced;
     }
 
@@ -736,8 +736,8 @@ pub fn transform_quietly(
     //
     // `back_face_data` is the whole test: `every_card_with_a_back_face_declares_it`
     // holds every card Scryfall gives a back face to declaring one, Garruk
-    // Relentless included.
-    if behavior.back_face_data().is_none() {
+    // Relentless included. `has_back_face` asks it of the kept faces.
+    if !registry.has_back_face(card_id) {
         return TransformResult::SingleFaced;
     }
 
@@ -754,10 +754,10 @@ pub fn transform_quietly(
 
     // Refresh the display cache with the face now showing.
     let new_name = if was_transformed {
-        Some(behavior.card_data().name)
+        registry.printed_name(card_id, false)
     } else {
-        behavior.back_face_data().map(|back| back.name)
-    };
+        registry.printed_back_name(card_id)
+    }.map(str::to_string);
 
     if let Some(obj) = state.get_object_mut(object_id) {
         obj.is_transformed = !was_transformed;

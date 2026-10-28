@@ -2385,7 +2385,8 @@ const TRIGGER_KINDS: &[TriggerKind] = &[
 
 /// `face_card_types`, `face_supertypes`, `face_subtypes`, `face_cost`,
 /// `face_name` and `face_color_indicator`, and the registry's `printed_pt`,
-/// `printed_back_pt` and `prints_trigger`, read the faces the registry kept
+/// `printed_back_pt`, `has_back_face`, `printed_back_name` and
+/// `prints_trigger`, read the faces the registry kept
 /// at registration; `face_data` builds the card's
 /// data again. Card code reads the first set, so they have to say what
 /// `face_data` says — for every card, face up and face down, and for a
@@ -2399,6 +2400,12 @@ fn the_kept_faces_say_what_face_data_says() {
     for name in reg.all_names() {
         let card = reg.get_id_by_name(name).expect("every name has an id");
         let back = reg.get(card).and_then(|b| b.back_face_data());
+        if reg.has_back_face(card) != back.is_some() {
+            offenders.push(format!("{name}: whether it has a back face"));
+        }
+        if reg.printed_back_name(card) != back.as_ref().map(|d| d.name.as_str()) {
+            offenders.push(format!("{name}: back face name"));
+        }
         if reg.printed_back_pt(card) != back.map(|d| (d.power, d.toughness)) {
             offenders.push(format!("{name}: back face power and toughness"));
         }
