@@ -1278,6 +1278,12 @@ struct Brink {
 }
 
 fn brink() -> Brink {
+    brink_shaped(kani::any(), kani::any())
+}
+
+/// [`brink`]'s board, with the second Mikaeus in the graveyard if
+/// `second_dead`, and the blank card a creature if `blank_creature`.
+fn brink_shaped(second_dead: bool, blank_creature: bool) -> Brink {
     let (mut registry, mut state, blank_card, card) = board(Box::new(isd::back_from_the_brink::BackFromTheBrink));
     let mikaeus_card = registry.register(Box::new(isd::mikaeus_the_lunarch::MikaeusTheLunarch));
     let you = PlayerId(u8::from(kani::any::<bool>()));
@@ -1292,11 +1298,11 @@ fn brink() -> Brink {
         id
     };
     let first = graveyard(&mut state, mikaeus_card, "Mikaeus, the Lunarch", Zone::Graveyard);
-    let second = graveyard(&mut state, mikaeus_card, "Mikaeus, the Lunarch", if kani::any() { Zone::Graveyard } else { Zone::Hand });
+    let second = graveyard(&mut state, mikaeus_card, "Mikaeus, the Lunarch", if second_dead { Zone::Graveyard } else { Zone::Hand });
     let blank = graveyard(&mut state, blank_card, "Blank", Zone::Graveyard);
     let o = state.get_object_mut(blank).expect("just created");
     o.card_types = Vec::with_capacity(1);
-    if kani::any() {
+    if blank_creature {
         o.card_types.push(CardType::Creature);
     }
     let token = graveyard(&mut state, CardId(0), "Blank", Zone::Graveyard);
@@ -1325,24 +1331,37 @@ card_proof! {
     /// sorcery; the ability's index names the card. None for a player
     /// with no creature card in their graveyard.
     fn back_from_the_brink_has_an_ability_for_each_creature_card_in_your_graveyard() {
-        let b = brink();
-        let defs = std::mem::ManuallyDrop::new(b.registry.get(b.card()).expect("registered").activated_abilities(&b.state, b.me, &b.registry));
-        if b.you == PlayerId(1) {
-            assert!(defs.is_empty());
-        } else {
-            let mut expected = Vec::with_capacity(2);
-            expected.push((b.mikaeus[0], Ability { cost: mana(0, &[Color::White]), sorcery_speed: true, ..Ability::default() }));
-            if b.creature(b.blank) {
-                expected.push((b.blank, Ability { sorcery_speed: true, ..Ability::default() }));
+        let which: u8 = kani::any();
+        for (i, (second_dead, blank_creature)) in [(false, false), (false, true), (true, false), (true, true)].into_iter().enumerate() {
+            if usize::from(which) == i {
+                back_from_the_brink_has_its_abilities(second_dead, blank_creature);
             }
-            assert!(defs.len() == expected.len());
-            for (def, (id, ability)) in defs.iter().zip(&expected) {
-                assert!(def.ability_index == usize::try_from(id.0).expect("small") && Ability::of(def) == *ability);
-            }
-            std::mem::forget(expected);
         }
-        std::mem::forget(b);
     }
+}
+
+/// `back_from_the_brink_has_an_ability_for_each_creature_card_in_your_graveyard`,
+/// for one board, a constant in each call: a board the solver chose had a
+/// graveyard of every length, and so a list of abilities of every length,
+/// each compared, and the proof ran out of memory at ten gigabytes.
+fn back_from_the_brink_has_its_abilities(second_dead: bool, blank_creature: bool) {
+    let b = brink_shaped(second_dead, blank_creature);
+    let defs = std::mem::ManuallyDrop::new(b.registry.get(b.card()).expect("registered").activated_abilities(&b.state, b.me, &b.registry));
+    if b.you == PlayerId(1) {
+        assert!(defs.is_empty());
+    } else {
+        let mut expected = Vec::with_capacity(2);
+        expected.push((b.mikaeus[0], Ability { cost: mana(0, &[Color::White]), sorcery_speed: true, ..Ability::default() }));
+        if b.creature(b.blank) {
+            expected.push((b.blank, Ability { sorcery_speed: true, ..Ability::default() }));
+        }
+        assert!(defs.len() == expected.len());
+        for (def, (id, ability)) in defs.iter().zip(&expected) {
+            assert!(def.ability_index == usize::try_from(id.0).expect("small") && Ability::of(def) == *ability);
+        }
+        std::mem::forget(expected);
+    }
+    std::mem::forget(b);
 }
 
 card_proof! {
