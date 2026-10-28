@@ -155,83 +155,111 @@ case_by_case! { delver_of_secrets_transforms_on_a_revealed_instant_or_sorcery;
 }
 
 card_proof! {
-    /// Cloistered Youth: at its controller's upkeep, front face up, they
-    /// are asked whether to transform it, and it transforms on "yes";
-    /// Unholy Fiend: at its controller's end step, they lose 1 life.
-    fn cloistered_youth_may_transform_and_unholy_fiend_costs_a_life() {
+    /// Cloistered Youth // Unholy Fiend: an upkeep trigger on the front
+    /// face and an end step trigger on the back, each its controller's
+    /// alone. What they do is the proof below.
+    fn cloistered_youth_and_unholy_fiend_trigger_at_your_upkeep_and_end_step() {
         let youth = isd::cloistered_youth::CloisteredYouth;
         assert!(triggers(&youth) == [(TriggerKind::Upkeep, None)] && back_triggers(&youth) == [TriggerKind::EndStep]);
         for back in [false, true] {
             assert!(youth.step_trigger_scope(&TriggerKind::Upkeep, back) == TriggerScope::Your);
             assert!(youth.step_trigger_scope(&TriggerKind::EndStep, back) == TriggerScope::Your);
         }
-        let mut b = creature(Box::new(youth));
-        let front_up = b.front_up();
-        let before = b.upkeep();
-        if front_up {
-            assert!(b.asked() && acted() == 0);
-            let yes: bool = kani::any();
-            b.answer(yes);
-            if yes {
-                assert!(asked_for(&[Act::Transform(b.me)]));
-            } else {
-                assert!(acted() == 0);
-            }
-        } else {
-            assert!(!b.asked() && acted() == 0);
-            let card = b.card();
-            b.registry.get(card).expect("registered").on_end_step(&mut b.state, b.me, &[], &b.registry);
-            assert!(asked_for(&[Act::Life(b.you, -1)]));
-        }
-        assert!(Snapshot::of(&b.state) == before);
-        std::mem::forget(b);
     }
 }
 
+/// Cloistered Youth: at its controller's upkeep, front face up, they are
+/// asked whether to transform it, and it transforms on "yes"; Unholy
+/// Fiend: at its controller's end step, they lose 1 life. In its owner's
+/// graveyard for `placed` 0, front face up on the battlefield for 1 and
+/// transformed there for 2, and answered `yes` or not, each a constant in
+/// its harness, as the cases of one harness add up.
+fn cloistered_youth_may_transform_and_unholy_fiend_costs_a_life((placed, yes): (u8, bool)) {
+    let mut b = creature_at(Box::new(isd::cloistered_youth::CloisteredYouth), PlayerId(u8::from(kani::any::<bool>())), placed == 0, placed == 2);
+    let before = b.upkeep();
+    if placed == 1 {
+        assert!(b.asked() && acted() == 0);
+        b.answer(yes);
+        if yes {
+            assert!(asked_for(&[Act::Transform(b.me)]));
+        } else {
+            assert!(acted() == 0);
+        }
+    } else {
+        assert!(!b.asked() && acted() == 0);
+        let card = b.card();
+        b.registry.get(card).expect("registered").on_end_step(&mut b.state, b.me, &[], &b.registry);
+        assert!(asked_for(&[Act::Life(b.you, -1)]));
+    }
+    assert!(Snapshot::of(&b.state) == before);
+    std::mem::forget(b);
+}
+
+case_by_case! { cloistered_youth_may_transform_and_unholy_fiend_costs_a_life;
+    cloistered_youth_gone_asks_nothing: (0, false),
+    cloistered_youth_transforms_on_yes: (1, true),
+    cloistered_youth_stays_on_no: (1, false),
+    unholy_fiend_costs_a_life: (2, false),
+}
+
 card_proof! {
-    /// Screeching Bat // Stalking Vampire: at its controller's upkeep, on
-    /// the battlefield either face up, they are asked whether to pay
-    /// {2}{B}{B} if they can (with no way to pay it the "may" has one
-    /// answer, and nothing is asked); on "yes" they pay it and, if it was
-    /// paid and the creature is still there, it transforms.
-    fn screeching_bat_may_pay_to_transform_either_way() {
+    /// Screeching Bat // Stalking Vampire: an upkeep trigger on each face,
+    /// its controller's alone. What it does is the proof below.
+    fn screeching_bat_triggers_at_your_upkeep_either_way() {
         let bat = isd::screeching_bat::ScreechingBat;
         assert!(triggers(&bat) == [(TriggerKind::Upkeep, None)] && back_triggers(&bat) == [TriggerKind::Upkeep]);
         for back in [false, true] {
             assert!(bat.step_trigger_scope(&TriggerKind::Upkeep, back) == TriggerScope::Your);
         }
-        let mut b = creature(Box::new(bat));
-        let on = b.state.get_object(b.me).expect("on the board").zone == Zone::Battlefield;
-        let before = b.upkeep();
-        if b.asked() {
-            assert!(on && acted() == 0);
-            let yes: bool = kani::any();
-            b.answer(yes);
-            let cost = crate::types::ManaCost::new(vec![
-                crate::types::ManaSymbol::Generic(2),
-                crate::types::ManaSymbol::Colored(crate::types::Color::Black),
-                crate::types::ManaSymbol::Colored(crate::types::Color::Black),
-            ]);
-            match super::act(0) {
-                None => {
-                    assert!(!yes);
-                }
-                Some(Act::Pay(p, paid_cost, paid)) => {
-                    assert!(yes && *p == b.you && *paid_cost == cost);
-                    if *paid {
-                        assert!(acted() == 2 && Some(&Act::Transform(b.me)) == super::act(1));
-                    } else {
-                        assert!(acted() == 1);
-                    }
-                }
-                _ => panic!("pays first"),
-            }
-        } else {
-            assert!(acted() == 0);
-        }
-        assert!(Snapshot::of(&b.state) == before);
-        std::mem::forget(b);
     }
+}
+
+/// Screeching Bat // Stalking Vampire: at its controller's upkeep, on the
+/// battlefield either face up, they are asked whether to pay {2}{B}{B} if
+/// they can (with no way to pay it the "may" has one answer, and nothing
+/// is asked); on "yes" they pay it and, if it was paid and the creature is
+/// still there, it transforms. In its owner's graveyard for `placed` 0,
+/// front face up on the battlefield for 1 and transformed there for 2, and
+/// answered `yes` or not, each a constant in its harness, as the cases of
+/// one harness add up.
+fn screeching_bat_may_pay_to_transform_either_way((placed, yes): (u8, bool)) {
+    let mut b = creature_at(Box::new(isd::screeching_bat::ScreechingBat), PlayerId(u8::from(kani::any::<bool>())), placed == 0, placed == 2);
+    let before = b.upkeep();
+    if b.asked() {
+        assert!(placed != 0 && acted() == 0);
+        b.answer(yes);
+        let cost = crate::types::ManaCost::new(vec![
+            crate::types::ManaSymbol::Generic(2),
+            crate::types::ManaSymbol::Colored(crate::types::Color::Black),
+            crate::types::ManaSymbol::Colored(crate::types::Color::Black),
+        ]);
+        match super::act(0) {
+            None => {
+                assert!(!yes);
+            }
+            Some(Act::Pay(p, paid_cost, paid)) => {
+                assert!(yes && *p == b.you && *paid_cost == cost);
+                if *paid {
+                    assert!(acted() == 2 && Some(&Act::Transform(b.me)) == super::act(1));
+                } else {
+                    assert!(acted() == 1);
+                }
+            }
+            _ => panic!("pays first"),
+        }
+    } else {
+        assert!(acted() == 0);
+    }
+    assert!(Snapshot::of(&b.state) == before);
+    std::mem::forget(b);
+}
+
+case_by_case! { screeching_bat_may_pay_to_transform_either_way;
+    screeching_bat_gone_asks_nothing: (0, false),
+    screeching_bat_pays_and_transforms_on_yes: (1, true),
+    screeching_bat_stays_on_no: (1, false),
+    stalking_vampire_pays_and_transforms_on_yes: (2, true),
+    stalking_vampire_stays_on_no: (2, false),
 }
 
 card_proof! {
