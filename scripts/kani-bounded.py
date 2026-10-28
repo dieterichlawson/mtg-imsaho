@@ -438,10 +438,13 @@ def main():
     # harness in a module by the module's name (`vec_map`, `cards::auras`).
     wanted = [h for h in every if not a.harness
               or any(h == w or h.endswith('::' + w) or f'::{w}::' in f'::{h}' for w in a.harness)]
-    done = set()
-    if os.path.exists(a.results):
-        done = {l.split()[2] for l in open(a.results) if len(l.split()) > 2}
-    todo = [h for h in wanted if h not in done]
+    def done():
+        if not os.path.exists(a.results):
+            return set()
+        with open(a.results, errors='replace') as res:
+            return {l.split()[2] for l in res if len(l.split()) > 2}
+
+    todo = [h for h in wanted if h not in done()]
     # One at a time, a harness is held to the cap it would have had alone,
     # so that a run beside other work cannot take the machine's memory.
     cap = a.mem_cap if a.jobs > 1 else a.solo_cap
@@ -468,7 +471,12 @@ def main():
         return None
 
     for i in range(0, len(todo), a.batch):
-        batch = todo[i:i + a.batch]
+        # Read again before each batch: another run writing to the same
+        # results may have done some of these since this one began.
+        finished = done()
+        batch = [h for h in todo[i:i + a.batch] if h not in finished]
+        if not batch:
+            continue
         found = codegen(batch, a.crate, a.target)
         if found is None:
             for h in batch:
