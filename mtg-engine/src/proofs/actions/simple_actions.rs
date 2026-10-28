@@ -5,16 +5,16 @@
 //! `remove_counters`), its regeneration shields
 //! (`add_regeneration_shield`), what it is attached to (`attach`), who
 //! controls it (`change_control`, `gain_control_while_source_controlled`),
-//! its power and toughness as set in layer
-//! 7b (`set_base_pt`), a card's place in a hand (`discard_card`), a
-//! player's mana pool (`add_mana`), whether a player has lost
-//! (`player_loses`) and whether the game is over (`end_game`). A card
-//! proof's recorder stands in for each.
+//! its power and toughness as set in layer 7b (`set_base_pt`), a card's
+//! place in a hand (`discard_card`, and `discard_cards` for N), a player's
+//! mana pool (`add_mana`), whether a player has lost (`player_loses`) and
+//! whether the game is over (`end_game`). A card proof's recorder stands
+//! in for each.
 
 use crate::events::{GameEvent, LossReason};
 use crate::ids::{ObjectId, PlayerId};
-use crate::proofs::cards::{acted, asked_for, blank_board, new_game, Act, Snapshot};
-use crate::state::{ControlEffect, GameResult, SetPtEffect};
+use crate::proofs::cards::{acted, asked_each, asked_for, blank_board, new_game, Act, Snapshot};
+use crate::state::{AwaitingAction, ControlEffect, GameResult, ResolutionChoiceKind, SetPtEffect};
 use crate::types::{CounterType, ManaType, Zone};
 
 #[kani::proof]
@@ -616,4 +616,50 @@ fn adding_mana_adds_it_to_that_players_pool() {
         [GameEvent::ManaAdded { player, mana_type, amount }] if *player == who && *mana_type == kind && *amount == n));
     assert!(Snapshot::of(&state).without_events() == before.without_events());
     std::mem::forget(state);
+}
+
+#[kani::proof]
+#[kani::unwind(7)]
+#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+#[kani::stub(crate::state::GameState::discard_card_for, crate::proofs::cards::record_discard_for)]
+#[kani::stub(crate::state::GameState::objects_in_zone, crate::proofs::cards::objects_in_zone_in_id_order)]
+/// "Target player discards N cards" (CR 701.8a): the player chooses N
+/// cards of their hand, and a player with no more than N discards them
+/// all, unasked (as much as they can, 101.3), each of the hand in its
+/// order; a player with more is asked, once, to choose a card of their
+/// hand to discard, with N still to go. Discarding none, or from an empty
+/// hand, does nothing. For either player, hands of up to two cards beside
+/// a card in the other player's, and N up to three. Nothing else changes.
+fn discarding_n_discards_the_hand_or_asks_for_the_cards() {
+    let (registry, mut state, blank) = blank_board();
+    let who = PlayerId(u8::from(kani::any::<bool>()));
+    let held: usize = kani::any();
+    kani::assume(held <= 2);
+    // Both cards made, the ones not held in exile, so that every id is
+    // known (`cards_in_zones` says why).
+    let cards = [0, 1].map(|i| state.create_object(blank, who, if i < held { Zone::Hand } else { Zone::Exile }, None, None));
+    state.create_object(blank, PlayerId(1 - who.0), Zone::Hand, None, None);
+    let source = state.create_object(blank, who, Zone::Stack, None, None);
+    let n: usize = kani::any();
+    kani::assume(n <= 3);
+    let before = Snapshot::of(&state);
+
+    crate::engine::discard_cards(&mut state, who, n, source, "a source", &registry);
+
+    if n == 0 || held == 0 {
+        assert!(acted() == 0 && Snapshot::of(&state) == before);
+    } else if held <= n {
+        assert!(asked_each(held, |i| Act::Discard(cards[i])) && Snapshot::of(&state) == before);
+    } else {
+        assert!(acted() == 0 && Snapshot::of(&state) == before.with_asking(true));
+        assert!(matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+            player, source: s, choice: ResolutionChoiceKind::ChooseCardFromHand {
+                player: from, cards: offered, discard_immediately: true, remaining, ..
+            },
+        }) if *player == who && *s == source && *from == who && offered.as_slice() == &cards[..held] && *remaining == n));
+    }
+    kani::cover!(held == 2 && n == 1, "asked to choose");
+    std::mem::forget((registry, state));
 }

@@ -199,3 +199,18 @@ for_each_size!(putting, move_keeping_library_order, [
     putting_a_card_into_a_library_of_two: 2,
     putting_a_card_into_a_library_of_three: 3
 ]);
+
+#[kani::proof]
+#[kani::unwind(7)]
+#[kani::stub(crate::state::GameState::move_object, crate::proofs::cards::record_move)]
+/// Milling one card (CR 701.17a) is putting it into its owner's graveyard,
+/// which `move_object` does (its own proof says how): for a card of either
+/// player's, the one move, and nothing else.
+fn milling_one_card_puts_it_into_its_owners_graveyard() {
+    let (registry, mut state, blank) = blank_board();
+    let card = state.create_object(blank, PlayerId(u8::from(kani::any::<bool>())), Zone::Library, None, None);
+    let before = Snapshot::of(&state);
+    crate::engine::mill_one(&mut state, card, &registry);
+    assert!(asked_for(&[Act::Move(card, Zone::Graveyard)]) && Snapshot::of(&state) == before);
+    std::mem::forget((registry, state));
+}

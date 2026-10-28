@@ -7,6 +7,7 @@ mod countering;
 mod damage;
 mod destruction;
 mod effects;
+mod fighting;
 mod library;
 mod moving;
 mod pending_effects;

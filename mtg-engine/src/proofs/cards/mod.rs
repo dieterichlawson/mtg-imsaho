@@ -1220,6 +1220,12 @@ impl Snapshot {
         s
     }
 
+    /// This snapshot waiting on an answer or not, as `asking` says, and
+    /// nothing else changed.
+    pub fn with_asking(&self, asking: bool) -> Self {
+        Snapshot { asking, ..self.clone() }
+    }
+
     /// This snapshot with `n` objects on the stack, and nothing else
     /// changed.
     pub fn with_stack(&self, n: usize) -> Self {

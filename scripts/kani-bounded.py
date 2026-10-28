@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """scripts/kani-bounded.py [NAME...] [--results FILE] [--batch N] [--timeout S] [--bound B] [--as-built]
-                          [--start-unwind U] [--loops FILE] [--jobs J --mem-cap GB]
+                          [--start-unwind U] [--loops FILE] [--jobs J --mem-cap GB] [--memory-checks]
 
 Run the Kani proofs in mtg-engine/src/proofs/ the way `cargo kani` does,
 with one addition: every function in a harness's final goto program that
@@ -35,6 +35,9 @@ Per batch: `cargo kani --only-codegen` for the batch's harnesses; per
 harness: Kani's goto-cc link and goto-instrument passes, the rewrite,
 then cbmc with Kani's flags, the bounds and --json-ui. A result is read as Kani reads
 it: reachability checks are not failures, and covers are counted.
+
+CBMC's pointer and bounds checks are off (`NO_MEMORY_CHECKS` says why);
+--memory-checks keeps them.
 
 With --jobs J, J harnesses of a batch are verified at once, each cbmc
 held to GB gigabytes of address space; one that runs out of it is run
@@ -126,6 +129,15 @@ ENGINE = re.compile(r'(GameState::matches_filter|GameState::check_condition|Cont
 CBMC_FLAGS = ['--no-malloc-may-fail', '--no-undefined-shift-check', '--no-signed-overflow-check', '--nan-check',
               '--no-self-loops-to-assumptions', '--no-pointer-primitive-check', '--object-bits', '16',
               '--sat-solver', 'cadical', '--slice-formula', '--max-field-sensitivity-array-size', '4096']
+# CBMC's own checks that every dereference is of a live object and in its
+# bounds. The proofs prove what the code does; that safe Rust (the engine
+# has no `unsafe`) reads only memory it may is the compiler's guarantee,
+# and Rust's own checks, an index past a slice's end and every other
+# panic, are assertions in the program and stay. An invalid read would
+# give a value the solver leaves open, which no assertion holds of unless
+# it holds of every value. Without them Rolling Temblor's symbolic
+# execution took half the time and left 3876 checks to solve, not 9670.
+NO_MEMORY_CHECKS = ['--no-pointer-check', '--no-bounds-check', '--no-div-by-zero-check']
 
 
 def run(cmd, **kw):
@@ -194,8 +206,8 @@ def verify(h, goto, unwind, mangled, bound, timeout, precise=True, cap=None):
         rounds += 1
         raised = sorted({f'{m}.{n}' for name, n in learned for m in by_name.get(name, [])})
         unwindset = ','.join(['memcmp.0:33'] + [f'{r}:{bound}' for r in rec] + [f'{l}:{full}' for l in raised])
-        cmd = [f'{K}/bin/cbmc'] + CBMC_FLAGS + ['--unwind', str(min(START_UNWIND, full)), '--unwindset', unwindset,
-                                                out, '--verbosity', '9', '--json-ui']
+        cmd = [f'{K}/bin/cbmc'] + CBMC_FLAGS + ([] if MEMORY_CHECKS else NO_MEMORY_CHECKS) + [
+            '--unwind', str(min(START_UNWIND, full)), '--unwindset', unwindset, out, '--verbosity', '9', '--json-ui']
         with open(out + '.cmd', 'w') as f:
             f.write(' '.join(f"'{c}'" if ',' in c or '*' in c else c for c in cmd) + '\n')
         if cap:
@@ -313,7 +325,7 @@ def solve(cmd, timeout, nrec):
     return ('SUCCESSFUL', f'{nrec} bounded{cov}', seconds, set(), [])
 
 
-START_UNWIND, LOOPS = 4, None
+START_UNWIND, LOOPS, MEMORY_CHECKS = 4, None, False
 
 
 def main():
@@ -328,11 +340,12 @@ def main():
     ap.add_argument('--as-built', action='store_true', help='skip the precise-enums rewrite')
     ap.add_argument('--start-unwind', type=int, default=4)
     ap.add_argument('--loops', default=f'{ROOT}/logs/kani/loop-bounds.txt')
+    ap.add_argument('--memory-checks', action='store_true', help="keep CBMC's pointer and bounds checks")
     ap.add_argument('--jobs', type=int, default=1)
     ap.add_argument('--mem-cap', type=float, default=None, help='gigabytes of address space per cbmc, with --jobs')
     a = ap.parse_args()
-    global START_UNWIND, LOOPS
-    START_UNWIND, LOOPS = a.start_unwind, a.loops
+    global START_UNWIND, LOOPS, MEMORY_CHECKS
+    START_UNWIND, LOOPS, MEMORY_CHECKS = a.start_unwind, a.loops, a.memory_checks
     os.makedirs(os.path.dirname(a.results), exist_ok=True)
     every = list_harnesses(f'{a.crate}/src')
     # A name selects a harness by its full path or its last part, or every
@@ -353,6 +366,7 @@ def main():
     def one(h, goto, unwind, mangled, cap):
         result, took, why = verify(h, goto, unwind, mangled, a.bound, a.timeout, precise=not a.as_built, cap=cap)
         if result == 'OOM' and cap:
+            print(f"{'OVER_CAP':10s} {took:>8s}  {h}  again alone, after the batch", flush=True)
             return h
         write(f'{result:10s} {took:>8s}  {h}  {why}')
         print(f'{result:10s} {took:>8s}  {h}', flush=True)
