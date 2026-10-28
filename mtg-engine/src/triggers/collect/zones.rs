@@ -50,8 +50,7 @@ pub(super) fn entered_battlefield(
         let trigger_kind = crate::cards::TriggerKind::AnyCreatureEnters;
         for (watcher_id, watcher_card_id, watcher_controller, watcher_zone) in watchers {
             if let Some(behavior) = registry.get(watcher_card_id) {
-                let has_trigger = behavior.card_data().triggered_abilities.iter()
-                    .any(|t| t.kind == trigger_kind);
+                let has_trigger = registry.prints_trigger(watcher_card_id, false, &trigger_kind);
                 // CR 603.2: an event condition on the entering
                 // creature is read HERE, as it enters — not at
                 // resolution, by which time its power may differ.
@@ -121,8 +120,8 @@ pub(super) fn creature_died(
         // Only create death-watch triggers for permanents whose ACTIVE
         // face has an AnyCreatureDies triggered ability (CR 712.8d —
         // a transformed DFC only has its back face's abilities).
-        let has_death_trigger = state.triggered_abilities_of(watcher_id, registry).iter()
-            .any(|t| t.kind == crate::cards::TriggerKind::AnyCreatureDies);
+        let has_death_trigger = registry.prints_trigger(
+            watcher_card_id, watcher_transformed, &crate::cards::TriggerKind::AnyCreatureDies);
         // CR 603.2: the watcher's own condition on WHICH death this is, read
         // here as the creature dies — the same gate the ETB-watch scan above
         // and the damage collector both have.
@@ -178,9 +177,8 @@ pub(super) fn creature_card_milled(
     for (watcher_id, watcher_card_id, watcher_controller) in watchers {
         // Only watchers who are opponents of the milled player.
         if watcher_controller == milled_player { continue; }
-        let has_trigger = registry.get(watcher_card_id)
-            .is_some_and(|b| b.card_data().triggered_abilities.iter()
-                .any(|t| t.kind == crate::cards::TriggerKind::CreatureCardMilled));
+        let has_trigger = registry.prints_trigger(
+            watcher_card_id, false, &crate::cards::TriggerKind::CreatureCardMilled);
         if has_trigger {
             let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::CreatureCardMilled, false);
             c.emit(watcher_id, watcher_card_id, watcher_controller, desc,

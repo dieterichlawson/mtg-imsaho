@@ -1464,10 +1464,9 @@ impl GameState {
             if leaving && self.get_object(id).is_some_and(|o| !o.is_token) {
                 self.get_object(id).and_then(|o| {
                     let printed_card = o.copy_grantor.unwrap_or(o.card_id);
-                    registry.get(printed_card).map(|b| {
-                        let d = b.card_data();
-                        (d.name, d.power, d.toughness)
-                    })
+                    let name = registry.printed_name(printed_card, false)?;
+                    let (power, toughness) = registry.printed_pt(printed_card, false)?;
+                    Some((name.to_string(), power, toughness))
                 })
             } else {
                 None
@@ -2264,7 +2263,7 @@ impl GameState {
                     // carried a `dynamic_pt` that did nothing but repeat their
                     // own `back_face_data` — one derived fact written twice,
                     // in two places free to disagree.
-                    behavior.back_face_data().and_then(|d| d.power).or(obj.power)?
+                    registry.printed_back_pt(obj.card_id).and_then(|(p, _)| p).or(obj.power)?
                 } else {
                     obj.power?
                 }
@@ -2342,7 +2341,7 @@ impl GameState {
                     t
                 } else if obj.is_transformed {
                     // The back face's printed toughness — see effective_power.
-                    behavior.back_face_data().and_then(|d| d.toughness).or(obj.toughness)?
+                    registry.printed_back_pt(obj.card_id).and_then(|(_, t)| t).or(obj.toughness)?
                 } else {
                     obj.toughness?
                 }

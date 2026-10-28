@@ -15,7 +15,7 @@
 
 mod common;
 use common::*;
-use mtg_engine::cards::{CardData, CardRegistry, TargetRequirement};
+use mtg_engine::cards::{CardData, CardRegistry, TargetRequirement, TriggerKind};
 use mtg_engine::types::{CardType, Color, Step, Supertype};
 use std::collections::HashSet;
 
@@ -2372,8 +2372,20 @@ fn every_auras_enchant_ability_is_one_the_attachment_rules_model() {
     assert_covers(checked, 15, "are Auras");
 }
 
+/// Every `TriggerKind`, for asking a face about each.
+const TRIGGER_KINDS: &[TriggerKind] = &[
+    TriggerKind::EntersBattlefield, TriggerKind::SelfDies, TriggerKind::AnyCreatureDies,
+    TriggerKind::AnyCreatureEnters, TriggerKind::CombatDamageToPlayer,
+    TriggerKind::AnyCombatDamageToPlayer, TriggerKind::AnyDamageToPlayer, TriggerKind::Upkeep,
+    TriggerKind::EndStep, TriggerKind::SpellCast, TriggerKind::Attacks, TriggerKind::Blocks,
+    TriggerKind::BecomesBlocked, TriggerKind::AnyCreatureAttacks,
+    TriggerKind::DealsCombatDamageToCreature, TriggerKind::EndCombat,
+    TriggerKind::LeavesBattlefield, TriggerKind::CreatureCardMilled,
+];
+
 /// `face_card_types`, `face_supertypes`, `face_subtypes`, `face_cost`,
-/// `face_name` and `face_color_indicator` read the faces the registry kept
+/// `face_name` and `face_color_indicator`, and the registry's `printed_pt`,
+/// `printed_back_pt` and `prints_trigger`, read the faces the registry kept
 /// at registration; `face_data` builds the card's
 /// data again. Card code reads the first set, so they have to say what
 /// `face_data` says — for every card, face up and face down, and for a
@@ -2386,6 +2398,10 @@ fn the_kept_faces_say_what_face_data_says() {
     let mut looked = 0;
     for name in reg.all_names() {
         let card = reg.get_id_by_name(name).expect("every name has an id");
+        let back = reg.get(card).and_then(|b| b.back_face_data());
+        if reg.printed_back_pt(card) != back.map(|d| (d.power, d.toughness)) {
+            offenders.push(format!("{name}: back face power and toughness"));
+        }
         for transformed in [false, true] {
             let id = state.create_object(card, PlayerId(0), mtg_engine::types::Zone::Library, None, None);
             state.get_object_mut(id).expect("just created").is_transformed = transformed;
@@ -2408,6 +2424,15 @@ fn the_kept_faces_say_what_face_data_says() {
             }
             if state.face_color_indicator(id, &reg) != data.color_indicator.as_slice() {
                 offenders.push(format!("{name} (transformed {transformed}): color indicator"));
+            }
+            if reg.printed_pt(card, transformed) != Some((data.power, data.toughness)) {
+                offenders.push(format!("{name} (transformed {transformed}): power and toughness"));
+            }
+            for kind in TRIGGER_KINDS {
+                let prints = data.triggered_abilities.iter().any(|t| t.kind == *kind);
+                if reg.prints_trigger(card, transformed, kind) != prints {
+                    offenders.push(format!("{name} (transformed {transformed}): a {kind:?} trigger"));
+                }
             }
         }
     }

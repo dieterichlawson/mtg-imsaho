@@ -1175,6 +1175,10 @@ struct PrintedFace {
     subtypes: Vec<String>,
     cost: Option<ManaCost>,
     color_indicator: Vec<Color>,
+    power: Option<i32>,
+    toughness: Option<i32>,
+    /// The kind of each triggered ability the face prints, in order.
+    trigger_kinds: Vec<TriggerKind>,
 }
 
 impl Default for CardRegistry {
@@ -1219,6 +1223,9 @@ impl CardRegistry {
                 subtypes: data.subtypes,
                 cost: data.cost,
                 color_indicator: data.color_indicator,
+                power: data.power,
+                toughness: data.toughness,
+                trigger_kinds: data.triggered_abilities.iter().map(|t| t.kind.clone()).collect(),
             },
             back: back.map(|d| PrintedFace {
                 name: d.name,
@@ -1229,6 +1236,9 @@ impl CardRegistry {
                 subtypes: d.subtypes,
                 cost: d.cost,
                 color_indicator: d.color_indicator,
+                power: d.power,
+                toughness: d.toughness,
+                trigger_kinds: d.triggered_abilities.iter().map(|t| t.kind.clone()).collect(),
             }),
         });
         self.cards.push(card);
@@ -1338,6 +1348,30 @@ impl CardRegistry {
     #[must_use]
     pub fn printed_name(&self, id: CardId, transformed: bool) -> Option<&str> {
         Some(self.printed_face(id, transformed)?.name.as_str())
+    }
+
+    /// The power and toughness printed on that face, as
+    /// [`Self::printed_card_types`]; `None` for a card not in the registry.
+    #[must_use]
+    pub fn printed_pt(&self, id: CardId, transformed: bool) -> Option<(Option<i32>, Option<i32>)> {
+        let face = self.printed_face(id, transformed)?;
+        Some((face.power, face.toughness))
+    }
+
+    /// The power and toughness printed on the card's back face, or `None`
+    /// for a card with no back face — what `back_face_data()` says, where
+    /// [`Self::printed_pt`] would fall back to the front.
+    #[must_use]
+    pub fn printed_back_pt(&self, id: CardId) -> Option<(Option<i32>, Option<i32>)> {
+        let back = self.printed_card(id)?.back.as_ref()?;
+        Some((back.power, back.toughness))
+    }
+
+    /// Whether that face prints a triggered ability of this kind, as
+    /// [`Self::printed_card_types`].
+    #[must_use]
+    pub fn prints_trigger(&self, id: CardId, transformed: bool, kind: &TriggerKind) -> bool {
+        self.printed_face(id, transformed).is_some_and(|f| f.trigger_kinds.contains(kind))
     }
 
     /// The color indicator printed on that face (CR 204), as
