@@ -100,13 +100,9 @@ struct Vigil {
     forest: Option<ObjectId>,
 }
 
-fn vigil() -> Vigil {
-    vigil_of(any_player(), kani::any())
-}
-
-/// [`vigil`]'s board under player `you`, player 0's library of the cards
-/// whose bits are set in `library` (the nonland card 1, the Forests 2 and
-/// 8, the nonbasic land 4), the others in their owner's hand.
+/// The board under player `you`, player 0's library of the cards whose
+/// bits are set in `library` (the nonland card 1, the Forests 2 and 8, the
+/// nonbasic land 4), the others in their owner's hand.
 fn vigil_of(you: PlayerId, library: u8) -> Vigil {
     let (mut registry, mut state, blank, card) = board(Box::new(isd::caravan_vigil::CaravanVigil));
     let forest = registry.register(Box::new(crate::cards::forest::Forest));
@@ -200,44 +196,60 @@ case_by_case! { caravan_vigil_offers_one_of_each_basic_land_in_your_library;
     caravan_vigil_under_the_second_player_over_a_library_of_a_nonland_card_and_a_forest_and_a_nonbasic_land_and_a_second_forest: (1, 15),
 }
 
-card_proof! {
-    /// Caravan Vigil, the land chosen: with no creature dead this turn, it
-    /// goes to its controller's hand and their library is shuffled; with
-    /// one (morbid), they are asked whether to put it onto the battlefield
-    /// instead, and on the answer it goes there or to their hand, and the
-    /// library is shuffled. No land chosen, the library is shuffled all
-    /// the same, the search having happened (CR 701.23a). Nothing else.
-    fn caravan_vigil_puts_the_land_into_your_hand_or_with_morbid_onto_the_battlefield() {
-        let Vigil { registry, mut state, card, spell, you, forest } = vigil();
-        let Some(land) = forest else {
-            std::mem::forget((registry, state));
-            return;
-        };
-        let vigil = registry.get(card).expect("registered");
-        let before = Snapshot::of(&state);
-        if kani::any() {
-            vigil.on_declined_choice(&mut state, spell, &registry);
-            assert!(asked_for(&[Act::Shuffle(you)]) && Snapshot::of(&state) == before);
-            std::mem::forget((registry, state));
-            return;
-        }
-        vigil.resolve_card_effect(&mut state, spell, "", &Target::Object(land), &registry);
-        if !state.creature_died_this_turn {
-            assert!(asked_for(&[Act::Move(land, Zone::Hand), Act::Shuffle(you)]) && Snapshot::of(&state) == before);
-            std::mem::forget((registry, state));
-            return;
-        }
-        let asked = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
-            player, source, choice: ResolutionChoiceKind::YesNo { source_card, .. },
-        }) if *player == you && *source == spell && *source_card == spell);
-        assert!(asked && acted() == 0 && Snapshot::of(&state) == asking(&before, true));
-        state.awaiting_action = None;
-        let yes: bool = kani::any();
-        vigil.on_yes_no_choice(&mut state, spell, yes, &registry);
-        let to = if yes { Zone::Battlefield } else { Zone::Hand };
-        assert!(asked_for(&[Act::Move(land, to), Act::Shuffle(you)]) && Snapshot::of(&state) == before);
+/// Caravan Vigil, the land chosen: with no creature dead this turn, it
+/// goes to its controller's hand and their library is shuffled; with one
+/// (morbid), they are asked whether to put it onto the battlefield
+/// instead, and on the answer it goes there or to their hand, and the
+/// library is shuffled. No land chosen, the library is shuffled all the
+/// same, the search having happened (CR 701.23a). Nothing else.
+///
+/// For each controller and each `way`: the choice declined (0), the land
+/// chosen with no creature dead (1), and with one, answered yes (2) or no
+/// (3); each a constant in its harness, as the cases of one harness add
+/// up, and in one the proof ran out of memory at four and a half
+/// gigabytes. Over player 0's library of all four cards: which cards a
+/// library holds is the search's (the proof above, over each), and here
+/// the land is in hand as chosen, the library shuffled by an action whose
+/// proof is `proofs::actions`'.
+fn caravan_vigil_puts_the_land_into_your_hand_or_with_morbid_onto_the_battlefield((you, way): (u8, u8)) {
+    let Vigil { registry, mut state, card, spell, you, forest } = vigil_of(PlayerId(you), 0b1111);
+    let land = forest.expect("a Forest in each player's library");
+    state.creature_died_this_turn = way >= 2;
+    let vigil = registry.get(card).expect("registered");
+    let before = Snapshot::of(&state);
+    if way == 0 {
+        vigil.on_declined_choice(&mut state, spell, &registry);
+        assert!(asked_for(&[Act::Shuffle(you)]) && Snapshot::of(&state) == before);
         std::mem::forget((registry, state));
+        return;
     }
+    vigil.resolve_card_effect(&mut state, spell, "", &Target::Object(land), &registry);
+    if way == 1 {
+        assert!(asked_for(&[Act::Move(land, Zone::Hand), Act::Shuffle(you)]) && Snapshot::of(&state) == before);
+        std::mem::forget((registry, state));
+        return;
+    }
+    let asked = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+        player, source, choice: ResolutionChoiceKind::YesNo { source_card, .. },
+    }) if *player == you && *source == spell && *source_card == spell);
+    assert!(asked && acted() == 0 && Snapshot::of(&state) == asking(&before, true));
+    state.awaiting_action = None;
+    let yes = way == 2;
+    vigil.on_yes_no_choice(&mut state, spell, yes, &registry);
+    let to = if yes { Zone::Battlefield } else { Zone::Hand };
+    assert!(asked_for(&[Act::Move(land, to), Act::Shuffle(you)]) && Snapshot::of(&state) == before);
+    std::mem::forget((registry, state));
+}
+
+case_by_case! { caravan_vigil_puts_the_land_into_your_hand_or_with_morbid_onto_the_battlefield;
+    caravan_vigil_of_the_first_player_declined_shuffles: (0, 0),
+    caravan_vigil_of_the_first_player_puts_the_land_into_hand_without_morbid: (0, 1),
+    caravan_vigil_of_the_first_player_with_morbid_puts_the_land_onto_the_battlefield_on_yes: (0, 2),
+    caravan_vigil_of_the_first_player_with_morbid_puts_the_land_into_hand_on_no: (0, 3),
+    caravan_vigil_of_the_second_player_declined_shuffles: (1, 0),
+    caravan_vigil_of_the_second_player_puts_the_land_into_hand_without_morbid: (1, 1),
+    caravan_vigil_of_the_second_player_with_morbid_puts_the_land_onto_the_battlefield_on_yes: (1, 2),
+    caravan_vigil_of_the_second_player_with_morbid_puts_the_land_into_hand_on_no: (1, 3),
 }
 
 card_proof! {
