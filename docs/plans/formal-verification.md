@@ -844,6 +844,11 @@ for both players and boards as its doc comment states):
 | tokens entering attacking (506.3, 508.4), a token on a board without a planeswalker | proved, 161 s, at seven gigabytes |
 | `prune_effects_on_departed_objects` (400.7): each kind of effect about either object or one gone, and two or three in order | proved, 52 to 198 s each, but the prevention's (past four gigabytes) |
 | `damage::perform` (120.3, 702.2b, 702.15b) on either player | proved, 212 and 219 s |
+| damage nothing prevents or replaces, through the replacement layer (616.1), to either player | proved, 89 and 91 s |
+| `finish_library_search` (701.19a, 614.1c, 302.6) | proved, 133 s, once defect 12 was fixed |
+| `arrives_tapped` (614.1c), a change of control, adding mana to a pool | proved, 49 to 65 s each |
+| the creature groups a card's effect names ("creatures you control", "your opponents control", "creature tokens you control", "with flying your opponents control", "as long as you control a Human", "as long as an opponent controls a Human"), for a card and a token | proved, 32 to 65 s each |
+| `replacement::for_entering` on a board printing no replacement (614.1) | proved, 39 s |
 
 Three of these held only once the function asked what the rule says:
 `untap` untapped a card off the battlefield, `discard_card` discarded a
@@ -851,19 +856,21 @@ permanent, and `attach` left an Aura attached to the player it came off;
 no game reached any of them, every caller offering only what the rule
 allows, and each has a regular test besides.
 
-Not yet finished: moving a card between zones (each past five
-gigabytes); destroying permanents together (past eleven); the damage
-queue and `perform` on a permanent, and prevention and doubling, each
-set of effects its own harness (past four, being run again with the
-queue's loops bounded); the other boards of tokens entering attacking
+Not yet finished: moving a card between zones (each past two and a half
+gigabytes, to be run at a larger cap); destroying permanents together
+(past eleven); the damage queue, `perform` on a permanent, and
+prevention and doubling, now a harness for each target, board and set
+of effects (being run); the other boards of tokens entering attacking
 (past four), putting a card into a library, the prevention's pruning,
 paying a cost (the autotap planner's symbolic execution past half an
-hour, a pool the solver chose or not), the subtype filters, a filtered
-target requirement and the `KindMap` proofs (heavy, to be run alone at a
-larger cap); tokens, transforming and searching (written, not yet run
-under the current rewrite). The rest of
-the pool's proofs are being run under these measures, and this section
-will record which hold.
+hour, a pool the solver chose or not), the subtype filters and the
+creature groups that name a subtype, a filtered target requirement, a
+search's question and discarding several cards (past two and a half),
+and the `KindMap` proofs (heavy, to be run alone at a larger cap);
+tokens and transforming (written, not yet run under the current
+rewrite). The card proofs made a harness per case are being run, and
+the rest of the pool's under these measures; this section will record
+which hold.
 
 ### The whole engine under libFuzzer
 
