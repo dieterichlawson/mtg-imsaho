@@ -718,7 +718,24 @@ sits in memory. What was measured, and what the proofs do about each:
   that way). A board of cards that are there or not makes them all and
   puts the absent ones where the card does not look (`cards_in_zones`),
   so that every object's id is known: Desperate Ravings went from a
-  timeout to 201 seconds.
+  timeout to 201 seconds. The same three things, a list of a length the
+  solver leaves open, an object it leaves open, a player it indexes the
+  players by, were behind most of the proofs that ran out of memory
+  since: a target that may have left the game (an id one past the
+  board's: destroying), the object each effect is about (pruning), a
+  planeswalker made or not (it moves the ids after it), how many tokens
+  and whether the opponent is in the game (tokens entering attacking), a
+  library of open length and cards (Mindshrieker, Cellar Door,
+  Heretic's Punishment, which then read each card's printed data through
+  an index into the registry), a hand of open size (Grimoire of the
+  Dead). Each is a constant in each call or each harness, every case
+  still proved. An effect copied whole into the heap with a number in it
+  the solver chose is bytes CBMC does not take apart (it propagates no
+  value holding a symbol), so the printed effects are proved as the
+  pool's cards print them; and where an amount the solver chose may be 0
+  and is then never queued, the queue's length is open whatever else is
+  constant, so the queue is proved with what it hands on recorded, and
+  what it hands to (`damage::perform`) on its own.
 - **What is never written.** `precise-enums.py` also zeroes every heap
   allocation, as `calloc` does, and the bytes outside a niche-encoded
   enum's variant (its tag kept in another variant's bytes) where Kani
@@ -813,6 +830,8 @@ for both players and boards as its doc comment states):
 | `fight` (701.12a) | proved, 113 s |
 | damage on a board printing no effect: only protection applies (615) | proved, 62 s |
 | tokens entering attacking (506.3, 508.4), a token on a board without a planeswalker | proved, 161 s, at seven gigabytes |
+| `prune_effects_on_departed_objects` (400.7): each kind of effect about either object or one gone, and two or three in order | proved, 52 to 198 s each, but the prevention's (past four gigabytes) |
+| `damage::perform` (120.3, 702.2b, 702.15b) on either player | proved, 212 and 219 s |
 
 Three of these held only once the function asked what the rule says:
 `untap` untapped a card off the battlefield, `discard_card` discarded a
@@ -821,15 +840,16 @@ no game reached any of them, every caller offering only what the rule
 allows, and each has a regular test besides.
 
 Not yet finished: moving a card between zones (each past five
-gigabytes); destroying permanents together, damage nothing prevents and
-damage prevention and doubling (each past four gigabytes even with the
-target and the players constants: an amount the solver chose may be 0,
-which is never queued, so the queue's length is left open), the other
-boards of tokens entering attacking (past four), putting a card into a
-library, pruning effects on departed permanents, paying a cost, the
-subtype filters, a filtered target requirement and the `KindMap` proofs
-(heavy, to be run alone at a larger cap); tokens, transforming and
-searching (written, not yet run under the current rewrite). The rest of
+gigabytes); destroying permanents together (past eleven); the damage
+queue and `perform` on a permanent, and prevention and doubling, each
+set of effects its own harness (past four, being run again with the
+queue's loops bounded); the other boards of tokens entering attacking
+(past four), putting a card into a library, the prevention's pruning,
+paying a cost (the autotap planner's symbolic execution past half an
+hour, a pool the solver chose or not), the subtype filters, a filtered
+target requirement and the `KindMap` proofs (heavy, to be run alone at a
+larger cap); tokens, transforming and searching (written, not yet run
+under the current rewrite). The rest of
 the pool's proofs are being run under these measures, and this section
 will record which hold.
 
