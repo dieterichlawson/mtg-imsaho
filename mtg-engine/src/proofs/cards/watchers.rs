@@ -26,7 +26,7 @@
 //! own entering ("another") is the engine's (`triggers::collect`), proved
 //! in `proofs::actions`.
 
-use super::{act, acted, any_object, any_target, asked_for, board, card_proof, each_is, kept, triggers, Act, Form, Kinds, Snapshot};
+use super::{act, acted, any_object, any_target, asked_for, board, card_proof, case_by_case, each_is, kept, triggers, Act, Form, Kinds, Snapshot};
 use crate::cards::{AttackInfo, CardBehavior, CardRegistry, TargetRequirement as R, TriggerKind};
 use crate::damage::DamageKind;
 use crate::events::DamageTarget;
@@ -50,6 +50,11 @@ struct Board {
 }
 
 fn watching(card: Box<dyn CardBehavior>, can_be_gone: bool) -> Board {
+    watching_of(card, can_be_gone, &PEOPLE)
+}
+
+/// [`watching`]'s board, the other two objects of `kinds`.
+fn watching_of(card: Box<dyn CardBehavior>, can_be_gone: bool, kinds: &Kinds) -> Board {
     let (registry, mut state, blank, card) = board(card);
     let you = PlayerId(u8::from(kani::any::<bool>()));
     let gone = can_be_gone && kani::any();
@@ -61,7 +66,7 @@ fn watching(card: Box<dyn CardBehavior>, can_be_gone: bool) -> Board {
     } else {
         o.controller = you;
     }
-    let others = [any_object(&mut state, blank, &PEOPLE, Form::Card), any_object(&mut state, blank, &PEOPLE, Form::Token)];
+    let others = [any_object(&mut state, blank, kinds, Form::Card), any_object(&mut state, blank, kinds, Form::Token)];
     Board { registry, state, me, others, you }
 }
 
@@ -107,47 +112,65 @@ card_proof! {
     }
 }
 
+/// Mentor of the Meek's board: its creature and two others, of no
+/// subtype, which nothing here reads.
+const CREATURES: Kinds = Kinds { types: &[CardType::Creature], subtypes: &[], keywords: &[] };
+
 card_proof! {
     /// Mentor of the Meek: triggers for another creature with power 2 or
     /// less entering under its controller's control, and nothing else
-    /// entering; its controller is asked whether to pay {1}, and on "yes"
-    /// pays it and, if it was paid, draws a card (CR 117.12a... "if you
-    /// do"); on "no", nothing.
-    fn mentor_of_the_meek_draws_for_a_small_creature_if_you_pay() {
+    /// entering. Its effect is the proof below.
+    fn mentor_of_the_meek_triggers_for_another_small_creature_of_yours() {
         assert!(triggers(&isd::mentor_of_the_meek::MentorOfTheMeek) == [(TriggerKind::AnyCreatureEnters, None)]);
-        let mut b = watching(Box::new(isd::mentor_of_the_meek::MentorOfTheMeek), false);
+        let b = watching_of(Box::new(isd::mentor_of_the_meek::MentorOfTheMeek), false, &CREATURES);
         let entered = if kani::any() { b.either() } else { b.me };
         let under = PlayerId(u8::from(kani::any::<bool>()));
         let power = b.state.effective_power(entered, &b.registry);
         let fires = b.behavior().should_trigger_on_creature_enters(&b.state, b.me, entered, under, &b.registry);
         assert!(fires == (entered != b.me && under == b.you && power.is_some_and(|p| p <= 2)));
-        let before = Snapshot::of(&b.state);
-        let card = b.card();
-        b.registry.get(card).expect("registered").on_any_creature_enters(&mut b.state, b.me, entered, under, &b.registry);
-        let asked = matches!(&b.state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
-            player, source, choice: ResolutionChoiceKind::YesNo { source_card, .. },
-        }) if *player == b.you && *source == b.me && *source_card == b.me);
-        assert!(asked && acted() == 0);
-        b.state.awaiting_action = None;
-        assert!(Snapshot::of(&b.state) == before);
-        let yes: bool = kani::any();
-        b.registry.get(card).expect("registered").on_yes_no_choice(&mut b.state, b.me, yes, &b.registry);
-        let one = ManaCost::new(vec![ManaSymbol::Generic(1)]);
-        if yes {
-            match act(0) {
-                Some(Act::Pay(p, cost, true)) => {
-                    assert!(*p == b.you && *cost == one && acted() == 2 && Some(&Act::Draw(b.you, 1)) == act(1));
-                }
-                Some(Act::Pay(p, cost, false)) => {
-                    assert!(*p == b.you && *cost == one && acted() == 1);
-                }
-                _ => panic!("pays first"),
-            }
-        } else {
-            assert!(acted() == 0);
-        }
         std::mem::forget(b);
     }
+}
+
+/// Mentor of the Meek's effect: its controller is asked whether to pay
+/// {1}, and on "yes" pays it and, if it was paid, draws a card (CR
+/// 117.12a... "if you do"); on "no", nothing. Answered `yes` or not, a
+/// constant in each harness: the trigger and both answers in one harness
+/// ran out of memory at four gigabytes in symbolic execution.
+fn mentor_of_the_meek_draws_for_a_small_creature_if_you_pay(yes: bool) {
+    let mut b = watching_of(Box::new(isd::mentor_of_the_meek::MentorOfTheMeek), false, &CREATURES);
+    let entered = b.either();
+    let under = b.you;
+    let before = Snapshot::of(&b.state);
+    let card = b.card();
+    b.registry.get(card).expect("registered").on_any_creature_enters(&mut b.state, b.me, entered, under, &b.registry);
+    let asked = matches!(&b.state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+        player, source, choice: ResolutionChoiceKind::YesNo { source_card, .. },
+    }) if *player == b.you && *source == b.me && *source_card == b.me);
+    assert!(asked && acted() == 0);
+    b.state.awaiting_action = None;
+    assert!(Snapshot::of(&b.state) == before);
+    b.registry.get(card).expect("registered").on_yes_no_choice(&mut b.state, b.me, yes, &b.registry);
+    let one = ManaCost::new(vec![ManaSymbol::Generic(1)]);
+    if yes {
+        match act(0) {
+            Some(Act::Pay(p, cost, true)) => {
+                assert!(*p == b.you && *cost == one && acted() == 2 && Some(&Act::Draw(b.you, 1)) == act(1));
+            }
+            Some(Act::Pay(p, cost, false)) => {
+                assert!(*p == b.you && *cost == one && acted() == 1);
+            }
+            _ => panic!("pays first"),
+        }
+    } else {
+        assert!(acted() == 0);
+    }
+    std::mem::forget(b);
+}
+
+case_by_case! { mentor_of_the_meek_draws_for_a_small_creature_if_you_pay;
+    mentor_of_the_meek_pays_and_draws_on_yes: true,
+    mentor_of_the_meek_does_nothing_on_no: false,
 }
 
 card_proof! {
