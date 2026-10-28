@@ -892,6 +892,16 @@ pub fn no_format(_: std::fmt::Arguments<'_>) -> String {
     String::new()
 }
 
+/// Stands in for `GameState::obj_name`, which is `format!` of the object's
+/// name and id: with `format!` standing in as [`no_format`], it is the empty
+/// string whatever the object, and this is that string without looking the
+/// object up and copying its name for `format!` to drop. Log lines name
+/// their objects so, and in a damage proof that was a third of the work.
+#[allow(dead_code)] // named only by `kani::stub`
+pub fn no_name(_: &GameState, _: crate::ids::ObjectId) -> String {
+    String::new()
+}
+
 /// A card proof: `#[kani::proof]` with the stubs and bounds every card
 /// proof runs under (the module doc says why each).
 macro_rules! card_proof {
@@ -921,6 +931,7 @@ macro_rules! card_proof {
         #[kani::proof]
         #[kani::unwind($n)]
         #[kani::stub(std::fmt::format, $crate::proofs::cards::no_format)]
+        #[kani::stub($crate::state::GameState::obj_name, $crate::proofs::cards::no_name)]
         #[kani::stub(alloc::alloc::Global::grow_impl_runtime, $crate::proofs::cards::no_growing)]
         #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, $crate::proofs::cards::no_freeing)]
         #[kani::stub($crate::state::GameState::log, $crate::proofs::cards::no_log)]

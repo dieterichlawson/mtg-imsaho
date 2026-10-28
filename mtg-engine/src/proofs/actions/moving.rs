@@ -222,6 +222,7 @@ macro_rules! from_each_zone {
         #[kani::proof]
         #[kani::unwind(7)]
         #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+        #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
         #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
         #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
         #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
@@ -300,6 +301,7 @@ from_each_zone! {
 #[kani::proof]
 #[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+#[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
 #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 /// A permanent entering a board on which no card prints a replacement
