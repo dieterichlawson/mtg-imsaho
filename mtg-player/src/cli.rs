@@ -421,16 +421,26 @@ pub const WORKING_DELAY_ENV: &str = "MTG_CLI_WORKING_DELAY_MS";
 
 /// Start the indicator, unless one is already running or it is turned off.
 pub fn start_working() {
-    if std::env::var(NO_WORKING_INDICATOR_ENV).is_ok_and(|v| v == "1") {
+    // `true` or `yes` left the indicator on in silence (#915): read as the
+    // other on-or-off settings are, and said.
+    if crate::llm::env_flag(NO_WORKING_INDICATOR_ENV) {
         return;
     }
+    // Read before taking WORKING: the warning goes through `stderr_line!`,
+    // which stops the indicator, which takes WORKING.
+    let delay = match std::env::var(WORKING_DELAY_ENV) {
+        Err(_) => WORKING_DELAY,
+        Ok(v) if v.trim().is_empty() => WORKING_DELAY,
+        Ok(v) => v.trim().parse::<u64>().map_or_else(|_| {
+            crate::llm::unknown_setting(WORKING_DELAY_ENV, &v,
+                &format!("the delay stays {} ms (a whole number of milliseconds sets one)", WORKING_DELAY.as_millis()));
+            WORKING_DELAY
+        }, std::time::Duration::from_millis),
+    };
     let mut slot = match WORKING.lock() { Ok(g) => g, Err(e) => e.into_inner() };
     if slot.is_some() {
         return;
     }
-    let delay = std::env::var(WORKING_DELAY_ENV).ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .map_or(WORKING_DELAY, std::time::Duration::from_millis);
     let running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
     let flag = std::sync::Arc::clone(&running);
     std::thread::spawn(move || {

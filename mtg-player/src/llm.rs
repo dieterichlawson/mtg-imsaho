@@ -546,13 +546,29 @@ pub fn retry_budget(env: &str) -> std::time::Duration {
 pub const MAX_ENV_SECONDS: u64 = 86_400;
 
 /// `default`, unless `env` names a number of seconds to use instead, capped
-/// at [`MAX_ENV_SECONDS`].
+/// at [`MAX_ENV_SECONDS`]. A value it cannot read, or one it caps, is said
+/// once: "90s" ran the default 300 in silence (#915, #911's shape).
 #[must_use]
 pub fn env_seconds(env: &str, default: std::time::Duration) -> std::time::Duration {
-    std::env::var(env)
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .map_or(default, |secs| std::time::Duration::from_secs(secs.min(MAX_ENV_SECONDS)))
+    let value = std::env::var(env).ok();
+    let (secs, warning) = read_seconds(value.as_deref(), default);
+    if let (Some(value), Some(instead)) = (value, warning) {
+        unknown_setting(env, &value, &instead);
+    }
+    secs
+}
+
+/// What a seconds setting's value means, and what to say about it when it
+/// is not taken as written.
+fn read_seconds(value: Option<&str>, default: std::time::Duration) -> (std::time::Duration, Option<String>) {
+    let Some(value) = value.map(str::trim).filter(|v| !v.is_empty()) else { return (default, None) };
+    match value.parse::<u64>() {
+        Ok(secs) if secs > MAX_ENV_SECONDS => (std::time::Duration::from_secs(MAX_ENV_SECONDS),
+            Some(format!("it is capped at {MAX_ENV_SECONDS} seconds, a day"))),
+        Ok(secs) => (std::time::Duration::from_secs(secs), None),
+        Err(_) => (default, Some(format!("the default of {} seconds stands (a whole number of seconds sets one)",
+            default.as_secs()))),
+    }
 }
 
 /// How long to wait before attempt number `attempt` (1-based on retries).
@@ -927,9 +943,23 @@ pub const PASS_UNTIL_ENV: &str = "MTG_LLM_PASS_UNTIL";
 /// [`PASS_UNTIL_ENV`].
 #[must_use]
 pub fn pass_until_enabled() -> bool {
-    !std::env::var(PASS_UNTIL_ENV).is_ok_and(|v| {
-        matches!(v.trim().to_ascii_lowercase().as_str(), "off" | "0" | "false" | "no")
-    })
+    let Ok(value) = std::env::var(PASS_UNTIL_ENV) else { return true };
+    let (on, warning) = read_pass_until(&value);
+    if let Some(instead) = warning {
+        unknown_setting(PASS_UNTIL_ENV, &value, instead);
+    }
+    on
+}
+
+/// What a [`PASS_UNTIL_ENV`] value means. A value that is neither on nor off
+/// keeps the row, and says so: "disabled" kept it in silence and recorded
+/// `"pass_until": true` in the save (#915).
+fn read_pass_until(value: &str) -> (bool, Option<&'static str>) {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "off" | "0" | "false" | "no" => (false, None),
+        "" | "on" | "1" | "true" | "yes" => (true, None),
+        _ => (true, Some("the pass-until row stays on (off, 0, false or no leaves it out)")),
+    }
 }
 
 /// The one row every priority offer carries beside the engine's actions,
@@ -11358,5 +11388,37 @@ mod env_seconds_cap {
         assert_eq!(env_seconds(ENV, std::time::Duration::from_secs(5)), std::time::Duration::from_secs(7));
         std::env::remove_var(ENV);
         assert_eq!(env_seconds(ENV, std::time::Duration::from_secs(5)), std::time::Duration::from_secs(5));
+    }
+
+    /// #915: a value it cannot read ran the default in silence, and a capped
+    /// one ran a day in silence. Both are said; a number, unset or empty is
+    /// not.
+    #[test]
+    fn a_seconds_value_not_taken_as_written_is_said() {
+        let five = std::time::Duration::from_secs(5);
+        assert_eq!(read_seconds(None, five), (five, None));
+        assert_eq!(read_seconds(Some(" "), five), (five, None));
+        assert_eq!(read_seconds(Some("90"), five), (std::time::Duration::from_secs(90), None));
+        let (secs, said) = read_seconds(Some("90s"), five);
+        assert_eq!(secs, five);
+        assert!(said.is_some_and(|s| s.contains("default of 5 seconds")));
+        let (secs, said) = read_seconds(Some("100000"), five);
+        assert_eq!(secs, std::time::Duration::from_secs(MAX_ENV_SECONDS));
+        assert!(said.is_some_and(|s| s.contains("capped")));
+    }
+
+    /// #915: `MTG_LLM_PASS_UNTIL=disabled` kept the row in silence.
+    #[test]
+    fn a_pass_until_value_neither_on_nor_off_is_said() {
+        for off in ["off", "0", "FALSE", " no "] {
+            assert_eq!(read_pass_until(off), (false, None), "{off}");
+        }
+        for on in ["", "on", "1", "true", "Yes"] {
+            assert_eq!(read_pass_until(on), (true, None), "{on}");
+        }
+        for typo in ["disabled", "n"] {
+            let (on, said) = read_pass_until(typo);
+            assert!(on && said.is_some(), "{typo}");
+        }
     }
 }
