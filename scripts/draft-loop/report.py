@@ -13,6 +13,13 @@ import json
 import os
 
 
+def count(n, one, many=None):
+    """`n` and the noun for it: "1 call", "8 calls" (the runner's
+    `mtg_draft_runner::count`, #914; this report said "curator: 1 calls"
+    every night, #947)."""
+    return f"{n} {one if n == 1 else (many or one + 's')}"
+
+
 def load(path):
     return json.load(open(path)) if os.path.exists(path) else None
 
@@ -43,7 +50,7 @@ def main():
         if s.get("fallback_deck"):
             flags.append("substitute deck")
         if s.get("substituted_picks"):
-            flags.append(f"{s['substituted_picks']} picks substituted")
+            flags.append(count(s['substituted_picks'], 'pick') + " substituted")
         out.append(f"| {i} | {s['seat']} | {'yes' if s['guided'] else 'no'} | {s['colors']} | "
                    f"{s['match_wins']}-{s['match_losses']}-{s['match_draws']} | {s['game_wins']}-{s['game_losses']} | {', '.join(flags)} |")
     for label, want in (("guided", True), ("unguided", False)):
@@ -55,14 +62,14 @@ def main():
     subs = sum(s.get("substituted_picks", 0) for s in seats)
     decks = sum(1 for s in seats if s.get("fallback_deck"))
     if h:
-        out.append(f"\nWhat went wrong: {h['reasks']} re-asks, {h['unreadable']} replies no answer could be read from, "
+        out.append(f"\nWhat went wrong: {count(h['reasks'], 're-ask')}, {count(h['unreadable'], 'reply', 'replies')} no answer could be read from, "
                    f"{h['panics']} panics, fatal stops or invariant breaks, "
-                   f"{h.get('harness_chose', 0)} game answers the harness chose for a seat, "
-                   f"{subs} picks and {decks} decks substituted for a seat"
+                   f"{count(h.get('harness_chose', 0), 'game answer')} the harness chose for a seat, "
+                   f"{count(subs, 'pick')} and {count(decks, 'deck')} substituted for a seat"
                    # A resume under another guide, setting or set (#948, #949).
-                   + (f", {h['prompt_unlike']} resume lines saying the night was asked under two system prompts"
+                   + (f", {count(h['prompt_unlike'], 'resume line')} saying the night was asked under two system prompts"
                       if h.get("prompt_unlike") else "") + ". "
-                   f"The games made {h['game_calls']} calls: {h['out']} output tokens ({h['thinking']} thinking), "
+                   f"The games made {count(h['game_calls'], 'call')}: {count(h['out'], 'output token')} ({h['thinking']} thinking), "
                    f"{h['cache_read']} read from the cache, {h['cache_write']} written to it.")
     out += ["", "## Lessons", ""]
     for s in lessons["seats"]:
@@ -86,7 +93,7 @@ def main():
     calls = [("debriefs", [s.get("usage") or {} for s in lessons["seats"]]),
              ("curator", [r.get("usage") or {} for r in refused]
               + ([] if curate.get("kept_old_guide") or not curate else [curate.get("usage") or {}]))]
-    spent = [f"{label}: {len(us)} calls, " + " / ".join(
+    spent = [f"{label}: {count(len(us), 'call')}, " + " / ".join(
                 f"{sum(u.get(k, 0) for u in us)} {short}" for k, short in
                 (("output_tokens", "out"), ("cache_read_input_tokens", "cache_read"), ("cache_creation_input_tokens", "cache_write")))
              for label, us in calls if us]

@@ -55,3 +55,39 @@ fn the_ledger_counts_every_reask_unreadable_reply_and_call_the_log_holds() {
     assert_eq!(h["prompt_unlike"], 2, "{h}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// #947: the night report said "curator: 1 calls" every night; every count
+/// in it is said in the singular at one.
+#[test]
+fn the_night_report_says_one_call_in_the_singular() {
+    let dir = std::env::temp_dir().join(format!("mtg-report-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("nights")).unwrap();
+    let seat = |n: usize, guided: bool, wins: usize| serde_json::json!({
+        "seat": n, "model": "cc", "guided": guided, "colors": "G", "match_wins": wins, "match_losses": 1 - wins,
+        "match_draws": 0, "game_wins": 2 * wins, "game_losses": 2 - 2 * wins, "substituted_picks": wins});
+    std::fs::write(dir.join("nights/2099-01-01.json"), serde_json::json!({
+        "seed": 1, "players": 2, "best_of": 3, "guide_hash": "x",
+        "seats": [seat(0, true, 1), seat(1, false, 0)],
+        "health": {"reasks": 1, "unreadable": 1, "panics": 0, "harness_chose": 1, "game_calls": 1,
+                   "out": 1, "thinking": 0, "cache_read": 0, "cache_write": 0},
+    }).to_string()).unwrap();
+    std::fs::write(dir.join("nights/2099-01-01-lessons.json"), serde_json::json!({
+        "seats": [{"seat": 0, "colors": "G", "record": "1-0", "lessons": [], "usage": {"output_tokens": 5}}],
+    }).to_string()).unwrap();
+    std::fs::write(dir.join("nights/2099-01-01-curate.json"), serde_json::json!({
+        "model": "m", "words": 900, "usage": {"output_tokens": 7},
+    }).to_string()).unwrap();
+    let out = Command::new("python3")
+        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/draft-loop/report.py"))
+        .args(["--night", "2099-01-01", "--out", dir.to_str().unwrap()])
+        .output().expect("python3 runs");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let report = std::fs::read_to_string(dir.join("nights/2099-01-01.md")).unwrap();
+    for said in ["debriefs: 1 call,", "curator: 1 call,", "1 re-ask,", "1 reply no answer", "1 game answer the harness",
+                 "1 pick and 0 decks substituted", "The games made 1 call: 1 output token ", "| 1 pick substituted |"] {
+        assert!(report.contains(said), "{said:?} in:\n{report}");
+    }
+    assert!(!report.contains(" 1 calls") && !report.contains(" 1 picks"), "{report}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
