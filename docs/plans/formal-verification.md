@@ -808,6 +808,11 @@ for both players and boards as its doc comment states):
 | `apply_pending_effect`: damage, destroy, sacrifice, return to hand, -N/-N, can't block, a card's own effect, a search's answer | proved, 64 to 173 s each |
 | the targeting predicates (`is_creature`, colours, card types, keywords, filters, `can_be_targeted_by`) | proved, 13 to 103 s each |
 | an Aura's or Equipment's printed effect reaching the creature it is attached to (613.1, 611.3a): each P/T change, keyword and Human condition the pool prints, can't attack, can't block, attacks each combat, doesn't untap | proved, 36 to 76 s each |
+| `try_destroy`, `try_destroy_by`, `try_destroy_no_regen`, `sacrifice_by` (701.7a, 702.12b, 701.15a, 701.17a), each its own harness | proved, 154 to 174 s each |
+| `present_target_choice` (a choice of target applied at once or asked) | proved, 149 s |
+| `fight` (701.12a) | proved, 113 s |
+| damage on a board printing no effect: only protection applies (615) | proved, 62 s |
+| tokens entering attacking (506.3, 508.4), a token on a board without a planeswalker | proved, 161 s, at seven gigabytes |
 
 Three of these held only once the function asked what the rule says:
 `untap` untapped a card off the battlefield, `discard_card` discarded a
@@ -816,13 +821,17 @@ no game reached any of them, every caller offering only what the rule
 allows, and each has a regular test besides.
 
 Not yet finished: moving a card between zones (each past five
-gigabytes); pruning effects on departed permanents, paying a
-cost, the subtype filters, a filtered target requirement and the
-`KindMap` proofs (heavy, run alone at a larger cap); destroying,
-damage's prevention and replacement, fighting, tokens, transforming,
-choosing targets and searching (written, not yet run under the current
-rewrite). The rest of the pool's proofs are being run under these
-measures, and this section will record which hold.
+gigabytes); destroying permanents together, damage nothing prevents and
+damage prevention and doubling (each past four gigabytes even with the
+target and the players constants: an amount the solver chose may be 0,
+which is never queued, so the queue's length is left open), the other
+boards of tokens entering attacking (past four), putting a card into a
+library, pruning effects on departed permanents, paying a cost, the
+subtype filters, a filtered target requirement and the `KindMap` proofs
+(heavy, to be run alone at a larger cap); tokens, transforming and
+searching (written, not yet run under the current rewrite). The rest of
+the pool's proofs are being run under these measures, and this section
+will record which hold.
 
 ### The whole engine under libFuzzer
 
