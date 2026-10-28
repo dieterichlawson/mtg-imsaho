@@ -101,16 +101,22 @@ struct Vigil {
 }
 
 fn vigil() -> Vigil {
+    vigil_of(any_player(), kani::any())
+}
+
+/// [`vigil`]'s board under player `you`, player 0's library of the cards
+/// whose bits are set in `library` (the nonland card 1, the Forests 2 and
+/// 8, the nonbasic land 4), the others in their owner's hand.
+fn vigil_of(you: PlayerId, library: u8) -> Vigil {
     let (mut registry, mut state, blank, card) = board(Box::new(isd::caravan_vigil::CaravanVigil));
     let forest = registry.register(Box::new(crate::cards::forest::Forest));
     let township = registry.register(Box::new(isd::gavony_township::GavonyTownship));
-    let you = any_player();
     let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
     state.get_object_mut(spell).expect("just created").controller = you;
     let mut first_forest = [None; 2];
-    for of in [blank, forest, township, forest] {
+    for (i, of) in [blank, forest, township, forest].into_iter().enumerate() {
         let id = state.create_object(of, PlayerId(0), Zone::Library, None, None);
-        if kani::any() {
+        if library & (1 << i) != 0 {
             state.players[0].library_order.push(id);
             if of == forest && first_forest[0].is_none() {
                 first_forest[0] = Some(id);
@@ -127,32 +133,71 @@ fn vigil() -> Vigil {
     Vigil { registry, state, card, spell, you, forest }
 }
 
-card_proof! {
-    /// Caravan Vigil, resolving: its controller searches their own library
-    /// (CR 701.23a) for a basic land card, and is asked which, offered one
-    /// of each card that is one (CR 701.23b: a player need not find a card
-    /// that is there, so "none" is an answer too); with none to find,
-    /// their library is shuffled and nothing else happens. Nothing else.
-    fn caravan_vigil_offers_one_of_each_basic_land_in_your_library() {
-        let Vigil { registry, mut state, card, spell, you, forest } = vigil();
-        let before = Snapshot::of(&state);
-        registry.get(card).expect("registered").on_resolve(&mut state, spell, &[], &registry);
-        match forest {
-            Some(land) => {
-                let asked = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
-                    player, source, choice: ResolutionChoiceKind::ChooseTarget {
-                        options, optional: true, effect: PendingEffect::CardEffect { source_id, .. }, ..
-                    },
-                }) if *player == you && *source == spell && *source_id == spell
-                    && options.len() == 1 && options[0] == Target::Object(land));
-                assert!(asked && acted() == 0 && Snapshot::of(&state) == asking(&before, true));
-            }
-            None => {
-                assert!(asked_for(&[Act::Shuffle(you)]) && Snapshot::of(&state) == before);
-            }
+/// Caravan Vigil, resolving: its controller searches their own library
+/// (CR 701.23a) for a basic land card, and is asked which, offered one
+/// of each card that is one (CR 701.23b: a player need not find a card
+/// that is there, so "none" is an answer too); with none to find,
+/// their library is shuffled and nothing else happens. Nothing else.
+///
+/// Player 0's library and the spell's controller are constants in each
+/// harness: with both the solver's, the library was a list of every
+/// length at once, searched through an index by that player, and the
+/// proof ran out of memory at four and a half gigabytes in symbolic
+/// execution.
+fn caravan_vigil_offers_one_of_each_basic_land_in_your_library((you, library): (u8, u8)) {
+    let Vigil { registry, mut state, card, spell, you, forest } = vigil_of(PlayerId(you), library);
+    let before = Snapshot::of(&state);
+    registry.get(card).expect("registered").on_resolve(&mut state, spell, &[], &registry);
+    match forest {
+        Some(land) => {
+            let asked = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+                player, source, choice: ResolutionChoiceKind::ChooseTarget {
+                    options, optional: true, effect: PendingEffect::CardEffect { source_id, .. }, ..
+                },
+            }) if *player == you && *source == spell && *source_id == spell
+                && options.len() == 1 && options[0] == Target::Object(land));
+            assert!(asked && acted() == 0 && Snapshot::of(&state) == asking(&before, true));
         }
-        std::mem::forget((registry, state));
+        None => {
+            assert!(asked_for(&[Act::Shuffle(you)]) && Snapshot::of(&state) == before);
+        }
     }
+    std::mem::forget((registry, state));
+}
+
+case_by_case! { caravan_vigil_offers_one_of_each_basic_land_in_your_library;
+    caravan_vigil_under_the_first_player_over_an_empty_library: (0, 0),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_nonland_card: (0, 1),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_forest: (0, 2),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_nonland_card_and_a_forest: (0, 3),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_nonbasic_land: (0, 4),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_nonland_card_and_a_nonbasic_land: (0, 5),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_forest_and_a_nonbasic_land: (0, 6),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_nonland_card_and_a_forest_and_a_nonbasic_land: (0, 7),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_second_forest: (0, 8),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_nonland_card_and_a_second_forest: (0, 9),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_forest_and_a_second_forest: (0, 10),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_nonland_card_and_a_forest_and_a_second_forest: (0, 11),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_nonbasic_land_and_a_second_forest: (0, 12),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_nonland_card_and_a_nonbasic_land_and_a_second_forest: (0, 13),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_forest_and_a_nonbasic_land_and_a_second_forest: (0, 14),
+    caravan_vigil_under_the_first_player_over_a_library_of_a_nonland_card_and_a_forest_and_a_nonbasic_land_and_a_second_forest: (0, 15),
+    caravan_vigil_under_the_second_player_over_an_empty_library: (1, 0),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_nonland_card: (1, 1),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_forest: (1, 2),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_nonland_card_and_a_forest: (1, 3),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_nonbasic_land: (1, 4),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_nonland_card_and_a_nonbasic_land: (1, 5),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_forest_and_a_nonbasic_land: (1, 6),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_nonland_card_and_a_forest_and_a_nonbasic_land: (1, 7),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_second_forest: (1, 8),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_nonland_card_and_a_second_forest: (1, 9),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_forest_and_a_second_forest: (1, 10),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_nonland_card_and_a_forest_and_a_second_forest: (1, 11),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_nonbasic_land_and_a_second_forest: (1, 12),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_nonland_card_and_a_nonbasic_land_and_a_second_forest: (1, 13),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_forest_and_a_nonbasic_land_and_a_second_forest: (1, 14),
+    caravan_vigil_under_the_second_player_over_a_library_of_a_nonland_card_and_a_forest_and_a_nonbasic_land_and_a_second_forest: (1, 15),
 }
 
 card_proof! {
