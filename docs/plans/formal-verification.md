@@ -667,8 +667,17 @@ sits in memory. What was measured, and what the proofs do about each:
   out of memory in the solver; what is left of its cost is being
   measured.
 - **Lists of a length the solver leaves open.** Cloning one allocates a
-  buffer of that open size; the action log is read in place and the
-  recorders keep their lists at a fixed size.
+  buffer of that open size, which CBMC hands the solver as an array of
+  that size; the action log is read in place and the recorders keep
+  their lists at a fixed size. One that did not, the ids of the tokens a
+  card asks for, allocated at the number asked for: Spider Spawning's
+  proof finished symbolic execution and ran out of memory in
+  propositional reduction, 4.65 million clauses, at four and a half
+  gigabytes; with the list allocated at its largest first it passed at
+  three and a half, 3.9 million clauses, in 349 seconds. And a list
+  filtered and collected is allocated at the first entry kept, which the
+  solver keeps or not: the lists a proof expects are filtered into a list
+  allocated first (`kept`).
 - **The zone order** itself is proved with Verus, for every board, not
   with Kani (above).
 
