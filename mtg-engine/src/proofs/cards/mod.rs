@@ -428,14 +428,18 @@ pub fn make_tokens(
     ids
 }
 
+/// The most tokens one action here makes: Army of the Damned's thirteen,
+/// and some to spare.
+const MAX_TOKENS: usize = 16;
+
 /// The ids of the next `n` objects the game would create, as a list of
-/// [`MAX_LISTED`] allocated up front: one of `n` entries, a number the
+/// [`MAX_TOKENS`] allocated up front: one of `n` entries, a number the
 /// solver may leave open, is an allocation of a size it leaves open, and
 /// the solver ran out of memory on Spider Spawning's in propositional
 /// reduction, symbolic execution done.
 pub fn new_ids(state: &GameState, n: u32) -> Vec<ObjectId> {
-    assert!(n as usize <= MAX_LISTED, "a list longer than a recorder keeps");
-    let mut ids = Vec::with_capacity(MAX_LISTED);
+    assert!(n as usize <= MAX_TOKENS, "more tokens than a recorder keeps");
+    let mut ids = Vec::with_capacity(MAX_TOKENS);
     for k in 0..u64::from(n) {
         ids.push(ObjectId(state.next_object_id + k));
     }
