@@ -44,7 +44,7 @@
 //! permanents that are creatures (CR 110.1, 302); "each" is every one,
 //! in the order the game lists them.
 
-use super::{act, acted, any_object, asked_each, asked_for, board, both, card_proof, each_is, either, has_subtype, listed, new_ids, were, Act, Blank, Form, Kinds, Snapshot};
+use super::{act, acted, any_object, asked_each, asked_for, board, both, card_proof, each_is, either, has_subtype, listed, new_ids, were, Act, Form, Kinds, Snapshot};
 use crate::cards::{AdditionalCost, CardBehavior, CardRegistry};
 use crate::damage::DamageKind;
 use crate::destruction::DestroyResult;
@@ -335,11 +335,12 @@ card_proof! { unwind(15)
         let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
         let before = Snapshot::of(&state);
         registry.get(card).expect("registered").on_resolve(&mut state, spell, &[], &registry);
-        let mut expected = vec![Act::Tokens {
+        // The two built in place: a list of one pushed to would grow, which
+        // no proof here lets a list do.
+        let expected = [Act::Tokens {
             n: 13, controller: PlayerId(0), power: 2, toughness: 2, colors: vec![Color::Black],
             types: vec![CardType::Creature], keywords: vec![], subtypes: vec!["Zombie".into()],
-        }];
-        expected.push(Act::ArrivesTapped { first: new_ids(&state, 1)[0], count: 13 });
+        }, Act::ArrivesTapped { first: new_ids(&state, 1)[0], count: 13 }];
         assert!(asked_for(&expected) && Snapshot::of(&state) == before);
         std::mem::forget((registry, state));
     }
@@ -431,8 +432,9 @@ card_proof! {
     /// either player's graveyard, the instant perhaps granted flashback
     /// already.
     fn past_in_flames_gives_flashback_to_each_instant_and_sorcery_in_your_graveyard() {
+        // Four cards, no more: a registry's lists start empty and are given
+        // room for four, and a fifth card would grow them.
         let mut registry = CardRegistry::new();
-        let _blank = registry.register(Box::new(Blank));
         let cards = [
             registry.register(Box::new(crate::cards::lightning_bolt::LightningBolt)),
             registry.register(Box::new(crate::cards::lava_axe::LavaAxe)),
