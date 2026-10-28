@@ -273,6 +273,17 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   mid-prompt (tiny, huge, back), including with a target-selection or
   declare-blockers prompt open and a deep stack; look for panics,
   unrecoverable frames, unreachable prompts, misrouted input
+
+  **Re-run 2026-10-28 → #958-#964.** Resize is not a repaint problem any more:
+  no panic, wedge or misrouted key in two storms of 14 resizes, and every
+  pager reaches its end. What it finds now is *state chosen at the old
+  size*. A `/` search opened at 100+ columns stays open, invisibly, below
+  100 and eats the next answer (#958), because the fit check runs only on
+  entry. Look for every `*_fits()` check made once, outside a loop that
+  repaints on `Resize`. The short side is where the markers fail (#960,
+  #961): stage 22 permanents a side by save edit and walk the height down
+  from 24 to 12 at 120, 80 and 40 columns. Single-shot screens such as the
+  inspector detail page have no pager at all (#962).
 - V12 control-character and escape-sequence injection: send Ctrl
   chords, Escape, arrows, function keys, Tab, Backspace-on-empty and
   literal ANSI sequences at every prompt type; nothing unbound may be
@@ -695,6 +706,16 @@ whether it told the truth.
   twice must give a byte-identical `--log` (timestamps aside) and
   identical saves; `--on-the-play` honoured; different seeds actually
   differ
+
+  **Re-run 2026-10-28, holds** (35 games; seeds 21, 33, 34, 41). Every
+  single change gave the identical log (`cut -f4-`) and save: `--check-invariants`
+  (#956's observed passes), `--save`, `--log`, the size, a resize, opening
+  every viewer, and 12 kills plus `--resume`. A recorded keystroke script
+  must wait for each prompt and check its heading, because type-ahead of
+  the same identity is kept on purpose (#71) and can answer a later
+  prompt. The viewers have no `>`, so wait on a stable screen instead.
+  `--on-the-play N` does not reproduce the game a coin flip would have
+  made: the flip draws from the RNG before the shuffle. That is expected.
 - M4 flag and file matrix: flags in combination rather than one at a time
   — `--resume` plus everything else — and against a filesystem that
   fights back: read-only directories, a small tmpfs filled to capacity
