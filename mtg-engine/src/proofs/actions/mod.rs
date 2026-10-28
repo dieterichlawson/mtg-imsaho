@@ -3,6 +3,7 @@
 //! halves fit). Each action is proved with the actions *it* asks for
 //! recorded in turn, so each proof is of one function's own logic.
 
+mod countering;
 mod damage;
 mod destruction;
 mod effects;
@@ -15,6 +16,7 @@ mod scopes;
 mod simple_actions;
 mod targeting;
 mod tokens;
+mod transforming;
 
 /// An action proof: the stubs and bounds of a card proof, so that one
 /// action's proof uses the next action's recorder.

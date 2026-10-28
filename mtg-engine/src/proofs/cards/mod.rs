@@ -1220,6 +1220,24 @@ impl Snapshot {
         s
     }
 
+    /// This snapshot with `n` objects on the stack, and nothing else
+    /// changed.
+    pub fn with_stack(&self, n: usize) -> Self {
+        Snapshot { stack: n, ..self.clone() }
+    }
+
+    /// This snapshot with `id` showing its back face or not as `back`
+    /// says, and nothing else changed.
+    pub fn with_transformed(&self, id: ObjectId, back: bool) -> Self {
+        let mut s = self.clone();
+        for row in &mut s.objects {
+            if row.id == id {
+                row.transformed = back;
+            }
+        }
+        s
+    }
+
     /// This snapshot with permanents `ids` new on the battlefield under
     /// `controller`, after the objects it had: untapped, undamaged, with no
     /// counters, attached to nothing and face up; nothing else changed.
