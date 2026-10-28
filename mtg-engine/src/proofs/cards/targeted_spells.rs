@@ -45,7 +45,7 @@
 //! that the proof covers what the card does with one it no longer finds
 //! where it was.
 
-use super::{acted, any_object, asked_each, asked_for, board, card_proof, each_case, were, Act, Form, Kinds, Snapshot};
+use super::{acted, any_object, asked_each, asked_for, board, card_proof, were, Act, Form, Kinds, Snapshot};
 use crate::actions::Target;
 use crate::cards::{AdditionalCost, CardBehavior, CardRegistry, TargetFilter, TargetRequirement as R};
 use crate::damage::DamageKind;
@@ -564,11 +564,11 @@ enum InHand {
 /// Night Terrors: "target player"; the spell's controller chooses a
 /// nonland card of that player's hand (the only one without being asked),
 /// which is exiled; with none, nothing. Over `hand`, top first, of
-/// `player`. The cards and the player are constants: a hand whose length
-/// the solver left open was a list of every length, and a card it left
-/// open an index into the registry it left open, which every read of the
-/// card is then a question of; as for the library cards of
-/// `proofs::cards::activated`, which ran out of memory so.
+/// `player`. The cards are constants: a hand whose length the solver left
+/// open was a list of every length, and a card it left open an index into
+/// the registry it left open, which every read of the card is then a
+/// question of; as for the library cards of `proofs::cards::activated`,
+/// which ran out of memory so.
 fn night_terrors(player: PlayerId, hand: &[InHand]) {
     let mut b = spell(Box::new(isd::night_terrors::NightTerrors));
     assert!(*b.requirement() == R::PlayerOnly);
@@ -606,14 +606,14 @@ fn night_terrors(player: PlayerId, hand: &[InHand]) {
     std::mem::forget((b, nonland));
 }
 
-/// The proof above, a harness for each hand of up to two cards, for either
+/// The proof above, a harness for each hand of up to two cards, either
 /// player's.
 macro_rules! over_each_hand {
     ($($name:ident: $proof:ident[$($card:ident),*];)*) => {$(
         card_proof! {
             /// The proof above it, for one hand.
             fn $name() {
-                each_case(2, |p| $proof(PlayerId(p), &[$(InHand::$card),*]));
+                $proof(PlayerId(u8::from(kani::any::<bool>())), &[$(InHand::$card),*]);
             }
         }
     )*};
