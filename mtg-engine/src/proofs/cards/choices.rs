@@ -252,77 +252,102 @@ case_by_case! { caravan_vigil_puts_the_land_into_your_hand_or_with_morbid_onto_t
     caravan_vigil_of_the_second_player_with_morbid_puts_the_land_into_hand_on_no: (1, 3),
 }
 
+/// Frightful Delusion's board: the spell, and its target, a spell under
+/// `them` on the stack or gone from it to its owner's graveyard; `them`
+/// with `in_hand` cards in hand, and the other player with one.
+fn delusion(them: PlayerId, gone: bool, in_hand: usize) -> (CardRegistry, GameState, CardId, ObjectId, ObjectId, Vec<ObjectId>) {
+    let (registry, mut state, blank, card) = board(Box::new(isd::frightful_delusion::FrightfulDelusion));
+    let me = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
+    let spell = state.create_object(blank, PlayerId(0), if gone { Zone::Graveyard } else { Zone::Stack }, None, None);
+    if gone {
+        state.players[0].graveyard_order.push(spell);
+    } else {
+        state.get_object_mut(spell).expect("just created").controller = them;
+    }
+    let mut cards = Vec::with_capacity(2);
+    for _ in 0..in_hand {
+        cards.push(state.create_object(blank, them, Zone::Hand, None, None));
+    }
+    state.create_object(blank, PlayerId(1 - them.0), Zone::Hand, None, None);
+    (registry, state, card, me, spell, cards)
+}
+
 card_proof! {
-    /// Frightful Delusion: its target still a spell on the stack, that
-    /// spell's controller is asked whether to pay {1}; then, paying and
-    /// able to, the spell is not countered, and otherwise it is; and either
-    /// way that player discards a card (the card's ruling: "The player
-    /// discards a card even if they pay {1}"), chosen by them when they
-    /// have more than one (CR 701.9a), and with none, nothing. Its target
-    /// gone, nothing at all (CR 608.2b). Over the target spell under
-    /// either player, and each player's hand of up to two cards.
-    fn frightful_delusion_counters_unless_paid_and_that_player_discards() {
-        let (registry, mut state, blank, card) = board(Box::new(isd::frightful_delusion::FrightfulDelusion));
-        let me = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
+    /// Frightful Delusion, its target gone from the stack or illegal:
+    /// nothing at all (CR 608.2b). For a spell under either player.
+    fn frightful_delusion_does_nothing_with_its_target_gone() {
         let them = any_player();
         let gone: bool = kani::any();
-        let spell = state.create_object(blank, PlayerId(0), if gone { Zone::Graveyard } else { Zone::Stack }, None, None);
-        if gone {
-            state.players[0].graveyard_order.push(spell);
-        } else {
-            state.get_object_mut(spell).expect("just created").controller = them;
-        }
-        let mut hands = [[None; 2]; 2];
-        for (p, hand) in hands.iter_mut().enumerate() {
-            for slot in hand.iter_mut() {
-                if kani::any() {
-                    *slot = Some(state.create_object(blank, PlayerId(p as u8), Zone::Hand, None, None));
-                }
-            }
-        }
-        let target = if kani::any() { Target::Object(spell) } else { Target::Illegal };
+        let (registry, mut state, card, me, spell, _) = delusion(them, gone, 1);
+        let target = if gone && kani::any() { Target::Object(spell) } else { Target::Illegal };
         let before = Snapshot::of(&state);
-        registry.get(card).expect("registered").on_resolve(&mut state, me, &[target.clone()], &registry);
-        if gone || target == Target::Illegal {
-            assert!(acted() == 0 && Snapshot::of(&state) == before);
-            std::mem::forget((registry, state));
-            return;
-        }
-        let one = ManaCost::new(vec![ManaSymbol::Generic(1)]);
-        let asked = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
-            player, source, choice: ResolutionChoiceKind::PayOrNot { spell_id, source_spell_id, cost, .. },
-        }) if *player == them && *source == me && *spell_id == spell && *source_spell_id == me && *cost == one);
-        assert!(asked && acted() == 0);
-        let pay: bool = kani::any();
-        let _ = crate::engine::actions::choices::resolve_choice(&mut state, &ResolvedChoice::PayDecision(pay), &registry);
-        let paid = pay && matches!(super::act(0), Some(Act::Pay(_, _, true)));
-        let hand = if them == PlayerId(0) { hands[0] } else { hands[1] };
-        let cards = picked(&hand, |c| *c);
-        // Each action that may or may not come compared on its own, at
-        // its place, rather than through a list of one of four lengths.
-        let (p, c) = (usize::from(pay), usize::from(!paid));
-        assert!(acted() == p + c + usize::from(cards.len() == 1));
-        if pay {
-            assert!(were(0, 1, |_| Act::Pay(them, one.clone(), paid)));
-        }
-        if !paid {
-            assert!(were(p, 1, |_| Act::Counter { spell, exile: false }));
-        }
-        if cards.len() == 1 {
-            assert!(were(p + c, 1, |_| Act::Discard(cards[0])));
-        }
-        if cards.len() == 2 {
-            let asks_to_discard = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
-                player, source, choice: ResolutionChoiceKind::ChooseCardFromHand {
-                    player: from, cards: offered, discard_immediately: true, remaining: 1, ..
-                },
-            }) if *player == them && *from == them && *source == me && *offered == cards);
-            assert!(asks_to_discard && Snapshot::of(&state) == asking(&before, true));
-        } else {
-            assert!(Snapshot::of(&state) == before);
-        }
-        std::mem::forget((registry, state, one, cards));
+        registry.get(card).expect("registered").on_resolve(&mut state, me, &[target], &registry);
+        assert!(acted() == 0 && Snapshot::of(&state) == before);
+        std::mem::forget((registry, state));
     }
+}
+
+/// Frightful Delusion: its target still a spell on the stack, that
+/// spell's controller is asked whether to pay {1}; then, paying and able
+/// to, the spell is not countered, and otherwise it is; and either way
+/// that player discards a card (the card's ruling: "The player discards a
+/// card even if they pay {1}"), chosen by them when they have more than
+/// one (CR 701.9a), and with none, nothing. For the target's controller
+/// `them`, whether they `pay`, and the cards in their hand, up to two,
+/// each a constant in its harness: with all three the solver's, in one
+/// harness, the proof ran out of memory at four and a half gigabytes in
+/// symbolic execution.
+fn frightful_delusion_counters_unless_paid_and_that_player_discards((them, pay, in_hand): (u8, bool, usize)) {
+    let them = PlayerId(them);
+    let (registry, mut state, card, me, spell, cards) = delusion(them, false, in_hand);
+    let before = Snapshot::of(&state);
+    registry.get(card).expect("registered").on_resolve(&mut state, me, &[Target::Object(spell)], &registry);
+    let one = ManaCost::new(vec![ManaSymbol::Generic(1)]);
+    let asked = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+        player, source, choice: ResolutionChoiceKind::PayOrNot { spell_id, source_spell_id, cost, .. },
+    }) if *player == them && *source == me && *spell_id == spell && *source_spell_id == me && *cost == one);
+    assert!(asked && acted() == 0);
+    let _ = crate::engine::actions::choices::resolve_choice(&mut state, &ResolvedChoice::PayDecision(pay), &registry);
+    let paid = pay && matches!(super::act(0), Some(Act::Pay(_, _, true)));
+    // Each action that may or may not come compared on its own, at its
+    // place, rather than through a list of one of four lengths.
+    let (p, c) = (usize::from(pay), usize::from(!paid));
+    assert!(acted() == p + c + usize::from(cards.len() == 1));
+    if pay {
+        assert!(were(0, 1, |_| Act::Pay(them, one.clone(), paid)));
+    }
+    if !paid {
+        assert!(were(p, 1, |_| Act::Counter { spell, exile: false }));
+    }
+    if cards.len() == 1 {
+        assert!(were(p + c, 1, |_| Act::Discard(cards[0])));
+    }
+    if cards.len() == 2 {
+        let asks_to_discard = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+            player, source, choice: ResolutionChoiceKind::ChooseCardFromHand {
+                player: from, cards: offered, discard_immediately: true, remaining: 1, ..
+            },
+        }) if *player == them && *from == them && *source == me && *offered == cards);
+        assert!(asks_to_discard && Snapshot::of(&state) == asking(&before, true));
+    } else {
+        assert!(Snapshot::of(&state) == before);
+    }
+    std::mem::forget((registry, state, one, cards));
+}
+
+case_by_case! { frightful_delusion_counters_unless_paid_and_that_player_discards;
+    frightful_delusion_against_the_first_players_spell_paid_for_with_no_card_in_hand: (0, true, 0),
+    frightful_delusion_against_the_first_players_spell_paid_for_with_one_card_in_hand: (0, true, 1),
+    frightful_delusion_against_the_first_players_spell_paid_for_with_two_cards_in_hand: (0, true, 2),
+    frightful_delusion_against_the_first_players_spell_not_paid_for_with_no_card_in_hand: (0, false, 0),
+    frightful_delusion_against_the_first_players_spell_not_paid_for_with_one_card_in_hand: (0, false, 1),
+    frightful_delusion_against_the_first_players_spell_not_paid_for_with_two_cards_in_hand: (0, false, 2),
+    frightful_delusion_against_the_second_players_spell_paid_for_with_no_card_in_hand: (1, true, 0),
+    frightful_delusion_against_the_second_players_spell_paid_for_with_one_card_in_hand: (1, true, 1),
+    frightful_delusion_against_the_second_players_spell_paid_for_with_two_cards_in_hand: (1, true, 2),
+    frightful_delusion_against_the_second_players_spell_not_paid_for_with_no_card_in_hand: (1, false, 0),
+    frightful_delusion_against_the_second_players_spell_not_paid_for_with_one_card_in_hand: (1, false, 1),
+    frightful_delusion_against_the_second_players_spell_not_paid_for_with_two_cards_in_hand: (1, false, 2),
 }
 
 /// Divine Reckoning's board: the spell on the stack, either player active,
