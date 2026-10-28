@@ -762,6 +762,21 @@ sits in memory. What was measured, and what the proofs do about each:
   finished in 75 seconds, which had run out of memory at six gigabytes,
   and the clone of that effect, boxed or not, in some sixty thousand
   steps, which had run out of memory at three.
+- **A pointer one past the end.** CBMC simplifies `&x == NULL` to false,
+  but not `&x + 80 == NULL`, the test of whether an `Option` whose niche is
+  a pointer is empty when that pointer is one past the end of a list. A
+  `Chain` of two slice iterators keeps its first half as such an
+  `Option`, and once the first half had run out, symbolic execution
+  took it as possibly absent and read the next effect through null, from
+  an object CBMC leaves open. Walking the effects that reach a second
+  creature then went into every effect, scope and filter, out of memory
+  (the first creature's walk stopped at the Aura's effect, which reached
+  it). `precise-enums.py` also compares such a pointer's offset with zero,
+  which CBMC does simplify, to 80. Null is the null object at offset zero,
+  so the test is the same test; "can't attack" and its three siblings
+  then ran in 37 seconds where they had run out of memory at five
+  gigabytes, and the claim that the second creature can't attack fails
+  as it should.
 - **CBMC's memory checks.** `kani-bounded.py` leaves out CBMC's pointer,
   bounds and division checks (`--memory-checks` keeps them): that safe
   Rust reads only memory it may is the compiler's guarantee, and Rust's

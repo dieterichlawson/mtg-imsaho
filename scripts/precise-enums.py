@@ -58,6 +58,15 @@ The rewrite, which changes nothing a Rust program can observe:
   (`PendingEffect`, `TargetFilter`, `GameEvent` and the rest marked
   `#[cfg_attr(kani, repr(u8))]`) keep their tag in a field of its own in
   a Kani build;
+- every comparison of a pointer with null, `p == NULL`, also compares its
+  offset with zero, `offset(p) == 0 && p == NULL` (and `!=` the negation):
+  CBMC's null is the null object at offset zero, so the two agree on every
+  pointer, but CBMC simplifies `&x == NULL` to false and not `&x + 80 ==
+  NULL`, while it simplifies the offset of `&x + 80` to 80. An `Option`
+  whose niche is a pointer one past the end of a list (a slice iterator
+  run to its end, as `Chain` holds its first half) was otherwise possibly
+  absent, and its next item was read through null from an object CBMC
+  leaves open, of every variant;
 - every heap allocation (CBMC's `malloc`, which Kani's `__rust_alloc`
   calls) is zeroed, as `calloc`'s is. Rust's allocator hands out memory of
   no particular value, and safe Rust never reads memory before writing it
@@ -392,6 +401,47 @@ def rewrite(version, strings, symbols, functions):
             ins[0] = gb.Irep(code.id, [x, whole], list(code.named))
             niches += 1
 
+    # A pointer compared with null is also compared by its offset, which is
+    # zero when it is null: `p == NULL` becomes `offset(p) == 0 && p ==
+    # NULL`, and `!=` its negation. A CBMC pointer is an object and an
+    # offset, and null is the null object at offset zero, so the two say
+    # the same of every pointer. But CBMC simplifies `&x == NULL` to false
+    # and not `&x + 80 == NULL`, which a pointer one past the end of a list
+    # is, while it does simplify that pointer's offset, to 80. A slice
+    # iterator run to its end was then read as possibly absent (`Chain`'s
+    # first half, an `Option` whose niche is that pointer), and on that
+    # path its next item was read through a null pointer, from an object
+    # CBMC leaves open: walking the effects that reach a second creature
+    # went into every effect, every scope and every filter.
+    EQUAL, NOTEQUAL, AND, OR = sid('='), sid('notequal'), sid('and'), sid('or')
+    POINTER_OFFSET, K_NULL = sid('pointer_offset'), sid('NULL')
+    size_t = gb.Irep(UNSIGNEDBV, [], [(K_WIDTH, leaf('64'))])
+    bool_t = gb.Irep(BOOL, [], [])
+
+    def is_null(n):
+        v, t = named(n, K_VALUE), named(n, K_TYPE)
+        return n.id == CONSTANT and v is not None and v.id == K_NULL and t is not None and t.id == POINTER
+
+    nulls, seen = 0, set()
+    stack = [x for _, ins in functions for i in ins for x in (i[0], i[3])]
+    while stack:
+        n = stack.pop()
+        if id(n) in seen:
+            continue
+        seen.add(id(n))
+        if n.id in (EQUAL, NOTEQUAL) and len(n.subs) == 2 and (is_null(n.subs[0]) or is_null(n.subs[1])):
+            p = n.subs[1] if is_null(n.subs[0]) else n.subs[0]
+            pt = named(p, K_TYPE)
+            if pt is not None and pt.id == POINTER and not is_null(p):
+                offset = gb.Irep(POINTER_OFFSET, [p], [(K_TYPE, size_t)])
+                by_offset = gb.Irep(n.id, [offset, zero(size_t)], [(K_TYPE, bool_t)])
+                as_was = gb.Irep(n.id, list(n.subs), list(n.named))
+                seen.update((id(offset), id(by_offset), id(as_was)))
+                n.id, n.subs = (AND if n.id == EQUAL else OR), [by_offset, as_was]
+                nulls += 1
+        stack.extend(n.subs)
+        stack.extend(v for _, v in n.named)
+
     # Every allocation zeroed, as `calloc`'s is.
     ALLOCATE = sid('allocate')
 
@@ -412,17 +462,18 @@ def rewrite(version, strings, symbols, functions):
     for ins, code, rhs in list(allocations('malloc')):
         ins[0] = gb.Irep(code.id, [code.subs[0], gb.Irep(rhs.id, [rhs.subs[0], zeroed], list(rhs.named))], list(code.named))
         allocs += 1
-    return padding, variants, fieldless, niches, tags, dataful, reordered, allocs
+    return padding, variants, fieldless, niches, tags, dataful, reordered, nulls, allocs
 
 
 def main(src, dst):
     model = gb.read(src)
-    padding, variants, fieldless, niches, tags, dataful, reordered, allocs = rewrite(*model)
+    padding, variants, fieldless, niches, tags, dataful, reordered, nulls, allocs = rewrite(*model)
     gb.write(dst, *model)
     print(f'{padding} padding values made zero, {variants} variant writes made whole, '
           f'{fieldless} fieldless variants made whole, '
           f'{niches} niche variant writes made whole ({tags} with their tags, {dataful} holding the niche), '
-          f'{reordered} enums with their widest variant put first, {allocs} allocations zeroed')
+          f'{reordered} enums with their widest variant put first, {nulls} null comparisons made by offset too, '
+          f'{allocs} allocations zeroed')
 
 
 if __name__ == '__main__':
