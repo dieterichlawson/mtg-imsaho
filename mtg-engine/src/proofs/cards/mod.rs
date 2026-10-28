@@ -376,7 +376,7 @@ pub fn record_mill(state: &mut GameState, player: PlayerId, count: usize, _: &st
     record(Act::Mill(player, count));
     // A branch on the player, not an index by it: `any_object` says why.
     let library = if player == PlayerId(0) { &state.players[0].library_order } else { &state.players[1].library_order };
-    library.iter().take(count).copied().collect()
+    listed(&library[..count.min(library.len())])
 }
 
 /// Stands in for `GameState::create_tokens_with_subtypes`: the ids the
@@ -492,7 +492,7 @@ pub fn record_deal_queued(_: &mut GameState, _: &CardRegistry) {
 /// Stands in for `helpers::tokens_enter_combat_attacking`.
 #[allow(dead_code)] // named only by `kani::stub`
 pub fn record_enter_attacking(_: &mut GameState, source: ObjectId, controller: PlayerId, tokens: &[ObjectId], _: &CardRegistry) {
-    record(Act::EnterAttacking { source, controller, tokens: tokens.to_vec() });
+    record(Act::EnterAttacking { source, controller, tokens: listed(tokens) });
 }
 
 /// Stands in for `GameState::player_loses`.
