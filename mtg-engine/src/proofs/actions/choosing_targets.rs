@@ -68,14 +68,6 @@ fn a_choice_of_target_applies_at_once_or_asks_among_exactly_those() {
     std::mem::forget((registry, state, all, effect));
 }
 
-#[kani::proof]
-#[kani::unwind(7)]
-#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
-#[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
-#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
-#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
-#[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
-#[kani::stub(crate::engine::apply_pending_effect, crate::proofs::cards::record_effect)]
 /// Tokens put onto the battlefield attacking (CR 506.3): each arrives
 /// tapped, which taps nothing and so is not announced, and was never
 /// declared an attacker, so summoning sickness has nothing to stop
@@ -83,28 +75,24 @@ fn a_choice_of_target_applies_at_once_or_asks_among_exactly_those() {
 /// them attacks among the opponents still in the game and the
 /// planeswalkers they control (508.4), with the rest to follow, as
 /// `present_target_choice` asks (above): the opponent at once when it is
-/// the only option. For up to two tokens, a planeswalker of either
-/// player's or none, and the opponent in the game or out. Nothing else
-/// changes.
-fn tokens_entering_attacking_arrive_tapped_and_ask_what_they_attack() {
+/// the only option. For `n` tokens, a planeswalker of either player's if
+/// `with_walker`, and the opponent out of the game if `gone`. Nothing
+/// else changes.
+fn entering_attacking(you: PlayerId, with_walker: bool, n: usize, gone: bool) {
     let (registry, mut state, blank) = blank_board();
-    let you = PlayerId(u8::from(kani::any::<bool>()));
     let them = PlayerId(1 - you.0);
     let source = state.create_object(blank, you, Zone::Stack, None, None);
-    let walker = kani::any::<bool>().then(|| {
+    let walker = with_walker.then(|| {
         let id = state.create_object(blank, PlayerId(u8::from(kani::any::<bool>())), Zone::Battlefield, None, None);
         state.get_object_mut(id).expect("just created").card_types = vec![CardType::Planeswalker];
         id
     });
     let theirs = walker.filter(|w| state.get_object(*w).expect("on the board").controller == them);
-    let gone: bool = kani::any();
     if gone {
         // A branch on the player, not an index by it: `any_object` says why.
         if them == PlayerId(0) { state.players[0].lost = true } else { state.players[1].lost = true }
     }
     let tokens = [0, 1].map(|_| state.create_object(blank, you, Zone::Battlefield, Some(1), Some(1)));
-    let n: usize = kani::any();
-    kani::assume((1..=2).contains(&n));
     let before = Snapshot::of(&state);
 
     helpers::tokens_enter_combat_attacking(&mut state, source, you, &tokens[..n], &registry);
@@ -140,4 +128,47 @@ fn tokens_entering_attacking_arrive_tapped_and_ask_what_they_attack() {
     }
     kani::cover!(n == 2 && options == 2, "two tokens, two things to attack");
     std::mem::forget((registry, state, effect));
+}
+
+/// `entering_attacking` for tokens of either player's and the opponent in
+/// the game or out, each a constant in each call. Whether there is a
+/// planeswalker, and how many tokens enter, are constants in each harness:
+/// a planeswalker made or not moved the tokens' ids, a count left open was
+/// a list of every length, as was the list of what to attack with the
+/// opponent in the game or not, and the player an index into the players
+/// the solver left open; together they ran out of memory.
+fn for_either_player(with_walker: bool, n: usize) {
+    let (you, gone): (bool, bool) = (kani::any(), kani::any());
+    for p in [false, true] {
+        for g in [false, true] {
+            if you == p && gone == g {
+                entering_attacking(PlayerId(u8::from(p)), with_walker, n, g);
+            }
+        }
+    }
+}
+
+/// A proof above for each board.
+macro_rules! each_board {
+    ($($name:ident: $walker:expr, $n:expr;)*) => {$(
+        #[kani::proof]
+        #[kani::unwind(7)]
+        #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+        #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+        #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+        #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+        #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+        #[kani::stub(crate::engine::apply_pending_effect, crate::proofs::cards::record_effect)]
+        /// The proof above it, for one board.
+        fn $name() {
+            for_either_player($walker, $n);
+        }
+    )*};
+}
+
+each_board! {
+    a_token_entering_attacking_on_a_board_without_a_planeswalker: false, 1;
+    two_tokens_entering_attacking_on_a_board_without_a_planeswalker: false, 2;
+    a_token_entering_attacking_on_a_board_with_a_planeswalker: true, 1;
+    two_tokens_entering_attacking_on_a_board_with_a_planeswalker: true, 2;
 }
