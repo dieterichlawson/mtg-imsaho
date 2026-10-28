@@ -440,6 +440,7 @@ def main():
     ap.add_argument('--jobs', type=int, default=1)
     ap.add_argument('--mem-cap', type=float, default=None, help='gigabytes of address space per cbmc, with --jobs')
     ap.add_argument('--solo-cap', type=float, default=12, help='gigabytes for a harness run again alone')
+    ap.add_argument('--reverse', action='store_true', help='run the harnesses last first, as a second run sharing the results')
     a = ap.parse_args()
     global START_UNWIND, LOOPS, MEMORY_CHECKS
     START_UNWIND, LOOPS, MEMORY_CHECKS = a.start_unwind, a.loops, a.memory_checks
@@ -456,6 +457,8 @@ def main():
             return {l.split()[2] for l in res if len(l.split()) > 2}
 
     todo = [h for h in wanted if h not in done()]
+    if a.reverse:
+        todo.reverse()
     # One at a time, a harness is held to the cap it would have had alone,
     # so that a run beside other work cannot take the machine's memory.
     cap = a.mem_cap if a.jobs > 1 else a.solo_cap
