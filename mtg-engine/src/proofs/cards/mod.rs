@@ -536,7 +536,8 @@ pub fn record_control(_: &mut GameState, id: ObjectId, player: PlayerId) {
 }
 
 /// Stands in for `engine::pay_cost_with_sources`: paid or not, either, as
-/// a player may or may not have the mana.
+/// a player may or may not have the mana (what paying does is
+/// `proofs::actions::paying`'s).
 #[allow(dead_code)] // named only by `kani::stub`
 pub fn record_pay(_: &mut GameState, player: PlayerId, cost: &crate::types::ManaCost, _: &CardRegistry) -> bool {
     let paid = kani::any();
@@ -546,7 +547,8 @@ pub fn record_pay(_: &mut GameState, player: PlayerId, cost: &crate::types::Mana
 
 /// Stands in for `engine::payment_plan_with_sources`, which changes nothing:
 /// a plan or none, either, as a player may or may not have the mana; the
-/// plan, when there is one, the pool alone (no source to tap).
+/// plan, when there is one, the pool alone (no source to tap), as it is on
+/// a board of the blank card's (`proofs::actions::paying`).
 #[allow(dead_code)] // named only by `kani::stub`
 pub fn any_payment_plan(_: &GameState, _: PlayerId, _: &crate::types::ManaCost, _: &CardRegistry) -> Option<Vec<(ObjectId, usize)>> {
     if kani::any() { Some(Vec::new()) } else { None }

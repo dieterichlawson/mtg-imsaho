@@ -11,6 +11,7 @@ mod effects;
 mod fighting;
 mod library;
 mod moving;
+mod paying;
 mod pending_effects;
 mod predicates;
 mod random;
