@@ -134,15 +134,15 @@ fn came_to(state: &GameState, before: &Snapshot, asked: &[Asked], outcomes: &[De
     assert!(state.creature_died_this_turn == died);
 }
 
-#[kani::proof]
-#[kani::unwind(7)]
-#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
-#[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
-#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
-#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
-#[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
-#[kani::stub(crate::state::GameState::move_object, crate::proofs::cards::record_move)]
-#[kani::stub(crate::state::GameState::has_keyword, is_indestructible)]
+/// The forms of destroying one permanent.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Way {
+    Destroy,
+    DestroyBy,
+    DestroyNoRegen,
+    Sacrifice,
+}
+
 /// "Destroy target permanent" (CR 701.7a): a permanent that is not
 /// indestructible (702.12b) and has no regeneration shield is put into
 /// its owner's graveyard, and a creature's death is announced; one with a
@@ -154,22 +154,33 @@ fn came_to(state: &GameState, before: &Snapshot, asked: &[Asked], outcomes: &[De
 /// `sacrifice_by` (701.17a), whose answer is whether it was sacrificed;
 /// for a permanent as `a_permanent` makes it, or an object no longer in
 /// the game. Nothing else changes.
-fn destroying_a_permanent_destroys_regenerates_or_leaves_it() {
+fn destroying(way: Way) {
+    // Which object is asked about, the one made or one gone, is a constant
+    // in each call: an id the solver chose made every read of the board
+    // one at an index it left open, and the proof ran out of memory.
+    if kani::any() {
+        destroying_one(way, false);
+    } else {
+        destroying_one(way, true);
+    }
+}
+
+/// `destroying` of the permanent made, or, if `gone`, of an object that
+/// has left the game: a token that ceased to exist.
+fn destroying_one(way: Way, gone: bool) {
     let (registry, mut state, blank) = blank_board();
     let mut a = a_permanent(&mut state, blank);
-    if kani::any() {
-        // One that has left the game: a token that ceased to exist.
+    if gone {
         a.id = ObjectId(a.id.0 + 1);
         a.on_battlefield = false;
     }
     let before = Snapshot::of(&state);
 
-    let way: u8 = kani::any();
     let (result, expected) = match way {
-        0 => (destruction::try_destroy(&mut state, a.id, &registry), by_the_rules(&a, true)),
-        1 => (destruction::try_destroy_by(&mut state, a.id, "a source", &registry), by_the_rules(&a, true)),
-        2 => (destruction::try_destroy_no_regen(&mut state, a.id, &registry), by_the_rules(&a, false)),
-        _ => {
+        Way::Destroy => (destruction::try_destroy(&mut state, a.id, &registry), by_the_rules(&a, true)),
+        Way::DestroyBy => (destruction::try_destroy_by(&mut state, a.id, "a source", &registry), by_the_rules(&a, true)),
+        Way::DestroyNoRegen => (destruction::try_destroy_no_regen(&mut state, a.id, &registry), by_the_rules(&a, false)),
+        Way::Sacrifice => {
             let sacrificed = destruction::sacrifice_by(&mut state, a.id, "a reason", &registry);
             assert!(sacrificed == a.on_battlefield);
             let r = if a.on_battlefield { DestroyResult::Died } else { DestroyResult::NotAPermanent };
@@ -184,30 +195,21 @@ fn destroying_a_permanent_destroys_regenerates_or_leaves_it() {
     std::mem::forget((registry, state));
 }
 
-#[kani::proof]
-#[kani::unwind(7)]
-#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
-#[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
-#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
-#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
-#[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
-#[kani::stub(crate::state::GameState::move_object, crate::proofs::cards::record_move)]
-#[kani::stub(crate::state::GameState::has_keyword, is_indestructible)]
 /// "Destroy all creatures" (CR 701.7a, 700.2c): each permanent comes to
 /// the outcome destroying it alone would, decided before any of them has
 /// moved, and the outcomes come back in the order asked. For two
-/// permanents as `a_permanent` makes them, through `try_destroy_all` and
-/// `try_destroy_all_by`. Nothing else changes.
-fn destroying_permanents_together_destroys_each_as_alone() {
+/// permanents as `a_permanent` makes them, through `try_destroy_all` or,
+/// `by` a source, `try_destroy_all_by`. Nothing else changes.
+fn destroying_together(by: bool) {
     let (registry, mut state, blank) = blank_board();
     let asked = [a_permanent(&mut state, blank), a_permanent(&mut state, blank)];
     let ids = [asked[0].id, asked[1].id];
     let before = Snapshot::of(&state);
 
-    let outcomes = if kani::any() {
-        destruction::try_destroy_all(&mut state, &ids, &registry)
-    } else {
+    let outcomes = if by {
         destruction::try_destroy_all_by(&mut state, &ids, "a source", &registry)
+    } else {
+        destruction::try_destroy_all(&mut state, &ids, &registry)
     };
 
     let expected = [by_the_rules(&asked[0], true), by_the_rules(&asked[1], true)];
@@ -216,4 +218,34 @@ fn destroying_permanents_together_destroys_each_as_alone() {
     came_to(&state, &before, &asked, &expected, blank);
     kani::cover!(expected == [DestroyResult::Regenerated, DestroyResult::Died], "one regenerates, one dies");
     std::mem::forget((registry, state, outcomes));
+}
+
+/// A proof above for each form of destroying, the form a constant in each:
+/// one the solver chose was each form at once, with each one's death to
+/// announce, and ran out of memory at six gigabytes.
+macro_rules! by_each_way {
+    ($($name:ident: $proof:ident($arg:expr)),* $(,)?) => {$(
+        #[kani::proof]
+        #[kani::unwind(7)]
+        #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+        #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+        #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+        #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+        #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+        #[kani::stub(crate::state::GameState::move_object, crate::proofs::cards::record_move)]
+        #[kani::stub(crate::state::GameState::has_keyword, is_indestructible)]
+        /// The proof above it, for one form of destroying.
+        fn $name() {
+            $proof($arg);
+        }
+    )*};
+}
+
+by_each_way! {
+    try_destroy_destroys_regenerates_or_leaves_a_permanent: destroying(Way::Destroy),
+    try_destroy_by_destroys_regenerates_or_leaves_a_permanent: destroying(Way::DestroyBy),
+    try_destroy_no_regen_destroys_or_leaves_a_permanent: destroying(Way::DestroyNoRegen),
+    sacrifice_by_sacrifices_a_permanent_or_leaves_a_card: destroying(Way::Sacrifice),
+    try_destroy_all_destroys_each_as_alone: destroying_together(false),
+    try_destroy_all_by_destroys_each_as_alone: destroying_together(true),
 }
