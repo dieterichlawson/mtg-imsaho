@@ -758,6 +758,19 @@ pub fn record_move_under(_: &mut GameState, id: ObjectId, to: Zone, controller: 
     true
 }
 
+/// Stands in for `helpers::sorted`: `names` as they are, which it asserts
+/// are in order. Sorting a list in order leaves it as it is, so on every
+/// list it accepts this is the sort; and the names a proof's registry
+/// lists come in order, its map being kept in key order (`vec_map`), the
+/// assertion saying so. Kani could not tell how two names on the heap
+/// compared, and sorting three did not finish in half an hour; checking
+/// that they are in order is a comparison for each pair side by side.
+#[allow(dead_code)] // named only by `kani::stub`
+pub fn names_in_order(names: Vec<String>) -> Vec<String> {
+    assert!(names.windows(2).all(|pair| pair[0] <= pair[1]), "names a sort would reorder");
+    names
+}
+
 /// Stands in for `helpers::shuffle_library`.
 #[allow(dead_code)] // named only by `kani::stub`
 pub fn record_shuffle(_: &mut GameState, player: PlayerId) {
@@ -995,6 +1008,7 @@ macro_rules! card_proof {
         #[kani::stub($crate::state::GameState::put_into_library, $crate::proofs::cards::record_to_library)]
         #[kani::stub($crate::state::GameState::move_object_under_control, $crate::proofs::cards::record_move_under)]
         #[kani::stub($crate::cards::helpers::shuffle_library, $crate::proofs::cards::record_shuffle)]
+        #[kani::stub($crate::cards::helpers::sorted, $crate::proofs::cards::names_in_order)]
         #[kani::stub($crate::state::GameState::add_regeneration_shield, $crate::proofs::cards::record_regenerate)]
         #[kani::stub($crate::state::GameState::add_mana, $crate::proofs::cards::record_mana)]
         #[kani::stub($crate::destruction::sacrifice_by, $crate::proofs::cards::record_sacrifice)]
