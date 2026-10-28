@@ -53,7 +53,7 @@ proofs define. One line per harness
 goes to RESULTS (default logs/kani/results.txt):
     RESULT  SECONDS  NAME  [bounds, covers, size, or what failed]
 """
-import argparse, concurrent.futures, glob, json, os, re, subprocess, sys, threading, time
+import argparse, concurrent.futures, fcntl, glob, json, os, re, subprocess, sys, tempfile, threading, time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 K = os.path.expanduser('~/.kani/kani-0.68.0')
@@ -166,16 +166,25 @@ def run(cmd, **kw):
     return subprocess.run(cmd, capture_output=True, text=True, **kw)
 
 
+# Held while compiling, by every run on the machine: Kani's compiler took
+# seven gigabytes for a batch of thirty card harnesses, and three runs
+# compiling at once beside their solvers had the kernel stop it, which
+# recorded every harness of its batch as not run.
+CODEGEN_LOCK = os.path.join(tempfile.gettempdir(), 'kani-bounded-codegen.lock')
+
+
 def codegen(harnesses, crate, target):
     args = ['cargo', 'kani', '-Z', 'stubbing', '-Z', 'unstable-options', '--only-codegen', '--exact']
     for h in harnesses:
         args += ['--harness', h]
     env = dict(os.environ, CARGO_TARGET_DIR=target)
-    p = run(args, cwd=crate, env=env)
-    if p.returncode != 0 and 'Failed to canonicalize harness model' in p.stdout + p.stderr:
-        # A cached build whose goto files were removed: build it again.
-        os.utime(f'{crate}/src/lib.rs')
+    with open(CODEGEN_LOCK, 'w') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
         p = run(args, cwd=crate, env=env)
+        if p.returncode != 0 and 'Failed to canonicalize harness model' in p.stdout + p.stderr:
+            # A cached build whose goto files were removed: build it again.
+            os.utime(f'{crate}/src/lib.rs')
+            p = run(args, cwd=crate, env=env)
     if p.returncode != 0:
         sys.stderr.write(p.stdout[-3000:] + p.stderr[-3000:])
         return None
