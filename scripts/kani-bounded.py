@@ -65,7 +65,7 @@ KANI_LIB = f'{K}/library/kani/kani_lib.c'
 # harnesses with (abilities!, statics!, equipment!, ...). `cargo kani list`
 # says the same at the price of building every harness, gigabytes of goto
 # files.
-TABLES = {'abilities', 'declares', 'werewolves', 'mana', 'statics', 'check_land', 'choosing_at_random', 'for_each_size', 'from_each_zone', 'for_each_key', 'each_printed', 'by_each_way', 'each_board', 'each_pruning', 'over_each_library', 'over_each_hand', 'case_by_case'}
+TABLES = {'abilities', 'declares', 'werewolves', 'mana', 'statics', 'check_land', 'choosing_at_random', 'for_each_size', 'from_each_zone', 'for_each_key', 'each_printed', 'by_each_way', 'each_target', 'each_board', 'each_cost', 'each_pruning', 'each_path', 'each_set', 'over_each_library', 'over_each_hand', 'case_by_case'}
 FORMS = {'reaches_what_it_describes', 'holds_exactly_then'}
 def block(text, i):
     # text[i] is an opening bracket; return the index of its match
@@ -81,13 +81,28 @@ def strip(text):
     # drop comments and string literals' content enough not to confuse matching
     text = re.sub(r'//[^\n]*', '', text)
     return text
+# Loops a proof module bounds below the start, by its comment
+# `// loop bound: <function> <n> [<part of a harness name>]`: every loop of
+# that function (its pretty name, as `pretty_names` has it) is unwound to n
+# in each harness of the module (whose name holds the part, if one is
+# given), the unwinding assertions on as everywhere, so a bound too small
+# fails the proof. For a loop the solver cannot see the end of in symbolic
+# execution, over a list whose length it leaves open: unwound to the start
+# bound, each pass past the list's end is a pass over what it cannot rule
+# out, and the damage queue's ran out of memory so.
+LOOP_CAPS = {}
+
+
 def list_harnesses(src):
     out = []
     for f in sorted(glob.glob(src + '/proofs/**/*.rs', recursive=True)):
         rel = os.path.relpath(f, src)[:-3].split('/')
         mod = [p for p in rel if p != 'mod']
         path = '::'.join(mod)
-        t = strip(open(f).read())
+        raw = open(f).read()
+        for m in re.finditer(r'(?m)^\s*// loop bound: (\S+) (\d+)(?: (\w+))?\s*$', raw):
+            LOOP_CAPS.setdefault(path, []).append((m.group(1), int(m.group(2)), m.group(3) or ''))
+        t = strip(raw)
         for m in re.finditer(r'\b(card_proof|action_proof)!\s*\{', t):
             if t[m.start()-13:m.start()].endswith('macro_rules! '): continue
             body = t[m.end()-1:block(t, m.end()-1)+1]
@@ -207,12 +222,21 @@ def verify(h, goto, unwind, mangled, bound, timeout, precise=True, cap=None):
     rec = bounds(out, bound)
     by_name = pretty_names(out)
     full = unwind or 7
+    caps = {}
+    for module, fns in LOOP_CAPS.items():
+        if h.startswith(module + '::'):
+            loops_of = re.findall(r'^Loop (\S+):', run([f'{K}/bin/goto-instrument', '--show-loops', out]).stdout, re.M)
+            for name, n, part in fns:
+                if part in h.rsplit('::', 1)[-1]:
+                    for m in by_name.get(name, []):
+                        caps.update({l: n for l in loops_of if l.startswith(m + '.')})
     learned = load_loops()
     took, rounds = 0.0, 0
     while True:
         rounds += 1
-        raised = sorted({f'{m}.{n}' for name, n in learned for m in by_name.get(name, [])})
-        unwindset = ','.join(['memcmp.0:33'] + [f'{r}:{bound}' for r in rec] + [f'{l}:{full}' for l in raised])
+        raised = sorted({f'{m}.{n}' for name, n in learned for m in by_name.get(name, [])} - set(caps))
+        unwindset = ','.join(['memcmp.0:33'] + [f'{r}:{bound}' for r in rec] + [f'{l}:{full}' for l in raised]
+                             + [f'{l}:{n}' for l, n in sorted(caps.items())])
         cmd = [f'{K}/bin/cbmc'] + CBMC_FLAGS + ([] if MEMORY_CHECKS else NO_MEMORY_CHECKS) + [
             '--unwind', str(min(START_UNWIND, full)), '--unwindset', unwindset, out, '--verbosity', '9', '--json-ui']
         with open(out + '.cmd', 'w') as f:
