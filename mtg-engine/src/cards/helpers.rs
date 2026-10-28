@@ -1013,9 +1013,18 @@ pub fn morbid_should_trigger(state: &GameState, kind: &TriggerKind) -> bool {
 /// this, and the invariant checker flags one that offers two copies.
 #[must_use]
 pub fn one_of_each_card(state: &GameState, candidates: Vec<ObjectId>) -> Vec<ObjectId> {
-    let mut seen_cards = std::collections::HashSet::new();
+    // A list rather than a hash set: a library holds a few dozen cards, and
+    // a hash set's seed is drawn from the operating system, which the
+    // proofs of this function (`proofs::actions::searching`) cannot model.
+    let mut seen_cards: Vec<crate::ids::CardId> = Vec::new();
     candidates.into_iter()
-        .filter(|&id| state.get_object(id).is_none_or(|o| seen_cards.insert(o.card_id)))
+        .filter(|&id| state.get_object(id).is_none_or(|o| {
+            let fresh = !seen_cards.contains(&o.card_id);
+            if fresh {
+                seen_cards.push(o.card_id);
+            }
+            fresh
+        }))
         .collect()
 }
 
