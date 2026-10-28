@@ -1188,10 +1188,10 @@ fn hands(state: &mut GameState, blank: CardId, p: PlayerId, n: usize) -> Vec<Obj
 /// Grimoire of the Dead's abilities: "{1}, {T}, Discard a card", offered
 /// only with a card in its controller's hand to discard (CR 601.2h: a cost
 /// that cannot be paid cannot be chosen); and "{T}, Remove three study
-/// counters ... and sacrifice it", always. With `n` cards in its
-/// controller's hand.
-fn grimoire_of_the_dead_has_its_abilities_with(n: usize) {
-    let mut b = permanent(Box::new(isd::grimoire_of_the_dead::GrimoireOfTheDead), &ANY_CREATURE, false);
+/// counters ... and sacrifice it", always. With `n` cards in the hand of
+/// its controller, player `you`.
+fn grimoire_of_the_dead_has_its_abilities_with((n, you): (usize, u8)) {
+    let mut b = permanent_of(Box::new(isd::grimoire_of_the_dead::GrimoireOfTheDead), &ANY_CREATURE, false, PlayerId(you));
     let you = b.you;
     let hand = hands(&mut b.state, CardId(1), you, n);
     let card = b.card();
@@ -1213,10 +1213,10 @@ fn grimoire_of_the_dead_has_its_abilities_with(n: usize) {
 /// controller's hand discarded, or with more than one, they are asked
 /// which (CR 601.2b: the choice is theirs, made while paying), from their
 /// own hand alone. The second ability's costs are the engine's alone
-/// (pinned above). Nothing else. With `n` cards in its controller's
-/// hand.
-fn grimoire_of_the_dead_discards_as_a_cost_with(n: usize) {
-    let mut b = permanent(Box::new(isd::grimoire_of_the_dead::GrimoireOfTheDead), &ANY_CREATURE, false);
+/// (pinned above). Nothing else. With `n` cards in the hand of its
+/// controller, player `you`.
+fn grimoire_of_the_dead_discards_as_a_cost_with((n, you): (usize, u8)) {
+    let mut b = permanent_of(Box::new(isd::grimoire_of_the_dead::GrimoireOfTheDead), &ANY_CREATURE, false, PlayerId(you));
     let you = b.you;
     let hand = hands(&mut b.state, CardId(1), you, n);
     let index = usize::from(kani::any::<bool>());
@@ -1238,20 +1238,28 @@ fn grimoire_of_the_dead_discards_as_a_cost_with(n: usize) {
     std::mem::forget((b, hand));
 }
 
-// The proofs above, a harness for each size of hand up to 2: a hand whose
-// size the solver chose is a list of every length, and every card made
-// after it an id it leaves open; the Grimoire's proofs ran out of memory at
-// ten gigabytes, and with the sizes in one harness each, at four.
+// The proofs above, a harness for each size of hand up to 2 and each
+// controller: a hand whose size the solver chose is a list of every
+// length, and every card made after it an id it leaves open; the
+// Grimoire's proofs ran out of memory at ten gigabytes, with the sizes in
+// one harness each at four, and with a harness per size, the controller
+// the solver's (whose hand the engine finds by them), at three and a half.
 case_by_case! { grimoire_of_the_dead_has_its_abilities_with;
-    grimoire_of_the_dead_has_its_abilities_with_an_empty_hand: 0,
-    grimoire_of_the_dead_has_its_abilities_with_a_card_in_hand: 1,
-    grimoire_of_the_dead_has_its_abilities_with_two_cards_in_hand: 2,
+    grimoire_of_the_dead_has_its_abilities_with_an_empty_hand_for_the_first_player: (0, 0),
+    grimoire_of_the_dead_has_its_abilities_with_a_card_in_hand_for_the_first_player: (1, 0),
+    grimoire_of_the_dead_has_its_abilities_with_two_cards_in_hand_for_the_first_player: (2, 0),
+    grimoire_of_the_dead_has_its_abilities_with_an_empty_hand_for_the_second_player: (0, 1),
+    grimoire_of_the_dead_has_its_abilities_with_a_card_in_hand_for_the_second_player: (1, 1),
+    grimoire_of_the_dead_has_its_abilities_with_two_cards_in_hand_for_the_second_player: (2, 1),
 }
 
 case_by_case! { grimoire_of_the_dead_discards_as_a_cost_with;
-    grimoire_of_the_dead_discards_nothing_from_an_empty_hand: 0,
-    grimoire_of_the_dead_discards_its_controllers_only_card: 1,
-    grimoire_of_the_dead_asks_which_of_two_cards_to_discard: 2,
+    grimoire_of_the_dead_discards_nothing_from_an_empty_hand_for_the_first_player: (0, 0),
+    grimoire_of_the_dead_discards_its_controllers_only_card_for_the_first_player: (1, 0),
+    grimoire_of_the_dead_asks_which_of_two_cards_to_discard_for_the_first_player: (2, 0),
+    grimoire_of_the_dead_discards_nothing_from_an_empty_hand_for_the_second_player: (0, 1),
+    grimoire_of_the_dead_discards_its_controllers_only_card_for_the_second_player: (1, 1),
+    grimoire_of_the_dead_asks_which_of_two_cards_to_discard_for_the_second_player: (2, 1),
 }
 
 card_proof! {
