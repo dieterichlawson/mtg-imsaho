@@ -385,66 +385,108 @@ card_proof! {
 }
 
 card_proof! {
-    /// Bloodline Keeper // Lord of Lineage: either face, "{T}: Create a 2/2
-    /// black Vampire creature token with flying"; front face up, a card,
-    /// and with five or more Vampires its controller controls, "{B}:
-    /// Transform this creature"; back face up, "Other Vampire creatures you
-    /// control get +2/+2". Over four tokens, each either player's and a
-    /// Vampire or not.
-    fn bloodline_keeper_makes_vampires_and_transforms_at_five() {
-        let keeper = isd::bloodline_keeper::BloodlineKeeper;
-        let back = std::mem::ManuallyDrop::new(keeper.back_face_data().expect("a back face"));
+    /// Lord of Lineage, Bloodline Keeper's back face: "Other Vampire
+    /// creatures you control get +2/+2". Its abilities and their
+    /// resolutions are the proofs below.
+    fn lord_of_lineage_pumps_your_other_vampires() {
+        let back = std::mem::ManuallyDrop::new(isd::bloodline_keeper::BloodlineKeeper.back_face_data().expect("a back face"));
         assert!(matches!(back.continuous_effects.as_slice(), [crate::types::ContinuousEffect::ModifyPT {
             power: 2, toughness: 2, scope: crate::types::EffectScope::GlobalOther(f),
         }] if super::both(f, |f| matches!(f, crate::types::CreatureFilter::ControlledByYou), |f| super::has_subtype(f, "Vampire"))));
-        let mut b = creature(Box::new(keeper));
-        let mut vampires = 1;
-        for _ in 0..4 {
-            let controller = PlayerId(u8::from(kani::any::<bool>()));
-            let id = b.state.create_object(CardId(0), controller, Zone::Battlefield, Some(2), Some(2));
-            let o = b.state.get_object_mut(id).expect("just created");
-            o.is_token = true;
-            o.card_types = vec![crate::types::CardType::Creature];
-            o.subtypes = Vec::with_capacity(1);
-            if kani::any() {
-                o.subtypes.push("Vampire".into());
-                if controller == b.you {
-                    vampires += 1;
-                }
+    }
+}
+
+/// Bloodline Keeper // Lord of Lineage: either face, "{T}: Create a 2/2
+/// black Vampire creature token with flying"; front face up, a card, and
+/// with five or more Vampires its controller controls, "{B}: Transform
+/// this creature"; off the battlefield, no ability. Over four tokens
+/// beside it, each either player's and a Vampire or not; with it in its
+/// owner's graveyard for `placed` 0, front face up on the battlefield for
+/// 1 and transformed there for 2, and, front face up, `yours` of the
+/// tokens Vampires of its controller and the others each a Vampire of the
+/// other player or not a Vampire, each a constant in its harness: the
+/// abilities are a list of a length they decide, and with them the
+/// solver's the proof ran out of memory at four and a half gigabytes in
+/// symbolic execution.
+fn bloodline_keeper_has_its_abilities((placed, yours): (u8, Option<u8>)) {
+    let mut b = creature_at(Box::new(isd::bloodline_keeper::BloodlineKeeper), PlayerId(u8::from(kani::any::<bool>())), placed == 0, placed == 2);
+    let mut vampires = 1;
+    for k in 0..4 {
+        // Either player's and a Vampire or not; or, `yours` given, the
+        // first `yours` Vampires of `you`, and each other one not a
+        // Vampire of `you`.
+        let (controller, vampire) = match yours {
+            None => (PlayerId(u8::from(kani::any::<bool>())), kani::any()),
+            Some(n) if k < n => (b.you, true),
+            Some(_) => {
+                let vampire: bool = kani::any();
+                (if vampire { PlayerId(1 - b.you.0) } else { PlayerId(u8::from(kani::any::<bool>())) }, vampire)
+            }
+        };
+        let id = b.state.create_object(CardId(0), controller, Zone::Battlefield, Some(2), Some(2));
+        let o = b.state.get_object_mut(id).expect("just created");
+        o.is_token = true;
+        o.card_types = vec![crate::types::CardType::Creature];
+        o.subtypes = Vec::with_capacity(1);
+        if vampire {
+            o.subtypes.push("Vampire".into());
+            if controller == b.you {
+                vampires += 1;
             }
         }
-        let o = b.state.get_object(b.me).expect("on the board");
-        let on = o.zone == Zone::Battlefield;
-        let front_up = on && !o.is_transformed;
-        let make = super::activated::Ability { tap: true, ..super::activated::Ability::default() };
-        let transform = super::activated::Ability {
-            cost: crate::types::ManaCost::new(vec![crate::types::ManaSymbol::Colored(crate::types::Color::Black)]),
-            ..super::activated::Ability::default()
-        };
-        let got = abilities(&b);
-        if !on {
-            assert!(got.is_empty());
-        } else if front_up && vampires >= 5 {
-            assert!(got.len() == 2 && got[0] == make && got[1] == transform);
-        } else {
-            assert!(got.len() == 1 && got[0] == make);
-        }
-        b.state.resolving_ability_activator = Some(b.you);
-        let before = Snapshot::of(&b.state);
-        let index = usize::from(kani::any::<bool>());
-        let card = b.card();
-        b.registry.get(card).expect("registered").resolve_activated_ability(&mut b.state, b.me, index, &[], &b.registry);
-        if index == 0 {
-            assert!(asked_for(&[Act::Tokens {
-                n: 1, controller: b.you, power: 2, toughness: 2, colors: vec![crate::types::Color::Black],
-                types: vec![crate::types::CardType::Creature], keywords: vec![crate::types::Keyword::Flying], subtypes: vec!["Vampire".into()],
-            }]));
-        } else {
-            assert!(asked_for(&[Act::Transform(b.me)]));
-        }
-        assert!(Snapshot::of(&b.state) == before);
-        std::mem::forget((b, got));
     }
+    let make = super::activated::Ability { tap: true, ..super::activated::Ability::default() };
+    let transform = super::activated::Ability {
+        cost: crate::types::ManaCost::new(vec![crate::types::ManaSymbol::Colored(crate::types::Color::Black)]),
+        ..super::activated::Ability::default()
+    };
+    let got = abilities(&b);
+    if placed == 0 {
+        assert!(got.is_empty());
+    } else if placed == 1 && vampires >= 5 {
+        assert!(got.len() == 2 && got[0] == make && got[1] == transform);
+    } else {
+        assert!(got.len() == 1 && got[0] == make);
+    }
+    std::mem::forget((b, got, make, transform));
+}
+
+case_by_case! { bloodline_keeper_has_its_abilities;
+    bloodline_keeper_gone_has_no_ability: (0, None),
+    lord_of_lineage_makes_vampires: (2, None),
+    bloodline_keeper_with_no_other_vampire_of_yours_only_makes_vampires: (1, Some(0)),
+    bloodline_keeper_with_one_other_vampire_of_yours_only_makes_vampires: (1, Some(1)),
+    bloodline_keeper_with_two_other_vampires_of_yours_only_makes_vampires: (1, Some(2)),
+    bloodline_keeper_with_three_other_vampires_of_yours_only_makes_vampires: (1, Some(3)),
+    bloodline_keeper_with_four_other_vampires_of_yours_may_transform: (1, Some(4)),
+}
+
+/// Bloodline Keeper's abilities resolving, either face up, on the
+/// battlefield or gone: the first, a 2/2 black Vampire token with flying
+/// for the player who activated it; the second, it transformed. Nothing
+/// else. Which ability is `index`, a constant in each harness. Neither
+/// reads the other creatures, which the proof above is over.
+fn bloodline_keeper_resolves(index: usize) {
+    let mut b = creature(Box::new(isd::bloodline_keeper::BloodlineKeeper));
+    b.state.resolving_ability_activator = Some(b.you);
+    let before = Snapshot::of(&b.state);
+    let card = b.card();
+    b.registry.get(card).expect("registered").resolve_activated_ability(&mut b.state, b.me, index, &[], &b.registry);
+    if index == 0 {
+        assert!(asked_for(&[Act::Tokens {
+            n: 1, controller: b.you, power: 2, toughness: 2, colors: vec![crate::types::Color::Black],
+            types: vec![crate::types::CardType::Creature], keywords: vec![crate::types::Keyword::Flying], subtypes: vec!["Vampire".into()],
+        }]));
+    } else {
+        assert!(asked_for(&[Act::Transform(b.me)]));
+    }
+    assert!(Snapshot::of(&b.state) == before);
+    std::mem::forget(b);
+}
+
+case_by_case! { bloodline_keeper_resolves;
+    bloodline_keeper_makes_a_vampire: 0,
+    bloodline_keeper_transforms: 1,
 }
 
 /// Ludevic's Test Subject // Ludevic's Abomination: front face up on the
