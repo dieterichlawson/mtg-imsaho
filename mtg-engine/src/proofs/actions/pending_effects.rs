@@ -133,25 +133,129 @@ effect_proof! {
 }
 
 effect_proof! {
-    /// "It gets -N/-N until end of turn" (CR 611.2c): the permanent gets
-    /// it, and a card off the battlefield, a new object (400.7), nothing.
-    fn a_pending_debuff_lasts_the_turn_on_a_permanent(PendingEffect::DebuffUntilEOT { power: -1, toughness: -2, source_name: "a source".into() })
-        => |state, id, on| {
+    /// "It gets -N/-N until end of turn" (CR 611.2c): it gets it. One on a
+    /// card that has left the battlefield applies to nothing, the card a
+    /// new object (400.7): the engine ends it as the action ends, before
+    /// anyone can act (`prune_effects_on_departed_objects`, proved below).
+    fn a_pending_debuff_lasts_the_turn(PendingEffect::DebuffUntilEOT { power: -1, toughness: -2, source_name: "a source".into() })
+        => |state, id, _on| {
             let added = state.until_end_of_turn.as_slice();
-            (acted() == 0 && (!on || matches!(added, [crate::state::TemporaryEffect::ModifyPT { target, power_mod: -1, toughness_mod: -2 }] if *target == id)),
-                usize::from(on))
+            (acted() == 0 && matches!(added, [crate::state::TemporaryEffect::ModifyPT { target, power_mod: -1, toughness_mod: -2 }] if *target == id), 1)
         }
 }
 
 effect_proof! {
-    /// "It can't block this turn" (CR 611.2c): the permanent can't, and a
-    /// card off the battlefield is untouched.
-    fn a_pending_cant_block_lasts_the_turn_on_a_permanent(PendingEffect::CantBlockThisTurn { source_name: "a source".into() })
-        => |state, id, on| {
+    /// "It can't block this turn" (CR 611.2c): it can't; and the same of a
+    /// card off the battlefield.
+    fn a_pending_cant_block_lasts_the_turn(PendingEffect::CantBlockThisTurn { source_name: "a source".into() })
+        => |state, id, _on| {
             let added = state.until_end_of_turn.as_slice();
-            (acted() == 0 && (!on || matches!(added, [crate::state::TemporaryEffect::CantBlock { target }] if *target == id)),
-                usize::from(on))
+            (acted() == 0 && matches!(added, [crate::state::TemporaryEffect::CantBlock { target }] if *target == id), 1)
         }
+}
+
+/// An until-end-of-turn effect of kind `kind` (one of nine) about
+/// `target`, and whether it is about that permanent: it gets +N/+N, gains
+/// or loses a keyword, can't block, has protection, or is controlled by
+/// another player (CR 611.2c), or gets +N/+N while a source stays; not a
+/// card given flashback in a graveyard (702.34), and not combat damage
+/// prevented this turn, which is about no object.
+fn an_effect(kind: u8, target: crate::ids::ObjectId) -> (crate::state::TemporaryEffect, bool) {
+    use crate::state::TemporaryEffect as T;
+    use crate::types::{CreatureFilter, Keyword, ManaCost};
+    match kind % 9 {
+        0 => (T::ModifyPT { target, power_mod: 1, toughness_mod: -1 }, true),
+        1 => (T::GrantKeyword { target, keyword: Keyword::Flying }, true),
+        2 => (T::RemoveKeyword { target, keyword: Keyword::Defender }, true),
+        3 => (T::CantBlock { target }, true),
+        4 => (T::GrantProtection { target, filter: CreatureFilter::ControlledByOpponent }, true),
+        5 => (T::ChangeControl { target, controller: PlayerId(1), timestamp: 3 }, true),
+        6 => (T::ModifyPTWhileSourceInPlay { target, source: target, power_mod: 1, toughness_mod: 0 }, true),
+        7 => (T::GrantFlashback { target, cost: ManaCost::free() }, false),
+        _ => (T::PreventCombatDamageExcept { filter: CreatureFilter::ControlledByYou, source_name: String::new() }, false),
+    }
+}
+
+/// `prune_effects_on_departed_objects` over effects of the kinds given, in
+/// that order, each about either of two objects (each on the battlefield
+/// or in a graveyard) or one no longer in the game. The kinds are
+/// constants: an effect of a kind the solver left open is dropped, when
+/// pruned, as every kind at once, a creature filter's every variant
+/// included, and the proof ran past eight gigabytes.
+fn pruning<const N: usize>(kinds: [u8; N]) {
+    let (_registry, mut state, blank) = crate::proofs::cards::blank_board();
+    let mut on = [false; 2];
+    let mut ids = [crate::ids::ObjectId(0); 3];
+    for (i, o) in on.iter_mut().enumerate() {
+        *o = kani::any();
+        ids[i] = state.create_object(blank, PlayerId(u8::from(kani::any::<bool>())), if *o { Zone::Battlefield } else { Zone::Graveyard }, Some(2), Some(2));
+    }
+    ids[2] = crate::ids::ObjectId(ids[1].0 + 1);
+    let about: [u8; N] = kani::any();
+    let target = |j: usize| ids[usize::from(about[j] % 3)];
+    for j in 0..N {
+        state.until_end_of_turn.push(an_effect(kinds[j], target(j)).0);
+    }
+    let before = Snapshot::of(&state);
+
+    state.prune_effects_on_departed_objects();
+
+    // Kept, in order: each effect about no permanent, and each about one
+    // still on the battlefield.
+    let mut n = 0;
+    for j in 0..N {
+        let (effect, about_a_permanent) = an_effect(kinds[j], target(j));
+        let on_battlefield = about[j] % 3 < 2 && on[usize::from(about[j] % 3)];
+        if !about_a_permanent || on_battlefield {
+            assert!(state.until_end_of_turn.get(n) == Some(&effect));
+            n += 1;
+        }
+        std::mem::forget(effect);
+    }
+    assert!(state.until_end_of_turn.len() == n);
+    assert!(Snapshot::of(&state).without_until_end_of_turn() == before.without_until_end_of_turn());
+    std::mem::forget(state);
+}
+
+#[kani::proof]
+#[kani::unwind(7)]
+#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+/// An effect that lasts the turn on a permanent that has left the
+/// battlefield applies to nothing, and the card it became is a new object
+/// that must not carry it back (CR 400.7): as each action ends, the engine
+/// ends it. One about no permanent stays. For an effect of each of the
+/// nine kinds, about either object or one gone.
+fn an_effect_on_a_departed_permanent_ends() {
+    match kani::any::<u8>() % 9 {
+        0 => pruning([0]),
+        1 => pruning([1]),
+        2 => pruning([2]),
+        3 => pruning([3]),
+        4 => pruning([4]),
+        5 => pruning([5]),
+        6 => pruning([6]),
+        7 => pruning([7]),
+        _ => pruning([8]),
+    }
+}
+
+#[kani::proof]
+#[kani::unwind(7)]
+#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+/// Of several effects, those that end end and the rest stay, in the order
+/// they were: up to three, a card's flashback among two about permanents,
+/// each about either object or one gone.
+fn effects_on_departed_permanents_end_and_the_rest_stay_in_order() {
+    match kani::any::<u8>() % 4 {
+        0 => pruning([]),
+        1 => pruning([0, 3]),
+        2 => pruning([7, 0]),
+        _ => pruning([0, 7, 3]),
+    }
 }
 
 /// What a card's own effect was asked to do: its source, whether its key
