@@ -1356,6 +1356,24 @@ pub fn each_case(n: u8, proof: impl Fn(u8)) {
     }
 }
 
+/// `proof` for each target [`any_target`] gives, by its place in that
+/// list, a constant in each call: a target the solver chose is an object
+/// or a player it leaves open, an index every later read is a question of.
+pub fn each_target(proof: impl Fn(u8)) {
+    each_case(5, proof);
+}
+
+/// The target at place `i` of [`any_target`]'s list.
+pub fn target_at(objects: [ObjectId; 2], i: u8) -> Target {
+    match i {
+        0 => Target::Object(objects[0]),
+        1 => Target::Object(objects[1]),
+        2 => Target::Player(PlayerId(0)),
+        3 => Target::Player(PlayerId(1)),
+        _ => Target::Illegal,
+    }
+}
+
 /// A card that prints nothing: an object of it has exactly the
 /// characteristics a proof gives it, since an object's characteristics are
 /// its own and its card's (`GameState::colors_of` and the rest).

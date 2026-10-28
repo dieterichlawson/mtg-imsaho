@@ -85,7 +85,7 @@
 //! activated it, its controller as it was activated (CR 113.8); and a card
 //! and a token of any characteristics beside it.
 
-use super::{acted, any_object, any_target, asked_each, asked_for, board, both, card_proof, each_case, each_is, has_subtype, new_ids, prints_where, were, Act, Form, Kinds, Snapshot};
+use super::{acted, any_object, any_target, asked_each, asked_for, board, both, card_proof, each_case, each_is, each_target, has_subtype, new_ids, prints_where, target_at, were, Act, Form, Kinds, Snapshot};
 use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardRegistry, SacrificeCost, TargetFilter, TargetRequirement};
 use crate::damage::DamageKind;
@@ -1465,10 +1465,10 @@ card_proof! {
     /// (CR 706.9a: the exception its copy effect makes), and on nothing
     /// else, a declined Evil Twin being a 0/0 with no ability; costing
     /// {U}{B} and {T}, and targeting a creature with the same name as the
-    /// permanent (the engine's `SameNameAsSource`), which as the card says
-    /// must be a creature on the battlefield. Resolving, its target
-    /// destroyed; its target gone, nothing.
-    fn evil_twin_destroys_a_creature_with_its_name() {
+    /// permanent (the engine's `SameNameAsSource`). Its targets and its
+    /// resolution are the two proofs below: the three in one harness ran
+    /// out of memory at ten gigabytes.
+    fn evil_twin_has_its_ability_only_as_a_copy() {
         let mut b = permanent(Box::new(isd::evil_twin::EvilTwin), &ANY_CREATURE, true);
         let copy: bool = kani::any();
         if copy {
@@ -1489,6 +1489,17 @@ card_proof! {
         } else {
             assert!(defs.is_empty());
         }
+        std::mem::forget(b);
+    }
+}
+
+card_proof! {
+    /// Evil Twin's target: as the card says, a creature on the battlefield
+    /// (the name is the requirement's, the engine's); no player, nothing
+    /// gone.
+    fn evil_twin_targets_a_creature() {
+        let b = permanent(Box::new(isd::evil_twin::EvilTwin), &ANY_CREATURE, true);
+        let twin = isd::evil_twin::EvilTwin;
         for id in b.others {
             let o = b.state.get_object(id).expect("on the board");
             let creature = o.zone == Zone::Battlefield && o.card_types.contains(&CardType::Creature);
@@ -1496,18 +1507,29 @@ card_proof! {
         }
         assert!(!twin.is_valid_target(&b.state, b.you, &Target::Player(b.you), &b.registry));
         assert!(!twin.is_valid_target(&b.state, b.you, &Target::Illegal, &b.registry));
-        let target = any_target(b.others);
-        let before = b.resolve(0, &[target.clone()]);
-        match target {
-            Target::Object(id) => {
-                assert!(asked_for(&[Act::Destroy(id)]));
-            }
-            _ => {
-                assert!(acted() == 0);
-            }
-        }
-        assert!(Snapshot::of(&b.state) == before);
         std::mem::forget(b);
+    }
+}
+
+card_proof! {
+    /// Evil Twin's ability resolving: its target destroyed; its target
+    /// gone, nothing. For each target, a constant in each call.
+    fn evil_twin_destroys_its_target() {
+        each_target(|i| {
+            let mut b = permanent(Box::new(isd::evil_twin::EvilTwin), &ANY_CREATURE, true);
+            let target = target_at(b.others, i);
+            let before = b.resolve(0, &[target.clone()]);
+            match target {
+                Target::Object(id) => {
+                    assert!(asked_for(&[Act::Destroy(id)]));
+                }
+                _ => {
+                    assert!(acted() == 0);
+                }
+            }
+            assert!(Snapshot::of(&b.state) == before);
+            std::mem::forget(b);
+        });
     }
 }
 
