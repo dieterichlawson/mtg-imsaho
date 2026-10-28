@@ -1111,11 +1111,54 @@ pub trait CardBehavior: Send + Sync {
 
 /// A card name to the card that prints it: a `HashMap`, except in the
 /// proofs, where a `HashMap` cannot be built at all (it seeds its hasher
-/// from the operating system) and `crate::vec_map::VecMap` stands in.
+/// from the operating system) and [`NameList`] stands in.
 #[cfg(not(kani))]
 type NameMap = HashMap<String, CardId>;
 #[cfg(kani)]
-type NameMap = crate::vec_map::VecMap<String, CardId>;
+type NameMap = NameList;
+
+/// The proofs' name map: each name with its card, in the order the cards
+/// were registered.
+///
+/// Not a map kept in key order, as `VecMap` is: that finds each name's
+/// place by comparing it with the names before it, and Kani cannot tell
+/// how two names on the heap compare, so every name's place, and every id
+/// read back by position, was the solver's to choose. Nevermore, which
+/// lists the registry's names, ran out of memory in symbolic execution.
+/// The order a `HashMap` gives is no order at all, and nothing reads one
+/// but Nevermore, which sorts.
+#[cfg(kani)]
+struct NameList(Vec<(String, CardId)>);
+
+#[cfg(kani)]
+impl NameList {
+    fn new() -> Self {
+        // Room for every card a proof's board registers, so that no push
+        // reallocates (`proofs::cards::no_growing`).
+        Self(Vec::with_capacity(16))
+    }
+
+    /// Adds `name`. A name is registered once (`card_names_are_unique`),
+    /// which a proof is held to here rather than handled: replacing the
+    /// card under a name already there, as a `HashMap` does, would be a
+    /// write at a place the solver chose.
+    fn insert(&mut self, name: String, id: CardId) {
+        assert!(!self.0.iter().any(|(n, _)| *n == name), "a card name registered twice");
+        self.0.push((name, id));
+    }
+
+    fn get(&self, name: &str) -> Option<&CardId> {
+        self.0.iter().find(|(n, _)| n == name).map(|(_, id)| id)
+    }
+
+    fn keys(&self) -> impl Iterator<Item = &String> {
+        self.0.iter().map(|(n, _)| n)
+    }
+
+    fn iter(&self) -> impl Iterator<Item = (&String, &CardId)> {
+        self.0.iter().map(|(n, id)| (n, id))
+    }
+}
 
 /// Registry mapping `CardIds` to their behavior implementations.
 pub struct CardRegistry {

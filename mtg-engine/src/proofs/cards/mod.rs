@@ -1467,6 +1467,17 @@ impl CardBehavior for Blank {
     }
 }
 
+/// A second card that prints nothing, for a board of two cards alike but
+/// for which card they are. Of a name of its own: a registry holds each
+/// name once.
+pub(crate) struct OtherBlank;
+
+impl CardBehavior for OtherBlank {
+    fn card_data(&self) -> CardData {
+        CardData { name: "Other Blank".into(), ..CardData::default() }
+    }
+}
+
 /// A registry of the blank card and `card`, and a two-player game: the
 /// blank card's id and `card`'s.
 pub fn board(card: Box<dyn CardBehavior>) -> (CardRegistry, GameState, CardId, CardId) {

@@ -34,7 +34,7 @@ use crate::types::Zone;
 /// not. Nothing else changes.
 fn searching_asks_among_the_cards_with_the_quality() {
     let (mut registry, mut state, blank) = blank_board();
-    let other = registry.register(Box::new(crate::proofs::cards::Blank));
+    let other = registry.register(Box::new(crate::proofs::cards::OtherBlank));
     let who = PlayerId(u8::from(kani::any::<bool>()));
     let source = state.create_object(blank, who, Zone::Battlefield, None, None);
     let same: bool = kani::any();
