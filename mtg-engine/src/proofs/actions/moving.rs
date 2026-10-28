@@ -2,10 +2,11 @@
 //! for, and `move_object_under_control`, which `record_move_under` does: a
 //! card put from one zone into another.
 //!
-//! Each zone a card can leave has a proof of its own, for a move into any
-//! zone: the zone it leaves decides what is on the board before the move
-//! (a permanent's tapped status and damage, a spell's cast), and a proof
-//! that left it open would build every zone's board at once.
+//! Each zone a card can leave, and each it can go to, has a proof of its
+//! own: the zone it leaves decides what is on the board before the move
+//! (a permanent's tapped status and damage, a spell's cast), and the zone
+//! it goes to what the move does; a proof that left either open would
+//! build every board, and make every move, at once.
 //!
 //! The board is the blank card's, which prints no replacement effect and no
 //! choice to make as it enters (CR 614.12): what a card that prints one
@@ -42,20 +43,7 @@ fn no_copy(_: &mut GameState, _: crate::ids::ObjectId, _: crate::ids::ObjectId, 
     panic!("a permanent entered as a copy with no copy decided");
 }
 
-/// Any zone.
-fn any_zone() -> Zone {
-    match kani::any::<u8>() {
-        0 => Zone::Library,
-        1 => Zone::Hand,
-        2 => Zone::Battlefield,
-        3 => Zone::Graveyard,
-        4 => Zone::Stack,
-        5 => Zone::Exile,
-        _ => Zone::Command,
-    }
-}
-
-/// A card put from `from` into any zone (CR 400.7). It is then in that
+/// A card put from `from` into `to` (CR 400.7). It is then in that
 /// zone, the move counted and announced (a move within a zone too, which
 /// is how `put_into_library` moves a card within its library). Its
 /// owner's library lists it no longer if it left the library (CR 401.2;
@@ -78,7 +66,7 @@ fn any_zone() -> Zone {
 /// `move_object`, and `move_object_under_control` for a card put onto the
 /// battlefield from elsewhere under either player's control. Nothing else
 /// changes.
-fn moving(from: Zone, who: PlayerId) {
+fn moving(from: Zone, to: Zone, who: PlayerId) {
     let (registry, mut state, blank) = blank_board();
     let other = PlayerId(1 - who.0);
     // Its owner's library and graveyard hold a card each besides it.
@@ -140,7 +128,6 @@ fn moving(from: Zone, who: PlayerId) {
     let set_pt = |object| SetPtEffect { object, power: Some(1), toughness: None, timestamp: 0 };
     state.set_pt_effects = vec![set_pt(id), set_pt(below)];
 
-    let to = any_zone();
     let entered = to == Zone::Battlefield && from != Zone::Battlefield;
     let under_control = (entered && kani::any::<bool>()).then(|| PlayerId(u8::from(kani::any::<bool>())));
     let before = Snapshot::of(&state);
@@ -231,7 +218,7 @@ fn moving(from: Zone, who: PlayerId) {
 }
 
 macro_rules! from_each_zone {
-    ($($name:ident: $zone:ident),* $(,)?) => {$(
+    ($($name:ident: $from:ident => $to:ident),* $(,)?) => {$(
         #[kani::proof]
         #[kani::unwind(7)]
         #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
@@ -240,30 +227,74 @@ macro_rules! from_each_zone {
         #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
         #[kani::stub(crate::replacement::for_entering, unchanged)]
         #[kani::stub(crate::state::GameState::become_copy_of, no_copy)]
-        /// The proof above it, for a card leaving that zone, of either
-        /// player's. The owner is a constant in each call, not left to the
-        /// solver: `move_object` reaches the owner's library and graveyard
-        /// through an index by the owner, and a write through an index the
-        /// solver leaves open makes every later read of either player a
-        /// question of which one it was.
+        /// The proof above it, for a card leaving one zone for another
+        /// (or for the same one), of either player's. The zones and the
+        /// owner are constants in each call, not left to the solver: a
+        /// move to any zone was every move at once, merged, and ran out of
+        /// memory; and `move_object` reaches the owner's library and
+        /// graveyard through an index by the owner, and a write through an
+        /// index the solver leaves open makes every later read of either
+        /// player a question of which one it was.
         fn $name() {
             if kani::any() {
-                moving(Zone::$zone, PlayerId(0));
+                moving(Zone::$from, Zone::$to, PlayerId(0));
             } else {
-                moving(Zone::$zone, PlayerId(1));
+                moving(Zone::$from, Zone::$to, PlayerId(1));
             }
         }
     )*};
 }
 
 from_each_zone! {
-    moving_a_card_from_a_library: Library,
-    moving_a_card_from_a_hand: Hand,
-    moving_a_permanent_from_the_battlefield: Battlefield,
-    moving_a_card_from_a_graveyard: Graveyard,
-    moving_a_spell_from_the_stack: Stack,
-    moving_a_card_from_exile: Exile,
-    moving_a_card_from_the_command_zone: Command,
+    moving_from_library_to_library: Library => Library,
+    moving_from_library_to_hand: Library => Hand,
+    moving_from_library_to_battlefield: Library => Battlefield,
+    moving_from_library_to_graveyard: Library => Graveyard,
+    moving_from_library_to_stack: Library => Stack,
+    moving_from_library_to_exile: Library => Exile,
+    moving_from_library_to_command: Library => Command,
+    moving_from_hand_to_library: Hand => Library,
+    moving_from_hand_to_hand: Hand => Hand,
+    moving_from_hand_to_battlefield: Hand => Battlefield,
+    moving_from_hand_to_graveyard: Hand => Graveyard,
+    moving_from_hand_to_stack: Hand => Stack,
+    moving_from_hand_to_exile: Hand => Exile,
+    moving_from_hand_to_command: Hand => Command,
+    moving_from_battlefield_to_library: Battlefield => Library,
+    moving_from_battlefield_to_hand: Battlefield => Hand,
+    moving_from_battlefield_to_battlefield: Battlefield => Battlefield,
+    moving_from_battlefield_to_graveyard: Battlefield => Graveyard,
+    moving_from_battlefield_to_stack: Battlefield => Stack,
+    moving_from_battlefield_to_exile: Battlefield => Exile,
+    moving_from_battlefield_to_command: Battlefield => Command,
+    moving_from_graveyard_to_library: Graveyard => Library,
+    moving_from_graveyard_to_hand: Graveyard => Hand,
+    moving_from_graveyard_to_battlefield: Graveyard => Battlefield,
+    moving_from_graveyard_to_graveyard: Graveyard => Graveyard,
+    moving_from_graveyard_to_stack: Graveyard => Stack,
+    moving_from_graveyard_to_exile: Graveyard => Exile,
+    moving_from_graveyard_to_command: Graveyard => Command,
+    moving_from_stack_to_library: Stack => Library,
+    moving_from_stack_to_hand: Stack => Hand,
+    moving_from_stack_to_battlefield: Stack => Battlefield,
+    moving_from_stack_to_graveyard: Stack => Graveyard,
+    moving_from_stack_to_stack: Stack => Stack,
+    moving_from_stack_to_exile: Stack => Exile,
+    moving_from_stack_to_command: Stack => Command,
+    moving_from_exile_to_library: Exile => Library,
+    moving_from_exile_to_hand: Exile => Hand,
+    moving_from_exile_to_battlefield: Exile => Battlefield,
+    moving_from_exile_to_graveyard: Exile => Graveyard,
+    moving_from_exile_to_stack: Exile => Stack,
+    moving_from_exile_to_exile: Exile => Exile,
+    moving_from_exile_to_command: Exile => Command,
+    moving_from_command_to_library: Command => Library,
+    moving_from_command_to_hand: Command => Hand,
+    moving_from_command_to_battlefield: Command => Battlefield,
+    moving_from_command_to_graveyard: Command => Graveyard,
+    moving_from_command_to_stack: Command => Stack,
+    moving_from_command_to_exile: Command => Exile,
+    moving_from_command_to_command: Command => Command,
 }
 
 #[kani::proof]
