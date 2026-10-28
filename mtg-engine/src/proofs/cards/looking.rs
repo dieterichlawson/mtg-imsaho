@@ -7,12 +7,11 @@
 //! that question (`engine::actions::choices`), proved here with it, since
 //! nothing else asks it. Over a library of each size up to five cards (so
 //! that one is past the fourth), a harness each, and every answer: each
-//! card of the library, those not looked at among them, each a constant
-//! in its call. A library whose length the solver left open was a list of
-//! every length, and an answer it left open an index into it, which every
-//! read of the question and the answer is then a question of.
+//! card of the library, those not looked at among them. A library whose
+//! length the solver left open was a list of every length, and every read
+//! of the question and the answer a question of which.
 
-use super::{acted, asked_for, board, card_proof, each_case, were, Act, Snapshot};
+use super::{acted, asked_for, board, card_proof, were, Act, Snapshot};
 use crate::actions::ResolvedChoice;
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{AwaitingAction, ResolutionChoiceKind};
@@ -26,8 +25,8 @@ use crate::cards::isd;
 /// an answer that is one of those, it goes to their hand and the rest
 /// of those are milled into their graveyard, in order; an answer that
 /// is not one of them is refused and the question stands. Over a
-/// library of `n` cards, its controller answering with card `answer`.
-fn forbidden_alchemy(n: u8, answer: u8) {
+/// library of `n` cards.
+fn forbidden_alchemy(n: u8) {
     let (registry, mut state, blank, card) = board(Box::new(isd::forbidden_alchemy::ForbiddenAlchemy));
     let mut library = Vec::with_capacity(5);
     for _ in 0..n {
@@ -50,7 +49,7 @@ fn forbidden_alchemy(n: u8, answer: u8) {
                 player: PlayerId(0), source, choice: ResolutionChoiceKind::ChooseFromLookedAt { looked_at, .. },
             }) if *source == spell && *looked_at == looked);
             assert!(asks(&state.awaiting_action) && acted() == 0);
-            let answer = library[usize::from(answer)];
+            let answer = library[usize::from(kani::any::<u8>() % n)];
             let _ = crate::engine::actions::choices::resolve_choice(&mut state, &ResolvedChoice::ChosenCard(answer), &registry);
             if looked.contains(&answer) {
                 let rest: Vec<ObjectId> = looked.iter().copied().filter(|id| *id != answer).collect();
@@ -65,22 +64,13 @@ fn forbidden_alchemy(n: u8, answer: u8) {
     std::mem::forget((registry, state, library, looked));
 }
 
-/// `forbidden_alchemy` over a library of `n` cards, for every answer.
-fn every_answer(n: u8) {
-    if n < 2 {
-        forbidden_alchemy(n, 0);
-    } else {
-        each_case(n, |answer| forbidden_alchemy(n, answer));
-    }
-}
-
 /// The proof above, a harness for each size of library.
 macro_rules! for_each_size {
     ($($name:ident: $n:literal;)*) => {$(
         card_proof! {
             /// The proof above it, for one size of library.
             fn $name() {
-                every_answer($n);
+                forbidden_alchemy($n);
             }
         }
     )*};
