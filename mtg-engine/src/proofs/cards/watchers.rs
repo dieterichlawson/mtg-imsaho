@@ -116,20 +116,28 @@ card_proof! {
 /// subtype, which nothing here reads.
 const CREATURES: Kinds = Kinds { types: &[CardType::Creature], subtypes: &[], keywords: &[] };
 
-card_proof! {
-    /// Mentor of the Meek: triggers for another creature with power 2 or
-    /// less entering under its controller's control, and nothing else
-    /// entering. Its effect is the proof below.
-    fn mentor_of_the_meek_triggers_for_another_small_creature_of_yours() {
-        assert!(triggers(&isd::mentor_of_the_meek::MentorOfTheMeek) == [(TriggerKind::AnyCreatureEnters, None)]);
-        let b = watching_of(Box::new(isd::mentor_of_the_meek::MentorOfTheMeek), false, &CREATURES);
-        let entered = if kani::any() { b.either() } else { b.me };
-        let under = PlayerId(u8::from(kani::any::<bool>()));
-        let power = b.state.effective_power(entered, &b.registry);
-        let fires = b.behavior().should_trigger_on_creature_enters(&b.state, b.me, entered, under, &b.registry);
-        assert!(fires == (entered != b.me && under == b.you && power.is_some_and(|p| p <= 2)));
-        std::mem::forget(b);
-    }
+/// Mentor of the Meek: triggers for another creature with power 2 or less
+/// entering under its controller's control, and nothing else entering.
+/// Its effect is the proof below. For the creature that entered `which`
+/// (the Mentor itself 0, the card 1, the token 2), a constant in each
+/// harness: its power is read through the layers, and with the creature
+/// the solver's, every object's was, and the proof ran out of memory at
+/// four and a half gigabytes in symbolic execution.
+fn mentor_of_the_meek_triggers_for_another_small_creature_of_yours(which: u8) {
+    assert!(triggers(&isd::mentor_of_the_meek::MentorOfTheMeek) == [(TriggerKind::AnyCreatureEnters, None)]);
+    let b = watching_of(Box::new(isd::mentor_of_the_meek::MentorOfTheMeek), false, &CREATURES);
+    let entered = match which { 0 => b.me, 1 => b.others[0], _ => b.others[1] };
+    let under = PlayerId(u8::from(kani::any::<bool>()));
+    let power = b.state.effective_power(entered, &b.registry);
+    let fires = b.behavior().should_trigger_on_creature_enters(&b.state, b.me, entered, under, &b.registry);
+    assert!(fires == (entered != b.me && under == b.you && power.is_some_and(|p| p <= 2)));
+    std::mem::forget(b);
+}
+
+case_by_case! { mentor_of_the_meek_triggers_for_another_small_creature_of_yours;
+    mentor_of_the_meek_does_not_trigger_for_itself: 0,
+    mentor_of_the_meek_triggers_for_a_small_creature_card: 1,
+    mentor_of_the_meek_triggers_for_a_small_creature_token: 2,
 }
 
 /// Mentor of the Meek's effect: its controller is asked whether to pay
