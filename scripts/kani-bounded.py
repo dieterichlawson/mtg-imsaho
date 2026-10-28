@@ -187,6 +187,17 @@ def codegen(harnesses, crate, target):
             p = run(args, cwd=crate, env=env)
     if p.returncode != 0:
         sys.stderr.write(p.stdout[-3000:] + p.stderr[-3000:])
+        if len(harnesses) > 1 and 'SIGKILL' in p.stdout + p.stderr:
+            # Stopped for want of memory: Kani's compiler took 8.4
+            # gigabytes for eight harnesses that each resolve a choice.
+            # Each half alone, so that a batch too big costs a retry, not
+            # its harnesses.
+            half = len(harnesses) // 2
+            first = codegen(harnesses[:half], crate, target)
+            second = codegen(harnesses[half:], crate, target)
+            if first is None and second is None:
+                return None
+            return {**(first or {}), **(second or {})}
         return None
     # The newest metadata names each harness's goto file.
     found = {}
