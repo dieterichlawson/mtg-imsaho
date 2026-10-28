@@ -29,16 +29,15 @@ The rewrite, which changes nothing a Rust program can observe:
   fills it with zero instead (safe Rust never reads padding: derived `==`
   and `Hash` go field by field, and the engine has no `unsafe`);
 - every assignment `x.cases.V := v` of an enum with its own tag field
-  becomes `x.cases := the union of member V, v`, a write of the whole
-  union rather than of one member over its bytes as they were (which CBMC
-  keeps as an update of those bytes, and does not simplify a read of), and
-  one that a read of member V gives back exactly, where the union as bytes
-  would be kept as its widest member. No program reads a variant other
+  becomes `x.cases := bytes of {v, 0...}`, so the bytes of other variants
+  are zero rather than whatever they were. No program reads a variant other
   than the one its tag names. A fieldless variant, only its tag written,
-  has its variants' bytes made zero, so that CBMC knows all of it and
-  propagates it. A niche-encoded enum keeps its tag inside a
-  variant's bytes and is left alone, as is a Rust `union`, whose other
-  bytes are kept by a write. A niche-encoded enum's variant (its tag kept
+  has its variants' bytes made zero too, so that CBMC knows all of a value
+  holding it and propagates it: an Aura's printed effect over
+  `EffectScope::Attached`, boxed as its card, was otherwise cloned as
+  every scope, each filter's every variant with it. A niche-encoded enum
+  keeps its tag inside a variant's bytes and is left alone, as is a Rust
+  `union`, whose other bytes are kept by a write. A niche-encoded enum's variant (its tag kept
   in a field of another variant's bytes) is written as its fields, if it
   has any, and then its tag into the niche: both become one write of the
   whole value, the bytes outside the variant zero, the tag in the
@@ -58,8 +57,7 @@ The rewrite, which changes nothing a Rust program can observe:
   engine's own enums that would be niche-encoded and hold pointers
   (`PendingEffect`, `TargetFilter`, `GameEvent` and the rest marked
   `#[cfg_attr(kani, repr(u8))]`) keep their tag in a field of its own in
-  a Kani build, and each variant is written as the union of its own
-  member (below), read back by that member's name;
+  a Kani build;
 - every heap allocation (CBMC's `malloc`, which Kani's `__rust_alloc`
   calls) is zeroed, as `calloc`'s is. Rust's allocator hands out memory of
   no particular value, and safe Rust never reads memory before writing it
@@ -194,13 +192,16 @@ def rewrite(version, strings, symbols, functions):
             uw, vw = width(ut), (width(vt) if vt is not None else None)
             if uw is None or vw is None or vw > uw:
                 continue
-            # The union as the member written: read by that member's name,
-            # as code reads the variant its tag names, it is the value
-            # written. As bytes, CBMC keeps it as its widest member, and a
-            # read through any other member is simplified only when the
-            # whole value converts to bits, which it does not when it holds
-            # a pointer or bytes never written (a fieldless variant's).
-            whole = gb.Irep(UNION, [rhs], [(K_TYPE, ut), (K_COMPONENT_NAME, named(lhs, K_COMPONENT_NAME))])
+            # As bytes, not as the union of the member written: CBMC splits
+            # a union so built into its members and does not keep the whole,
+            # so the value copied whole (into a `Box`) was unknown.
+            comps, ops = [gb.Irep(EMPTY, [], [(K_NAME, leaf('v')), (K_TYPE, vt)])], [rhs]
+            if uw > vw:
+                tail = gb.Irep(UNSIGNEDBV, [], [(K_WIDTH, leaf(str(uw - vw)))])
+                comps.append(gb.Irep(EMPTY, [], [(K_NAME, leaf('tail')), (K_TYPE, tail)]))
+                ops.append(zero(tail))
+            bytes_of = gb.Irep(STRUCT, ops, [(K_TYPE, gb.Irep(STRUCT, [], [(K_COMPONENTS, gb.Irep(EMPTY, comps, []))]))])
+            whole = gb.Irep(BYTE_EXTRACT, [bytes_of, offset0], [(K_TYPE, ut), (K_BITS_PER_BYTE, leaf('8'))])
             ins[0] = gb.Irep(code.id, [cases, whole], list(code.named))
             variants += 1
 

@@ -750,16 +750,18 @@ sits in memory. What was measured, and what the proofs do about each:
   was cloned as every scope, each filter's every variant included, out of
   memory. In a Kani build the engine's niche-encoded enums are tagged
   (`#[cfg_attr(kani, repr(u8))]`, a change of layout only), and
-  `precise-enums.py` writes each tagged variant as the union of its own
-  member, which a read by that name gives back exactly; makes a fieldless
-  variant's unwritten bytes zero, so that CBMC knows, and propagates, all
-  of a value holding one; and, for the niche-encoded enums left (the
-  standard library's), puts each union's widest variant first (a union's
-  members all start at its first byte, so their order is not the
-  program's) and writes the tag as part of the variant's value. The
-  debuff harness then finished in 75 seconds, which had run out of memory
-  at six gigabytes, and the clone of that effect, boxed or not, in some
-  sixty thousand steps, which had run out of memory at three.
+  `precise-enums.py` makes a fieldless variant's unwritten bytes zero, so
+  that CBMC knows, and propagates, all of a value holding one; and, for
+  the niche-encoded enums left (the standard library's), puts each
+  union's widest variant first (a union's members all start at its first
+  byte, so their order is not the program's) and writes the tag as part
+  of the variant's value. (Writing a tagged variant as the union of its
+  own member instead, which a read by that name gives back exactly, made
+  a value copied whole, into a `Box`, unknown: CBMC splits a union so
+  built into its members and keeps no whole.) The debuff harness then
+  finished in 75 seconds, which had run out of memory at six gigabytes,
+  and the clone of that effect, boxed or not, in some sixty thousand
+  steps, which had run out of memory at three.
 - **CBMC's memory checks.** `kani-bounded.py` leaves out CBMC's pointer,
   bounds and division checks (`--memory-checks` keeps them): that safe
   Rust reads only memory it may is the compiler's guarantee, and Rust's
