@@ -2384,7 +2384,7 @@ const TRIGGER_KINDS: &[TriggerKind] = &[
 ];
 
 /// `face_card_types`, `face_supertypes`, `face_subtypes`, `face_cost`,
-/// `face_name` and `face_color_indicator`, and the registry's `printed_pt`,
+/// `face_flashback_cost`, `face_name` and `face_color_indicator`, and the registry's `printed_pt`,
 /// `printed_back_pt`, `has_back_face`, `printed_back_name` and
 /// `prints_trigger`, read the faces the registry kept
 /// at registration; `face_data` builds the card's
@@ -2425,6 +2425,9 @@ fn the_kept_faces_say_what_face_data_says() {
             }
             if state.face_cost(id, &reg) != data.cost.as_ref() {
                 offenders.push(format!("{name} (transformed {transformed}): mana cost"));
+            }
+            if state.face_flashback_cost(id, &reg) != data.flashback_cost.as_ref() {
+                offenders.push(format!("{name} (transformed {transformed}): flashback cost"));
             }
             if state.face_name(id, &reg) != Some(data.name.as_str()) {
                 offenders.push(format!("{name} (transformed {transformed}): name"));

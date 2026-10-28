@@ -3641,6 +3641,14 @@ impl GameState {
         registry.printed_cost(o.card_id, o.is_transformed)
     }
 
+    /// The flashback cost printed on the object's active face (CR 702.33),
+    /// as [`Self::face_cost`].
+    #[must_use]
+    pub fn face_flashback_cost<'r>(&self, id: ObjectId, registry: &'r crate::cards::CardRegistry) -> Option<&'r crate::types::ManaCost> {
+        let o = self.get_object(id)?;
+        registry.printed_flashback_cost(o.card_id, o.is_transformed)
+    }
+
     /// The name printed on the object's active face, as
     /// [`Self::face_card_types`]; `None` for an object with no registry
     /// entry.

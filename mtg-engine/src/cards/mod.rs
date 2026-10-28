@@ -1175,6 +1175,7 @@ struct PrintedFace {
     subtypes: Vec<String>,
     cost: Option<ManaCost>,
     color_indicator: Vec<Color>,
+    flashback_cost: Option<ManaCost>,
     power: Option<i32>,
     toughness: Option<i32>,
     /// The kind of each triggered ability the face prints, in order.
@@ -1223,6 +1224,7 @@ impl CardRegistry {
                 subtypes: data.subtypes,
                 cost: data.cost,
                 color_indicator: data.color_indicator,
+                flashback_cost: data.flashback_cost,
                 power: data.power,
                 toughness: data.toughness,
                 trigger_kinds: data.triggered_abilities.iter().map(|t| t.kind.clone()).collect(),
@@ -1236,6 +1238,7 @@ impl CardRegistry {
                 subtypes: d.subtypes,
                 cost: d.cost,
                 color_indicator: d.color_indicator,
+                flashback_cost: d.flashback_cost,
                 power: d.power,
                 toughness: d.toughness,
                 trigger_kinds: d.triggered_abilities.iter().map(|t| t.kind.clone()).collect(),
@@ -1341,6 +1344,13 @@ impl CardRegistry {
     #[must_use]
     pub fn printed_cost(&self, id: CardId, transformed: bool) -> Option<&ManaCost> {
         self.printed_face(id, transformed)?.cost.as_ref()
+    }
+
+    /// The flashback cost printed on that face (CR 702.33), as
+    /// [`Self::printed_cost`].
+    #[must_use]
+    pub fn printed_flashback_cost(&self, id: CardId, transformed: bool) -> Option<&ManaCost> {
+        self.printed_face(id, transformed)?.flashback_cost.as_ref()
     }
 
     /// The name printed on that face, as [`Self::printed_card_types`];

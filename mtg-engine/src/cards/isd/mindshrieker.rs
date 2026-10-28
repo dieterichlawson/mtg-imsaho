@@ -63,9 +63,8 @@ impl CardBehavior for Mindshrieker {
             // mills nothing and X never exists.
             let Some(&milled_id) = milled.first() else { return };
             let mana_value = i32::try_from(
-                state.face_data(milled_id, registry)
-                    .and_then(|d| d.cost.map(|c| c.mana_value()))
-                    .unwrap_or(0)
+                state.face_cost(milled_id, registry)
+                    .map_or(0, crate::types::ManaCost::mana_value)
             ).unwrap_or(i32::MAX);
 
             // Two decisions, which used to be one condition (#590).
