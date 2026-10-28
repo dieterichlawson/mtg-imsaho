@@ -7,7 +7,8 @@
 //! size: a library whose length the solver leaves open is one whose cards
 //! move by a distance it leaves open as one is taken out or put in, which
 //! CBMC encodes over the whole buffer, and milling such a library ran it
-//! out of memory.
+//! out of memory. And for each player in a call of its own, as
+//! `each_player` says.
 
 use crate::cards::CardRegistry;
 use crate::events::GameEvent;
@@ -78,9 +79,8 @@ fn a_library<const SIZE: usize>(state: &mut GameState, blank: CardId, who: Playe
 /// anything replaces it (614.1, Laboratory Maniac); no draw is tried after
 /// it. What comes back is how many were drawn. For either player, a
 /// library of `SIZE` cards and N up to four; nothing else changes.
-fn drawing<const SIZE: usize>() {
+fn drawing<const SIZE: usize>(who: PlayerId) {
     let (registry, mut state, blank) = blank_board();
-    let who = PlayerId(u8::from(kani::any::<bool>()));
     let cards = a_library::<SIZE>(&mut state, blank, who);
     let n: usize = kani::any();
     kani::assume(n <= 4);
@@ -108,9 +108,8 @@ fn drawing<const SIZE: usize>() {
 /// or all of them if there are fewer, are put into their graveyard one at a
 /// time, top first, and are what comes back. For either player, a library
 /// of `SIZE` cards and N up to four; nothing else changes.
-fn milling<const SIZE: usize>() {
+fn milling<const SIZE: usize>(who: PlayerId) {
     let (registry, mut state, blank) = blank_board();
-    let who = PlayerId(u8::from(kani::any::<bool>()));
     let cards = a_library::<SIZE>(&mut state, blank, who);
     let n: usize = kani::any();
     kani::assume(n <= 4);
@@ -132,9 +131,8 @@ fn milling<const SIZE: usize>() {
 /// order of a library). A card already in the library moves within it.
 /// For a card of either player's, one of a library of `SIZE` cards or one
 /// in exile, put on top or at the bottom; nothing else changes.
-fn putting<const SIZE: usize>() {
+fn putting<const SIZE: usize>(who: PlayerId) {
     let (registry, mut state, blank) = blank_board();
-    let who = PlayerId(u8::from(kani::any::<bool>()));
     let cards = a_library::<SIZE>(&mut state, blank, who);
     let outside = state.create_object(blank, who, Zone::Exile, None, None);
     let pick: usize = kani::any();
@@ -163,6 +161,20 @@ fn putting<const SIZE: usize>() {
     std::mem::forget((registry, state, expected));
 }
 
+/// `proof` for each player, a constant in each call: the library a card is
+/// taken from or put into is then known, where for a player the solver
+/// chose it is either player's, every move within it a write through a
+/// pointer to one of two buffers, and milling a library of one ran out of
+/// memory at four gigabytes, where so it proves in under three minutes.
+fn each_player(proof: impl Fn(PlayerId)) {
+    let which: bool = kani::any();
+    for p in [false, true] {
+        if which == p {
+            proof(PlayerId(u8::from(p)));
+        }
+    }
+}
+
 macro_rules! for_each_size {
     ($body:ident, $move:path, [$($name:ident: $size:literal),*]) => {$(
         #[kani::proof]
@@ -176,7 +188,7 @@ macro_rules! for_each_size {
         #[kani::stub(crate::replacement::apply, record_empty_draw)]
         /// The proof above it, for a library of that many cards.
         fn $name() {
-            $body::<$size>();
+            each_player($body::<$size>);
         }
     )*};
 }
