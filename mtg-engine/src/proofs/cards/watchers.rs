@@ -26,7 +26,7 @@
 //! own entering ("another") is the engine's (`triggers::collect`), proved
 //! in `proofs::actions`.
 
-use super::{act, acted, any_object, any_target, asked_for, board, card_proof, case_by_case, each_is, kept, triggers, Act, Form, Kinds, Snapshot};
+use super::{act, acted, any_object, any_object_of, any_target, asked_for, board, card_proof, case_by_case, each_is, kept, triggers, Act, Form, Kinds, Snapshot};
 use crate::cards::{AttackInfo, CardBehavior, CardRegistry, TargetRequirement as R, TriggerKind};
 use crate::damage::DamageKind;
 use crate::events::DamageTarget;
@@ -55,6 +55,21 @@ fn watching(card: Box<dyn CardBehavior>, can_be_gone: bool) -> Board {
 
 /// [`watching`]'s board, the other two objects of `kinds`.
 fn watching_of(card: Box<dyn CardBehavior>, can_be_gone: bool, kinds: &Kinds) -> Board {
+    watching_on(card, can_be_gone, |state, blank| {
+        [any_object(state, blank, kinds, Form::Card), any_object(state, blank, kinds, Form::Token)]
+    })
+}
+
+/// [`watching_of`]'s board, the card of exactly `subtypes[0]` and the
+/// token of `subtypes[1]`.
+fn watching_with(card: Box<dyn CardBehavior>, can_be_gone: bool, kinds: &Kinds, subtypes: [&[&str]; 2]) -> Board {
+    watching_on(card, can_be_gone, |state, blank| {
+        [any_object_of(state, blank, kinds, Form::Card, subtypes[0]), any_object_of(state, blank, kinds, Form::Token, subtypes[1])]
+    })
+}
+
+/// The board with the other two objects made by `others`.
+fn watching_on(card: Box<dyn CardBehavior>, can_be_gone: bool, others: impl FnOnce(&mut GameState, CardId) -> [ObjectId; 2]) -> Board {
     let (registry, mut state, blank, card) = board(card);
     let you = PlayerId(u8::from(kani::any::<bool>()));
     let gone = can_be_gone && kani::any();
@@ -66,7 +81,7 @@ fn watching_of(card: Box<dyn CardBehavior>, can_be_gone: bool, kinds: &Kinds) ->
     } else {
         o.controller = you;
     }
-    let others = [any_object(&mut state, blank, kinds, Form::Card), any_object(&mut state, blank, kinds, Form::Token)];
+    let others = others(&mut state, blank);
     Board { registry, state, me, others, you }
 }
 
@@ -269,27 +284,45 @@ card_proof! {
     }
 }
 
-card_proof! {
-    /// Hamlet Captain: triggers as it attacks and as it blocks; +1/+1 until
-    /// end of turn on each other Human creature its controller controls.
-    fn hamlet_captain_pumps_your_other_humans() {
-        assert!(triggers(&isd::hamlet_captain::HamletCaptain) == [(TriggerKind::Attacks, None), (TriggerKind::Blocks, None)]);
-        let mut b = watching(Box::new(isd::hamlet_captain::HamletCaptain), true);
-        let humans = kept(&b.others, |id| {
-            let o = b.get(id);
-            o.zone == Zone::Battlefield && o.controller == b.you && o.card_types.contains(&CardType::Creature) && b.is(id, "Human")
-        });
-        let before = Snapshot::of(&b.state);
-        let card = b.card();
-        let captain = b.registry.get(card).expect("registered");
-        if kani::any() {
-            captain.on_attacks(&mut b.state, b.me, AttackInfo::new(b.me, PlayerId(1 - b.you.0)), &[], &b.registry);
-        } else {
-            captain.on_blocks(&mut b.state, b.me, b.others[0], &b.registry);
-        }
-        let added = &b.state.until_end_of_turn[before.until_end_of_turn()..];
-        assert!(each_is(added, humans.len(), |i| T::ModifyPT { target: humans[i], power_mod: 1, toughness_mod: 1 }) && acted() == 0);
-        assert!(Snapshot::of(&b.state).without_until_end_of_turn() == before.without_until_end_of_turn());
-        std::mem::forget(b);
+/// The subtypes [`hamlet_captain_pumps_your_other_humans`] gives each of
+/// the other two objects: none, Human, or Vampire.
+const HAMLET_SUBTYPES: [&[&str]; 3] = [&[], &["Human"], &["Vampire"]];
+
+/// Hamlet Captain: triggers as it attacks and as it blocks; +1/+1 until
+/// end of turn on each other Human creature its controller controls. With
+/// the other two objects' subtypes those of `HAMLET_SUBTYPES` at `card`
+/// and `token`, a constant in each harness: over subtypes the solver
+/// chose, each object's compared with "Human" byte by byte, the proof ran
+/// out of memory at four and a half gigabytes.
+fn hamlet_captain_pumps_your_other_humans((card, token): (usize, usize)) {
+    assert!(triggers(&isd::hamlet_captain::HamletCaptain) == [(TriggerKind::Attacks, None), (TriggerKind::Blocks, None)]);
+    let mut b = watching_with(Box::new(isd::hamlet_captain::HamletCaptain), true, &PEOPLE, [HAMLET_SUBTYPES[card], HAMLET_SUBTYPES[token]]);
+    let humans = kept(&b.others, |id| {
+        let o = b.get(id);
+        o.zone == Zone::Battlefield && o.controller == b.you && o.card_types.contains(&CardType::Creature) && b.is(id, "Human")
+    });
+    let before = Snapshot::of(&b.state);
+    let card = b.card();
+    let captain = b.registry.get(card).expect("registered");
+    if kani::any() {
+        captain.on_attacks(&mut b.state, b.me, AttackInfo::new(b.me, PlayerId(1 - b.you.0)), &[], &b.registry);
+    } else {
+        captain.on_blocks(&mut b.state, b.me, b.others[0], &b.registry);
     }
+    let added = &b.state.until_end_of_turn[before.until_end_of_turn()..];
+    assert!(each_is(added, humans.len(), |i| T::ModifyPT { target: humans[i], power_mod: 1, toughness_mod: 1 }) && acted() == 0);
+    assert!(Snapshot::of(&b.state).without_until_end_of_turn() == before.without_until_end_of_turn());
+    std::mem::forget(b);
+}
+
+case_by_case! { hamlet_captain_pumps_your_other_humans;
+    hamlet_captain_with_neither_other_object_of_a_subtype: (0, 0),
+    hamlet_captain_with_the_token_a_human: (0, 1),
+    hamlet_captain_with_the_token_a_vampire: (0, 2),
+    hamlet_captain_with_the_card_a_human: (1, 0),
+    hamlet_captain_with_both_humans: (1, 1),
+    hamlet_captain_with_the_card_a_human_and_the_token_a_vampire: (1, 2),
+    hamlet_captain_with_the_card_a_vampire: (2, 0),
+    hamlet_captain_with_the_card_a_vampire_and_the_token_a_human: (2, 1),
+    hamlet_captain_with_both_vampires: (2, 2),
 }
