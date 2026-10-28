@@ -759,7 +759,7 @@ fn apply_effect(state: &mut GameState, index: usize, effect: &DamageEffect, regi
 
 /// Deal settled damage: mark it (or remove loyalty), record who dealt it,
 /// emit the event and the log line, and gain lifelink life.
-fn perform(state: &mut GameState, pd: PendingDamage, registry: &CardRegistry) {
+pub(crate) fn perform(state: &mut GameState, pd: PendingDamage, registry: &CardRegistry) {
     let PendingDamage { source, target, amount, kind, .. } = pd;
     if amount == 0 {
         return;
