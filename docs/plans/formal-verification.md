@@ -736,6 +736,18 @@ sits in memory. What was measured, and what the proofs do about each:
   and is then never queued, the queue's length is open whatever else is
   constant, so the queue is proved with what it hands on recorded, and
   what it hands to (`damage::perform`) on its own.
+- **The cases of one harness.** Making a choice a constant in each call
+  runs each case's symbolic execution in full, and the cases of one
+  harness add up. One case of Traveler's Amulet's board peaked at 2.1
+  gigabytes and passed in four minutes; two in one harness ran out of
+  memory at three, whether run in turn under a guard each, as an `if` and
+  its `else`, or as a `match`; one under a guard alone passed as the
+  bare one did. So a card proof's cases are harnesses of their own
+  (`case_by_case!`, which names one harness per case), and a choice that
+  decides no list's length and no index into the players stays the
+  solver's, in one call: the targets of Avacynian Priest's and Evil
+  Twin's resolutions, which ran out of memory as five cases, pass as one
+  (158 and 213 seconds).
 - **What is never written.** `precise-enums.py` also zeroes every heap
   allocation, as `calloc` does, and the bytes outside a niche-encoded
   enum's variant (its tag kept in another variant's bytes) where Kani
