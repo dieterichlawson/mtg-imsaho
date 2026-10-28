@@ -16,7 +16,7 @@
 //! card is an instant (Lightning Bolt), a sorcery (Lava Axe), the blank
 //! card, or no card at all.
 
-use super::{acted, asked_for, board, card_proof, each_case, triggers, Act, Snapshot};
+use super::{acted, asked_for, board, card_proof, case_by_case, triggers, Act, Snapshot};
 use crate::cards::{CardBehavior, CardRegistry, TriggerKind, TriggerScope};
 use crate::ids::{CardId, ObjectId, PlayerId};
 use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind};
@@ -90,55 +90,63 @@ fn back_triggers(card: &dyn CardBehavior) -> Vec<TriggerKind> {
     back.triggered_abilities.iter().map(|t| t.kind.clone()).collect()
 }
 
-card_proof! {
-    /// Delver of Secrets: at its controller's upkeep, front face up, they
-    /// look at the top card of their library and are asked whether to
-    /// reveal it (with no card there, nothing to look at, nothing asked);
-    /// revealed and an instant or sorcery card, Delver transforms; not
-    /// revealed, or another card, nothing. Back face up, or gone, nothing.
-    fn delver_of_secrets_transforms_on_a_revealed_instant_or_sorcery() {
-        let delver = isd::delver_of_secrets::DelverOfSecrets;
-        assert!(triggers(&delver) == [(TriggerKind::Upkeep, None)] && back_triggers(&delver).is_empty());
-        assert!(delver.step_trigger_scope(&TriggerKind::Upkeep, false) == TriggerScope::Your);
-        // Its controller, and the top card of their library (Lightning
-        // Bolt, Lava Axe, the blank card, or none), are constants in each
-        // call: a card the solver chose is an index into the registry it
-        // leaves open, a library made or not a list of a length it leaves
-        // open, and a controller it chose an index into the players.
-        each_case(8, |case| {
-            let mut b = creature_of(Box::new(isd::delver_of_secrets::DelverOfSecrets), PlayerId(case / 4));
-            // It transforms only as the trigger says, never on its own.
-            assert!(!isd::delver_of_secrets::DelverOfSecrets.should_transform(&b.state, b.me, &b.registry));
-            let bolt = b.registry.register(Box::new(crate::cards::lightning_bolt::LightningBolt));
-            let axe = b.registry.register(Box::new(crate::cards::lava_axe::LavaAxe));
-            let which = case % 4;
-            if which < 3 {
-                let card = match which { 0 => bolt, 1 => axe, _ => CardId(1) };
-                let top = b.state.create_object(card, b.you, Zone::Library, None, None);
-                if b.you == PlayerId(0) {
-                    b.state.players[0].library_order.push(top);
-                } else {
-                    b.state.players[1].library_order.push(top);
-                }
-            }
-            let front_up = b.front_up();
-            let before = b.upkeep();
-            if front_up && which < 3 {
-                assert!(b.asked() && acted() == 0);
-                let yes: bool = kani::any();
-                b.answer(yes);
-                if yes && which < 2 {
-                    assert!(asked_for(&[Act::Transform(b.me)]));
-                } else {
-                    assert!(acted() == 0);
-                }
-            } else {
-                assert!(!b.asked() && acted() == 0);
-            }
-            assert!(Snapshot::of(&b.state) == before);
-            std::mem::forget(b);
-        });
+/// Delver of Secrets: at its controller's upkeep, front face up, they
+/// look at the top card of their library and are asked whether to
+/// reveal it (with no card there, nothing to look at, nothing asked);
+/// revealed and an instant or sorcery card, Delver transforms; not
+/// revealed, or another card, nothing. Back face up, or gone, nothing.
+///
+/// Its controller, and the top card of their library (Lightning
+/// Bolt, Lava Axe, the blank card, or none), are constants in each
+/// harness: a card the solver chose is an index into the registry it
+/// leaves open, a library made or not a list of a length it leaves
+/// open, and a controller it chose an index into the players.
+fn delver_of_secrets_transforms_on_a_revealed_instant_or_sorcery(case: u8) {
+    let delver = isd::delver_of_secrets::DelverOfSecrets;
+    assert!(triggers(&delver) == [(TriggerKind::Upkeep, None)] && back_triggers(&delver).is_empty());
+    assert!(delver.step_trigger_scope(&TriggerKind::Upkeep, false) == TriggerScope::Your);
+    let mut b = creature_of(Box::new(isd::delver_of_secrets::DelverOfSecrets), PlayerId(case / 4));
+    // It transforms only as the trigger says, never on its own.
+    assert!(!isd::delver_of_secrets::DelverOfSecrets.should_transform(&b.state, b.me, &b.registry));
+    let bolt = b.registry.register(Box::new(crate::cards::lightning_bolt::LightningBolt));
+    let axe = b.registry.register(Box::new(crate::cards::lava_axe::LavaAxe));
+    let which = case % 4;
+    if which < 3 {
+        let card = match which { 0 => bolt, 1 => axe, _ => CardId(1) };
+        let top = b.state.create_object(card, b.you, Zone::Library, None, None);
+        if b.you == PlayerId(0) {
+            b.state.players[0].library_order.push(top);
+        } else {
+            b.state.players[1].library_order.push(top);
+        }
     }
+    let front_up = b.front_up();
+    let before = b.upkeep();
+    if front_up && which < 3 {
+        assert!(b.asked() && acted() == 0);
+        let yes: bool = kani::any();
+        b.answer(yes);
+        if yes && which < 2 {
+            assert!(asked_for(&[Act::Transform(b.me)]));
+        } else {
+            assert!(acted() == 0);
+        }
+    } else {
+        assert!(!b.asked() && acted() == 0);
+    }
+    assert!(Snapshot::of(&b.state) == before);
+    std::mem::forget(b);
+}
+
+case_by_case! { delver_of_secrets_transforms_on_a_revealed_instant_or_sorcery;
+    delver_of_secrets_of_the_first_player_over_lightning_bolt: 0,
+    delver_of_secrets_of_the_first_player_over_lava_axe: 1,
+    delver_of_secrets_of_the_first_player_over_a_blank_card: 2,
+    delver_of_secrets_of_the_first_player_over_nothing: 3,
+    delver_of_secrets_of_the_second_player_over_lightning_bolt: 4,
+    delver_of_secrets_of_the_second_player_over_lava_axe: 5,
+    delver_of_secrets_of_the_second_player_over_a_blank_card: 6,
+    delver_of_secrets_of_the_second_player_over_nothing: 7,
 }
 
 card_proof! {
