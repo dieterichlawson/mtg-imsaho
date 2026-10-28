@@ -1141,3 +1141,21 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   call record holds N) gives a mid-draft snapshot in seconds. Next
   time, try the timer flags with a person at the table, and the
   draft-loop's `night.sh` resume path
+- D59 [proposed 2026-10-28, from b107519] the guide with no word cap.
+  `scripts/draft-loop/reflect.py` no longer holds the curator to 700
+  words. It refuses an answer only when it is empty or lacks one of the
+  six headings, and the guide went from 719 words (10-27) to 1,099
+  (10-28). The guide is in every guided seat's system prompt at every
+  pick. Run `reflect.py curate` with `DRAFT_LOOP_CURATOR` pointed at a
+  stub `claude` that answers (a) a 20,000-word guide, (b) the six headings
+  out of order, (c) the headings with the last section cut off mid-sentence,
+  as a reply would be at its output limit, and (d) the headings inside a
+  fence with prose before it. Check which ones are written to `guide.md`
+  and what the night report says. Then pass each kept guide to
+  `mtg-draft-runner --model cc --guide` under the prompt stub
+  (`scripts/measure-draft-prompts.sh`). Measure the system prompt's bytes
+  and the cache writes per guided seat, and check that nothing warns
+  as it grows. CLAUDE.md asks that a prompt change be measured, and b107519
+  measured nothing. Then read the night reports for the guide's word count
+  against `wc -w` (10-28 says 1,075 and the file holds 1,099 with its
+  header).
