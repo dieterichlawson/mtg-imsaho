@@ -170,7 +170,9 @@ shown, `lands plains=7 island=10`, `show`, and `ready` when the deck is
 final; `text <n>` prints a card's rules text (the pack's card while
 drafting, the pool's while building); the server's refusal (`Deck has 39 cards (need at least 40)`) is
 printed as it comes. When a match is paired it prints `Round 1 vs seat 3:
-playing — open http://192.168.1.20:8803/`; a round you sit out is
+playing (game 1)`, with the game's link on a line of its own under it, `open
+http://192.168.1.20:8800/game/8803/<key>/`: through the table's own port and
+carrying the page's key, which a bare game port without one refuses; a round you sit out is
 `Round 2: a bye — counted as a match won`, and the seats show you as
 `bye` (on the page too). Between games it prints `Before game 2 vs seat 3
 (they lead 1-0):` with who chooses, what the opponent has shown and your
