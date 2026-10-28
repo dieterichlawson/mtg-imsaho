@@ -1131,101 +1131,129 @@ card_proof! {
     }
 }
 
-/// `n` cards of the blank card in `p`'s hand, `n` up to 2 and Kani's to
-/// choose; and one in the other player's.
-fn hands(state: &mut GameState, blank: CardId, p: PlayerId) -> Vec<ObjectId> {
+/// `n` cards of the blank card in `p`'s hand, and one in the other
+/// player's.
+fn hands(state: &mut GameState, blank: CardId, p: PlayerId, n: usize) -> Vec<ObjectId> {
     let mut hand = Vec::with_capacity(2);
-    for _ in 0..2 {
-        if kani::any() {
-            hand.push(state.create_object(blank, p, Zone::Hand, None, None));
-        }
+    for _ in 0..n {
+        hand.push(state.create_object(blank, p, Zone::Hand, None, None));
     }
     state.create_object(blank, PlayerId(1 - p.0), Zone::Hand, None, None);
     hand
 }
 
-card_proof! {
-    /// Grimoire of the Dead's abilities: "{1}, {T}, Discard a card", offered
-    /// only with a card in its controller's hand to discard (CR 601.2h: a
-    /// cost that cannot be paid cannot be chosen); and "{T}, Remove three
-    /// study counters ... and sacrifice it", always.
-    fn grimoire_of_the_dead_has_its_abilities() {
-        let mut b = permanent(Box::new(isd::grimoire_of_the_dead::GrimoireOfTheDead), &ANY_CREATURE, false);
-        let you = b.state.get_object(b.me).expect("on the board").controller;
-        let hand = hands(&mut b.state, CardId(1), you);
-        let card = b.card();
-        let defs = std::mem::ManuallyDrop::new(b.registry.get(card).expect("registered").activated_abilities(&b.state, b.me, &b.registry));
-        let discard = Ability { cost: mana(1, &[]), tap: true, ..Ability::default() };
-        let sacrifice = Ability {
-            tap: true, sacrifice: SacrificeCost::SacrificeThis, remove_counters: Some((CounterType::Study, 3)), ..Ability::default()
-        };
-        if hand.is_empty() {
-            assert!(defs.len() == 1 && defs[0].ability_index == 1 && Ability::of(&defs[0]) == sacrifice);
-        } else {
-            assert!(defs.len() == 2 && defs[0].ability_index == 0 && Ability::of(&defs[0]) == discard);
-            assert!(defs[1].ability_index == 1 && Ability::of(&defs[1]) == sacrifice);
+/// Grimoire of the Dead's abilities: "{1}, {T}, Discard a card", offered
+/// only with a card in its controller's hand to discard (CR 601.2h: a cost
+/// that cannot be paid cannot be chosen); and "{T}, Remove three study
+/// counters ... and sacrifice it", always. With `n` cards in the hand of
+/// `you`, who control it.
+fn grimoire_of_the_dead_has_its_abilities_with(n: usize, you: PlayerId) {
+    let mut b = permanent_of(Box::new(isd::grimoire_of_the_dead::GrimoireOfTheDead), &ANY_CREATURE, false, you);
+    let hand = hands(&mut b.state, CardId(1), you, n);
+    let card = b.card();
+    let defs = std::mem::ManuallyDrop::new(b.registry.get(card).expect("registered").activated_abilities(&b.state, b.me, &b.registry));
+    let discard = Ability { cost: mana(1, &[]), tap: true, ..Ability::default() };
+    let sacrifice = Ability {
+        tap: true, sacrifice: SacrificeCost::SacrificeThis, remove_counters: Some((CounterType::Study, 3)), ..Ability::default()
+    };
+    if hand.is_empty() {
+        assert!(defs.len() == 1 && defs[0].ability_index == 1 && Ability::of(&defs[0]) == sacrifice);
+    } else {
+        assert!(defs.len() == 2 && defs[0].ability_index == 0 && Ability::of(&defs[0]) == discard);
+        assert!(defs[1].ability_index == 1 && Ability::of(&defs[1]) == sacrifice);
+    }
+    std::mem::forget((b, hand, discard, sacrifice));
+}
+
+/// Grimoire of the Dead, paying for its first ability: the card in its
+/// controller's hand discarded, or with more than one, they are asked
+/// which (CR 601.2b: the choice is theirs, made while paying), from their
+/// own hand alone. The second ability's costs are the engine's alone
+/// (pinned above). Nothing else. With `n` cards in the hand of `you`, who
+/// control it.
+fn grimoire_of_the_dead_discards_as_a_cost_with(n: usize, you: PlayerId) {
+    let mut b = permanent_of(Box::new(isd::grimoire_of_the_dead::GrimoireOfTheDead), &ANY_CREATURE, false, you);
+    let hand = hands(&mut b.state, CardId(1), you, n);
+    let index = usize::from(kani::any::<bool>());
+    let before = Snapshot::of(&b.state);
+    let card = b.card();
+    b.registry.get(card).expect("registered").pay_activation_cost(&mut b.state, b.me, index, &[], &b.registry);
+    if index == 0 && hand.len() == 1 {
+        assert!(asked_for(&[Act::Discard(hand[0])]) && Snapshot::of(&b.state) == before);
+    } else if index == 0 && hand.len() == 2 {
+        let asked = matches!(&b.state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+            player, source, choice: ResolutionChoiceKind::ChooseCardFromHand {
+                player: from, cards, discard_immediately: true, remaining: 1, ..
+            },
+        }) if *player == you && *from == you && *source == b.me && *cards == hand);
+        assert!(asked && acted() == 0);
+    } else {
+        assert!(acted() == 0 && Snapshot::of(&b.state) == before);
+    }
+    std::mem::forget((b, hand));
+}
+
+/// The proofs above, a harness for each size of hand up to 2, for a
+/// Grimoire either player controls, a constant in each call: a hand whose
+/// size the solver chose is a list of every length, and every card made
+/// after it an id it leaves open; the Grimoire's proofs ran out of memory
+/// at ten gigabytes, and with the sizes in one harness each, and the
+/// controller left open, at four.
+macro_rules! over_each_hand_size {
+    ($($name:ident: $proof:ident($n:literal);)*) => {$(
+        card_proof! {
+            /// The proof above it, for one size of hand.
+            fn $name() {
+                each_case(2, |p| $proof($n, PlayerId(p)));
+            }
         }
-        std::mem::forget((b, hand, discard, sacrifice));
+    )*};
+}
+
+over_each_hand_size! {
+    grimoire_of_the_dead_has_its_abilities_with_an_empty_hand: grimoire_of_the_dead_has_its_abilities_with(0);
+    grimoire_of_the_dead_has_its_abilities_with_a_card_in_hand: grimoire_of_the_dead_has_its_abilities_with(1);
+    grimoire_of_the_dead_has_its_abilities_with_two_cards_in_hand: grimoire_of_the_dead_has_its_abilities_with(2);
+    grimoire_of_the_dead_discards_nothing_from_an_empty_hand: grimoire_of_the_dead_discards_as_a_cost_with(0);
+    grimoire_of_the_dead_discards_its_controllers_only_card: grimoire_of_the_dead_discards_as_a_cost_with(1);
+    grimoire_of_the_dead_asks_which_of_two_cards_to_discard: grimoire_of_the_dead_discards_as_a_cost_with(2);
+}
+
+card_proof! {
+    /// Grimoire of the Dead's first ability resolving: a study counter on
+    /// it, and nothing else.
+    fn grimoire_of_the_dead_puts_a_study_counter_on_itself() {
+        let mut b = permanent(Box::new(isd::grimoire_of_the_dead::GrimoireOfTheDead), &ANY_CREATURE, true);
+        let before = b.resolve(0, &[]);
+        assert!(asked_for(&[Act::Counters(b.me, CounterType::Study, 1)]));
+        assert!(Snapshot::of(&b.state) == before);
+        std::mem::forget(b);
     }
 }
 
 card_proof! {
-    /// Grimoire of the Dead, paying for its first ability: the card in its
-    /// controller's hand discarded, or with more than one, they are asked
-    /// which (CR 601.2b: the choice is theirs, made while paying), from
-    /// their own hand alone. The second ability's costs are the engine's
-    /// alone (pinned above). Nothing else.
-    fn grimoire_of_the_dead_discards_as_a_cost() {
-        let mut b = permanent(Box::new(isd::grimoire_of_the_dead::GrimoireOfTheDead), &ANY_CREATURE, false);
-        let you = b.state.get_object(b.me).expect("on the board").controller;
-        let hand = hands(&mut b.state, CardId(1), you);
-        let index = usize::from(kani::any::<bool>());
-        let before = Snapshot::of(&b.state);
-        let card = b.card();
-        b.registry.get(card).expect("registered").pay_activation_cost(&mut b.state, b.me, index, &[], &b.registry);
-        if index == 0 && hand.len() == 1 {
-            assert!(asked_for(&[Act::Discard(hand[0])]) && Snapshot::of(&b.state) == before);
-        } else if index == 0 && hand.len() == 2 {
-            let asked = matches!(&b.state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
-                player, source, choice: ResolutionChoiceKind::ChooseCardFromHand {
-                    player: from, cards, discard_immediately: true, remaining: 1, ..
-                },
-            }) if *player == you && *from == you && *source == b.me && *cards == hand);
-            assert!(asked && acted() == 0);
-        } else {
-            assert!(acted() == 0 && Snapshot::of(&b.state) == before);
-        }
-        std::mem::forget((b, hand));
-    }
-}
-
-card_proof! {
-    /// Grimoire of the Dead resolving: its first ability, a study counter
-    /// on it; its second, every creature card in every graveyard (no
-    /// token, CR 109.1, and not itself, sacrificed to pay for it, which is
-    /// not a creature) put onto the battlefield under the control of the
-    /// player who activated it, each of them then black and a Zombie
-    /// besides whatever else it is, once (CR 205.1b: in addition to its
-    /// other types), and nothing else made either.
+    /// Grimoire of the Dead's second ability resolving: every creature
+    /// card in every graveyard (no token, CR 109.1, and not itself,
+    /// sacrificed to pay for it, which is not a creature) put onto the
+    /// battlefield under the control of the player who activated it, each
+    /// of them then black and a Zombie besides whatever else it is, once
+    /// (CR 205.1b: in addition to its other types), and nothing else made
+    /// either. Apart from the first ability's proof above: the two in one
+    /// harness ran out of memory at ten gigabytes.
     fn grimoire_of_the_dead_returns_every_creature_card_as_a_black_zombie() {
         let mut b = permanent(Box::new(isd::grimoire_of_the_dead::GrimoireOfTheDead), &ANY_CREATURE, true);
-        let index = usize::from(kani::any::<bool>());
         let returned = b.those(|o| o.zone == Zone::Graveyard && !o.is_token && o.card_types.contains(&CardType::Creature));
         let black = b.others.map(|id| b.state.get_object(id).expect("on the board").colors.contains(&Color::Black));
-        let before = b.resolve(index, &[]);
-        if index == 0 {
-            assert!(asked_for(&[Act::Counters(b.me, CounterType::Study, 1)]));
-        } else {
-            assert!(asked_each(returned.len(), |i| Act::MoveUnder(returned[i], Zone::Battlefield, b.you)));
-            for (i, id) in b.others.iter().enumerate() {
-                let o = b.state.get_object(*id).expect("on the board");
-                let zombies = o.subtypes.iter().filter(|s| *s == "Zombie").count();
-                let blacks = o.colors.iter().filter(|c| **c == Color::Black).count();
-                if returned.contains(id) {
-                    assert!(zombies == 1 && blacks == 1);
-                } else {
-                    assert!(zombies == 0 && (blacks == 1) == black[i]);
-                }
+        let before = b.resolve(1, &[]);
+        assert!(asked_each(returned.len(), |i| Act::MoveUnder(returned[i], Zone::Battlefield, b.you)));
+        for (i, id) in b.others.iter().enumerate() {
+            let o = b.state.get_object(*id).expect("on the board");
+            let zombies = o.subtypes.iter().filter(|s| *s == "Zombie").count();
+            let blacks = o.colors.iter().filter(|c| **c == Color::Black).count();
+            if returned.contains(id) {
+                assert!(zombies == 1 && blacks == 1);
+            } else {
+                assert!(zombies == 0 && (blacks == 1) == black[i]);
             }
         }
         assert!(Snapshot::of(&b.state) == before);
