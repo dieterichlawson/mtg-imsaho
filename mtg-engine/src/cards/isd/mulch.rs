@@ -4,6 +4,23 @@ use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
+/// The names of the objects `.1` that are still in the game, joined by ", ".
+struct Names<'a>(&'a GameState, &'a [ObjectId]);
+
+impl std::fmt::Display for Names<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut first = true;
+        for o in self.1.iter().filter_map(|id| self.0.get_object(*id)) {
+            if !first {
+                f.write_str(", ")?;
+            }
+            f.write_str(&o.name)?;
+            first = false;
+        }
+        Ok(())
+    }
+}
+
 /// Mulch — {1}{G} Sorcery.
 /// Reveal the top four cards of your library. Put all land cards revealed this way
 /// into your hand and the rest into your graveyard.
@@ -35,8 +52,12 @@ impl CardBehavior for Mulch {
         let library = &state.get_player(controller).library_order;
         let revealed: Vec<ObjectId> = library.iter().take(4).copied().collect();
 
-        let mut lands = Vec::new();
-        let mut non_lands = Vec::new();
+        // Each list allocated at the most it can hold: a list that is empty,
+        // and so unallocated, until its first push is one whose allocation
+        // is a question about the board, which a proof of the card has to
+        // take both ways.
+        let mut lands = Vec::with_capacity(revealed.len());
+        let mut non_lands = Vec::with_capacity(revealed.len());
 
         for &card_id in &revealed {
             let is_land = state.has_card_type(card_id, CardType::Land, registry);
@@ -48,12 +69,11 @@ impl CardBehavior for Mulch {
             }
         }
 
-        // Log the reveal.
-        let all_names: Vec<String> = revealed.iter()
-            .filter_map(|id| state.get_object(*id).map(|o| o.name.clone()))
-            .collect();
+        // Log the reveal: the names written as the line is, not copied out
+        // and joined first, which builds strings of lengths the board
+        // decides even where nothing reads the line.
         state.log(crate::state::LogLevel::Event,
-            format!("Mulch revealed: {}", all_names.join(", ")));
+            format!("Mulch revealed: {}", Names(state, &revealed)));
 
         // Lands go to hand.
         for &land_id in &lands {
