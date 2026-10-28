@@ -1877,46 +1877,72 @@ fn resolving_from(source: ObjectId, card: CardId, activator: PlayerId, back: boo
 card_proof! {
     /// Daybreak Ranger: face up, "{T}: This creature deals 2 damage to
     /// target creature with flying"; transformed, Nightfall Predator's
-    /// "{R}, {T}: This creature fights target creature" (CR 701.14a); each
-    /// resolving as the face it was activated from says, whichever face is
-    /// up by then (CR 712.8d-e: Moonmist in response turns no ping into a
-    /// fight); its target gone, nothing.
+    /// "{R}, {T}: This creature fights target creature" (CR 701.14a); off
+    /// the battlefield, neither. Its resolution is the proof below: the two
+    /// in one harness, over a target the solver chose, ran out of memory at
+    /// ten gigabytes. Where it is and which face is up are constants in each
+    /// call: the abilities are a list of a length they decide, read past
+    /// its end if the solver chose them.
+    fn daybreak_ranger_has_its_faces_abilities() {
+        each_case(3, daybreak_ranger_has_its_abilities_placed);
+    }
+}
+
+/// [`daybreak_ranger_has_its_faces_abilities`], with the Ranger in its
+/// owner's graveyard for 0, front face up on the battlefield for 1, and
+/// transformed there for 2.
+fn daybreak_ranger_has_its_abilities_placed(placed: u8) {
+    let mut b = permanent_at(Box::new(isd::daybreak_ranger::DaybreakRanger), &ANY_CREATURE, placed == 0, PlayerId(u8::from(kani::any::<bool>())));
+    let transformed = placed == 2;
+    b.state.get_object_mut(b.me).expect("on the board").is_transformed = transformed;
+    let card = b.card();
+    let defs = std::mem::ManuallyDrop::new(b.registry.get(card).expect("registered").activated_abilities(&b.state, b.me, &b.registry));
+    if !b.on() {
+        assert!(defs.is_empty());
+    } else if transformed {
+        let fight = Ability { cost: mana(0, &[Color::Red]), tap: true, target: Some(TargetRequirement::Creature), ..Ability::default() };
+        assert!(defs.len() == 1 && defs[0].ability_index == 0 && Ability::of(&defs[0]) == fight);
+        std::mem::forget(fight);
+    } else {
+        let ping = Ability {
+            tap: true, target: Some(TargetRequirement::CreatureWithFilter(TargetFilter::HasKeyword(Keyword::Flying))), ..Ability::default()
+        };
+        assert!(defs.len() == 1 && defs[0].ability_index == 0 && Ability::of(&defs[0]) == ping);
+        std::mem::forget(ping);
+    }
+    std::mem::forget(b);
+}
+
+card_proof! {
+    /// Daybreak Ranger's ability resolving as the face it was activated
+    /// from says, whichever face is up by then (CR 712.8d-e: Moonmist in
+    /// response turns no ping into a fight): 2 damage to its target, or a
+    /// fight with it; its target gone, nothing. For each target, a constant
+    /// in each call.
     fn daybreak_ranger_pings_a_flyer_or_nightfall_predator_fights() {
-        let mut b = permanent(Box::new(isd::daybreak_ranger::DaybreakRanger), &ANY_CREATURE, true);
-        let transformed = b.on() && kani::any();
-        b.state.get_object_mut(b.me).expect("on the board").is_transformed = transformed;
-        let card = b.card();
-        let defs = std::mem::ManuallyDrop::new(b.registry.get(card).expect("registered").activated_abilities(&b.state, b.me, &b.registry));
-        if !b.on() {
-            assert!(defs.is_empty());
-        } else if transformed {
-            let fight = Ability { cost: mana(0, &[Color::Red]), tap: true, target: Some(TargetRequirement::Creature), ..Ability::default() };
-            assert!(defs.len() == 1 && defs[0].ability_index == 0 && Ability::of(&defs[0]) == fight);
-            std::mem::forget(fight);
-        } else {
-            let ping = Ability {
-                tap: true, target: Some(TargetRequirement::CreatureWithFilter(TargetFilter::HasKeyword(Keyword::Flying))), ..Ability::default()
-            };
-            assert!(defs.len() == 1 && defs[0].ability_index == 0 && Ability::of(&defs[0]) == ping);
-            std::mem::forget(ping);
-        }
-        let back: bool = kani::any();
-        b.state.resolving_ability = Some(resolving_from(b.me, card, b.you, back));
-        let target = any_target(b.others);
-        let before = b.resolve(0, &[target.clone()]);
-        match target {
-            Target::Object(id) if back => {
-                assert!(asked_for(&[Act::Fight(b.me, id)]));
+        each_target(|i| {
+            let mut b = permanent(Box::new(isd::daybreak_ranger::DaybreakRanger), &ANY_CREATURE, true);
+            let transformed = b.on() && kani::any();
+            b.state.get_object_mut(b.me).expect("on the board").is_transformed = transformed;
+            let card = b.card();
+            let back: bool = kani::any();
+            b.state.resolving_ability = Some(resolving_from(b.me, card, b.you, back));
+            let target = target_at(b.others, i);
+            let before = b.resolve(0, &[target.clone()]);
+            match target {
+                Target::Object(id) if back => {
+                    assert!(asked_for(&[Act::Fight(b.me, id)]));
+                }
+                Target::Object(id) => {
+                    assert!(asked_for(&[Act::Effect(Target::Object(id), PendingEffect::DealDamage { amount: 2, source_id: b.me })]));
+                }
+                _ => {
+                    assert!(acted() == 0);
+                }
             }
-            Target::Object(id) => {
-                assert!(asked_for(&[Act::Effect(Target::Object(id), PendingEffect::DealDamage { amount: 2, source_id: b.me })]));
-            }
-            _ => {
-                assert!(acted() == 0);
-            }
-        }
-        assert!(Snapshot::of(&b.state) == before);
-        std::mem::forget(b);
+            assert!(Snapshot::of(&b.state) == before);
+            std::mem::forget(b);
+        });
     }
 }
 
