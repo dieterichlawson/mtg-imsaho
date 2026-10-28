@@ -104,7 +104,7 @@ use crate::cards::isd;
 /// what it sacrifices, the counters it removes, how many untapped
 /// creatures it taps, what it targets, and the limits on when it may be
 /// activated. Its description is for people.
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Ability {
     pub cost: ManaCost,
     pub tap: bool,
@@ -232,10 +232,18 @@ impl Board {
 
 /// The card's abilities as the engine reads them with its permanent on
 /// the battlefield, a creature having died this turn or not: exactly
-/// `expected(died)`, each at its index.
-fn has_abilities(card: Box<dyn CardBehavior>, expected: impl FnOnce(bool) -> Vec<Ability>) {
+/// `expected(died)`, each at its index. Whether one died is a constant in
+/// each call: the abilities expected may be a list of either length, and
+/// one built for a choice the solver left open is read past its end (as
+/// the lists of expected actions are), which ran Skirsdag High Priest's
+/// proof out of memory at ten gigabytes.
+fn has_abilities(card: fn() -> Box<dyn CardBehavior>, expected: impl Fn(bool) -> Vec<Ability>) {
+    each_case(2, |died| has_abilities_when(card(), died == 1, &expected));
+}
+
+/// [`has_abilities`], a creature having died this turn if `died`.
+fn has_abilities_when(card: Box<dyn CardBehavior>, died: bool, expected: &impl Fn(bool) -> Vec<Ability>) {
     let mut b = permanent(card, &ANY_CREATURE, false);
-    let died: bool = kani::any();
     b.state.creature_died_this_turn = died;
     let card = b.card();
     let defs = std::mem::ManuallyDrop::new(b.registry.get(card).expect("registered").activated_abilities(&b.state, b.me, &b.registry));
@@ -248,8 +256,8 @@ fn has_abilities(card: Box<dyn CardBehavior>, expected: impl FnOnce(bool) -> Vec
 }
 
 /// One ability, whatever has died.
-fn one(ability: Ability) -> impl FnOnce(bool) -> Vec<Ability> {
-    move |_| vec![ability]
+fn one(ability: Ability) -> impl Fn(bool) -> Vec<Ability> {
+    move |_| vec![ability.clone()]
 }
 
 /// The card's one ability as the engine reads it with its permanent on
@@ -268,7 +276,7 @@ macro_rules! abilities {
         $(
             card_proof! {
                 fn $name() {
-                    has_abilities(Box::new($card), $expected);
+                    has_abilities(|| Box::new($card), $expected);
                 }
             }
         )*
