@@ -554,10 +554,12 @@ card_proof! {
 /// each one of several allocations, every Werewolf creature the ability
 /// looks for compared with them byte by byte, and the proof ran out of
 /// memory at ten gigabytes; with the subtypes constant and the four boards
-/// in one harness, at four.
-fn full_moons_rise_regenerates(werewolves: [bool; 2]) {
+/// in one harness, at four; with each board a harness, the player who
+/// activated it left to the solver, at three and a half. That player is a
+/// constant in each harness too (`you`, by index).
+fn full_moons_rise_regenerates((werewolves, you): ([bool; 2], u8)) {
     const CREATURES: Kinds = Kinds { types: &[CardType::Creature], subtypes: &[], keywords: &[] };
-    let mut b = permanent(Box::new(isd::full_moons_rise::FullMoonsRise), &CREATURES, true);
+    let mut b = permanent_of(Box::new(isd::full_moons_rise::FullMoonsRise), &CREATURES, true, PlayerId(you));
     for (id, werewolf) in b.others.into_iter().zip(werewolves) {
         if werewolf {
             b.state.get_object_mut(id).expect("on the board").subtypes = vec!["Werewolf".into()];
@@ -573,10 +575,14 @@ fn full_moons_rise_regenerates(werewolves: [bool; 2]) {
 }
 
 case_by_case! { full_moons_rise_regenerates;
-    full_moons_rise_regenerates_with_no_other_werewolf: [false, false],
-    full_moons_rise_regenerates_with_the_token_a_werewolf: [false, true],
-    full_moons_rise_regenerates_with_the_card_a_werewolf: [true, false],
-    full_moons_rise_regenerates_with_both_werewolves: [true, true],
+    full_moons_rise_regenerates_with_no_other_werewolf_for_the_first_player: ([false, false], 0),
+    full_moons_rise_regenerates_with_the_token_a_werewolf_for_the_first_player: ([false, true], 0),
+    full_moons_rise_regenerates_with_the_card_a_werewolf_for_the_first_player: ([true, false], 0),
+    full_moons_rise_regenerates_with_both_werewolves_for_the_first_player: ([true, true], 0),
+    full_moons_rise_regenerates_with_no_other_werewolf_for_the_second_player: ([false, false], 1),
+    full_moons_rise_regenerates_with_the_token_a_werewolf_for_the_second_player: ([false, true], 1),
+    full_moons_rise_regenerates_with_the_card_a_werewolf_for_the_second_player: ([true, false], 1),
+    full_moons_rise_regenerates_with_both_werewolves_for_the_second_player: ([true, true], 1),
 }
 
 card_proof! {
