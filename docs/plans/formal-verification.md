@@ -681,7 +681,11 @@ sits in memory. What was measured, and what the proofs do about each:
   destroy-all recorder's outcomes, allocated at the length of the ids it
   was handed and cloned for the record, were two more: with both of
   `MAX_LISTED` Paraselene's proof, which had run out of memory at four
-  and a half gigabytes, passed in 242 seconds.
+  and a half gigabytes, passed in 242 seconds. The engine's own list of a player's
+  creatures, which Selfless Cathar, Rally the Peasants, Vampiric Fury
+  and Spare from Evil read, was a filtered `collect` too; allocated at
+  its largest, Selfless Cathar's proof passes in 160 seconds at the cap
+  it had run out of memory at.
 - **An object a zone's listing may hold.** A card that scans a zone
   (Full Moon's Rise: each Werewolf creature its activator controls) is
   handed the zone's objects in a list whose every entry, with each
@@ -727,6 +731,21 @@ sits in memory. What was measured, and what the proofs do about each:
   symbolic execution in 23 seconds, and the solver unfinished at half an
   hour. A graveyard is a few dozen cards; the names seen are now a list,
   the abilities the same and in the same order. No other card hashes.
+- **A clone of a value whose variant is open.** The proofs compared an
+  activated ability with the one expected by building an `Ability` of
+  the engine's, which cloned its target requirement, a type that holds
+  itself; read out of a list built in one branch or the other, it is of
+  a variant the solver leaves open, and the clone went down every shape a
+  requirement can take. It was half of Moorland Haunt's symbolic
+  execution, and where it was when it ran out of memory at four and a
+  half gigabytes (and at ten). `Ability::describes` compares each field
+  where it lies, the expected value on the left: each case of Moorland
+  Haunt's now passes in two minutes.
+- **Names placed by comparing them.** The proofs' card registry kept its
+  names in key order, finding each one's place by comparing it with the
+  others, which on the heap Kani cannot do: every name's place, and every
+  id read back by position, was open. It keeps them in the order the
+  cards were registered (`NameList`), asserting each name is new.
 - **A case in its own harness, and a board in its own case.** The card
   proofs that read a list whose length the board decides (the abilities
   of a card by where it is and which face is up, a hand, a library, the
@@ -943,12 +962,12 @@ Ghoulcaller's Chant, Nevermore, and the ability lists of Grimoire of the
 Dead, Back from the Brink and Moorland Haunt and Ghost Quarter's
 resolution on a permanent, are past four gigabytes even a case to a
 harness, to be run alone at about ten. The results so far were of
-several commits, and the face reads above changed the engine under
-every card, so all 970 harnesses (693 of cards) are being run again at
-one commit, 25dd902: the cards from both ends and the engine's actions
-beside them, at four to four and a half gigabytes, and the 98 card
-harnesses known to need more held for a run alone. This section will
-record which hold at that commit.
+several commits, and the face reads and the name list above changed the
+engine and its proof model under every card, so all 970 harnesses are
+being run again at one commit, 481c7ce: the cards from both ends and the
+engine's actions beside them, at three and a half to four and a half
+gigabytes, and the 30 harnesses known to need more held for a run alone.
+This section will record which hold at that commit.
 
 A counterexample can be of a board no game reaches, which is then the
 board's error and not the card's: the board the counted creatures are
