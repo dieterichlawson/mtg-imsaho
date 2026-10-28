@@ -58,18 +58,22 @@ impl HamletCaptain {
         let controller = crate::cards::helpers::controller_of(state, self_id);
 
         // Find other Human creatures you control.
-        let humans: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller).into_iter()
-            .filter(|o| {
-                state.is_creature(o.id, registry)
-                    && o.id != self_id
-            })
-            // `registry.card_data` always returns FRONT-face data, so a
-            // transformed werewolf still looked Human and got buffed. CR 712.8d:
-            // a DFC on the battlefield has only its current face's
-            // characteristics — `has_subtype` reads that face.
-            .filter(|o| state.has_subtype(o.id, "Human", registry))
-            .map(|o| o.id)
-            .collect();
+        //
+        // `registry.card_data` always returns FRONT-face data, so a
+        // transformed werewolf still looked Human and got buffed. CR 712.8d:
+        // a DFC on the battlefield has only its current face's
+        // characteristics — `has_subtype` reads that face.
+        //
+        // The list is allocated at its largest and filled in a loop: a
+        // filtered `collect` allocates when it keeps its first Human, which
+        // a proof has to take both ways.
+        let battlefield = state.objects_in_zone(Zone::Battlefield, controller);
+        let mut humans: Vec<ObjectId> = Vec::with_capacity(battlefield.len());
+        for o in battlefield {
+            if state.is_creature(o.id, registry) && o.id != self_id && state.has_subtype(o.id, "Human", registry) {
+                humans.push(o.id);
+            }
+        }
 
         for id in &humans {
             state.until_end_of_turn.push(
