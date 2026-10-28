@@ -45,7 +45,7 @@
 //! that the proof covers what the card does with one it no longer finds
 //! where it was.
 
-use super::{acted, any_object, asked_each, asked_for, board, card_proof, were, Act, Form, Kinds, Snapshot};
+use super::{acted, any_object, asked_each, asked_for, board, card_proof, each_case, were, Act, Form, Kinds, Snapshot};
 use crate::actions::Target;
 use crate::cards::{AdditionalCost, CardBehavior, CardRegistry, TargetFilter, TargetRequirement as R};
 use crate::damage::DamageKind;
@@ -553,50 +553,80 @@ card_proof! {
     }
 }
 
-card_proof! {
-    /// Night Terrors: "target player"; the spell's controller chooses a
-    /// nonland card of that player's hand (the only one without being
-    /// asked), which is exiled; with none, nothing. Over a hand of up to
-    /// two cards, each Grizzly Bears or a Forest.
-    fn night_terrors_exiles_a_nonland_card_you_choose_from_their_hand() {
-        let mut b = spell(Box::new(isd::night_terrors::NightTerrors));
-        assert!(*b.requirement() == R::PlayerOnly);
-        let bears = b.registry.register(Box::new(crate::cards::grizzly_bears::GrizzlyBears));
-        let forest = b.registry.register(Box::new(crate::cards::forest::Forest));
-        let player = PlayerId(u8::from(kani::any::<bool>()));
-        let n: u8 = kani::any();
-        kani::assume(n <= 2);
-        let mut nonland = Vec::with_capacity(2);
-        for _ in 0..n {
-            let land: bool = kani::any();
-            let id = b.state.create_object(if land { forest } else { bears }, player, Zone::Hand, None, None);
-            if !land {
-                nonland.push(id);
-            }
+/// A card in a hand a proof makes: Grizzly Bears, a nonland card, or a
+/// Forest, a land.
+#[derive(Clone, Copy)]
+enum InHand {
+    Bears,
+    Forest,
+}
+
+/// Night Terrors: "target player"; the spell's controller chooses a
+/// nonland card of that player's hand (the only one without being asked),
+/// which is exiled; with none, nothing. Over `hand`, top first, of
+/// `player`. The cards and the player are constants: a hand whose length
+/// the solver left open was a list of every length, and a card it left
+/// open an index into the registry it left open, which every read of the
+/// card is then a question of; as for the library cards of
+/// `proofs::cards::activated`, which ran out of memory so.
+fn night_terrors(player: PlayerId, hand: &[InHand]) {
+    let mut b = spell(Box::new(isd::night_terrors::NightTerrors));
+    assert!(*b.requirement() == R::PlayerOnly);
+    let bears = b.registry.register(Box::new(crate::cards::grizzly_bears::GrizzlyBears));
+    let forest = b.registry.register(Box::new(crate::cards::forest::Forest));
+    let mut nonland = Vec::with_capacity(2);
+    for card in hand {
+        let land = matches!(card, InHand::Forest);
+        let id = b.state.create_object(if land { forest } else { bears }, player, Zone::Hand, None, None);
+        if !land {
+            nonland.push(id);
         }
-        let target = if kani::any() { Target::Player(player) } else { Target::Illegal };
-        let before = b.resolve(&[target.clone()]);
-        match (target, nonland.as_slice()) {
-            (Target::Player(_), [only]) => {
-                assert!(asked_for(&[Act::Move(*only, Zone::Exile)]));
-            }
-            (Target::Player(_), [a, c]) => {
-                assert!(asked_for(&[Act::Choose {
-                    source: b.spell, player: PlayerId(0), options: vec![Target::Object(*a), Target::Object(*c)],
-                    effect: PendingEffect::CardEffect { source_id: b.spell, key: String::new() }, optional: false,
-                }]));
-                let chosen = if kani::any() { *a } else { *c };
-                let card = b.get(b.spell).card_id;
-                b.registry.get(card).expect("registered").resolve_card_effect(&mut b.state, b.spell, "", &Target::Object(chosen), &b.registry);
-                assert!(Some(&Act::Move(chosen, Zone::Exile)) == super::act(1) && acted() == 2);
-            }
-            _ => {
-                assert!(acted() == 0);
-            }
-        }
-        assert!(Snapshot::of(&b.state) == before);
-        std::mem::forget((b, nonland));
     }
+    let target = if kani::any() { Target::Player(player) } else { Target::Illegal };
+    let before = b.resolve(&[target.clone()]);
+    match (target, nonland.as_slice()) {
+        (Target::Player(_), [only]) => {
+            assert!(asked_for(&[Act::Move(*only, Zone::Exile)]));
+        }
+        (Target::Player(_), [a, c]) => {
+            assert!(asked_for(&[Act::Choose {
+                source: b.spell, player: PlayerId(0), options: vec![Target::Object(*a), Target::Object(*c)],
+                effect: PendingEffect::CardEffect { source_id: b.spell, key: String::new() }, optional: false,
+            }]));
+            let chosen = if kani::any() { *a } else { *c };
+            let card = b.get(b.spell).card_id;
+            b.registry.get(card).expect("registered").resolve_card_effect(&mut b.state, b.spell, "", &Target::Object(chosen), &b.registry);
+            assert!(Some(&Act::Move(chosen, Zone::Exile)) == super::act(1) && acted() == 2);
+        }
+        _ => {
+            assert!(acted() == 0);
+        }
+    }
+    assert!(Snapshot::of(&b.state) == before);
+    std::mem::forget((b, nonland));
+}
+
+/// The proof above, a harness for each hand of up to two cards, for either
+/// player's.
+macro_rules! over_each_hand {
+    ($($name:ident: $proof:ident[$($card:ident),*];)*) => {$(
+        card_proof! {
+            /// The proof above it, for one hand.
+            fn $name() {
+                each_case(2, |p| $proof(PlayerId(p), &[$(InHand::$card),*]));
+            }
+        }
+    )*};
+}
+
+over_each_hand! {
+    night_terrors_over_an_empty_hand: night_terrors[];
+    night_terrors_over_grizzly_bears: night_terrors[Bears];
+    night_terrors_over_a_forest: night_terrors[Forest];
+    night_terrors_over_grizzly_bears_and_grizzly_bears: night_terrors[Bears, Bears];
+    night_terrors_over_grizzly_bears_and_a_forest: night_terrors[Bears, Forest];
+    night_terrors_over_a_forest_and_grizzly_bears: night_terrors[Forest, Bears];
+    night_terrors_over_a_forest_and_a_forest: night_terrors[Forest, Forest];
 }
 
 card_proof! {
