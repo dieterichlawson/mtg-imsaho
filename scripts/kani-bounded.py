@@ -287,25 +287,37 @@ def solve(cmd, timeout, nrec):
     messages, results, size = [], [], ''
     oom = False
     prop = desc = None
+
+    def value(line):
+        # A line cut short (cbmc stopped at the cap mid-write, or the disk
+        # full) is no value: skipped, where it stopped the whole run.
+        try:
+            return json.loads(line.split(': ', 1)[1].rstrip().rstrip(','))
+        except ValueError:
+            return None
+
     with open(log, errors='replace') as f:
         for line in f:
             if re.search(r'[Oo]ut of memory|bad_alloc', line):
                 oom = True
             if line.startswith('    "messageText": '):
-                text = json.loads(line.split(': ', 1)[1].rstrip().rstrip(','))
-                messages.append([text, None])
+                text = value(line)
+                if isinstance(text, str):
+                    messages.append([text, None])
             elif line.startswith('    "messageType": ') and messages:
-                messages[-1][1] = json.loads(line.split(': ', 1)[1].rstrip().rstrip(','))
+                messages[-1][1] = value(line)
                 if len(messages) > 400:
                     # Only what is said of size, time and errors is kept.
                     messages = [m for m in messages if m[1] == 'ERROR' or re.match(
                         r'size of program|Runtime|.* variables, .* clauses|Invalid User Input', m[0])]
             elif line.startswith('        "description": '):
-                desc = json.loads(line.split(': ', 1)[1].rstrip().rstrip(','))
+                desc = value(line)
             elif line.startswith('        "property": '):
-                prop = json.loads(line.split(': ', 1)[1].rstrip().rstrip(','))
+                prop = value(line)
             elif line.startswith('        "status": ') and prop is not None:
-                results.append((prop, json.loads(line.split(': ', 1)[1].rstrip().rstrip(',')), desc))
+                status = value(line)
+                if status is not None:
+                    results.append((prop, status, desc))
                 prop = desc = None
     if not os.environ.get('KANI_BOUNDED_KEEP'):
         os.remove(log)
