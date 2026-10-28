@@ -704,6 +704,23 @@ sits in memory. What was measured, and what the proofs do about each:
   `names_in_order`, returning the names as they are and asserting they
   are in order, which is what a sort does to such a list; the proof's
   registry, kept in key order under Kani, hands them over so.
+- **A card's whole data built to read one field of it.** `face_data`
+  builds the active face's `CardData`, abilities and all, and a caller
+  asking it one thing (is this a creature card, is it basic, what does
+  it cost) dropped the rest again. A dropped `CardData` whose triggered
+  abilities the solver cannot tell apart is dropped as each shape a
+  target requirement may have, recursively: in the Civilized Scholar
+  profile that was 70 per cent of symbolic execution, from one
+  `is_creature_card`. The engine did the same in its hottest reads: the
+  legend rule's `is_legendary` of every permanent at every check,
+  `subtypes_of`, `colors_of`, `name_of`, a transformed creature's power
+  and toughness, every permanent's triggers when a creature enters or
+  dies, and a transform's test for a back face. The registry keeps each
+  face's printed fields at registration, and those reads now go through
+  `face_card_types`, `face_supertypes`, `face_subtypes`, `face_cost`,
+  `face_name`, `prints_trigger` and the rest, each held to `face_data`
+  for every card face up and face down by
+  `the_kept_faces_say_what_face_data_says`.
 - **A case in its own harness, and a board in its own case.** The card
   proofs that read a list whose length the board decides (the abilities
   of a card by where it is and which face is up, a hand, a library, the
@@ -919,9 +936,13 @@ Tribute to Hunger, Sever the Bloodline, Blasphemous Act, Past in Flames,
 Ghoulcaller's Chant, Nevermore, and the ability lists of Grimoire of the
 Dead, Back from the Brink and Moorland Haunt and Ghost Quarter's
 resolution on a permanent, are past four gigabytes even a case to a
-harness, to be run alone at about ten. Of the 691 card harnesses at the
-last count, 207 hold, and the rest of the pool's are being run; this
-section will record which hold.
+harness, to be run alone at about ten. The results so far were of
+several commits, and the face reads above changed the engine under
+every card, so all 970 harnesses (693 of cards) are being run again at
+one commit, 25dd902: the cards from both ends and the engine's actions
+beside them, at four to four and a half gigabytes, and the 98 card
+harnesses known to need more held for a run alone. This section will
+record which hold at that commit.
 
 A counterexample can be of a board no game reaches, which is then the
 board's error and not the card's: the board the counted creatures are
