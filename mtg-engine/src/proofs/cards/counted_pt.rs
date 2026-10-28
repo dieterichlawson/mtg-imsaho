@@ -29,8 +29,9 @@
 //! "you" is the creature's controller, which off the battlefield is its
 //! owner (CR 108.4, and `move_object` sets it so). Each count is proved
 //! over the creature on the battlefield under either player or in its
-//! owner's graveyard, beside two cards, each either player's, a creature
-//! or not, in a hand, a graveyard or on the battlefield, and a token on the
+//! owner's graveyard, beside two cards, each either player's, a 1/1
+//! creature or not a creature (and with no power and toughness, CR 208.3),
+//! in a hand, a graveyard or on the battlefield, and a token on the
 //! battlefield. Where the engine puts the count among the layers is
 //! `proofs::actions`'.
 
@@ -65,7 +66,14 @@ fn counted(card: Box<dyn CardBehavior>) -> Board {
     for slot in others.iter_mut().take(2) {
         let owner = PlayerId(u8::from(kani::any::<bool>()));
         let zone = match kani::any::<u8>() % 3 { 0 => Zone::Hand, 1 => Zone::Graveyard, _ => Zone::Battlefield };
-        let id = state.create_object(blank, owner, zone, Some(1), Some(1));
+        // A power and toughness for a creature only, as the game gives
+        // them: the engine takes an object with a power for a creature
+        // (`GameState::has_card_type`), and a board giving every card one
+        // had Boneyard Wurm count a non-creature card, a state no game
+        // reaches.
+        let creature: bool = kani::any();
+        let pt = creature.then_some(1);
+        let id = state.create_object(blank, owner, zone, pt, pt);
         if zone == Zone::Graveyard {
             if owner == PlayerId(0) {
                 state.players[0].graveyard_order.push(id);
@@ -75,7 +83,7 @@ fn counted(card: Box<dyn CardBehavior>) -> Board {
         }
         let o = state.get_object_mut(id).expect("just created");
         o.card_types = Vec::with_capacity(1);
-        if kani::any() {
+        if creature {
             o.card_types.push(CardType::Creature);
         }
         *slot = id;
