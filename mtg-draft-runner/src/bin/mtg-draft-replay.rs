@@ -68,8 +68,17 @@ fn main() {
     let get = |flag: &str| args.iter().rposition(|a| a == flag).and_then(|i| args.get(i + 1)).cloned();
     let positions = get("--positions").unwrap_or_else(|| die("--positions <file> is required"));
     let model = get("--model").unwrap_or_else(|| die("--model <spec> is required"));
-    if !args.iter().any(|a| a == "--metered") && !matches!(model.split(':').next(), Some("cc" | "claude-code")) {
-        die(&format!("{model} is a metered seat; pass --metered to spend on it"));
+    // A provider the runner does not know is named as one, before the
+    // metered check: "CC is a metered seat; pass --metered" sent a typo to
+    // the wrong fix, which then failed only after the positions were read
+    // (#922).
+    match model.split(':').next().unwrap_or("") {
+        "cc" | "claude-code" => {}
+        "claude" | "gemini" => if !args.iter().any(|a| a == "--metered") {
+            die(&format!("{model} is a metered seat; pass --metered to spend on it"));
+        },
+        other => die(&format!("model '{model}': unknown provider '{other}' (expected {})",
+            mtg_draft_runner::llm_client::ACCEPTED_PROVIDERS)),
     }
     // The backend expects its key: a run with none panicked at the first
     // position (#903's review).

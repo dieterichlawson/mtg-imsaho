@@ -95,6 +95,18 @@ fn every_kept_pick_replays_as_the_pick_it_was_live() {
         .output()
         .expect("the replay runs");
     assert!(!metered.status.success() && String::from_utf8_lossy(&metered.stderr).contains("--metered"));
+    // A mistyped provider is named as one, with or without --metered, and
+    // is not sent to --metered (#922).
+    for extra in [&[][..], &["--metered"][..]] {
+        let typo = Command::new(env!("CARGO_BIN_EXE_mtg-draft-replay"))
+            .current_dir(repo_root())
+            .args(["--positions", positions.to_str().unwrap(), "--model", "CC"])
+            .args(extra)
+            .output()
+            .expect("the replay runs");
+        let err = String::from_utf8_lossy(&typo.stderr);
+        assert!(!typo.status.success() && err.contains("unknown provider 'CC'") && !err.contains("metered seat"), "{err}");
+    }
     let _ = std::fs::remove_dir_all(&dir);
 }
 

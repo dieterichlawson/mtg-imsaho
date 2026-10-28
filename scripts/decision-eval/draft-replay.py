@@ -85,8 +85,14 @@ def main():
     ap.add_argument("--timeout", type=int, default=900)
     args = ap.parse_args()
     args.bin = os.path.abspath(args.bin)
-    if args.model.split(":")[0] not in ("cc", "claude-code"):
+    # A provider mtg-draft-replay does not know is named as one, not as
+    # metered: "CC is a metered API seat" sent a typo to the wrong fix (#922).
+    provider = args.model.split(":")[0]
+    if provider in ("claude", "gemini"):
         sys.exit(f"draft-replay.py: --model {args.model} is a metered API seat; refusing without an explicit edit")
+    if provider not in ("cc", "claude-code"):
+        sys.exit(f"draft-replay.py: --model {args.model}: unknown provider '{provider}' "
+                 "(expected claude[:model], gemini[:model], claude-code[:model], cc[:model])")
     lines = [l for l in open(args.positions) if l.strip()]
     if args.limit:
         lines = lines[: args.limit]
