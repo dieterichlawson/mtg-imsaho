@@ -467,7 +467,7 @@ pub fn build_options(
     player: PlayerId,
     registry: &CardRegistry,
 ) -> FundingOptions {
-    let pool: BTreeMap<ManaType, u32> = state.get_player(player).mana_pool.mana.clone();
+    let pool: BTreeMap<ManaType, u32> = state.get_player(player).mana_pool.mana.iter().map(|(t, n)| (*t, *n)).collect();
     let pool_total: u32 = pool.values().sum();
 
     // Bucket-building scratch: key -> (category, mana_per_tap, colors, source_ids).

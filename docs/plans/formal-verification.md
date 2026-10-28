@@ -72,7 +72,9 @@ codebase:
   a second; that measurement is why payment moved to Verus.
 - **`BTreeMap`: out of reach.** One insert and lookup proves in five
   seconds; six inserts did not finish in five minutes. Most of the engine's
-  state (`GameState`, `ManaPool`, `CombatState`) is `BTreeMap`s.
+  state (`GameState`, `ManaPool`, `CombatState`) is `BTreeMap`s; a Kani
+  build keeps the objects in a `VecMap` and the counters and mana pools in
+  a `KindMap` instead, each proved an ordered map (below).
 - **CBMC's SMT backend** (`--z3`) crashes on Kani's output (`map::at`) as
   of Kani 0.68.
 
@@ -681,9 +683,10 @@ sits in memory. What was measured, and what the proofs do about each:
 - **Counters.** Adding a counter to a `BTreeMap`, and then to a `VecMap`
   whose two kinds of counter sat in an order the solver left open, ran
   CBMC out of memory: a write at an offset it leaves open makes it follow
-  the buffer as a whole. A Kani build keeps an object's counters in one
-  field per kind (`counter_map`), held to an ordered map keyed by kind
-  by `proofs::counter_map`, and every access is to a field it knows.
+  the buffer as a whole. A Kani build keeps an object's counters, and a
+  player's mana pool, in one slot per kind (`kind_map`: six kinds of
+  counter, six types of mana), held to an ordered map keyed by kind by
+  `proofs::kind_map`, and every access is to a slot it knows.
 - **Which side of `==`.** A derived `==` branches on its left operand's
   variant, and an action recorded at a place in the log the solver leaves
   open is of a variant it leaves open: with it on the left, every
@@ -730,9 +733,6 @@ sits in memory. What was measured, and what the proofs do about each:
   it is not called (`no_copy`): the proof then holds only if no path
   reaches it, and the solver, not symbolic execution, settles that none
   does.
-- **CBMC's memory checks.** `kani-bounded.py` leaves out CBMC's pointer,
-  bounds and division checks (`--memory-checks` keeps them): that safe
-  Rust reads only memory it may is the compiler's guarantee, and Rust's
 - **Which member of a union.** CBMC splits a union into its members and
   keeps a value written as bytes as its widest member, but reads through a
   pointer, or by bytes, through the *first* member with a field where
@@ -760,6 +760,9 @@ sits in memory. What was measured, and what the proofs do about each:
   debuff harness then finished in 75 seconds, which had run out of memory
   at six gigabytes, and the clone of that effect, boxed or not, in some
   sixty thousand steps, which had run out of memory at three.
+- **CBMC's memory checks.** `kani-bounded.py` leaves out CBMC's pointer,
+  bounds and division checks (`--memory-checks` keeps them): that safe
+  Rust reads only memory it may is the compiler's guarantee, and Rust's
   own checks are assertions in the program and stay. Rolling Temblor's
   symbolic execution took half the time without them, with 3876 checks
   left to solve rather than 9670. Freeing stands in as nothing in the

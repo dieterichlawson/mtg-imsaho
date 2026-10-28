@@ -160,13 +160,13 @@ pub type ObjectMap = std::collections::BTreeMap<ObjectId, GameObject>;
 pub type ObjectMap = crate::vec_map::VecMap<ObjectId, GameObject>;
 
 /// The counters on an object: a `BTreeMap`, except in the proofs, which
-/// keep one field per kind (`crate::counter_map` says why). The engine asks
+/// keep one slot per kind (`crate::kind_map` says why). The engine asks
 /// it for `get`, `get_mut`, `insert`, `remove`, `entry(..).or_insert(..)`,
 /// `clear` and iteration in counter order.
 #[cfg(not(kani))]
 pub type CounterMap = std::collections::BTreeMap<crate::types::CounterType, u32>;
 #[cfg(kani)]
-pub type CounterMap = crate::counter_map::CounterMap;
+pub type CounterMap = crate::kind_map::KindMap<crate::types::CounterType>;
 
 /// The complete, immutable game state. Clone to produce new states.
 #[derive(Debug, Clone, Serialize, Deserialize)]

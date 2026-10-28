@@ -212,13 +212,22 @@ impl std::fmt::Display for ManaCost {
 /// game replayed would show (and could spend) mana in a different order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ManaPool {
-    pub mana: std::collections::BTreeMap<ManaType, u32>,
+    pub mana: ManaMap,
 }
+
+/// The mana in a pool, by type: a `BTreeMap`, except in the proofs, which
+/// keep one slot per type (`crate::kind_map` says why). The engine asks it
+/// for `get`, `insert`, `entry(..).or_insert(..)`, `clear` and iteration
+/// in type order.
+#[cfg(not(kani))]
+pub type ManaMap = std::collections::BTreeMap<ManaType, u32>;
+#[cfg(kani)]
+pub type ManaMap = crate::kind_map::KindMap<ManaType>;
 
 impl ManaPool {
     #[must_use]
     pub fn new() -> Self {
-        Self { mana: std::collections::BTreeMap::new() }
+        Self { mana: ManaMap::new() }
     }
 
     pub fn add(&mut self, mana_type: ManaType, amount: u32) {
