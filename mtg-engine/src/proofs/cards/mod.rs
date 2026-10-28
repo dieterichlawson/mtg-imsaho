@@ -994,6 +994,39 @@ macro_rules! card_proof {
 }
 pub(crate) use card_proof;
 
+/// A harness for each case of `proof`, each named, the case a constant: a
+/// case of a card's board is a couple of gigabytes of symbolic execution,
+/// and the cases of one harness add up. One case of Traveler's Amulet
+/// peaked at 2.1 gigabytes and two in one harness ran out of memory at
+/// three, whether as cases in turn or as an `if` and its `else`.
+macro_rules! case_by_case {
+    ($proof:expr; $($name:ident: $case:expr),* $(,)?) => {$(
+        $crate::proofs::cards::card_proof! {
+            /// The proof above it, for one case.
+            fn $name() {
+                ($proof)($case);
+            }
+        }
+    )*};
+    (unwind($n:literal) $proof:expr; $($name:ident: $case:expr),* $(,)?) => {$(
+        $crate::proofs::cards::card_proof! { unwind($n)
+            /// The proof above it, for one case.
+            fn $name() {
+                ($proof)($case);
+            }
+        }
+    )*};
+    (taking_milled $proof:expr; $($name:ident: $case:expr),* $(,)?) => {$(
+        $crate::proofs::cards::card_proof! { taking_milled
+            /// The proof above it, for one case.
+            fn $name() {
+                ($proof)($case);
+            }
+        }
+    )*};
+}
+pub(crate) use case_by_case;
+
 /// A card proof for each [`Form`] an object may take: `NAME::of_a_card`
 /// and `NAME::of_a_token`, each running the body with `form` set.
 macro_rules! for_each_form {
@@ -1346,7 +1379,10 @@ pub fn any_target(objects: [ObjectId; 2]) -> Target {
 
 /// `proof` for each of `n` cases, by number, a constant in each call: a
 /// choice the solver makes that decides an object, a player or a list's
-/// length is an index every later read is a question of.
+/// length is an index every later read is a question of. Each case's
+/// symbolic execution is the whole of it, and the cases add up: for a
+/// card's board, whose case is a couple of gigabytes, [`case_by_case`]
+/// makes each case a harness of its own.
 pub fn each_case(n: u8, proof: impl Fn(u8)) {
     let which: u8 = kani::any();
     for i in 0..n {
@@ -1354,13 +1390,6 @@ pub fn each_case(n: u8, proof: impl Fn(u8)) {
             proof(i);
         }
     }
-}
-
-/// `proof` for each target [`any_target`] gives, by its place in that
-/// list, a constant in each call: a target the solver chose is an object
-/// or a player it leaves open, an index every later read is a question of.
-pub fn each_target(proof: impl Fn(u8)) {
-    each_case(5, proof);
 }
 
 /// The target at place `i` of [`any_target`]'s list.

@@ -85,7 +85,7 @@
 //! activated it, its controller as it was activated (CR 113.8); and a card
 //! and a token of any characteristics beside it.
 
-use super::{acted, any_object, any_target, asked_each, asked_for, board, both, card_proof, each_case, each_is, each_target, has_subtype, new_ids, prints_where, target_at, were, Act, Form, Kinds, Snapshot};
+use super::{acted, any_object, any_target, asked_each, asked_for, board, both, card_proof, case_by_case, each_case, each_is, has_subtype, new_ids, prints_where, target_at, were, Act, Form, Kinds, Snapshot};
 use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardRegistry, SacrificeCost, TargetFilter, TargetRequirement};
 use crate::damage::DamageKind;
@@ -232,13 +232,9 @@ impl Board {
 
 /// The card's abilities as the engine reads them with its permanent on
 /// the battlefield, a creature having died this turn or not: exactly
-/// `expected(died)`, each at its index. Whether one died is a constant in
-/// each call: the abilities expected may be a list of either length, and
-/// one built for a choice the solver left open is read past its end (as
-/// the lists of expected actions are), which ran Skirsdag High Priest's
-/// proof out of memory at ten gigabytes.
-fn has_abilities(card: fn() -> Box<dyn CardBehavior>, expected: impl Fn(bool) -> Vec<Ability>) {
-    each_case(2, |died| has_abilities_when(card(), died == 1, &expected));
+/// `expected(died)`, each at its index.
+fn has_abilities(card: Box<dyn CardBehavior>, expected: impl Fn(bool) -> Vec<Ability>) {
+    has_abilities_when(card, kani::any(), &expected);
 }
 
 /// [`has_abilities`], a creature having died this turn if `died`.
@@ -276,11 +272,27 @@ macro_rules! abilities {
         $(
             card_proof! {
                 fn $name() {
-                    has_abilities(|| Box::new($card), $expected);
+                    has_abilities(Box::new($card), $expected);
                 }
             }
         )*
     };
+}
+
+/// Skirsdag High Priest's morbid ability, after a death and only then: a
+/// harness for each, whether one died a constant in it. Its abilities are
+/// a list of a length that decides, and a list expected of a length the
+/// solver left open is read past its end, as the lists of expected actions
+/// are: in one harness the proof ran out of memory at ten gigabytes.
+fn skirsdag_high_priest_has_its_ability(died: bool) {
+    has_abilities_when(Box::new(isd::skirsdag_high_priest::SkirsdagHighPriest), died, &|died: bool| {
+        if died { vec![Ability { tap: true, tap_creatures: Some(2), ..Ability::default() }] } else { vec![] }
+    });
+}
+
+case_by_case! { skirsdag_high_priest_has_its_ability;
+    skirsdag_high_priest_has_no_ability_without_a_death: false,
+    skirsdag_high_priest_has_its_ability_after_a_death: true,
 }
 
 abilities! {
@@ -312,8 +324,6 @@ abilities! {
         cost: mana(0, &[Color::Red]), tap: true, sacrifice: SacrificeCost::SacrificeCreature,
         target: Some(TargetRequirement::AnyTarget), ..Ability::default()
     }),
-    skirsdag_high_priest_has_its_ability_after_a_death: isd::skirsdag_high_priest::SkirsdagHighPriest
-        => |died: bool| if died { vec![Ability { tap: true, tap_creatures: Some(2), ..Ability::default() }] } else { vec![] },
     stitchers_apprentice_has_its_ability: isd::stitchers_apprentice::StitchersApprentice
         => one(Ability { cost: mana(1, &[Color::Blue]), tap: true, ..Ability::default() }),
     tree_of_redemption_has_its_ability: isd::tree_of_redemption::TreeOfRedemption => one(Ability { tap: true, ..Ability::default() }),
@@ -539,15 +549,15 @@ card_proof! {
 
 /// Full Moon's Rise's ability: a regeneration shield on each Werewolf
 /// creature the player who activated it controls as it resolves, and
-/// nothing else. With each of the other two objects a Werewolf or not, and
-/// that player `you`, constants in each call: subtypes the solver chose
-/// among were strings each one of several allocations, every Werewolf
-/// creature the ability looks for compared with them byte by byte, and the
-/// proof ran out of memory at ten gigabytes; with the subtypes constant
-/// and the four boards in one harness, at four.
-fn full_moons_rise_regenerates(werewolves: [bool; 2], you: PlayerId) {
+/// nothing else. With each of the other two objects a Werewolf or not, a
+/// constant in each harness: subtypes the solver chose among were strings
+/// each one of several allocations, every Werewolf creature the ability
+/// looks for compared with them byte by byte, and the proof ran out of
+/// memory at ten gigabytes; with the subtypes constant and the four boards
+/// in one harness, at four.
+fn full_moons_rise_regenerates(werewolves: [bool; 2]) {
     const CREATURES: Kinds = Kinds { types: &[CardType::Creature], subtypes: &[], keywords: &[] };
-    let mut b = permanent_of(Box::new(isd::full_moons_rise::FullMoonsRise), &CREATURES, true, you);
+    let mut b = permanent(Box::new(isd::full_moons_rise::FullMoonsRise), &CREATURES, true);
     for (id, werewolf) in b.others.into_iter().zip(werewolves) {
         if werewolf {
             b.state.get_object_mut(id).expect("on the board").subtypes = vec!["Werewolf".into()];
@@ -562,24 +572,11 @@ fn full_moons_rise_regenerates(werewolves: [bool; 2], you: PlayerId) {
     std::mem::forget((b, shielded));
 }
 
-/// The proof above, a harness for each pair of the card and the token
-/// Werewolves or not, for either player activating it.
-macro_rules! over_each_pair {
-    ($($name:ident: $proof:ident[$card:literal, $token:literal];)*) => {$(
-        card_proof! {
-            /// The proof above it, for one pair.
-            fn $name() {
-                each_case(2, |p| $proof([$card, $token], PlayerId(p)));
-            }
-        }
-    )*};
-}
-
-over_each_pair! {
-    full_moons_rise_regenerates_with_no_other_werewolf: full_moons_rise_regenerates[false, false];
-    full_moons_rise_regenerates_with_the_token_a_werewolf: full_moons_rise_regenerates[false, true];
-    full_moons_rise_regenerates_with_the_card_a_werewolf: full_moons_rise_regenerates[true, false];
-    full_moons_rise_regenerates_with_both_werewolves: full_moons_rise_regenerates[true, true];
+case_by_case! { full_moons_rise_regenerates;
+    full_moons_rise_regenerates_with_no_other_werewolf: [false, false],
+    full_moons_rise_regenerates_with_the_token_a_werewolf: [false, true],
+    full_moons_rise_regenerates_with_the_card_a_werewolf: [true, false],
+    full_moons_rise_regenerates_with_both_werewolves: [true, true],
 }
 
 card_proof! {
@@ -699,26 +696,21 @@ card_proof! {
     }
 }
 
-card_proof! {
-    /// Traveler's Amulet: the player who activated it searches their
-    /// library for a basic land card (the basic lands in it, in library
-    /// order) to put into their hand, untapped, and must; the search
-    /// reveals and shuffles (`proofs::actions`). Over a library of a Forest
-    /// and a nonbasic land card in either order, the first player's, the
-    /// player who activated it either. The order, the library's owner and
-    /// the player who activated it are constants in each call: an order the
-    /// solver chose made each card in the library either card, every read
-    /// of it a question of which, and a player it chose an index into the
-    /// players, through which the card reads the library it searches; the
-    /// proof ran out of memory at ten gigabytes, and with the activator
-    /// alone left open, at four.
-    fn travelers_amulet_searches_for_a_basic_land() {
-        each_case(4, |case| travelers_amulet(case % 2 == 1, PlayerId(case / 2)));
-    }
-}
-
-/// `travelers_amulet_searches_for_a_basic_land`, with the Forest on top if
-/// `forest_first`, activated by `you`.
+/// Traveler's Amulet: the player who activated it searches their
+/// library for a basic land card (the basic lands in it, in library
+/// order) to put into their hand, untapped, and must; the search
+/// reveals and shuffles (`proofs::actions`). Over a library of a Forest
+/// and a nonbasic land card in either order, the first player's, the
+/// player who activated it either. The order, the library's owner and
+/// the player who activated it are constants in each harness: an order
+/// the solver chose made each card in the library either card, every
+/// read of it a question of which, and a player it chose an index into
+/// the players, through which the card reads the library it searches;
+/// the proof ran out of memory at ten gigabytes, and with the activator
+/// alone left open, at four; and the four in one harness, two gigabytes
+/// each, at four.
+///
+/// With the Forest on top if `forest_first`, activated by `you`.
 fn travelers_amulet(forest_first: bool, you: PlayerId) {
     let mut b = permanent_of(Box::new(isd::travelers_amulet::TravelersAmulet), &ANY_CREATURE, true, you);
     let forest_card = b.registry.register(Box::new(crate::cards::forest::Forest));
@@ -733,6 +725,13 @@ fn travelers_amulet(forest_first: bool, you: PlayerId) {
     assert!(asked_for(&[Act::Search { source: b.me, player: b.you, candidates, to: Zone::Hand, tapped: false, optional: false }]));
     assert!(Snapshot::of(&b.state) == before);
     std::mem::forget(b);
+}
+
+case_by_case! { |(forest_first, p)| travelers_amulet(forest_first, PlayerId(p));
+    travelers_amulet_finds_the_forest_on_top_for_the_first_player: (true, 0),
+    travelers_amulet_finds_the_forest_under_a_land_for_the_first_player: (false, 0),
+    travelers_amulet_finds_the_forest_on_top_for_the_second_player: (true, 1),
+    travelers_amulet_finds_the_forest_under_a_land_for_the_second_player: (false, 1),
 }
 
 /// A card in a library a proof makes: Grizzly Bears (a creature card, mana
@@ -841,16 +840,13 @@ fn mindshrieker(cards: &[InLibrary]) {
 /// equal to the greatest mana value among the milled cards." With its
 /// target gone illegal it does nothing, the milling included (CR
 /// 608.2b). Over a library of the cards given, up to two, of mana value 0,
-/// 2 or 5, of the enchantment's controller, either player, a constant in
-/// each call: the card reads the top of its controller's library through
-/// an index by the controller, and with one the solver chose each of these
-/// ran out of memory at four gigabytes, the empty library's included.
-fn heretics_punishment(cards: &[InLibrary]) {
-    each_case(2, |p| heretics_punishment_for(PlayerId(p), cards));
-}
-
-/// [`heretics_punishment`] for an enchantment `you` control.
-fn heretics_punishment_for(you: PlayerId, cards: &[InLibrary]) {
+/// 2 or 5, of the enchantment's controller `you`. The controller is a
+/// constant in each harness: the card reads the top of its controller's
+/// library through an index by the controller, and with one the solver
+/// chose each of these ran out of memory at four gigabytes, the empty
+/// library's included; and the two in one harness, a couple of gigabytes
+/// each, out of four.
+fn heretics_punishment(you: PlayerId, cards: &[InLibrary]) {
     let mut b = permanent_of(Box::new(isd::heretics_punishment::HereticsPunishment), &ANY_CREATURE, true, you);
     let library = library_of(&mut b, you, cards);
     let target = any_target(b.others);
@@ -879,9 +875,8 @@ fn heretics_punishment_for(you: PlayerId, cards: &[InLibrary]) {
 }
 
 /// The library proofs above, a harness for each library: the top card for
-/// Mindshrieker, which mills one; the bottom card, and one above it of
-/// another kind, for Cellar Door, which mills the bottom one; and every
-/// library of up to two for Heretic's Punishment, which mills three.
+/// Mindshrieker, which mills one; and the bottom card, and one above it of
+/// another kind, for Cellar Door, which mills the bottom one.
 macro_rules! over_each_library {
     ($($name:ident: $proof:ident[$($card:ident),*];)*) => {$(
         card_proof! {
@@ -908,19 +903,61 @@ over_each_library! {
     cellar_door_milling_a_blank_card_under_lava_axe_makes_a_zombie_if_a_creature: cellar_door[Axe, Blank];
     cellar_door_milling_grizzly_bears_under_a_blank_card_makes_a_zombie_if_a_creature: cellar_door[Blank, Bears];
     cellar_door_milling_lava_axe_under_a_blank_card_makes_a_zombie_if_a_creature: cellar_door[Blank, Axe];
-    heretics_punishment_over_an_empty_library_deals_nothing: heretics_punishment[];
-    heretics_punishment_milling_grizzly_bears_deals_its_mana_value: heretics_punishment[Bears];
-    heretics_punishment_milling_lava_axe_deals_its_mana_value: heretics_punishment[Axe];
-    heretics_punishment_milling_a_blank_card_deals_its_mana_value: heretics_punishment[Blank];
-    heretics_punishment_milling_grizzly_bears_then_grizzly_bears_deals_the_greater: heretics_punishment[Bears, Bears];
-    heretics_punishment_milling_grizzly_bears_then_lava_axe_deals_the_greater: heretics_punishment[Bears, Axe];
-    heretics_punishment_milling_grizzly_bears_then_a_blank_card_deals_the_greater: heretics_punishment[Bears, Blank];
-    heretics_punishment_milling_lava_axe_then_grizzly_bears_deals_the_greater: heretics_punishment[Axe, Bears];
-    heretics_punishment_milling_lava_axe_then_lava_axe_deals_the_greater: heretics_punishment[Axe, Axe];
-    heretics_punishment_milling_lava_axe_then_a_blank_card_deals_the_greater: heretics_punishment[Axe, Blank];
-    heretics_punishment_milling_a_blank_card_then_grizzly_bears_deals_the_greater: heretics_punishment[Blank, Bears];
-    heretics_punishment_milling_a_blank_card_then_lava_axe_deals_the_greater: heretics_punishment[Blank, Axe];
-    heretics_punishment_milling_a_blank_card_then_a_blank_card_deals_the_greater: heretics_punishment[Blank, Blank];
+}
+
+// Heretic's Punishment, which mills three, over every library of up to two
+// cards, for each controller.
+case_by_case! { |p| heretics_punishment(PlayerId(p), &[]);
+    heretics_punishment_over_an_empty_library_deals_nothing_for_the_first_player: 0,
+    heretics_punishment_over_an_empty_library_deals_nothing_for_the_second_player: 1,
+}
+case_by_case! { |p| heretics_punishment(PlayerId(p), &[InLibrary::Bears]);
+    heretics_punishment_milling_grizzly_bears_deals_its_mana_value_for_the_first_player: 0,
+    heretics_punishment_milling_grizzly_bears_deals_its_mana_value_for_the_second_player: 1,
+}
+case_by_case! { |p| heretics_punishment(PlayerId(p), &[InLibrary::Axe]);
+    heretics_punishment_milling_lava_axe_deals_its_mana_value_for_the_first_player: 0,
+    heretics_punishment_milling_lava_axe_deals_its_mana_value_for_the_second_player: 1,
+}
+case_by_case! { |p| heretics_punishment(PlayerId(p), &[InLibrary::Blank]);
+    heretics_punishment_milling_a_blank_card_deals_its_mana_value_for_the_first_player: 0,
+    heretics_punishment_milling_a_blank_card_deals_its_mana_value_for_the_second_player: 1,
+}
+case_by_case! { |p| heretics_punishment(PlayerId(p), &[InLibrary::Bears, InLibrary::Bears]);
+    heretics_punishment_milling_grizzly_bears_then_grizzly_bears_deals_the_greater_for_the_first_player: 0,
+    heretics_punishment_milling_grizzly_bears_then_grizzly_bears_deals_the_greater_for_the_second_player: 1,
+}
+case_by_case! { |p| heretics_punishment(PlayerId(p), &[InLibrary::Bears, InLibrary::Axe]);
+    heretics_punishment_milling_grizzly_bears_then_lava_axe_deals_the_greater_for_the_first_player: 0,
+    heretics_punishment_milling_grizzly_bears_then_lava_axe_deals_the_greater_for_the_second_player: 1,
+}
+case_by_case! { |p| heretics_punishment(PlayerId(p), &[InLibrary::Bears, InLibrary::Blank]);
+    heretics_punishment_milling_grizzly_bears_then_a_blank_card_deals_the_greater_for_the_first_player: 0,
+    heretics_punishment_milling_grizzly_bears_then_a_blank_card_deals_the_greater_for_the_second_player: 1,
+}
+case_by_case! { |p| heretics_punishment(PlayerId(p), &[InLibrary::Axe, InLibrary::Bears]);
+    heretics_punishment_milling_lava_axe_then_grizzly_bears_deals_the_greater_for_the_first_player: 0,
+    heretics_punishment_milling_lava_axe_then_grizzly_bears_deals_the_greater_for_the_second_player: 1,
+}
+case_by_case! { |p| heretics_punishment(PlayerId(p), &[InLibrary::Axe, InLibrary::Axe]);
+    heretics_punishment_milling_lava_axe_then_lava_axe_deals_the_greater_for_the_first_player: 0,
+    heretics_punishment_milling_lava_axe_then_lava_axe_deals_the_greater_for_the_second_player: 1,
+}
+case_by_case! { |p| heretics_punishment(PlayerId(p), &[InLibrary::Axe, InLibrary::Blank]);
+    heretics_punishment_milling_lava_axe_then_a_blank_card_deals_the_greater_for_the_first_player: 0,
+    heretics_punishment_milling_lava_axe_then_a_blank_card_deals_the_greater_for_the_second_player: 1,
+}
+case_by_case! { |p| heretics_punishment(PlayerId(p), &[InLibrary::Blank, InLibrary::Bears]);
+    heretics_punishment_milling_a_blank_card_then_grizzly_bears_deals_the_greater_for_the_first_player: 0,
+    heretics_punishment_milling_a_blank_card_then_grizzly_bears_deals_the_greater_for_the_second_player: 1,
+}
+case_by_case! { |p| heretics_punishment(PlayerId(p), &[InLibrary::Blank, InLibrary::Axe]);
+    heretics_punishment_milling_a_blank_card_then_lava_axe_deals_the_greater_for_the_first_player: 0,
+    heretics_punishment_milling_a_blank_card_then_lava_axe_deals_the_greater_for_the_second_player: 1,
+}
+case_by_case! { |p| heretics_punishment(PlayerId(p), &[InLibrary::Blank, InLibrary::Blank]);
+    heretics_punishment_milling_a_blank_card_then_a_blank_card_deals_the_greater_for_the_first_player: 0,
+    heretics_punishment_milling_a_blank_card_then_a_blank_card_deals_the_greater_for_the_second_player: 1,
 }
 
 
@@ -1145,10 +1182,11 @@ fn hands(state: &mut GameState, blank: CardId, p: PlayerId, n: usize) -> Vec<Obj
 /// Grimoire of the Dead's abilities: "{1}, {T}, Discard a card", offered
 /// only with a card in its controller's hand to discard (CR 601.2h: a cost
 /// that cannot be paid cannot be chosen); and "{T}, Remove three study
-/// counters ... and sacrifice it", always. With `n` cards in the hand of
-/// `you`, who control it.
-fn grimoire_of_the_dead_has_its_abilities_with(n: usize, you: PlayerId) {
-    let mut b = permanent_of(Box::new(isd::grimoire_of_the_dead::GrimoireOfTheDead), &ANY_CREATURE, false, you);
+/// counters ... and sacrifice it", always. With `n` cards in its
+/// controller's hand.
+fn grimoire_of_the_dead_has_its_abilities_with(n: usize) {
+    let mut b = permanent(Box::new(isd::grimoire_of_the_dead::GrimoireOfTheDead), &ANY_CREATURE, false);
+    let you = b.you;
     let hand = hands(&mut b.state, CardId(1), you, n);
     let card = b.card();
     let defs = std::mem::ManuallyDrop::new(b.registry.get(card).expect("registered").activated_abilities(&b.state, b.me, &b.registry));
@@ -1169,10 +1207,11 @@ fn grimoire_of_the_dead_has_its_abilities_with(n: usize, you: PlayerId) {
 /// controller's hand discarded, or with more than one, they are asked
 /// which (CR 601.2b: the choice is theirs, made while paying), from their
 /// own hand alone. The second ability's costs are the engine's alone
-/// (pinned above). Nothing else. With `n` cards in the hand of `you`, who
-/// control it.
-fn grimoire_of_the_dead_discards_as_a_cost_with(n: usize, you: PlayerId) {
-    let mut b = permanent_of(Box::new(isd::grimoire_of_the_dead::GrimoireOfTheDead), &ANY_CREATURE, false, you);
+/// (pinned above). Nothing else. With `n` cards in its controller's
+/// hand.
+fn grimoire_of_the_dead_discards_as_a_cost_with(n: usize) {
+    let mut b = permanent(Box::new(isd::grimoire_of_the_dead::GrimoireOfTheDead), &ANY_CREATURE, false);
+    let you = b.you;
     let hand = hands(&mut b.state, CardId(1), you, n);
     let index = usize::from(kani::any::<bool>());
     let before = Snapshot::of(&b.state);
@@ -1193,30 +1232,20 @@ fn grimoire_of_the_dead_discards_as_a_cost_with(n: usize, you: PlayerId) {
     std::mem::forget((b, hand));
 }
 
-/// The proofs above, a harness for each size of hand up to 2, for a
-/// Grimoire either player controls, a constant in each call: a hand whose
-/// size the solver chose is a list of every length, and every card made
-/// after it an id it leaves open; the Grimoire's proofs ran out of memory
-/// at ten gigabytes, and with the sizes in one harness each, and the
-/// controller left open, at four.
-macro_rules! over_each_hand_size {
-    ($($name:ident: $proof:ident($n:literal);)*) => {$(
-        card_proof! {
-            /// The proof above it, for one size of hand.
-            fn $name() {
-                each_case(2, |p| $proof($n, PlayerId(p)));
-            }
-        }
-    )*};
+// The proofs above, a harness for each size of hand up to 2: a hand whose
+// size the solver chose is a list of every length, and every card made
+// after it an id it leaves open; the Grimoire's proofs ran out of memory at
+// ten gigabytes, and with the sizes in one harness each, at four.
+case_by_case! { grimoire_of_the_dead_has_its_abilities_with;
+    grimoire_of_the_dead_has_its_abilities_with_an_empty_hand: 0,
+    grimoire_of_the_dead_has_its_abilities_with_a_card_in_hand: 1,
+    grimoire_of_the_dead_has_its_abilities_with_two_cards_in_hand: 2,
 }
 
-over_each_hand_size! {
-    grimoire_of_the_dead_has_its_abilities_with_an_empty_hand: grimoire_of_the_dead_has_its_abilities_with(0);
-    grimoire_of_the_dead_has_its_abilities_with_a_card_in_hand: grimoire_of_the_dead_has_its_abilities_with(1);
-    grimoire_of_the_dead_has_its_abilities_with_two_cards_in_hand: grimoire_of_the_dead_has_its_abilities_with(2);
-    grimoire_of_the_dead_discards_nothing_from_an_empty_hand: grimoire_of_the_dead_discards_as_a_cost_with(0);
-    grimoire_of_the_dead_discards_its_controllers_only_card: grimoire_of_the_dead_discards_as_a_cost_with(1);
-    grimoire_of_the_dead_asks_which_of_two_cards_to_discard: grimoire_of_the_dead_discards_as_a_cost_with(2);
+case_by_case! { grimoire_of_the_dead_discards_as_a_cost_with;
+    grimoire_of_the_dead_discards_nothing_from_an_empty_hand: 0,
+    grimoire_of_the_dead_discards_its_controllers_only_card: 1,
+    grimoire_of_the_dead_asks_which_of_two_cards_to_discard: 2,
 }
 
 card_proof! {
@@ -1322,29 +1351,19 @@ impl Brink {
     }
 }
 
-card_proof! {
-    /// Back from the Brink's abilities: one for each creature card in its
-    /// controller's graveyard (no token, CR 109.1), two cards of one name
-    /// being one ability (the same cost, the same token, CR 707.2), each
-    /// costing that card's mana cost with X as 0 (CR 107.3e: no X is
-    /// announced, the card not being cast) and activated only as a
-    /// sorcery; the ability's index names the card. None for a player
-    /// with no creature card in their graveyard.
-    fn back_from_the_brink_has_an_ability_for_each_creature_card_in_your_graveyard() {
-        let which: u8 = kani::any();
-        for (i, (second_dead, blank_creature)) in [(false, false), (false, true), (true, false), (true, true)].into_iter().enumerate() {
-            if usize::from(which) == i {
-                back_from_the_brink_has_its_abilities(second_dead, blank_creature);
-            }
-        }
-    }
-}
-
-/// `back_from_the_brink_has_an_ability_for_each_creature_card_in_your_graveyard`,
-/// for one board, a constant in each call: a board the solver chose had a
-/// graveyard of every length, and so a list of abilities of every length,
-/// each compared, and the proof ran out of memory at ten gigabytes.
-fn back_from_the_brink_has_its_abilities(second_dead: bool, blank_creature: bool) {
+/// Back from the Brink's abilities: one for each creature card in its
+/// controller's graveyard (no token, CR 109.1), two cards of one name
+/// being one ability (the same cost, the same token, CR 707.2), each
+/// costing that card's mana cost with X as 0 (CR 107.3e: no X is
+/// announced, the card not being cast) and activated only as a
+/// sorcery; the ability's index names the card. None for a player
+/// with no creature card in their graveyard.
+///
+/// For one board, a constant in each harness: a board the solver chose had
+/// a graveyard of every length, and so a list of abilities of every
+/// length, each compared, and the proof ran out of memory at ten
+/// gigabytes; the four boards in one harness, at four.
+fn back_from_the_brink_has_its_abilities((second_dead, blank_creature): (bool, bool)) {
     let b = brink_shaped(second_dead, blank_creature);
     let defs = std::mem::ManuallyDrop::new(b.registry.get(b.card()).expect("registered").activated_abilities(&b.state, b.me, &b.registry));
     if b.you == PlayerId(1) {
@@ -1362,6 +1381,13 @@ fn back_from_the_brink_has_its_abilities(second_dead: bool, blank_creature: bool
         std::mem::forget(expected);
     }
     std::mem::forget(b);
+}
+
+case_by_case! { back_from_the_brink_has_its_abilities;
+    back_from_the_brink_has_an_ability_for_one_mikaeus: (false, false),
+    back_from_the_brink_has_an_ability_for_one_mikaeus_and_a_creature_card: (false, true),
+    back_from_the_brink_has_one_ability_for_two_mikaeus: (true, false),
+    back_from_the_brink_has_one_ability_for_two_mikaeus_and_one_for_a_creature_card: (true, true),
 }
 
 card_proof! {
@@ -1460,37 +1486,47 @@ card_proof! {
     }
 }
 
-card_proof! {
-    /// Evil Twin's ability: on a permanent that entered as a copy with it
-    /// (CR 706.9a: the exception its copy effect makes), and on nothing
-    /// else, a declined Evil Twin being a 0/0 with no ability; costing
-    /// {U}{B} and {T}, and targeting a creature with the same name as the
-    /// permanent (the engine's `SameNameAsSource`). Its targets and its
-    /// resolution are the two proofs below: the three in one harness ran
-    /// out of memory at ten gigabytes.
-    fn evil_twin_has_its_ability_only_as_a_copy() {
-        let mut b = permanent(Box::new(isd::evil_twin::EvilTwin), &ANY_CREATURE, true);
-        let copy: bool = kani::any();
-        if copy {
-            let card = b.card();
-            b.state.get_object_mut(b.me).expect("on the board").copy_grantor = Some(card);
-        }
+/// Evil Twin's ability: on a permanent that entered as a copy with it
+/// (CR 706.9a: the exception its copy effect makes), and on nothing
+/// else, a declined Evil Twin being a 0/0 with no ability; costing
+/// {U}{B} and {T}, and targeting a creature with the same name as the
+/// permanent (the engine's `SameNameAsSource`). Its targets and its
+/// resolution are the two proofs below: the three in one harness ran
+/// out of memory at ten gigabytes. Whether it is a copy, and whether it
+/// is on the battlefield, are constants in each harness: they decide the
+/// length of the list of abilities, read past its end if the solver
+/// chose them, and the proof ran out of memory at four gigabytes so.
+///
+/// For an Evil Twin that entered as a copy if `copy`, gone from the
+/// battlefield if `gone`.
+fn evil_twin_has_its_ability((copy, gone): (bool, bool)) {
+    let mut b = permanent_at(Box::new(isd::evil_twin::EvilTwin), &ANY_CREATURE, gone, PlayerId(u8::from(kani::any::<bool>())));
+    if copy {
         let card = b.card();
-        let twin = b.registry.get(card).expect("registered");
-        let defs = std::mem::ManuallyDrop::new(twin.activated_abilities(&b.state, b.me, &b.registry));
-        if copy && b.on() {
-            let ability = Ability {
-                cost: mana(0, &[Color::Blue, Color::Black]), tap: true,
-                target: Some(TargetRequirement::CreatureWithFilter(TargetFilter::SameNameAsSource)),
-                ..Ability::default()
-            };
-            assert!(defs.len() == 1 && defs[0].ability_index == 0 && Ability::of(&defs[0]) == ability);
-            std::mem::forget(ability);
-        } else {
-            assert!(defs.is_empty());
-        }
-        std::mem::forget(b);
+        b.state.get_object_mut(b.me).expect("on the board").copy_grantor = Some(card);
     }
+    let card = b.card();
+    let twin = b.registry.get(card).expect("registered");
+    let defs = std::mem::ManuallyDrop::new(twin.activated_abilities(&b.state, b.me, &b.registry));
+    if copy && b.on() {
+        let ability = Ability {
+            cost: mana(0, &[Color::Blue, Color::Black]), tap: true,
+            target: Some(TargetRequirement::CreatureWithFilter(TargetFilter::SameNameAsSource)),
+            ..Ability::default()
+        };
+        assert!(defs.len() == 1 && defs[0].ability_index == 0 && Ability::of(&defs[0]) == ability);
+        std::mem::forget(ability);
+    } else {
+        assert!(defs.is_empty());
+    }
+    std::mem::forget(b);
+}
+
+case_by_case! { evil_twin_has_its_ability;
+    evil_twin_as_a_copy_has_its_ability: (true, false),
+    evil_twin_declined_has_no_ability: (false, false),
+    evil_twin_as_a_copy_gone_has_no_ability: (true, true),
+    evil_twin_declined_gone_has_no_ability: (false, true),
 }
 
 card_proof! {
@@ -1513,23 +1549,21 @@ card_proof! {
 
 card_proof! {
     /// Evil Twin's ability resolving: its target destroyed; its target
-    /// gone, nothing. For each target, a constant in each call.
+    /// gone, nothing.
     fn evil_twin_destroys_its_target() {
-        each_target(|i| {
-            let mut b = permanent(Box::new(isd::evil_twin::EvilTwin), &ANY_CREATURE, true);
-            let target = target_at(b.others, i);
-            let before = b.resolve(0, &[target.clone()]);
-            match target {
-                Target::Object(id) => {
-                    assert!(asked_for(&[Act::Destroy(id)]));
-                }
-                _ => {
-                    assert!(acted() == 0);
-                }
+        let mut b = permanent(Box::new(isd::evil_twin::EvilTwin), &ANY_CREATURE, true);
+        let target = any_target(b.others);
+        let before = b.resolve(0, &[target.clone()]);
+        match target {
+            Target::Object(id) => {
+                assert!(asked_for(&[Act::Destroy(id)]));
             }
-            assert!(Snapshot::of(&b.state) == before);
-            std::mem::forget(b);
-        });
+            _ => {
+                assert!(acted() == 0);
+            }
+        }
+        assert!(Snapshot::of(&b.state) == before);
+        std::mem::forget(b);
     }
 }
 
@@ -1579,23 +1613,17 @@ card_proof! {
     }
 }
 
-card_proof! { unwind(8)
-    /// Ghost Quarter: its target destroyed, and then, destroyed or not
-    /// (the card's ruling), its controller as it was may search their
-    /// library for a basic land card to put onto the battlefield untapped:
-    /// offered every basic land card in that library, in order ("may": the
-    /// search is optional, and its shuffle the search's). Its target gone,
-    /// nothing. Over a library of a Forest and a nonbasic land card in
-    /// either order for each player.
-    fn ghost_quarter_destroys_a_land_and_offers_its_controller_a_basic() {
-        each_target(ghost_quarter_resolves);
-    }
-}
-
-/// `ghost_quarter_destroys_a_land_and_offers_its_controller_a_basic`, for
-/// the target at place `i`, a constant in each call: a target the solver
-/// chose, beside the libraries' orders, ran the proof out of memory at
-/// ten gigabytes.
+/// Ghost Quarter: its target destroyed, and then, destroyed or not
+/// (the card's ruling), its controller as it was may search their
+/// library for a basic land card to put onto the battlefield untapped:
+/// offered every basic land card in that library, in order ("may": the
+/// search is optional, and its shuffle the search's). Its target gone,
+/// nothing. Over a library of a Forest and a nonbasic land card in
+/// either order for each player.
+///
+/// For the target at place `i` of [`any_target`]'s list, a constant in
+/// each harness: a target the solver chose, beside the libraries' orders,
+/// ran the proof out of memory at ten gigabytes.
 fn ghost_quarter_resolves(i: u8) {
     let mut b = permanent(Box::new(isd::ghost_quarter::GhostQuarter), &ANY_CREATURE, true);
     let forest_card = b.registry.register(Box::new(crate::cards::forest::Forest));
@@ -1631,6 +1659,14 @@ fn ghost_quarter_resolves(i: u8) {
     }
     assert!(Snapshot::of(&b.state) == before);
     std::mem::forget(b);
+}
+
+case_by_case! { unwind(8) ghost_quarter_resolves;
+    ghost_quarter_destroys_the_card_it_targets_and_offers_a_basic: 0,
+    ghost_quarter_destroys_the_token_it_targets_and_offers_a_basic: 1,
+    ghost_quarter_targeting_the_first_player_does_nothing: 2,
+    ghost_quarter_targeting_the_second_player_does_nothing: 3,
+    ghost_quarter_with_its_target_gone_does_nothing: 4,
 }
 
 card_proof! {
@@ -1715,40 +1751,36 @@ impl Board {
 /// has a creature card in their graveyard to exile (CR 601.2h: a cost that
 /// cannot be paid cannot be chosen), and not otherwise. For a Haunt `you`
 /// control, and the other card in either player's graveyard, a creature
-/// card or not, each a constant in each call: the engine looks for one
+/// card or not, each a constant in each harness: the engine looks for one
 /// through the graveyard of the player the solver chose, an index into
 /// the players it leaves open, and the proof ran out of memory at ten
 /// gigabytes.
-fn haunt_has_its_ability(you: PlayerId) {
-    each_case(4, |i| {
-        let b = permanent_of(Box::new(isd::moorland_haunt::MoorlandHaunt), &ANY_CREATURE, false, you);
-        let (b, card) = haunt_beside(b, PlayerId(i / 2), i % 2 == 1);
-        let exilable = b.creature_cards_in_graveyard(you, &[b.others[0], card]);
-        let haunt = b.card();
-        let defs = std::mem::ManuallyDrop::new(b.registry.get(haunt).expect("registered").activated_abilities(&b.state, b.me, &b.registry));
-        if exilable.is_empty() {
-            assert!(defs.is_empty());
-        } else {
-            let ability = Ability { cost: mana(0, &[Color::White, Color::Blue]), tap: true, ..Ability::default() };
-            assert!(defs.len() == 1 && defs[0].ability_index == 1 && Ability::of(&defs[0]) == ability);
-            std::mem::forget(ability);
-        }
-        std::mem::forget((b, exilable));
-    });
+fn haunt_has_its_ability((you, owner, creature): (u8, u8, bool)) {
+    let you = PlayerId(you);
+    let b = permanent_of(Box::new(isd::moorland_haunt::MoorlandHaunt), &ANY_CREATURE, false, you);
+    let (b, card) = haunt_beside(b, PlayerId(owner), creature);
+    let exilable = b.creature_cards_in_graveyard(you, &[b.others[0], card]);
+    let haunt = b.card();
+    let defs = std::mem::ManuallyDrop::new(b.registry.get(haunt).expect("registered").activated_abilities(&b.state, b.me, &b.registry));
+    if exilable.is_empty() {
+        assert!(defs.is_empty());
+    } else {
+        let ability = Ability { cost: mana(0, &[Color::White, Color::Blue]), tap: true, ..Ability::default() };
+        assert!(defs.len() == 1 && defs[0].ability_index == 1 && Ability::of(&defs[0]) == ability);
+        std::mem::forget(ability);
+    }
+    std::mem::forget((b, exilable));
 }
 
-card_proof! {
-    /// The proof above, for a Haunt the first player controls.
-    fn moorland_haunt_has_its_ability_with_a_creature_card_to_exile_for_the_first_player() {
-        haunt_has_its_ability(PlayerId(0));
-    }
-}
-
-card_proof! {
-    /// The proof above, for a Haunt the second player controls.
-    fn moorland_haunt_has_its_ability_with_a_creature_card_to_exile_for_the_second_player() {
-        haunt_has_its_ability(PlayerId(1));
-    }
+case_by_case! { haunt_has_its_ability;
+    moorland_haunt_of_the_first_player_with_its_creature_card_has_its_ability: (0, 0, true),
+    moorland_haunt_of_the_first_player_with_a_noncreature_card_has_none: (0, 0, false),
+    moorland_haunt_of_the_first_player_with_the_others_creature_card_has_none: (0, 1, true),
+    moorland_haunt_of_the_first_player_with_the_others_noncreature_card_has_none: (0, 1, false),
+    moorland_haunt_of_the_second_player_with_the_others_creature_card_has_none: (1, 0, true),
+    moorland_haunt_of_the_second_player_with_the_others_noncreature_card_has_none: (1, 0, false),
+    moorland_haunt_of_the_second_player_with_its_creature_card_has_its_ability: (1, 1, true),
+    moorland_haunt_of_the_second_player_with_a_noncreature_card_has_none: (1, 1, false),
 }
 
 card_proof! {
@@ -1874,23 +1906,17 @@ fn resolving_from(source: ObjectId, card: CardId, activator: PlayerId, back: boo
     }
 }
 
-card_proof! {
-    /// Daybreak Ranger: face up, "{T}: This creature deals 2 damage to
-    /// target creature with flying"; transformed, Nightfall Predator's
-    /// "{R}, {T}: This creature fights target creature" (CR 701.14a); off
-    /// the battlefield, neither. Its resolution is the proof below: the two
-    /// in one harness, over a target the solver chose, ran out of memory at
-    /// ten gigabytes. Where it is and which face is up are constants in each
-    /// call: the abilities are a list of a length they decide, read past
-    /// its end if the solver chose them.
-    fn daybreak_ranger_has_its_faces_abilities() {
-        each_case(3, daybreak_ranger_has_its_abilities_placed);
-    }
-}
-
-/// [`daybreak_ranger_has_its_faces_abilities`], with the Ranger in its
-/// owner's graveyard for 0, front face up on the battlefield for 1, and
-/// transformed there for 2.
+/// Daybreak Ranger: face up, "{T}: This creature deals 2 damage to
+/// target creature with flying"; transformed, Nightfall Predator's
+/// "{R}, {T}: This creature fights target creature" (CR 701.14a); off
+/// the battlefield, neither. Its resolution is the proof below: the two
+/// in one harness, over a target the solver chose, ran out of memory at
+/// ten gigabytes. Where it is and which face is up are constants in each
+/// harness: the abilities are a list of a length they decide, read past
+/// its end if the solver chose them.
+///
+/// With the Ranger in its owner's graveyard for 0, front face up on the
+/// battlefield for 1, and transformed there for 2.
 fn daybreak_ranger_has_its_abilities_placed(placed: u8) {
     let mut b = permanent_at(Box::new(isd::daybreak_ranger::DaybreakRanger), &ANY_CREATURE, placed == 0, PlayerId(u8::from(kani::any::<bool>())));
     let transformed = placed == 2;
@@ -1913,36 +1939,39 @@ fn daybreak_ranger_has_its_abilities_placed(placed: u8) {
     std::mem::forget(b);
 }
 
+case_by_case! { daybreak_ranger_has_its_abilities_placed;
+    daybreak_ranger_gone_has_no_ability: 0,
+    daybreak_ranger_face_up_pings_a_flyer: 1,
+    nightfall_predator_fights: 2,
+}
+
 card_proof! {
     /// Daybreak Ranger's ability resolving as the face it was activated
     /// from says, whichever face is up by then (CR 712.8d-e: Moonmist in
     /// response turns no ping into a fight): 2 damage to its target, or a
-    /// fight with it; its target gone, nothing. For each target, a constant
-    /// in each call.
+    /// fight with it; its target gone, nothing.
     fn daybreak_ranger_pings_a_flyer_or_nightfall_predator_fights() {
-        each_target(|i| {
-            let mut b = permanent(Box::new(isd::daybreak_ranger::DaybreakRanger), &ANY_CREATURE, true);
-            let transformed = b.on() && kani::any();
-            b.state.get_object_mut(b.me).expect("on the board").is_transformed = transformed;
-            let card = b.card();
-            let back: bool = kani::any();
-            b.state.resolving_ability = Some(resolving_from(b.me, card, b.you, back));
-            let target = target_at(b.others, i);
-            let before = b.resolve(0, &[target.clone()]);
-            match target {
-                Target::Object(id) if back => {
-                    assert!(asked_for(&[Act::Fight(b.me, id)]));
-                }
-                Target::Object(id) => {
-                    assert!(asked_for(&[Act::Effect(Target::Object(id), PendingEffect::DealDamage { amount: 2, source_id: b.me })]));
-                }
-                _ => {
-                    assert!(acted() == 0);
-                }
+        let mut b = permanent(Box::new(isd::daybreak_ranger::DaybreakRanger), &ANY_CREATURE, true);
+        let transformed = b.on() && kani::any();
+        b.state.get_object_mut(b.me).expect("on the board").is_transformed = transformed;
+        let card = b.card();
+        let back: bool = kani::any();
+        b.state.resolving_ability = Some(resolving_from(b.me, card, b.you, back));
+        let target = any_target(b.others);
+        let before = b.resolve(0, &[target.clone()]);
+        match target {
+            Target::Object(id) if back => {
+                assert!(asked_for(&[Act::Fight(b.me, id)]));
             }
-            assert!(Snapshot::of(&b.state) == before);
-            std::mem::forget(b);
-        });
+            Target::Object(id) => {
+                assert!(asked_for(&[Act::Effect(Target::Object(id), PendingEffect::DealDamage { amount: 2, source_id: b.me })]));
+            }
+            _ => {
+                assert!(acted() == 0);
+            }
+        }
+        assert!(Snapshot::of(&b.state) == before);
+        std::mem::forget(b);
     }
 }
 
