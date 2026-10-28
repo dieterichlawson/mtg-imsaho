@@ -237,38 +237,56 @@ card_proof! {
 card_proof! {
     /// Thraben Sentry // Thraben Militia: triggers, front face up, for
     /// another creature its controller controlled as it died, and for no
-    /// other death (back face up, it has no such ability); its controller
-    /// is asked whether to transform it, still there front face up, and it
-    /// transforms on "yes".
-    fn thraben_sentry_may_transform_when_another_creature_of_yours_dies() {
+    /// other death (back face up, it has no such ability). What it does is
+    /// the proof below.
+    fn thraben_sentry_triggers_when_another_creature_of_yours_dies() {
         let sentry = isd::thraben_sentry::ThrabenSentry;
         assert!(triggers(&sentry) == [(TriggerKind::AnyCreatureDies, None)] && back_triggers(&sentry).is_empty());
-        let mut b = creature(Box::new(sentry));
+        let b = creature(Box::new(sentry));
         let transformed = b.state.get_object(b.me).expect("on the board").is_transformed;
         let dead_controller = PlayerId(u8::from(kani::any::<bool>()));
         let card = b.card();
         let fires = b.registry.get(card).expect("registered").should_trigger_on_creature_dies(
             &b.state, b.me, ObjectId(100), dead_controller, &[], 1, false, &[], &b.registry);
         assert!(fires == (!transformed && dead_controller == b.you));
-        let front_up = b.front_up();
-        let before = Snapshot::of(&b.state);
-        b.registry.get(card).expect("registered").on_any_creature_dies(
-            &mut b.state, b.me, ObjectId(100), dead_controller, &[], 1, false, &[], &b.registry);
-        if front_up {
-            assert!(b.asked() && acted() == 0);
-            let yes: bool = kani::any();
-            b.answer(yes);
-            if yes {
-                assert!(asked_for(&[Act::Transform(b.me)]));
-            } else {
-                assert!(acted() == 0);
-            }
-        } else {
-            assert!(!b.asked() && acted() == 0);
-        }
-        assert!(Snapshot::of(&b.state) == before);
         std::mem::forget(b);
     }
+}
+
+/// Thraben Sentry's trigger resolving: its controller is asked whether to
+/// transform it, still there front face up, and it transforms on "yes";
+/// gone, or transformed already, nothing is asked. In its owner's
+/// graveyard for `placed` 0, front face up on the battlefield for 1 and
+/// transformed there for 2, and answered `yes` or not, each a constant in
+/// its harness: with them the solver's, and the trigger in the same
+/// harness, the proof ran out of memory at four gigabytes in symbolic
+/// execution.
+fn thraben_sentry_may_transform_when_another_creature_of_yours_dies((placed, yes): (u8, bool)) {
+    let mut b = creature_at(Box::new(isd::thraben_sentry::ThrabenSentry), PlayerId(u8::from(kani::any::<bool>())), placed == 0, placed == 2);
+    let card = b.card();
+    let before = Snapshot::of(&b.state);
+    b.registry.get(card).expect("registered").on_any_creature_dies(
+        &mut b.state, b.me, ObjectId(100), b.you, &[], 1, false, &[], &b.registry);
+    if placed == 1 {
+        assert!(b.asked() && acted() == 0);
+        b.answer(yes);
+        if yes {
+            assert!(asked_for(&[Act::Transform(b.me)]));
+        } else {
+            assert!(acted() == 0);
+        }
+    } else {
+        assert!(!b.asked() && acted() == 0);
+    }
+    assert!(Snapshot::of(&b.state) == before);
+    std::mem::forget(b);
+}
+
+case_by_case! { thraben_sentry_may_transform_when_another_creature_of_yours_dies;
+    thraben_sentry_gone_asks_nothing: (0, false),
+    thraben_sentry_transforms_on_yes: (1, true),
+    thraben_sentry_stays_on_no: (1, false),
+    thraben_militia_asks_nothing: (2, false),
 }
 
 /// The card's activated abilities as the engine reads them, as the
