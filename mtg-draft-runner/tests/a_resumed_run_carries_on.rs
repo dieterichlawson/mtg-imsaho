@@ -139,6 +139,22 @@ fn a_resume_after_the_tournament_replays_nothing_and_says_so() {
     assert!(calls(&pod.path("first.calls")) > 0);
     assert_eq!(saved["decks"].as_array().map(Vec::len), Some(2), "both built decks are in the snapshot");
     assert_eq!(saved["matches"].as_array().map(Vec::len), Some(1), "the one match is in the snapshot");
+    // Each game says what each seat played (#901): the ledger credits a
+    // card with the games it was in the deck for, not with every game of a
+    // deck it was sideboarded out of. A best-of-1 game is the registered deck.
+    let result = &saved["matches"][0]["result"];
+    let sorted = |v: &serde_json::Value| {
+        let mut names: Vec<String> = v.as_array().unwrap().iter().map(|n| n.as_str().unwrap().to_string()).collect();
+        names.sort();
+        names
+    };
+    for game in result["games"].as_array().unwrap() {
+        for (i, side) in ["player_a", "player_b"].iter().enumerate() {
+            let seat = result[side].as_u64().unwrap() as usize;
+            assert_eq!(sorted(&game["decks"][i]), sorted(&saved["decks"][seat]["deck"]["maindeck"]),
+                "game {game} records seat {seat}'s deck");
+        }
+    }
 
     let second = pod.run(&["--resume", snap.to_str().unwrap()], "second.calls", "second.log");
     let stderr = String::from_utf8_lossy(&second.stderr);

@@ -264,7 +264,7 @@ fn a_seat_never_sees_another_seats_pack_or_pool_and_each_phase_has_a_fixture() {
     assert_eq!(to_play, vec![(1, 0, 1), (1, 2, 3)]);
     lobby.match_started(1, 0, 1, [Some("http://192.168.1.20:8801/".into()), None]);
     lobby.match_started(1, 2, 3, [None, None]);
-    let game = |winner: usize| GameOutcome { winner: Some(winner), turns: 9, game_log: vec!["log".into()], stalled_seat: None, abandoned: false };
+    let game = |winner: usize| GameOutcome { winner: Some(winner), turns: 9, game_log: vec!["log".into()], stalled_seat: None, abandoned: false, decks: None };
     lobby.game_finished(1, 0, 1, &game(0));
     let v = serde_json::to_value(lobby.view(0)).unwrap();
     assert_eq!(v["phase"], "playing");
@@ -572,7 +572,7 @@ fn the_hosts_lines_name_a_seat_as_the_page_does() {
         deck: fallback_deck(&pool, &registry), attempts: vec![], retries: 0, fallback: false,
     });
     assert_eq!(lobby.begin_tournament(), vec![(1, 0, 1)]);
-    let game = GameOutcome { winner: Some(1), turns: 9, game_log: vec!["log".into()], stalled_seat: None, abandoned: false };
+    let game = GameOutcome { winner: Some(1), turns: 9, game_log: vec!["log".into()], stalled_seat: None, abandoned: false, decks: None };
     lobby.game_finished(1, 0, 1, &game);
     lobby.match_finished(1, 0, 1, MatchResult {
         player_a: 0, player_b: 1, wins_a: 0, wins_b: 2, games: vec![game.clone(), game],
@@ -820,7 +820,7 @@ fn a_snapshot_carries_the_table_on_where_it_stopped() {
         }
     }
     same_draft(&a, &b);
-    let game = |winner: usize| GameOutcome { winner: Some(winner), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false };
+    let game = |winner: usize| GameOutcome { winner: Some(winner), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false, decks: None };
     let result = |p: usize, q: usize, wp: usize, wq: usize| MatchResult {
         player_a: p, player_b: q, wins_a: wp, wins_b: wq,
         // The match's loser's wins first: the games in an order a match is
@@ -930,7 +930,7 @@ fn a_doctored_snapshot_is_refused_with_its_reason() {
             a.ai_deck(seat, &mtg_draft_runner::deck::DeckBuildResult { deck, attempts: vec![], retries: 0, fallback: false });
         }
     }
-    let game = |winner: usize| GameOutcome { winner: Some(winner), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false };
+    let game = |winner: usize| GameOutcome { winner: Some(winner), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false, decks: None };
     assert_eq!(a.begin_tournament(), vec![(1, 0, 1), (1, 2, 3)]);
     a.match_started(1, 0, 1, [None, None]);
     a.match_finished(1, 0, 1, MatchResult { player_a: 0, player_b: 1, wins_a: 2, wins_b: 0, games: vec![game(0), game(0)] });
@@ -1028,7 +1028,7 @@ fn between_games_a_person_chooses_and_sideboards_and_the_clock_ends_it() {
     assert_eq!(l.play_draw(0, true).unwrap_err(), "you are not between games");
 
     // Game 2: seat 0 lost game 1 and chooses; both may sideboard.
-    let game = |winner: usize| GameOutcome { winner: Some(winner), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false };
+    let game = |winner: usize| GameOutcome { winner: Some(winner), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false, decks: None };
     l.game_finished(1, 0, 1, &game(1));
     let played = l.match_deck(1, 0, 1, 0).unwrap();
     l.open_between(1, 0, 1, 2, 0, [vec![], vec!["Brimstone Volley".into()]], [None, None]);

@@ -316,6 +316,7 @@ pub fn play_match(
         }
         let starts = if setup.chooser_plays.unwrap_or(true) { chooser } else if chooser == seat_a { seat_b } else { seat_a };
         let starter = if starts == seat_a { PlayerId(0) } else { PlayerId(1) };
+        let played = [&a.deck, &b.deck].map(played_cards);
         let (mut outcome, showed) = play_game(
             &mut a,
             &mut b,
@@ -325,6 +326,7 @@ pub fn play_match(
             MatchFormat::BestOf { best_of, game: game_number, your_wins: wins_b, their_wins: wins_a },
             rand::Rng::gen(&mut match_rng),
         );
+        outcome.decks = Some(played);
 
         // The loser chooses for the next game; after a draw, the same seat.
         if let Some(w) = outcome.winner {
@@ -372,7 +374,7 @@ pub fn play_match(
                 let forfeit = GameOutcome {
                     winner: Some(winner), turns: 0,
                     game_log: withdrawn.iter().map(|(_, line)| line.clone()).collect(),
-                    stalled_seat: Some(dead), abandoned: false,
+                    stalled_seat: Some(dead), abandoned: false, decks: None,
                 };
                 after_game(&forfeit);
                 games.push(forfeit);
@@ -387,6 +389,16 @@ pub fn play_match(
         wins_b,
         games,
     }
+}
+
+/// The non-basic cards of a deck, one name per copy: what a game's record
+/// says each seat played (#901). The basics are left out as a registered
+/// deck's `maindeck` leaves them out.
+fn played_cards(deck: &Decklist) -> Vec<String> {
+    deck.entries.iter()
+        .filter(|(name, _)| !mtg_draft::deckbuilding::BASIC_LANDS.contains(&name.as_str()))
+        .flat_map(|(name, n)| std::iter::repeat_n(name.clone(), *n as usize))
+        .collect()
 }
 
 /// What each seat showed its opponent: its cards (not tokens) that were
@@ -632,6 +644,7 @@ fn play_game(
         game_log,
         stalled_seat,
         abandoned,
+        decks: None,
     }, showed)
 }
 
@@ -799,7 +812,7 @@ mod harness_stop_tests {
     #[test]
     fn an_abandoned_game_is_named_on_the_score_line() {
         let game = |stalled_seat, abandoned| GameOutcome {
-            winner: None, turns: 30, game_log: vec![], stalled_seat, abandoned,
+            winner: None, turns: 30, game_log: vec![], stalled_seat, abandoned, decks: None,
         };
         assert_eq!(unplayed_games_note(&[game(None, false)]), "");
         assert_eq!(unplayed_games_note(&[game(None, true)]),
@@ -809,7 +822,7 @@ mod harness_stop_tests {
         // A forfeit the table made before any game began says why, as its
         // log does, not "a seat stalled" (#759).
         let unplayed = |why: &str| GameOutcome {
-            winner: Some(1), turns: 0, game_log: vec![format!("forfeit: {why}")], stalled_seat: Some(0), abandoned: false,
+            winner: Some(1), turns: 0, game_log: vec![format!("forfeit: {why}")], stalled_seat: Some(0), abandoned: false, decks: None,
         };
         assert_eq!(unplayed_games_note(&[unplayed("no game page for seat 0"), unplayed("no game page for seat 0")]),
             " [2 games forfeited: no game page for seat 0]");

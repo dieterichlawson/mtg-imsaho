@@ -78,7 +78,7 @@ fn every_record_is_filed_under_whom_it_is_about() {
         let next = std::thread::scope(|s| std::thread::Builder::new().name(format!("seat {a} v {b}"))
             .spawn_scoped(s, || {
                 lobby.match_started(round, a, b, [None, None]);
-                let game = GameOutcome { winner: Some(a), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false };
+                let game = GameOutcome { winner: Some(a), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false, decks: None };
                 lobby.match_finished(round, a, b, MatchResult {
                     player_a: a, player_b: b, wins_a: 1, wins_b: 0, games: vec![game],
                 })

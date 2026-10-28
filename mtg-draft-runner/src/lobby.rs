@@ -1992,7 +1992,7 @@ for the seat from here, and its games are forfeit"), ""));
             player_a: a, player_b: b, wins_a, wins_b,
             games: (0..needed).map(|_| GameOutcome {
                 winner: Some(winner), turns: 0, game_log: vec![format!("forfeit: {why}")],
-                stalled_seat: Some(loser), abandoned: false,
+                stalled_seat: Some(loser), abandoned: false, decks: None,
             }).collect(),
         }
     }

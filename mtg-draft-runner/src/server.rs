@@ -1431,7 +1431,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("mtg-game-log-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let outcome = GameOutcome { winner: Some(0), turns: 3, game_log: vec!["a line".into()], stalled_seat: None, abandoned: false };
+        let outcome = GameOutcome { winner: Some(0), turns: 3, game_log: vec!["a line".into()], stalled_seat: None, abandoned: false, decks: None };
         write_game_log(Some(&dir), 1, 0, 1, 1, &outcome).unwrap();
         assert_eq!(std::fs::read_to_string(dir.join("games/r1-0v1-g1.log")).unwrap(), "a line\n");
         // `games` is a file: neither the directory nor the log can be made.

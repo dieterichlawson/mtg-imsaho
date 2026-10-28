@@ -1958,7 +1958,7 @@ mod snapshot_match_tests {
     use mtg_draft::tournament::{GameOutcome, MatchResult, Tournament, TournamentConfig, BYE};
 
     fn game(winner: usize) -> GameOutcome {
-        GameOutcome { winner: Some(winner), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false }
+        GameOutcome { winner: Some(winner), turns: 9, game_log: vec![], stalled_seat: None, abandoned: false, decks: None }
     }
 
     /// Round 1 of a fresh 4-seat pod as the runner would record it, the
