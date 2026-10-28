@@ -1170,7 +1170,9 @@ struct PrintedFace {
     continuous_effects: Vec<ContinuousEffect>,
     keywords: Vec<Keyword>,
     card_types: Vec<CardType>,
+    supertypes: Vec<Supertype>,
     subtypes: Vec<String>,
+    cost: Option<ManaCost>,
 }
 
 impl Default for CardRegistry {
@@ -1209,13 +1211,17 @@ impl CardRegistry {
                 continuous_effects: data.continuous_effects,
                 keywords: data.keywords,
                 card_types: data.card_types,
+                supertypes: data.supertypes,
                 subtypes: data.subtypes,
+                cost: data.cost,
             },
             back: back.map(|d| PrintedFace {
                 continuous_effects: d.continuous_effects,
                 keywords: d.keywords,
                 card_types: d.card_types,
+                supertypes: d.supertypes,
                 subtypes: d.subtypes,
+                cost: d.cost,
             }),
         });
         self.cards.push(card);
@@ -1304,6 +1310,20 @@ impl CardRegistry {
     #[must_use]
     pub fn printed_subtypes(&self, id: CardId, transformed: bool) -> &[String] {
         self.printed_face(id, transformed).map_or(&[], |f| f.subtypes.as_slice())
+    }
+
+    /// The supertypes printed on that face, as [`Self::printed_card_types`].
+    #[must_use]
+    pub fn printed_supertypes(&self, id: CardId, transformed: bool) -> &[Supertype] {
+        self.printed_face(id, transformed).map_or(&[], |f| f.supertypes.as_slice())
+    }
+
+    /// The mana cost printed on that face, as [`Self::printed_card_types`]:
+    /// `None` for a face with no mana cost (a transforming back face, a
+    /// land) and for a card not in the registry.
+    #[must_use]
+    pub fn printed_cost(&self, id: CardId, transformed: bool) -> Option<&ManaCost> {
+        self.printed_face(id, transformed)?.cost.as_ref()
     }
 
     /// The face `GameState::face_data` reads (CR 712.8a, and a transformed

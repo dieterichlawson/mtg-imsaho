@@ -2371,3 +2371,39 @@ fn every_auras_enchant_ability_is_one_the_attachment_rules_model() {
     assert_none(&unmodelled, "are Auras whose enchant ability the host-eligibility match has no arm for");
     assert_covers(checked, 15, "are Auras");
 }
+
+/// `face_card_types`, `face_supertypes`, `face_subtypes` and `face_cost` read
+/// the faces the registry kept at registration; `face_data` builds the card's
+/// data again. Card code reads the first set, so they have to say what
+/// `face_data` says — for every card, face up and face down, and for a
+/// transformed card with no back face, which shows its front.
+#[test]
+fn the_kept_faces_say_what_face_data_says() {
+    let reg = registry();
+    let mut state = GameState::new(2);
+    let mut offenders = Vec::new();
+    let mut looked = 0;
+    for name in reg.all_names() {
+        let card = reg.get_id_by_name(name).expect("every name has an id");
+        for transformed in [false, true] {
+            let id = state.create_object(card, PlayerId(0), mtg_engine::types::Zone::Library, None, None);
+            state.get_object_mut(id).expect("just created").is_transformed = transformed;
+            let data = state.face_data(id, &reg).expect("a registered card has a face");
+            looked += 1;
+            if state.face_card_types(id, &reg) != data.card_types.as_slice() {
+                offenders.push(format!("{name} (transformed {transformed}): card types"));
+            }
+            if state.face_supertypes(id, &reg) != data.supertypes.as_slice() {
+                offenders.push(format!("{name} (transformed {transformed}): supertypes"));
+            }
+            if state.face_subtypes(id, &reg) != data.subtypes.as_slice() {
+                offenders.push(format!("{name} (transformed {transformed}): subtypes"));
+            }
+            if state.face_cost(id, &reg) != data.cost.as_ref() {
+                offenders.push(format!("{name} (transformed {transformed}): mana cost"));
+            }
+        }
+    }
+    assert_covers(looked, 500, "were read face up and face down");
+    assert_none(&offenders, "keep a face that differs from face_data");
+}

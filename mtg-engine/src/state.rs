@@ -3611,6 +3611,38 @@ impl GameState {
         Some(behavior.card_data())
     }
 
+    /// The card types printed on the object's active face — what
+    /// `face_data(id).card_types` says, read off the faces the registry kept
+    /// at registration instead of building the card's data again. Empty for
+    /// an object with no registry entry, where `face_data` is `None`.
+    #[must_use]
+    pub fn face_card_types<'r>(&self, id: ObjectId, registry: &'r crate::cards::CardRegistry) -> &'r [crate::types::CardType] {
+        self.get_object(id).map_or(&[], |o| registry.printed_card_types(o.card_id, o.is_transformed))
+    }
+
+    /// The supertypes printed on the object's active face, as
+    /// [`Self::face_card_types`].
+    #[must_use]
+    pub fn face_supertypes<'r>(&self, id: ObjectId, registry: &'r crate::cards::CardRegistry) -> &'r [crate::types::Supertype] {
+        self.get_object(id).map_or(&[], |o| registry.printed_supertypes(o.card_id, o.is_transformed))
+    }
+
+    /// The subtypes printed on the object's active face, as
+    /// [`Self::face_card_types`].
+    #[must_use]
+    pub fn face_subtypes<'r>(&self, id: ObjectId, registry: &'r crate::cards::CardRegistry) -> &'r [String] {
+        self.get_object(id).map_or(&[], |o| registry.printed_subtypes(o.card_id, o.is_transformed))
+    }
+
+    /// The mana cost printed on the object's active face, as
+    /// [`Self::face_card_types`]: `None` for a face with no mana cost and
+    /// for an object with no registry entry.
+    #[must_use]
+    pub fn face_cost<'r>(&self, id: ObjectId, registry: &'r crate::cards::CardRegistry) -> Option<&'r crate::types::ManaCost> {
+        let o = self.get_object(id)?;
+        registry.printed_cost(o.card_id, o.is_transformed)
+    }
+
     /// The object's name, from its active face — the back face when a DFC is
     /// transformed. `obj.name` is only authoritative for tokens, which have no
     /// registry face; for a real card it is a display cache that goes stale
