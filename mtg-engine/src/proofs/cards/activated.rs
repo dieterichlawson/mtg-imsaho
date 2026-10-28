@@ -341,6 +341,8 @@ abilities! {
         => one(Ability { cost: mana(2, &[]), tap: true, target: Some(TargetRequirement::PlayerOnly), ..Ability::default() }),
     mirror_mad_phantasm_has_its_ability: isd::mirror_mad_phantasm::MirrorMadPhantasm
         => one(Ability { cost: mana(1, &[Color::Blue]), ..Ability::default() }),
+    avacynian_priest_has_its_ability: isd::avacynian_priest::AvacynianPriest
+        => one(Ability { cost: mana(1, &[]), tap: true, target: Some(TargetRequirement::Creature), ..Ability::default() }),
 }
 
 /// The ability, with no targets, adds exactly `effects(me)` until end of
@@ -924,27 +926,40 @@ over_each_library! {
 
 
 card_proof! {
-    /// Avacynian Priest: "{1}, {T}: Tap target non-Human creature." Its
-    /// target a creature on the battlefield that is not a Human (the
-    /// engine asks the requirement, then the card); tapped (whether it can
-    /// be is the action's).
-    fn avacynian_priest_taps_a_non_human() {
-        const PEOPLE: Kinds = Kinds { types: &[CardType::Creature], subtypes: &["Human"], keywords: &[] };
-        let mut b = permanent(Box::new(isd::avacynian_priest::AvacynianPriest), &PEOPLE, true);
-        if b.on() {
-            let card = b.card();
-            let defs = std::mem::ManuallyDrop::new(b.registry.get(card).expect("registered").activated_abilities(&b.state, b.me, &b.registry));
-            assert!(defs.len() == 1 && Ability::of(&defs[0]) == Ability {
-                cost: mana(1, &[]), tap: true, target: Some(TargetRequirement::Creature), ..Ability::default()
-            });
-        }
-        let candidate = b.others[0];
-        let o = b.state.get_object(candidate).expect("on the board");
-        let human = o.subtypes.iter().any(|s| s == "Human");
-        let creature = o.zone == Zone::Battlefield && o.card_types.contains(&CardType::Creature);
-        let priest = isd::avacynian_priest::AvacynianPriest;
-        assert!(priest.is_valid_target(&b.state, b.you, &Target::Object(candidate), &b.registry) == (creature && !human));
-        assert!(!priest.is_valid_target(&b.state, b.you, &Target::Player(b.you), &b.registry));
+    /// Avacynian Priest's target: a creature on the battlefield that is not
+    /// a Human (the engine asks the requirement, then the card); its
+    /// ability is in the table above. Whether the candidate is a Human,
+    /// and the player choosing, are constants in each call: a list of
+    /// subtypes the solver left open, with the target it chose and the
+    /// ability, ran the proof out of memory at ten gigabytes, and the
+    /// ability with the target, the Human-ness a constant, at four.
+    fn avacynian_priest_targets_a_non_human_creature() {
+        each_case(4, |case| avacynian_priest_targets(case % 2 == 1, PlayerId(case / 2)));
+    }
+}
+
+/// `avacynian_priest_targets_a_non_human_creature`, for a candidate that
+/// is a Human or not, the Priest `you`'s.
+fn avacynian_priest_targets(human: bool, you: PlayerId) {
+    const PEOPLE: Kinds = Kinds { types: &[CardType::Creature], subtypes: &[], keywords: &[] };
+    let mut b = permanent_of(Box::new(isd::avacynian_priest::AvacynianPriest), &PEOPLE, true, you);
+    let candidate = b.others[0];
+    if human {
+        b.state.get_object_mut(candidate).expect("on the board").subtypes = vec!["Human".into()];
+    }
+    let o = b.state.get_object(candidate).expect("on the board");
+    let creature = o.zone == Zone::Battlefield && o.card_types.contains(&CardType::Creature);
+    let priest = isd::avacynian_priest::AvacynianPriest;
+    assert!(priest.is_valid_target(&b.state, b.you, &Target::Object(candidate), &b.registry) == (creature && !human));
+    assert!(!priest.is_valid_target(&b.state, b.you, &Target::Player(b.you), &b.registry));
+    std::mem::forget(b);
+}
+
+card_proof! {
+    /// Avacynian Priest's ability, resolving: its target tapped (whether it
+    /// can be is the action's); with its target gone illegal, nothing.
+    fn avacynian_priest_taps_its_target() {
+        let mut b = permanent(Box::new(isd::avacynian_priest::AvacynianPriest), &ANY_CREATURE, true);
         let target = any_target(b.others);
         let before = b.resolve(0, &[target.clone()]);
         match target {
