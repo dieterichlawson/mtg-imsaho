@@ -16,7 +16,7 @@
 //! card is an instant (Lightning Bolt), a sorcery (Lava Axe), the blank
 //! card, or no card at all.
 
-use super::{acted, asked_for, board, card_proof, triggers, Act, Snapshot};
+use super::{acted, asked_for, board, card_proof, each_case, triggers, Act, Snapshot};
 use crate::cards::{CardBehavior, CardRegistry, TriggerKind, TriggerScope};
 use crate::ids::{CardId, ObjectId, PlayerId};
 use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind};
@@ -32,8 +32,12 @@ struct Board {
 }
 
 fn creature(card: Box<dyn CardBehavior>) -> Board {
+    creature_of(card, PlayerId(u8::from(kani::any::<bool>())))
+}
+
+/// [`creature`]'s board, controlled (or last controlled) by `you`.
+fn creature_of(card: Box<dyn CardBehavior>, you: PlayerId) -> Board {
     let (registry, mut state, _, card) = board(card);
-    let you = PlayerId(u8::from(kani::any::<bool>()));
     let gone: bool = kani::any();
     let me = state.create_object(card, PlayerId(0), if gone { Zone::Graveyard } else { Zone::Battlefield }, None, None);
     let o = state.get_object_mut(me).expect("just created");
@@ -96,37 +100,44 @@ card_proof! {
         let delver = isd::delver_of_secrets::DelverOfSecrets;
         assert!(triggers(&delver) == [(TriggerKind::Upkeep, None)] && back_triggers(&delver).is_empty());
         assert!(delver.step_trigger_scope(&TriggerKind::Upkeep, false) == TriggerScope::Your);
-        let mut b = creature(Box::new(delver));
-        // It transforms only as the trigger says, never on its own.
-        assert!(!isd::delver_of_secrets::DelverOfSecrets.should_transform(&b.state, b.me, &b.registry));
-        let bolt = b.registry.register(Box::new(crate::cards::lightning_bolt::LightningBolt));
-        let axe = b.registry.register(Box::new(crate::cards::lava_axe::LavaAxe));
-        let which = kani::any::<u8>() % 4;
-        if which < 3 {
-            let card = match which { 0 => bolt, 1 => axe, _ => CardId(1) };
-            let top = b.state.create_object(card, b.you, Zone::Library, None, None);
-            if b.you == PlayerId(0) {
-                b.state.players[0].library_order.push(top);
-            } else {
-                b.state.players[1].library_order.push(top);
+        // Its controller, and the top card of their library (Lightning
+        // Bolt, Lava Axe, the blank card, or none), are constants in each
+        // call: a card the solver chose is an index into the registry it
+        // leaves open, a library made or not a list of a length it leaves
+        // open, and a controller it chose an index into the players.
+        each_case(8, |case| {
+            let mut b = creature_of(Box::new(isd::delver_of_secrets::DelverOfSecrets), PlayerId(case / 4));
+            // It transforms only as the trigger says, never on its own.
+            assert!(!isd::delver_of_secrets::DelverOfSecrets.should_transform(&b.state, b.me, &b.registry));
+            let bolt = b.registry.register(Box::new(crate::cards::lightning_bolt::LightningBolt));
+            let axe = b.registry.register(Box::new(crate::cards::lava_axe::LavaAxe));
+            let which = case % 4;
+            if which < 3 {
+                let card = match which { 0 => bolt, 1 => axe, _ => CardId(1) };
+                let top = b.state.create_object(card, b.you, Zone::Library, None, None);
+                if b.you == PlayerId(0) {
+                    b.state.players[0].library_order.push(top);
+                } else {
+                    b.state.players[1].library_order.push(top);
+                }
             }
-        }
-        let front_up = b.front_up();
-        let before = b.upkeep();
-        if front_up && which < 3 {
-            assert!(b.asked() && acted() == 0);
-            let yes: bool = kani::any();
-            b.answer(yes);
-            if yes && which < 2 {
-                assert!(asked_for(&[Act::Transform(b.me)]));
+            let front_up = b.front_up();
+            let before = b.upkeep();
+            if front_up && which < 3 {
+                assert!(b.asked() && acted() == 0);
+                let yes: bool = kani::any();
+                b.answer(yes);
+                if yes && which < 2 {
+                    assert!(asked_for(&[Act::Transform(b.me)]));
+                } else {
+                    assert!(acted() == 0);
+                }
             } else {
-                assert!(acted() == 0);
+                assert!(!b.asked() && acted() == 0);
             }
-        } else {
-            assert!(!b.asked() && acted() == 0);
-        }
-        assert!(Snapshot::of(&b.state) == before);
-        std::mem::forget(b);
+            assert!(Snapshot::of(&b.state) == before);
+            std::mem::forget(b);
+        });
     }
 }
 
