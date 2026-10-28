@@ -1712,8 +1712,8 @@ back to you on your next pick"
         };
         let mut prompt = format!(
             "Pack {pack_number} of 3, Pick {pick_index} of {}. You are seat {} of {}; \
-{handoff}.\n\nAvailable ({} cards):\n",
-            table.pack_size, table.seat, table.pod_size, available.len(),
+{handoff}.\n\nAvailable ({}):\n",
+            table.pack_size, table.seat, table.pod_size, crate::count(available.len(), "card", "cards"),
         );
         for (i, card) in available.iter().enumerate() {
             writeln!(prompt, "{i}: {}", cards.pack_line(card)).unwrap();
@@ -1721,7 +1721,8 @@ back to you on your next pick"
         if pool.is_empty() {
             prompt.push_str("\nYour pool is empty — this is your first pick.\n");
         } else {
-            writeln!(prompt, "\nYour pool ({} cards):", pool.len()).unwrap();
+            // "Your pool (1 card)" at a seat's second pick (#946, #914).
+            writeln!(prompt, "\nYour pool ({}):", crate::count(pool.len(), "card", "cards")).unwrap();
             prompt.push_str(&cards.pool_listing(pool));
         }
         prompt
@@ -1878,6 +1879,14 @@ mod draft_prompt_tests {
             table(1, 4), 1, 1, &available, &[], &cards,
         );
         assert!(first.contains("Your pool is empty"), "{first}");
+
+        // The second pick: one card, said in the singular (#946), and a
+        // pack's last card, were it ever asked, the same way.
+        let second = DraftLlmClient::build_pick_prompt(
+            table(1, 4), 1, 2, &available[..1], &pool[..1], &cards,
+        );
+        assert!(second.contains("Your pool (1 card):"), "{second}");
+        assert!(second.contains("Available (1 card):"), "{second}");
     }
 
     /// #483: the pack was a list of bare names, with the cost, colour, type,
