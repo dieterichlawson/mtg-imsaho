@@ -21,7 +21,7 @@
 //! its trigger scope says, and resolves for the player it enchants, or
 //! enchanted last if it has since left the battlefield (113.7a).
 
-use super::{acted, asked_each, asked_for, board, card_proof, each_case, prints_effects, triggers, Act, Snapshot};
+use super::{acted, asked_each, asked_for, board, card_proof, case_by_case, prints_effects, triggers, Act, Snapshot};
 use crate::actions::Target;
 use crate::cards::{CardBehavior, TriggerKind, TriggerScope, TargetRequirement};
 use crate::ids::{ObjectId, PlayerId};
@@ -212,15 +212,16 @@ card_proof! {
 /// chosen); with none, nothing. Nothing else. Over `in_graveyard` of
 /// three cards of the cursed player's in their graveyard and the rest
 /// in their hand, the Curse itself among that graveyard's cards if it
-/// is there, and a token there; the player cursed, the Curse's owner,
-/// and whether it is on the battlefield by `case`. These are constants
-/// in each call: the graveyard's cards are a list of every length at
-/// once if the solver chooses which are there, and its owner an index
-/// into the players, read for the graveyard's order, if it chooses
-/// whose.
-fn curse_of_oblivion(in_graveyard: u8, case: u8) {
-    let (cursed, owner) = (PlayerId(case % 2), PlayerId(case / 2 % 2));
-    let (registry, mut state, curse, cursed, blank) = cursing_as(Box::new(isd::curse_of_oblivion::CurseOfOblivion), cursed, owner, case / 4 == 1);
+/// is there, and a token there; the player cursed, and the Curse on the
+/// battlefield (`place` 0), in their graveyard (1) or in the other
+/// player's (2). These are constants in each harness: the graveyard's
+/// cards are a list of every length at once if the solver chooses which
+/// are there, and its owner an index into the players, read for the
+/// graveyard's order, if it chooses whose.
+fn curse_of_oblivion((in_graveyard, cursed, place): (u8, u8, u8)) {
+    let owner = PlayerId(if place == 2 { 1 - cursed } else { cursed });
+    let (registry, mut state, curse, cursed, blank) =
+        cursing_as(Box::new(isd::curse_of_oblivion::CurseOfOblivion), PlayerId(cursed), owner, place == 0);
     let mut cards = Vec::with_capacity(4);
     let c = state.get_object(curse).expect("the curse");
     if c.zone == Zone::Graveyard && c.owner == cursed {
@@ -255,22 +256,32 @@ fn curse_of_oblivion(in_graveyard: u8, case: u8) {
     std::mem::forget((registry, state, cards));
 }
 
-/// The proof above, a harness for each number of cards in the graveyard,
-/// for each player cursed and each place of the Curse.
-macro_rules! over_each_graveyard {
-    ($($name:ident: $proof:ident($n:literal);)*) => {$(
-        card_proof! {
-            /// The proof above it, for one number of cards.
-            fn $name() {
-                each_case(8, |case| $proof($n, case));
-            }
-        }
-    )*};
-}
-
-over_each_graveyard! {
-    curse_of_oblivion_with_no_other_card_in_the_graveyard: curse_of_oblivion(0);
-    curse_of_oblivion_with_one_other_card_in_the_graveyard: curse_of_oblivion(1);
-    curse_of_oblivion_with_two_other_cards_in_the_graveyard: curse_of_oblivion(2);
-    curse_of_oblivion_with_three_other_cards_in_the_graveyard: curse_of_oblivion(3);
+// The proof above, a harness for each number of cards in the graveyard,
+// each player cursed and each place of the Curse: a case of it is a couple
+// of gigabytes of symbolic execution, and the cases of one harness add up.
+case_by_case! { curse_of_oblivion;
+    curse_of_oblivion_with_no_other_card_in_the_graveyard_cursing_the_first_player_on_the_battlefield: (0, 0, 0),
+    curse_of_oblivion_with_no_other_card_in_the_graveyard_cursing_the_first_player_in_their_graveyard: (0, 0, 1),
+    curse_of_oblivion_with_no_other_card_in_the_graveyard_cursing_the_first_player_in_the_others_graveyard: (0, 0, 2),
+    curse_of_oblivion_with_no_other_card_in_the_graveyard_cursing_the_second_player_on_the_battlefield: (0, 1, 0),
+    curse_of_oblivion_with_no_other_card_in_the_graveyard_cursing_the_second_player_in_their_graveyard: (0, 1, 1),
+    curse_of_oblivion_with_no_other_card_in_the_graveyard_cursing_the_second_player_in_the_others_graveyard: (0, 1, 2),
+    curse_of_oblivion_with_one_other_card_in_the_graveyard_cursing_the_first_player_on_the_battlefield: (1, 0, 0),
+    curse_of_oblivion_with_one_other_card_in_the_graveyard_cursing_the_first_player_in_their_graveyard: (1, 0, 1),
+    curse_of_oblivion_with_one_other_card_in_the_graveyard_cursing_the_first_player_in_the_others_graveyard: (1, 0, 2),
+    curse_of_oblivion_with_one_other_card_in_the_graveyard_cursing_the_second_player_on_the_battlefield: (1, 1, 0),
+    curse_of_oblivion_with_one_other_card_in_the_graveyard_cursing_the_second_player_in_their_graveyard: (1, 1, 1),
+    curse_of_oblivion_with_one_other_card_in_the_graveyard_cursing_the_second_player_in_the_others_graveyard: (1, 1, 2),
+    curse_of_oblivion_with_two_other_cards_in_the_graveyard_cursing_the_first_player_on_the_battlefield: (2, 0, 0),
+    curse_of_oblivion_with_two_other_cards_in_the_graveyard_cursing_the_first_player_in_their_graveyard: (2, 0, 1),
+    curse_of_oblivion_with_two_other_cards_in_the_graveyard_cursing_the_first_player_in_the_others_graveyard: (2, 0, 2),
+    curse_of_oblivion_with_two_other_cards_in_the_graveyard_cursing_the_second_player_on_the_battlefield: (2, 1, 0),
+    curse_of_oblivion_with_two_other_cards_in_the_graveyard_cursing_the_second_player_in_their_graveyard: (2, 1, 1),
+    curse_of_oblivion_with_two_other_cards_in_the_graveyard_cursing_the_second_player_in_the_others_graveyard: (2, 1, 2),
+    curse_of_oblivion_with_three_other_cards_in_the_graveyard_cursing_the_first_player_on_the_battlefield: (3, 0, 0),
+    curse_of_oblivion_with_three_other_cards_in_the_graveyard_cursing_the_first_player_in_their_graveyard: (3, 0, 1),
+    curse_of_oblivion_with_three_other_cards_in_the_graveyard_cursing_the_first_player_in_the_others_graveyard: (3, 0, 2),
+    curse_of_oblivion_with_three_other_cards_in_the_graveyard_cursing_the_second_player_on_the_battlefield: (3, 1, 0),
+    curse_of_oblivion_with_three_other_cards_in_the_graveyard_cursing_the_second_player_in_their_graveyard: (3, 1, 1),
+    curse_of_oblivion_with_three_other_cards_in_the_graveyard_cursing_the_second_player_in_the_others_graveyard: (3, 1, 2),
 }
