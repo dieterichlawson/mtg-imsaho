@@ -12,7 +12,7 @@
 //! - Murder of Crows, 4/4 Flying: "Whenever another creature dies, you may
 //!   draw a card. If you do, discard a card."
 
-use super::{acted, any_object, asked_each, asked_for, board, card_proof, triggers, Act, Form, Kinds, Snapshot};
+use super::{acted, any_object, asked_each, asked_for, board, card_proof, each_case, triggers, Act, Form, Kinds, Snapshot};
 use crate::actions::Target;
 use crate::cards::{CardBehavior, TargetFilter, TargetRequirement as R, TriggerKind};
 use crate::ids::{ObjectId, PlayerId};
@@ -126,45 +126,51 @@ card_proof! {
     /// drawn, nothing more.
     fn murder_of_crows_may_draw_then_discards() {
         assert!(triggers(&isd::murder_of_crows::MurderOfCrows) == [(TriggerKind::AnyCreatureDies, None)]);
-        let (registry, mut state, blank, card) = board(Box::new(isd::murder_of_crows::MurderOfCrows));
-        let you = PlayerId(u8::from(kani::any::<bool>()));
-        let me = state.create_object(card, PlayerId(0), Zone::Battlefield, None, None);
-        state.get_object_mut(me).expect("just created").controller = you;
-        let in_library: bool = kani::any();
-        if in_library {
-            let top = state.create_object(blank, you, Zone::Library, None, None);
-            if you == PlayerId(0) {
-                state.players[0].library_order.push(top);
-            } else {
-                state.players[1].library_order.push(top);
+        // Its controller, and whether their library and their hand hold a
+        // card, are constants in each call: the engine reads both through
+        // an index by the controller, and the hand is a list of a length
+        // the solver would otherwise leave open.
+        each_case(8, |case| {
+            let (registry, mut state, blank, card) = board(Box::new(isd::murder_of_crows::MurderOfCrows));
+            let you = PlayerId(case % 2);
+            let me = state.create_object(card, PlayerId(0), Zone::Battlefield, None, None);
+            state.get_object_mut(me).expect("just created").controller = you;
+            let in_library = case / 2 % 2 == 1;
+            if in_library {
+                let top = state.create_object(blank, you, Zone::Library, None, None);
+                if you == PlayerId(0) {
+                    state.players[0].library_order.push(top);
+                } else {
+                    state.players[1].library_order.push(top);
+                }
             }
-        }
-        let in_hand: bool = kani::any();
-        if in_hand {
-            state.create_object(blank, you, Zone::Hand, None, None);
-        }
-        let behavior = registry.get(card).expect("registered");
-        behavior.on_any_creature_dies(&mut state, me, ObjectId(100), PlayerId(0), &[], 1, false, &[], &registry);
-        let asked = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
-            player, source, choice: ResolutionChoiceKind::YesNo { source_card, .. },
-        }) if *player == you && *source == me && *source_card == me);
-        assert!(asked && acted() == 0);
-        state.awaiting_action = None;
-        let yes: bool = kani::any();
-        behavior.on_yes_no_choice(&mut state, me, yes, &registry);
-        let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, you).iter().map(|o| o.id).collect();
-        if !yes {
-            assert!(acted() == 0);
-        } else if !in_library {
-            assert!(asked_for(&[Act::Draw(you, 1)]));
-        } else if hand.len() == 1 {
-            assert!(asked_for(&[Act::Draw(you, 1), Act::Discard(hand[0])]));
-        } else {
-            let chooses = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
-                player, source, choice: ResolutionChoiceKind::ChooseCardFromHand { player: chooser, cards, discard_immediately: true, remaining: 1, .. },
-            }) if *player == you && *source == me && *chooser == you && *cards == hand);
-            assert!(chooses && asked_for(&[Act::Draw(you, 1)]));
-        }
-        std::mem::forget((registry, state, hand));
+            let in_hand = case / 4 == 1;
+            if in_hand {
+                state.create_object(blank, you, Zone::Hand, None, None);
+            }
+            let behavior = registry.get(card).expect("registered");
+            behavior.on_any_creature_dies(&mut state, me, ObjectId(100), PlayerId(0), &[], 1, false, &[], &registry);
+            let asked = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+                player, source, choice: ResolutionChoiceKind::YesNo { source_card, .. },
+            }) if *player == you && *source == me && *source_card == me);
+            assert!(asked && acted() == 0);
+            state.awaiting_action = None;
+            let yes: bool = kani::any();
+            behavior.on_yes_no_choice(&mut state, me, yes, &registry);
+            let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, you).iter().map(|o| o.id).collect();
+            if !yes {
+                assert!(acted() == 0);
+            } else if !in_library {
+                assert!(asked_for(&[Act::Draw(you, 1)]));
+            } else if hand.len() == 1 {
+                assert!(asked_for(&[Act::Draw(you, 1), Act::Discard(hand[0])]));
+            } else {
+                let chooses = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+                    player, source, choice: ResolutionChoiceKind::ChooseCardFromHand { player: chooser, cards, discard_immediately: true, remaining: 1, .. },
+                }) if *player == you && *source == me && *chooser == you && *cards == hand);
+                assert!(chooses && asked_for(&[Act::Draw(you, 1)]));
+            }
+            std::mem::forget((registry, state, hand));
+        });
     }
 }
