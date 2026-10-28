@@ -778,14 +778,20 @@ pub fn record_destroy_by(state: &mut GameState, id: ObjectId, _: &str, registry:
 }
 
 /// Stands in for `destruction::try_destroy_all`, with every outcome for
-/// each.
+/// each. Both lists are of [`MAX_LISTED`] allocated up front, as
+/// [`listed`]'s: one of the open length of `ids` is no list at all when it
+/// is empty, and an allocation when it is not.
 #[allow(dead_code)] // named only by `kani::stub`
 pub fn record_destroy_all(_: &mut GameState, ids: &[ObjectId], _: &CardRegistry) -> Vec<(ObjectId, DestroyResult)> {
-    let mut outcomes = Vec::with_capacity(ids.len());
+    assert!(ids.len() <= MAX_LISTED, "a list longer than a recorder keeps");
+    let mut outcomes = Vec::with_capacity(MAX_LISTED);
+    let mut recorded = Vec::with_capacity(MAX_LISTED);
     for id in ids {
-        outcomes.push((*id, any_destroy_result()));
+        let outcome = any_destroy_result();
+        outcomes.push((*id, outcome));
+        recorded.push((*id, outcome));
     }
-    record(Act::DestroyAll(outcomes.clone()));
+    record(Act::DestroyAll(recorded));
     outcomes
 }
 
