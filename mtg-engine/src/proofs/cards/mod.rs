@@ -1220,6 +1220,31 @@ impl Snapshot {
         s
     }
 
+    /// This snapshot with permanents `ids` new on the battlefield under
+    /// `controller`, after the objects it had: untapped, undamaged, with no
+    /// counters, attached to nothing and face up; nothing else changed.
+    pub fn with_new_permanents(&self, ids: &[ObjectId], controller: PlayerId) -> Self {
+        let mut s = self.clone();
+        let mut objects = Vec::with_capacity(self.objects.len() + MAX_LISTED);
+        objects.extend_from_slice(&self.objects);
+        assert!(ids.len() <= MAX_LISTED, "more new permanents than a snapshot here adds");
+        for id in ids {
+            objects.push(ObjectRow {
+                id: *id,
+                zone: Zone::Battlefield,
+                controller,
+                tapped: false,
+                damage: 0,
+                counters: [0; COUNTER_KINDS.len()],
+                attached_to: None,
+                attached_to_player: None,
+                transformed: false,
+            });
+        }
+        s.objects = objects;
+        s
+    }
+
     /// This snapshot with player `p`'s graveyard `cards`, bottom first, and
     /// nothing else changed.
     pub fn with_graveyard(&self, p: PlayerId, cards: &[ObjectId]) -> Self {

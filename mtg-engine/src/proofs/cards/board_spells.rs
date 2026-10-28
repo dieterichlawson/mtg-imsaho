@@ -348,26 +348,36 @@ card_proof! { unwind(15)
 /// A board for the spells that read a library or a hand: the spell, cast
 /// by player 0, and up to `library` cards in player 0's library and up to
 /// `hand` in their hand, each a land or not.
+///
+/// Every card is made, and those the board does not hold are in exile,
+/// which neither spell reads: a card made or not as the solver chooses is
+/// an object count it leaves open, and with it every later object's id,
+/// and so where in the board's map each is. The library is its cards top
+/// first, cut to its length, for the same reason: a card pushed or not
+/// moves where the next one goes.
 fn cards_in_zones(card: Box<dyn CardBehavior>, library: usize, hand: usize) -> (CardRegistry, GameState, ObjectId, CardId) {
     let (registry, mut state, blank, card) = board(card);
     let (in_library, in_hand): (usize, usize) = (kani::any(), kani::any());
     kani::assume(in_library <= library && in_hand <= hand);
     state.players[0].library_order = Vec::with_capacity(library);
     for i in 0..library + hand {
-        if (i < library && i >= in_library) || (i >= library && i - library >= in_hand) {
-            continue;
-        }
-        let zone = if i < library { Zone::Library } else { Zone::Hand };
+        let held = if i < library { i < in_library } else { i - library < in_hand };
+        let zone = match (held, i < library) {
+            (false, _) => Zone::Exile,
+            (true, true) => Zone::Library,
+            (true, false) => Zone::Hand,
+        };
         let id = state.create_object(blank, PlayerId(0), zone, None, None);
         let o = state.get_object_mut(id).expect("just created");
         o.card_types = Vec::with_capacity(1);
         if kani::any() {
             o.card_types.push(CardType::Land);
         }
-        if zone == Zone::Library {
+        if i < library {
             state.players[0].library_order.push(id);
         }
     }
+    state.players[0].library_order.truncate(in_library);
     let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
     (registry, state, spell, blank)
 }

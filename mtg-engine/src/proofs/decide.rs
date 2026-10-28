@@ -23,6 +23,8 @@ pub enum Question {
     HasHexproof,
     HasProtection,
     IsIndestructible,
+    HasDeathtouch,
+    HasLifelink,
 }
 
 /// The answers given so far: a fixed array and a count rather than a

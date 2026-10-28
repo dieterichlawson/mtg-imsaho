@@ -689,6 +689,19 @@ sits in memory. What was measured, and what the proofs do about each:
   open is of a variant it leaves open: with it on the left, every
   variant's fields were compared, two thirds of the mill proof's work.
   The proofs put the expected value, whose variant is known, on the left.
+- **Lists of expected actions.** That is so only for an expected value
+  built where it is compared. A list of them whose length the board
+  decides (one action per creature the spell reaches), built first and
+  then compared, is read past its end on paths the solver cannot rule
+  out, and an action read from there is of a variant it leaves open:
+  three quarters of the symbolic execution of milling an empty library
+  was that comparison, and it ran out of memory. In a toy of six
+  variants the same comparison ran out of memory where an expected value
+  built in place took 25 seconds, and one built as either of two
+  variants four times that. The proofs compare such lists run by run,
+  each expected action built in place and of one variant
+  (`asked_each`, `were`), or compare inside the branch where the
+  list's length is known.
 
 The engine actions these card proofs stand in for, proved so far (each
 for both players and boards as its doc comment states):
