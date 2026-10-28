@@ -94,6 +94,11 @@ def list_harnesses(src):
             # A body with a `$` is a macro's own use of the macro, not a proof.
             if n and not body.lstrip('{').strip().startswith('(') and '$' not in body:
                 out.append(path + '::' + n.group(1))
+        for m in re.finditer(r'(?m)^effect_proof!\s*\{', t):
+            body = t[m.end()-1:block(t, m.end()-1)+1]
+            n = re.search(r'\bfn (\w+)\(', body)
+            if n:
+                out.append(path + '::' + n.group(1))
         for m in re.finditer(r'#\[kani::proof\][^\n]*\n(?:\s*#\[[^\n]*\n)*\s*(?:pub )?fn (\w+)', t):
             out.append(path + '::' + m.group(1))
         for m in re.finditer(r'\bfor_each_form!\s*\{', t):
