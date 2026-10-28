@@ -37,11 +37,16 @@ fn creature(card: Box<dyn CardBehavior>) -> Board {
 
 /// [`creature`]'s board, controlled (or last controlled) by `you`.
 fn creature_of(card: Box<dyn CardBehavior>, you: PlayerId) -> Board {
+    creature_at(card, you, kani::any(), kani::any())
+}
+
+/// [`creature_of`]'s board, the creature in its owner's graveyard exactly
+/// if `gone`, and transformed exactly if `transformed`.
+fn creature_at(card: Box<dyn CardBehavior>, you: PlayerId, gone: bool, transformed: bool) -> Board {
     let (registry, mut state, _, card) = board(card);
-    let gone: bool = kani::any();
     let me = state.create_object(card, PlayerId(0), if gone { Zone::Graveyard } else { Zone::Battlefield }, None, None);
     let o = state.get_object_mut(me).expect("just created");
-    o.is_transformed = kani::any();
+    o.is_transformed = transformed;
     if gone {
         o.last_controller = Some(you);
         state.players[0].graveyard_order.push(me);
@@ -442,26 +447,46 @@ card_proof! {
     }
 }
 
+/// Ludevic's Test Subject // Ludevic's Abomination: front face up on the
+/// battlefield, "{1}{U}: Put a hatchling counter on this creature. Then if
+/// there are five or more hatchling counters on it, remove all of them
+/// and transform it"; transformed or off the battlefield, no ability. Its
+/// resolution is the proof below. Where it is and which face is up are
+/// constants in each harness, as for Ulvenwald Mystics: whether it has
+/// the ability is a list of abilities of a length they decide, and with
+/// them the solver's, and the resolution in the same harness, the proof
+/// ran out of memory at four and a half gigabytes in symbolic execution.
+/// In its owner's graveyard for 0, front face up on the battlefield for
+/// 1, and transformed there for 2.
+fn ludevics_test_subject_placed(placed: u8) {
+    let b = creature_at(Box::new(isd::ludevics_test_subject::LudevicsTestSubject), PlayerId(u8::from(kani::any::<bool>())), placed == 0, placed == 2);
+    let got = abilities(&b);
+    if placed == 1 {
+        assert!(got.len() == 1 && got[0] == super::activated::Ability {
+            cost: crate::types::ManaCost::new(vec![
+                crate::types::ManaSymbol::Generic(1), crate::types::ManaSymbol::Colored(crate::types::Color::Blue),
+            ]),
+            ..super::activated::Ability::default()
+        });
+    } else {
+        assert!(got.is_empty());
+    }
+    std::mem::forget((b, got));
+}
+
+case_by_case! { ludevics_test_subject_placed;
+    ludevics_test_subject_gone_has_no_ability: 0,
+    ludevics_test_subject_face_up_has_its_ability: 1,
+    ludevics_abomination_has_no_ability: 2,
+}
+
 card_proof! { adding_counters
-    /// Ludevic's Test Subject // Ludevic's Abomination: front face up on the
-    /// battlefield, "{1}{U}: Put a hatchling counter on this creature. Then
-    /// if there are five or more hatchling counters on it, remove all of
-    /// them and transform it." Over any number of hatchling counters from
-    /// none to five already on it.
+    /// Ludevic's Test Subject's ability resolving: a hatchling counter on
+    /// it, and then, with five or more there, all of them removed and it
+    /// transformed. Over any number of hatchling counters from none to five
+    /// already on it.
     fn ludevics_test_subject_hatches_at_five_counters() {
         let mut b = creature(Box::new(isd::ludevics_test_subject::LudevicsTestSubject));
-        let front_up = b.front_up();
-        let got = abilities(&b);
-        if front_up {
-            assert!(got.len() == 1 && got[0] == super::activated::Ability {
-                cost: crate::types::ManaCost::new(vec![
-                    crate::types::ManaSymbol::Generic(1), crate::types::ManaSymbol::Colored(crate::types::Color::Blue),
-                ]),
-                ..super::activated::Ability::default()
-            });
-        } else {
-            assert!(got.is_empty());
-        }
         let had: u32 = kani::any();
         kani::assume(had <= 5);
         if had > 0 {
@@ -477,6 +502,6 @@ card_proof! { adding_counters
         } else {
             assert!(asked_for(&[add]));
         }
-        std::mem::forget((b, got));
+        std::mem::forget(b);
     }
 }
