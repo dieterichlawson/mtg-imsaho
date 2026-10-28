@@ -348,11 +348,17 @@ card_proof! {
         registry.get(card).expect("registered").on_resolve(&mut state, spell, &[], &registry);
         assert!(Some(&Act::Random(listed(&cards), 2)) == act(0));
         assert!(acted() == 1 + cards.len().min(2));
+        // The cards returned are told apart by the ids their moves name, not
+        // by comparing the two moves: each is a recorded action, of a variant
+        // the solver leaves open, and `!=` between two of them is every
+        // variant compared with every other.
+        let mut returned = [ObjectId(0); 2];
         for i in 1..acted() {
             let Some(Act::Move(id, Zone::Hand)) = act(i) else { panic!("returns to the hand") };
             assert!(cards.contains(id));
-            assert!(i == 1 || act(1) != act(i));
+            returned[i - 1] = *id;
         }
+        assert!(acted() < 3 || returned[0] != returned[1]);
         assert!(Snapshot::of(&state) == before);
         kani::cover!(cards.len() == 3, "two chosen of three");
         std::mem::forget((registry, state, cards, before));
