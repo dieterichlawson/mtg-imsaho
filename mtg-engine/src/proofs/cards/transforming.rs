@@ -297,62 +297,88 @@ fn card_of_yours(b: &mut Board, bears: CardId, zone: Zone) -> ObjectId {
     id
 }
 
-card_proof! {
-    /// Civilized Scholar // Homicidal Brute. Front face up on the
-    /// battlefield, "{T}: Draw a card, then discard a card": its
-    /// controller draws, then discards a card of their hand as it then is
-    /// (the only one without being asked, else the one they choose); a
-    /// creature card discarded, the Scholar untaps and then transforms.
-    fn civilized_scholar_draws_discards_and_transforms_on_a_creature() {
-        let mut b = creature(Box::new(isd::civilized_scholar::CivilizedScholar));
-        let front_up = b.front_up();
-        assert!(abilities(&b).len() == usize::from(front_up));
-        if front_up {
-            assert!(abilities(&b)[0] == super::activated::Ability { tap: true, ..super::activated::Ability::default() });
+/// Civilized Scholar // Homicidal Brute: front face up on the battlefield,
+/// "{T}: Draw a card, then discard a card"; transformed or off the
+/// battlefield, no ability. Its resolution is the proof below. Where it is
+/// and which face is up are constants in each harness, as for Ulvenwald
+/// Mystics: whether it has the ability is a list of abilities of a length
+/// they decide, and with them the solver's, and the resolution in the same
+/// harness, the proof ran out of memory at four and a half gigabytes in
+/// symbolic execution. In its owner's graveyard for 0, front face up on
+/// the battlefield for 1, and transformed there for 2.
+fn civilized_scholar_placed(placed: u8) {
+    let b = creature_at(Box::new(isd::civilized_scholar::CivilizedScholar), PlayerId(u8::from(kani::any::<bool>())), placed == 0, placed == 2);
+    let got = abilities(&b);
+    if placed == 1 {
+        assert!(got.len() == 1 && got[0] == super::activated::Ability { tap: true, ..super::activated::Ability::default() });
+    } else {
+        assert!(got.is_empty());
+    }
+    std::mem::forget((b, got));
+}
+
+case_by_case! { civilized_scholar_placed;
+    civilized_scholar_gone_has_no_ability: 0,
+    civilized_scholar_face_up_has_its_ability: 1,
+    homicidal_brute_has_no_ability: 2,
+}
+
+/// Civilized Scholar's ability resolving: its controller draws, then
+/// discards a card of their hand as it then is (the only one without
+/// being asked, else the one they choose); a creature card discarded, the
+/// Scholar untaps and then transforms. With a card, Grizzly Bears or the
+/// blank card, in its controller's library exactly if `in_library` and in
+/// their hand exactly if `in_hand`, each a constant in its harness: the
+/// hand drawn into is a list of a length they decide.
+fn civilized_scholar_draws_discards_and_transforms_on_a_creature((in_library, in_hand): (bool, bool)) {
+    let mut b = creature(Box::new(isd::civilized_scholar::CivilizedScholar));
+    let bears = b.registry.register(Box::new(crate::cards::grizzly_bears::GrizzlyBears));
+    if in_library {
+        card_of_yours(&mut b, bears, Zone::Library);
+    }
+    if in_hand {
+        card_of_yours(&mut b, bears, Zone::Hand);
+    }
+    b.state.resolving_ability_activator = Some(b.you);
+    let card = b.card();
+    b.registry.get(card).expect("registered").resolve_activated_ability(&mut b.state, b.me, 0, &[], &b.registry);
+    let hand = picked(&b.state.objects_in_zone(Zone::Hand, b.you), |o| Some(o.id));
+    let bears_in_hand = picked(&hand, |id| Some(b.state.get_object(*id).expect("on the board").card_id == bears));
+    let creature_card = |id: ObjectId| hand.iter().zip(&bears_in_hand).any(|(h, is)| *h == id && *is);
+    assert!(Some(&Act::Draw(b.you, 1)) == super::act(0));
+    match hand.as_slice() {
+        [] => {
+            assert!(acted() == 1);
         }
-        let bears = b.registry.register(Box::new(crate::cards::grizzly_bears::GrizzlyBears));
-        let in_library: bool = kani::any();
-        if in_library {
-            card_of_yours(&mut b, bears, Zone::Library);
+        [only] if creature_card(*only) => {
+            assert!(asked_for(&[Act::Draw(b.you, 1), Act::Discard(*only), Act::Untap(b.me), Act::Transform(b.me)]));
         }
-        let in_hand: bool = kani::any();
-        if in_hand {
-            card_of_yours(&mut b, bears, Zone::Hand);
+        [only] => {
+            assert!(asked_for(&[Act::Draw(b.you, 1), Act::Discard(*only)]));
         }
-        b.state.resolving_ability_activator = Some(b.you);
-        let card = b.card();
-        b.registry.get(card).expect("registered").resolve_activated_ability(&mut b.state, b.me, 0, &[], &b.registry);
-        let hand = picked(&b.state.objects_in_zone(Zone::Hand, b.you), |o| Some(o.id));
-        let bears_in_hand = picked(&hand, |id| Some(b.state.get_object(*id).expect("on the board").card_id == bears));
-        let creature_card = |id: ObjectId| hand.iter().zip(&bears_in_hand).any(|(h, is)| *h == id && *is);
-        assert!(Some(&Act::Draw(b.you, 1)) == super::act(0));
-        match hand.as_slice() {
-            [] => {
+        _ => {
+            let asked = matches!(&b.state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+                player, source, choice: ResolutionChoiceKind::ChooseCardFromHand { player: chooser, cards, discard_immediately: true, remaining: 1, .. },
+            }) if *player == b.you && *source == b.me && *chooser == b.you && *cards == hand);
+            assert!(asked && acted() == 1);
+            let discarded = hand[usize::from(kani::any::<bool>())];
+            b.state.awaiting_action = None;
+            b.registry.get(card).expect("registered").on_discard_choice(&mut b.state, b.me, discarded, &b.registry);
+            if creature_card(discarded) {
+                assert!(asked_for(&[Act::Draw(b.you, 1), Act::Untap(b.me), Act::Transform(b.me)]));
+            } else {
                 assert!(acted() == 1);
             }
-            [only] if creature_card(*only) => {
-                assert!(asked_for(&[Act::Draw(b.you, 1), Act::Discard(*only), Act::Untap(b.me), Act::Transform(b.me)]));
-            }
-            [only] => {
-                assert!(asked_for(&[Act::Draw(b.you, 1), Act::Discard(*only)]));
-            }
-            _ => {
-                let asked = matches!(&b.state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
-                    player, source, choice: ResolutionChoiceKind::ChooseCardFromHand { player: chooser, cards, discard_immediately: true, remaining: 1, .. },
-                }) if *player == b.you && *source == b.me && *chooser == b.you && *cards == hand);
-                assert!(asked && acted() == 1);
-                let discarded = hand[usize::from(kani::any::<bool>())];
-                b.state.awaiting_action = None;
-                b.registry.get(card).expect("registered").on_discard_choice(&mut b.state, b.me, discarded, &b.registry);
-                if creature_card(discarded) {
-                    assert!(asked_for(&[Act::Draw(b.you, 1), Act::Untap(b.me), Act::Transform(b.me)]));
-                } else {
-                    assert!(acted() == 1);
-                }
-            }
         }
-        std::mem::forget((b, hand, bears_in_hand));
     }
+    std::mem::forget((b, hand, bears_in_hand));
+}
+
+case_by_case! { civilized_scholar_draws_discards_and_transforms_on_a_creature;
+    civilized_scholar_draws_from_an_empty_library_with_an_empty_hand: (false, false),
+    civilized_scholar_draws_from_an_empty_library_with_a_card_in_hand: (false, true),
+    civilized_scholar_draws_a_card_with_an_empty_hand: (true, false),
+    civilized_scholar_draws_a_card_with_a_card_in_hand: (true, true),
 }
 
 card_proof! {
