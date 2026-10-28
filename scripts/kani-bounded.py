@@ -295,19 +295,27 @@ def solve(cmd, timeout, nrec):
     """Run cbmc: the result, what to say of it, its seconds, the loops whose
     unwinding assertions failed, and every other failure.
 
-    cbmc's output goes to a file beside its program and is read line by
-    line: at the verbosity the statistics need it runs to gigabytes, and
-    held in memory, then parsed whole, it was this driver that the kernel
-    stopped for want of memory, losing the harnesses it had left."""
+    cbmc's output is read line by line as it is written, and only what is
+    said of size, time, errors and results is kept: at the verbosity the
+    statistics need it runs to gigabytes. Held in memory and parsed whole,
+    it was this driver that the kernel stopped for want of memory, losing
+    the harnesses it had left; written to a file beside its program and
+    read back, three runs at once filled the disk. KANI_BOUNDED_KEEP writes
+    it to that file besides."""
     log = next(c for c in cmd if c.endswith('.out')) + '.json'
+    raw = open(log, 'w') if os.environ.get('KANI_BOUNDED_KEEP') else None
     start = time.time()
-    with open(log, 'w') as f:
-        try:
-            p = subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT, timeout=timeout)
-            code, timed_out = p.returncode, False
-        except subprocess.TimeoutExpired:
-            code, timed_out = None, True
-    seconds = time.time() - start
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors='replace')
+    expired = threading.Event()
+
+    def stop():
+        expired.set()
+        p.kill()
+
+    timer = threading.Timer(timeout, stop) if timeout else None
+    if timer:
+        timer.daemon = True
+        timer.start()
     messages, results, size = [], [], ''
     oom = False
     prop = desc = None
@@ -320,31 +328,37 @@ def solve(cmd, timeout, nrec):
         except ValueError:
             return None
 
-    with open(log, errors='replace') as f:
-        for line in f:
-            if re.search(r'[Oo]ut of memory|bad_alloc', line):
-                oom = True
-            if line.startswith('    "messageText": '):
-                text = value(line)
-                if isinstance(text, str):
-                    messages.append([text, None])
-            elif line.startswith('    "messageType": ') and messages:
-                messages[-1][1] = value(line)
-                if len(messages) > 400:
-                    # Only what is said of size, time and errors is kept.
-                    messages = [m for m in messages if m[1] == 'ERROR' or re.match(
-                        r'size of program|Runtime|.* variables, .* clauses|Invalid User Input', m[0])]
-            elif line.startswith('        "description": '):
-                desc = value(line)
-            elif line.startswith('        "property": '):
-                prop = value(line)
-            elif line.startswith('        "status": ') and prop is not None:
-                status = value(line)
-                if status is not None:
-                    results.append((prop, status, desc))
-                prop = desc = None
-    if not os.environ.get('KANI_BOUNDED_KEEP'):
-        os.remove(log)
+    for line in p.stdout:
+        if raw:
+            raw.write(line)
+        if 'ut of memory' in line or 'bad_alloc' in line:
+            oom = True
+        if line.startswith('    "messageText": '):
+            text = value(line)
+            if isinstance(text, str):
+                messages.append([text, None])
+        elif line.startswith('    "messageType": ') and messages:
+            messages[-1][1] = value(line)
+            if len(messages) > 400:
+                # Only what is said of size, time and errors is kept.
+                messages = [m for m in messages if m[1] == 'ERROR' or re.match(
+                    r'size of program|Runtime|.* variables, .* clauses|Invalid User Input', m[0])]
+        elif line.startswith('        "description": '):
+            desc = value(line)
+        elif line.startswith('        "property": '):
+            prop = value(line)
+        elif line.startswith('        "status": ') and prop is not None:
+            status = value(line)
+            if status is not None:
+                results.append((prop, status, desc))
+            prop = desc = None
+    code = p.wait()
+    if timer:
+        timer.cancel()
+    if raw:
+        raw.close()
+    timed_out = expired.is_set()
+    seconds = time.time() - start
     if timed_out:
         steps = next((m[0] for m in messages if m[0].startswith('size of program expression')), None)
         sym = next((m[0] for m in messages if m[0].startswith('Runtime Symex')), None)
