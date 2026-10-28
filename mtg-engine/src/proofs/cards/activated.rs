@@ -525,25 +525,59 @@ card_proof! {
 
 card_proof! {
     /// Full Moon's Rise: Werewolf creatures its controller controls get
-    /// +1/+0 and have trample; its ability puts a regeneration shield on
-    /// each Werewolf creature the player who activated it controls as it
-    /// resolves, and does nothing else.
-    fn full_moons_rise_pumps_and_regenerates_your_werewolves() {
+    /// +1/+0 and have trample. Its ability is the proof below.
+    fn full_moons_rise_pumps_your_werewolves() {
         let werewolves_you_control = |f: &F| both(f, |f| matches!(f, F::ControlledByYou), |f| has_subtype(f, "Werewolf"));
         assert!(prints_where(&isd::full_moons_rise::FullMoonsRise, |e| matches!(e, [
             E::ModifyPT { power: 1, toughness: 0, scope: EffectScope::Global(a) },
             E::GrantKeyword { keyword: Keyword::Trample, scope: EffectScope::Global(b) },
         ] if werewolves_you_control(a) && werewolves_you_control(b))));
-        const WEREWOLVES: Kinds = Kinds { types: &[CardType::Creature], subtypes: &["Werewolf"], keywords: &[] };
-        let mut b = permanent(Box::new(isd::full_moons_rise::FullMoonsRise), &WEREWOLVES, true);
-        let before = b.resolve(0, &[]);
-        let shielded = b.those(|o| {
-            o.zone == Zone::Battlefield && o.controller == b.you && o.card_types.contains(&CardType::Creature)
-                && o.subtypes.iter().any(|s| s == "Werewolf")
-        });
-        assert!(asked_each(shielded.len(), |i| Act::Regenerate(shielded[i])) && Snapshot::of(&b.state) == before);
-        std::mem::forget((b, shielded));
     }
+}
+
+/// Full Moon's Rise's ability: a regeneration shield on each Werewolf
+/// creature the player who activated it controls as it resolves, and
+/// nothing else. With each of the other two objects a Werewolf or not, and
+/// that player `you`, constants in each call: subtypes the solver chose
+/// among were strings each one of several allocations, every Werewolf
+/// creature the ability looks for compared with them byte by byte, and the
+/// proof ran out of memory at ten gigabytes; with the subtypes constant
+/// and the four boards in one harness, at four.
+fn full_moons_rise_regenerates(werewolves: [bool; 2], you: PlayerId) {
+    const CREATURES: Kinds = Kinds { types: &[CardType::Creature], subtypes: &[], keywords: &[] };
+    let mut b = permanent_of(Box::new(isd::full_moons_rise::FullMoonsRise), &CREATURES, true, you);
+    for (id, werewolf) in b.others.into_iter().zip(werewolves) {
+        if werewolf {
+            b.state.get_object_mut(id).expect("on the board").subtypes = vec!["Werewolf".into()];
+        }
+    }
+    let before = b.resolve(0, &[]);
+    let shielded = b.those(|o| {
+        o.zone == Zone::Battlefield && o.controller == b.you && o.card_types.contains(&CardType::Creature)
+            && o.subtypes.iter().any(|s| s == "Werewolf")
+    });
+    assert!(asked_each(shielded.len(), |i| Act::Regenerate(shielded[i])) && Snapshot::of(&b.state) == before);
+    std::mem::forget((b, shielded));
+}
+
+/// The proof above, a harness for each pair of the card and the token
+/// Werewolves or not, for either player activating it.
+macro_rules! over_each_pair {
+    ($($name:ident: $proof:ident[$card:literal, $token:literal];)*) => {$(
+        card_proof! {
+            /// The proof above it, for one pair.
+            fn $name() {
+                each_case(2, |p| $proof([$card, $token], PlayerId(p)));
+            }
+        }
+    )*};
+}
+
+over_each_pair! {
+    full_moons_rise_regenerates_with_no_other_werewolf: full_moons_rise_regenerates[false, false];
+    full_moons_rise_regenerates_with_the_token_a_werewolf: full_moons_rise_regenerates[false, true];
+    full_moons_rise_regenerates_with_the_card_a_werewolf: full_moons_rise_regenerates[true, false];
+    full_moons_rise_regenerates_with_both_werewolves: full_moons_rise_regenerates[true, true];
 }
 
 card_proof! {
