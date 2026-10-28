@@ -1565,6 +1565,21 @@ pub fn any_object(state: &mut GameState, blank: CardId, kinds: &Kinds, form: For
     id
 }
 
+/// [`any_object`] of exactly `subtypes`, `kinds`' subtypes aside: for a
+/// proof that is a harness for each object's subtypes. Subtypes the solver
+/// chose among are strings, each one of several allocations, and every
+/// subtype a card looks for is compared with them byte by byte: Full
+/// Moon's Rise's proof ran out of memory so at ten gigabytes.
+pub fn any_object_of(state: &mut GameState, blank: CardId, kinds: &Kinds, form: Form, subtypes: &[&str]) -> ObjectId {
+    let id = any_object(state, blank, &Kinds { subtypes: &[], ..*kinds }, form);
+    let o = state.get_object_mut(id).expect("just created");
+    o.subtypes = Vec::with_capacity(subtypes.len());
+    for s in subtypes {
+        o.subtypes.push((*s).to_string());
+    }
+    id
+}
+
 /// A card's triggered abilities as the engine reads them to know when it
 /// triggers: each one's event, and what it targets (CR 603.1, 603.3d).
 ///

@@ -44,7 +44,10 @@
 //! permanents that are creatures (CR 110.1, 302); "each" is every one,
 //! in the order the game lists them.
 
-use super::{act, acted, any_object, asked_each, asked_for, board, both, card_proof, each_is, either, has_subtype, kept, listed, new_ids, were, Act, Form, Kinds, Snapshot};
+use super::{
+    act, acted, any_object, any_object_of, asked_each, asked_for, board, both, card_proof, case_by_case, each_is, either,
+    has_subtype, kept, listed, new_ids, were, Act, Form, Kinds, Snapshot,
+};
 use crate::cards::{AdditionalCost, CardBehavior, CardRegistry};
 use crate::damage::DamageKind;
 use crate::destruction::DestroyResult;
@@ -87,6 +90,21 @@ impl Resolved {
 fn resolve(card: Box<dyn CardBehavior>, kinds: &Kinds) -> Resolved {
     let (registry, mut state, blank, card) = board(card);
     let others = [any_object(&mut state, blank, kinds, Form::Card), any_object(&mut state, blank, kinds, Form::Token)];
+    resolve_on(registry, state, card, others)
+}
+
+/// [`resolve`], the card of exactly `subtypes[0]` and the token of
+/// `subtypes[1]`.
+fn resolve_of(card: Box<dyn CardBehavior>, kinds: &Kinds, subtypes: [&[&str]; 2]) -> Resolved {
+    let (registry, mut state, blank, card) = board(card);
+    let others = [
+        any_object_of(&mut state, blank, kinds, Form::Card, subtypes[0]),
+        any_object_of(&mut state, blank, kinds, Form::Token, subtypes[1]),
+    ];
+    resolve_on(registry, state, card, others)
+}
+
+fn resolve_on(registry: CardRegistry, mut state: GameState, card: CardId, others: [ObjectId; 2]) -> Resolved {
     let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
     let before = Snapshot::of(&state);
     registry.get(card).expect("registered").on_resolve(&mut state, spell, &[], &registry);
@@ -134,21 +152,29 @@ card_proof! {
     }
 }
 
-card_proof! {
-    /// Vampiric Fury: +2/+0 and first strike until end of turn on each
-    /// Vampire creature its controller controls, and nothing else.
-    fn vampiric_fury_pumps_each_of_your_vampires() {
-        const VAMPIRES: Kinds = Kinds { types: &[CardType::Creature], subtypes: &["Vampire"], keywords: &[] };
-        let r = resolve(Box::new(isd::vampiric_fury::VampiricFury), &VAMPIRES);
-        let ids = r.those(|o| creature(o) && yours(o) && o.subtypes.iter().any(|s| s == "Vampire"));
-        assert!(each_is(r.added(), 2 * ids.len(), |i| if i % 2 == 0 {
-            T::ModifyPT { target: ids[i / 2], power_mod: 2, toughness_mod: 0 }
-        } else {
-            T::GrantKeyword { target: ids[i / 2], keyword: Keyword::FirstStrike }
-        }));
-        assert!(acted() == 0 && r.nothing_else_changed());
-        std::mem::forget(r);
-    }
+/// Vampiric Fury: +2/+0 and first strike until end of turn on each
+/// Vampire creature its controller controls, and nothing else. With each
+/// of the other two objects a Vampire or not, a constant in each harness:
+/// over subtypes the solver chose, the proof ran out of memory at four and
+/// a half gigabytes.
+fn vampiric_fury_pumps_each_of_your_vampires(vampires: [bool; 2]) {
+    const CREATURE: Kinds = Kinds { types: &[CardType::Creature], subtypes: &[], keywords: &[] };
+    let r = resolve_of(Box::new(isd::vampiric_fury::VampiricFury), &CREATURE, vampires.map(|v| if v { &["Vampire"][..] } else { &[] }));
+    let ids = r.those(|o| creature(o) && yours(o) && o.subtypes.iter().any(|s| s == "Vampire"));
+    assert!(each_is(r.added(), 2 * ids.len(), |i| if i % 2 == 0 {
+        T::ModifyPT { target: ids[i / 2], power_mod: 2, toughness_mod: 0 }
+    } else {
+        T::GrantKeyword { target: ids[i / 2], keyword: Keyword::FirstStrike }
+    }));
+    assert!(acted() == 0 && r.nothing_else_changed());
+    std::mem::forget((r, ids));
+}
+
+case_by_case! { vampiric_fury_pumps_each_of_your_vampires;
+    vampiric_fury_with_neither_other_object_a_vampire: [false, false],
+    vampiric_fury_with_the_token_a_vampire: [false, true],
+    vampiric_fury_with_the_card_a_vampire: [true, false],
+    vampiric_fury_with_both_vampires: [true, true],
 }
 
 card_proof! {
