@@ -1113,15 +1113,14 @@ pub fn finish_library_search(
 ) {
     let name = state.obj_name(found);
     state.move_object(found, destination, registry);
-    if destination == Zone::Battlefield {
-        if let Some(obj) = state.get_object_mut(found) {
-            obj.summoning_sick = false;
-        }
+    // A permanent put onto the battlefield is summoning sick as entering
+    // made it (CR 302.6), which is no matter for a land. This used to clear
+    // it, so a creature card a search put onto the battlefield could have
+    // attacked, or paid a {T} cost, the turn it arrived.
+    if destination == Zone::Battlefield && tapped {
         // "put it onto the battlefield tapped" — the land arrives tapped
         // rather than being tapped by anything (CR 614.1c).
-        if tapped {
-            state.arrives_tapped(found);
-        }
+        state.arrives_tapped(found);
     }
     state.log(crate::state::LogLevel::Event,
         format!("p{} searched their library and found {name}", searcher.0));

@@ -333,11 +333,12 @@ fn a_library_search_only_touches_the_card_it_puts_onto_the_battlefield() {
         (state, found)
     };
 
-    // Onto the battlefield: ready to use, and untapped unless asked.
+    // Onto the battlefield: ready to use, and untapped unless asked. It
+    // entered this turn, which a land does not care about (CR 302.6).
     let (state, found) = searched(Zone::Battlefield, false);
     let o = state.get_object(found).unwrap();
     assert_eq!(o.zone, Zone::Battlefield);
-    assert!(!o.summoning_sick, "a land fetched onto the battlefield is usable");
+    assert!(state.can_pay_tap_cost(found, &reg), "a land fetched onto the battlefield is usable");
     assert!(!o.tapped, "and arrives untapped when the card does not say otherwise");
 
     // "...tapped" arrives tapped (CR 614.1c).
@@ -356,6 +357,24 @@ fn a_library_search_only_touches_the_card_it_puts_onto_the_battlefield() {
     assert!(state.events.iter().any(|e|
         matches!(e, GameEvent::LibraryShuffled { player } if *player == P0)),
         "a search shuffles the library it read");
+}
+
+/// CR 302.6: a creature card a search puts onto the battlefield is summoning
+/// sick, as anything that enters is; the search does not decide that.
+/// `finish_library_search` cleared the flag on whatever it put there, which
+/// only a land's search reached in this pool, so a creature fetched by a
+/// future card would have attacked the turn it arrived. Found by the Kani
+/// proof of `finish_library_search`.
+#[test]
+fn a_creature_card_a_search_puts_onto_the_battlefield_is_summoning_sick() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let found = card_in_library(&mut state, &reg, "Walking Corpse", P0);
+    mtg_engine::cards::helpers::finish_library_search(&mut state, P0, found, Zone::Battlefield, false, &reg);
+    assert_eq!(state.get_object(found).unwrap().zone, Zone::Battlefield);
+    assert!(state.has_summoning_sickness(found, &reg),
+        "it came under its controller's control this turn, so it cannot attack or tap");
+    assert!(!state.can_pay_tap_cost(found, &reg));
 }
 
 /// "Whenever a creature card is put into an **opponent's** graveyard from
