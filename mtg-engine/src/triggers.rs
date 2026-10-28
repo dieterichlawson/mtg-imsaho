@@ -105,6 +105,7 @@ pub struct DeadCreature {
 /// `TriggerKind`s — a card can have both, and Blood Artist's "whenever this or
 /// another creature dies" must fire its watcher ability when it dies itself.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(kani, repr(u8))] // a tag of its own in the proofs: scripts/precise-enums.py says why
 pub enum TriggerEvent {
     /// This creature died.
     SelfDies,

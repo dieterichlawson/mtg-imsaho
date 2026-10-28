@@ -442,6 +442,7 @@ impl TriggeredAbilityDef {
 /// Typed filter for creature or permanent targeting restrictions.
 /// Used instead of stringly-typed filters for compile-time safety.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(kani, repr(u8))] // a tag of its own in the proofs: scripts/precise-enums.py says why
 pub enum TargetFilter {
     /// No additional restriction beyond the base type.
     Any,

@@ -5,6 +5,7 @@ use crate::types::{Zone, Step, ManaPool, ContinuousEffect};
 
 /// An entry on the stack — a spell, triggered ability, or activated ability.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(kani, repr(u8))] // a tag of its own in the proofs: scripts/precise-enums.py says why
 pub enum StackEntry {
     /// A spell (instant, sorcery, creature, etc.) on the stack.
     Spell(ObjectId),
@@ -513,6 +514,7 @@ pub struct LogEntry {
 
 /// A temporary effect that expires during the cleanup step.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(kani, repr(u8))] // a tag of its own in the proofs: scripts/precise-enums.py says why
 pub enum TemporaryEffect {
     /// Modify power and/or toughness (e.g., Giant Growth +3/+3).
     ModifyPT { target: ObjectId, power_mod: i32, toughness_mod: i32 },
@@ -4653,6 +4655,7 @@ pub struct PendingSpellCast {
 
 /// What the engine is waiting for the player to do.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(kani, repr(u8))] // a tag of its own in the proofs: scripts/precise-enums.py says why
 pub enum AwaitingAction {
     DeclareAttackers,
     DeclareBlockers { defending_player: PlayerId },
@@ -4697,6 +4700,7 @@ pub struct TriggerOrderOption {
 
 /// Describes what kind of mid-resolution choice is needed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(kani, repr(u8))] // a tag of its own in the proofs: scripts/precise-enums.py says why
 pub enum ResolutionChoiceKind {
     /// Choose whether to pay a cost (Frightful Delusion's "pay {1}").
     PayOrNot {
@@ -5022,6 +5026,7 @@ pub enum ResolutionChoiceKind {
 
 /// What happens to the chosen target when a `ResolutionChoice` is resolved.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(kani, repr(u8))] // a tag of its own in the proofs: scripts/precise-enums.py says why
 pub enum PendingEffect {
     /// Deal N damage to the chosen target.
     /// CR 119.3: damage has a source, and the source is an object — not its

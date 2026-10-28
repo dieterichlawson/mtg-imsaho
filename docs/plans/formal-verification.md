@@ -733,6 +733,33 @@ sits in memory. What was measured, and what the proofs do about each:
 - **CBMC's memory checks.** `kani-bounded.py` leaves out CBMC's pointer,
   bounds and division checks (`--memory-checks` keeps them): that safe
   Rust reads only memory it may is the compiler's guarantee, and Rust's
+- **Which member of a union.** CBMC splits a union into its members and
+  keeps a value written as bytes as its widest member, but reads through a
+  pointer, or by bytes, through the *first* member with a field where
+  those bytes are, and by name through the member named. A read through a
+  member other than the one kept is simplified only by turning the whole
+  value into bits, which CBMC cannot do when the value holds a pointer
+  (any `String`'s) or bytes never written (a fieldless variant's). So the
+  tag of a niche-encoded enum (`PendingEffect`, `TargetFilter`,
+  `GameEvent`: the tag kept in a niche of one variant's bytes) was not
+  known in symbolic execution even three lines after the value was built,
+  and every `match` on it followed every arm: applying a -1/-2 went into a
+  token's attack and, recursively, the choice of the next one, out of
+  memory. And a tagged enum's variant inside another's
+  (`ContinuousEffect::PreventAttack { scope: EffectScope::Attached }`)
+  was cloned as every scope, each filter's every variant included, out of
+  memory. In a Kani build the engine's niche-encoded enums are tagged
+  (`#[cfg_attr(kani, repr(u8))]`, a change of layout only), and
+  `precise-enums.py` writes each tagged variant as the union of its own
+  member, which a read by that name gives back exactly; makes a fieldless
+  variant's unwritten bytes zero, so that CBMC knows, and propagates, all
+  of a value holding one; and, for the niche-encoded enums left (the
+  standard library's), puts each union's widest variant first (a union's
+  members all start at its first byte, so their order is not the
+  program's) and writes the tag as part of the variant's value. The
+  debuff harness then finished in 75 seconds, which had run out of memory
+  at six gigabytes, and the clone of that effect, boxed or not, in some
+  sixty thousand steps, which had run out of memory at three.
   own checks are assertions in the program and stay. Rolling Temblor's
   symbolic execution took half the time without them, with 3876 checks
   left to solve rather than 9670. Freeing stands in as nothing in the

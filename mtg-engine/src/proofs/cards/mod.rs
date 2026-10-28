@@ -79,6 +79,7 @@ mod werewolves;
 
 /// An action a card asked the engine for.
 #[derive(Debug, Clone, PartialEq)]
+#[repr(u8)] // a tag of its own: scripts/precise-enums.py says why
 pub enum Act {
     /// `engine::apply_pending_effect`: `effect`, to `target`.
     Effect(Target, PendingEffect),

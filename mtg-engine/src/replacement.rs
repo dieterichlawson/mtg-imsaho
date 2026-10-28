@@ -44,6 +44,7 @@ pub struct EnteringPermanent {
 
 /// An event a replacement effect may act on before it happens.
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(kani, repr(u8))] // a tag of its own in the proofs: scripts/precise-enums.py says why
 pub enum ReplaceableEvent {
     EntersBattlefield(EnteringPermanent),
     /// One or more tokens are about to be created under `controller`.

@@ -29,16 +29,37 @@ The rewrite, which changes nothing a Rust program can observe:
   fills it with zero instead (safe Rust never reads padding: derived `==`
   and `Hash` go field by field, and the engine has no `unsafe`);
 - every assignment `x.cases.V := v` of an enum with its own tag field
-  becomes `x.cases := bytes of {v, 0...}`, so the bytes of other variants
-  are zero rather than whatever they were. No program reads a variant other
-  than the one its tag names. A niche-encoded enum keeps its tag inside a
+  becomes `x.cases := the union of member V, v`, a write of the whole
+  union rather than of one member over its bytes as they were (which CBMC
+  keeps as an update of those bytes, and does not simplify a read of), and
+  one that a read of member V gives back exactly, where the union as bytes
+  would be kept as its widest member. No program reads a variant other
+  than the one its tag names. A fieldless variant, only its tag written,
+  has its variants' bytes made zero, so that CBMC knows all of it and
+  propagates it. A niche-encoded enum keeps its tag inside a
   variant's bytes and is left alone, as is a Rust `union`, whose other
   bytes are kept by a write. A niche-encoded enum's variant (its tag kept
   in a field of another variant's bytes) is written as its fields, if it
   has any, and then its tag into the niche: both become one write of the
-  whole value, the bytes outside the variant zero, when the variable was
+  whole value, the bytes outside the variant zero, the tag in the
+  variant's leading padding (where the niche is), when the variable was
   fresh (declared just before) or the write of its fields came just
-  before;
+  before; and the variant that holds the niche, written with no tag
+  after it, is written as the whole value too;
+- each enum's widest variant is put first in its union. CBMC keeps a
+  union's value as its widest member and reads one through a pointer
+  through the first member with a field where the bytes are, and a read
+  through a member other than the one kept is simplified only when the
+  whole value converts to bits, which a value holding a pointer does not:
+  a niche-encoded enum's tag, read so, was unknown, and every `match` on
+  it followed every arm. A union's members all start at its first byte,
+  so their order is not the program's. A variant other than the widest
+  is then still read through another member than the one kept, so the
+  engine's own enums that would be niche-encoded and hold pointers
+  (`PendingEffect`, `TargetFilter`, `GameEvent` and the rest marked
+  `#[cfg_attr(kani, repr(u8))]`) keep their tag in a field of its own in
+  a Kani build, and each variant is written as the union of its own
+  member (below), read back by that member's name;
 - every heap allocation (CBMC's `malloc`, which Kani's `__rust_alloc`
   calls) is zeroed, as `calloc`'s is. Rust's allocator hands out memory of
   no particular value, and safe Rust never reads memory before writing it
@@ -173,13 +194,13 @@ def rewrite(version, strings, symbols, functions):
             uw, vw = width(ut), (width(vt) if vt is not None else None)
             if uw is None or vw is None or vw > uw:
                 continue
-            comps, ops = [gb.Irep(EMPTY, [], [(K_NAME, leaf('v')), (K_TYPE, vt)])], [rhs]
-            if uw > vw:
-                tail = gb.Irep(UNSIGNEDBV, [], [(K_WIDTH, leaf(str(uw - vw)))])
-                comps.append(gb.Irep(EMPTY, [], [(K_NAME, leaf('tail')), (K_TYPE, tail)]))
-                ops.append(zero(tail))
-            bytes_of = gb.Irep(STRUCT, ops, [(K_TYPE, gb.Irep(STRUCT, [], [(K_COMPONENTS, gb.Irep(EMPTY, comps, []))]))])
-            whole = gb.Irep(BYTE_EXTRACT, [bytes_of, offset0], [(K_TYPE, ut), (K_BITS_PER_BYTE, leaf('8'))])
+            # The union as the member written: read by that member's name,
+            # as code reads the variant its tag names, it is the value
+            # written. As bytes, CBMC keeps it as its widest member, and a
+            # read through any other member is simplified only when the
+            # whole value converts to bits, which it does not when it holds
+            # a pointer or bytes never written (a fieldless variant's).
+            whole = gb.Irep(UNION, [rhs], [(K_TYPE, ut), (K_COMPONENT_NAME, named(lhs, K_COMPONENT_NAME))])
             ins[0] = gb.Irep(code.id, [cases, whole], list(code.named))
             variants += 1
 
@@ -187,6 +208,49 @@ def rewrite(version, strings, symbols, functions):
     # bytes, then its tag written into the niche, `*(T *)&x := tag`. Made a
     # write of the whole union, the bytes outside the variant zero.
     DEREF, TYPECAST, ADDRESS_OF, SYMBOL = sid('dereference'), sid('typecast'), sid('address_of'), sid('symbol')
+
+    # A tagged enum's fieldless variant: a fresh local, `DECL x`, then only
+    # its tag written, `x.case := tag`, its variants' bytes never. Made a
+    # write of the whole value, those bytes zero: CBMC propagates a value
+    # only when it knows all of it, and one holding this one (a
+    # `ContinuousEffect` over `EffectScope::Attached`) was not propagated
+    # into a `Box`, where cloning it then went into every scope's filter.
+    fieldless = 0
+    for _, instrs in functions:
+        for i, ins in enumerate(instrs[1:], 1):
+            code, prev = ins[0], instrs[i - 1]
+            if ins[2] != ASSIGN or len(code.subs) != 2 or prev[2] != DECL or not prev[0].subs:
+                continue
+            lhs, tag = code.subs
+            if lhs.id != MEMBER or not lhs.subs or lhs.subs[0].id != SYMBOL:
+                continue
+            x, cn = lhs.subs[0], named(lhs, K_COMPONENT_NAME)
+            declared, xid = prev[0].subs[0], named(lhs.subs[0], K_IDENT)
+            if (cn is None or strings[cn.id] != b'case' or declared.id != SYMBOL or xid is None
+                    or named(declared, K_IDENT) is None or named(declared, K_IDENT).id != xid.id):
+                continue
+            st = resolve(named(x, K_TYPE))
+            comps = named(st, K_COMPONENTS) if st is not None and st.id == STRUCT else None
+            if comps is None:
+                continue
+            ops = []
+            for c in comps.subs:
+                name, ct = strings[named(c, K_NAME).id], named(c, K_TYPE)
+                w = width(ct)
+                if name == b'case':
+                    ops.append(tag)
+                elif w is None:
+                    break
+                elif ct.id == UNION_TAG:
+                    bits = gb.Irep(UNSIGNEDBV, [], [(K_WIDTH, leaf(str(w)))])
+                    ops.append(gb.Irep(BYTE_EXTRACT, [zero(bits), offset0], [(K_TYPE, ct), (K_BITS_PER_BYTE, leaf('8'))]))
+                else:
+                    ops.append(zero(ct))
+            if len(ops) != len(comps.subs):
+                continue
+            ins[0] = gb.Irep(code.id, [x, gb.Irep(STRUCT, ops, [(K_TYPE, named(x, K_TYPE))])], list(code.named))
+            fieldless += 1
+
 
     def niche_write_to(code, var):
         if len(code.subs) != 2:
@@ -197,24 +261,87 @@ def rewrite(version, strings, symbols, functions):
         return lhs.id == ADDRESS_OF and lhs.subs and lhs.subs[0].id == SYMBOL and named(lhs.subs[0], K_IDENT) is not None \
             and named(lhs.subs[0], K_IDENT).id == var
 
-    niches = 0
+    def is_enum_union(ut):
+        """Whether union type `ut` is an enum's (each member a variant, a
+        struct named for the enum): a niche-encoded enum's, or the union
+        of a tagged enum's variants beside its tag. Not a Rust `union`."""
+        u, ident = resolve(ut), named(ut, K_IDENT)
+        comps = named(u, K_COMPONENTS) if u is not None and u.id == UNION else None
+        if ident is None or comps is None or not comps.subs:
+            return False
+        name = strings[ident.id]
+        prefix = (name[:-len(b'-union')] if name.endswith(b'-union') else name) + b'::'
+        for c in comps.subs:
+            ct = named(c, K_TYPE)
+            ci = named(ct, K_IDENT) if ct is not None and ct.id == STRUCT_TAG else None
+            if ci is None or not strings[ci.id].startswith(prefix):
+                return False
+        return True
+
+    # Each enum's widest variant first. Symex splits a union into its
+    # members and keeps its value as the widest member (the first of the
+    # widest: CBMC turns the bytes of a whole write into that member), but
+    # reads through a pointer, or by bytes, through the first member with a
+    # field where the bytes are; a member read other than the one kept is
+    # simplified only by turning the whole value into bits, which CBMC
+    # cannot do when it holds a pointer. The tag of a niche-encoded enum
+    # was read through another member than the one kept, and every `match`
+    # on it followed every arm. Members of a union all start at its first
+    # byte, so their order is not the program's.
+    reordered = 0
+    for ident, ty in types.items():
+        comps = named(ty, K_COMPONENTS) if ty.id == UNION else None
+        if comps is None or len(comps.subs) < 2 or not is_enum_union(gb.Irep(UNION_TAG, [], [(K_IDENT, gb.Irep(ident, [], []))])):
+            continue
+        ws = [width(named(c, K_TYPE)) for c in comps.subs]
+        if any(w is None for w in ws):
+            continue
+        widest = ws.index(max(ws))
+        if widest:
+            comps.subs.insert(0, comps.subs.pop(widest))
+            reordered += 1
+
+    niches, tags, dataful = 0, 0, 0
     for _, instrs in functions:
         for i, ins in enumerate(instrs[:-1]):
             code = ins[0]
-            if ins[2] != ASSIGN or len(code.subs) != 2 or instrs[i + 1][2] != ASSIGN:
+            if ins[2] != ASSIGN or len(code.subs) != 2:
                 continue
             lhs, rhs = code.subs
             if lhs.id != MEMBER or not lhs.subs or lhs.subs[0].id != SYMBOL:
                 continue
             union = lhs.subs[0]
             ut, var = named(union, K_TYPE), named(union, K_IDENT)
-            if ut is None or ut.id != UNION_TAG or var is None or not niche_write_to(instrs[i + 1][0], var.id):
+            if ut is None or ut.id != UNION_TAG or var is None:
+                continue
+            tagged = instrs[i + 1][2] == ASSIGN and niche_write_to(instrs[i + 1][0], var.id)
+            if not tagged and not is_enum_union(ut):
                 continue
             vt = named(rhs, K_TYPE)
             uw, vw = width(ut), (width(vt) if vt is not None else None)
             if uw is None or vw is None or vw > uw:
                 continue
             comps, ops = [gb.Irep(EMPTY, [], [(K_NAME, leaf('v')), (K_TYPE, vt)])], [rhs]
+            if tagged:
+                # The tag goes where the niche is, the variant's leading
+                # padding, and its write of its own goes: the value is then
+                # one whose tag symex reads back (with the widest variant
+                # first, above).
+                nxt = instrs[i + 1][0]
+                tag = nxt.subs[1]
+                vr = resolve(vt)
+                vcomps = named(vr, K_COMPONENTS) if vr is not None and vr.id == STRUCT else None
+                if rhs.id == STRUCT and rhs.subs and vcomps is not None and len(vcomps.subs) == len(rhs.subs) and tag.id == CONSTANT:
+                    c0, tt = vcomps.subs[0], named(tag, K_TYPE)
+                    pad, ct = named(c0, K_PADDING), named(c0, K_TYPE)
+                    if pad is not None and strings[pad.id] == b'1' and tt is not None and width(ct) is not None and width(ct) == width(tt):
+                        first = tag if tt.id == ct.id else gb.Irep(TYPECAST, [tag], [(K_TYPE, ct)])
+                        ops = [gb.Irep(rhs.id, [first] + rhs.subs[1:], list(rhs.named))]
+                        instrs[i + 1][0] = gb.Irep(nxt.id, [union, union], list(nxt.named))
+                        tags += 1
+            else:
+                # The variant that holds the niche, whose own bytes are its tag.
+                dataful += 1
             if uw > vw:
                 tail = gb.Irep(UNSIGNEDBV, [], [(K_WIDTH, leaf(str(uw - vw)))])
                 comps.append(gb.Irep(EMPTY, [], [(K_NAME, leaf('tail')), (K_TYPE, tail)]))
@@ -284,15 +411,17 @@ def rewrite(version, strings, symbols, functions):
     for ins, code, rhs in list(allocations('malloc')):
         ins[0] = gb.Irep(code.id, [code.subs[0], gb.Irep(rhs.id, [rhs.subs[0], zeroed], list(rhs.named))], list(code.named))
         allocs += 1
-    return padding, variants, niches, allocs
+    return padding, variants, fieldless, niches, tags, dataful, reordered, allocs
 
 
 def main(src, dst):
     model = gb.read(src)
-    padding, variants, niches, allocs = rewrite(*model)
+    padding, variants, fieldless, niches, tags, dataful, reordered, allocs = rewrite(*model)
     gb.write(dst, *model)
     print(f'{padding} padding values made zero, {variants} variant writes made whole, '
-          f'{niches} niche variant writes made whole, {allocs} allocations zeroed')
+          f'{fieldless} fieldless variants made whole, '
+          f'{niches} niche variant writes made whole ({tags} with their tags, {dataful} holding the niche), '
+          f'{reordered} enums with their widest variant put first, {allocs} allocations zeroed')
 
 
 if __name__ == '__main__':

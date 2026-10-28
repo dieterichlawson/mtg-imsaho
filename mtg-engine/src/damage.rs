@@ -71,6 +71,7 @@ pub struct PendingDamage {
 /// One replacement or prevention effect that applies to a damage event —
 /// the things the affected player chooses among (CR 616.1).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(kani, repr(u8))] // a tag of its own in the proofs: scripts/precise-enums.py says why
 pub enum DamageEffect {
     /// A prevention effect that prevents all of the damage and does nothing
     /// else (CR 615).
@@ -90,6 +91,7 @@ pub enum DamageEffect {
 
 /// What is preventing all of a damage event.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(kani, repr(u8))] // a tag of its own in the proofs: scripts/precise-enums.py says why
 pub enum Prevention {
     /// A permanent's static ability — Ghostly Possession on the source or
     /// the target.
