@@ -1373,7 +1373,7 @@ card_proof! {
     }
 }
 
-card_proof! {
+card_proof! { unwind(8)
     /// Ghost Quarter: its target destroyed, and then, destroyed or not
     /// (the card's ruling), its controller as it was may search their
     /// library for a basic land card to put onto the battlefield untapped:
@@ -1609,7 +1609,9 @@ card_proof! {
         for id in [b.me, b.others[0], b.others[1]] {
             let o = b.state.get_object(id).expect("on the board");
             let on = o.zone == Zone::Battlefield;
-            let creature = on && o.card_types.contains(&CardType::Creature);
+            // Olivia a creature card, printed so; the blank card's objects
+            // creatures by the types they were given.
+            let creature = on && (id == b.me || o.card_types.contains(&CardType::Creature));
             let t = Target::Object(id);
             assert!(b.registry.get(punishment).expect("registered").is_valid_target(&b.state, b.you, &t, &b.registry) == on);
             assert!(b.registry.get(olivia).expect("registered").is_valid_target(&b.state, b.you, &t, &b.registry) == creature);

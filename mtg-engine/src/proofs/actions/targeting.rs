@@ -66,7 +66,9 @@ fn two_objects(state: &mut GameState, blank: crate::ids::CardId) -> [ObjectId; 2
 }
 
 #[kani::proof]
-#[kani::unwind(7)]
+// Eight questions asked (four of each object), so `decided` looks through
+// up to nine of its answers.
+#[kani::unwind(10)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
 #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]

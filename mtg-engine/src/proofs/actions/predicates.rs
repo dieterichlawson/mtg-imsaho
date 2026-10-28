@@ -74,29 +74,56 @@ for_each_form! {
     }
 }
 
+/// For the subtype filters: the types `FILTERED` gives, and no subtype,
+/// which each proof below gives itself.
+const TYPED: Kinds = Kinds {
+    types: &[CardType::Creature, CardType::Artifact, CardType::Enchantment],
+    subtypes: &[],
+    keywords: &[],
+};
+
+/// Every set of the subtypes `FILTERED` names.
+const SUBTYPE_SETS: [&[&str]; 8] = [
+    &[], &["Spirit"], &["Vampire"], &["Zombie"],
+    &["Spirit", "Vampire"], &["Spirit", "Zombie"], &["Vampire", "Zombie"], &["Spirit", "Vampire", "Zombie"],
+];
+
+/// The subtype filters' answers for an object with subtypes `subtypes`, a
+/// constant in each call: an object whose subtypes the solver chose among
+/// was a list of strings each one of several allocations, and comparing
+/// them by bytes ran the solver out of memory.
+fn subtype_filters_for(form: crate::proofs::cards::Form, subtypes: &[&str]) {
+    let (registry, mut state, blank) = blank_board();
+    let id = any_object(&mut state, blank, &TYPED, form);
+    let o = state.get_object_mut(id).expect("on the board");
+    o.subtypes = subtypes.iter().map(|s| (*s).to_string()).collect();
+    let o = state.get_object(id).expect("on the board");
+    let sub = |s: &str| subtypes.contains(&s);
+    let (spirit, enchantment) = (sub("Spirit"), has_type(o, CardType::Enchantment));
+    let tribal = sub("Vampire") || sub("Werewolf") || sub("Zombie");
+    let spirit_or_enchantment = TargetFilter::SubtypeOrCardType {
+        subtypes: vec!["Spirit".into()],
+        card_types: vec![CardType::Enchantment],
+    };
+    assert!(matches(&state, id, &spirit_or_enchantment, &registry) == (spirit || enchantment));
+    let not = TargetFilter::NotSubtypes(vec!["Vampire".into(), "Werewolf".into(), "Zombie".into()]);
+    assert!(matches(&state, id, &not, &registry) == !tribal);
+    std::mem::forget((spirit_or_enchantment, not));
+    std::mem::forget((registry, state));
+}
+
 for_each_form! {
     /// "Spirit or enchantment" matches exactly an object with the subtype
     /// Spirit or the type enchantment, and "non-Vampire, non-Werewolf,
-    /// non-Zombie" one with none of those subtypes (CR 205.3, 205.4b).
+    /// non-Zombie" one with none of those subtypes (CR 205.3, 205.4b). For
+    /// every set of Spirit, Vampire and Zombie.
     fn the_subtype_filters_match_their_subtypes(form) {
-        let (registry, mut state, blank) = blank_board();
-        let id = any_object(&mut state, blank, &FILTERED, form);
-        // What the object is, read off it rather than off a copy of it:
-        // copying an object copies its subtype strings, and the copy cost
-        // more than every comparison here.
-        let o = state.get_object(id).expect("on the board");
-        let sub = |s: &str| o.subtypes.iter().any(|t| t == s);
-        let (spirit, enchantment) = (sub("Spirit"), has_type(o, CardType::Enchantment));
-        let tribal = sub("Vampire") || sub("Werewolf") || sub("Zombie");
-        let spirit_or_enchantment = TargetFilter::SubtypeOrCardType {
-            subtypes: vec!["Spirit".into()],
-            card_types: vec![CardType::Enchantment],
-        };
-        assert!(matches(&state, id, &spirit_or_enchantment, &registry) == (spirit || enchantment));
-        let not = TargetFilter::NotSubtypes(vec!["Vampire".into(), "Werewolf".into(), "Zombie".into()]);
-        assert!(matches(&state, id, &not, &registry) == !tribal);
-        std::mem::forget((spirit_or_enchantment, not));
-        std::mem::forget((registry, state));
+        let which: u8 = kani::any();
+        for (i, subtypes) in SUBTYPE_SETS.iter().enumerate() {
+            if usize::from(which) == i {
+                subtype_filters_for(form, subtypes);
+            }
+        }
     }
 }
 
