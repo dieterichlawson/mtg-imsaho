@@ -85,7 +85,7 @@
 //! activated it, its controller as it was activated (CR 113.8); and a card
 //! and a token of any characteristics beside it.
 
-use super::{acted, any_object, any_target, asked_for, board, both, card_proof, each_is, has_subtype, new_ids, prints_where, Act, Form, Kinds, Snapshot};
+use super::{acted, any_object, any_target, asked_each, asked_for, board, both, card_proof, each_is, has_subtype, new_ids, prints_where, were, Act, Form, Kinds, Snapshot};
 use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardRegistry, SacrificeCost, TargetFilter, TargetRequirement};
 use crate::damage::DamageKind;
@@ -521,12 +521,12 @@ card_proof! {
         const WEREWOLVES: Kinds = Kinds { types: &[CardType::Creature], subtypes: &["Werewolf"], keywords: &[] };
         let mut b = permanent(Box::new(isd::full_moons_rise::FullMoonsRise), &WEREWOLVES, true);
         let before = b.resolve(0, &[]);
-        let shielded: Vec<Act> = b.those(|o| {
+        let shielded = b.those(|o| {
             o.zone == Zone::Battlefield && o.controller == b.you && o.card_types.contains(&CardType::Creature)
                 && o.subtypes.iter().any(|s| s == "Werewolf")
-        }).into_iter().map(Act::Regenerate).collect();
-        assert!(asked_for(&shielded) && Snapshot::of(&b.state) == before);
-        std::mem::forget(b);
+        });
+        assert!(asked_each(shielded.len(), |i| Act::Regenerate(shielded[i])) && Snapshot::of(&b.state) == before);
+        std::mem::forget((b, shielded));
     }
 }
 
@@ -709,15 +709,14 @@ card_proof! {
         let creature = bottom.is_some_and(|id| b.state.name_of(id, &b.registry) == "Grizzly Bears");
         let before = b.resolve(0, &[target.clone()]);
         match (target, bottom) {
+            (Target::Player(_), Some(id)) if creature => {
+                assert!(asked_for(&[Act::MillCard(id), Act::Tokens {
+                    n: 1, controller: b.you, power: 2, toughness: 2, colors: vec![Color::Black],
+                    types: vec![CardType::Creature], keywords: vec![], subtypes: vec!["Zombie".into()],
+                }]));
+            }
             (Target::Player(_), Some(id)) => {
-                let mut expected = vec![Act::MillCard(id)];
-                if creature {
-                    expected.push(Act::Tokens {
-                        n: 1, controller: b.you, power: 2, toughness: 2, colors: vec![Color::Black],
-                        types: vec![CardType::Creature], keywords: vec![], subtypes: vec!["Zombie".into()],
-                    });
-                }
-                assert!(asked_for(&expected));
+                assert!(asked_for(&[Act::MillCard(id)]));
             }
             _ => {
                 assert!(acted() == 0);
@@ -909,11 +908,7 @@ card_proof! {
         if index == 0 {
             assert!(asked_for(&[Act::Counters(b.me, CounterType::PlusOnePlusOne, 1)]));
         } else {
-            let mut expected = Vec::with_capacity(2);
-            for id in &yours {
-                expected.push(Act::Counters(*id, CounterType::PlusOnePlusOne, 1));
-            }
-            assert!(asked_for(&expected));
+            assert!(asked_each(yours.len(), |i| Act::Counters(yours[i], CounterType::PlusOnePlusOne, 1)));
         }
         assert!(Snapshot::of(&b.state) == before);
         std::mem::forget(b);
@@ -980,17 +975,13 @@ card_proof! {
         }
         let found = phantasm.iter().position(|named| *named);
         let revealed = found.unwrap_or(library.len());
-        let mut expected = Vec::with_capacity(6);
-        expected.push(Act::ToLibrary(me, LibraryPosition::Bottom));
-        expected.push(Act::Shuffle(PlayerId(0)));
-        for id in &library[..revealed] {
-            expected.push(Act::Move(*id, Zone::Graveyard));
-        }
+        assert!(acted() == 2 + revealed + usize::from(found.is_some()));
+        assert!(were(0, 1, |_| Act::ToLibrary(me, LibraryPosition::Bottom)) && were(1, 1, |_| Act::Shuffle(PlayerId(0))));
+        assert!(were(2, revealed, |j| Act::Move(library[j], Zone::Graveyard)));
         if let Some(i) = found {
-            expected.push(Act::Move(library[i], Zone::Battlefield));
+            assert!(were(2 + revealed, 1, |_| Act::Move(library[i], Zone::Battlefield)));
             assert!(state.get_object(library[i]).expect("on the board").controller == PlayerId(0));
         }
-        assert!(asked_for(&expected));
         let mut after = before.clone();
         after.players[0].1 = super::zone_rows(found.map_or(&[][..], |i| &library[i + 1..]));
         assert!(Snapshot::of(&state) == after);
@@ -1083,11 +1074,7 @@ card_proof! {
         if index == 0 {
             assert!(asked_for(&[Act::Counters(b.me, CounterType::Study, 1)]));
         } else {
-            let mut expected = Vec::with_capacity(2);
-            for id in &returned {
-                expected.push(Act::MoveUnder(*id, Zone::Battlefield, b.you));
-            }
-            assert!(asked_for(&expected));
+            assert!(asked_each(returned.len(), |i| Act::MoveUnder(returned[i], Zone::Battlefield, b.you)));
             for (i, id) in b.others.iter().enumerate() {
                 let o = b.state.get_object(*id).expect("on the board");
                 let zombies = o.subtypes.iter().filter(|s| *s == "Zombie").count();
@@ -1249,20 +1236,20 @@ card_proof! {
             }
         }
         let before = b.resolve(0, &[target]);
-        let exile = |b: &Board, id: ObjectId| {
-            let mut acts = Vec::with_capacity(2);
-            acts.push(Act::Move(id, Zone::Exile));
+        // Each list of a length known where it is compared.
+        let exiled = |b: &Board, id: ObjectId| {
             if b.state.get_object(id).expect("on the board").card_types.contains(&CardType::Creature) {
-                acts.push(Act::Life(b.you, 2));
+                asked_for(&[Act::Move(id, Zone::Exile), Act::Life(b.you, 2)])
+            } else {
+                asked_for(&[Act::Move(id, Zone::Exile)])
             }
-            acts
         };
         match cards.len() {
             0 => {
                 assert!(acted() == 0);
             }
             1 => {
-                assert!(asked_for(&exile(&b, cards[0])));
+                assert!(exiled(&b, cards[0]));
             }
             _ => {
                 let asked = matches!(&b.state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
@@ -1276,7 +1263,7 @@ card_proof! {
                 let chosen = cards[usize::from(kani::any::<bool>())];
                 let card = b.card();
                 b.registry.get(card).expect("registered").resolve_card_effect(&mut b.state, b.me, "", &Target::Object(chosen), &b.registry);
-                assert!(asked_for(&exile(&b, chosen)));
+                assert!(exiled(&b, chosen));
             }
         }
         assert!(Snapshot::of(&b.state) == before);
@@ -1364,12 +1351,8 @@ card_proof! {
         let mut b = permanent(Box::new(isd::gavony_township::GavonyTownship), &ANY_CREATURE, true);
         let yours = b.those(|o| o.zone == Zone::Battlefield && o.controller == b.you && o.card_types.contains(&CardType::Creature));
         let before = b.resolve(1, &[]);
-        let mut expected = Vec::with_capacity(2);
-        for id in &yours {
-            expected.push(Act::Counters(*id, CounterType::PlusOnePlusOne, 1));
-        }
-        assert!(asked_for(&expected) && Snapshot::of(&b.state) == before);
-        std::mem::forget((b, yours, expected));
+        assert!(asked_each(yours.len(), |i| Act::Counters(yours[i], CounterType::PlusOnePlusOne, 1)) && Snapshot::of(&b.state) == before);
+        std::mem::forget((b, yours));
     }
 }
 

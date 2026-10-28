@@ -26,7 +26,7 @@
 //! effects then do, until the cleanup step ends them (CR 514.2), is the
 //! engine's, proved in `proofs::actions`.
 
-use super::{acted, any_object, asked_for, board, card_proof, each_is, Act, Form, Snapshot, ANY_PERMANENT};
+use super::{acted, any_object, asked_each, asked_for, board, card_proof, each_is, Act, Form, Snapshot, ANY_PERMANENT};
 use crate::actions::Target;
 use crate::cards::{CardBehavior, TargetFilter, TargetRequirement};
 use crate::ids::{ObjectId, PlayerId};
@@ -148,9 +148,9 @@ card_proof! {
     fn feeling_of_dread_taps_up_to_two() {
         assert!(up_to_two_creatures(&crate::cards::isd::feeling_of_dread::FeelingOfDread));
         let (registry, state, _, targets, before) = resolve_holding(Box::new(crate::cards::isd::feeling_of_dread::FeelingOfDread), up_to_two);
-        let tapped: Vec<Act> = on_battlefield(&state, &targets).into_iter().map(Act::Tap).collect();
-        assert!(asked_for(&tapped) && Snapshot::of(&state) == before);
-        std::mem::forget((registry, state));
+        let tapped = on_battlefield(&state, &targets);
+        assert!(asked_each(tapped.len(), |i| Act::Tap(tapped[i])) && Snapshot::of(&state) == before);
+        std::mem::forget((registry, state, tapped));
     }
 }
 
@@ -176,11 +176,12 @@ card_proof! {
     fn travel_preparations_counts_up_to_two() {
         assert!(up_to_two_creatures(&crate::cards::isd::travel_preparations::TravelPreparations));
         let (registry, state, _, targets, before) = resolve_holding(Box::new(crate::cards::isd::travel_preparations::TravelPreparations), up_to_two);
-        let countered: Vec<Act> = targets.iter()
-            .map(|t| match t { Target::Object(id) => Act::Counters(*id, CounterType::PlusOnePlusOne, 1), _ => unreachable!() })
+        let countered: Vec<ObjectId> = targets.iter()
+            .map(|t| match t { Target::Object(id) => *id, _ => unreachable!() })
             .collect();
-        assert!(asked_for(&countered) && Snapshot::of(&state) == before);
-        std::mem::forget((registry, state));
+        assert!(asked_each(countered.len(), |i| Act::Counters(countered[i], CounterType::PlusOnePlusOne, 1)));
+        assert!(Snapshot::of(&state) == before);
+        std::mem::forget((registry, state, countered));
     }
 }
 

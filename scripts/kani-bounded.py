@@ -264,7 +264,7 @@ def solve(cmd, timeout, nrec):
     seconds = time.time() - start
     if p.returncode in (-9, 137):
         return ('OOM', f'{nrec} bounded', seconds, set(), [])
-    if p.returncode != 0 and re.search(r'[Oo]ut of memory|bad_alloc', p.stdout[-2000:] + p.stderr[-2000:]):
+    if re.search(r'[Oo]ut of memory|bad_alloc', p.stdout[-4000:] + p.stderr[-4000:]):
         # Under --mem-cap: the cap, not the machine, ran out.
         return ('OOM', f'{nrec} bounded; over the cap', seconds, set(), [])
     try:
@@ -292,6 +292,8 @@ def solve(cmd, timeout, nrec):
             failed.append(item['messageText'])
             others.append(item['messageText'])
     errors = [i.get('messageText', '') for i in doc if i.get('messageType') == 'ERROR']
+    if any('out of memory' in e.lower() for e in errors):
+        return ('OOM', f'{nrec} bounded; over the cap', seconds, set(), [])
     size = ''
     for i in doc:
         t = i.get('messageText', '')

@@ -232,6 +232,29 @@ pub fn asked_for(expected: &[Act]) -> bool {
     n == expected.len() && acts.iter().zip(expected).all(|(a, e)| Some(e) == a.as_ref())
 }
 
+/// Whether the card asked for exactly `n` actions, the `i`th of them
+/// `expected(i)`. For a list whose length the board decides: such a list,
+/// built and handed to [`asked_for`], is read past its end on paths the
+/// solver cannot rule out, and an action read from there is of a variant
+/// it leaves open, which puts it on the left of `==` as every variant
+/// there is. Built where it is compared, each expected action is of the
+/// variant `expected` names, so `expected` names one: a list of two kinds
+/// of action is two runs ([`were`]), not one closure choosing between
+/// them, whose answer is of either variant.
+pub fn asked_each(n: usize, expected: impl Fn(usize) -> Act) -> bool {
+    acted() == n && were(0, n, expected)
+}
+
+/// Whether the `n` actions asked for from the `from`th on were
+/// `expected(0)` onwards, each built where it is compared
+/// ([`asked_each`]).
+pub fn were(from: usize, n: usize, expected: impl Fn(usize) -> Act) -> bool {
+    (0..n).all(|i| {
+        let e = std::mem::ManuallyDrop::new(expected(i));
+        Some(&*e) == act(from + i)
+    })
+}
+
 /// The `i`th action asked for, if there were that many: the action
 /// itself, not a copy, since copying a list whose length the solver
 /// leaves open allocates a buffer of that open size, which it models byte

@@ -9,7 +9,7 @@
 //! is past the fourth), and every answer: each card of the library, those
 //! not looked at among them.
 
-use super::{acted, asked_for, board, card_proof, Act, Snapshot};
+use super::{acted, asked_for, board, card_proof, were, Act, Snapshot};
 use crate::actions::ResolvedChoice;
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{AwaitingAction, ResolutionChoiceKind};
@@ -52,9 +52,10 @@ card_proof! {
                 let answer = library[usize::from(kani::any::<u8>() % n)];
                 let _ = crate::engine::actions::choices::resolve_choice(&mut state, &ResolvedChoice::ChosenCard(answer), &registry);
                 if looked.contains(&answer) {
-                    let mut expected = vec![Act::Move(answer, Zone::Hand)];
-                    expected.extend(looked.iter().filter(|id| **id != answer).map(|id| Act::MillCard(*id)));
-                    assert!(asked_for(&expected) && state.awaiting_action.is_none());
+                    let rest: Vec<ObjectId> = looked.iter().copied().filter(|id| *id != answer).collect();
+                    assert!(acted() == 1 + rest.len() && were(0, 1, |_| Act::Move(answer, Zone::Hand))
+                        && were(1, rest.len(), |i| Act::MillCard(rest[i])));
+                    assert!(state.awaiting_action.is_none());
                 } else {
                     assert!(acted() == 0 && asks(&state.awaiting_action));
                 }

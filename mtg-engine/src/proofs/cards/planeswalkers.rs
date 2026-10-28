@@ -24,7 +24,7 @@
 //! either player ("you" is the activator, CR 602.2a), beside a card and a
 //! token of any characteristics.
 
-use super::{act, acted, any_object, any_target, asked_for, board, card_proof, each_is, Act, Form, Kinds, Snapshot};
+use super::{act, acted, any_object, any_target, asked_each, asked_for, board, card_proof, each_is, Act, Form, Kinds, Snapshot};
 use crate::actions::{ResolvedChoice, Target};
 use crate::cards::{CardBehavior, CardRegistry, LoyaltyAbilityDef, TargetRequirement};
 use crate::ids::{CardId, ObjectId, PlayerId};
@@ -365,13 +365,9 @@ card_proof! {
             chosen.push(card);
         }
         assert!(state.awaiting_action.is_none());
-        let mut expected = Vec::with_capacity(2);
-        for card in &chosen {
-            expected.push(Act::Discard(*card));
-        }
-        assert!(asked_for(&expected) && Snapshot::of(&state) == before);
+        assert!(asked_each(chosen.len(), |i| Act::Discard(chosen[i])) && Snapshot::of(&state) == before);
         assert!(state.get_object(me).expect("on the board").card_state.is_empty());
-        std::mem::forget((registry, state, chosen, expected));
+        std::mem::forget((registry, state, chosen));
     }
 }
 
@@ -472,11 +468,7 @@ card_proof! {
         let first: bool = kani::any();
         let _ = crate::engine::actions::choices::resolve_choice(&mut b.state, &ResolvedChoice::ChosenIndex(usize::from(!first), String::new()), &b.registry);
         let sacrificed = if first { &pile } else { &rest };
-        let mut expected = Vec::with_capacity(3);
-        for id in sacrificed {
-            expected.push(Act::Sacrifice(*id));
-        }
-        assert!(asked_for(&expected) && b.state.awaiting_action.is_none());
-        std::mem::forget((b, permanents, pile, rest, expected));
+        assert!(asked_each(sacrificed.len(), |i| Act::Sacrifice(sacrificed[i])) && b.state.awaiting_action.is_none());
+        std::mem::forget((b, permanents, pile, rest));
     }
 }

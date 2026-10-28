@@ -44,7 +44,7 @@
 //! permanents that are creatures (CR 110.1, 302); "each" is every one,
 //! in the order the game lists them.
 
-use super::{act, acted, any_object, asked_for, board, both, card_proof, each_is, either, has_subtype, listed, new_ids, Act, Blank, Form, Kinds, Snapshot};
+use super::{act, acted, any_object, asked_each, asked_for, board, both, card_proof, each_is, either, has_subtype, listed, new_ids, were, Act, Blank, Form, Kinds, Snapshot};
 use crate::cards::{AdditionalCost, CardBehavior, CardRegistry};
 use crate::damage::DamageKind;
 use crate::destruction::DestroyResult;
@@ -178,11 +178,11 @@ card_proof! {
     fn rolling_temblor_deals_two_to_each_creature_without_flying() {
         const FLIERS: Kinds = Kinds { types: &[CardType::Creature, CardType::Enchantment], subtypes: &[], keywords: &[Keyword::Flying] };
         let r = resolve(Box::new(isd::rolling_temblor::RollingTemblor), &FLIERS);
-        let mut expected: Vec<Act> = r.those(|o| creature(o) && !o.keywords.contains(&Keyword::Flying)).into_iter()
-            .map(|id| Act::Queue { source: r.spell, target: DamageTarget::Object(id), amount: 2, kind: DamageKind::NonCombat })
-            .collect();
-        expected.push(Act::DealQueued);
-        assert!(asked_for(&expected) && r.added().is_empty() && r.nothing_else_changed());
+        let ids = r.those(|o| creature(o) && !o.keywords.contains(&Keyword::Flying));
+        let n = ids.len();
+        let queued = |i: usize| Act::Queue { source: r.spell, target: DamageTarget::Object(ids[i]), amount: 2, kind: DamageKind::NonCombat };
+        assert!(acted() == n + 1 && were(0, n, queued) && were(n, 1, |_| Act::DealQueued));
+        assert!(r.added().is_empty() && r.nothing_else_changed());
         std::mem::forget(r);
     }
 }
@@ -194,11 +194,10 @@ card_proof! {
     fn moonmist_transforms_humans_and_spares_werewolves_and_wolves() {
         const HUMANS: Kinds = Kinds { types: &[CardType::Creature], subtypes: &["Human", "Wolf"], keywords: &[] };
         let r = resolve(Box::new(isd::moonmist::Moonmist), &HUMANS);
-        let transformed: Vec<Act> = r.those(|o| o.zone == Zone::Battlefield && o.subtypes.iter().any(|s| s == "Human")).into_iter()
-            .map(Act::Transform).collect();
+        let humans = r.those(|o| o.zone == Zone::Battlefield && o.subtypes.iter().any(|s| s == "Human"));
         let prevents = matches!(r.added(), [T::PreventCombatDamageExcept { filter, source_name }]
             if either(filter, |f| has_subtype(f, "Wolf"), |f| has_subtype(f, "Werewolf")) && source_name == "Moonmist");
-        assert!(asked_for(&transformed) && prevents && r.nothing_else_changed());
+        assert!(asked_each(humans.len(), |i| Act::Transform(humans[i])) && prevents && r.nothing_else_changed());
         std::mem::forget(r);
     }
 }
@@ -405,9 +404,11 @@ card_proof! {
         registry.get(state.get_object(spell).expect("on the stack").card_id).expect("registered")
             .on_resolve(&mut state, spell, &[], &registry);
         let land = |id: &ObjectId| state.get_object(*id).expect("on the board").card_types.contains(&CardType::Land);
-        let mut expected: Vec<Act> = top.iter().filter(|id| land(id)).map(|id| Act::Move(*id, Zone::Hand)).collect();
-        expected.extend(top.iter().filter(|id| !land(id)).map(|id| Act::MillCard(*id)));
-        assert!(asked_for(&expected) && Snapshot::of(&state) == before);
+        let lands: Vec<ObjectId> = top.iter().copied().filter(|id| land(id)).collect();
+        let rest: Vec<ObjectId> = top.iter().copied().filter(|id| !land(id)).collect();
+        assert!(acted() == top.len() && were(0, lands.len(), |i| Act::Move(lands[i], Zone::Hand))
+            && were(lands.len(), rest.len(), |i| Act::MillCard(rest[i])));
+        assert!(Snapshot::of(&state) == before);
         std::mem::forget((registry, state));
     }
 }

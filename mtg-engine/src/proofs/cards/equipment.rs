@@ -19,7 +19,7 @@
 //! creature. It can't be regenerated." (Runechanter's Pike's X is
 //! `proofs::cards::counted_pt`'s.)
 
-use super::{act, acted, any_object, any_target, asked_for, board, card_proof, prints_effects, triggers, Act, Form, Kinds, Snapshot, ANY_PERMANENT};
+use super::{act, acted, any_object, any_target, asked_each, asked_for, board, card_proof, prints_effects, triggers, Act, Form, Kinds, Snapshot, ANY_PERMANENT};
 use crate::actions::Target;
 use crate::cards::helpers::EQUIP_ABILITY_INDEX;
 use crate::cards::{AttackInfo, CardBehavior, SacrificeCost, TargetFilter, TargetRequirement, TriggerKind};
@@ -287,11 +287,7 @@ card_proof! { taking_milled
         let before = Snapshot::of(&state);
         let attack = AttackInfo::new(creature, defender);
         registry.get(card).expect("registered").on_attacks(&mut state, blade, attack, &[], &registry);
-        let mut milled = Vec::with_capacity(3);
-        for id in &library[..revealed] {
-            milled.push(Act::MillCard(*id));
-        }
-        assert!(asked_for(&milled));
+        assert!(asked_each(revealed, |i| Act::MillCard(library[i])));
         let added = &state.until_end_of_turn[before.until_end_of_turn()..];
         if on {
             let x = i32::try_from(revealed).expect("small");
@@ -307,7 +303,7 @@ card_proof! { taking_milled
             after.players[1].1 = rest;
         }
         assert!(Snapshot::of(&state).without_until_end_of_turn() == after);
-        std::mem::forget((registry, state, library, milled));
+        std::mem::forget((registry, state, library));
     }
 }
 

@@ -45,7 +45,7 @@
 //! that the proof covers what the card does with one it no longer finds
 //! where it was.
 
-use super::{acted, any_object, asked_for, board, card_proof, Act, Form, Kinds, Snapshot};
+use super::{acted, any_object, asked_each, asked_for, board, card_proof, were, Act, Form, Kinds, Snapshot};
 use crate::actions::Target;
 use crate::cards::{AdditionalCost, CardBehavior, CardRegistry, TargetFilter, TargetRequirement as R};
 use crate::damage::DamageKind;
@@ -107,18 +107,34 @@ impl Board {
 /// either object or gone illegal, asks for `acts(board, object)` when the
 /// target is an object for which `applies` holds, and for nothing
 /// otherwise; and changes nothing else.
+///
+/// The board is the same after as before, which is asserted first, so
+/// what the card was to ask for is read off it afterwards, on the one path
+/// on which it asks: built before and carried past the branch, a list of
+/// one length on one path and another on the other is read past its end
+/// on paths the solver cannot rule out (`asked_each` says what that costs).
 fn acts_on_its_target(
     card: Box<dyn CardBehavior>, requirement: R, applies: fn(&Board, ObjectId) -> bool, acts: fn(&Board, ObjectId) -> Vec<Act>,
 ) {
     let mut b = spell(card);
     assert!(*b.requirement() == requirement);
     let target = b.any_object_target();
-    let expected = match target {
-        Target::Object(id) if applies(&b, id) => acts(&b, id),
-        _ => vec![],
+    let hit = match target {
+        Target::Object(id) if applies(&b, id) => Some(id),
+        _ => None,
     };
     let before = b.resolve(&[target]);
-    assert!(asked_for(&expected) && Snapshot::of(&b.state) == before);
+    assert!(Snapshot::of(&b.state) == before);
+    match hit {
+        Some(id) => {
+            let expected = acts(&b, id);
+            assert!(asked_for(&expected));
+            std::mem::forget(expected);
+        }
+        None => {
+            assert!(acted() == 0);
+        }
+    }
     std::mem::forget(b);
 }
 
@@ -130,19 +146,23 @@ card_proof! {
         let mut b = spell(Box::new(crate::cards::swords_to_plowshares::SwordsToPlowshares));
         assert!(*b.requirement() == R::Creature);
         let target = b.any_object_target();
-        let expected = match target {
-            Target::Object(id) if b.on(id) => {
-                let power = b.state.effective_power(id, &b.registry).unwrap_or(0);
-                let mut acts = vec![Act::Move(id, Zone::Exile)];
-                if power > 0 {
-                    acts.push(Act::Life(b.get(id).controller, power));
-                }
-                acts
-            }
-            _ => vec![],
+        let hit = match target {
+            Target::Object(id) if b.on(id) => Some((id, b.state.effective_power(id, &b.registry).unwrap_or(0), b.get(id).controller)),
+            _ => None,
         };
         let before = b.resolve(&[target]);
-        assert!(asked_for(&expected) && Snapshot::of(&b.state) == before);
+        assert!(Snapshot::of(&b.state) == before);
+        match hit {
+            Some((id, power, controller)) if power > 0 => {
+                assert!(asked_for(&[Act::Move(id, Zone::Exile), Act::Life(controller, power)]));
+            }
+            Some((id, _, _)) => {
+                assert!(asked_for(&[Act::Move(id, Zone::Exile)]));
+            }
+            None => {
+                assert!(acted() == 0);
+            }
+        }
         std::mem::forget(b);
     }
 }
@@ -158,12 +178,20 @@ card_proof! {
                 && matches!(**theirs, R::CreatureWithFilter(TargetFilter::YouDontControl))));
         let first = if kani::any() { Target::Object(b.others[0]) } else { Target::Illegal };
         let second = if kani::any() { Target::Object(b.others[1]) } else { Target::Illegal };
-        let expected = match (&first, &second) {
-            (Target::Object(a), Target::Object(c)) => vec![Act::Fight(*a, *c)],
-            _ => vec![],
+        let fight = match (&first, &second) {
+            (Target::Object(a), Target::Object(c)) => Some((*a, *c)),
+            _ => None,
         };
         let before = b.resolve(&[first, second]);
-        assert!(asked_for(&expected) && Snapshot::of(&b.state) == before);
+        assert!(Snapshot::of(&b.state) == before);
+        match fight {
+            Some((a, c)) => {
+                assert!(asked_for(&[Act::Fight(a, c)]));
+            }
+            None => {
+                assert!(acted() == 0);
+            }
+        }
         std::mem::forget(b);
     }
 }
@@ -317,14 +345,14 @@ card_proof! {
             && matches!(modes[0], R::GraveyardCreature)
             && matches!(&modes[1], R::TwoTargets(x, y) if zombie(x) && zombie(y))));
         let targets = if kani::any() { vec![b.any_object_target()] } else { vec![b.any_object_target(), b.any_object_target()] };
-        let expected: Vec<Act> = targets.iter()
+        let returned: Vec<ObjectId> = targets.iter()
             .filter_map(|t| match t {
-                Target::Object(id) if b.get(*id).zone == Zone::Graveyard => Some(Act::Move(*id, Zone::Hand)),
+                Target::Object(id) if b.get(*id).zone == Zone::Graveyard => Some(*id),
                 _ => None,
             })
             .collect();
         let before = b.resolve(&targets);
-        assert!(asked_for(&expected) && Snapshot::of(&b.state) == before);
+        assert!(asked_each(returned.len(), |i| Act::Move(returned[i], Zone::Hand)) && Snapshot::of(&b.state) == before);
         std::mem::forget((b, targets));
     }
 }
@@ -348,24 +376,29 @@ card_proof! {
         if kani::any() {
             targets.push(b.any_object_target());
         }
-        let expected = match player {
-            Target::Player(p) => {
-                let mut acts: Vec<Act> = targets.iter()
-                    .filter_map(|t| match t {
-                        Target::Object(id) if b.get(*id).zone == Zone::Graveyard && b.get(*id).owner == p => {
-                            Some(Act::ToLibrary(*id, LibraryPosition::Bottom))
-                        }
-                        _ => None,
-                    })
-                    .collect();
-                acts.push(Act::Shuffle(p));
-                acts
-            }
-            _ => vec![],
+        let p = match player {
+            Target::Player(p) => Some(p),
+            _ => None,
         };
+        let shuffled: Vec<ObjectId> = targets.iter()
+            .filter_map(|t| match (t, p) {
+                (Target::Object(id), Some(p)) if b.get(*id).zone == Zone::Graveyard && b.get(*id).owner == p => Some(*id),
+                _ => None,
+            })
+            .collect();
         let before = b.resolve(&targets);
-        assert!(asked_for(&expected) && Snapshot::of(&b.state) == before);
-        std::mem::forget((b, targets));
+        let n = shuffled.len();
+        match p {
+            Some(p) => {
+                assert!(acted() == n + 1 && were(0, n, |i| Act::ToLibrary(shuffled[i], LibraryPosition::Bottom))
+                    && were(n, 1, |_| Act::Shuffle(p)));
+            }
+            None => {
+                assert!(acted() == 0);
+            }
+        }
+        assert!(Snapshot::of(&b.state) == before);
+        std::mem::forget((b, targets, shuffled));
     }
 }
 
@@ -379,19 +412,18 @@ card_proof! {
         let token = b.others[1];
         b.state.get_object_mut(token).expect("on the board").name = if kani::any() { "Blank".into() } else { "Spirit".into() };
         let target = b.any_object_target();
-        let expected = match target {
+        let exiled: Vec<ObjectId> = match target {
             Target::Object(id) if b.on(id) => {
                 let name = b.state.name_of(id, &b.registry);
                 b.others.iter().copied()
                     .filter(|o| b.on(*o) && b.get(*o).card_types.contains(&CardType::Creature) && b.state.name_of(*o, &b.registry) == name)
-                    .map(|o| Act::Move(o, Zone::Exile))
                     .collect()
             }
             _ => vec![],
         };
         let before = b.resolve(&[target]);
-        assert!(asked_for(&expected) && Snapshot::of(&b.state) == before);
-        std::mem::forget(b);
+        assert!(asked_each(exiled.len(), |i| Act::Move(exiled[i], Zone::Exile)) && Snapshot::of(&b.state) == before);
+        std::mem::forget((b, exiled));
     }
 }
 
@@ -416,12 +448,11 @@ card_proof! {
             }
         }
         let before = b.resolve(&[]);
-        let mut expected: Vec<Act> = creatures.into_iter()
-            .map(|id| Act::Queue { source: b.spell, target: DamageTarget::Object(id), amount: 13, kind: DamageKind::NonCombat })
-            .collect();
-        expected.push(Act::DealQueued);
-        assert!(asked_for(&expected) && Snapshot::of(&b.state) == before);
-        std::mem::forget(b);
+        let n = creatures.len();
+        let queued = |i: usize| Act::Queue { source: b.spell, target: DamageTarget::Object(creatures[i]), amount: 13, kind: DamageKind::NonCombat };
+        assert!(acted() == n + 1 && were(0, n, queued) && were(n, 1, |_| Act::DealQueued));
+        assert!(Snapshot::of(&b.state) == before);
+        std::mem::forget((b, creatures));
     }
 }
 
@@ -436,20 +467,25 @@ card_proof! {
                 && matches!(**creature, R::Creature)));
         let land = if kani::any() { Target::Object(b.others[0]) } else { Target::Illegal };
         let creature = if kani::any() { Target::Object(b.others[1]) } else { Target::Illegal };
-        let mut expected = Vec::with_capacity(2);
-        if let Target::Object(id) = land {
-            if b.on(id) {
-                expected.push(Act::Destroy(id));
-            }
-        }
-        if let Target::Object(id) = creature {
-            if b.on(id) {
-                expected.push(Act::Effect(Target::Object(id), PendingEffect::DealDamage { amount: 13, source_id: b.spell }));
-            }
-        }
+        let destroyed = match land {
+            Target::Object(id) if b.on(id) => Some(id),
+            _ => None,
+        };
+        let burned = match creature {
+            Target::Object(id) if b.on(id) => Some(id),
+            _ => None,
+        };
         let before = b.resolve(&[land, creature]);
-        assert!(asked_for(&expected) && Snapshot::of(&b.state) == before);
-        std::mem::forget((b, expected));
+        let n = usize::from(destroyed.is_some());
+        assert!(acted() == n + usize::from(burned.is_some()));
+        if let Some(id) = destroyed {
+            assert!(were(0, 1, |_| Act::Destroy(id)));
+        }
+        if let Some(id) = burned {
+            assert!(were(n, 1, |_| Act::Effect(Target::Object(id), PendingEffect::DealDamage { amount: 13, source_id: b.spell })));
+        }
+        assert!(Snapshot::of(&b.state) == before);
+        std::mem::forget(b);
     }
 }
 
@@ -466,18 +502,25 @@ card_proof! {
         let countered = b.state.create_object(blank, PlayerId(1), Zone::Stack, None, None);
         let first = if kani::any() { Target::Object(countered) } else { Target::Illegal };
         let second = b.any_object_target();
-        let mut expected = Vec::with_capacity(2);
-        if let Target::Object(id) = first {
-            expected.push(Act::Counter { spell: id, exile: false });
-        }
-        if let Target::Object(id) = second {
-            if b.on(id) {
-                expected.push(Act::Move(id, Zone::Hand));
-            }
-        }
+        let countered = match first {
+            Target::Object(id) => Some(id),
+            _ => None,
+        };
+        let bounced = match second {
+            Target::Object(id) if b.on(id) => Some(id),
+            _ => None,
+        };
         let before = b.resolve(&[first, second]);
-        assert!(asked_for(&expected) && Snapshot::of(&b.state) == before);
-        std::mem::forget((b, expected));
+        let n = usize::from(countered.is_some());
+        assert!(acted() == n + usize::from(bounced.is_some()));
+        if let Some(id) = countered {
+            assert!(were(0, 1, |_| Act::Counter { spell: id, exile: false }));
+        }
+        if let Some(id) = bounced {
+            assert!(were(n, 1, |_| Act::Move(id, Zone::Hand)));
+        }
+        assert!(Snapshot::of(&b.state) == before);
+        std::mem::forget(b);
     }
 }
 

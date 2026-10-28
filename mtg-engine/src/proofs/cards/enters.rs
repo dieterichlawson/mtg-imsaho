@@ -37,7 +37,7 @@
 //! all the same), under either player's control, beside a card and a
 //! token of any characteristics.
 
-use super::{act, acted, any_object, any_target, asked_for, board, card_proof, listed, triggers, Act, Form, Kinds, Snapshot};
+use super::{act, acted, any_object, any_target, asked_each, asked_for, board, card_proof, listed, triggers, Act, Form, Kinds, Snapshot};
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardRegistry, TargetFilter, TargetRequirement as R, TriggerKind};
 use crate::ids::{CardId, ObjectId, PlayerId};
@@ -216,16 +216,16 @@ card_proof! {
             let o = b.get(b.me);
             o.zone == Zone::Battlefield && o.controller == b.you && o.tapped
         };
-        let mut expected = Vec::with_capacity(3);
+        let mut untapped = Vec::with_capacity(3);
         if me_too {
-            expected.push(Act::Untap(b.me));
+            untapped.push(b.me);
         }
-        expected.extend(b.those(|o| {
+        untapped.extend(b.those(|o| {
             o.zone == Zone::Battlefield && o.controller == b.you && o.tapped && o.card_types.contains(&CardType::Creature)
-        }).into_iter().map(Act::Untap));
+        }));
         let before = b.resolve(&[]);
-        assert!(asked_for(&expected) && Snapshot::of(&b.state) == before);
-        std::mem::forget(b);
+        assert!(asked_each(untapped.len(), |i| Act::Untap(untapped[i])) && Snapshot::of(&b.state) == before);
+        std::mem::forget((b, untapped));
     }
 }
 

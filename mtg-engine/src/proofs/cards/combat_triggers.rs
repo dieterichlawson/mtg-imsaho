@@ -27,7 +27,7 @@
 //! when the event happens, with that player and amount, is
 //! `proofs::actions`'.
 
-use super::{act, acted, any_object, asked_for, board, card_proof, has_subtype, prints_effects, prints_where, triggers, Act, Form, Kinds, Snapshot};
+use super::{act, acted, any_object, asked_for, board, card_proof, has_subtype, prints_effects, prints_where, triggers, were, Act, Form, Kinds, Snapshot};
 use crate::cards::{CardBehavior, CardRegistry, TriggerKind};
 use crate::damage::DamageKind;
 use crate::events::DamageTarget;
@@ -124,15 +124,16 @@ card_proof! {
         assert!(prints_effects(&isd::balefire_dragon::BalefireDragon, &[]));
         let (registry, state, me, others, player, amount, before) =
             deals_combat_damage_to_a_player(Box::new(isd::balefire_dragon::BalefireDragon));
-        let mut expected: Vec<Act> = others.iter().copied()
+        let theirs: Vec<ObjectId> = others.iter().copied()
             .filter(|id| state.get_object(*id).is_some_and(|o| {
                 o.zone == Zone::Battlefield && o.controller == player && o.card_types.contains(&CardType::Creature)
             }))
-            .map(|id| Act::Queue { source: me, target: DamageTarget::Object(id), amount, kind: DamageKind::NonCombat })
             .collect();
-        expected.push(Act::DealQueued);
-        assert!(asked_for(&expected) && Snapshot::of(&state) == before);
-        std::mem::forget((registry, state));
+        let n = theirs.len();
+        let queued = |i: usize| Act::Queue { source: me, target: DamageTarget::Object(theirs[i]), amount, kind: DamageKind::NonCombat };
+        assert!(acted() == n + 1 && were(0, n, queued) && were(n, 1, |_| Act::DealQueued));
+        assert!(Snapshot::of(&state) == before);
+        std::mem::forget((registry, state, theirs));
     }
 }
 

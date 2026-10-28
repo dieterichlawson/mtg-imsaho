@@ -12,7 +12,7 @@
 use crate::cards::CardRegistry;
 use crate::events::GameEvent;
 use crate::ids::{CardId, ObjectId, PlayerId};
-use crate::proofs::cards::{act, acted, asked_for, blank_board, Act, Snapshot};
+use crate::proofs::cards::{asked_each, asked_for, blank_board, Act, Snapshot};
 use crate::replacement::ReplaceableEvent;
 use crate::state::{GameState, LibraryPosition};
 use crate::types::Zone;
@@ -90,7 +90,7 @@ fn drawing<const SIZE: usize>() {
 
     let k = n.min(SIZE);
     assert!(drawn == k);
-    assert!(acted() == k && (0..k).all(|i| Some(&Act::Move(cards[i], Zone::Hand)) == act(i)));
+    assert!(asked_each(k, |i| Act::Move(cards[i], Zone::Hand)));
     assert!(state.events.len() == k && (0..k).all(|i| matches!(state.events[i],
         GameEvent::CardDrawn { player, object } if player == who && object == cards[i])));
     for p in [PlayerId(0), PlayerId(1)] {
@@ -120,11 +120,10 @@ fn milling<const SIZE: usize>() {
 
     let k = n.min(SIZE);
     assert!(milled.as_slice() == &cards[..k]);
-    let moves: [Act; SIZE] = core::array::from_fn(|i| Act::Move(cards[i], Zone::Graveyard));
-    assert!(asked_for(&moves[..k]));
+    assert!(asked_each(k, |i| Act::Move(cards[i], Zone::Graveyard)));
     assert!(Snapshot::of(&state) == before.with_library(who, &cards[k..]));
     kani::cover!(n > SIZE, "the library runs out");
-    std::mem::forget((registry, state, milled, moves));
+    std::mem::forget((registry, state, milled));
 }
 
 /// "Put it on top of its owner's library", or "on the bottom": it is moved

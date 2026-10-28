@@ -21,7 +21,7 @@
 //! its trigger scope says, and resolves for the player it enchants, or
 //! enchanted last if it has since left the battlefield (113.7a).
 
-use super::{acted, asked_for, board, card_proof, prints_effects, triggers, Act, Snapshot};
+use super::{acted, asked_each, asked_for, board, card_proof, prints_effects, triggers, Act, Snapshot};
 use crate::actions::Target;
 use crate::cards::{CardBehavior, TriggerKind, TriggerScope, TargetRequirement};
 use crate::ids::{ObjectId, PlayerId};
@@ -228,12 +228,8 @@ card_proof! {
         let oblivion = isd::curse_of_oblivion::CurseOfOblivion;
         oblivion.on_upkeep(&mut state, curse, &[], &registry);
         if cards.len() <= 2 {
-            let mut exiled = Vec::with_capacity(2);
-            for id in &cards {
-                exiled.push(Act::Move(*id, Zone::Exile));
-            }
-            assert!(asked_for(&exiled) && Snapshot::of(&state) == before);
-            std::mem::forget((registry, state, cards, exiled));
+            assert!(asked_each(cards.len(), |i| Act::Move(cards[i], Zone::Exile)) && Snapshot::of(&state) == before);
+            std::mem::forget((registry, state, cards));
             return;
         }
         let asked = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {

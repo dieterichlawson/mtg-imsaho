@@ -20,7 +20,7 @@
 //! `resolve_card_effect`, through `engine::apply_pending_effect`), the
 //! card's own hook is called with every answer the handler accepts.
 
-use super::{acted, asked_for, board, card_proof, Act, Snapshot};
+use super::{acted, asked_for, board, card_proof, were, Act, Snapshot};
 use crate::actions::{ResolvedChoice, Target};
 use crate::cards::{CardBehavior, CardRegistry};
 use crate::ids::{CardId, ObjectId, PlayerId};
@@ -232,19 +232,21 @@ card_proof! {
         let pay: bool = kani::any();
         let _ = crate::engine::actions::choices::resolve_choice(&mut state, &ResolvedChoice::PayDecision(pay), &registry);
         let paid = pay && matches!(super::act(0), Some(Act::Pay(_, _, true)));
-        let mut expected = Vec::with_capacity(3);
-        if pay {
-            expected.push(Act::Pay(them, one.clone(), paid));
-        }
-        if !paid {
-            expected.push(Act::Counter { spell, exile: false });
-        }
         let hand = if them == PlayerId(0) { hands[0] } else { hands[1] };
         let cards: Vec<ObjectId> = hand.iter().flatten().copied().collect();
-        if cards.len() == 1 {
-            expected.push(Act::Discard(cards[0]));
+        // Each action that may or may not come compared on its own, at
+        // its place, rather than through a list of one of four lengths.
+        let (p, c) = (usize::from(pay), usize::from(!paid));
+        assert!(acted() == p + c + usize::from(cards.len() == 1));
+        if pay {
+            assert!(were(0, 1, |_| Act::Pay(them, one.clone(), paid)));
         }
-        assert!(asked_for(&expected));
+        if !paid {
+            assert!(were(p, 1, |_| Act::Counter { spell, exile: false }));
+        }
+        if cards.len() == 1 {
+            assert!(were(p + c, 1, |_| Act::Discard(cards[0])));
+        }
         if cards.len() == 2 {
             let asks_to_discard = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
                 player, source, choice: ResolutionChoiceKind::ChooseCardFromHand {
@@ -255,7 +257,7 @@ card_proof! {
         } else {
             assert!(Snapshot::of(&state) == before);
         }
-        std::mem::forget((registry, state, one, expected, cards));
+        std::mem::forget((registry, state, one, cards));
     }
 }
 

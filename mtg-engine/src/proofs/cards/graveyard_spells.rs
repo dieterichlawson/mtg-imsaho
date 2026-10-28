@@ -12,7 +12,7 @@
 //! - Murder of Crows, 4/4 Flying: "Whenever another creature dies, you may
 //!   draw a card. If you do, discard a card."
 
-use super::{acted, any_object, asked_for, board, card_proof, triggers, Act, Form, Kinds, Snapshot};
+use super::{acted, any_object, asked_each, asked_for, board, card_proof, triggers, Act, Form, Kinds, Snapshot};
 use crate::actions::Target;
 use crate::cards::{CardBehavior, TargetFilter, TargetRequirement as R, TriggerKind};
 use crate::ids::{ObjectId, PlayerId};
@@ -69,15 +69,14 @@ card_proof! {
         let land: bool = kani::any();
         let (name, kind) = if land { ("Land", CardType::Land) } else { ("Creature", CardType::Creature) };
         registry.get(card).expect("registered").on_card_type_choice(&mut state, spell, name, &registry);
-        let returned: Vec<Act> = others.iter().copied()
+        let returned: Vec<ObjectId> = others.iter().copied()
             .filter(|id| {
                 let o = state.get_object(*id).expect("on the board");
                 o.zone == Zone::Graveyard && o.owner == PlayerId(0) && o.card_types.contains(&kind)
             })
-            .map(|id| Act::Move(id, Zone::Hand))
             .collect();
-        assert!(asked_for(&returned) && Snapshot::of(&state) == before);
-        std::mem::forget((registry, state));
+        assert!(asked_each(returned.len(), |i| Act::Move(returned[i], Zone::Hand)) && Snapshot::of(&state) == before);
+        std::mem::forget((registry, state, returned));
     }
 }
 
