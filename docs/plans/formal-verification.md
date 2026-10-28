@@ -773,14 +773,23 @@ for both players and boards as its doc comment states):
 
 | Action | Result |
 |---|---|
-| `change_life` and its four other forms (CR 119.3, 119.10) | proved, 57 s |
-| `tap`, `tap_for` (701.21a, 110.5) | proved, 73 s |
-| `untap`, `untap_for` (701.21b, 110.5) | proved, 72 s |
-| `discard_card`, `discard_card_for` (701.8a) | proved, 110 s |
-| `attach` (701.3a, 701.3b, 702.6c) | proved, 118 s |
-| `add_counters`, `add_counters_quiet` (122.1) | proved, 96 s |
-| `remove_counters` | proved, 88 s |
-| `draw_cards` (121.1, 121.2, 704.5b, 614.1) | proved, 300 s |
+| `change_life` and its four other forms (CR 119.3, 119.10) | proved, 41 s |
+| `tap`, `tap_for` (701.21a, 110.5) | proved, 59 s |
+| `untap`, `untap_for` (701.21b, 110.5) | proved, 60 s |
+| `discard_card`, `discard_card_for` (701.8a) | proved, 91 s |
+| `attach` (701.3a, 701.3b, 702.6c) | proved, 82 s |
+| `add_counters`, `add_counters_quiet` (122.1) | proved, 86 s |
+| `remove_counters` | proved, 74 s |
+| `add_regeneration_shield` (701.15a) | proved, 51 s |
+| `set_base_pt` (613.4b) | proved, 22 s |
+| `gain_control_while_source_controlled` (613.1b) | proved, 97 s |
+| `player_loses`, `end_game` (104.3) | proved, 37 s and 52 s |
+| `draw_cards` (121.1, 121.2, 704.5b, 614.1), a library of 0 to 3 | proved, 120 to 231 s |
+| `mill_cards`, `mill_one` (701.13a), a library of 0 to 2 | proved, 54 to 190 s |
+| `shuffle_library` (701.20a), `choose_at_random` of 0 to 4, `flip_coin`, `random_below` | proved, 6 to 67 s |
+| `counter_spell`, `counter_spell_exiling` (701.5a, 702.34a) | proved, 319 s |
+| `apply_pending_effect`: damage, destroy, sacrifice, return to hand, -N/-N, can't block, a card's own effect, a search's answer | proved, 64 to 173 s each |
+| the targeting predicates (`is_creature`, colours, card types, keywords, filters, `can_be_targeted_by`) | proved, 13 to 103 s each |
 
 Three of these held only once the function asked what the rule says:
 `untap` untapped a card off the battlefield, `discard_card` discarded a
@@ -788,10 +797,15 @@ permanent, and `attach` left an Aura attached to the player it came off;
 no game reached any of them, every caller offering only what the rule
 allows, and each has a regular test besides.
 
-The effects proofs, which read an effect printed on a card back from the
-registry, are where these costs meet: they do not yet finish. The rest
-of the pool's proofs are being run under these measures, and this
-section will record which hold.
+Not yet finished: moving a card between zones, and the effects proofs,
+which read an effect printed on a card back from the registry (each
+past five gigabytes); pruning effects on departed permanents, paying a
+cost, the subtype filters, a filtered target requirement and the
+`KindMap` proofs (heavy, run alone at a larger cap); destroying,
+damage's prevention and replacement, fighting, tokens, transforming,
+choosing targets and searching (written, not yet run under the current
+rewrite). The rest of the pool's proofs are being run under these
+measures, and this section will record which hold.
 
 ### The whole engine under libFuzzer
 
