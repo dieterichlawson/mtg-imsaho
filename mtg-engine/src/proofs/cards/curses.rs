@@ -21,7 +21,7 @@
 //! its trigger scope says, and resolves for the player it enchants, or
 //! enchanted last if it has since left the battlefield (113.7a).
 
-use super::{acted, asked_each, asked_for, board, card_proof, prints_effects, triggers, Act, Snapshot};
+use super::{acted, asked_each, asked_for, board, card_proof, each_case, prints_effects, triggers, Act, Snapshot};
 use crate::actions::Target;
 use crate::cards::{CardBehavior, TriggerKind, TriggerScope, TargetRequirement};
 use crate::ids::{ObjectId, PlayerId};
@@ -61,11 +61,16 @@ fn enchants_a_player(card: Box<dyn CardBehavior>) {
 /// that has left it, having enchanted that player: the board, the Curse,
 /// and the player it enchants.
 fn cursing(card: Box<dyn CardBehavior>) -> (crate::cards::CardRegistry, GameState, ObjectId, PlayerId, crate::ids::CardId) {
+    cursing_as(card, PlayerId(u8::from(kani::any::<bool>())), PlayerId(u8::from(kani::any::<bool>())), kani::any())
+}
+
+/// [`cursing`]'s board, the Curse `owner`'s, enchanting `cursed`, and on
+/// the battlefield if `on`.
+fn cursing_as(card: Box<dyn CardBehavior>, cursed: PlayerId, owner: PlayerId, on: bool)
+    -> (crate::cards::CardRegistry, GameState, ObjectId, PlayerId, crate::ids::CardId)
+{
     let (registry, mut state, blank, card) = board(card);
-    let cursed = PlayerId(u8::from(kani::any::<bool>()));
-    let on: bool = kani::any();
-    let curse = state.create_object(card, PlayerId(u8::from(kani::any::<bool>())),
-        if on { Zone::Battlefield } else { Zone::Graveyard }, None, None);
+    let curse = state.create_object(card, owner, if on { Zone::Battlefield } else { Zone::Graveyard }, None, None);
     let o = state.get_object_mut(curse).expect("just created");
     if on {
         o.attached_to_player = Some(cursed);
@@ -199,48 +204,73 @@ card_proof! {
     }
 }
 
-card_proof! {
-    /// Curse of Oblivion's upkeep trigger: the player it enchants (as it
-    /// left, if it has, CR 113.7a) exiles two cards from their graveyard
-    /// (no token, CR 109.1): with two or fewer there, all of them; with
-    /// more, the two they choose, asked as one question of exactly two of
-    /// them (each then exiled as the card's effect runs once per card
-    /// chosen); with none, nothing. Nothing else. Over three cards of the
-    /// cursed player's in their graveyard or not, the Curse itself among
-    /// that graveyard's cards if it is there, and a token there.
-    fn curse_of_oblivion_exiles_two_cards_from_its_players_graveyard() {
-        let (registry, mut state, curse, cursed, blank) = cursing(Box::new(isd::curse_of_oblivion::CurseOfOblivion));
-        let mut cards = Vec::with_capacity(4);
-        let c = state.get_object(curse).expect("the curse");
-        if c.zone == Zone::Graveyard && c.owner == cursed {
-            cards.push(curse);
+/// Curse of Oblivion's upkeep trigger: the player it enchants (as it
+/// left, if it has, CR 113.7a) exiles two cards from their graveyard
+/// (no token, CR 109.1): with two or fewer there, all of them; with
+/// more, the two they choose, asked as one question of exactly two of
+/// them (each then exiled as the card's effect runs once per card
+/// chosen); with none, nothing. Nothing else. Over `in_graveyard` of
+/// three cards of the cursed player's in their graveyard and the rest
+/// in their hand, the Curse itself among that graveyard's cards if it
+/// is there, and a token there; the player cursed, the Curse's owner,
+/// and whether it is on the battlefield by `case`. These are constants
+/// in each call: the graveyard's cards are a list of every length at
+/// once if the solver chooses which are there, and its owner an index
+/// into the players, read for the graveyard's order, if it chooses
+/// whose.
+fn curse_of_oblivion(in_graveyard: u8, case: u8) {
+    let (cursed, owner) = (PlayerId(case % 2), PlayerId(case / 2 % 2));
+    let (registry, mut state, curse, cursed, blank) = cursing_as(Box::new(isd::curse_of_oblivion::CurseOfOblivion), cursed, owner, case / 4 == 1);
+    let mut cards = Vec::with_capacity(4);
+    let c = state.get_object(curse).expect("the curse");
+    if c.zone == Zone::Graveyard && c.owner == cursed {
+        cards.push(curse);
+    }
+    for j in 0..3 {
+        let there = j < in_graveyard;
+        let id = state.create_object(blank, cursed, if there { Zone::Graveyard } else { Zone::Hand }, None, None);
+        if there {
+            cards.push(id);
         }
-        for _ in 0..3 {
-            let in_graveyard: bool = kani::any();
-            let id = state.create_object(blank, cursed, if in_graveyard { Zone::Graveyard } else { Zone::Hand }, None, None);
-            if in_graveyard {
-                cards.push(id);
+    }
+    let token = state.create_object(crate::ids::CardId(0), cursed, Zone::Graveyard, None, None);
+    state.get_object_mut(token).expect("just created").is_token = true;
+    let before = Snapshot::of(&state);
+    let oblivion = isd::curse_of_oblivion::CurseOfOblivion;
+    oblivion.on_upkeep(&mut state, curse, &[], &registry);
+    if cards.len() <= 2 {
+        assert!(asked_each(cards.len(), |i| Act::Move(cards[i], Zone::Exile)) && Snapshot::of(&state) == before);
+        std::mem::forget((registry, state, cards));
+        return;
+    }
+    let asked = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+        player, source, choice: ResolutionChoiceKind::ChooseObjectSet {
+            options, min: 2, max: 2, effect: PendingEffect::CardEffect { source_id, .. }, ..
+        },
+    }) if *player == cursed && *source == curse && *source_id == curse && *options == cards);
+    assert!(asked && acted() == 0);
+    let chosen = cards[usize::from(kani::any::<u8>() % 4) % cards.len()];
+    oblivion.resolve_card_effect(&mut state, curse, "", &Target::Object(chosen), &registry);
+    assert!(asked_for(&[Act::Move(chosen, Zone::Exile)]));
+    std::mem::forget((registry, state, cards));
+}
+
+/// The proof above, a harness for each number of cards in the graveyard,
+/// for each player cursed and each place of the Curse.
+macro_rules! over_each_graveyard {
+    ($($name:ident: $proof:ident($n:literal);)*) => {$(
+        card_proof! {
+            /// The proof above it, for one number of cards.
+            fn $name() {
+                each_case(8, |case| $proof($n, case));
             }
         }
-        let token = state.create_object(crate::ids::CardId(0), cursed, Zone::Graveyard, None, None);
-        state.get_object_mut(token).expect("just created").is_token = true;
-        let before = Snapshot::of(&state);
-        let oblivion = isd::curse_of_oblivion::CurseOfOblivion;
-        oblivion.on_upkeep(&mut state, curse, &[], &registry);
-        if cards.len() <= 2 {
-            assert!(asked_each(cards.len(), |i| Act::Move(cards[i], Zone::Exile)) && Snapshot::of(&state) == before);
-            std::mem::forget((registry, state, cards));
-            return;
-        }
-        let asked = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
-            player, source, choice: ResolutionChoiceKind::ChooseObjectSet {
-                options, min: 2, max: 2, effect: PendingEffect::CardEffect { source_id, .. }, ..
-            },
-        }) if *player == cursed && *source == curse && *source_id == curse && *options == cards);
-        assert!(asked && acted() == 0);
-        let chosen = cards[usize::from(kani::any::<u8>() % 4) % cards.len()];
-        oblivion.resolve_card_effect(&mut state, curse, "", &Target::Object(chosen), &registry);
-        assert!(asked_for(&[Act::Move(chosen, Zone::Exile)]));
-        std::mem::forget((registry, state, cards));
-    }
+    )*};
+}
+
+over_each_graveyard! {
+    curse_of_oblivion_with_no_other_card_in_the_graveyard: curse_of_oblivion(0);
+    curse_of_oblivion_with_one_other_card_in_the_graveyard: curse_of_oblivion(1);
+    curse_of_oblivion_with_two_other_cards_in_the_graveyard: curse_of_oblivion(2);
+    curse_of_oblivion_with_three_other_cards_in_the_graveyard: curse_of_oblivion(3);
 }
