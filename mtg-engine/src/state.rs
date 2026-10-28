@@ -3759,11 +3759,17 @@ impl GameState {
     /// really does pick up creatures as they arrive.
     #[must_use]
     pub fn creatures_controlled_snapshot(&self, controller: PlayerId, registry: &crate::cards::CardRegistry) -> Vec<ObjectId> {
-        self.objects.values()
-            .filter(|o| o.zone == Zone::Battlefield && o.controller == controller)
-            .filter(|o| self.is_creature(o.id, registry))
-            .map(|o| o.id)
-            .collect()
+        // Allocated at the most it can hold, as `all_objects_in_zone` is: a
+        // filtered `collect` allocates when it keeps its first creature, so
+        // whether the list was allocated at all is a question about the
+        // board, and a proof's board leaves it open.
+        let mut ids = Vec::with_capacity(self.objects.len());
+        for o in self.objects.values() {
+            if o.zone == Zone::Battlefield && o.controller == controller && self.is_creature(o.id, registry) {
+                ids.push(o.id);
+            }
+        }
+        ids
     }
 
     /// Who controls this object, or — once it has left the battlefield — who
