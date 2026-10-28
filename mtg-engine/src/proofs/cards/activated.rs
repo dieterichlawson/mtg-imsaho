@@ -85,7 +85,7 @@
 //! activated it, its controller as it was activated (CR 113.8); and a card
 //! and a token of any characteristics beside it.
 
-use super::{acted, any_object, any_target, asked_each, asked_for, board, both, card_proof, each_is, has_subtype, new_ids, prints_where, were, Act, Form, Kinds, Snapshot};
+use super::{acted, any_object, any_target, asked_each, asked_for, board, both, card_proof, each_case, each_is, has_subtype, new_ids, prints_where, were, Act, Form, Kinds, Snapshot};
 use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardRegistry, SacrificeCost, TargetFilter, TargetRequirement};
 use crate::damage::DamageKind;
@@ -172,9 +172,17 @@ struct Board {
 const ANY_CREATURE: Kinds = Kinds { types: &[CardType::Creature, CardType::Enchantment], subtypes: &[], keywords: &[] };
 
 fn permanent(card: Box<dyn CardBehavior>, kinds: &Kinds, gone: bool) -> Board {
+    permanent_of(card, kinds, gone, PlayerId(u8::from(kani::any::<bool>())))
+}
+
+/// [`permanent`]'s board, controlled by `you`.
+fn permanent_of(card: Box<dyn CardBehavior>, kinds: &Kinds, gone: bool, you: PlayerId) -> Board {
+    permanent_at(card, kinds, gone && kani::any(), you)
+}
+
+/// [`permanent_of`]'s board, the permanent gone exactly if `gone`.
+fn permanent_at(card: Box<dyn CardBehavior>, kinds: &Kinds, gone: bool, you: PlayerId) -> Board {
     let (registry, mut state, blank, card) = board(card);
-    let you = PlayerId(u8::from(kani::any::<bool>()));
-    let gone = gone && kani::any();
     let me = state.create_object(card, PlayerId(0), if gone { Zone::Graveyard } else { Zone::Battlefield }, None, None);
     let o = state.get_object_mut(me).expect("just created");
     if gone {
@@ -781,10 +789,17 @@ fn mindshrieker(cards: &[InLibrary]) {
 /// equal to the greatest mana value among the milled cards." With its
 /// target gone illegal it does nothing, the milling included (CR
 /// 608.2b). Over a library of the cards given, up to two, of mana value 0,
-/// 2 or 5.
+/// 2 or 5, of the enchantment's controller, either player, a constant in
+/// each call: the card reads the top of its controller's library through
+/// an index by the controller, and with one the solver chose each of these
+/// ran out of memory at four gigabytes, the empty library's included.
 fn heretics_punishment(cards: &[InLibrary]) {
-    let mut b = permanent(Box::new(isd::heretics_punishment::HereticsPunishment), &ANY_CREATURE, true);
-    let you = b.you;
+    each_case(2, |p| heretics_punishment_for(PlayerId(p), cards));
+}
+
+/// [`heretics_punishment`] for an enchantment `you` control.
+fn heretics_punishment_for(you: PlayerId, cards: &[InLibrary]) {
+    let mut b = permanent_of(Box::new(isd::heretics_punishment::HereticsPunishment), &ANY_CREATURE, true, you);
     let library = library_of(&mut b, you, cards);
     let target = any_target(b.others);
     let mana_value = |id: &ObjectId| match b.state.name_of(*id, &b.registry).as_str() {

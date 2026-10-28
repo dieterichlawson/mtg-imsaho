@@ -1344,6 +1344,18 @@ pub fn any_target(objects: [ObjectId; 2]) -> Target {
     }
 }
 
+/// `proof` for each of `n` cases, by number, a constant in each call: a
+/// choice the solver makes that decides an object, a player or a list's
+/// length is an index every later read is a question of.
+pub fn each_case(n: u8, proof: impl Fn(u8)) {
+    let which: u8 = kani::any();
+    for i in 0..n {
+        if which == i {
+            proof(i);
+        }
+    }
+}
+
 /// A card that prints nothing: an object of it has exactly the
 /// characteristics a proof gives it, since an object's characteristics are
 /// its own and its card's (`GameState::colors_of` and the rest).
