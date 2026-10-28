@@ -677,7 +677,25 @@ sits in memory. What was measured, and what the proofs do about each:
   three and a half, 3.9 million clauses, in 349 seconds. And a list
   filtered and collected is allocated at the first entry kept, which the
   solver keeps or not: the lists a proof expects are filtered into a list
-  allocated first (`kept`).
+  allocated first (`kept`, and `picked` for a filter and a map). The
+  destroy-all recorder's outcomes, allocated at the length of the ids it
+  was handed and cloned for the record, were two more: with both of
+  `MAX_LISTED` Paraselene's proof, which had run out of memory at four
+  and a half gigabytes, passed in 242 seconds.
+- **An object a zone's listing may hold.** A card that scans a zone
+  (Full Moon's Rise: each Werewolf creature its activator controls) is
+  handed the zone's objects in a list whose every entry, with each
+  object's zone and controller the solver's, may be any of the board's
+  objects, and every read through one splits as many ways. Of the
+  symbolic execution traced of Full Moon's Rise's ability, 45 per cent
+  was `has_subtype` and a quarter `is_creature`, each read three ways,
+  with every subtype compared byte by byte; it finished symbolic
+  execution in 1.35 million steps and ran out of memory at three and a
+  half gigabytes, the Werewolves and the activator constants. Vampiric
+  Fury's, a constant Vampire or not on each object, ran out at four in
+  symbolic execution. Making each object's zone and controller constant
+  as well would be eight harnesses for each case there is now; these
+  are run instead with more memory, alone.
 - **The zone order** itself is proved with Verus, for every board, not
   with Kani (above).
 
@@ -868,18 +886,26 @@ allows, and each has a regular test besides.
 Not yet finished: moving a card between zones (each past two and a half
 gigabytes, to be run at a larger cap); destroying permanents together
 (past eleven); the damage queue, `perform` on a permanent, and
-prevention and doubling, now a harness for each target, board and set
-of effects (being run); the other boards of tokens entering attacking
-(past four), putting a card into a library, the prevention's pruning,
-paying a cost (the autotap planner's symbolic execution past half an
-hour, a pool the solver chose or not), the subtype filters and the
-creature groups that name a subtype, a filtered target requirement, a
-search's question and discarding several cards (past two and a half),
-and the `KindMap` proofs (heavy, to be run alone at a larger cap);
-tokens and transforming (written, not yet run under the current
-rewrite). The card proofs made a harness per case are being run, and
-the rest of the pool's under these measures; this section will record
-which hold.
+prevention and doubling, a harness for each target, board and set of
+effects (those on a permanent, and those a doubler or a shield applies
+to, past four); the other boards of tokens entering attacking (past
+four), putting a card into a library, the prevention's pruning, paying
+a cost (the autotap planner's symbolic execution past half an hour, a
+pool the solver chose or not), the subtype filters and the creature
+groups that name a subtype, a filtered target requirement, a search's
+question and discarding several cards (past two and a half), and the
+`KindMap` proofs (heavy, to be run alone at a larger cap). Of the cards,
+Full Moon's Rise's ability, Vampiric Fury, Moonmist, Spare from Evil,
+Rolling Temblor, Make a Wish, Mulch and Balefire Dragon are past four
+gigabytes, to be run alone at about ten; the rest of the pool's card
+proofs are being run, and this section will record which hold.
+
+A counterexample can be of a board no game reaches, which is then the
+board's error and not the card's: the board the counted creatures are
+proved over gave each card a power, a creature or not, and the engine
+takes an object with a power for a creature, so Boneyard Wurm counted a
+non-creature card. A noncreature has no power (CR 208.3); the board now
+gives one only to a creature, and the proof holds.
 
 ### The whole engine under libFuzzer
 
