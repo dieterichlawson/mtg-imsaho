@@ -1975,25 +1975,34 @@ card_proof! {
     }
 }
 
-card_proof! {
-    /// Ulvenwald Mystics: face up, no ability; transformed, Ulvenwald
-    /// Primordials' "{G}: Regenerate this creature"; resolving, a
-    /// regeneration shield on it. Nothing else.
-    fn ulvenwald_primordials_regenerates() {
-        let mut b = permanent(Box::new(isd::ulvenwald_mystics::UlvenwaldMystics), &ANY_CREATURE, true);
-        let transformed = b.on() && kani::any();
-        b.state.get_object_mut(b.me).expect("on the board").is_transformed = transformed;
-        let card = b.card();
-        let defs = std::mem::ManuallyDrop::new(b.registry.get(card).expect("registered").activated_abilities(&b.state, b.me, &b.registry));
-        if transformed {
-            let regenerate = Ability { cost: mana(0, &[Color::Green]), ..Ability::default() };
-            assert!(defs.len() == 1 && defs[0].ability_index == 0 && Ability::of(&defs[0]) == regenerate);
-            std::mem::forget(regenerate);
-        } else {
-            assert!(defs.is_empty());
-        }
-        let before = b.resolve(0, &[]);
-        assert!(asked_for(&[Act::Regenerate(b.me)]) && Snapshot::of(&b.state) == before);
-        std::mem::forget(b);
+/// Ulvenwald Mystics: face up, no ability; transformed, Ulvenwald
+/// Primordials' "{G}: Regenerate this creature"; resolving, a
+/// regeneration shield on it. Nothing else. Where it is and which face is
+/// up are constants in each harness: whether it has the ability is a list
+/// of abilities of a length they decide, read past its end if the solver
+/// chose them, and the proof ran out of memory at ten gigabytes so. With
+/// it in its owner's graveyard for 0, front face up on the battlefield for
+/// 1, and transformed there for 2.
+fn ulvenwald_mystics_placed(placed: u8) {
+    let mut b = permanent_at(Box::new(isd::ulvenwald_mystics::UlvenwaldMystics), &ANY_CREATURE, placed == 0, PlayerId(u8::from(kani::any::<bool>())));
+    let transformed = placed == 2;
+    b.state.get_object_mut(b.me).expect("on the board").is_transformed = transformed;
+    let card = b.card();
+    let defs = std::mem::ManuallyDrop::new(b.registry.get(card).expect("registered").activated_abilities(&b.state, b.me, &b.registry));
+    if transformed {
+        let regenerate = Ability { cost: mana(0, &[Color::Green]), ..Ability::default() };
+        assert!(defs.len() == 1 && defs[0].ability_index == 0 && Ability::of(&defs[0]) == regenerate);
+        std::mem::forget(regenerate);
+    } else {
+        assert!(defs.is_empty());
     }
+    let before = b.resolve(0, &[]);
+    assert!(asked_for(&[Act::Regenerate(b.me)]) && Snapshot::of(&b.state) == before);
+    std::mem::forget(b);
+}
+
+case_by_case! { ulvenwald_mystics_placed;
+    ulvenwald_mystics_gone_has_no_ability: 0,
+    ulvenwald_mystics_face_up_has_no_ability: 1,
+    ulvenwald_primordials_regenerates: 2,
 }
