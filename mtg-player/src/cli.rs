@@ -3464,7 +3464,18 @@ impl CliPlayer {
         // from static prompts like the target choosers (issue #122).
         let mut card_filter = String::new();
 
-        loop {
+        let closed = loop {
+            // The box is only drawn at CARD_SEARCH_MIN_COLS, and a resize can
+            // take the terminal below that with the search open. Kept open,
+            // it repainted a frame with no box and no `[/=search]` hint and
+            // took the next answer typed as its filter (issue #958, #107's
+            // modal half again). It closes, and says so, instead.
+            if !Self::card_search_fits() {
+                break Some(format!(
+                    "Card search closed: the terminal is now {} columns, and it needs at least {}.",
+                    Self::term_width(), Self::CARD_SEARCH_MIN_COLS));
+            }
+
             // Re-render with current filter
             let _ = Self::render_paged(view, Some(actions), message, &view.display_log, &card_filter, None, menu_offset);
 
@@ -3490,8 +3501,7 @@ impl CliPlayer {
             if let Event::Key(KeyEvent { code, modifiers, .. }) = ev {
                 match code {
                     KeyCode::Esc | KeyCode::Enter | KeyCode::Char('/') => {
-                        card_filter.clear();
-                        break;
+                        break None;
                     }
                     KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
                         quit_at_prompt();
@@ -3507,11 +3517,11 @@ impl CliPlayer {
                     _ => {}
                 }
             }
-        }
+        };
 
         let _ = execute!(stdout(), event::DisableBracketedPaste);
         tui_raw_off();
-        None
+        closed
     }
 
     /// Interactive target selection for a castable spell.
