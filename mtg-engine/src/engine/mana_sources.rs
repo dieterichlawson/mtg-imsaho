@@ -154,8 +154,7 @@ pub(crate) fn gather_mana_sources(
             let has_side_effects = abilities.iter().any(|a| a.has_side_effects);
             let is_creature = state.is_creature(obj.id, registry);
             let has_utility = !behavior.activated_abilities(state, obj.id, registry).is_empty();
-            let is_basic = state.face_data(obj.id, registry)
-                .is_some_and(|d| d.supertypes.contains(&Supertype::Basic));
+            let is_basic = state.face_supertypes(obj.id, registry).contains(&Supertype::Basic);
 
             let source_kind = if has_side_effects {
                 ManaSourceKind::HasSideEffects

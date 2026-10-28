@@ -65,6 +65,5 @@ impl CardBehavior for TravelersAmulet {
 /// A basic land card — `Land` card type plus the `Basic` supertype.
 fn is_basic_land(state: &GameState, id: crate::ids::ObjectId, registry: &CardRegistry) -> bool {
     state.has_card_type(id, CardType::Land, registry)
-        && state.face_data(id, registry)
-            .is_some_and(|d| d.supertypes.contains(&Supertype::Basic))
+        && state.face_supertypes(id, registry).contains(&Supertype::Basic)
 }

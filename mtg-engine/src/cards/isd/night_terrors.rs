@@ -47,8 +47,7 @@ impl CardBehavior for NightTerrors {
             let nonland_cards: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, *target_player)
                 .iter()
                 .filter(|o| {
-                    let is_land = state.face_data(o.id, registry)
-                        .is_some_and(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Land)));
+                    let is_land = state.face_card_types(o.id, registry).contains(&CardType::Land);
                     !is_land
                 })
                 .map(|o| o.id)

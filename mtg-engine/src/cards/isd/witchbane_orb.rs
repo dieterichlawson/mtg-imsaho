@@ -40,8 +40,7 @@ impl CardBehavior for WitchbaneOrb {
         let curses: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield).into_iter()
             .filter(|o| {
                 o.attached_to_player == Some(controller)
-                    && state.face_data(o.id, registry)
-                        .is_some_and(|d| d.subtypes.iter().any(|s| s == "Curse"))
+                    && state.face_subtypes(o.id, registry).iter().any(|s| s == "Curse")
             })
             .map(|o| o.id)
             .collect();

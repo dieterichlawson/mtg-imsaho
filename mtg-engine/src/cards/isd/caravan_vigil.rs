@@ -67,8 +67,7 @@ impl CardBehavior for CaravanVigil {
         let basic_lands: Vec<ObjectId> = state.get_player(controller).library_order.iter()
             .filter(|&&obj_id| {
                 state.has_card_type(obj_id, CardType::Land, registry)
-                    && state.face_data(obj_id, registry)
-                        .is_some_and(|d| d.supertypes.iter().any(|st| matches!(st, Supertype::Basic)))
+                    && state.face_supertypes(obj_id, registry).contains(&Supertype::Basic)
             })
             .copied()
             .collect();

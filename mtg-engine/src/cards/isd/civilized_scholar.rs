@@ -29,8 +29,7 @@ impl CivilizedScholar {
     /// registry-backed card, so testing it first meant the authoritative face
     /// data was consulted only when the object field happened to be unset.
     fn is_creature_card(state: &GameState, id: ObjectId, registry: &CardRegistry) -> bool {
-        state.face_data(id, registry)
-            .is_some_and(|d| d.card_types.contains(&CardType::Creature))
+        state.face_card_types(id, registry).contains(&CardType::Creature)
     }
 
 }

@@ -52,8 +52,8 @@ impl CardBehavior for Ghoulraiser {
             .iter()
             // "a Zombie **card**" — CR 109.1, said rather than left to
             // `face_data` happening to be None for a token.
-            .filter(|o| state.is_card(o.id) && state.face_data(o.id, registry)
-                .is_some_and(|d| d.subtypes.iter().any(|s| s == "Zombie")))
+            .filter(|o| state.is_card(o.id)
+                && state.face_subtypes(o.id, registry).iter().any(|s| s == "Zombie"))
             .map(|o| o.id)
             .collect();
 

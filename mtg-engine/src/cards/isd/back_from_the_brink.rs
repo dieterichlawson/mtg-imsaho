@@ -66,8 +66,8 @@ impl CardBehavior for BackFromTheBrink {
             // announcement (CR 107.3e) — without this the engine saw {X} in
             // the ability's cost and put the player through the X-funding
             // prompt, letting them dump mana into a value that can only be 0.
-            let mana_cost = state.face_data(creature.id, registry)
-                .and_then(|d| d.cost.clone())
+            let mana_cost = state.face_cost(creature.id, registry)
+                .cloned()
                 .unwrap_or_else(ManaCost::free)
                 .without_x();
 
