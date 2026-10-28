@@ -26,15 +26,14 @@ impl CardBehavior for Paraselene {
         let controller = crate::cards::helpers::controller_of(state, object_id);
 
         // Find all enchantments on the battlefield.
-        let enchantments: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield).into_iter()
-            // `has_card_type` rather than a raw `face_data` read: it unions
-            // the object's own types with its active face's, so a token or a
-            // permanent granted the type counts. Nothing in this set is an
-            // enchantment that way, but the accessor is the one every other
-            // card asks through.
-            .filter(|o| state.has_card_type(o.id, CardType::Enchantment, registry))
-            .map(|o| o.id)
-            .collect();
+        //
+        // `has_card_type` rather than a raw `face_data` read: it unions
+        // the object's own types with its active face's, so a token or a
+        // permanent granted the type counts. Nothing in this set is an
+        // enchantment that way, but the accessor is the one every other
+        // card asks through.
+        let enchantments = crate::cards::helpers::ids_where(state.all_objects_in_zone(Zone::Battlefield),
+            |o| state.has_card_type(o.id, CardType::Enchantment, registry));
 
         // "Destroy all enchantments" — one event (CR 700.2c), so the
         // indestructible check for each is made against the battlefield as it

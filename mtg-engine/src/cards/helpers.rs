@@ -1012,6 +1012,24 @@ pub fn morbid_should_trigger(state: &GameState, kind: &TriggerKind) -> bool {
 /// and kept doing it after that (#692). Every library choice goes through
 /// this, and the invariant checker flags one that offers two copies.
 #[must_use]
+/// The ids of the objects in `objects`, in their order, that `keep` holds
+/// for: what `objects.into_iter().filter(keep).map(|o| o.id).collect()`
+/// gives, into a list allocated at the most it can hold.
+///
+/// A filtered `collect` allocates when it keeps its first object, so
+/// whether the list was allocated at all is a question about the board,
+/// which a proof of the card has to take both ways; allocated first, every
+/// id lands in the one list.
+pub fn ids_where(objects: Vec<&crate::state::GameObject>, mut keep: impl FnMut(&crate::state::GameObject) -> bool) -> Vec<ObjectId> {
+    let mut ids = Vec::with_capacity(objects.len());
+    for o in objects {
+        if keep(o) {
+            ids.push(o.id);
+        }
+    }
+    ids
+}
+
 pub fn one_of_each_card(state: &GameState, candidates: Vec<ObjectId>) -> Vec<ObjectId> {
     // A list rather than a hash set: a library holds a few dozen cards, and
     // a hash set's seed is drawn from the operating system, which the

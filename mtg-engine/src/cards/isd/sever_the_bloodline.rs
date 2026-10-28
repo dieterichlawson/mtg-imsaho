@@ -47,10 +47,8 @@ impl CardBehavior for SeverTheBloodline {
                 // "and all OTHER creatures with the same name" — on the
                 // battlefield only. Ruling: "In other zones, they're 'creature
                 // cards,' not 'creatures.'"
-                let to_exile: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield).into_iter()
-                    .map(|o| o.id)
-                    .filter(|id| state.is_creature(*id, registry) && state.name_of(*id, registry) == name)
-                    .collect();
+                let to_exile = crate::cards::helpers::ids_where(state.all_objects_in_zone(Zone::Battlefield),
+                    |o| state.is_creature(o.id, registry) && state.name_of(o.id, registry) == name);
 
                 // The cause, before the moves `move_object` logs one by one;
                 // written after them it was a summary telling them again
