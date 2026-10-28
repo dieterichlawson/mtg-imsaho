@@ -20,7 +20,7 @@
 //! `resolve_card_effect`, through `engine::apply_pending_effect`), the
 //! card's own hook is called with every answer the handler accepts.
 
-use super::{acted, asked_for, board, card_proof, picked, were, Act, Snapshot};
+use super::{acted, asked_for, board, card_proof, case_by_case, picked, were, Act, Snapshot};
 use crate::actions::{ResolvedChoice, Target};
 use crate::cards::{CardBehavior, CardRegistry};
 use crate::ids::{CardId, ObjectId, PlayerId};
@@ -38,44 +38,51 @@ fn asking(before: &Snapshot, asking: bool) -> Snapshot {
     Snapshot { asking, ..before.clone() }
 }
 
-card_proof! {
-    /// Nevermore: its name is chosen as it enters (CR 614.12), which is no
-    /// trigger; its controller is asked to choose among every nonland card
-    /// name there is, in order; the name chosen is the one whose spells
-    /// can't be cast (the `PreventCastingNamed` effect it then has, which
-    /// the engine's casting rules read); an answer past the end of the
-    /// names is refused, and the question stands. Nothing else. Over a
-    /// registry of a nonland card, a land and Nevermore, and Nevermore
-    /// under either player.
-    fn nevermore_names_a_nonland_card() {
-        let nevermore = isd::nevermore::Nevermore;
-        assert!(nevermore.chooses_as_it_enters() && !nevermore.has_etb_handler());
-        let (mut registry, mut state, _blank, card) = board(Box::new(nevermore));
-        registry.register(Box::new(isd::gavony_township::GavonyTownship));
-        let you = any_player();
-        let me = state.create_object(card, PlayerId(0), Zone::Battlefield, None, None);
-        state.get_object_mut(me).expect("just created").controller = you;
-        let before = Snapshot::of(&state);
-        registry.get(card).expect("registered").on_enter_battlefield(&mut state, me, &[], &registry);
-        let asked = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
-            player, source, choice: ResolutionChoiceKind::ChooseCardName { options, source_id, .. },
-        }) if *player == you && *source == me && *source_id == me
-            && options.len() == 2 && options[0] == "Blank" && options[1] == "Nevermore");
-        assert!(asked && acted() == 0 && Snapshot::of(&state) == asking(&before, true));
-        let index: usize = kani::any();
-        kani::assume(index <= 2);
-        let _ = crate::engine::actions::choices::resolve_choice(&mut state, &ResolvedChoice::ChosenIndex(index, String::new()), &registry);
-        let effects = state.get_object(me).expect("on the board").instance_continuous_effects.as_deref();
-        if index < 2 {
-            let name = if index == 0 { "Blank" } else { "Nevermore" };
-            assert!(matches!(effects, Some([E::PreventCastingNamed { name: n }]) if n == name));
-            assert!(Snapshot::of(&state) == before);
-        } else {
-            assert!(effects.is_none() && Snapshot::of(&state) == asking(&before, true));
-        }
-        assert!(acted() == 0);
-        std::mem::forget((registry, state));
+/// Nevermore: its name is chosen as it enters (CR 614.12), which is no
+/// trigger; its controller is asked to choose among every nonland card
+/// name there is, in order; the name chosen is the one whose spells can't
+/// be cast (the `PreventCastingNamed` effect it then has, which the
+/// engine's casting rules read); an answer past the end of the names is
+/// refused, and the question stands. Nothing else. Over a registry of a
+/// nonland card, a land and Nevermore, Nevermore under player `you`
+/// answering `index`, each a constant in its harness: with both the
+/// solver's, the answer was every path through `resolve_choice` at once,
+/// and the proof was still in symbolic execution after half an hour.
+fn nevermore_names_a_nonland_card((you, index): (u8, usize)) {
+    let nevermore = isd::nevermore::Nevermore;
+    assert!(nevermore.chooses_as_it_enters() && !nevermore.has_etb_handler());
+    let (mut registry, mut state, _blank, card) = board(Box::new(nevermore));
+    registry.register(Box::new(isd::gavony_township::GavonyTownship));
+    let you = PlayerId(you);
+    let me = state.create_object(card, PlayerId(0), Zone::Battlefield, None, None);
+    state.get_object_mut(me).expect("just created").controller = you;
+    let before = Snapshot::of(&state);
+    registry.get(card).expect("registered").on_enter_battlefield(&mut state, me, &[], &registry);
+    let asked = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+        player, source, choice: ResolutionChoiceKind::ChooseCardName { options, source_id, .. },
+    }) if *player == you && *source == me && *source_id == me
+        && options.len() == 2 && options[0] == "Blank" && options[1] == "Nevermore");
+    assert!(asked && acted() == 0 && Snapshot::of(&state) == asking(&before, true));
+    let _ = crate::engine::actions::choices::resolve_choice(&mut state, &ResolvedChoice::ChosenIndex(index, String::new()), &registry);
+    let effects = state.get_object(me).expect("on the board").instance_continuous_effects.as_deref();
+    if index < 2 {
+        let name = if index == 0 { "Blank" } else { "Nevermore" };
+        assert!(matches!(effects, Some([E::PreventCastingNamed { name: n }]) if n == name));
+        assert!(Snapshot::of(&state) == before);
+    } else {
+        assert!(effects.is_none() && Snapshot::of(&state) == asking(&before, true));
     }
+    assert!(acted() == 0);
+    std::mem::forget((registry, state));
+}
+
+case_by_case! { nevermore_names_a_nonland_card;
+    nevermore_under_the_first_player_names_the_first_card: (0, 0),
+    nevermore_under_the_first_player_names_the_second_card: (0, 1),
+    nevermore_under_the_first_player_refuses_an_answer_past_the_names: (0, 2),
+    nevermore_under_the_second_player_names_the_first_card: (1, 0),
+    nevermore_under_the_second_player_names_the_second_card: (1, 1),
+    nevermore_under_the_second_player_refuses_an_answer_past_the_names: (1, 2),
 }
 
 /// Caravan Vigil's board: the spell on the stack under either player;
