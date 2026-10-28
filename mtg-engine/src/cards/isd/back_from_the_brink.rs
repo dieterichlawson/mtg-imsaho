@@ -43,8 +43,13 @@ impl CardBehavior for BackFromTheBrink {
         // surface could tell apart, an `--check-invariants` abort on any
         // non-singleton deck, and a random seat that weighted this ability N
         // times over everything else (issue #631).
-        let mut seen = std::collections::HashSet::new();
-        let creatures: Vec<_> = state.objects_in_zone(Zone::Graveyard, controller)
+        //
+        // The names seen are a list, not a `HashSet`: a graveyard is a few
+        // dozen cards at most, and a hash set's keys are random, which a
+        // proof of this card has to take as any keys at all.
+        let graveyard = state.objects_in_zone(Zone::Graveyard, controller);
+        let mut seen: Vec<&str> = Vec::with_capacity(graveyard.len());
+        let creatures: Vec<_> = graveyard
             .into_iter()
             .filter(|o| {
                 // "exile a creature **card**" — CR 109.1: a token in a graveyard
@@ -57,7 +62,13 @@ impl CardBehavior for BackFromTheBrink {
                 // active face's card types.
                 state.is_card(o.id) && state.is_creature(o.id, registry)
             })
-            .filter(|o| seen.insert(o.name.clone()))
+            .filter(|o| {
+                if seen.contains(&o.name.as_str()) {
+                    return false;
+                }
+                seen.push(&o.name);
+                true
+            })
             .collect();
 
         creatures.into_iter().map(|creature| {
