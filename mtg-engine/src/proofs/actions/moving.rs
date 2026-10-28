@@ -9,15 +9,38 @@
 //!
 //! The board is the blank card's, which prints no replacement effect and no
 //! choice to make as it enters (CR 614.12): what a card that prints one
-//! does as something enters is that card's own proof. Combat and the
+//! does as something enters is that card's own proof. The replacement
+//! layer's answer for an entering permanent, `replacement::for_entering`,
+//! stands in as the event unchanged, which is what it answers on such a
+//! board (`entering_with_nothing_to_replace_it_is_unchanged`, below): run
+//! through it here, the copy it might decide was one CBMC left open, and
+//! becoming a copy was two thirds of the proof's work. Combat and the
 //! turn's effects are empty here: `remove_from_combat` and the retain over
 //! `until_end_of_turn` are not reached with anything to remove.
 
+use crate::cards::CardRegistry;
 use crate::events::GameEvent;
 use crate::ids::PlayerId;
 use crate::proofs::cards::{blank_board, Snapshot};
-use crate::state::{ControlEffect, EnterAsCopyChoice, SetPtEffect};
+use crate::replacement::EnteringPermanent;
+use crate::state::{ControlEffect, EnterAsCopyChoice, GameState, SetPtEffect};
 use crate::types::{CardType, Color, CounterType, Zone};
+
+/// Stands in for `replacement::for_entering`: the event as it was.
+#[allow(dead_code)] // named only by `kani::stub`
+fn unchanged(_: &mut GameState, entering: EnteringPermanent, _: &CardRegistry) -> EnteringPermanent {
+    entering
+}
+
+/// Stands in for `GameState::become_copy_of`, which nothing here may call:
+/// no permanent enters as a copy when nothing decided one. The proof holds
+/// only if no path reaches it; CBMC, which cannot tell from the bytes of
+/// an entering event that no copy was decided, would otherwise follow
+/// becoming a copy of something into every effect a copy might drop.
+#[allow(dead_code)] // named only by `kani::stub`
+fn no_copy(_: &mut GameState, _: crate::ids::ObjectId, _: crate::ids::ObjectId, _: &CardRegistry) {
+    panic!("a permanent entered as a copy with no copy decided");
+}
 
 /// Any zone.
 fn any_zone() -> Zone {
@@ -213,7 +236,10 @@ macro_rules! from_each_zone {
         #[kani::unwind(7)]
         #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
         #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+        #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
         #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+        #[kani::stub(crate::replacement::for_entering, unchanged)]
+        #[kani::stub(crate::state::GameState::become_copy_of, no_copy)]
         /// The proof above it, for a card leaving that zone, of either
         /// player's. The owner is a constant in each call, not left to the
         /// solver: `move_object` reaches the owner's library and graveyard
@@ -238,4 +264,38 @@ from_each_zone! {
     moving_a_spell_from_the_stack: Stack,
     moving_a_card_from_exile: Exile,
     moving_a_card_from_the_command_zone: Command,
+}
+
+#[kani::proof]
+#[kani::unwind(7)]
+#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+/// A permanent entering a board on which no card prints a replacement
+/// effect (CR 614.1) enters as it was going to: the replacement layer
+/// gives back the event it was asked about, from wherever the permanent
+/// comes, under either player, tapped or not, with or without counters,
+/// as a copy of something or not.
+fn entering_with_nothing_to_replace_it_is_unchanged() {
+    let (registry, mut state, blank) = blank_board();
+    let id = state.create_object(blank, PlayerId(u8::from(kani::any::<bool>())), Zone::Graveyard, None, None);
+    state.create_object(blank, PlayerId(u8::from(kani::any::<bool>())), Zone::Battlefield, None, None);
+    let mut counters = Vec::with_capacity(1);
+    if kani::any() {
+        counters.push((crate::types::CounterType::PlusOnePlusOne, 1));
+    }
+    let entering = EnteringPermanent {
+        object: id,
+        from: if kani::any() { Some(Zone::Graveyard) } else { None },
+        controller: PlayerId(u8::from(kani::any::<bool>())),
+        tapped: kani::any(),
+        counters,
+        copy_of: kani::any::<bool>().then_some(crate::ids::ObjectId(id.0 + 1)),
+    };
+    let asked = entering.clone();
+
+    let answer = crate::replacement::for_entering(&mut state, entering, &registry);
+
+    assert!(answer == asked);
+    std::mem::forget((registry, state, answer, asked));
 }

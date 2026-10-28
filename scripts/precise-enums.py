@@ -33,7 +33,12 @@ The rewrite, which changes nothing a Rust program can observe:
   are zero rather than whatever they were. No program reads a variant other
   than the one its tag names. A niche-encoded enum keeps its tag inside a
   variant's bytes and is left alone, as is a Rust `union`, whose other
-  bytes are kept by a write;
+  bytes are kept by a write. A niche-encoded enum's variant (its tag kept
+  in a field of another variant's bytes) is written as its fields, if it
+  has any, and then its tag into the niche: both become one write of the
+  whole value, the bytes outside the variant zero, when the variable was
+  fresh (declared just before) or the write of its fields came just
+  before;
 - every heap allocation (CBMC's `malloc`, which Kani's `__rust_alloc`
   calls) is zeroed, as `calloc`'s is. Rust's allocator hands out memory of
   no particular value, and safe Rust never reads memory before writing it
@@ -217,6 +222,46 @@ def rewrite(version, strings, symbols, functions):
             bytes_of = gb.Irep(STRUCT, ops, [(K_TYPE, gb.Irep(STRUCT, [], [(K_COMPONENTS, gb.Irep(EMPTY, comps, []))]))])
             whole = gb.Irep(BYTE_EXTRACT, [bytes_of, offset0], [(K_TYPE, ut), (K_BITS_PER_BYTE, leaf('8'))])
             ins[0] = gb.Irep(code.id, [union, whole], list(code.named))
+            niches += 1
+
+    # A niche-encoded enum's variant of no fields (`None`): a fresh local,
+    # `DECL x`, then only its tag written into the niche, `*(T *)&x := tag`.
+    # Made a write of the whole value, the bytes after the tag zero.
+    def symbol_of_niche_write(code):
+        lhs = code.subs[0]
+        if lhs.id != DEREF or not lhs.subs:
+            return None
+        p = lhs.subs[0]
+        while p.id == TYPECAST and p.subs:
+            p = p.subs[0]
+        if p.id != ADDRESS_OF or not p.subs or p.subs[0].id != SYMBOL:
+            return None
+        return p.subs[0]
+
+    for _, instrs in functions:
+        for i, ins in enumerate(instrs[1:], 1):
+            code, prev = ins[0], instrs[i - 1]
+            if ins[2] != ASSIGN or len(code.subs) != 2 or prev[2] != DECL or not prev[0].subs:
+                continue
+            x = symbol_of_niche_write(code)
+            if x is None:
+                continue
+            declared, xid = prev[0].subs[0], named(x, K_IDENT)
+            if declared.id != SYMBOL or xid is None or named(declared, K_IDENT) is None or named(declared, K_IDENT).id != xid.id:
+                continue
+            xt, tag = named(x, K_TYPE), code.subs[1]
+            tt = named(tag, K_TYPE)
+            xw, tw = width(xt), (width(tt) if tt is not None else None)
+            if xw is None or tw is None or tw > xw:
+                continue
+            comps, ops = [gb.Irep(EMPTY, [], [(K_NAME, leaf('tag')), (K_TYPE, tt)])], [tag]
+            if xw > tw:
+                tail = gb.Irep(UNSIGNEDBV, [], [(K_WIDTH, leaf(str(xw - tw)))])
+                comps.append(gb.Irep(EMPTY, [], [(K_NAME, leaf('tail')), (K_TYPE, tail)]))
+                ops.append(zero(tail))
+            bytes_of = gb.Irep(STRUCT, ops, [(K_TYPE, gb.Irep(STRUCT, [], [(K_COMPONENTS, gb.Irep(EMPTY, comps, []))]))])
+            whole = gb.Irep(BYTE_EXTRACT, [bytes_of, offset0], [(K_TYPE, xt), (K_BITS_PER_BYTE, leaf('8'))])
+            ins[0] = gb.Irep(code.id, [x, whole], list(code.named))
             niches += 1
 
     # Every allocation zeroed, as `calloc`'s is.

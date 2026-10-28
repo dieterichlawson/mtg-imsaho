@@ -15,6 +15,7 @@ use crate::types::Zone;
 #[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
 #[kani::stub(crate::cards::helpers::shuffle_library, crate::proofs::cards::record_shuffle)]
 /// "Search your library for a card with a quality" (CR 701.19): the
@@ -80,6 +81,7 @@ fn searching_asks_among_the_cards_with_the_quality() {
 #[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
 #[kani::stub(crate::state::GameState::move_object, crate::proofs::cards::record_move)]
 #[kani::stub(crate::state::GameState::arrives_tapped, crate::proofs::cards::record_arrives_tapped)]

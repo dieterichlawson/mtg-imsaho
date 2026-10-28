@@ -16,6 +16,7 @@ use crate::types::{CardType, Zone};
 #[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
 #[kani::stub(crate::engine::apply_pending_effect, crate::proofs::cards::record_effect)]
 /// "Choose one of them" as an effect resolves: with nothing to choose
@@ -70,6 +71,7 @@ fn a_choice_of_target_applies_at_once_or_asks_among_exactly_those() {
 #[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
 #[kani::stub(crate::engine::apply_pending_effect, crate::proofs::cards::record_effect)]
 /// Tokens put onto the battlefield attacking (CR 506.3): each arrives

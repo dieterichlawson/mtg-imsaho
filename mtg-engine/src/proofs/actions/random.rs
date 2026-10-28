@@ -53,6 +53,7 @@ fn a_random_number_is_below_its_bound() {
 #[kani::proof]
 #[kani::unwind(6)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(crate::state::GameState::random_below, any_below)]
 /// A shuffle (CR 701.20a) puts the same items in an order: each once, none
 /// lost, none added; and any of them may come first. For up to four items.
@@ -91,6 +92,7 @@ macro_rules! choosing_at_random {
         #[kani::proof]
         #[kani::unwind(6)]
         #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+        #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
         #[kani::stub(crate::state::GameState::random_below, any_below)]
         /// "Choose N at random", from that many candidates, N up to four.
         fn $name() {
@@ -110,6 +112,7 @@ choosing_at_random! {
 #[kani::proof]
 #[kani::unwind(6)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(crate::state::GameState::random_below, any_below)]
 /// "Shuffle your library" (CR 701.20a): that player's library holds the
 /// same cards in an order, the other's is untouched, and the shuffle is

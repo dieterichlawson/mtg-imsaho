@@ -44,6 +44,7 @@ fn any_count(_: &mut GameState, event: ReplaceableEvent, _: &CardRegistry) -> Op
 #[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
 #[kani::stub(crate::replacement::apply, any_count)]
 /// "Create N P/T [colour] [subtype] [type] tokens [with keyword]" (CR
@@ -126,6 +127,7 @@ impl crate::cards::CardBehavior for Bear {
 #[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
 #[kani::stub(crate::replacement::apply, any_count)]
 /// "Create a token that's a copy of target creature" (CR 707.2, 111.10):
@@ -193,6 +195,7 @@ fn a_token_copy_has_the_copiable_values_and_nothing_else() {
 #[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
 #[kani::stub(crate::replacement::apply, any_count)]
 /// "Create an X/X token with 'This creature's power and toughness are each

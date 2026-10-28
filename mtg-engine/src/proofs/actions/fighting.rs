@@ -13,6 +13,7 @@ use crate::types::Zone;
 #[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
 #[kani::stub(crate::damage::queue_damage, crate::proofs::cards::record_queue)]
 #[kani::stub(crate::damage::process_pending_damage, crate::proofs::cards::record_deal_queued)]

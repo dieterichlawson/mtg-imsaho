@@ -169,6 +169,7 @@ macro_rules! for_each_size {
         #[kani::unwind(7)]
         #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
         #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+        #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
         #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
         #[kani::stub(crate::state::GameState::move_object, $move)]
         #[kani::stub(crate::replacement::apply, record_empty_draw)]

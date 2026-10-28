@@ -702,6 +702,41 @@ sits in memory. What was measured, and what the proofs do about each:
   each expected action built in place and of one variant
   (`asked_each`, `were`), or compare inside the branch where the
   list's length is known.
+- **A board whose shape is left open.** The same holds of the engine's
+  own lists: a list pushed to or not as the solver chooses has its next
+  entry written at an index it leaves open, and an entry read back from
+  there (to drop it, compare it, walk it) is of a variant it leaves open.
+  Countering a spell under another spell or not went, as it dropped the
+  countered entry, into every variant of a stack entry and every target
+  requirement an ability's might hold, three deep. A proof whose board
+  has a few shapes calls its body once per shape with the shape a
+  constant (`countering(on, under)`), and the same for a player the
+  engine indexes its players by (`move_object` reaches the owner's zones
+  that way). A board of cards that are there or not makes them all and
+  puts the absent ones where the card does not look (`cards_in_zones`),
+  so that every object's id is known: Desperate Ravings went from a
+  timeout to 201 seconds.
+- **What is never written.** `precise-enums.py` also zeroes every heap
+  allocation, as `calloc` does, and the bytes outside a niche-encoded
+  enum's variant (its tag kept in another variant's bytes) where Kani
+  writes the variant's fields, or none, and then the tag. Safe Rust reads
+  no memory it has not written, so neither is observable; what is read on
+  a path the solver cannot rule out is then one known variant rather than
+  every one.
+- **A path that cannot be taken.** Where CBMC cannot tell that a path is
+  impossible (moving a card onto the battlefield, on a board where no
+  replacement decides a copy, still went into becoming a copy, two
+  thirds of the proof), the function there stands in as an assertion that
+  it is not called (`no_copy`): the proof then holds only if no path
+  reaches it, and the solver, not symbolic execution, settles that none
+  does.
+- **CBMC's memory checks.** `kani-bounded.py` leaves out CBMC's pointer,
+  bounds and division checks (`--memory-checks` keeps them): that safe
+  Rust reads only memory it may is the compiler's guarantee, and Rust's
+  own checks are assertions in the program and stay. Rolling Temblor's
+  symbolic execution took half the time without them, with 3876 checks
+  left to solve rather than 9670. Freeing stands in as nothing in the
+  action proofs as in the card proofs (`no_freeing`).
 
 The engine actions these card proofs stand in for, proved so far (each
 for both players and boards as its doc comment states):

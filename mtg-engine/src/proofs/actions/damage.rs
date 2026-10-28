@@ -39,6 +39,7 @@ fn has_keyword(_: &GameState, id: ObjectId, keyword: Keyword, _: &CardRegistry) 
 #[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
 #[kani::stub(crate::damage::applicable_effects, none_applies)]
 #[kani::stub(crate::state::GameState::has_keyword, has_keyword)]

@@ -21,6 +21,7 @@ use crate::types::{CounterType, ManaType, Zone};
 #[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
 /// "Gain N life" and "lose N life" (CR 119.3): that player's total moves
 /// by N and no other's does. A change of 0 is no life gained or lost
@@ -89,6 +90,7 @@ fn one_object() -> (crate::cards::CardRegistry, crate::state::GameState, ObjectI
 #[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
 /// "Tap" (CR 701.21a, 110.5): only an untapped permanent is tapped.
 /// Tapping one taps it and announces it, once, and says it did; anything
@@ -117,6 +119,7 @@ fn tapping_taps_exactly_an_untapped_permanent() {
 #[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
 /// "Untap" (CR 701.21b, 110.5): only a tapped permanent is untapped.
 /// Untapping one untaps it and announces it, once, and says it did;
@@ -144,6 +147,7 @@ fn untapping_untaps_exactly_a_tapped_permanent() {
 #[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
 #[kani::stub(crate::state::GameState::move_object, crate::proofs::cards::record_move)]
 /// "Discard a card" (CR 701.8a): a card in its owner's hand is put into
@@ -203,6 +207,7 @@ fn with_counters(state: &mut crate::state::GameState, id: ObjectId) -> (CounterT
 #[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
 /// "Put N counters on it" (CR 122.1): counters go on a permanent. On one,
 /// N of that kind join those it has and no other kind changes; on anything
@@ -238,6 +243,7 @@ fn counters_go_on_a_permanent_and_only_of_their_kind() {
 #[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
 /// "Remove N counters from it", as a cost or an effect says: N of that
 /// kind come off, or every one if it has fewer, and it is left with none
@@ -267,6 +273,7 @@ fn removing_counters_removes_up_to_that_many_of_their_kind() {
 #[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
 /// "Attach it to that object" (CR 701.3a): it is taken from where it is,
 /// the object or the player it was attached to (702.6c), and put onto that
@@ -309,6 +316,7 @@ fn attaching_puts_it_onto_that_object_from_wherever_it_was() {
 #[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
 /// "Regenerate it" (CR 701.15a) sets up a shield on a permanent: it has
 /// one more regeneration shield, and nothing else changes; anything else
@@ -334,6 +342,7 @@ fn a_regeneration_shield_goes_on_a_permanent() {
 #[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
 /// "Enters tapped" (CR 614.1c), "put onto the battlefield tapped", "tapped
 /// and attacking": the permanent is tapped, and since nothing tapped it,
@@ -357,6 +366,7 @@ fn arriving_tapped_taps_a_permanent_unannounced() {
 #[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
 /// "Gain control of target permanent" (CR 110.2, 613.1b): a permanent
 /// another player controls comes under the new controller's control, is
@@ -396,6 +406,7 @@ fn control_changes_only_of_a_permanent_to_another_player() {
 #[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
 /// "Gain control of target creature for as long as you control this"
 /// (CR 611.2b, 613.1b): for a permanent and a source on the battlefield,
@@ -467,6 +478,7 @@ fn a_setting(issued: u64) -> SetPtEffect {
 #[kani::proof]
 #[kani::unwind(7)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 /// "Its toughness becomes N" (CR 613.4b, layer 7b): the setting is kept
 /// for that permanent with a timestamp later than every one the game has
 /// handed out (613.7a: of two, the later applies last and so wins), after
@@ -503,6 +515,7 @@ fn setting_power_and_toughness_keeps_the_latest_setting() {
 #[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
 /// A player loses the game (CR 104.3): a player still in it is out of it,
 /// with the reason kept and the loss announced once; a player who has
@@ -547,6 +560,7 @@ fn a_player_loses_the_game_once() {
 #[kani::proof]
 #[kani::unwind(7)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 /// The game ends (CR 104.1), once: a game in progress takes the result, a
 /// win for either player or a draw (104.4a), announced once, and keeps the
 /// game as it was then as its final state; a game over already keeps the
@@ -577,6 +591,7 @@ fn a_game_ends_once() {
 #[kani::proof]
 #[kani::unwind(7)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 /// "Add {G}" (CR 106.4): that much mana of that type joins what that
 /// player's pool holds of it, the pool's other types and the other
 /// player's pool are unchanged, and the mana is announced once. For either
@@ -625,6 +640,7 @@ fn adding_mana_adds_it_to_that_players_pool() {
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
 #[kani::stub(crate::state::GameState::discard_card_for, crate::proofs::cards::record_discard_for)]
 #[kani::stub(crate::state::GameState::objects_in_zone, crate::proofs::cards::objects_in_zone_in_id_order)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 /// "Target player discards N cards" (CR 701.8a): the player chooses N
 /// cards of their hand, and a player with no more than N discards them
 /// all, unasked (as much as they can, 101.3), each of the hand in its

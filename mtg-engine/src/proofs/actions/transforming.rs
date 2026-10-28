@@ -25,6 +25,7 @@ impl CardBehavior for TwoFaced {
 #[kani::unwind(7)]
 #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
 /// "Transform it" (CR 701.28a): a permanent represented by a
 /// double-faced card is turned over, so its other face is up and named
