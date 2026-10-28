@@ -143,7 +143,7 @@ function seatsTable(view: DraftView): HTMLElement {
     h("td", { class: "num", text: String(s.picks) }),
   ));
   return h("table", { class: "seats" },
-    h("thead", {}, h("tr", {}, ...["seat", "name", "kind", "joined", "status", "picks"].map(t => h("th", { text: t })))),
+    h("thead", {}, h("tr", {}, ...["seat", "name", "kind", "where", "status", "picks"].map(t => h("th", { text: t })))),
     h("tbody", {}, ...rows));
 }
 

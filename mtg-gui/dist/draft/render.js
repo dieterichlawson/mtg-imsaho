@@ -119,7 +119,7 @@ function statusWord(s) {
 }
 function seatsTable(view) {
     const rows = view.seats.map((s) => h("tr", { class: s.seat === view.seat ? "me" : "" }, h("td", { text: String(s.seat) }), h("td", { class: "name", text: s.name + (s.seat === view.seat ? " (you)" : "") }), h("td", { text: s.kind }), h("td", { text: presence(s) }), h("td", { text: statusWord(s) }), h("td", { class: "num", text: String(s.picks) })));
-    return h("table", { class: "seats" }, h("thead", {}, h("tr", {}, ...["seat", "name", "kind", "joined", "status", "picks"].map(t => h("th", { text: t })))), h("tbody", {}, ...rows));
+    return h("table", { class: "seats" }, h("thead", {}, h("tr", {}, ...["seat", "name", "kind", "where", "status", "picks"].map(t => h("th", { text: t })))), h("tbody", {}, ...rows));
 }
 /**
  * What the standings count. They are recorded when a round's last match

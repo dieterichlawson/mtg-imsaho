@@ -173,6 +173,16 @@ async function main() {
         check(await page.$eval("#name", el => el.value) === "", `${tag}: and stays empty for a seat with no name of its own`);
       }
 
+      // #929: the Seats table's fourth column says where a seat is ("here",
+      // "in game", "game page closed", "away", "not yet"), not whether it
+      // joined, and its heading says so.
+      {
+        await stage(byName.playing);
+        await page.waitForTimeout(50);
+        const heads = await page.$$eval("table.seats thead th", t => t.map(x => x.textContent.trim()));
+        check(heads.includes("where") && !heads.includes("joined"), `${tag}: the Seats table heads its presence column "where" (${JSON.stringify(heads)})`);
+      }
+
       // Drafting: click selects, a second click picks, the message names the pack and the index.
       {
         const view = byName.drafting;
