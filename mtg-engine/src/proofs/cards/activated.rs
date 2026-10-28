@@ -1588,41 +1588,49 @@ card_proof! { unwind(8)
     /// nothing. Over a library of a Forest and a nonbasic land card in
     /// either order for each player.
     fn ghost_quarter_destroys_a_land_and_offers_its_controller_a_basic() {
-        let mut b = permanent(Box::new(isd::ghost_quarter::GhostQuarter), &ANY_CREATURE, true);
-        let forest_card = b.registry.register(Box::new(crate::cards::forest::Forest));
-        let township_card = b.registry.register(Box::new(isd::gavony_township::GavonyTownship));
-        let mut forests = [b.me; 2];
-        for (p, forest) in forests.iter_mut().enumerate() {
-            let owner = PlayerId(p as u8);
-            *forest = b.state.create_object(forest_card, owner, Zone::Library, None, None);
-            let other = b.state.create_object(township_card, owner, Zone::Library, None, None);
-            let order = if kani::any() { [*forest, other] } else { [other, *forest] };
-            b.state.players[p].library_order.extend_from_slice(&order);
-        }
-        let target = any_target(b.others);
-        let land = match target {
-            Target::Object(id) => {
-                let o = b.state.get_object(id).expect("on the board");
-                (o.zone == Zone::Battlefield).then_some((id, o.controller))
-            }
-            _ => None,
-        };
-        let before = b.resolve(1, &[target]);
-        match land {
-            Some((id, controller)) => {
-                let candidates = vec![forests[usize::from(controller.0)]];
-                assert!(asked_for(&[
-                    Act::Destroy(id),
-                    Act::Search { source: b.me, player: controller, candidates, to: Zone::Battlefield, tapped: false, optional: true },
-                ]));
-            }
-            None => {
-                assert!(acted() == 0);
-            }
-        }
-        assert!(Snapshot::of(&b.state) == before);
-        std::mem::forget(b);
+        each_target(ghost_quarter_resolves);
     }
+}
+
+/// `ghost_quarter_destroys_a_land_and_offers_its_controller_a_basic`, for
+/// the target at place `i`, a constant in each call: a target the solver
+/// chose, beside the libraries' orders, ran the proof out of memory at
+/// ten gigabytes.
+fn ghost_quarter_resolves(i: u8) {
+    let mut b = permanent(Box::new(isd::ghost_quarter::GhostQuarter), &ANY_CREATURE, true);
+    let forest_card = b.registry.register(Box::new(crate::cards::forest::Forest));
+    let township_card = b.registry.register(Box::new(isd::gavony_township::GavonyTownship));
+    let mut forests = [b.me; 2];
+    for (p, forest) in forests.iter_mut().enumerate() {
+        let owner = PlayerId(p as u8);
+        *forest = b.state.create_object(forest_card, owner, Zone::Library, None, None);
+        let other = b.state.create_object(township_card, owner, Zone::Library, None, None);
+        let order = if kani::any() { [*forest, other] } else { [other, *forest] };
+        b.state.players[p].library_order.extend_from_slice(&order);
+    }
+    let target = target_at(b.others, i);
+    let land = match target {
+        Target::Object(id) => {
+            let o = b.state.get_object(id).expect("on the board");
+            (o.zone == Zone::Battlefield).then_some((id, o.controller))
+        }
+        _ => None,
+    };
+    let before = b.resolve(1, &[target]);
+    match land {
+        Some((id, controller)) => {
+            let candidates = vec![forests[usize::from(controller.0)]];
+            assert!(asked_for(&[
+                Act::Destroy(id),
+                Act::Search { source: b.me, player: controller, candidates, to: Zone::Battlefield, tapped: false, optional: true },
+            ]));
+        }
+        None => {
+            assert!(acted() == 0);
+        }
+    }
+    assert!(Snapshot::of(&b.state) == before);
+    std::mem::forget(b);
 }
 
 card_proof! {
