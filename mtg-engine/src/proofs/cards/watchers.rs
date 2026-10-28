@@ -291,10 +291,12 @@ const HAMLET_SUBTYPES: [&[&str]; 3] = [&[], &["Human"], &["Vampire"]];
 /// Hamlet Captain: triggers as it attacks and as it blocks; +1/+1 until
 /// end of turn on each other Human creature its controller controls. With
 /// the other two objects' subtypes those of `HAMLET_SUBTYPES` at `card`
-/// and `token`, a constant in each harness: over subtypes the solver
+/// and `token`, and the trigger its attack's or (if `blocks`) its
+/// block's, each a constant in each harness: over subtypes the solver
 /// chose, each object's compared with "Human" byte by byte, the proof ran
-/// out of memory at four and a half gigabytes.
-fn hamlet_captain_pumps_your_other_humans((card, token): (usize, usize)) {
+/// out of memory at four and a half gigabytes, and with the subtypes
+/// constants and both triggers in one harness, at four.
+fn hamlet_captain_pumps_your_other_humans((card, token, blocks): (usize, usize, bool)) {
     assert!(triggers(&isd::hamlet_captain::HamletCaptain) == [(TriggerKind::Attacks, None), (TriggerKind::Blocks, None)]);
     let mut b = watching_with(Box::new(isd::hamlet_captain::HamletCaptain), true, &PEOPLE, [HAMLET_SUBTYPES[card], HAMLET_SUBTYPES[token]]);
     let humans = kept(&b.others, |id| {
@@ -304,10 +306,10 @@ fn hamlet_captain_pumps_your_other_humans((card, token): (usize, usize)) {
     let before = Snapshot::of(&b.state);
     let card = b.card();
     let captain = b.registry.get(card).expect("registered");
-    if kani::any() {
-        captain.on_attacks(&mut b.state, b.me, AttackInfo::new(b.me, PlayerId(1 - b.you.0)), &[], &b.registry);
-    } else {
+    if blocks {
         captain.on_blocks(&mut b.state, b.me, b.others[0], &b.registry);
+    } else {
+        captain.on_attacks(&mut b.state, b.me, AttackInfo::new(b.me, PlayerId(1 - b.you.0)), &[], &b.registry);
     }
     let added = &b.state.until_end_of_turn[before.until_end_of_turn()..];
     assert!(each_is(added, humans.len(), |i| T::ModifyPT { target: humans[i], power_mod: 1, toughness_mod: 1 }) && acted() == 0);
@@ -316,13 +318,22 @@ fn hamlet_captain_pumps_your_other_humans((card, token): (usize, usize)) {
 }
 
 case_by_case! { hamlet_captain_pumps_your_other_humans;
-    hamlet_captain_with_neither_other_object_of_a_subtype: (0, 0),
-    hamlet_captain_with_the_token_a_human: (0, 1),
-    hamlet_captain_with_the_token_a_vampire: (0, 2),
-    hamlet_captain_with_the_card_a_human: (1, 0),
-    hamlet_captain_with_both_humans: (1, 1),
-    hamlet_captain_with_the_card_a_human_and_the_token_a_vampire: (1, 2),
-    hamlet_captain_with_the_card_a_vampire: (2, 0),
-    hamlet_captain_with_the_card_a_vampire_and_the_token_a_human: (2, 1),
-    hamlet_captain_with_both_vampires: (2, 2),
+    hamlet_captain_attacking_with_neither_other_object_of_a_subtype: (0, 0, false),
+    hamlet_captain_attacking_with_the_token_a_human: (0, 1, false),
+    hamlet_captain_attacking_with_the_token_a_vampire: (0, 2, false),
+    hamlet_captain_attacking_with_the_card_a_human: (1, 0, false),
+    hamlet_captain_attacking_with_both_humans: (1, 1, false),
+    hamlet_captain_attacking_with_the_card_a_human_and_the_token_a_vampire: (1, 2, false),
+    hamlet_captain_attacking_with_the_card_a_vampire: (2, 0, false),
+    hamlet_captain_attacking_with_the_card_a_vampire_and_the_token_a_human: (2, 1, false),
+    hamlet_captain_attacking_with_both_vampires: (2, 2, false),
+    hamlet_captain_blocking_with_neither_other_object_of_a_subtype: (0, 0, true),
+    hamlet_captain_blocking_with_the_token_a_human: (0, 1, true),
+    hamlet_captain_blocking_with_the_token_a_vampire: (0, 2, true),
+    hamlet_captain_blocking_with_the_card_a_human: (1, 0, true),
+    hamlet_captain_blocking_with_both_humans: (1, 1, true),
+    hamlet_captain_blocking_with_the_card_a_human_and_the_token_a_vampire: (1, 2, true),
+    hamlet_captain_blocking_with_the_card_a_vampire: (2, 0, true),
+    hamlet_captain_blocking_with_the_card_a_vampire_and_the_token_a_human: (2, 1, true),
+    hamlet_captain_blocking_with_both_vampires: (2, 2, true),
 }
