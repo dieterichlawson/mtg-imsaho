@@ -1515,8 +1515,9 @@ substituted {} (the first card)", self.who(seat), mtg_draft::front_face(&card)))
         s.deck_fallback = fallback;
         s.build_deadline = None;
         let name = self.who(seat);
-        self.event(format!("{name} is ready: {} cards ({} spells, {} lands)",
-            deck.total_cards(), deck.maindeck.len(), deck.lands.values().sum::<u32>()));
+        self.event(format!("{name} is ready: {} ({}, {})",
+            crate::count(deck.total_cards(), "card", "cards"), crate::count(deck.maindeck.len(), "spell", "spells"),
+            crate::count(deck.lands.values().sum::<u32>() as usize, "land", "lands")));
         if let Some(dir) = &self.config.out_dir {
             let path = dir.join("decks").join(format!("seat-{seat}.txt"));
             if let Err(e) = crate::deck::write_deck_file(&path, deck) {

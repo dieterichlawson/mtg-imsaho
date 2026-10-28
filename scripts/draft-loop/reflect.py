@@ -215,7 +215,7 @@ def curate(args):
             break
         refused.append({"words": words, "missing_sections": missing, "usage": usage})
         message += (f"\n\nYour last answer was not taken: it "
-                    + (f"lacked the headings {', '.join(missing)}" if new else "was empty")
+                    + (f"lacked the heading{'' if len(missing) == 1 else 's'} {', '.join(missing)}" if new else "was empty")
                     + ". Use exactly the six `## ` headings, in order.")
     record = {"night": args.night, "model": model, "attempts": attempt + 1, "words": words,
               "missing_sections": missing, "usage": usage, "refused": refused}

@@ -20,8 +20,8 @@ pub use standings::{standings_row, RowTags};
 /// "1 cards short" and "1 retries" each had a format string of their own
 /// to slip in (#874, #914).
 #[must_use]
-pub fn count(n: usize, one: &str, many: &str) -> String {
-    format!("{n} {}", if n == 1 { one } else { many })
+pub fn count<N: std::fmt::Display + PartialEq + From<u8>>(n: N, one: &str, many: &str) -> String {
+    format!("{n} {}", if n == N::from(1) { one } else { many })
 }
 
 use progress::end_progress_line;

@@ -5,7 +5,7 @@
 // from it, which is what a reconnect and a refusal both rely on.
 
 import { artFor, groupByColor, initials, parseLine, COLOR_NAMES, type ColorKey } from "./cards.js";
-import { BASICS, MIN_DECK, counts, problem, summary, type DeckEdit } from "./deck.js";
+import { BASICS, MIN_DECK, count, counts, deckSum, problem, summary, type DeckEdit } from "./deck.js";
 import type { Between, CardInfo, DraftView, Match, PackCard, ReviewPick, SeatInfo } from "./protocol.js";
 import type { Actions, PageState } from "./state.js";
 
@@ -306,7 +306,7 @@ function poolRows(list: HTMLElement, pool: CardInfo[], edit: DeckEdit, state: Pa
   const c = counts(edit);
   // The count where the rows are, on a phone: the deck panel's own count
   // line is under the whole pool there, 1,500px from the first row (#792).
-  list.append(h("div", { class: "phone-count", id: "phone-count", text: `${c.spells} spells + ${c.lands} lands = ${c.total}` }));
+  list.append(h("div", { class: "phone-count", id: "phone-count", text: deckSum(c) }));
   const groups = groupByColor(pool.map((c, i) => ({ ...c, poolIndex: i })));
   for (const g of groups) {
     list.append(h("h4", { class: `group-head color-${g.key}` }, `${g.label} (${g.cards.length})`));
@@ -365,7 +365,7 @@ function building(view: DraftView, state: PageState, actions: Actions): HTMLElem
   const why = problem(edit, view.pool);
   const s = summary(edit, view.pool);
   panel.append(h("h3", { text: ready ? `Deck${dashed("ready")}` : "Deck" }));
-  panel.append(h("div", { class: "count-line", id: "count-line", text: `${c.spells} spells + ${c.lands} lands = ${c.total}` }));
+  panel.append(h("div", { class: "count-line", id: "count-line", text: deckSum(c) }));
   if (!ready && view.build_deadline_ms != null) {
     panel.append(h("div", { class: "build-timer" }, h("span", { id: "countdown", class: "countdown" }),
       h("span", { class: "muted", text: " to build; then the deck as you last sent it is played (basics fill a short one, up to 18 lands), or else the table builds one" })));
@@ -374,7 +374,7 @@ function building(view: DraftView, state: PageState, actions: Actions): HTMLElem
   const colorsEl = h("div", { class: "colors-summary" });
   for (const { key, n } of s.colors) colorsEl.append(h("span", { class: `swatch color-${key}`, text: `${COLOR_NAMES[key as ColorKey]} ${n}` }));
   if (s.colors.length === 0) colorsEl.append(h("span", { class: "muted", text: "No spells in the main deck yet." }));
-  panel.append(h("div", { class: "summary" }, h("div", { class: "summary-title", text: `Colours (${s.creatures} creatures)` }), colorsEl));
+  panel.append(h("div", { class: "summary" }, h("div", { class: "summary-title", text: `Colours (${count(s.creatures, "creature", "creatures")})` }), colorsEl));
   const curve = h("div", { class: "curve" });
   const peak = Math.max(1, ...s.curve);
   s.curve.forEach((n, mv) => {
@@ -509,7 +509,7 @@ function betweenPanel(view: DraftView, m: Match, b: Between, state: PageState, a
     const list = h("div", { class: "checklist" });
     poolRows(list, view.pool, edit, state, actions, ready);
     const side = h("aside", { class: "deckpanel" },
-      h("div", { class: "count-line", id: "count-line", text: `${c.spells} spells + ${c.lands} lands = ${c.total}` }),
+      h("div", { class: "count-line", id: "count-line", text: deckSum(c) }),
       landSteppers(edit, ready, actions),
       readyEl);
     if (b.opponent_showed.length) {

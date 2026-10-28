@@ -1121,6 +1121,13 @@ fn games_so_far(m: &Value, me: u64, who: &dyn Fn(u64) -> String) -> Option<Strin
     Some(if done.is_empty() { on } else { format!("{on}; {}", done.join(", ")) })
 }
 
+/// "22 spells + 17 lands = 39 cards", singular at one ("1 spell + 0 lands
+/// = 1 card" after the first `add`; #946's review).
+fn deck_sum(spells: usize, lands: u32) -> String {
+    format!("{} + {} = {}\n", crate::count(spells, "spell", "spells"),
+        crate::count(lands as usize, "land", "lands"), crate::count(spells + lands as usize, "card", "cards"))
+}
+
 /// While drafting, the pool in one line above the pack: its size, and the
 /// command that lists it.
 fn pool_line(v: &Value) -> String {
@@ -1265,7 +1272,7 @@ fn between_listing(v: &Value, m: &Value, b: &Value, build: &Build, who: &dyn Fn(
         let lands: u32 = build.lands.values().sum();
         s.push_str(&format!("lands: {}\n", build.lands.iter().map(|(l, n)| format!("{l}={n}"))
             .collect::<Vec<_>>().join(" ")));
-        s.push_str(&format!("{} spells + {lands} lands = {} cards\n", build.main.len(), build.main.len() as u32 + lands));
+        s.push_str(&deck_sum(build.main.len(), lands));
     }
     s.push_str(&if b["ready"] == true {
         if b["opponent_ready"] == true { format!("ready — game {game} is starting\n") } else { format!("ready — waiting for {opponent}\n") }
@@ -1326,7 +1333,7 @@ fn build_listing(v: &Value, build: &Build) -> String {
     let spells = build.main.len();
     s.push_str(&format!("lands: {}\n", build.lands.iter().map(|(l, n)| format!("{l}={n}"))
         .collect::<Vec<_>>().join(" ")));
-    s.push_str(&format!("{spells} spells + {lands} lands = {} cards\n", spells as u32 + lands));
+    s.push_str(&deck_sum(spells, lands));
     if let Some(deck) = v["deck"].as_object() {
         if let Some(problem) = deck["problem"].as_str() {
             s.push_str(&format!("not legal yet: {problem}\n"));

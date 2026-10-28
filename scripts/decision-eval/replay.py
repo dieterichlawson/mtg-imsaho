@@ -146,7 +146,8 @@ def main():
                 done.add((r["position"], r["sample"]))
     todo = [(p, s) for p in positions for s in range(args.samples)
             if (os.path.basename(p)[:-5], s) not in done]
-    print(f"{args.name}: {len(todo)} decisions to replay ({len(done)} already done)", file=sys.stderr)
+    # Singular at one, as the runner's counts are (#914, #946's review).
+    print(f"{args.name}: {len(todo)} {'decision' if len(todo) == 1 else 'decisions'} to replay ({len(done)} already done)", file=sys.stderr)
     with cf.ThreadPoolExecutor(args.jobs) as pool, open(result_path, "a") as out:
         futures = [pool.submit(run_one, args, p, s, logdir) for p, s in todo]
         unlike = {}
@@ -162,7 +163,7 @@ def main():
             if n % 10 == 0 or n == len(futures):
                 print(f"{args.name}: {n}/{len(futures)}", file=sys.stderr)
     for why, count in unlike.items():
-        print(f"{args.name}: WARN {count} decisions were asked under another system prompt than the live one: {why}",
+        print(f"{args.name}: WARN {count} {'decision was' if count == 1 else 'decisions were'} asked under another system prompt than the live one: {why}",
               file=sys.stderr)
 
 

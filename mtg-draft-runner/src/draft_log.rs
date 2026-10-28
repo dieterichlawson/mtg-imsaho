@@ -44,7 +44,7 @@ impl DraftLogger {
 
         let mut lines: Vec<String> = Vec::new();
         lines.push(format!("{set_name} Draft"));
-        lines.push(format!("{players} players"));
+        lines.push(crate::count(players, "player", "players"));
         lines.push(format!("best-of-{best_of}"));
         if all_same {
             lines.push(format!("model: {}", models[0]));

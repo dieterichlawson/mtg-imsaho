@@ -4,7 +4,7 @@
 // view is the whole seat, so the page can be thrown away and rebuilt
 // from it, which is what a reconnect and a refusal both rely on.
 import { artFor, groupByColor, initials, parseLine, COLOR_NAMES } from "./cards.js";
-import { BASICS, MIN_DECK, counts, problem, summary } from "./deck.js";
+import { BASICS, MIN_DECK, count, counts, deckSum, problem, summary } from "./deck.js";
 /** A DOM builder: tag, properties and attributes, children. */
 export function h(tag, props = {}, ...children) {
     const el = document.createElement(tag);
@@ -250,7 +250,7 @@ function poolRows(list, pool, edit, state, actions, ready) {
     const c = counts(edit);
     // The count where the rows are, on a phone: the deck panel's own count
     // line is under the whole pool there, 1,500px from the first row (#792).
-    list.append(h("div", { class: "phone-count", id: "phone-count", text: `${c.spells} spells + ${c.lands} lands = ${c.total}` }));
+    list.append(h("div", { class: "phone-count", id: "phone-count", text: deckSum(c) }));
     const groups = groupByColor(pool.map((c, i) => ({ ...c, poolIndex: i })));
     for (const g of groups) {
         list.append(h("h4", { class: `group-head color-${g.key}` }, `${g.label} (${g.cards.length})`));
@@ -296,7 +296,7 @@ function building(view, state, actions) {
     const why = problem(edit, view.pool);
     const s = summary(edit, view.pool);
     panel.append(h("h3", { text: ready ? `Deck${dashed("ready")}` : "Deck" }));
-    panel.append(h("div", { class: "count-line", id: "count-line", text: `${c.spells} spells + ${c.lands} lands = ${c.total}` }));
+    panel.append(h("div", { class: "count-line", id: "count-line", text: deckSum(c) }));
     if (!ready && view.build_deadline_ms != null) {
         panel.append(h("div", { class: "build-timer" }, h("span", { id: "countdown", class: "countdown" }), h("span", { class: "muted", text: " to build; then the deck as you last sent it is played (basics fill a short one, up to 18 lands), or else the table builds one" })));
     }
@@ -306,7 +306,7 @@ function building(view, state, actions) {
         colorsEl.append(h("span", { class: `swatch color-${key}`, text: `${COLOR_NAMES[key]} ${n}` }));
     if (s.colors.length === 0)
         colorsEl.append(h("span", { class: "muted", text: "No spells in the main deck yet." }));
-    panel.append(h("div", { class: "summary" }, h("div", { class: "summary-title", text: `Colours (${s.creatures} creatures)` }), colorsEl));
+    panel.append(h("div", { class: "summary" }, h("div", { class: "summary-title", text: `Colours (${count(s.creatures, "creature", "creatures")})` }), colorsEl));
     const curve = h("div", { class: "curve" });
     const peak = Math.max(1, ...s.curve);
     s.curve.forEach((n, mv) => {
@@ -428,7 +428,7 @@ function betweenPanel(view, m, b, state, actions) {
         const c = counts(edit);
         const list = h("div", { class: "checklist" });
         poolRows(list, view.pool, edit, state, actions, ready);
-        const side = h("aside", { class: "deckpanel" }, h("div", { class: "count-line", id: "count-line", text: `${c.spells} spells + ${c.lands} lands = ${c.total}` }), landSteppers(edit, ready, actions), readyEl);
+        const side = h("aside", { class: "deckpanel" }, h("div", { class: "count-line", id: "count-line", text: deckSum(c) }), landSteppers(edit, ready, actions), readyEl);
         if (b.opponent_showed.length) {
             side.append(h("div", { class: "summary", id: "opponent-showed" }, h("div", { class: "summary-title", text: `${opponent} has shown (${b.opponent_showed.length})` }), h("ul", { class: "pool-list" }, ...b.opponent_showed.map(card => {
                 const p = parseLine(card.name, card.line);

@@ -975,8 +975,8 @@ made under these is unknown")],
     }
     if !args.quiet {
         mtg_player::stderr_line!(
-            "=== {} Draft: {} players, best-of-{} ===",
-            set_data.set_name, args.players, args.best_of
+            "=== {} Draft: {}, best-of-{} ===",
+            set_data.set_name, mtg_draft_runner::count(args.players, "player", "players"), args.best_of
         );
         mtg_player::stderr_line!("Log file: {}", args.log);
         // Which model each seat is, and which bill per call: the default

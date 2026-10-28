@@ -149,8 +149,8 @@ fn phase_line(usage: &HashMap<String, ModelUsage>) -> String {
         .map(|(m, u)| mtg_player::llm::api_equivalent(m, &as_llm_usage(u)))
         .try_fold(0.0, |acc, v| v.map(|v| acc + v));
     let api = api.filter(|_| usage.keys().all(|m| mtg_player::llm::is_plan_quota(m)));
-    format!("{} calls, {} in / {} out / {} cache_read / {} cache_write, {}",
-        sum(|u| u.calls), sum(|u| u.input), sum(|u| u.output), sum(|u| u.cache_read),
+    format!("{}, {} in / {} out / {} cache_read / {} cache_write, {}",
+        crate::count(sum(|u| u.calls), "call", "calls"), sum(|u| u.input), sum(|u| u.output), sum(|u| u.cache_read),
         sum(|u| u.cache_create), cost_text(phase_cost(usage), api))
 }
 
@@ -253,11 +253,11 @@ pub fn print_usage_summary(outcome: RunOutcome) {
         // A dead backend and a bad answer are different events with
         // different remedies, so they are different numbers (#587).
         let unanswered = mtg_player::llm::unanswered_note(u.unanswered);
-        writeln!(summary, "  {}: {} calls, {}in/{}out/{}cached/{}written = {cost}{rejected}{unanswered}",
-            model, u.calls, u.input, u.output, u.cache_read, u.cache_create
+        writeln!(summary, "  {}: {}, {}in/{}out/{}cached/{}written = {cost}{rejected}{unanswered}",
+            model, crate::count(u.calls, "call", "calls"), u.input, u.output, u.cache_read, u.cache_create
         ).unwrap();
     }
-    writeln!(summary, "  ---\n  Total: {} calls, {total_cost}", draft_calls + game_calls).unwrap();
+    writeln!(summary, "  ---\n  Total: {}, {total_cost}", crate::count(draft_calls + game_calls, "call", "calls")).unwrap();
 
     // These counters are process-local, so a resumed run's totals are a
     // fragment of the draft's real cost. Say so next to them: the number

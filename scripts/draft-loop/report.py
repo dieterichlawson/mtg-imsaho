@@ -63,7 +63,7 @@ def main():
     decks = sum(1 for s in seats if s.get("fallback_deck"))
     if h:
         out.append(f"\nWhat went wrong: {count(h['reasks'], 're-ask')}, {count(h['unreadable'], 'reply', 'replies')} no answer could be read from, "
-                   f"{h['panics']} panics, fatal stops or invariant breaks, "
+                   f"{count(h['panics'], 'panic, fatal stop or invariant break', 'panics, fatal stops or invariant breaks')}, "
                    f"{count(h.get('harness_chose', 0), 'game answer')} the harness chose for a seat, "
                    f"{count(subs, 'pick')} and {count(decks, 'deck')} substituted for a seat"
                    # A resume under another guide, setting or set (#948, #949).
