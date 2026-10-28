@@ -1675,12 +1675,17 @@ card_proof! {
 /// Moorland Haunt's board: [`permanent`]'s, and another card of the blank
 /// card, a creature or not, in either player's graveyard.
 fn haunt() -> (Board, ObjectId) {
-    let mut b = permanent(Box::new(isd::moorland_haunt::MoorlandHaunt), &ANY_CREATURE, false);
-    let owner = PlayerId(u8::from(kani::any::<bool>()));
+    let b = permanent(Box::new(isd::moorland_haunt::MoorlandHaunt), &ANY_CREATURE, false);
+    haunt_beside(b, PlayerId(u8::from(kani::any::<bool>())), kani::any())
+}
+
+/// [`haunt`]'s board on `b`, the other card in `owner`'s graveyard and a
+/// creature card if `creature`.
+fn haunt_beside(mut b: Board, owner: PlayerId, creature: bool) -> (Board, ObjectId) {
     let card = b.state.create_object(CardId(1), owner, Zone::Graveyard, None, None);
     let o = b.state.get_object_mut(card).expect("just created");
     o.card_types = Vec::with_capacity(1);
-    if kani::any() {
+    if creature {
         o.card_types.push(CardType::Creature);
     }
     if owner == PlayerId(0) {
@@ -1706,14 +1711,18 @@ impl Board {
     }
 }
 
-card_proof! {
-    /// Moorland Haunt's ability: {W}{U} and {T}, offered while its
-    /// controller has a creature card in their graveyard to exile (CR
-    /// 601.2h: a cost that cannot be paid cannot be chosen), and not
-    /// otherwise.
-    fn moorland_haunt_has_its_ability_with_a_creature_card_to_exile() {
-        let (b, card) = haunt();
-        let you = b.state.get_object(b.me).expect("on the board").controller;
+/// Moorland Haunt's ability: {W}{U} and {T}, offered while its controller
+/// has a creature card in their graveyard to exile (CR 601.2h: a cost that
+/// cannot be paid cannot be chosen), and not otherwise. For a Haunt `you`
+/// control, and the other card in either player's graveyard, a creature
+/// card or not, each a constant in each call: the engine looks for one
+/// through the graveyard of the player the solver chose, an index into
+/// the players it leaves open, and the proof ran out of memory at ten
+/// gigabytes.
+fn haunt_has_its_ability(you: PlayerId) {
+    each_case(4, |i| {
+        let b = permanent_of(Box::new(isd::moorland_haunt::MoorlandHaunt), &ANY_CREATURE, false, you);
+        let (b, card) = haunt_beside(b, PlayerId(i / 2), i % 2 == 1);
         let exilable = b.creature_cards_in_graveyard(you, &[b.others[0], card]);
         let haunt = b.card();
         let defs = std::mem::ManuallyDrop::new(b.registry.get(haunt).expect("registered").activated_abilities(&b.state, b.me, &b.registry));
@@ -1725,6 +1734,20 @@ card_proof! {
             std::mem::forget(ability);
         }
         std::mem::forget((b, exilable));
+    });
+}
+
+card_proof! {
+    /// The proof above, for a Haunt the first player controls.
+    fn moorland_haunt_has_its_ability_with_a_creature_card_to_exile_for_the_first_player() {
+        haunt_has_its_ability(PlayerId(0));
+    }
+}
+
+card_proof! {
+    /// The proof above, for a Haunt the second player controls.
+    fn moorland_haunt_has_its_ability_with_a_creature_card_to_exile_for_the_second_player() {
+        haunt_has_its_ability(PlayerId(1));
     }
 }
 
