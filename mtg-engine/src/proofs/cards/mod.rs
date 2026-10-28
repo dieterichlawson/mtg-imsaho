@@ -281,6 +281,22 @@ pub fn listed(ids: &[ObjectId]) -> Vec<ObjectId> {
     list
 }
 
+/// Those of `ids` that `keep` holds for, in order, as a list of
+/// [`MAX_LISTED`] allocated up front: `filter` and `collect` allocate at
+/// the first entry kept, which the solver may keep or not, and a list
+/// allocated or not as it chooses is a list it follows into two buffers
+/// from then on.
+pub fn kept(ids: &[ObjectId], keep: impl Fn(ObjectId) -> bool) -> Vec<ObjectId> {
+    assert!(ids.len() <= MAX_LISTED, "a list longer than a recorder keeps");
+    let mut list = Vec::with_capacity(MAX_LISTED);
+    for id in ids {
+        if keep(*id) {
+            list.push(*id);
+        }
+    }
+    list
+}
+
 /// How many actions were asked for.
 pub fn acted() -> usize {
     // SAFETY: as in `acts`.

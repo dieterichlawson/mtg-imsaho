@@ -85,7 +85,7 @@
 //! activated it, its controller as it was activated (CR 113.8); and a card
 //! and a token of any characteristics beside it.
 
-use super::{acted, any_object, any_target, asked_each, asked_for, board, both, card_proof, case_by_case, each_case, each_is, has_subtype, new_ids, prints_where, target_at, were, Act, Form, Kinds, Snapshot};
+use super::{acted, any_object, any_target, asked_each, asked_for, board, both, card_proof, case_by_case, each_case, each_is, has_subtype, kept, new_ids, prints_where, target_at, were, Act, Form, Kinds, Snapshot};
 use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardRegistry, SacrificeCost, TargetFilter, TargetRequirement};
 use crate::damage::DamageKind;
@@ -206,7 +206,7 @@ impl Board {
     }
 
     fn those(&self, pred: impl Fn(&GameObject) -> bool) -> Vec<ObjectId> {
-        self.others.iter().copied().filter(|id| pred(self.state.get_object(*id).expect("on the board"))).collect()
+        kept(&self.others, |id| pred(self.state.get_object(id).expect("on the board")))
     }
 
     /// The card's ability `index` resolving with `targets`; the board

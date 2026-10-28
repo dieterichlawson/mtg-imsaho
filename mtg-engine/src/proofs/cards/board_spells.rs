@@ -44,7 +44,7 @@
 //! permanents that are creatures (CR 110.1, 302); "each" is every one,
 //! in the order the game lists them.
 
-use super::{act, acted, any_object, asked_each, asked_for, board, both, card_proof, each_is, either, has_subtype, listed, new_ids, were, Act, Form, Kinds, Snapshot};
+use super::{act, acted, any_object, asked_each, asked_for, board, both, card_proof, each_is, either, has_subtype, kept, listed, new_ids, were, Act, Form, Kinds, Snapshot};
 use crate::cards::{AdditionalCost, CardBehavior, CardRegistry};
 use crate::damage::DamageKind;
 use crate::destruction::DestroyResult;
@@ -70,9 +70,7 @@ impl Resolved {
     /// were when the spell began to resolve: the recorders change nothing,
     /// so as they are now.
     fn those(&self, pred: impl Fn(&GameObject) -> bool) -> Vec<ObjectId> {
-        self.others.iter().copied()
-            .filter(|id| pred(self.state.get_object(*id).expect("on the board")))
-            .collect()
+        kept(&self.others, |id| pred(self.state.get_object(id).expect("on the board")))
     }
 
     /// The until-end-of-turn effects the spell added.
