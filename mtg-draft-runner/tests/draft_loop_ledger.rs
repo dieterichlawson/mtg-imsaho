@@ -91,3 +91,107 @@ fn the_night_report_says_one_call_in_the_singular() {
     assert!(!report.contains(" 1 calls") && !report.contains(" 1 picks"), "{report}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// #901: a card's games are the games it was in the deck for. `stats`
+/// credited every card of a seat's registered deck with all of the seat's
+/// games, so a card sideboarded out kept the games it sat out and one
+/// sideboarded in had none. The snapshot's games now say what each seat
+/// played; a forfeit carries the deck the seat was last on, and a night
+/// with no record at all reads as the registered deck.
+#[test]
+fn a_card_is_credited_with_the_games_it_was_in_the_deck_for() {
+    let dir = std::env::temp_dir().join(format!("mtg-ledger-sb-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let deck = |cards: &[&str]| serde_json::json!({"deck": {"maindeck": cards, "lands": {"Forest": 17}, "sideboard": []}});
+    // Seat 0 registers two Grizzly-ish cards; before game 2 it sides one
+    // Avacyn's Pilgrim out for Naturalize. Seat 1 never sideboards, and game
+    // 3 is a forfeit with no deck record.
+    let save = serde_json::json!({
+        "seed": 1, "set": "isd", "players": 2, "best_of": 3,
+        "seats": [{"model": "cc"}, {"model": "cc"}],
+        "decks": [deck(&["Avacyn's Pilgrim", "Ambush Viper"]), deck(&["Darkthicket Wolf"])],
+        "picks": [],
+        "matches": [{"round": 1, "result": {"player_a": 0, "player_b": 1, "wins_a": 2, "wins_b": 1, "games": [
+            {"winner": 0, "turns": 9, "decks": [["Avacyn's Pilgrim", "Ambush Viper"], ["Darkthicket Wolf"]]},
+            {"winner": 1, "turns": 8, "decks": [["Naturalize", "Ambush Viper"], ["Darkthicket Wolf"]]},
+            {"winner": 0, "turns": 0, "stalled_seat": 1},
+        ]}}],
+    });
+    let snap = dir.join("save.json");
+    std::fs::write(&snap, save.to_string()).unwrap();
+    let ledger = concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/draft-loop/ledger.py");
+    for args in [
+        vec!["night", "--save", snap.to_str().unwrap(), "--night", "2099-01-01", "--out", dir.to_str().unwrap()],
+        vec!["stats", "--out", dir.to_str().unwrap()],
+    ] {
+        let out = Command::new("python3").arg(ledger).args(&args).output().expect("python3 runs");
+        assert!(out.status.success(), "{args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    }
+    let stats: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("stats.json")).unwrap()).unwrap();
+    let card = |name: &str| stats["cards"].as_array().unwrap().iter()
+        .find(|c| c["card"] == name).unwrap_or_else(|| panic!("{name} in {stats}")).clone();
+    let games = |name: &str| (card(name)["decks"].as_u64(), card(name)["games"].as_u64(), card(name)["game_wins"].as_u64());
+    // Game 1 only: sided out for game 2, and the forfeit carries the deck
+    // the seat was last on.
+    assert_eq!(games("Avacyn's Pilgrim"), (Some(1), Some(1), Some(1)));
+    // Sided in for game 2, which was lost, and still in for the forfeit.
+    assert_eq!(games("Naturalize"), (Some(1), Some(2), Some(1)));
+    assert_eq!(games("Ambush Viper"), (Some(1), Some(3), Some(2)));
+    assert_eq!(games("Darkthicket Wolf"), (Some(1), Some(3), Some(1)));
+    // The night records each game's decks by seat, for whatever reads it next.
+    let night: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("nights/2099-01-01.json")).unwrap()).unwrap();
+    assert_eq!(night["matches"][0]["games"][1]["decks"]["0"], serde_json::json!(["Naturalize", "Ambush Viper"]), "{night}");
+
+    // The debrief tells each seat what it and its opponent sided.
+    let story = Command::new("python3")
+        .args(["-c", "import sys, json; sys.path.insert(0, sys.argv[1]); import reflect; n = json.load(open(sys.argv[2])); print(reflect.seat_story(n, n['seats'][1]))"])
+        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/draft-loop"))
+        .arg(dir.join("nights/2099-01-01.json"))
+        .output().expect("python3 runs");
+    assert!(story.status.success(), "{}", String::from_utf8_lossy(&story.stderr));
+    let story = String::from_utf8_lossy(&story.stdout);
+    assert!(story.contains("They sideboarded before game 2: in Naturalize, out Avacyn's Pilgrim."), "{story}");
+    assert!(!story.contains("You sideboarded"), "{story}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// #923: a pack's last card is taken without asking, so no position records
+/// it, and `stats` counted it as taken but never as seen. The seat that took
+/// it saw it.
+#[test]
+fn a_packs_last_card_is_seen_by_the_seat_that_takes_it() {
+    let dir = std::env::temp_dir().join(format!("mtg-ledger-seen-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let save = serde_json::json!({
+        "seed": 1, "set": "isd", "players": 1, "best_of": 1,
+        "seats": [{"model": "cc"}],
+        "decks": [{"deck": {"maindeck": [], "lands": {}, "sideboard": []}}],
+        "picks": [{"seat": 0, "round": 1, "pick": 1, "card": "Ambush Viper"},
+                  {"seat": 0, "round": 1, "pick": 2, "card": "Naturalize"}],
+        "matches": [],
+    });
+    let snap = dir.join("save.json");
+    std::fs::write(&snap, save.to_string()).unwrap();
+    // Asked for pick 1 only: Naturalize was the pack's last card.
+    let positions = dir.join("positions.jsonl");
+    std::fs::write(&positions, serde_json::json!({"seat": 0, "pack_number": 1, "pick_index": 1,
+        "available": ["Ambush Viper", "Naturalize"], "chosen": "Ambush Viper"}).to_string() + "\n").unwrap();
+    let ledger = concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/draft-loop/ledger.py");
+    for args in [
+        vec!["night", "--save", snap.to_str().unwrap(), "--positions", positions.to_str().unwrap(),
+             "--night", "2099-01-01", "--out", dir.to_str().unwrap()],
+        vec!["stats", "--out", dir.to_str().unwrap()],
+    ] {
+        let out = Command::new("python3").arg(ledger).args(&args).output().expect("python3 runs");
+        assert!(out.status.success(), "{args:?}: {}", String::from_utf8_lossy(&out.stderr));
+    }
+    let stats: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("stats.json")).unwrap()).unwrap();
+    let seen = |name: &str| stats["cards"].as_array().unwrap().iter()
+        .find(|c| c["card"] == name).map(|c| (c["picked"].as_u64(), c["seen"].as_u64()));
+    assert_eq!(seen("Ambush Viper"), Some((Some(1), Some(1))), "{stats}");
+    // Seen in the pack at pick 1, and again as the pack's last card.
+    assert_eq!(seen("Naturalize"), Some((Some(1), Some(2))), "{stats}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

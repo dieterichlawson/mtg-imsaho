@@ -85,6 +85,26 @@ def counted(cards):
     return "; ".join(f"{n}x {c}" if n > 1 else c for c, n in collections.Counter(cards).items())
 
 
+def sideboarding(m, s):
+    """What seat `s` changed from its registered deck for each game of match
+    `m`, as "before game 2: in A; B, out C" (#901: the debrief told every
+    seat its opponent's registered deck, whatever it played)."""
+    # Against the deck of the game before, so a sideboard kept for games 2
+    # and 3 is said once.
+    before = collections.Counter(s["maindeck"])
+    out = []
+    for i, g in enumerate(m["games"], 1):
+        deck = g.get("decks", {}).get(str(s["seat"]))
+        if deck is None:
+            continue
+        deck = collections.Counter(deck)
+        sided_in, sided_out = list((deck - before).elements()), list((before - deck).elements())
+        if sided_in or sided_out:
+            out.append(f"before game {i}: in {counted(sided_in) or 'nothing'}, out {counted(sided_out) or 'nothing'}")
+        before = deck
+    return out
+
+
 def seat_story(night, s):
     """What happened to one seat, in the words the debrief is asked about."""
     seats = night["seats"]
@@ -109,7 +129,9 @@ def seat_story(night, s):
         turns = ", ".join(str(g["turns"]) for g in m["games"])
         lines.append(f"  Round {m['round']} vs seat {opp['seat']} ({opp['colors']}): "
                      f"{'won' if mine > theirs else 'lost' if mine < theirs else 'drew'} {mine}-{theirs} (games of {turns} turns); "
-                     f"their deck: {counted(opp['maindeck'])}")
+                     f"their registered deck: {counted(opp['maindeck'])}")
+        for who, seat in (("You", s), ("They", opp)):
+            lines += [f"    {who} sideboarded {change}." for change in sideboarding(m, seat)]
     lines.append("The table: " + "; ".join(f"seat {o['seat']} {o['colors']} {o['match_wins']}-{o['match_losses']}" for o in seats) + ".")
     return "\n".join(lines)
 

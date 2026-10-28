@@ -16,7 +16,7 @@ commits what is here.
 | --- | --- |
 | `guide.md` | The guide. Even seats draft with it in their prompt at every pick; odd seats without it. `git log -p guide.md` is its history. |
 | `stats.md` | Every night's tables: guided against unguided seats, colour pairs, and per card how early it is taken, how often it is played, and how its decks do. `stats.json` is the same as data. |
-| `nights/DATE.json` | One night as data: each seat's picks (pack, pick, card), colours, deck, record, end-of-draft notes, and every pack it was handed. |
+| `nights/DATE.json` | One night as data: each seat's picks (pack, pick, card), colours, deck, record, end-of-draft notes, and every pack it was asked to pick from (a pack's last card is taken without asking). |
 | `nights/DATE-lessons.json` | Each seat's lessons, with its record and whether it had the guide. |
 | `nights/DATE-curate.json` | The guide's rewrite: the model, its length, and whether it was taken. |
 | `nights/DATE.md` | The night, for reading: standings, guided and unguided records, lessons, the guide's fate, what it spent. |
@@ -56,4 +56,7 @@ and `DRAFT_LOOP_BEST_OF` change the defaults; `DRAFT_LOOP_OUT` and
 The guided-against-unguided table is the loop's own test. A night is eight
 decks and about thirty games, so a difference of a game or two is noise;
 read it over weeks. Per-card numbers below about ten games are anecdotes,
-and the guide is told to say so.
+and the guide is told to say so. A card's games are the games it was in
+the deck for, sideboarding included; nights before 2026-10-28 recorded only
+the registered deck, and a card sided in or out on those nights was counted
+as if it never moved (#901).

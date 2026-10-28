@@ -1,6 +1,7 @@
 //! A pick a draft kept is asked again as the prompt it was live.
 //!
-//! `MTG_DRAFT_POSITIONS` keeps every pick's position; `mtg-draft-replay`
+//! `MTG_DRAFT_POSITIONS` keeps every asked pick's position (a pack's last
+//! card is taken without asking); `mtg-draft-replay`
 //! asks those positions again, which is what the draft's pick-quality eval
 //! is built on (`scripts/decision-eval/draft-replay.py`). The eval compares
 //! models and builds on the same positions, so a position that replayed as

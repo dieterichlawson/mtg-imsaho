@@ -7,8 +7,8 @@ night's results as the tables the guide is curated from.
     scripts/draft-loop/ledger.py stats --out reports/draft-loop
 
 `night` reads the runner's `--save` snapshot (picks, decks, matches, each
-seat's notes) and `MTG_DRAFT_POSITIONS` (every pack a seat was handed) and
-writes `<out>/nights/<DATE>.json`: per seat, its colours, deck, record and
+seat's notes) and `MTG_DRAFT_POSITIONS` (every pick a seat was asked; a
+pack's last card is taken without asking, so it has none) and writes `<out>/nights/<DATE>.json`: per seat, its colours, deck, record and
 picks, with whether it drafted with the guide. `stats` reads every night
 and writes `<out>/stats.md` and `<out>/stats.json`: guided against
 unguided seats, the colour pairs, and per card how early it is taken, how
@@ -65,6 +65,18 @@ def card_facts(set_code="isd"):
 
 
 BASIC = {"Plains": "W", "Island": "U", "Swamp": "B", "Mountain": "R", "Forest": "G"}
+
+
+def decks_by_game(match, seat):
+    """The non-basic cards `seat` (a night's seat record) played in each game
+    of `match`, one name per copy: each game's own record. A game nobody
+    played (a forfeit) has none and carries the deck the seat was last on;
+    a night written before games recorded one reads as the registered deck."""
+    deck, out = seat["maindeck"], []
+    for game in match["games"]:
+        deck = game.get("decks", {}).get(str(seat["seat"]), deck)
+        out.append(deck)
+    return out
 
 
 def deck_colors(maindeck, facts, lands=None):
@@ -131,7 +143,15 @@ def night(args):
     for m in save["matches"]:
         r = m["result"]
         a, b = r["player_a"], r["player_b"]
-        games = [{"winner": g.get("winner"), "turns": g.get("turns")} for g in r["games"]]
+        games = []
+        for g in r["games"]:
+            game = {"winner": g.get("winner"), "turns": g.get("turns")}
+            # The cards each seat played in this game, sideboarding included
+            # (#901): a seat's `maindeck` is the deck it registered, and a
+            # card sided out kept every game of it while one sided in had none.
+            if g.get("decks"):
+                game["decks"] = {str(a): g["decks"][0], str(b): g["decks"][1]}
+            games.append(game)
         matches.append({"round": m["round"], "a": a, "b": b, "wins_a": r["wins_a"], "wins_b": r["wins_b"], "games": games})
         for g in games:
             w = g["winner"]
@@ -240,14 +260,34 @@ def stats(args):
                 c = cards[front(card)]
                 c["picked"] += 1
                 pick_sum[front(card)] += pick
-            for card in set(s["maindeck"]):
-                c = cards[front(card)]
-                c["decks"] += 1
-                c["game_wins"] += s["game_wins"]
-                c["games"] += s["game_wins"] + s["game_losses"] + s["game_draws"]
+            # A deck a card made: the one registered, or one it was
+            # sideboarded into for a game.
+            in_deck = {front(card) for card in s["maindeck"]}
+            for m in n["matches"]:
+                if s["seat"] in (m["a"], m["b"]):
+                    for deck in decks_by_game(m, s):
+                        in_deck |= {front(card) for card in deck}
+            for card in in_deck:
+                cards[card]["decks"] += 1
+        # A card's games are the games it was in the deck for (#901).
+        for m in n["matches"]:
+            for seat in (m["a"], m["b"]):
+                for game, deck in zip(m["games"], decks_by_game(m, n["seats"][seat])):
+                    for card in {front(c) for c in deck}:
+                        cards[card]["games"] += 1
+                        cards[card]["game_wins"] += game["winner"] == seat
         for o in n.get("offered", []):
             for card in set(o["available"]):
                 cards[front(card)]["seen"] += 1
+        # A pack's last card is taken without asking (5e52396), so no
+        # position records it: it was counted as taken and never as seen
+        # (#923). The seat that took it saw it.
+        asked = {(o["seat"], o["pack"], o["pick"]) for o in n.get("offered", [])}
+        for s in n["seats"]:
+            if any(seat == s["seat"] for seat, _, _ in asked):
+                for pack, pick, card in s["picks"]:
+                    if (s["seat"], pack, pick) not in asked:
+                        cards[front(card)]["seen"] += 1
     out = ["# Draft loop: what the nights add up to", "",
            f"{len(nights)} night(s), {sum(len(n['seats']) for n in nights)} decks, "
            f"{sum(len(m['games']) for n in nights for m in n['matches'])} games. "
@@ -280,7 +320,7 @@ def stats(args):
               open(os.path.join(args.out, "stats.json"), "w"), indent=1, default=dict)
     min_games = max(6, len(nights) * 2)
     out += ["", f"## Cards in winning decks (at least {min_games} games in a deck)", "",
-            "`deck game win` is the game win rate of the decks that ran the card; `avg pick` is its pick within a pack (1-14) when taken.", "",
+            "`games` are the games the card was in the deck for, sideboarding included, and `deck game win` is how many of them its deck won; `avg pick` is its pick within a pack (1-14) when taken.", "",
             "| card | colours | rarity | decks | games | deck game win | avg pick | taken / seen |", "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: |"]
     for r in sorted((r for r in rows if r["games"] >= min_games), key=lambda r: -r["deck_game_win"])[:40]:
         out.append(f"| {r['card']} | {r['colors'] or 'C'} | {r['rarity']} | {r['decks']} | {r['games']} | {pct(r['game_wins'], r['games'])} | {r['avg_pick']} | {r['picked']}/{r['seen']} |")
