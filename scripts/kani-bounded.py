@@ -408,9 +408,13 @@ def main():
             return h
         write(f'{result:10s} {took:>8s}  {h}  {why}')
         print(f'{result:10s} {took:>8s}  {h}', flush=True)
+        # Its goto files, linked and as built: some thirty megabytes a
+        # harness, and a run of the cards filled the disk with them.
         base = goto[:-len('.symtab.out')] if goto.endswith('.symtab.out') else goto[:-len('.out')]
-        if os.path.exists(base + '.out') and not os.environ.get('KANI_BOUNDED_KEEP'):
-            os.remove(base + '.out')
+        if not os.environ.get('KANI_BOUNDED_KEEP'):
+            for f in glob.glob(glob.escape(base) + '.*'):
+                if not f.endswith('.kani-metadata.json'):
+                    os.remove(f)
         return None
 
     for i in range(0, len(todo), a.batch):
