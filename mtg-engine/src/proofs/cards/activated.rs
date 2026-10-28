@@ -675,17 +675,28 @@ card_proof! {
     }
 }
 
-/// A library for `player`: up to two cards, each Grizzly Bears (a creature
-/// card, mana value 2), Lava Axe (a sorcery card, mana value 5) or the
-/// blank card (neither, and no mana cost), in either player's library.
-fn library_of(b: &mut Board, player: PlayerId) -> Vec<ObjectId> {
+/// A card in a library a proof makes: Grizzly Bears (a creature card, mana
+/// value 2), Lava Axe (a sorcery card, mana value 5), or the blank card
+/// (neither, and no mana cost).
+#[derive(Clone, Copy)]
+enum InLibrary {
+    Bears,
+    Axe,
+    Blank,
+}
+
+/// A library for `player` of `cards`, top first. The cards are constants: a
+/// library whose length the solver left open was a list of every length,
+/// and a card it left open an index into the registry it left open, which
+/// every read of the card (its mana value, whether it is a creature) is
+/// then a question of; with both, each of these proofs ran out of memory
+/// at ten gigabytes.
+fn library_of(b: &mut Board, player: PlayerId, cards: &[InLibrary]) -> Vec<ObjectId> {
     let bears = b.registry.register(Box::new(crate::cards::grizzly_bears::GrizzlyBears));
     let axe = b.registry.register(Box::new(crate::cards::lava_axe::LavaAxe));
-    let n: u8 = kani::any();
-    kani::assume(n <= 2);
     let mut library = Vec::with_capacity(2);
-    for _ in 0..n {
-        let card = match kani::any::<u8>() % 3 { 0 => bears, 1 => axe, _ => CardId(1) };
+    for card in cards {
+        let card = match card { InLibrary::Bears => bears, InLibrary::Axe => axe, InLibrary::Blank => CardId(1) };
         library.push(b.state.create_object(card, player, Zone::Library, None, None));
     }
     if player == PlayerId(0) {
@@ -696,75 +707,156 @@ fn library_of(b: &mut Board, player: PlayerId) -> Vec<ObjectId> {
     library
 }
 
-card_proof! {
-    /// Cellar Door: "{3}, {T}: Target player puts the bottom card of their
-    /// library into their graveyard. If it's a creature card, you create a
-    /// 2/2 black Zombie creature token." With that library empty, nothing;
-    /// with its target gone illegal, nothing.
-    fn cellar_door_mills_the_bottom_card_and_makes_a_zombie_for_a_creature() {
-        let mut b = permanent(Box::new(isd::cellar_door::CellarDoor), &ANY_CREATURE, true);
-        let card = b.card();
-        let defs = std::mem::ManuallyDrop::new(b.registry.get(card).expect("registered").activated_abilities(&b.state, b.me, &b.registry));
-        assert!(defs.len() == 1 && defs[0].ability_index == 0
-            && Ability::of(&defs[0]) == Ability { cost: mana(3, &[]), tap: true, target: Some(TargetRequirement::PlayerOnly), ..Ability::default() });
-        let player = PlayerId(u8::from(kani::any::<bool>()));
-        let library = library_of(&mut b, player);
-        let target = if kani::any() { Target::Player(player) } else { Target::Illegal };
-        let bottom = library.last().copied();
-        let creature = bottom.is_some_and(|id| b.state.name_of(id, &b.registry) == "Grizzly Bears");
-        let before = b.resolve(0, &[target.clone()]);
-        match (target, bottom) {
-            (Target::Player(_), Some(id)) if creature => {
-                assert!(asked_for(&[Act::MillCard(id), Act::Tokens {
-                    n: 1, controller: b.you, power: 2, toughness: 2, colors: vec![Color::Black],
-                    types: vec![CardType::Creature], keywords: vec![], subtypes: vec!["Zombie".into()],
-                }]));
-            }
-            (Target::Player(_), Some(id)) => {
-                assert!(asked_for(&[Act::MillCard(id)]));
-            }
-            _ => {
-                assert!(acted() == 0);
-            }
+/// Cellar Door: "{3}, {T}: Target player puts the bottom card of their
+/// library into their graveyard. If it's a creature card, you create a
+/// 2/2 black Zombie creature token." With that library empty, nothing;
+/// with its target gone illegal, nothing.
+fn cellar_door(cards: &[InLibrary]) {
+    let mut b = permanent(Box::new(isd::cellar_door::CellarDoor), &ANY_CREATURE, true);
+    let card = b.card();
+    let defs = std::mem::ManuallyDrop::new(b.registry.get(card).expect("registered").activated_abilities(&b.state, b.me, &b.registry));
+    assert!(defs.len() == 1 && defs[0].ability_index == 0
+        && Ability::of(&defs[0]) == Ability { cost: mana(3, &[]), tap: true, target: Some(TargetRequirement::PlayerOnly), ..Ability::default() });
+    // The board's controller is either player, so the target is either
+    // the controller or the opponent.
+    let player = PlayerId(0);
+    let library = library_of(&mut b, player, cards);
+    let target = if kani::any() { Target::Player(player) } else { Target::Illegal };
+    let bottom = library.last().copied();
+    let creature = bottom.is_some_and(|id| b.state.name_of(id, &b.registry) == "Grizzly Bears");
+    let before = b.resolve(0, &[target.clone()]);
+    match (target, bottom) {
+        (Target::Player(_), Some(id)) if creature => {
+            assert!(asked_for(&[Act::MillCard(id), Act::Tokens {
+                n: 1, controller: b.you, power: 2, toughness: 2, colors: vec![Color::Black],
+                types: vec![CardType::Creature], keywords: vec![], subtypes: vec!["Zombie".into()],
+            }]));
         }
-        assert!(Snapshot::of(&b.state) == before);
-        std::mem::forget((b, library));
+        (Target::Player(_), Some(id)) => {
+            assert!(asked_for(&[Act::MillCard(id)]));
+        }
+        _ => {
+            assert!(acted() == 0);
+        }
     }
+    assert!(Snapshot::of(&b.state) == before);
+    std::mem::forget((b, library));
 }
 
-card_proof! {
-    /// Mindshrieker: "{2}: Target player mills a card. This creature gets
-    /// +X/+X until end of turn, where X is the milled card's mana value."
-    /// No card milled, or one of mana value 0, or Mindshrieker gone: no
-    /// bonus (CR 400.7). With its target gone illegal, nothing.
-    fn mindshrieker_mills_and_grows_by_the_mana_value() {
-        let mut b = permanent(Box::new(isd::mindshrieker::Mindshrieker), &ANY_CREATURE, true);
-        let player = PlayerId(u8::from(kani::any::<bool>()));
-        let library = library_of(&mut b, player);
-        let target = if kani::any() { Target::Player(player) } else { Target::Illegal };
-        let top = library.first().copied();
-        let mana_value = top.map_or(0, |id| match b.state.name_of(id, &b.registry).as_str() {
-            "Grizzly Bears" => 2,
-            "Lava Axe" => 5,
-            _ => 0,
-        });
-        let on = b.on();
-        let before = b.resolve(0, &[target.clone()]);
-        let added = b.added(&before);
-        match target {
-            Target::Player(p) => {
-                assert!(asked_for(&[Act::Mill(p, 1)]));
-                let grows = usize::from(on && mana_value > 0);
-                assert!(each_is(added, grows, |_| T::ModifyPT { target: b.me, power_mod: mana_value, toughness_mod: mana_value }));
-            }
-            _ => {
-                assert!(acted() == 0 && added.is_empty());
+/// Mindshrieker: "{2}: Target player mills a card. This creature gets
+/// +X/+X until end of turn, where X is the milled card's mana value."
+/// No card milled, or one of mana value 0, or Mindshrieker gone: no
+/// bonus (CR 400.7). With its target gone illegal, nothing.
+fn mindshrieker(cards: &[InLibrary]) {
+    let mut b = permanent(Box::new(isd::mindshrieker::Mindshrieker), &ANY_CREATURE, true);
+    // As in `cellar_door`.
+    let player = PlayerId(0);
+    let library = library_of(&mut b, player, cards);
+    let target = if kani::any() { Target::Player(player) } else { Target::Illegal };
+    let top = library.first().copied();
+    let mana_value = top.map_or(0, |id| match b.state.name_of(id, &b.registry).as_str() {
+        "Grizzly Bears" => 2,
+        "Lava Axe" => 5,
+        _ => 0,
+    });
+    let on = b.on();
+    let before = b.resolve(0, &[target.clone()]);
+    let added = b.added(&before);
+    match target {
+        Target::Player(p) => {
+            assert!(asked_for(&[Act::Mill(p, 1)]));
+            let grows = usize::from(on && mana_value > 0);
+            assert!(each_is(added, grows, |_| T::ModifyPT { target: b.me, power_mod: mana_value, toughness_mod: mana_value }));
+        }
+        _ => {
+            assert!(acted() == 0 && added.is_empty());
+        }
+    }
+    assert!(b.nothing_else_changed(&before));
+    std::mem::forget((b, library));
+}
+
+/// Heretic's Punishment: "{3}{R}: Choose any target, then mill three
+/// cards. This enchantment deals damage to that permanent or player
+/// equal to the greatest mana value among the milled cards." With its
+/// target gone illegal it does nothing, the milling included (CR
+/// 608.2b). Over a library of the cards given, up to two, of mana value 0,
+/// 2 or 5.
+fn heretics_punishment(cards: &[InLibrary]) {
+    let mut b = permanent(Box::new(isd::heretics_punishment::HereticsPunishment), &ANY_CREATURE, true);
+    let you = b.you;
+    let library = library_of(&mut b, you, cards);
+    let target = any_target(b.others);
+    let mana_value = |id: &ObjectId| match b.state.name_of(*id, &b.registry).as_str() {
+        "Grizzly Bears" => 2,
+        "Lava Axe" => 5,
+        _ => 0,
+    };
+    let greatest = library.iter().map(mana_value).max().unwrap_or(0);
+    let before = b.resolve(0, &[target.clone()]);
+    let damaged = match target {
+        Target::Object(id) => Some(DamageTarget::Object(id)),
+        Target::Player(p) => Some(DamageTarget::Player(p)),
+        Target::Illegal => None,
+    };
+    match damaged {
+        Some(t) => {
+            assert!(asked_for(&[Act::Mill(you, 3), Act::Damage { source: b.me, target: t, amount: greatest, kind: DamageKind::NonCombat }]));
+        }
+        None => {
+            assert!(acted() == 0);
+        }
+    }
+    assert!(Snapshot::of(&b.state) == before);
+    std::mem::forget((b, library));
+}
+
+/// The library proofs above, a harness for each library: the top card for
+/// Mindshrieker, which mills one; the bottom card, and one above it of
+/// another kind, for Cellar Door, which mills the bottom one; and every
+/// library of up to two for Heretic's Punishment, which mills three.
+macro_rules! over_each_library {
+    ($($name:ident: $proof:ident[$($card:ident),*];)*) => {$(
+        card_proof! {
+            /// The proof above it, for one library.
+            fn $name() {
+                $proof(&[$(InLibrary::$card),*]);
             }
         }
-        assert!(b.nothing_else_changed(&before));
-        std::mem::forget((b, library));
-    }
+    )*};
 }
+
+over_each_library! {
+    mindshrieker_milling_from_an_empty_library_grows_by_nothing: mindshrieker[];
+    mindshrieker_milling_grizzly_bears_grows_by_its_mana_value: mindshrieker[Bears];
+    mindshrieker_milling_lava_axe_grows_by_its_mana_value: mindshrieker[Axe];
+    mindshrieker_milling_a_blank_card_grows_by_its_mana_value: mindshrieker[Blank];
+    cellar_door_over_an_empty_library_does_nothing: cellar_door[];
+    cellar_door_milling_grizzly_bears_makes_a_zombie_if_a_creature: cellar_door[Bears];
+    cellar_door_milling_lava_axe_makes_a_zombie_if_a_creature: cellar_door[Axe];
+    cellar_door_milling_a_blank_card_makes_a_zombie_if_a_creature: cellar_door[Blank];
+    cellar_door_milling_lava_axe_under_grizzly_bears_makes_a_zombie_if_a_creature: cellar_door[Bears, Axe];
+    cellar_door_milling_a_blank_card_under_grizzly_bears_makes_a_zombie_if_a_creature: cellar_door[Bears, Blank];
+    cellar_door_milling_grizzly_bears_under_lava_axe_makes_a_zombie_if_a_creature: cellar_door[Axe, Bears];
+    cellar_door_milling_a_blank_card_under_lava_axe_makes_a_zombie_if_a_creature: cellar_door[Axe, Blank];
+    cellar_door_milling_grizzly_bears_under_a_blank_card_makes_a_zombie_if_a_creature: cellar_door[Blank, Bears];
+    cellar_door_milling_lava_axe_under_a_blank_card_makes_a_zombie_if_a_creature: cellar_door[Blank, Axe];
+    heretics_punishment_over_an_empty_library_deals_nothing: heretics_punishment[];
+    heretics_punishment_milling_grizzly_bears_deals_its_mana_value: heretics_punishment[Bears];
+    heretics_punishment_milling_lava_axe_deals_its_mana_value: heretics_punishment[Axe];
+    heretics_punishment_milling_a_blank_card_deals_its_mana_value: heretics_punishment[Blank];
+    heretics_punishment_milling_grizzly_bears_then_grizzly_bears_deals_the_greater: heretics_punishment[Bears, Bears];
+    heretics_punishment_milling_grizzly_bears_then_lava_axe_deals_the_greater: heretics_punishment[Bears, Axe];
+    heretics_punishment_milling_grizzly_bears_then_a_blank_card_deals_the_greater: heretics_punishment[Bears, Blank];
+    heretics_punishment_milling_lava_axe_then_grizzly_bears_deals_the_greater: heretics_punishment[Axe, Bears];
+    heretics_punishment_milling_lava_axe_then_lava_axe_deals_the_greater: heretics_punishment[Axe, Axe];
+    heretics_punishment_milling_lava_axe_then_a_blank_card_deals_the_greater: heretics_punishment[Axe, Blank];
+    heretics_punishment_milling_a_blank_card_then_grizzly_bears_deals_the_greater: heretics_punishment[Blank, Bears];
+    heretics_punishment_milling_a_blank_card_then_lava_axe_deals_the_greater: heretics_punishment[Blank, Axe];
+    heretics_punishment_milling_a_blank_card_then_a_blank_card_deals_the_greater: heretics_punishment[Blank, Blank];
+}
+
+
 
 card_proof! {
     /// Avacynian Priest: "{1}, {T}: Tap target non-Human creature." Its
@@ -803,41 +895,6 @@ card_proof! {
     }
 }
 
-card_proof! {
-    /// Heretic's Punishment: "{3}{R}: Choose any target, then mill three
-    /// cards. This enchantment deals damage to that permanent or player
-    /// equal to the greatest mana value among the milled cards." With its
-    /// target gone illegal it does nothing, the milling included (CR
-    /// 608.2b). Over a library of up to two cards of mana value 0, 2 or 5.
-    fn heretics_punishment_mills_three_and_deals_the_greatest_mana_value() {
-        let mut b = permanent(Box::new(isd::heretics_punishment::HereticsPunishment), &ANY_CREATURE, true);
-        let you = b.you;
-        let library = library_of(&mut b, you);
-        let target = any_target(b.others);
-        let mana_value = |id: &ObjectId| match b.state.name_of(*id, &b.registry).as_str() {
-            "Grizzly Bears" => 2,
-            "Lava Axe" => 5,
-            _ => 0,
-        };
-        let greatest = library.iter().map(mana_value).max().unwrap_or(0);
-        let before = b.resolve(0, &[target.clone()]);
-        let damaged = match target {
-            Target::Object(id) => Some(DamageTarget::Object(id)),
-            Target::Player(p) => Some(DamageTarget::Player(p)),
-            Target::Illegal => None,
-        };
-        match damaged {
-            Some(t) => {
-                assert!(asked_for(&[Act::Mill(you, 3), Act::Damage { source: b.me, target: t, amount: greatest, kind: DamageKind::NonCombat }]));
-            }
-            None => {
-                assert!(acted() == 0);
-            }
-        }
-        assert!(Snapshot::of(&b.state) == before);
-        std::mem::forget((b, library));
-    }
-}
 
 card_proof! { adding_counters
     /// Olivia Voldaren's first ability: "{1}{R}: Olivia Voldaren deals 1
