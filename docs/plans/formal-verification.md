@@ -721,6 +721,12 @@ sits in memory. What was measured, and what the proofs do about each:
   `face_name`, `prints_trigger` and the rest, each held to `face_data`
   for every card face up and face down by
   `the_kept_faces_say_what_face_data_says`.
+- **A hash set's keys.** Back from the Brink offered one ability per
+  creature card name and kept the names seen in a `HashSet`, whose
+  SipHash keys are random, so the proof took them as any keys at all:
+  symbolic execution in 23 seconds, and the solver unfinished at half an
+  hour. A graveyard is a few dozen cards; the names seen are now a list,
+  the abilities the same and in the same order. No other card hashes.
 - **A case in its own harness, and a board in its own case.** The card
   proofs that read a list whose length the board decides (the abilities
   of a card by where it is and which face is up, a hand, a library, the
