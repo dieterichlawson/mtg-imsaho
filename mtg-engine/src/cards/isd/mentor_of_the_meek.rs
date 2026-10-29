@@ -1,6 +1,6 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
-use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
+use crate::state::{GameState, LogLevel};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Mentor of the Meek — {2}{W} 2/2 Human Soldier.
@@ -56,22 +56,18 @@ impl CardBehavior for MentorOfTheMeek {
         // "You may pay {1}" — present choice to the player, saying what Yes
         // taps: the plan `on_yes_no_choice` runs, as a cast row names its
         // own and Screeching Bat's question names its (issue #841, #621).
+        // Not asked when nothing can pay it: the may is a no (#940).
         let cost = ManaCost::new(vec![ManaSymbol::Generic(1)]);
-        let description = match crate::engine::payment_plan_with_sources(state, controller, &cost, registry) {
-            Some(plan) if plan.is_empty() =>
-                "Mentor of the Meek: pay {1} (from your mana pool) to draw a card?".to_string(),
-            Some(plan) => format!("Mentor of the Meek: pay {{1}} ({}) to draw a card?",
-                crate::cards::helpers::format_tap_plan_names(state, &plan)),
-            None => "Mentor of the Meek: pay {1} to draw a card?".to_string(),
-        };
-        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-            player: controller,
-            source: self_id,
-            choice: ResolutionChoiceKind::YesNo {
-                description,
-                source_card: self_id,
-            },
+        let asked = crate::cards::helpers::ask_may_pay(state, controller, self_id, &cost, registry, |plan| {
+            if plan.is_empty() {
+                "Mentor of the Meek: pay {1} (from your mana pool) to draw a card?".to_string()
+            } else {
+                format!("Mentor of the Meek: pay {{1}} ({plan}) to draw a card?")
+            }
         });
+        if !asked {
+            state.log(LogLevel::Event, "Mentor of the Meek: nothing can pay {1}, so no card is drawn".into());
+        }
     }
 
     /// "you may pay {1}. If you do, draw a card."

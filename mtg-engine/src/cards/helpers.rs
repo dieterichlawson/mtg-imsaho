@@ -786,6 +786,37 @@ pub fn werewolf_on_upkeep(
 /// they are named bare. Through `obj_name`, which always adds the id, no two
 /// names were equal and it read "tap Swamp (#3), Swamp (#4)" — the grouping
 /// this function exists for never happened (#746).
+/// "You may pay {cost}": ask `player` with a Yes/No naming what Yes taps,
+/// when the cost can be paid. When it cannot, the "may" is a no (CR 117.3:
+/// no player can choose to pay a cost they cannot pay) and nothing is
+/// asked; returns whether the question was put.
+///
+/// `describe` gets the tap plan in the words a cast row uses ("Forest,
+/// 2x Swamp"), empty when the pool alone pays. Mentor of the Meek asked
+/// with nothing untapped, and Yes logged "could not pay {1}" — a question
+/// with an answer it could not honour, which Screeching Bat, the other
+/// copy of this, had never asked (#940). The plan is the one
+/// `engine::pay_cost_with_sources` runs on the Yes (#866).
+pub fn ask_may_pay(
+    state: &mut GameState,
+    player: PlayerId,
+    source: ObjectId,
+    cost: &crate::types::ManaCost,
+    registry: &crate::cards::CardRegistry,
+    describe: impl FnOnce(&str) -> String,
+) -> bool {
+    let Some(plan) = crate::engine::payment_plan_with_sources(state, player, cost, registry) else {
+        return false;
+    };
+    let description = describe(&format_tap_plan_names(state, &plan));
+    state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
+        player,
+        source,
+        choice: crate::state::ResolutionChoiceKind::YesNo { description, source_card: source },
+    });
+    true
+}
+
 #[must_use]
 pub fn format_tap_plan_names(state: &GameState, tap_plan: &[(ObjectId, usize)]) -> String {
     if tap_plan.is_empty() {

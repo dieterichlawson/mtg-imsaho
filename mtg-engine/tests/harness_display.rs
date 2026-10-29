@@ -1059,6 +1059,8 @@ fn the_trigger_asking_its_resolution_question_is_on_the_views_stack() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let mentor = named_permanent(&mut state, &reg, "Mentor of the Meek", P0);
+    // Something to pay {1} with: an unpayable "may pay" is not asked (#940).
+    named_permanent(&mut state, &reg, "Plains", P0);
     let small = ready_creature(&mut state, P0, 1, 1);
     let card_id = state.get_object(mentor).unwrap().card_id;
     state.stack.push(mtg_engine::state::StackEntry::Trigger(PendingTrigger::new(

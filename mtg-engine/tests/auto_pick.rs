@@ -965,6 +965,25 @@ fn mentor_of_the_meek_says_what_paying_taps() {
     assert_eq!(ask(&mut state), "Mentor of the Meek: pay {1} (from your mana pool) to draw a card?");
 }
 
+/// #940: with nothing untapped to pay {1}, Mentor of the Meek still asked,
+/// and Yes logged "could not pay {1}". An unpayable "may pay" is a no (CR
+/// 117.3), and is not asked: as Screeching Bat has done, and both go through
+/// one `helpers::ask_may_pay` now.
+#[test]
+fn an_unpayable_may_pay_is_not_asked() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let mentor = named_permanent(&mut state, &registry, "Mentor of the Meek", P0);
+    let small = ready_creature(&mut state, P0, 1, 1);
+    let tapped = named_permanent(&mut state, &registry, "Plains", P0);
+    state.get_object_mut(tapped).unwrap().tapped = true;
+    let behavior = registry.get(state.get_object(mentor).unwrap().card_id).unwrap();
+    behavior.on_any_creature_enters(&mut state, mentor, small, P0, &registry);
+    assert!(state.awaiting_action.is_none(), "nothing can pay {{1}}: {:?}", state.awaiting_action);
+    assert!(state.game_log.iter().any(|e| e.message == "Mentor of the Meek: nothing can pay {1}, so no card is drawn"),
+        "the log says why nothing was asked");
+}
+
 /// Bug: Skirsdag High Priest's ability costs "tap two untapped creatures
 /// you control" but the engine auto-selected which creatures to tap.
 ///

@@ -525,6 +525,8 @@ fn mentor_of_the_meek_offers_its_payment_after_dying() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let mentor = named_permanent(&mut state, &reg, "Mentor of the Meek", P0);
+    // Something to pay {1} with: an unpayable "may pay" is not asked (#940).
+    named_permanent(&mut state, &reg, "Plains", P0);
     let small = ready_creature(&mut state, P0, 1, 1);
 
     resolve_after_source_dies(&mut state, &reg, mentor,
