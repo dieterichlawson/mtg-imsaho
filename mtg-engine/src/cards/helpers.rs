@@ -1014,27 +1014,6 @@ pub fn morbid_should_trigger(state: &GameState, kind: &TriggerKind) -> bool {
     true
 }
 
-/// CR 701.19: search a library, take at most one matching card, then shuffle.
-///
-/// Handles the whole shape once: no match (shuffle and move on), exactly one
-/// (take it without asking — there is no choice to make), or several (ask, and
-/// finish in `finish_library_search` when the answer comes back). Five cards
-/// each had their own copy of this, with subtly different behaviour in the
-/// zero- and one-candidate cases.
-///
-/// `candidates` is what the card considers a legal find; `destination` and
-/// `tapped` are where it ends up. The shuffle always happens, even when
-/// nothing is found — you searched.
-/// One offer per card, not per copy, for a choice out of a library.
-///
-/// Copies of a card in a library are interchangeable — the zone is hidden
-/// and is shuffled after the search (CR 701.19a) — so "which Mountain" is
-/// not a choice anyone makes. Listing each copy made Ghost Quarter's search
-/// 17 rows for 3 distinct answers, byte-identical in the LLM prompt (issue
-/// #673); Bitterheart Witch and Caravan Vigil built their choices by hand
-/// and kept doing it after that (#692). Every library choice goes through
-/// this, and the invariant checker flags one that offers two copies.
-#[must_use]
 /// The ids of the objects in `objects`, in their order, that `keep` holds
 /// for: what `objects.into_iter().filter(keep).map(|o| o.id).collect()`
 /// gives, into a list allocated at the most it can hold.
@@ -1043,6 +1022,7 @@ pub fn morbid_should_trigger(state: &GameState, kind: &TriggerKind) -> bool {
 /// whether the list was allocated at all is a question about the board,
 /// which a proof of the card has to take both ways; allocated first, every
 /// id lands in the one list.
+#[must_use]
 pub fn ids_where(objects: Vec<&crate::state::GameObject>, mut keep: impl FnMut(&crate::state::GameObject) -> bool) -> Vec<ObjectId> {
     let mut ids = Vec::with_capacity(objects.len());
     for o in objects {
@@ -1053,6 +1033,16 @@ pub fn ids_where(objects: Vec<&crate::state::GameObject>, mut keep: impl FnMut(&
     ids
 }
 
+/// One offer per card, not per copy, for a choice out of a library.
+///
+/// Copies of a card in a library are interchangeable — the zone is hidden
+/// and is shuffled after the search (CR 701.19a) — so "which Mountain" is
+/// not a choice anyone makes. Listing each copy made Ghost Quarter's search
+/// 17 rows for 3 distinct answers, byte-identical in the LLM prompt (issue
+/// #673); Bitterheart Witch and Caravan Vigil built their choices by hand
+/// and kept doing it after that (#692). Every library choice goes through
+/// this, and the invariant checker flags one that offers two copies.
+#[must_use]
 pub fn one_of_each_card(state: &GameState, candidates: Vec<ObjectId>) -> Vec<ObjectId> {
     // A list rather than a hash set: a library holds a few dozen cards, and
     // a hash set's seed is drawn from the operating system, which the
@@ -1069,6 +1059,17 @@ pub fn one_of_each_card(state: &GameState, candidates: Vec<ObjectId>) -> Vec<Obj
         .collect()
 }
 
+/// CR 701.19: search a library, take at most one matching card, then shuffle.
+///
+/// Handles the whole shape once: no match (shuffle and move on), exactly one
+/// (take it without asking — there is no choice to make), or several (ask, and
+/// finish in `finish_library_search` when the answer comes back). Five cards
+/// each had their own copy of this, with subtly different behaviour in the
+/// zero- and one-candidate cases.
+///
+/// `candidates` is what the card considers a legal find; `destination` and
+/// `tapped` are where it ends up. The shuffle always happens, even when
+/// nothing is found — you searched.
 pub fn search_library(
     state: &mut GameState,
     source_id: ObjectId,
