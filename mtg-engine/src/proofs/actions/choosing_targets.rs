@@ -130,27 +130,28 @@ fn entering_attacking(you: PlayerId, with_walker: bool, n: usize, gone: bool) {
     std::mem::forget((registry, state, effect));
 }
 
-/// `entering_attacking` for tokens of either player's and the opponent in
-/// the game or out, each a constant in each call. Whether there is a
-/// planeswalker, and how many tokens enter, are constants in each harness:
-/// a planeswalker made or not moved the tokens' ids, a count left open was
-/// a list of every length, as was the list of what to attack with the
-/// opponent in the game or not, and the player an index into the players
-/// the solver left open; together they ran out of memory.
-fn for_either_player(with_walker: bool, n: usize) {
-    let (you, gone): (bool, bool) = (kani::any(), kani::any());
-    for p in [false, true] {
-        for g in [false, true] {
-            if you == p && gone == g {
-                entering_attacking(PlayerId(u8::from(p)), with_walker, n, g);
-            }
-        }
-    }
-}
-
-/// A proof above for each board.
-macro_rules! each_board {
+/// A proof above for each board, and for tokens of each player's with the
+/// opponent in the game or out, all constants in each harness. Whether
+/// there is a planeswalker made or not moved the tokens' ids, a count left
+/// open was a list of every length, as was the list of what to attack with
+/// the opponent in the game or not, and the player an index into the
+/// players the solver left open; together they ran out of memory. And the
+/// four players and opponents in one harness, each a call of its own, were
+/// the cases of one harness, which add up: past four gigabytes, where one
+/// board had proved at seven.
+macro_rules! each_board_and_player {
     ($($name:ident: $walker:expr, $n:expr;)*) => {$(
+        mod $name {
+            use crate::ids::PlayerId;
+            each_board_and_player!(@ $walker, $n,
+                for_the_first_player: 0, false;
+                for_the_first_player_with_the_opponent_gone: 0, true;
+                for_the_second_player: 1, false;
+                for_the_second_player_with_the_opponent_gone: 1, true;
+            );
+        }
+    )*};
+    (@ $walker:expr, $n:expr, $($case:ident: $p:literal, $gone:literal;)*) => {$(
         #[kani::proof]
         #[kani::unwind(7)]
         #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
@@ -159,14 +160,14 @@ macro_rules! each_board {
         #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
         #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
         #[kani::stub(crate::engine::apply_pending_effect, crate::proofs::cards::record_effect)]
-        /// The proof above it, for one board.
-        fn $name() {
-            for_either_player($walker, $n);
+        /// The proof above it, for one board, player and opponent.
+        fn $case() {
+            super::entering_attacking(PlayerId($p), $walker, $n, $gone);
         }
     )*};
 }
 
-each_board! {
+each_board_and_player! {
     a_token_entering_attacking_on_a_board_without_a_planeswalker: false, 1;
     two_tokens_entering_attacking_on_a_board_without_a_planeswalker: false, 2;
     a_token_entering_attacking_on_a_board_with_a_planeswalker: true, 1;
