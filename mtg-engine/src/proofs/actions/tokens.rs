@@ -20,20 +20,20 @@ use crate::types::{CardType, Color, Keyword, Zone};
 /// What creating tokens asked the replacement layer, and its answer.
 static mut ASKED: Option<(PlayerId, u32, Option<u32>)> = None;
 
+/// What the replacement layer answers in this proof, set by its harness
+/// before any token is made: a count, or that the event is replaced.
+static mut ANSWER: Option<u32> = None;
+
 /// Stands in for `replacement::apply`: creating tokens asks it how many are
-/// made, and the answer is any count up to two, or that the event is
-/// replaced and none are.
+/// made, and the answer is the harness's, a count up to two or that the
+/// event is replaced and none are (`each_answer` says why it is a constant).
 #[allow(dead_code)] // named only by `kani::stub`
-fn any_count(_: &mut GameState, event: ReplaceableEvent, _: &CardRegistry) -> Option<ReplaceableEvent> {
+fn the_answer(_: &mut GameState, event: ReplaceableEvent, _: &CardRegistry) -> Option<ReplaceableEvent> {
     let ReplaceableEvent::CreatesTokens { controller, count } = event else {
         panic!("creating tokens asks about creating tokens");
     };
-    let answer = kani::any::<bool>().then(|| {
-        let m: u32 = kani::any();
-        kani::assume(m <= 2);
-        m
-    });
-    // SAFETY: a proof runs on one thread, and only this module names it.
+    // SAFETY: a proof runs on one thread, and only this module names these.
+    let answer = unsafe { *std::ptr::addr_of!(ANSWER) };
     unsafe {
         *std::ptr::addr_of_mut!(ASKED) = Some((controller, count, answer));
     }
@@ -50,17 +50,15 @@ fn any_count(_: &mut GameState, event: ReplaceableEvent, _: &CardRegistry) -> Op
 /// printed characteristics, and named as the effect names it or, if it
 /// does not, after its subtypes (111.4); each one's entering is announced,
 /// in order, and what comes back is the new tokens, in order. For either
-/// player, N up to two, any power and toughness an `i8` holds, and with or
-/// without a keyword; with or without a subtype and a name, as the harness
-/// says. Nothing else changes.
-fn creating_tokens(zombie: bool, named: bool) {
+/// player and any power and toughness an `i8` holds; N of one or two, a
+/// Zombie or of no subtype, named or not, and flying or of no keyword, as
+/// the harness says (N of none is `creating_no_tokens_asks_and_makes_nothing`).
+/// Nothing else changes.
+fn creating_tokens(n: u32, zombie: bool, named: bool, flying: bool) {
     let (registry, mut state, blank) = blank_board();
     let there = state.create_object(blank, PlayerId(0), Zone::Battlefield, None, None);
     let owner = PlayerId(u8::from(kani::any::<bool>()));
-    let n: u32 = kani::any();
-    kani::assume(n <= 2);
     let (power, toughness) = (i32::from(kani::any::<i8>()), i32::from(kani::any::<i8>()));
-    let flying: bool = kani::any();
     let keywords = if flying { vec![Keyword::Flying] } else { vec![] };
     let subtypes: Vec<String> = if zombie { vec!["Zombie".into()] } else { vec![] };
     let name = if named { "Named" } else { "" };
@@ -69,14 +67,8 @@ fn creating_tokens(zombie: bool, named: bool) {
     let ids = state.create_tokens_with_subtypes(n, name, owner, power, toughness,
         vec![Color::Black], vec![CardType::Creature], keywords.clone(), subtypes.clone(), &registry);
 
-    // SAFETY: as in `any_count`.
-    let asked = unsafe { *std::ptr::addr_of!(ASKED) };
-    if n == 0 {
-        assert!(asked.is_none() && ids.is_empty() && Snapshot::of(&state) == before);
-        std::mem::forget((registry, state, ids, keywords, subtypes));
-        return;
-    }
-    let Some((controller, count, answer)) = asked else { panic!("asked how many") };
+    // SAFETY: as in `the_answer`.
+    let Some((controller, count, answer)) = (unsafe { *std::ptr::addr_of!(ASKED) }) else { panic!("asked how many") };
     assert!(controller == owner && count == n);
     let made = answer.unwrap_or(0) as usize;
     assert!(ids.len() == made && (0..made).all(|i| ids[i] == ObjectId(there.0 + 1 + i as u64)));
@@ -103,32 +95,36 @@ fn creating_tokens(zombie: bool, named: bool) {
     std::mem::forget((registry, state, ids, keywords, subtypes));
 }
 
-/// The proof above it for each name and subtype, each a constant: a name
-/// and a subtype list the solver chose were strings of either length to
-/// compare with every token's, byte by byte, and with the player, the
-/// count and the answer left open they ran out of memory.
-macro_rules! each_name_and_subtype {
-    ($($name:ident: $zombie:literal, $named:literal;)*) => {$(
-        #[kani::proof]
-        #[kani::unwind(7)]
-        #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
-        #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
-        #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
-        #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
-        #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
-        #[kani::stub(crate::replacement::apply, any_count)]
-        /// The proof above it, for one name and subtype.
-        fn $name() {
-            creating_tokens($zombie, $named);
-        }
-    )*};
-}
+#[kani::proof]
+#[kani::unwind(7)]
+#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+#[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+#[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+#[kani::stub(crate::replacement::apply, the_answer)]
+/// Creating no tokens asks the replacement layer nothing, makes nothing
+/// and changes nothing, whatever the tokens would have been: for either
+/// player, any power and toughness an `i8` holds, a Zombie or of no
+/// subtype, named or not, and flying or of no keyword. N is the constant
+/// the other token proofs leave out (`each_answer` says why it is one).
+fn creating_no_tokens_asks_and_makes_nothing() {
+    let (registry, mut state, blank) = blank_board();
+    state.create_object(blank, PlayerId(0), Zone::Battlefield, None, None);
+    let owner = PlayerId(u8::from(kani::any::<bool>()));
+    let (power, toughness) = (i32::from(kani::any::<i8>()), i32::from(kani::any::<i8>()));
+    let keywords = if kani::any() { vec![Keyword::Flying] } else { vec![] };
+    let subtypes: Vec<String> = if kani::any() { vec!["Zombie".into()] } else { vec![] };
+    let name = if kani::any() { "Named" } else { "" };
+    let before = Snapshot::of(&state);
 
-each_name_and_subtype! {
-    creating_unnamed_tokens_of_no_subtype_makes_as_many_as_the_replacements_say: false, false;
-    creating_named_tokens_of_no_subtype_makes_as_many_as_the_replacements_say: false, true;
-    creating_unnamed_zombie_tokens_makes_as_many_as_the_replacements_say: true, false;
-    creating_named_zombie_tokens_makes_as_many_as_the_replacements_say: true, true;
+    let ids = state.create_tokens_with_subtypes(0, name, owner, power, toughness,
+        vec![Color::Black], vec![CardType::Creature], keywords, subtypes, &registry);
+
+    // SAFETY: as in `the_answer`.
+    let asked = unsafe { *std::ptr::addr_of!(ASKED) };
+    assert!(asked.is_none() && ids.is_empty() && Snapshot::of(&state) == before);
+    std::mem::forget((registry, state, ids));
 }
 
 /// A 2/2 green Bear creature, {1}{G}.
@@ -148,14 +144,6 @@ impl crate::cards::CardBehavior for Bear {
     }
 }
 
-#[kani::proof]
-#[kani::unwind(7)]
-#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
-#[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
-#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
-#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
-#[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
-#[kani::stub(crate::replacement::apply, any_count)]
 /// "Create a token that's a copy of target creature" (CR 707.2, 111.10):
 /// the token has the copied permanent's copiable values, what is printed
 /// on it, and nothing an effect gave it, its counters or its status: a
@@ -166,12 +154,11 @@ impl crate::cards::CardBehavior for Bear {
 /// (its face), not as effects have since made it. The copy is under the
 /// player who made it, as many copies as the replacement layer answers
 /// (none if it replaces the event), and the first is what comes back.
-/// Nothing else changes.
-fn a_token_copy_has_the_copiable_values_and_nothing_else() {
+/// Nothing else changes. Of the Bear, or if `token` of the Zombie token.
+fn copying(token: bool) {
     let mut registry = CardRegistry::new();
     let bear = registry.register(Box::new(Bear));
     let mut state = crate::proofs::cards::new_game();
-    let token: bool = kani::any();
     let from = state.create_object(if token { CardId(0) } else { bear }, PlayerId(u8::from(kani::any::<bool>())), Zone::Battlefield, Some(2), Some(2));
     let o = state.get_object_mut(from).expect("just created");
     if token {
@@ -182,15 +169,15 @@ fn a_token_copy_has_the_copiable_values_and_nothing_else() {
             keywords: vec![], card_types: vec![CardType::Creature], subtypes: vec!["Zombie".into()],
         });
     }
-    // What effects and the game gave it, which a copy does not copy.
-    o.subtypes = vec!["Vampire".into()];
+    // What effects and the game gave it, which a copy does not copy (the
+    // list built whole: a list grown stands in as a failure, `no_growing`).
+    o.subtypes = if token { vec!["Vampire".into(), "Zombie".into()] } else { vec!["Vampire".into()] };
     o.colors = vec![Color::Black, Color::Red];
     o.keywords = vec![Keyword::Flying];
     o.tapped = true;
     o.damage_marked = 1;
     o.counters.insert(crate::types::CounterType::PlusOnePlusOne, 1);
     if token {
-        o.subtypes.push("Zombie".into());
         o.card_types = vec![CardType::Creature];
     }
     let owner = PlayerId(u8::from(kani::any::<bool>()));
@@ -198,7 +185,7 @@ fn a_token_copy_has_the_copiable_values_and_nothing_else() {
 
     let first = state.create_token_copy(from, owner, &registry);
 
-    // SAFETY: as in `any_count`.
+    // SAFETY: as in `the_answer`.
     let Some((controller, 1, answer)) = (unsafe { *std::ptr::addr_of!(ASKED) }) else { panic!("asked about one token") };
     assert!(controller == owner);
     let made = answer.unwrap_or(0) as usize;
@@ -217,14 +204,6 @@ fn a_token_copy_has_the_copiable_values_and_nothing_else() {
     std::mem::forget((registry, state));
 }
 
-#[kani::proof]
-#[kani::unwind(7)]
-#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
-#[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
-#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
-#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
-#[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
-#[kani::stub(crate::replacement::apply, any_count)]
 /// "Create an X/X token with 'This creature's power and toughness are each
 /// equal to ...'" (CR 604.3, Gutter Grime's Ooze): as many tokens as the
 /// replacement layer answers, each 0/0 without the ability and carrying,
@@ -232,7 +211,7 @@ fn a_token_copy_has_the_copiable_values_and_nothing_else() {
 /// and toughness, with the colours, types and subtypes given and named for
 /// its subtypes (111.4), under the player who made it. Nothing else
 /// changes.
-fn a_token_whose_ability_defines_its_size_knows_whose_it_is() {
+fn defining_its_size() {
     let (registry, mut state, blank) = blank_board();
     let source = state.create_object(blank, PlayerId(0), Zone::Battlefield, None, None);
     let owner = PlayerId(u8::from(kani::any::<bool>()));
@@ -240,7 +219,7 @@ fn a_token_whose_ability_defines_its_size_knows_whose_it_is() {
 
     let ids = state.create_token_with_defined_pt(source, "", owner, vec![Color::Green], vec![CardType::Creature], vec![], vec!["Ooze".into()], &registry);
 
-    // SAFETY: as in `any_count`.
+    // SAFETY: as in `the_answer`.
     let Some((controller, 1, answer)) = (unsafe { *std::ptr::addr_of!(ASKED) }) else { panic!("asked about one token") };
     assert!(controller == owner);
     let made = answer.unwrap_or(0) as usize;
@@ -253,4 +232,68 @@ fn a_token_whose_ability_defines_its_size_knows_whose_it_is() {
     }
     assert!(Snapshot::of(&state).without_events() == before.with_new_permanents(&ids, owner).without_events());
     std::mem::forget((registry, state, ids));
+}
+
+/// Each proof above, for each answer the replacement layer gives, and each
+/// token proof for each count asked for, name, subtype and keyword, each a
+/// constant. An answer the solver chose was a count of any size to
+/// symbolic execution, the assumption that it is at most two
+/// notwithstanding (an assumption narrows the solver's choice, not the
+/// walk), and the copies made in a loop that many times were walked to the
+/// loop's bound; a count asked for that could be none returned an empty
+/// list down that branch, and where it met the others the list made was of
+/// either length to every walk of it; a keyword list of either length was,
+/// in the same way, a list of any length to every clone and comparison of
+/// it; and a name and a subtype list the solver chose were strings of
+/// either length to compare with every token's, byte by byte. Left open,
+/// they ran out of memory; the count asked for, branched on inside one
+/// harness, still did.
+macro_rules! each_answer {
+    ($($name:ident: $proof:ident $args:tt;)*) => {$(
+        mod $name {
+            of_each_answer!($proof $args; when_they_replace_it: None, when_they_say_none: Some(0), when_they_say_one: Some(1), when_they_say_two: Some(2));
+        }
+    )*};
+}
+
+/// The harnesses of one row of `each_answer`, one for each answer.
+macro_rules! of_each_answer {
+    ($proof:ident $args:tt; $($fn:ident: $answer:expr),*) => {$(
+        #[kani::proof]
+        #[kani::unwind(7)]
+        #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+        #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+        #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+        #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+        #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+        #[kani::stub(crate::replacement::apply, super::the_answer)]
+        /// The proof named above it, for one answer.
+        fn $fn() {
+            // SAFETY: as in `the_answer`.
+            unsafe { *std::ptr::addr_of_mut!(super::ANSWER) = $answer };
+            super::$proof $args;
+        }
+    )*};
+}
+
+each_answer! {
+    creating_one_unnamed_token_of_no_subtype_makes_as_many_as_the_replacements_say: creating_tokens(1, false, false, false);
+    creating_one_unnamed_flying_token_of_no_subtype_makes_as_many_as_the_replacements_say: creating_tokens(1, false, false, true);
+    creating_one_named_token_of_no_subtype_makes_as_many_as_the_replacements_say: creating_tokens(1, false, true, false);
+    creating_one_named_flying_token_of_no_subtype_makes_as_many_as_the_replacements_say: creating_tokens(1, false, true, true);
+    creating_one_unnamed_zombie_token_makes_as_many_as_the_replacements_say: creating_tokens(1, true, false, false);
+    creating_one_unnamed_flying_zombie_token_makes_as_many_as_the_replacements_say: creating_tokens(1, true, false, true);
+    creating_one_named_zombie_token_makes_as_many_as_the_replacements_say: creating_tokens(1, true, true, false);
+    creating_one_named_flying_zombie_token_makes_as_many_as_the_replacements_say: creating_tokens(1, true, true, true);
+    creating_two_unnamed_tokens_of_no_subtype_makes_as_many_as_the_replacements_say: creating_tokens(2, false, false, false);
+    creating_two_unnamed_flying_tokens_of_no_subtype_makes_as_many_as_the_replacements_say: creating_tokens(2, false, false, true);
+    creating_two_named_tokens_of_no_subtype_makes_as_many_as_the_replacements_say: creating_tokens(2, false, true, false);
+    creating_two_named_flying_tokens_of_no_subtype_makes_as_many_as_the_replacements_say: creating_tokens(2, false, true, true);
+    creating_two_unnamed_zombie_tokens_makes_as_many_as_the_replacements_say: creating_tokens(2, true, false, false);
+    creating_two_unnamed_flying_zombie_tokens_makes_as_many_as_the_replacements_say: creating_tokens(2, true, false, true);
+    creating_two_named_zombie_tokens_makes_as_many_as_the_replacements_say: creating_tokens(2, true, true, false);
+    creating_two_named_flying_zombie_tokens_makes_as_many_as_the_replacements_say: creating_tokens(2, true, true, true);
+    a_token_copy_of_a_card_has_the_copiable_values_and_nothing_else: copying(false);
+    a_token_copy_of_a_token_has_its_face_and_nothing_else: copying(true);
+    a_token_whose_ability_defines_its_size_knows_whose_it_is: defining_its_size();
 }

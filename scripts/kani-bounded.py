@@ -67,13 +67,14 @@ KANI_LIB = f'{K}/library/kani/kani_lib.c'
 # harnesses with (abilities!, statics!, equipment!, ...). `cargo kani list`
 # says the same at the price of building every harness, gigabytes of goto
 # files.
-TABLES = {'abilities', 'declares', 'werewolves', 'mana', 'statics', 'check_land', 'choosing_at_random', 'for_each_size', 'from_each_zone', 'for_each_key', 'each_printed', 'by_each_way', 'each_target', 'each_board', 'each_cost', 'each_pruning', 'each_path', 'over_each_library', 'over_each_hand', 'case_by_case', 'each_shape', 'each_hand_of_discard', 'each_name_and_subtype'}
+TABLES = {'abilities', 'declares', 'werewolves', 'mana', 'statics', 'check_land', 'choosing_at_random', 'for_each_size', 'from_each_zone', 'for_each_key', 'each_printed', 'by_each_way', 'each_target', 'each_board', 'each_cost', 'each_pruning', 'each_path', 'over_each_library', 'over_each_hand', 'case_by_case', 'each_shape', 'each_hand_of_discard'}
 FORMS = {'reaches_what_it_describes', 'holds_exactly_then', 'each_subtype_set'}
 # Tables whose every entry is a module of these harnesses.
 SUFFIXED = {
     'each_size_and_player': ['for_the_first_player', 'for_the_second_player'],
     'each_pick_and_player': ['for_the_first_player', 'for_the_second_player'],
     'each_set': ['of_one_point', 'of_two_points', 'of_three_points'],
+    'each_answer': ['when_they_replace_it', 'when_they_say_none', 'when_they_say_one', 'when_they_say_two'],
     'each_library_and_player': ['for_the_first_player', 'for_the_second_player'],
     'into_play_from_each_zone': ['for_the_first_player', 'for_the_second_player'],
     'each_board_and_player': ['for_the_first_player', 'for_the_first_player_with_the_opponent_gone',

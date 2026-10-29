@@ -283,10 +283,10 @@ impl mtg_engine::cards::CardBehavior for Dwindling {
     }
 }
 
-/// The proof of token creation (`proofs::actions::tokens`) states it for every
-/// count the replacement layer may answer; read against that statement, an
-/// answer of none made one token all the same, the last of the copies being
-/// made outside the loop that makes the rest.
+/// Found by the proof of token creation (`proofs::actions::tokens`), which
+/// takes every count the replacement layer may answer: answered none, one
+/// token was made all the same, the last of the copies being made outside
+/// the loop that makes the rest.
 #[test]
 fn a_replacement_that_leaves_no_tokens_creates_none() {
     let mut reg = registry();
