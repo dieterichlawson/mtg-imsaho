@@ -365,9 +365,14 @@ header rows are the ones starting with a timestamp digit.
   out of the payload once captured.
 - `FORMAT` — the lines a text-answering `claude -p` seat puts under the
   prompt ("Answer with only this JSON object: ..." and its fields), which
-  the `PROMPT` record does not hold: a game seat's follows its `PROMPT`,
-  a draft seat's (`[Seat N] FORMAT`) comes just before the pick's `PROMPT`.
-  Read it beside a `REASK` to see what the seat was told to send.
+  the `PROMPT` record does not hold; one per call, so a retried call
+  writes it again. A game seat's follows its `PROMPT` (a re-ask's too). A
+  draft seat's (`[Seat N] FORMAT`) is written as the call is made, so it
+  comes before the records the draft log writes afterwards: the pick's
+  `PROMPT`, every `DECK_PROMPT attempt`, the `SIDEBOARD_PROMPT`. A pick
+  asked again writes `[Seat N] REASK_PROMPT`, the sentence it added under
+  the pick's prompt. Read them beside a `REASK` to see what the seat was
+  told to send.
 - `MALFORMED`, `VALIDATION`, `BLOCKER_VALIDATION` — the model answered with
   something unusable and the harness fell back (usually to option 0 / pass).
   Grep these first when a seat plays nonsense.

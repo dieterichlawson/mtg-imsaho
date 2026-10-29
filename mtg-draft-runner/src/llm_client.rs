@@ -1623,6 +1623,8 @@ pub struct DraftLlmClient {
     /// green-white, taking removal over creatures now" survives from one
     /// pick to the next.
     notes: Option<String>,
+    /// The seat's number, for the records the client writes itself.
+    seat: usize,
 }
 
 impl DraftLlmClient {
@@ -1667,7 +1669,7 @@ impl DraftLlmClient {
                 std::process::exit(1);
             }
         };
-        Self { backend, notes: None }
+        Self { backend, notes: None, seat: table.seat }
     }
 
     /// The most characters of reasoning carried into the next prompt: the
@@ -1776,9 +1778,11 @@ back to you on your next pick"
         if let Some(why) = why {
             mtg_player::game_log::write_at(mtg_player::game_log::LogLevel::Error, file!(), line!(),
                 "REASK", &format!("{why}: {}", response.trim()));
-            let again = format!(
-                "{user_message}\n\nYour answer {} is not one this pick allows: {why}. Answer again.",
-                response.trim());
+            let reason = format!("Your answer {} is not one this pick allows: {why}. Answer again.", response.trim());
+            // The pick's `PROMPT` record is the first asking; this is what
+            // the second one added under it (#910's review).
+            mtg_player::game_log::write(file!(), line!(), &format!("[Seat {}] REASK_PROMPT", self.seat), &reason);
+            let again = format!("{user_message}\n\n{reason}");
             response = self.backend.send_pick(&again, num_cards);
         }
         self.keep_notes(&response);
