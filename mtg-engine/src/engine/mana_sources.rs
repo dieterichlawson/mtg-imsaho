@@ -117,7 +117,14 @@ pub fn pay_cost_with_sources(
     registry: &CardRegistry,
 ) -> bool {
     let Some(plan) = payment_plan_with_sources(state, player, cost, registry) else { return false };
-    for (source_id, ability_index) in plan {
+    // By index, not by iterator. Where the planner's paths meet, a proof
+    // knows an empty plan's length and not its list pointer (the dangling
+    // one, or the null of the `None` it might have been), and an
+    // iterator's `ptr == end` over that pointer is left open: a payment
+    // from the pool walked a plan of any length, every card's mana
+    // abilities with it.
+    for i in 0..plan.len() {
+        let (source_id, ability_index) = plan[i];
         activate_mana_source_reserving(state, source_id, ability_index, Some(cost), registry);
     }
     // Around what everything else needs, as the plan assumed: a floating
