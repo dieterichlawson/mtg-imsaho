@@ -160,7 +160,8 @@ card_proof! {
 /// creature has died this turn.
 fn morbid_counters(state: &GameState, e: &EnteringPermanent) -> Option<EnteringPermanent> {
     state.creature_died_this_turn.then(|| {
-        let mut counters = e.counters.clone();
+        let mut counters = Vec::with_capacity(e.counters.len() + 1);
+        counters.extend_from_slice(&e.counters);
         counters.push((CounterType::PlusOnePlusOne, 2));
         EnteringPermanent { counters, ..e.clone() }
     })
