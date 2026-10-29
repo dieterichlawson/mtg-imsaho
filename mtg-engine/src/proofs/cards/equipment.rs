@@ -19,7 +19,7 @@
 //! creature. It can't be regenerated." (Runechanter's Pike's X is
 //! `proofs::cards::counted_pt`'s.)
 
-use super::{act, acted, any_object, any_target, asked_each, asked_for, board, card_proof, case_by_case, prints_effects, triggers, Act, Form, Kinds, Snapshot, ANY_PERMANENT};
+use super::{act, acted, any_object, any_target, asked_each, asked_for, board, card_proof, case_by_case, either, has_subtype, prints_effects, prints_where, triggers, Act, Form, Kinds, Snapshot, ANY_PERMANENT};
 use crate::actions::Target;
 use crate::cards::helpers::EQUIP_ABILITY_INDEX;
 use crate::cards::{AttackInfo, CardBehavior, SacrificeCost, TargetFilter, TargetRequirement, TriggerKind};
@@ -39,8 +39,9 @@ enum Equip {
 
 /// `card`'s equip ability, on the battlefield, costs `cost` and is "attach
 /// to target creature you control, activate only as a sorcery"; and the
-/// card prints exactly `effects`.
-fn prints(card: Box<dyn CardBehavior>, cost: Equip, effects: &[E]) {
+/// card prints what `effects` accepts (`prints_effects`, or for effects
+/// holding a filter or another effect, `prints_where`).
+fn prints(card: Box<dyn CardBehavior>, cost: Equip, effects: impl FnOnce(&dyn CardBehavior) -> bool) {
     let (registry, mut state, _, card) = board(card);
     let id = state.create_object(card, PlayerId(0), Zone::Battlefield, None, None);
     let behavior = registry.get(card).expect("registered");
@@ -53,7 +54,7 @@ fn prints(card: Box<dyn CardBehavior>, cost: Equip, effects: &[E]) {
     assert!(equip.cost == mana && equip.sacrifice_cost == sacrifice);
     assert!(equip.sorcery_speed_only && !equip.requires_tap && !equip.once_per_turn);
     assert!(equip.target_requirement == Some(TargetRequirement::CreatureWithFilter(TargetFilter::YouControl)));
-    assert!(prints_effects(behavior, effects));
+    assert!(effects(behavior));
     std::mem::forget((registry, state, abilities));
 }
 
@@ -106,9 +107,21 @@ macro_rules! equipment {
     // targeted ability too (Blazing Torch's "any target"), which its own
     // proof takes.
     (another targeted ability, $attaches:ident, $prints:ident, $card:expr, $cost:expr, [$($effect:expr),* $(,)?]) => {
-        equipment!(@ $attaches, $prints, $card, $cost, false, [$($effect),*]);
+        equipment!(@ $attaches, $prints, $card, $cost, false, |b| prints_effects(b, &[$($effect),*]));
+    };
+    // For an Equipment printing an effect that holds a filter or another
+    // effect: its effects matched as `shape` says (`prints_effects` says
+    // why such values are not compared with ones built to compare).
+    ($attaches:ident, $prints:ident, $card:expr, $cost:expr, where $shape:expr) => {
+        equipment!(@ $attaches, $prints, $card, $cost, true, |b| prints_where(b, $shape));
+    };
+    (another targeted ability, $attaches:ident, $prints:ident, $card:expr, $cost:expr, where $shape:expr) => {
+        equipment!(@ $attaches, $prints, $card, $cost, false, |b| prints_where(b, $shape));
     };
     (@ $attaches:ident, $prints:ident, $card:expr, $cost:expr, $equip_targets_only:expr, [$($effect:expr),* $(,)?]) => {
+        equipment!(@ $attaches, $prints, $card, $cost, $equip_targets_only, |b| prints_effects(b, &[$($effect),*]));
+    };
+    (@ $attaches:ident, $prints:ident, $card:expr, $cost:expr, $equip_targets_only:expr, $effects:expr) => {
         card_proof! {
             fn $attaches() {
                 attaches(Box::new($card), $equip_targets_only);
@@ -116,7 +129,7 @@ macro_rules! equipment {
         }
         card_proof! {
             fn $prints() {
-                prints(Box::new($card), $cost, &[$($effect),*]);
+                prints(Box::new($card), $cost, $effects);
             }
         }
     };
@@ -124,19 +137,13 @@ macro_rules! equipment {
 
 use crate::cards::isd as isd;
 
-equipment!(another targeted ability, blazing_torch_equips, blazing_torch_equip_one_and_blocked_only_by_others, isd::blazing_torch::BlazingTorch, Equip::Generic(1), [
-    E::CanOnlyBeBlockedBy {
-        allowed_blockers: CreatureFilter::Not(Box::new(CreatureFilter::Or(vec![
-            CreatureFilter::HasSubtype("Vampire".into()),
-            CreatureFilter::HasSubtype("Zombie".into()),
-        ]))),
-        scope: Attached,
-    },
-]);
-equipment!(butchers_cleaver_equips, butchers_cleaver_equip_three_plus_three_and_lifelink_for_a_human, isd::butchers_cleaver::ButchersCleaver, Equip::Generic(3), [
-    E::ModifyPT { power: 3, toughness: 0, scope: Attached },
-    E::when(EffectCondition::AttachedHasSubtype("Human".into()), E::GrantKeyword { keyword: Keyword::Lifelink, scope: Attached }),
-]);
+equipment!(another targeted ability, blazing_torch_equips, blazing_torch_equip_one_and_blocked_only_by_others, isd::blazing_torch::BlazingTorch, Equip::Generic(1),
+    where |e: &[E]| matches!(e, [E::CanOnlyBeBlockedBy { allowed_blockers: CreatureFilter::Not(f), scope: Attached }]
+        if either(f, |f| has_subtype(f, "Vampire"), |f| has_subtype(f, "Zombie"))));
+equipment!(butchers_cleaver_equips, butchers_cleaver_equip_three_plus_three_and_lifelink_for_a_human, isd::butchers_cleaver::ButchersCleaver, Equip::Generic(3),
+    where |e: &[E]| matches!(e, [E::ModifyPT { power: 3, toughness: 0, scope: Attached },
+        E::When { condition: EffectCondition::AttachedHasSubtype(s), effect }]
+        if s == "Human" && matches!(**effect, E::GrantKeyword { keyword: Keyword::Lifelink, scope: Attached })));
 equipment!(cobbled_wings_equips, cobbled_wings_equip_one_and_flying, isd::cobbled_wings::CobbledWings, Equip::Generic(1), [
     E::GrantKeyword { keyword: Keyword::Flying, scope: Attached },
 ]);
@@ -153,14 +160,14 @@ equipment!(mask_of_avacyn_equips, mask_of_avacyn_equip_three_plus_one_plus_two_a
 equipment!(runechanters_pike_equips, runechanters_pike_equip_two_and_first_strike, isd::runechanters_pike::RunechantersPike, Equip::Generic(2), [
     E::GrantKeyword { keyword: Keyword::FirstStrike, scope: Attached },
 ]);
-equipment!(sharpened_pitchfork_equips, sharpened_pitchfork_equip_one_first_strike_and_plus_one_for_a_human, isd::sharpened_pitchfork::SharpenedPitchfork, Equip::Generic(1), [
-    E::GrantKeyword { keyword: Keyword::FirstStrike, scope: Attached },
-    E::when(EffectCondition::AttachedHasSubtype("Human".into()), E::ModifyPT { power: 1, toughness: 1, scope: Attached }),
-]);
-equipment!(silver_inlaid_dagger_equips, silver_inlaid_dagger_equip_two_plus_two_and_one_more_for_a_human, isd::silver_inlaid_dagger::SilverInlaidDagger, Equip::Generic(2), [
-    E::ModifyPT { power: 2, toughness: 0, scope: Attached },
-    E::when(EffectCondition::AttachedHasSubtype("Human".into()), E::ModifyPT { power: 1, toughness: 0, scope: Attached }),
-]);
+equipment!(sharpened_pitchfork_equips, sharpened_pitchfork_equip_one_first_strike_and_plus_one_for_a_human, isd::sharpened_pitchfork::SharpenedPitchfork, Equip::Generic(1),
+    where |e: &[E]| matches!(e, [E::GrantKeyword { keyword: Keyword::FirstStrike, scope: Attached },
+        E::When { condition: EffectCondition::AttachedHasSubtype(s), effect }]
+        if s == "Human" && matches!(**effect, E::ModifyPT { power: 1, toughness: 1, scope: Attached })));
+equipment!(silver_inlaid_dagger_equips, silver_inlaid_dagger_equip_two_plus_two_and_one_more_for_a_human, isd::silver_inlaid_dagger::SilverInlaidDagger, Equip::Generic(2),
+    where |e: &[E]| matches!(e, [E::ModifyPT { power: 2, toughness: 0, scope: Attached },
+        E::When { condition: EffectCondition::AttachedHasSubtype(s), effect }]
+        if s == "Human" && matches!(**effect, E::ModifyPT { power: 1, toughness: 0, scope: Attached })));
 equipment!(trepanation_blade_equips, trepanation_blade_equip_two, isd::trepanation_blade::TrepanationBlade, Equip::Generic(2), []);
 equipment!(wooden_stake_equips, wooden_stake_equip_one_plus_one, isd::wooden_stake::WoodenStake, Equip::Generic(1), [
     E::ModifyPT { power: 1, toughness: 0, scope: Attached },
