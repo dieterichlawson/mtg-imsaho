@@ -146,6 +146,10 @@ def night(args):
         games = []
         for g in r["games"]:
             game = {"winner": g.get("winner"), "turns": g.get("turns")}
+            # Stopped at the action budget: no winner, and not a draw (#743),
+            # which the debrief's score keeps apart (#919's review).
+            if g.get("abandoned"):
+                game["abandoned"] = True
             # The cards each seat played in this game, sideboarding included
             # (#901): a seat's `maindeck` is the deck it registered, and a
             # card sided out kept every game of it while one sided in had none.

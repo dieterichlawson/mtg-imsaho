@@ -139,13 +139,16 @@ def seat_story(night, s):
         me_a = m["a"] == s["seat"]
         opp = seats[m["b"] if me_a else m["a"]]
         mine, theirs = (m["wins_a"], m["wins_b"]) if me_a else (m["wins_b"], m["wins_a"])
-        # The games with no winner as a third figure, as the runner's score
-        # says them: "lost 0-2" over three games left one out (#919).
-        level = sum(1 for g in m["games"] if g.get("winner") is None)
+        # The drawn games as a third figure, as the runner's score says
+        # them: "lost 0-2" over three games left one out (#919). An
+        # abandoned game is not a draw, and is said on its own.
+        level = sum(1 for g in m["games"] if g.get("winner") is None and not g.get("abandoned"))
+        stopped = sum(1 for g in m["games"] if g.get("abandoned"))
         score = f"{mine}-{theirs}" + (f"-{level}" if level else "")
         turns = ", ".join(str(g["turns"]) for g in m["games"])
         lines.append(f"  Round {m['round']} vs seat {opp['seat']} ({opp['colors']}): "
-                     f"{'won' if mine > theirs else 'lost' if mine < theirs else 'drew'} {score} (games of {turns} turns); "
+                     f"{'won' if mine > theirs else 'lost' if mine < theirs else 'drew'} {score} (games of {turns} turns"
+                     + (f"; {stopped} abandoned at the action budget, no winner" if stopped else "") + "); "
                      f"their registered deck: {counted(opp['maindeck'])}")
         for who, seat in (("You", s), ("They", opp)):
             lines += [f"    {who} sideboarded {change}." for change in sideboarding(m, seat)]

@@ -172,6 +172,8 @@ fn the_debrief_counts_a_matchs_drawn_games() {
         "picks": [],
         "matches": [{"round": 1, "result": {"player_a": 0, "player_b": 1, "wins_a": 1, "wins_b": 1, "games": [
             {"winner": 0, "turns": 9}, {"winner": null, "turns": 30}, {"winner": 1, "turns": 8},
+        ]}}, {"round": 2, "result": {"player_a": 0, "player_b": 1, "wins_a": 1, "wins_b": 1, "games": [
+            {"winner": 0, "turns": 9}, {"winner": null, "turns": 99, "abandoned": true}, {"winner": 1, "turns": 8},
         ]}}],
     });
     let snap = dir.join("save.json");
@@ -188,6 +190,8 @@ fn the_debrief_counts_a_matchs_drawn_games() {
     assert!(story.status.success(), "{}", String::from_utf8_lossy(&story.stderr));
     let story = String::from_utf8_lossy(&story.stdout);
     assert!(story.contains("drew 1-1-1 (games of 9, 30, 8 turns)"), "{story}");
+    // A game stopped at the action budget is not a draw (#743).
+    assert!(story.contains("drew 1-1 (games of 9, 99, 8 turns; 1 abandoned at the action budget, no winner)"), "{story}");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
