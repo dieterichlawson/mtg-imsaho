@@ -180,10 +180,12 @@ fn apply_destroy_all(
     // Phase 2 — capture the death events, still against that same state, so a
     // creature whose toughness depends on the others (Splinterfright counting
     // creature cards in the graveyard) is remembered as it was.
-    let deaths: Vec<(ObjectId, Option<GameEvent>)> = decisions.iter()
-        .filter(|(_, r)| *r == DestroyResult::Died)
-        .map(|&(id, _)| (id, death_event(state, id, Some(registry))))
-        .collect();
+    let mut deaths: Vec<(ObjectId, Option<GameEvent>)> = Vec::with_capacity(decisions.len());
+    for &(id, result) in decisions {
+        if result == DestroyResult::Died {
+            deaths.push((id, death_event(state, id, Some(registry))));
+        }
+    }
 
     // Phase 3 — apply.
     for &(id, result) in decisions {
@@ -191,8 +193,12 @@ fn apply_destroy_all(
             regenerate(state, id);
         }
     }
-    for (id, event) in deaths {
-        if let Some(event) = event {
+    // By index, each event taken out where it lies, not the list walked by
+    // value: a proof walking a list of events by value makes each step an
+    // `Option` of the widest event, field by field.
+    for i in 0..deaths.len() {
+        let id = deaths[i].0;
+        if let Some(event) = deaths[i].1.take() {
             state.events.push(event);
             state.creature_died_this_turn = true;
         }
