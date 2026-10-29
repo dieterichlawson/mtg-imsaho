@@ -49,9 +49,10 @@ The rewrite, which changes nothing a Rust program can observe:
   has any, and then its tag into the niche: both become one write of the
   whole value, the bytes outside the variant zero, the tag in the
   variant's leading padding (where the niche is), when the variable was
-  fresh (declared just before) or the write of its fields came just
-  before; and the variant that holds the niche, written with no tag
-  after it, is written as the whole value too;
+  fresh (declared just before, or with only a write of a member of no
+  bits since, as the `Break(None)` of an `Option`'s `?` is built) or the
+  write of its fields came just before; and the variant that holds the
+  niche, written with no tag after it, is written as the whole value too;
 - each enum's widest variant is put first in its union. CBMC keeps a
   union's value as its widest member and reads one through a pointer
   through the first member with a field where the bytes are, and a read
@@ -374,7 +375,14 @@ def rewrite(version, strings, symbols, functions):
 
     # A niche-encoded enum's variant of no fields (`None`): a fresh local,
     # `DECL x`, then only its tag written into the niche, `*(T *)&x := tag`.
-    # Made a write of the whole value, the bytes after the tag zero.
+    # Made a write of the whole value, the bytes after the tag zero. A
+    # write of a member with no bits may come between: the `Break(None)`
+    # an `Option`'s `?` returns, `x.Break := { nondet }` (its field is an
+    # `Option<Infallible>`), where the enum is laid out as a struct of its
+    # variants. Left as it was, the list in `Continue` beside that tag was
+    # of unknown length, and the plan `?` passed on was too wherever the
+    # paths met: a payment's plan, empty on every path, was walked as one
+    # of any length, every card's mana abilities with it.
     def symbol_of_niche_write(code):
         lhs = code.subs[0]
         if lhs.id != DEREF or not lhs.subs:
@@ -386,13 +394,31 @@ def rewrite(version, strings, symbols, functions):
             return None
         return p.subs[0]
 
+    def zero_width_write_to(ins, var):
+        """Whether `ins` writes a member of `var` that has no bits: the
+        empty variant of an enum laid out as a struct of its variants,
+        `x.Break := { nondet }` for the `None` an `Option`'s `?` returns."""
+        code = ins[0]
+        if ins[2] != ASSIGN or len(code.subs) != 2:
+            return False
+        lhs = code.subs[0]
+        return (lhs.id == MEMBER and lhs.subs and lhs.subs[0].id == SYMBOL
+                and named(lhs.subs[0], K_IDENT) is not None and named(lhs.subs[0], K_IDENT).id == var
+                and width(named(lhs, K_TYPE)) == 0)
+
     for _, instrs in functions:
         for i, ins in enumerate(instrs[1:], 1):
-            code, prev = ins[0], instrs[i - 1]
-            if ins[2] != ASSIGN or len(code.subs) != 2 or prev[2] != DECL or not prev[0].subs:
+            code = ins[0]
+            if ins[2] != ASSIGN or len(code.subs) != 2:
                 continue
             x = symbol_of_niche_write(code)
-            if x is None:
+            if x is None or named(x, K_IDENT) is None:
+                continue
+            j = i - 1
+            while j > 0 and zero_width_write_to(instrs[j], named(x, K_IDENT).id):
+                j -= 1
+            prev = instrs[j]
+            if prev[2] != DECL or not prev[0].subs:
                 continue
             declared, xid = prev[0].subs[0], named(x, K_IDENT)
             if declared.id != SYMBOL or xid is None or named(declared, K_IDENT) is None or named(declared, K_IDENT).id != xid.id:
