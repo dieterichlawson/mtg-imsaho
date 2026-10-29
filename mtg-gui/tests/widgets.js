@@ -384,6 +384,25 @@ async function main() {
         await clickHit("(h, m) => h.kind === 'row' && h.y === Math.max(...m.hits.filter(x => x.kind === 'row').map(x => x.y))");
         await expectSent("pay-or-not", a => a.ResolveChoice && a.ResolveChoice.choice.PayDecision === false);
       }
+      // #939: the engine puts the payment plan at the question's end, and a
+      // two-line cap on the modal's title cut it off in nearly every one.
+      const long = "Pay {1} to prevent Grizzly Bears from being countered? (Pay: tap Forest, Swamp, 3x Mountain, Shimmering Grotto)";
+      if (await stage("pay-or-not-long", legal({ actions, resolution_prompt: { PayOrNot: { description: long, spell_id: 1, source_spell_id: 2, cost: { symbols: [{ Generic: 1 }] } } } }), null, "list")) {
+        const drawn = await page.evaluate(() => {
+          const orig = CanvasRenderingContext2D.prototype.fillText;
+          const out = [];
+          try {
+            CanvasRenderingContext2D.prototype.fillText = function (s) { out.push(String(s)); return orig.apply(this, arguments); };
+            window.mtgDebug.render();
+          } finally { CanvasRenderingContext2D.prototype.fillText = orig; }
+          return out;
+        });
+        const said = drawn.join(" ");
+        if (!said.includes("Grotto)") || drawn.some(t => t.endsWith("tap…") || t.endsWith("Shimmering…"))) fail(`pay-or-not-long: the plan at the question's end is cut: ${JSON.stringify(drawn.filter(t => /Pay|Grotto|countered/.test(t)))}`);
+        else ok("pay-or-not-long → the whole question, plan included");
+        const fits = await page.evaluate(() => { const m = window.mtg.hits.find(h => h.kind === "modal"); return m && m.y >= 0 && m.y + m.h <= 360; });
+        if (!fits) fail("pay-or-not-long: the modal runs off the board");
+      }
     }
     // 10. A set prompt: bottom one of the hand.
     {

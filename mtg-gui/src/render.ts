@@ -1238,6 +1238,8 @@ const NUMBER_SUMMARY_LINES = 10;
 /** The most lines the X preview wraps to; three, at the modal's width,
  *  hold every source list a board has reached (#938). */
 const PREVIEW_LINES = 3;
+/** The most lines a modal's question wraps to (#939). */
+const TITLE_LINES = 5;
 
 function modal(ctx: Ctx, hits: Hit[], state: LiveState): void {
   const ui = state.ui;
@@ -1264,13 +1266,18 @@ function modal(ctx: Ctx, hits: Hit[], state: LiveState): void {
   const previewRows = ui.mode === "number" && ui.preview
     ? Math.max(1, Math.min(PREVIEW_LINES, wrap(ctx, previewOf(String(ui.max)) || "", w - 12, "7px Silkscreen").length))
     : 0;
-  const h = 30 + shown.length * rowH + (ui.mode === "number" ? 22 + (summary.length + previewRows) * 8 : 0) + (ui.filter ? 14 : 0) + 18;
+  // The question whole, up to TITLE_LINES: the engine puts the payment
+  // plan at its end ("… countered? (Pay: tap Forest)"), and a two-line cap
+  // cut it off in nearly every PayOrNot (#939). The height has room for two
+  // lines; each line past them adds its own.
+  const titleLines = wrapCapped(ctx, ui.title, w - 12, "8px PressStart", TITLE_LINES);
+  const h = 30 + Math.max(0, titleLines.length - 2) * 10 + shown.length * rowH + (ui.mode === "number" ? 22 + (summary.length + previewRows) * 8 : 0) + (ui.filter ? 14 : 0) + 18;
   const y = Math.max(8, (H - h) / 2);
   // The background hit goes in first, so the rows drawn on it are on top.
   hits.push({ x, y, w, h, kind: "modal" });
   texturedPanel(ctx, x, y, w, h, "#1a1620", "#c9a84a");
   let ty = y + 6;
-  for (const l of wrapCapped(ctx, ui.title, w - 12, "8px PressStart", 2)) { text(ctx, l, x + 6, ty, { font: "8px PressStart", color: "#ffe080" }); ty += 10; }
+  for (const l of titleLines) { text(ctx, l, x + 6, ty, { font: "8px PressStart", color: "#ffe080" }); ty += 10; }
   if (ui.filter) {
     // Where the real <input> goes. The modal used to paint a field here and
     // `syncField` parked the DOM control at a fixed spot near the top of the
