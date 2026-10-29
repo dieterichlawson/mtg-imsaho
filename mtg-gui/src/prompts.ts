@@ -1091,8 +1091,9 @@ export function allocateForX(opts: FundingOptions, x: number): { response: Fundi
   return { response, shortfall: remaining };
 }
 
-/** What announcing `x` spends, the engine's `funding::describe_x_plan`:
- *  "X = 3: tap Nephalia Drownyard, 2x Island", or null when `x` is not
+/** What announcing `x` spends on X, the engine's `funding::describe_x_plan`:
+ *  "X = 3: for X, tap Nephalia Drownyard, 2x Island" — X's share, which the
+ *  same confirm pays with the rest of the cost (#937) — or null when `x` is not
  *  payable. The X box took a number and tapped lands it never named, so a
  *  person learned which from the log after the cast (#845); the modal shows
  *  this for the value being typed. `x-funding-cases.jsonl` holds it to the
@@ -1115,7 +1116,7 @@ export function describeXPlan(opts: FundingOptions, x: number): string | null {
     taps.push(count > 1 ? `${count}x ${g.name}` : g.name);
   }
   if (taps.length > 0) parts.push(`tap ${taps.join(", ")}`);
-  return parts.length === 0 ? `X = ${x}: nothing is spent` : `X = ${x}: ${parts.join(", ")}`;
+  return parts.length === 0 ? `X = ${x}: nothing for X` : `X = ${x}: for X, ${parts.join(", ")}`;
 }
 
 /** The payable set as one line, runs collapsed, capped, both ends kept —

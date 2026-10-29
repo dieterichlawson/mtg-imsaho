@@ -283,10 +283,15 @@ pub fn allocate_for_x(options: &FundingOptions, x: u32) -> (FundingResponse, u32
     (response, remaining)
 }
 
-/// What announcing `x` spends, in the words a cast's row uses for its tap
-/// plan: `"X = 3: tap Nephalia Drownyard, 2x Island"`, `"X = 4: 1 Red from
-/// the pool, tap 3x Island"`, `"X = 0: nothing is spent"`. None when `x` is
-/// not payable, which the prompt refuses on its own terms.
+/// What announcing `x` spends on X, in the words a cast's row uses for its
+/// tap plan: `"X = 3: for X, tap Nephalia Drownyard, 2x Island"`, `"X = 4:
+/// for X, 1 Red from the pool, tap 3x Island"`, `"X = 0: nothing for X"`.
+/// None when `x` is not payable, which the prompt refuses on its own terms.
+///
+/// X's share only, and it says so: the rest of the cost, which the action's
+/// own row named, is paid on the same confirm. "X = 0: nothing is spent"
+/// was false whenever there was a rest — flashback Devil's Play tapped three
+/// Mountains on it (#937).
 ///
 /// The X prompt listed the sources and took a number, and
 /// [`allocate_for_x`] chose among them unseen: the person learned which
@@ -329,9 +334,9 @@ pub fn describe_x_plan(options: &FundingOptions, x: u32) -> Option<String> {
         parts.push(format!("tap {}", taps.join(", ")));
     }
     if parts.is_empty() {
-        return Some(format!("X = {x}: nothing is spent"));
+        return Some(format!("X = {x}: nothing for X"));
     }
-    Some(format!("X = {x}: {}", parts.join(", ")))
+    Some(format!("X = {x}: for X, {}", parts.join(", ")))
 }
 
 /// Error returned when a [`FundingResponse`] is inconsistent with its
@@ -1199,12 +1204,12 @@ mod tests {
             pool_order: Vec::new(),
             pool_keep: BTreeMap::new(),
         };
-        assert_eq!(describe_x_plan(&options, 0).as_deref(), Some("X = 0: nothing is spent"));
-        assert_eq!(describe_x_plan(&options, 1).as_deref(), Some("X = 1: 1 Red from the pool"));
+        assert_eq!(describe_x_plan(&options, 0).as_deref(), Some("X = 0: nothing for X"));
+        assert_eq!(describe_x_plan(&options, 1).as_deref(), Some("X = 1: for X, 1 Red from the pool"));
         assert_eq!(describe_x_plan(&options, 4).as_deref(),
-            Some("X = 4: 1 Red from the pool, tap Nephalia Drownyard, 2x Island"));
+            Some("X = 4: for X, 1 Red from the pool, tap Nephalia Drownyard, 2x Island"));
         assert_eq!(describe_x_plan(&options, 7).as_deref(),
-            Some("X = 7: 1 Red from the pool, tap Nephalia Drownyard, 3x Island, Sol Ring"));
+            Some("X = 7: for X, 1 Red from the pool, tap Nephalia Drownyard, 3x Island, Sol Ring"));
         assert_eq!(describe_x_plan(&options, 8), None);
         // A value the sources cannot sum to has no plan.
         let rock = FundingOptions {
@@ -1216,6 +1221,6 @@ mod tests {
             pool_keep: BTreeMap::new(),
         };
         assert_eq!(describe_x_plan(&rock, 1), None);
-        assert_eq!(describe_x_plan(&rock, 2).as_deref(), Some("X = 2: tap Sol Ring"));
+        assert_eq!(describe_x_plan(&rock, 2).as_deref(), Some("X = 2: for X, tap Sol Ring"));
     }
 }

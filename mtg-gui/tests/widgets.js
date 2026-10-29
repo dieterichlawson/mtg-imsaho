@@ -208,7 +208,7 @@ async function main() {
           } finally { CanvasRenderingContext2D.prototype.fillText = orig; }
           return out;
         });
-        if (!drawn.includes("X = 2: 1 Red from the pool, tap Forest")) fail(`choose-x: the typed X's plan is not drawn: ${JSON.stringify(drawn.filter(s => s.startsWith("X")))}`);
+        if (!drawn.includes("X = 2: for X, 1 Red from the pool, tap Forest")) fail(`choose-x: the typed X's plan is not drawn: ${JSON.stringify(drawn.filter(s => s.startsWith("X")))}`);
         else ok("choose-x → plan drawn before Enter");
         await page.keyboard.press("Enter");
         await expectSent("choose-x", a => { const f = a.ResolveChoice && a.ResolveChoice.choice.XFunding; return f && f.pool.Red === 1 && f.taps.Forest === 1; });

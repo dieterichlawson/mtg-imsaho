@@ -9393,9 +9393,9 @@ pub(crate) mod tests {
             groups: vec![group("Nephalia Drownyard", &[16]), group("Island", &[1, 5, 6])],
             max_x: 4, x_discount: 0, pool_order: vec![], pool_keep: std::collections::BTreeMap::new(),
         };
-        assert_eq!(CliPlayer::x_plan_row(&options, "1"), "  X = 1: tap Nephalia Drownyard");
-        assert_eq!(CliPlayer::x_plan_row(&options, "3 "), "  X = 3: tap Nephalia Drownyard, 2x Island");
-        assert_eq!(CliPlayer::x_plan_row(&options, "0"), "  X = 0: nothing is spent");
+        assert_eq!(CliPlayer::x_plan_row(&options, "1"), "  X = 1: for X, tap Nephalia Drownyard");
+        assert_eq!(CliPlayer::x_plan_row(&options, "3 "), "  X = 3: for X, tap Nephalia Drownyard, 2x Island");
+        assert_eq!(CliPlayer::x_plan_row(&options, "0"), "  X = 0: nothing for X");
         for nothing in ["", "5", "x", "-1"] {
             assert_eq!(CliPlayer::x_plan_row(&options, nothing), "", "{nothing:?}");
         }
