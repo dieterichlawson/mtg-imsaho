@@ -97,9 +97,12 @@ impl Board {
 }
 
 /// A loyalty ability as the engine reads it to offer it and pay for it:
-/// its index, its loyalty change, and its target.
-fn ability(def: &LoyaltyAbilityDef) -> (usize, i32, Option<TargetRequirement>) {
-    (def.ability_index, def.loyalty_change, def.target_requirement.clone())
+/// its index, its loyalty change, and its target. The target is borrowed,
+/// not cloned: a clone of a target requirement read from the heap went
+/// into every variant of every filter it might hold, and Garruk
+/// Relentless's proof of his abilities ran out of memory doing it.
+fn ability(def: &LoyaltyAbilityDef) -> (usize, i32, Option<&TargetRequirement>) {
+    (def.ability_index, def.loyalty_change, def.target_requirement.as_ref())
 }
 
 card_proof! {
@@ -118,7 +121,7 @@ card_proof! {
         if transformed {
             assert!(defs.len() == 3 && ability(&defs[0]) == (10, 1, None) && ability(&defs[1]) == (11, -1, None) && ability(&defs[2]) == (12, -3, None));
         } else {
-            assert!(defs.len() == 2 && ability(&defs[0]) == (0, 0, Some(TargetRequirement::Creature)) && ability(&defs[1]) == (1, 0, None));
+            assert!(defs.len() == 2 && ability(&defs[0]) == (0, 0, Some(&TargetRequirement::Creature)) && ability(&defs[1]) == (1, 0, None));
         }
         std::mem::forget((registry, state));
     }
@@ -311,8 +314,8 @@ card_proof! {
         let me = state.create_object(card, PlayerId(0), Zone::Battlefield, None, None);
         let defs = std::mem::ManuallyDrop::new(liliana.loyalty_abilities(&state, me));
         assert!(defs.len() == 3 && ability(&defs[0]) == (0, 1, None)
-            && ability(&defs[1]) == (1, -2, Some(TargetRequirement::PlayerOnly))
-            && ability(&defs[2]) == (2, -6, Some(TargetRequirement::PlayerOnly)));
+            && ability(&defs[1]) == (1, -2, Some(&TargetRequirement::PlayerOnly))
+            && ability(&defs[2]) == (2, -6, Some(&TargetRequirement::PlayerOnly)));
         std::mem::forget((registry, state));
     }
 }
