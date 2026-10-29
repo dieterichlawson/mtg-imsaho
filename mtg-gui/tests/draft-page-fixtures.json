@@ -2797,6 +2797,7 @@
        "winner": 0
       }
      ],
+     "next_game": null,
      "result": "2-1"
     },
     {
@@ -2809,6 +2810,7 @@
        "winner": 1
       }
      ],
+     "next_game": 2,
      "result": null
     }
    ],
@@ -3582,6 +3584,7 @@
        "winner": 0
       }
      ],
+     "next_game": null,
      "result": "2-1"
     }
    ],
@@ -4361,6 +4364,7 @@
        "winner": 0
       }
      ],
+     "next_game": null,
      "result": "2-0"
     },
     {
@@ -4369,6 +4373,7 @@
      "url": null,
      "status": "waiting",
      "games": [],
+     "next_game": null,
      "result": null
     }
    ],
@@ -5175,6 +5180,7 @@
        "winner": 0
       }
      ],
+     "next_game": null,
      "result": "2-1"
     },
     {
@@ -5193,6 +5199,7 @@
        "winner": 1
       }
      ],
+     "next_game": null,
      "result": "1-2"
     },
     {
@@ -5208,6 +5215,7 @@
        "winner": 0
       }
      ],
+     "next_game": null,
      "result": "2-0"
     }
    ],

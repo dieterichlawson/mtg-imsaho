@@ -340,6 +340,11 @@ pub struct MatchView {
     pub url: Option<String>,
     pub status: &'static str,
     pub games: Vec<GameView>,
+    /// The game a match being played is on, and none once its games have
+    /// decided it: the result is recorded a beat after the deciding game,
+    /// and in that beat the client read "playing (game 2; ...)" for a
+    /// best-of-1 (#916).
+    pub next_game: Option<usize>,
     pub result: Option<String>,
     /// Between games of this match: what the seat may do before the next.
     pub between: Option<BetweenView>,
@@ -1732,6 +1737,13 @@ for the seat from here, and its games are forfeit"), ""));
         to_play
     }
 
+    /// Whether a match's games so far have decided it, by the rule the
+    /// match loop stops on (`game::match_is_over`).
+    fn decided(&self, m: &MatchState) -> bool {
+        let wins = |s: usize| m.games.iter().filter(|g| g.winner == Some(s)).count();
+        crate::game::match_is_over(self.config.best_of, m.games.len(), wins(m.a), wins(m.b))
+    }
+
     fn match_mut(&mut self, round: usize, a: usize, b: usize) -> Option<&mut MatchState> {
         self.matches.iter_mut().find(|m| m.round == round && m.a == a && m.b == b)
     }
@@ -2318,6 +2330,7 @@ there: the packs are not the ones the table drafted (another seed, or a build wi
                     url: if self.seats[seat].kicked { None } else { m.urls[me].clone() },
                     status: m.status.word(),
                     games: m.games.clone(),
+                    next_game: (m.status == MatchStatus::Playing && !self.decided(m)).then_some(m.games.len() + 1),
                     result: m.result.as_ref().map(|r| score_for(r, seat)),
                     between: m.between.as_ref().map(|b| {
                         let deck = m.decks[me].clone().or_else(|| self.seats[seat].deck.clone()).unwrap_or_default();

@@ -661,7 +661,7 @@ mod tests {
                       {"seat": 1, "name": "Lawson", "kind": "human", "status": "playing", "picks": 42, "joined": true}],
             "matches": [
                 {"round": 1, "opponent": 1, "url": "http://h:8801/", "status": "done", "games": [], "result": "0-2"},
-                {"round": 2, "opponent": 1, "url": "http://h:8803/", "status": "playing", "games": [], "result": null},
+                {"round": 2, "opponent": 1, "url": "http://h:8803/", "status": "playing", "games": [], "next_game": 1, "result": null},
                 {"round": 3, "opponent": 1, "url": null, "status": "waiting", "games": [], "result": null},
             ],
             "pairings": [], "standings": [], "pool": [], "picks": [], "deck": null, "notice": null,
@@ -910,13 +910,32 @@ mod tests {
             "seats": [{"seat": 0, "name": "seat 0", "kind": "human", "status": "playing", "picks": 42, "joined": true, "presence": "in game"},
                       {"seat": 1, "name": "Lawson", "kind": "human", "status": "playing", "picks": 42, "joined": true, "presence": "game page closed"}],
             "matches": [{"round": 1, "opponent": 1, "url": "http://h:1/", "status": "playing",
-                         "games": [{"winner": 1}, {"winner": 0}], "result": null}],
+                         "games": [{"winner": 1}, {"winner": 0}], "next_game": 3, "result": null}],
             "pool": [], "picks": [], "deck": null, "notice": null, "pairings": [], "standings": [],
         });
         let (table, mine) = render(&v, &Build::default());
         assert!(mine.contains("Round 1 vs Lawson (seat 1): playing (game 3; G1 Lawson (seat 1), G2 you)\n  open http://h:1/\n"), "{mine}");
         assert!(table.contains("Lawson") && table.contains("(game page closed)"), "{table}");
         assert!(table_line(&v).contains("Lawson (seat 1) playing 42p, game page closed"), "{}", table_line(&v));
+    }
+
+    /// #916: between a match's deciding game and its recorded result the
+    /// match is still "playing", and the client counted one game more: a
+    /// best-of-1 read "playing (game 2; G1 seat 1)". The view says no game
+    /// is next.
+    #[test]
+    fn a_decided_match_is_not_on_a_next_game() {
+        let v = serde_json::json!({
+            "type": "view", "phase": "playing", "seat": 0, "set": "isd",
+            "seats": [{"seat": 0, "name": "seat 0", "kind": "human", "status": "playing", "picks": 42, "joined": true},
+                      {"seat": 1, "name": "seat 1", "kind": "ai", "status": "playing", "picks": 42, "joined": true}],
+            "matches": [{"round": 1, "opponent": 1, "url": "http://h:1/", "status": "playing",
+                         "games": [{"winner": 1}], "next_game": null, "result": null}],
+            "pool": [], "picks": [], "deck": null, "notice": null, "pairings": [], "standings": [],
+        });
+        let (_, mine) = render(&v, &Build::default());
+        assert!(mine.contains("Round 1 vs seat 1: playing (decided; G1 seat 1)"), "{mine}");
+        assert!(!mine.contains("game 2"), "{mine}");
     }
 
     /// Between games: who chooses, what the opponent showed, the pool to
@@ -933,7 +952,7 @@ mod tests {
             "seats": [{"seat": 0, "name": "seat 0", "kind": "human", "status": "playing", "picks": 30, "joined": true},
                       {"seat": 1, "name": "Bo", "kind": "human", "status": "playing", "picks": 30, "joined": true}],
             "matches": [{"round": 1, "opponent": 1, "url": "http://h:1/", "status": "playing",
-                         "games": [{"winner": 1}], "result": null,
+                         "games": [{"winner": 1}], "next_game": 2, "result": null,
                          "between": {"game": 2, "sideboarding": true, "you_choose": true, "play_first": null,
                                      "ready": false, "opponent_ready": false, "deadline_ms": 90_500,
                                      "deck": {"main": main, "lands": {"Mountain": 17}, "sideboard": [], "valid": true, "problem": null, "ready": false},
@@ -1105,7 +1124,10 @@ mod tests {
 }
 
 /// "game 2; G1 you": the game a match in progress is on and how each one
-/// before it went, the viewing seat as "you".
+/// before it went, the viewing seat as "you". "decided; G1 you" in the
+/// beat between a match's deciding game and its recorded result: the
+/// view's `next_game` is none then, where this used to count one more
+/// game, "game 2" of a best-of-1 (#916).
 fn games_so_far(m: &Value, me: u64, who: &dyn Fn(u64) -> String) -> Option<String> {
     let games = m["games"].as_array()?;
     let name = |s: u64| if s == me { "you".to_string() } else { who(s) };
@@ -1117,7 +1139,7 @@ fn games_so_far(m: &Value, me: u64, who: &dyn Fn(u64) -> String) -> Option<Strin
         };
         format!("G{} {won}", i + 1)
     }).collect();
-    let on = format!("game {}", games.len() + 1);
+    let on = m["next_game"].as_u64().map_or_else(|| "decided".to_string(), |n| format!("game {n}"));
     Some(if done.is_empty() { on } else { format!("{on}; {}", done.join(", ")) })
 }
 

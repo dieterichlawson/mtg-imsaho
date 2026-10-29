@@ -633,6 +633,20 @@ async function main() {
         }
         check((await page.$$(".pairings-list li")).length === 4 && (await text(".pairings-list") || "").includes("has a bye"), `${tag}: every pairing of the tournament is listed, the bye included`);
         check(whole.includes("away") && whole.includes("(table picks)"), `${tag}: the seats table says who is away and whom the table picks for`);
+        // A match its games have decided is "playing" until the result is
+        // recorded, and is not on a next game (#916).
+        {
+          const v = JSON.parse(JSON.stringify(byName.playing));
+          const live = v.matches.find(m => m.status === "playing");
+          await stage(v);
+          await page.waitForTimeout(50);
+          check((await text(".match-playing .match-head") || "").includes("playing now"), `${tag}: a match on its next game is playing now`);
+          live.next_game = null;
+          await stage(v);
+          await page.waitForTimeout(50);
+          const head = (await text(".match-playing .match-head")) || "";
+          check(head.includes("decided") && !head.includes("playing now"), `${tag}: a decided match says so (${head})`);
+        }
         await stage(byName.done);
         await page.waitForTimeout(50);
         check((await text("h2") || "").includes("Draft over"), `${tag}: done says the draft is over`);

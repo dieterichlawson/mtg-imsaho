@@ -813,6 +813,7 @@
             "winner": 0
           }
         ],
+        "next_game": null,
         "opponent": 1,
         "result": "2-0",
         "round": 1,
@@ -838,6 +839,7 @@
             "winner": 2
           }
         ],
+        "next_game": null,
         "opponent": 2,
         "result": "2-1",
         "round": 2,
@@ -1974,6 +1976,7 @@
             "winner": 0
           }
         ],
+        "next_game": 2,
         "opponent": 1,
         "result": null,
         "round": 1,
@@ -3656,6 +3659,7 @@
             "winner": 0
           }
         ],
+        "next_game": 2,
         "opponent": 1,
         "result": null,
         "round": 1,

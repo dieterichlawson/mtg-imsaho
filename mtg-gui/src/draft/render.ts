@@ -193,7 +193,10 @@ function matchRow(view: DraftView, m: Match): HTMLElement {
     const forfeit = g.forfeited_by !== undefined && g.forfeited_by !== null ? ` (${who(g.forfeited_by)} forfeited)` : "";
     return `G${i + 1}${NBSP}${won}${forfeit}`;
   }).join(", ");
-  const status = m.status === "done" ? `done${m.result ? `, ${tagText(m.result)}` : ""}` : m.status === "playing" ? "playing now" : "waiting to start";
+  // A match its games have decided is "playing" until its result is
+  // recorded; it is not on a next game (#916).
+  const playing = m.next_game === null ? "decided" : "playing now";
+  const status = m.status === "done" ? `done${m.result ? `, ${tagText(m.result)}` : ""}` : m.status === "playing" ? playing : "waiting to start";
   // The link is this seat's own page. It is null until the match's pages
   // are open (a beat after the pairing), and stays null for a match the
   // table settled without one (a forfeit).

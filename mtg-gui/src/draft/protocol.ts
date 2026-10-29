@@ -92,6 +92,9 @@ export interface Match {
   url: string | null;
   status: MatchStatus;
   games: GameResult[];
+  /** The game a match being played is on; null once its games have
+   *  decided it, in the beat before its result is recorded (#916). */
+  next_game: number | null;
   result: string | null;
   /** Between two games of this match, or before the first for the coin
    *  flip's winner: what this seat may do before the next game. */
@@ -284,7 +287,7 @@ export const SHAPES: Record<string, Shape> = {
   game: { winner: "number|null", forfeited_by: "number|null?", abandoned: "boolean?" },
   match: {
     round: "number", opponent: "number", url: "string|null",
-    status: "enum:waiting|playing|done", games: "array:game", result: "string|null",
+    status: "enum:waiting|playing|done", games: "array:game", next_game: "number|null", result: "string|null",
     between: "between|null?",
   },
   between: {

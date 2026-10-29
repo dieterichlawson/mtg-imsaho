@@ -51,7 +51,7 @@ export const SHAPES = {
     game: { winner: "number|null", forfeited_by: "number|null?", abandoned: "boolean?" },
     match: {
         round: "number", opponent: "number", url: "string|null",
-        status: "enum:waiting|playing|done", games: "array:game", result: "string|null",
+        status: "enum:waiting|playing|done", games: "array:game", next_game: "number|null", result: "string|null",
         between: "between|null?",
     },
     between: {
