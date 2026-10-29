@@ -15,7 +15,7 @@
 
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
-use crate::proofs::cards::{card_proof, for_each_form, Blank, Form};
+use crate::proofs::cards::{case_by_case, for_each_form, Blank, Form};
 use crate::state::GameState;
 use crate::types::{CardType, ContinuousEffect as E, CreatureFilter as F, EffectCondition as If, EffectScope, Keyword, Zone};
 
@@ -115,25 +115,28 @@ reaches_what_it_describes! {
         => |b, yours| !yours && b.state.get_object(b.creature).expect("on the board").keywords.contains(&Keyword::Flying);
 }
 
-card_proof! {
-    /// "Other ... creatures you control" reaches the creatures those words
-    /// describe but its source (CR 109.4, "other"); "this creature" reaches
-    /// its source alone.
-    fn other_skips_its_source_and_this_creature_is_its_source() {
-        let other: bool = kani::any();
-        let scope = if other { EffectScope::GlobalOther(F::ControlledByYou) } else { EffectScope::OnSelf };
-        let mut registry = CardRegistry::new();
-        let blank = registry.register(Box::new(Blank));
-        let printer = registry.register(Box::new(Prints(E::PreventAttack { scope })));
-        let mut state = crate::proofs::cards::new_game();
-        let controller = PlayerId(u8::from(kani::any::<bool>()));
-        let source = state.create_object(printer, controller, Zone::Battlefield, Some(1), Some(1));
-        let creature = state.create_object(blank, PlayerId(u8::from(kani::any::<bool>())), Zone::Battlefield, Some(1), Some(1));
-        let yours = state.get_object(creature).expect("on the board").controller == controller;
-        assert!(state.can_attack(source, &registry) == other);
-        assert!(state.can_attack(creature, &registry) == !(other && yours));
-        std::mem::forget((registry, state));
-    }
+/// "Other ... creatures you control" reaches the creatures those words
+/// describe but its source (CR 109.4, "other"); "this creature" reaches
+/// its source alone. Which scope, a constant in each harness: the two in
+/// one ran out of memory.
+fn other_skips_its_source_and_this_creature_is_its_source(other: bool) {
+    let scope = if other { EffectScope::GlobalOther(F::ControlledByYou) } else { EffectScope::OnSelf };
+    let mut registry = CardRegistry::new();
+    let blank = registry.register(Box::new(Blank));
+    let printer = registry.register(Box::new(Prints(E::PreventAttack { scope })));
+    let mut state = crate::proofs::cards::new_game();
+    let controller = PlayerId(u8::from(kani::any::<bool>()));
+    let source = state.create_object(printer, controller, Zone::Battlefield, Some(1), Some(1));
+    let creature = state.create_object(blank, PlayerId(u8::from(kani::any::<bool>())), Zone::Battlefield, Some(1), Some(1));
+    let yours = state.get_object(creature).expect("on the board").controller == controller;
+    assert!(state.can_attack(source, &registry) == other);
+    assert!(state.can_attack(creature, &registry) == !(other && yours));
+    std::mem::forget((registry, state));
+}
+
+case_by_case! { other_skips_its_source_and_this_creature_is_its_source;
+    other_creatures_you_control_skips_its_source: true,
+    this_creature_is_its_source: false,
 }
 
 /// "As long as you control a Human" and "as long as an opponent controls
@@ -162,23 +165,27 @@ holds_exactly_then! {
     as_long_as_an_opponent_controls_a_human_holds_exactly_then: If::OpponentControlsSubtype("Human".into()), true;
 }
 
-card_proof! {
-    /// "Protection from Zombies" (CR 702.16a): its source has protection
-    /// from exactly the objects that are Zombies, while it is on the
-    /// battlefield.
-    fn protection_from_a_subtype_is_from_exactly_that_subtype() {
-        let mut registry = CardRegistry::new();
-        let blank = registry.register(Box::new(Blank));
-        let printer = registry.register(Box::new(Prints(E::ProtectionFromSubtype { subtype: "Zombie".into(), scope: EffectScope::OnSelf })));
-        let mut state = crate::proofs::cards::new_game();
-        let on: bool = kani::any();
-        let protected = state.create_object(printer, PlayerId(0), if on { Zone::Battlefield } else { Zone::Graveyard }, Some(1), Some(1));
-        let source = state.create_object(blank, PlayerId(1), Zone::Battlefield, Some(1), Some(1));
-        let zombie: bool = kani::any();
-        if zombie {
-            state.get_object_mut(source).expect("just created").subtypes = vec!["Zombie".into()];
-        }
-        assert!(state.has_protection_from(protected, source, &registry) == (on && zombie));
-        std::mem::forget((registry, state));
+/// "Protection from Zombies" (CR 702.16a): its source has protection
+/// from exactly the objects that are Zombies, while it is on the
+/// battlefield. The other object a Zombie or not, a constant in each
+/// harness: a subtype list of a length the solver chose, compared by
+/// bytes, ran out of memory.
+fn protection_from_a_subtype_is_from_exactly_that_subtype(zombie: bool) {
+    let mut registry = CardRegistry::new();
+    let blank = registry.register(Box::new(Blank));
+    let printer = registry.register(Box::new(Prints(E::ProtectionFromSubtype { subtype: "Zombie".into(), scope: EffectScope::OnSelf })));
+    let mut state = crate::proofs::cards::new_game();
+    let on: bool = kani::any();
+    let protected = state.create_object(printer, PlayerId(0), if on { Zone::Battlefield } else { Zone::Graveyard }, Some(1), Some(1));
+    let source = state.create_object(blank, PlayerId(1), Zone::Battlefield, Some(1), Some(1));
+    if zombie {
+        state.get_object_mut(source).expect("just created").subtypes = vec!["Zombie".into()];
     }
+    assert!(state.has_protection_from(protected, source, &registry) == (on && zombie));
+    std::mem::forget((registry, state));
+}
+
+case_by_case! { protection_from_a_subtype_is_from_exactly_that_subtype;
+    protection_from_zombies_is_from_a_zombie: true,
+    protection_from_zombies_is_not_from_another_creature: false,
 }
