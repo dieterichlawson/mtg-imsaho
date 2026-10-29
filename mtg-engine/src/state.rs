@@ -5402,12 +5402,12 @@ impl Protections {
     /// Whether this permanent has protection from `source_id`.
     #[must_use]
     pub fn covers(&self, state: &GameState, source_id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
-        if !self.subtypes.is_empty() {
-            // The source's subtypes, active face — transform-aware.
-            let source_subtypes = state.subtypes_of(source_id, registry);
-            if self.subtypes.iter().any(|s| source_subtypes.contains(s)) {
-                return true;
-            }
+        // The source's subtypes, active face — transform-aware. Asked of
+        // each subtype, not read off a list built of them: the built list
+        // was a clone of every string to compare against, which a proof
+        // follows byte by byte, and ran out of memory.
+        if self.subtypes.iter().any(|s| state.has_subtype(source_id, s, registry)) {
+            return true;
         }
         if self.statics.iter().any(|(filter, by, by_controller)|
             state.matches_filter(source_id, filter, *by, *by_controller, registry))
