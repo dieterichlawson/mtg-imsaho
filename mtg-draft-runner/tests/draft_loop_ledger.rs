@@ -195,3 +195,140 @@ fn a_packs_last_card_is_seen_by_the_seat_that_takes_it() {
     assert_eq!(seen("Naturalize"), Some((Some(1), Some(2))), "{stats}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// `reflect.py curate` against a stand-in curator that gives `reply` to
+/// every call. Returns the guide file after, the curate record, and what
+/// the curator was sent on each call.
+fn curate_with(name: &str, reply: &str) -> (String, serde_json::Value, Vec<String>) {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = std::env::temp_dir().join(format!("mtg-curate-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("nights")).unwrap();
+    std::fs::write(dir.join("guide.md"), "# Innistrad draft guide\n\n## Colours and archetypes\n\nThe old guide.\n").unwrap();
+    std::fs::write(dir.join("reply.txt"), reply).unwrap();
+    let stub = dir.join("claude");
+    std::fs::write(&stub, format!(
+        "#!/usr/bin/env python3\nimport json, sys, glob\nm = sys.stdin.read()\n\
+         open('{d}/sent-%d.txt' % len(glob.glob('{d}/sent-*.txt')), 'w').write(m)\n\
+         print(json.dumps({{'type': 'result', 'is_error': False, 'result': open('{d}/reply.txt').read(), 'usage': {{}}}}))\n",
+        d = dir.display())).unwrap();
+    std::fs::set_permissions(&stub, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let out = Command::new("python3")
+        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/draft-loop/reflect.py"))
+        .args(["curate", "--night", "2099-01-01", "--out", dir.to_str().unwrap(),
+               "--guide", dir.join("guide.md").to_str().unwrap()])
+        .env("CLAUDE_CODE_BIN", &stub)
+        .output().expect("python3 runs");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let guide = std::fs::read_to_string(dir.join("guide.md")).unwrap();
+    let record = serde_json::from_str(&std::fs::read_to_string(dir.join("nights/2099-01-01-curate.json")).unwrap()).unwrap();
+    let mut sent: Vec<_> = std::fs::read_dir(&dir).unwrap().filter_map(Result::ok)
+        .filter(|e| e.file_name().to_string_lossy().starts_with("sent-")).map(|e| e.path()).collect();
+    sent.sort();
+    let sent = sent.iter().map(|p| std::fs::read_to_string(p).unwrap()).collect();
+    let _ = std::fs::remove_dir_all(&dir);
+    (guide, record, sent)
+}
+
+const HEADINGS: [&str; 6] = ["## Colours and archetypes", "## Commons that win", "## Uncommons and rares",
+                             "## Pick order", "## Building", "## Playing"];
+const END: &str = "<!-- end of guide -->";
+
+fn guide_of(headings: &[&str]) -> String {
+    headings.iter().map(|h| format!("{h}\n\nTake Brimstone Volley early; it wins games in red decks.\n\n")).collect()
+}
+
+/// #966: a guide whose sections came in another order was cut before
+/// `## Colours and archetypes`, re-asked as lacking headings it had, and
+/// the night's rewrite thrown away. It is taken, its sections in order.
+#[test]
+fn a_guide_with_its_sections_in_another_order_is_taken_in_order() {
+    let h = HEADINGS;
+    let reply = guide_of(&[h[3], h[4], h[0], h[1], h[2], h[5]]) + END;
+    let (guide, record, sent) = curate_with("order", &reply);
+    assert_eq!(sent.len(), 1, "taken at once");
+    assert!(record.get("kept_old_guide").is_none(), "{record}");
+    let at: Vec<usize> = h.iter().map(|x| guide.find(&format!("\n{x}\n")).unwrap_or_else(|| panic!("{x} in:\n{guide}"))).collect();
+    assert!(at.windows(2).all(|w| w[0] < w[1]), "the guide's own order:\n{guide}");
+    assert!(!guide.contains(END), "the closing line is the curator's, not the guide's");
+}
+
+/// #966: a heading one level too deep or a section written twice passed a
+/// substring test. Neither is taken, and the re-ask says what was wrong.
+#[test]
+fn a_heading_too_deep_or_a_section_twice_is_refused_for_what_it_is() {
+    let deep: Vec<String> = HEADINGS.iter().map(|h| format!("#{h}")).collect();
+    let deep: Vec<&str> = deep.iter().map(String::as_str).collect();
+    let (guide, record, sent) = curate_with("deep", &(guide_of(&deep) + END));
+    assert!(guide.contains("The old guide."), "{guide}");
+    assert_eq!(record["kept_old_guide"], true);
+    assert!(sent[1].contains("lacked the headings ## Colours and archetypes"), "{}", sent[1]);
+
+    let (guide, record, sent) = curate_with("twice", &(guide_of(&HEADINGS) + &guide_of(&HEADINGS) + END));
+    assert!(guide.contains("The old guide."), "{guide}");
+    assert_eq!(record["kept_old_guide"], true);
+    assert!(sent[1].contains("more than once") && !sent[1].contains("lacked"), "{}", sent[1]);
+}
+
+/// #967: a reply cut off mid-sentence was written into the guide every
+/// guided seat reads. One without the closing line is refused as cut off;
+/// one with chat after its closing fence is taken without the chat.
+#[test]
+fn a_cut_off_reply_is_refused_and_a_sign_off_is_not_written() {
+    let cut = guide_of(&HEADINGS) + "Against fliers, hold back your Moonmist until the opp";
+    let (guide, record, sent) = curate_with("cut", &cut);
+    assert!(!guide.contains("until the opp"), "{guide}");
+    assert_eq!(record["kept_old_guide"], true);
+    assert!(sent[1].contains("cut off"), "{}", sent[1]);
+
+    for (name, reply) in [
+        ("fenced", format!("```markdown\n{}```\n\nLet me know if you want me to shorten any section.", guide_of(&HEADINGS))),
+        ("marked", format!("{}{END}\n\nLet me know if you want me to shorten any section.", guide_of(&HEADINGS))),
+    ] {
+        let (guide, record, _) = curate_with(name, &reply);
+        assert!(record.get("kept_old_guide").is_none(), "{name}: {record}");
+        assert!(!guide.contains("Let me know") && !guide.contains("```"), "{name}:\n{guide}");
+        assert!(guide.trim_end().ends_with("red decks."), "{name}:\n{guide}");
+    }
+}
+
+/// #965: a guide past what one argument can carry with the rules made every
+/// guided pick fail E2BIG, and nothing refused it. The curator does.
+#[test]
+fn a_guide_too_long_for_the_seats_is_refused() {
+    let big = guide_of(&HEADINGS) + &"Take removal. ".repeat(6_000) + END;
+    let (guide, record, sent) = curate_with("big", &big);
+    assert!(guide.contains("The old guide."), "{}", &guide[..200.min(guide.len())]);
+    assert_eq!(record["kept_old_guide"], true);
+    assert!(sent[1].contains("bytes, over the 65,536"), "{}", &sent[1][sent[1].len().saturating_sub(400)..]);
+}
+
+/// #966: the night report said a kept-old guide was "missing" sections it
+/// had. It says what `reflect.py` found wrong.
+#[test]
+fn the_night_report_says_why_the_guide_was_not_taken() {
+    let dir = std::env::temp_dir().join(format!("mtg-report-why-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("nights")).unwrap();
+    std::fs::write(dir.join("nights/2099-01-01.json"), serde_json::json!({
+        "seed": 1, "players": 1, "best_of": 3, "guide_hash": "x",
+        "seats": [{"seat": 0, "model": "cc", "guided": true, "colors": "G", "match_wins": 1, "match_losses": 0,
+                   "match_draws": 0, "game_wins": 2, "game_losses": 0, "substituted_picks": 0}],
+    }).to_string()).unwrap();
+    let problems = ["did not end with the line <!-- end of guide -->, so it reads as cut off"];
+    std::fs::write(dir.join("nights/2099-01-01-curate.json"), serde_json::json!({
+        "model": "m", "words": 96, "attempts": 2, "missing_sections": [], "problems": problems, "kept_old_guide": true,
+        "refused": [{"words": 96, "missing_sections": [], "problems": problems, "usage": {}},
+                    {"words": 96, "missing_sections": [], "problems": problems, "usage": {}}],
+    }).to_string()).unwrap();
+    let out = Command::new("python3")
+        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/draft-loop/report.py"))
+        .args(["--night", "2099-01-01", "--out", dir.to_str().unwrap()])
+        .output().expect("python3 runs");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let report = std::fs::read_to_string(dir.join("nights/2099-01-01.md")).unwrap();
+    assert!(report.contains("(96 words; it did not end with the line"), "{report}");
+    assert!(report.contains("An answer was refused: 96 words; it did not end"), "{report}");
+    assert!(!report.contains("missing []"), "{report}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

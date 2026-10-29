@@ -15,7 +15,11 @@ drafted with (or that it drafted without one). They go to
 night's tables, `ledger.py stats`) to one call that rewrites the guide.
 It is as long as it needs to be: no word count is set, and the curator is
 asked to keep every line earning its place, since the guide is in every
-guided seat's system prompt. The old guide is kept in git.
+guided seat's system prompt. The answer is taken when it has the six
+headings once each (put in order if they came in another), ends with the
+closing line or a closed fence, and fits in 64 KiB; otherwise the curator
+is asked once more, told why, and then the old guide stays. The old guide
+is kept in git.
 
 The seats are `claude -p` on the CLI's own login — plan quota, never a
 metered key: `DRAFT_LOOP_MODEL` (default `claude-haiku-5-5`, the model
@@ -36,6 +40,15 @@ import uuid
 
 SECTIONS = ["## Colours and archetypes", "## Commons that win", "## Uncommons and rares",
             "## Pick order", "## Building", "## Playing"]
+# The line the curator ends the guide with, so a reply that stopped short is
+# known for one (#967). It is not written to the guide.
+END = "<!-- end of guide -->"
+# The most the guide file may be. Every guided seat is sent it in its system
+# prompt, which `claude -p` takes as one argument: Linux caps that at 128
+# KiB, and the rules and card reference are about 41 KB of it (#965).
+GUIDE_MAX_BYTES = 64 * 1024
+HEADER = ("# Innistrad draft guide\n\n_Written by the nightly draft loop (`scripts/draft-loop/`) from "
+          "{night}'s lessons and every night's statistics. Drafters read it at every pick._\n\n")
 
 
 def claude(system, message, model, timeout=600):
@@ -178,15 +191,69 @@ tonight's drafters wrote, and the statistics of every night so far, and you writ
   ten games are anecdotes and are said to be.
 - Name cards exactly as the statistics and lessons spell them, and no others.
 - Write for a drafter at a pick: what to take, what to pass, when to move in, how to build and play the deck.
-- Length is yours to judge: add what the data supports, and cut what no longer earns its place."""
+- Length is yours to judge: add what the data supports, and cut what no longer earns its place. The guide
+  travels in one command-line argument with the rules, so it may not pass {GUIDE_MAX_BYTES // 1024} KB (about 9,000 words).
+- End the guide with the line {END}: an answer without it is taken to have been cut off."""
 
 
 def sections(text):
     """A guide from its first section on: the title and the line the loop
     heads the file with are the loop's, not the curator's to copy (it did,
-    and the guide had two titles)."""
-    i = text.find(SECTIONS[0])
-    return text[i:].strip() if i >= 0 else text.strip()
+    and the guide had two titles). The first `## ` heading of any name, so
+    a reply that starts with another of the six keeps it (#966)."""
+    m = re.search(r"^## ", text, re.M)
+    return text[m.start():].strip() if m else text.strip()
+
+
+def unfenced(text):
+    """The inside of the code fence a reply put its guide in, if it did:
+    prose around the fence, a sign-off after it included, is the reply's
+    and not the guide's. Only the whole reply was stripped of a fence
+    before, so a fence with text after it went into the guide, fence and
+    all (#967). Also whether it found the fence closed: a reply that closed
+    its fence reached its end."""
+    m = re.search(r"^```[a-z]*[ \t]*\n(.*?)^```[ \t]*$", text, re.S | re.M)
+    return (m.group(1), True) if m and re.search(r"^## ", m.group(1), re.M) else (text, False)
+
+
+def read_guide(reply):
+    """The guide in a curator's reply, its six sections in the guide's order,
+    and every reason it cannot be taken (none when it can).
+
+    Headings are whole `## ` lines, not substrings: `### Playing` is not
+    `## Playing`, and a section written twice is one too many. Sections in
+    another order are put in order, not cut: everything before the first
+    `## Colours and archetypes` used to be dropped, and the check then
+    reported the cut headings as never written (#966). A reply that neither
+    ends with the closing line nor closes a fence stopped short of its end, the way one cut
+    off at its output limit does (#967); anything after that line is the
+    reply's. And a guide longer than one argument can carry with the rules
+    makes every guided pick fail (#965)."""
+    text, closed = unfenced((reply or "").replace("\r\n", "\n").lstrip("\ufeff").strip())
+    complete = closed or END in text
+    text = text.split(END)[0]
+    parts = re.split(r"^(## .*?)[ \t]*$", text, flags=re.M)
+    found = [(parts[i], parts[i + 1].strip()) for i in range(1, len(parts), 2)]
+    names = [h for h, _ in found]
+    if not text.strip():
+        return "", ["was empty"]
+    problems = []
+    missing = [h for h in SECTIONS if h not in names]
+    if missing:
+        problems.append(f"lacked the heading{'' if len(missing) == 1 else 's'} {', '.join(missing)}")
+    twice = [h for h in SECTIONS if names.count(h) > 1]
+    if twice:
+        problems.append(f"had {', '.join(twice)} more than once")
+    other = [h for h in names if h not in SECTIONS]
+    if other:
+        problems.append(f"had heading{'' if len(other) == 1 else 's'} not among the six: {', '.join(other)}")
+    if not complete:
+        problems.append(f"did not end with the line {END}, so it reads as cut off")
+    guide = "\n\n".join(f"{h}\n\n{body}".strip() for h in SECTIONS for n, body in found if n == h)
+    size = len((HEADER.format(night="2026-01-01") + guide + "\n").encode())
+    if size > GUIDE_MAX_BYTES:
+        problems.append(f"was {size:,} bytes, over the {GUIDE_MAX_BYTES:,} a guide may be")
+    return guide, problems
 
 
 def curate(args):
@@ -202,31 +269,27 @@ def curate(args):
                f"The statistics of every night so far:\n\n{stats}\n\n"
                f"Write the next guide: only the markdown, starting with the first heading.")
     model = os.environ.get("DRAFT_LOOP_CURATOR", "claude-sonnet-5-5")
-    # One more try for an answer that is not a guide (headings missing),
-    # told why: the night's lessons are not spent on a format slip.
+    # One more try for an answer that is not a guide, told why: the night's
+    # lessons are not spent on a format slip.
     refused = []
     for attempt in range(2):
         text, usage = claude(CURATE_SYSTEM, message, model)
-        new = (text or "").strip()
-        new = sections(re.sub(r"^```(?:markdown)?\n|\n```$", "", new).strip())
+        new, problems = read_guide(text)
         words = len(new.split())
-        missing = [h for h in SECTIONS if h not in new]
-        if new and not missing:
+        missing = [h for h in SECTIONS if not re.search(f"^{re.escape(h)}[ \t]*$", new, re.M)]
+        if not problems:
             break
-        refused.append({"words": words, "missing_sections": missing, "usage": usage})
-        message += (f"\n\nYour last answer was not taken: it "
-                    + (f"lacked the heading{'' if len(missing) == 1 else 's'} {', '.join(missing)}" if new else "was empty")
-                    + ". Use exactly the six `## ` headings, in order.")
+        refused.append({"words": words, "missing_sections": missing, "problems": problems, "usage": usage})
+        message += (f"\n\nYour last answer was not taken: it {'; it '.join(problems)}. Use exactly the six "
+                    f"`## ` headings, each once, in order, and end with the line {END}.")
     record = {"night": args.night, "model": model, "attempts": attempt + 1, "words": words,
-              "missing_sections": missing, "usage": usage, "refused": refused}
-    if not new or missing:
+              "missing_sections": missing, "problems": problems, "usage": usage, "refused": refused}
+    if problems:
         record["kept_old_guide"] = True
-        record["rejected"] = new
-        print(f"the new guide was not taken ({words} words, missing {missing}); the guide stays as it was", file=sys.stderr)
+        record["rejected"] = text
+        print(f"the new guide was not taken (it {'; it '.join(problems)}); the guide stays as it was", file=sys.stderr)
     else:
-        header = (f"# Innistrad draft guide\n\n_Written by the nightly draft loop (`scripts/draft-loop/`) from "
-                  f"{args.night}'s lessons and every night's statistics. Drafters read it at every pick._\n\n")
-        open(args.guide, "w").write(header + new + "\n")
+        open(args.guide, "w").write(HEADER.format(night=args.night) + new + "\n")
         print(f"wrote {args.guide}: {words} words")
     json.dump(record, open(os.path.join(args.out, "nights", f"{args.night}-curate.json"), "w"), indent=1)
 

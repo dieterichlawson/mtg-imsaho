@@ -76,9 +76,15 @@ def main():
         for l in s["lessons"]:
             out.append(f"- seat {s['seat']} ({s['colors']}, {s['record']}): {l}")
     out += ["", "## The guide", ""]
+    def why(r):
+        # What reflect.py found wrong; a record from before #966 has only
+        # the headings it took to be missing.
+        if r.get("problems"):
+            return "it " + "; it ".join(r["problems"])
+        return f"missing {', '.join(r['missing_sections'])}" if r.get("missing_sections") else ""
     if curate.get("kept_old_guide"):
-        out.append(f"Not rewritten: the curator's answer was not a guide ({curate.get('words')} words, "
-                   f"missing {curate.get('missing_sections')}). The guide stays as it was.")
+        out.append(f"Not rewritten: the curator's answer was not a guide ({curate.get('words')} words; "
+                   f"{why(curate)}). The guide stays as it was.")
     elif curate:
         out.append(f"Rewritten by `{curate['model']}` in {curate.get('attempts', 1)} attempt(s): "
                    f"{curate['words']} words. `git log -p reports/draft-loop/guide.md` shows what changed.")
@@ -86,8 +92,7 @@ def main():
     # them is the one the line above already said.
     refused = curate.get("refused", [])
     for r in refused[:-1] if curate.get("kept_old_guide") else refused:
-        out.append(f"An answer was refused: {r['words']} words"
-                   + (f", missing {', '.join(r['missing_sections'])}" if r["missing_sections"] else "") + ".")
+        out.append(f"An answer was refused: {r['words']} words" + (f"; {why(r)}" if why(r) else "") + ".")
     if night.get("usage"):
         out += ["", "## What it spent", "", "```", *night["usage"], "```"]
     calls = [("debriefs", [s.get("usage") or {} for s in lessons["seats"]]),

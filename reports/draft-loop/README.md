@@ -36,8 +36,11 @@ commits what is here.
 4. `reflect.py curate` — one call (Sonnet 5.5) with the guide, the lessons
    and the tables, asked for the next guide: six fixed headings, as long
    as it needs to be, numbers with their sample sizes, no card the data
-   does not name. An answer that is not a guide is tried once more, then the old
-   guide stands.
+   does not name, ending with `<!-- end of guide -->`. An answer that is
+   not a guide (a heading missing, repeated or not among the six; no
+   closing line or closed fence, so cut off; over 64 KiB, too long for a
+   seat's system prompt) is tried once more, told why, then the old guide
+   stands. Sections in another order are put in order.
 5. `report.py` — `nights/DATE.md`, with what went wrong (re-asks, replies
    no answer could be read from, panics, substituted picks and decks)
    counted from the run's log.
