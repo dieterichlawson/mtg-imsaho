@@ -119,6 +119,26 @@ A proof is a proof relative to what it assumes. Here that is:
 - **Verus, Z3 and Kani/CBMC**, and `vstd`'s specifications of the `std`
   functions the kernels call (`min`, `clamp`, `saturating_sub`, `Vec::push`);
 - **rustc**, compiling the same source for the game that Verus checked;
+- **a known imprecision in CBMC 6.11's `memcpy`**, which Kani 0.68 uses
+  for every copy of a list of plain values (a `Vec<ObjectId>`'s clone, a
+  `String`'s). It copies the source's bytes as an array taken where the
+  pointer points, and where symbolic execution cannot tell which object
+  that is, it takes, for a heap buffer, its first element rather than
+  the buffer, so every byte but the first is left unconstrained. The
+  smallest case is about thirty lines of Rust: a clone of
+  `Outer::Choice { player, source, choice: Inner::Narrow { looked_at } }`,
+  its list built in place, reads back a second element that may be
+  anything, and plain `cargo kani` reports the clone's own contents
+  wrong. Harnesses that must fail (that the element is not the one
+  copied, that a pushed-to list is not three long) still fail, so the
+  copy is an over-approximation: the true value is among the ones
+  allowed, and a proof that passes still holds. What it costs is
+  proofs: a list of any contents is a list every loop over it walks
+  every way, and the proofs of choices (an engine prompt is such an
+  enum) ran out of memory on it. A `memcpy` of our own, a word at a time,
+  was precise but ran a thirty-line harness's solver out of memory, so
+  the engine avoids the copies on the paths the proofs follow instead
+  (`resolve_choice`, the damage queue);
 - the **glue** that is not proved: reading `ManaPool`'s `BTreeMap` into six
   counts and writing the result back, mapping blockers' ids to positions,
   turning X's source groups into counts and the kernel's taps back into
