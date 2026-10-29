@@ -109,35 +109,63 @@ choosing_at_random! {
     choosing_at_random_from_four: 4,
 }
 
-#[kani::proof]
-#[kani::unwind(6)]
-#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
-#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
-#[kani::stub(crate::state::GameState::random_below, any_below)]
 /// "Shuffle your library" (CR 701.20a): that player's library holds the
 /// same cards in an order, the other's is untouched, and the shuffle is
-/// announced, once. For either player and libraries of up to four cards.
-fn shuffling_a_library_reorders_it_and_announces_it() {
+/// announced, once. For `who`'s library of `SIZE` cards, the other's empty.
+fn shuffling<const SIZE: usize>(who: PlayerId) {
     let mut state = new_game();
-    let who = PlayerId(u8::from(kani::any::<bool>()));
-    let (ids, len) = some_ids();
+    let ids: [ObjectId; SIZE] = core::array::from_fn(|i| ObjectId(10 + i as u64));
     let other = PlayerId(1 - who.0);
-    // A branch on the player, not an index by it: `any_object` says why.
-    for id in &ids[..len] {
-        if who == PlayerId(0) {
-            state.players[0].library_order.push(*id);
-        } else {
-            state.players[1].library_order.push(*id);
-        }
-    }
+    state.get_player_mut(who).library_order = ids.to_vec();
     let theirs = state.get_player(other).library_order.clone();
 
     crate::cards::helpers::shuffle_library(&mut state, who);
 
-    assert!(is_a_reordering(&state.get_player(who).library_order, &ids[..len]));
+    assert!(is_a_reordering(&state.get_player(who).library_order, &ids));
     assert!(state.get_player(other).library_order == theirs);
     assert!(matches!(state.events.as_slice(), [GameEvent::LibraryShuffled { player }] if *player == who));
+    kani::cover!(SIZE > 1 && state.get_player(who).library_order.first() == ids.last(), "the last first");
     std::mem::forget((state, theirs));
+}
+
+/// A harness for each size of library and each player, both constants:
+/// for a player the solver chose, the library shuffled is either player's,
+/// every swap in it a write through a pointer to one of two buffers, and
+/// with the size left open too the proof ran out of memory.
+macro_rules! each_library_and_player {
+    ($($name:ident: $size:literal),* $(,)?) => {$(
+        mod $name {
+            use crate::ids::PlayerId;
+            #[kani::proof]
+            #[kani::unwind(6)]
+            #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+            #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+            #[kani::stub(crate::state::GameState::random_below, super::any_below)]
+            /// The proof above it, for a library of that many cards, the
+            /// first player's.
+            fn for_the_first_player() {
+                super::shuffling::<$size>(PlayerId(0));
+            }
+            #[kani::proof]
+            #[kani::unwind(6)]
+            #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+            #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+            #[kani::stub(crate::state::GameState::random_below, super::any_below)]
+            /// The proof above it, for a library of that many cards, the
+            /// second player's.
+            fn for_the_second_player() {
+                super::shuffling::<$size>(PlayerId(1));
+            }
+        }
+    )*};
+}
+
+each_library_and_player! {
+    shuffling_an_empty_library: 0,
+    shuffling_a_library_of_one: 1,
+    shuffling_a_library_of_two: 2,
+    shuffling_a_library_of_three: 3,
+    shuffling_a_library_of_four: 4,
 }
 
 #[kani::proof]
