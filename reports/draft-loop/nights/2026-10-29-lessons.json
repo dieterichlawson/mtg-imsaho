@@ -1,0 +1,365 @@
+{
+ "night": "2026-10-29",
+ "model": "claude-haiku-5-5",
+ "seats": [
+  {
+   "seat": 0,
+   "guided": true,
+   "colors": "UB",
+   "record": "1-2-0",
+   "lessons": [
+    "Tonight's UB deck ran 17 lands on a low curve and went 1-2 in matches, so the guide's 16-land advice for low-curve decks deserves a test, though one deck proves little.",
+    "Blue-black went 1-2 for me and 0-3 for seat 4, matching the guide's weak UB read; draft it only when black-white or black-green is clearly closed.",
+    "Fliers plus removal, not ground bodies, won my only round: a 2-0 over BG in 16 turns, which supports the guide's air-first advice against BG."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 6101,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1663,
+    "output_tokens_details": {
+     "thinking_tokens": 1474
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 6101
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1663,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 6101,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 6101,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 1,
+   "guided": false,
+   "colors": "R",
+   "record": "1-2-0",
+   "lessons": [
+    "Pack 3 pick 1 Claustrophobia was a black card that never made my mono-red deck, so take the playable red removal or creature earlier, since Geistflame and Harvest Pyre carried my removal.",
+    "My mono-red deck went 3-5 in games, and Smite the Monstrous and Brimstone Volley beat it, so expect a removal-light red deck to lose long games and draft a second removal source.",
+    "I cut all blue and green cards to stay mono-red, leaving Tormented Pariah x3 and Kessig Wolf Run as my only card advantage, so value flexible off-colour playables more."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3249,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 1666,
+    "output_tokens_details": {
+     "thinking_tokens": 1453
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3249
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 1666,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3249,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3249,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 2,
+   "guided": true,
+   "colors": "WG",
+   "record": "2-1-0",
+   "lessons": [
+    "Tonight contradicted the guide's WG 43% verdict: my WG deck, built on Spider Spawning, Voiceless Spirit, Orchard Spirit and Rebuke, went 5-3 in games (2-1 in matches).",
+    "My 1-2 loss to BR (games of 26, 55 and 17 turns) came from ground stalls, so keep Rebuke or Smite for fliers and big blockers instead of trading them early.",
+    "Cutting Naturalize, Gnaw to the Bone, Mulch and the spare Travel Preparations for a 17-land 10 Forest, 6 Plains and Shimmering Grotto base with Avacyn's Pilgrim kept the curve low, so one fixer can carry a two-colour white splash-sized base."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 6107,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2408,
+    "output_tokens_details": {
+     "thinking_tokens": 2142
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 6107
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2408,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 6107,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 6107,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 3,
+   "guided": false,
+   "colors": "BR",
+   "record": "3-0-0",
+   "lessons": [
+    "Take removal early: both Brimstone Volley picks, plus Sever the Bloodline, carried this BR deck, and no other removal was needed for the 3-0 run.",
+    "Expect long, stalled games against white-green: Round 1 went 26 and 55 turns, so keep card advantage like Moan of the Unhallowed and Altar's Reap in the main deck.",
+    "I drafted without a guide, so I can't say where tonight contradicted one; the 9 Mountain / 8 Swamp split worked, and the deck went 6-2 in games."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3228,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 731,
+    "output_tokens_details": {
+     "thinking_tokens": 540
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3228
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 731,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3228,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3228,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 4,
+   "guided": true,
+   "colors": "UB",
+   "record": "0-3-0",
+   "lessons": [
+    "Armored Skaab, which the guide says to skip, sat in my UB main with Manor Skeleton and Fortress Crab, and that ground filler did not break 33- to 45-turn stalls, so cut it for fliers.",
+    "My UB deck had only two evasive finishers, Battleground Geist and Stitched Drake, so take a third flier like Chapel Geist or Moon Heron over off-colour picks like pack 2's Traitorous Blood.",
+    "Pack 2's Prey Upon, Darkthicket Wolf and Ambush Viper were wasted when I abandoned green for a 43% UB pair, so commit to the green pick and skip the pivot."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 6075,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2343,
+    "output_tokens_details": {
+     "thinking_tokens": 2112
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 6075
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2343,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 6075,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 6075,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 5,
+   "guided": false,
+   "colors": "WB",
+   "record": "2-1-0",
+   "lessons": [
+    "Take cheap removal and Fiend Hunter over marginal creatures: Victim of Night, Tribute to Hunger, Smite the Monstrous and two Ghostly Possession carried my long games, winning Round 1 2-1 in 45 and 33 turns.",
+    "Round 3's BR aggro (two Brimstone Volley, two Rakish Heir, two Typhoid Rats) beat my WB 0-2 in games of 25 and 14 turns, so value early two-drops and blockers over top-end."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3224,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2178,
+    "output_tokens_details": {
+     "thinking_tokens": 1997
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3224
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2178,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3224,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3224,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 6,
+   "guided": true,
+   "colors": "BG",
+   "record": "1-2-0",
+   "lessons": [
+    "BG with one Somberwald Spider and ground filler (Walking Corpse, Rotting Fensnake) lost four games to fliers after 16 to 38 turns; cap that filler and take evasive finishers over it.",
+    "Tonight's 1-2 BG deck with four removal spells contradicted 'BG with removal still wins': its removal faced WU and UB fliers yet went 2-5 in games, so answers alone are not enough.",
+    "Land count was not my problem: the 17-land BG deck lost to 16 to 38 turn stalls, so the guide's 16-land try won't fix a deck short on evasion."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 6121,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 4087,
+    "output_tokens_details": {
+     "thinking_tokens": 3874
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 6121
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 4087,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 6121,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 6121,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  },
+  {
+   "seat": 7,
+   "guided": false,
+   "colors": "WU",
+   "record": "2-1-0",
+   "lessons": [
+    "Expect grindy games: both my losses to WB ran 25 and 26 turns against Smite the Monstrous, Victim of Night and two Ghostly Possession, so prioritise evasive finishers like Moon Heron over durdle cards.",
+    "Don't spend mid-pack picks on curses: Curse of the Bloody Tome and Curse of the Pierced Heart were cut, and Rooftop Storm and Cobbled Wings never made the deck either.",
+    "Commit to white early: Fiend Hunter, Avacynian Priest and Chapel Geist flowed in pack 2, and the white-heavy 10 Plains build carried me to a 2-1 record."
+   ],
+   "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 3238,
+    "cache_read_input_tokens": 0,
+    "output_tokens": 2360,
+    "output_tokens_details": {
+     "thinking_tokens": 2128
+    },
+    "server_tool_use": {
+     "web_search_requests": 0,
+     "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+     "ephemeral_1h_input_tokens": 0,
+     "ephemeral_5m_input_tokens": 3238
+    },
+    "inference_geo": "global",
+    "iterations": [
+     {
+      "input_tokens": 2,
+      "output_tokens": 2360,
+      "cache_read_input_tokens": 0,
+      "cache_creation_input_tokens": 3238,
+      "cache_creation": {
+       "ephemeral_5m_input_tokens": 3238,
+       "ephemeral_1h_input_tokens": 0
+      },
+      "type": "message"
+     }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+   }
+  }
+ ]
+}
