@@ -1098,6 +1098,11 @@ impl ClaudeCodeDraftBackend {
         // log where the tournament recorded 202 (issue #607). This is the
         // seat the project actually drafts with.
         let sanitized = mtg_player::llm::sanitize_schema_for_anthropic(schema, true);
+        // A system prompt too long to be one argument fails every spawn the
+        // same way; it was retried for nine minutes (#965).
+        if let Some(why) = mtg_player::llm::claude_code_system_prompt_too_long(&self.system_prompt) {
+            fatal(&format!("claude -p draft seat cannot be asked: {why}"));
+        }
         // A session that has carried its window of decisions is not
         // resumed: every call to it would re-read all of them.
         if self.turns > self.window {
@@ -2344,6 +2349,43 @@ printf '{"type":"result","subtype":"success","is_error":false,"session_id":"%s",
         assert!(fake.calls().len() >= 2, "it kept trying while the budget lasted");
         assert!(started.elapsed() >= std::time::Duration::from_secs(2),
             "it really waited between attempts rather than burning three in 6ms");
+    }
+
+    /// #965: a guide that made the system prompt longer than one argument
+    /// can be failed every spawn with E2BIG, and the seat retried it for
+    /// nine minutes before dying at pack 1 pick 1. It is fatal at once, says
+    /// why, and the CLI is never run.
+    #[test]
+    fn a_system_prompt_too_long_for_one_argument_is_fatal_at_once() {
+        use super::DraftBackend;
+        let fake = Fake::new("e2big", OK_BODY);
+        let guide = "Take removal. ".repeat(10_000);
+        let mut b = super::ClaudeCodeDraftBackend::with_binary(
+            &fake.bin(), None, "Innistrad", Some(&guide),
+            "Doomed Traveler {W} | Creature — Human Soldier 1/1",
+            super::Table { seat: 0, pod_size: 2, pack_size: 14 },
+        );
+        assert!(b.system_prompt.len() > mtg_player::llm::CLAUDE_CODE_MAX_ARG_BYTES);
+        let started = std::time::Instant::now();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            b.send_pick("Pack 1, Pick 1", 2);
+        }));
+        let payload = result.expect_err("no pick can be asked");
+        let msg = payload.downcast_ref::<String>().expect("a message");
+        assert!(msg.starts_with(super::FATAL_MARKER), "{msg}");
+        assert!(msg.contains("one argument") && msg.contains("guide"), "it says why: {msg}");
+        assert!(fake.calls().is_empty(), "the CLI was never run:\n{}", fake.log());
+        assert!(started.elapsed() < std::time::Duration::from_secs(2), "no backoff was slept");
+
+        // Today's guide is well inside it, and is sent as before.
+        let fake = Fake::new("e2big-ok", OK_BODY);
+        let mut b = super::ClaudeCodeDraftBackend::with_binary(
+            &fake.bin(), None, "Innistrad", Some(&"Take removal. ".repeat(500)),
+            "Doomed Traveler {W} | Creature — Human Soldier 1/1",
+            super::Table { seat: 0, pod_size: 2, pack_size: 14 },
+        );
+        b.send_pick("Pack 1, Pick 1", 2);
+        assert_eq!(fake.calls().len(), 1);
     }
 
     /// The default budget is sized for an outage, not for a hiccup.

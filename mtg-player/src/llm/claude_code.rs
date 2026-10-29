@@ -763,6 +763,15 @@ impl ClaudeCodeBackend {
             self.last_call_failure = Some(why.clone());
             return None;
         }
+        // No attempt can succeed, so none is made (#965).
+        if let Some(why) = system_prompt_too_long(&self.system_prompt) {
+            let msg = format!("claude -p cannot be asked: {why}");
+            crate::stderr_line!("{}{msg}", seat_tag(&self.seat));
+            crate::game_log::write_at(crate::game_log::LogLevel::Error, file!(), line!(), &api_label("API_ERROR", &self.seat), &msg);
+            self.last_call_failure = Some(msg.clone());
+            self.gave_up = Some(msg);
+            return None;
+        }
         // A session that has carried its window of decisions is not
         // resumed: every call to it would re-read all of them.
         if self.turns > self.window {
@@ -900,6 +909,24 @@ impl ClaudeCodeBackend {
         cmd.current_dir(&self.workdir);
         run_print_mode(&mut cmd, &self.binary, asked.as_deref().unwrap_or(message))
     }
+}
+
+/// The longest one command-line argument can be on Linux: `MAX_ARG_STRLEN`,
+/// 32 pages of 4 KiB, less the terminating NUL.
+pub const MAX_ARG_BYTES: usize = 32 * 4096 - 1;
+
+/// Why `system_prompt` cannot be sent, if it cannot: both seats hand it to
+/// the CLI as the one `--system-prompt` argument, and the kernel refuses a
+/// longer one with E2BIG on every spawn. That failure is not transient, and
+/// a draft seat retried it fourteen times over nine minutes before the run
+/// died at its first pick (#965); a draft guide is in both seats' system
+/// prompts, and nothing else in them grows without bound. Checked before
+/// the first attempt, so the seat stops at once and says why.
+pub fn system_prompt_too_long(system_prompt: &str) -> Option<String> {
+    (system_prompt.len() > MAX_ARG_BYTES).then(|| format!(
+        "the system prompt is {} bytes, and `claude -p` takes it as one argument, which Linux caps at {MAX_ARG_BYTES} bytes; \
+         a draft guide is part of it, so a shorter guide is the fix",
+        system_prompt.len()))
 }
 
 /// Everything the workspace's two `claude -p` seats do to a prepared
