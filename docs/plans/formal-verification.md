@@ -100,6 +100,15 @@ Kani version (0.68.0) are pinned in `scripts/prove.sh`, and `vstd` in
 one at a time, as the script does: four at once ran a 15 GB machine out of
 memory.
 
+A harness can pass and prove nothing. If an assumption, a stub or an
+unwinding bound rules out every execution, no assertion is ever reached,
+and Kani reports success with each assertion UNREACHABLE.
+`kani-bounded.py` reads the reachability check Kani puts before each
+assertion. Each result line counts how many of the proof's own `assert!`s
+were reached (`reaches 11/22`), and a harness that reached none is
+VACUOUS, not SUCCESSFUL. A harness split into constant cases legitimately
+leaves the other cases' assertions unreached, and their covers too.
+
 ### What is trusted
 
 A proof is a proof relative to what it assumes. Here that is:
