@@ -221,8 +221,8 @@ come; the next round is paired when the round is over.
 
 Matches are played as a tournament plays them (MTR 2.2 and 2.4). Before
 game 1 a coin flip's winner chooses to play or draw; before each later
-game the last game's loser chooses (after a drawn game, whoever chose
-before), and both players may sideboard: any deck of their pool with 40 or
+game the last game's loser chooses (after a game with no winner, drawn
+or abandoned at the action budget, whoever chose before), and both players may sideboard: any deck of their pool with 40 or
 more cards, starting from the deck they played last game. The draft page
 shows a panel for it under "Your match is on" — the choice, the pool as
 rows to move between deck and sideboard, the land steppers, the cards the

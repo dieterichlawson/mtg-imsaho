@@ -524,7 +524,8 @@ before game 3: the score, how the last game went, the cards the opponent
 has shown (public zones, tokens left out), and its pool with the counts it
 is playing now. It answers in the deck build's shape plus `play_first`,
 which is read only when the choice is its own — the last game's loser
-chooses, and after a drawn game whoever chose before. Repeating the counts
+chooses, and after a game with no winner (drawn or abandoned) whoever
+chose before. Repeating the counts
 keeps the deck; an answer that does not make a legal deck keeps it too,
 with no retry. The log has `[Seat N] SIDEBOARD_PROMPT before game G`, its
 `_RESPONSE`, and one `[Seat N] SIDEBOARD before game G: in: A; B | out: C | Plains +1`
