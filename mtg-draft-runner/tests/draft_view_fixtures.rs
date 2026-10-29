@@ -1126,6 +1126,40 @@ fn a_decided_match_names_no_next_game() {
     }
 }
 
+/// #919: a match of three drawn games read "0-0" in the pairings and the
+/// seat's own result, like one nobody played, and a draw beside two wins
+/// was in no count. The score carries the draws, and a level match says so.
+#[test]
+fn a_drawn_match_says_so_and_its_draws_are_counted() {
+    let registry = CardRegistry::with_all_cards();
+    let (mut l, _) = lobby(vec![SeatKind::Human, SeatKind::Human, SeatKind::Ai("cc".into()), SeatKind::Ai("cc".into())]);
+    l.connected(0);
+    l.connected(1);
+    draft_to_the_end(&mut l, None);
+    for seat in 0..POD {
+        let deck = fallback_deck(&l.pool(seat), &registry);
+        if seat < 2 {
+            l.submit_deck(seat, &deck.maindeck, &deck.lands, &[]).unwrap();
+            l.ready(seat).unwrap();
+        } else {
+            l.ai_deck(seat, &mtg_draft_runner::deck::DeckBuildResult { deck, attempts: vec![], retries: 0, fallback: false });
+        }
+    }
+    let _ = l.begin_tournament();
+    let game = |w: Option<usize>| GameOutcome { winner: w, turns: 9, game_log: vec![], stalled_seat: None, abandoned: false, decks: None };
+    l.match_started(1, 0, 1, [None, None]);
+    l.match_finished(1, 0, 1, MatchResult { player_a: 0, player_b: 1, wins_a: 0, wins_b: 0, games: vec![game(None); 3] });
+    l.match_started(1, 2, 3, [None, None]);
+    let _ = l.match_finished(1, 2, 3, MatchResult { player_a: 2, player_b: 3, wins_a: 0, wins_b: 2,
+        games: vec![game(None), game(Some(3)), game(Some(3))] });
+    let v = jv(&l, 0);
+    let pairing = |a: u64| v["pairings"].as_array().unwrap().iter().find(|p| p["round"] == 1 && p["a"] == a).unwrap()["result"].clone();
+    assert_eq!(pairing(0), "0-0-3 (drawn)");
+    assert_eq!(pairing(2), "0-2-1");
+    assert_eq!(v["matches"][0]["result"], "0-0-3 (drawn)", "the seat's own result");
+    assert_eq!(jv(&l, 3)["matches"][0]["result"], "2-0-1", "from the winner's side");
+}
+
 /// A seat's draft review: every pack it was handed, as it was, and the
 /// card it took — 42 picks, each card in its own pack, the packs shrinking
 /// by one a pick — and the same after a `--resume`, which replays the

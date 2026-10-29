@@ -2356,7 +2356,11 @@ there: the packs are not the ones the table drafted (another seed, or a build wi
             round: m.round, a: m.a, b: Some(m.b), status: m.status.word(),
             // The table's score-line note: "0-2" alone read as two games
             // played and lost when they were forfeits (#744).
-            result: m.result.as_ref().map(|r| format!("{}-{}{}", r.wins_a, r.wins_b,
+            // And a level match says it is one: a bare "0-0" read as a match
+            // not played (#919).
+            result: m.result.as_ref().map(|r| format!("{}{}{}",
+                crate::standings::match_score(r.wins_a, r.wins_b, &r.games),
+                if r.winner().is_none() { " (drawn)" } else { "" },
                 crate::standings::unplayed_games_note(&r.games))),
         }).collect();
         if let Some(t) = &self.tournament {
@@ -2439,13 +2443,12 @@ fn millis_left(deadline: Instant, now: Instant) -> u64 {
     u64::try_from(deadline.saturating_duration_since(now).as_millis()).unwrap_or(u64::MAX)
 }
 
-/// A match's score from one seat's side.
+/// A match's score from one seat's side, its drawn games and a level
+/// match said (#919).
 fn score_for(r: &MatchResult, seat: usize) -> String {
-    if r.player_a == seat {
-        format!("{}-{}", r.wins_a, r.wins_b)
-    } else {
-        format!("{}-{}", r.wins_b, r.wins_a)
-    }
+    let (won, lost) = if r.player_a == seat { (r.wins_a, r.wins_b) } else { (r.wins_b, r.wins_a) };
+    format!("{}{}", crate::standings::match_score(won, lost, &r.games),
+        if r.winner().is_none() { " (drawn)" } else { "" })
 }
 
 /// The card the table takes for an absent seat: the first card of the
