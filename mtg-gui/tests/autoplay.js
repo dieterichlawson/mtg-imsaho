@@ -14,16 +14,25 @@
 // is counted, so a run's summary says what was exercised.
 
 const { chromium } = require("playwright");
-const { startRunner, finish } = require("./children.js");
+const { startRunner, finish, parseArgs } = require("./children.js");
 const path = require("path");
 const fs = require("fs");
 
-const arg = (name, def) => { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] : def; };
-const games = Number(arg("--games", "1"));
-const seed0 = Number(arg("--seed", String(Math.floor(Math.random() * 100000))));
-const maxDecisions = Number(arg("--decisions", "400"));
-const shotsDir = arg("--shots", null);
-const decksArg = [arg("--deck1", null), arg("--deck2", null)];
+// Read when it runs as a script: `table_rehearsal.js` requires this file
+// for its `step`, and its flags are not these.
+let games = 1, seed0 = 0, maxDecisions = 400, shotsDir = null, decksArg = [null, null];
+function readArgs() {
+  const a = parseArgs({
+    "--games": { kind: "int", min: 1, def: 1 },
+    "--seed": { kind: "int", def: Math.floor(Math.random() * 100000) },
+    "--decisions": { kind: "int", min: 1, def: 400 },
+    "--shots": { kind: "string", def: null },
+    "--deck1": { kind: "string", def: null },
+    "--deck2": { kind: "string", def: null },
+  });
+  games = a["--games"]; seed0 = a["--seed"]; maxDecisions = a["--decisions"]; shotsDir = a["--shots"];
+  decksArg = [a["--deck1"], a["--deck2"]];
+}
 const DECKS = ["red-green", "white-black", "blue-white", "black-aggro", "innistrad-white", "innistrad-blue", "innistrad-green",
   "decks/coverage/ub-coverage.txt", "decks/coverage/rg-coverage.txt", "decks/coverage/wb-coverage.txt", "decks/coverage/ug-coverage.txt",
   "decks/coverage/br-coverage.txt", "decks/coverage/wu-coverage.txt", "decks/coverage/wg-coverage.txt", "decks/coverage/ur-coverage.txt"];
@@ -38,7 +47,7 @@ async function playOne(browser, seed, deck1, deck2, kinds) {
   // The draw that once chose the port, kept so a seed plays the clicks and
   // decks it always did.
   rnd();
-  const { runner, urls, output } = await startRunner(
+  const { runner, urls, output, gone } = await startRunner(
     ["--p1", "gui:0", "--p2", "random", "--seed", String(seed), "--deck1", deck1, "--deck2", deck2, "-q", "--check-invariants"]);
   let page = null;
   const errors = [];
@@ -50,10 +59,21 @@ async function playOne(browser, seed, deck1, deck2, kinds) {
     page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     page.on("pageerror", e => errors.push("pageerror: " + e.message));
     page.on("console", m => { if (m.type() === "error" && !/404/.test(m.text())) errors.push("console: " + m.text()); });
-    await page.goto(urls["--p1"]);
+    // A page that does not load in 15s is the failure, said once: the
+    // default 30s timeout under a retry took 21 minutes to fail (#943).
+    await page.goto(urls["--p1"], { timeout: 15000 });
     let lastSeq = -1, stuck = 0, committed = false;
     while (decisions < maxDecisions) {
-      const ready = await page.waitForFunction(() => window.mtg && (window.mtg.decision || window.mtg.gameOver), null, { timeout: 60000 }).catch(() => null);
+      const ready = await Promise.race([
+        page.waitForFunction(() => window.mtg && (window.mtg.decision || window.mtg.gameOver), null, { timeout: 60000 }).catch(() => null),
+        gone.then(e => ({ gone: e })),
+      ]);
+      // The page's game over can arrive after the runner exits; only a
+      // runner gone with no game over is its failure.
+      if (ready && ready.gone && !(await page.evaluate(() => !!(window.mtg && window.mtg.gameOver)).catch(() => false))) {
+        fail(`${label}: the runner exited (${ready.gone.sig || ready.gone.code}) at decision ${decisions}:\n${output().slice(-1500)}`);
+        break;
+      }
       if (!ready) { fail(`${label}: no decision for 60s at decision ${decisions}`); await shot("hang"); break; }
       const snap = await snapshot(page);
       if (snap.over) { outcome = snap.over.split("\n")[0]; break; }
@@ -202,5 +222,5 @@ async function main() {
 
 // Run as a script it plays its own games; required, it lends its step to
 // another driver (`table_rehearsal.js` plays a hosted table's game pages).
-if (require.main === module) finish(main);
+if (require.main === module) { readArgs(); finish(main); }
 module.exports = { step, snapshot };

@@ -19,7 +19,7 @@ const path = require("path");
 const fs = require("fs");
 
 const guiDir = path.resolve(__dirname, "..");
-const shotsDir = process.argv.includes("--shots") ? process.argv[process.argv.indexOf("--shots") + 1] : null;
+const shotsDir = require("./children.js").parseArgs({ "--shots": { kind: "string", def: null } })["--shots"];
 let failures = 0;
 function fail(msg) { console.error("FAIL: " + msg); failures++; }
 function ok(msg) { console.log("ok: " + msg); }
@@ -88,7 +88,7 @@ async function main() {
         // art is a placeholder, not an error.
         if (m.type() === "error" && !/WebSocket|404/.test(m.text())) errors.push("console: " + m.text());
       });
-      await page.goto(`http://127.0.0.1:${port}/?seat=0&key=test-key`);
+      await page.goto(`http://127.0.0.1:${port}/?seat=0&key=test-key`, { timeout: 15000 });
       await page.waitForFunction(() => window.mtgDraftDebug && window.mtgDraft, null, { timeout: 15000 });
       const tag = String(viewport.width);
       const shot = async (name) => {

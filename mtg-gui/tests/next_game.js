@@ -30,7 +30,7 @@ async function main() {
     const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
     const errors = [];
     page.on("pageerror", e => errors.push("pageerror: " + e.message));
-    await page.goto(urls["--p1"]);
+    await page.goto(urls["--p1"], { timeout: 15000 });
     await page.waitForFunction(() => window.mtg && window.mtg.decision, null, { timeout: 30000 });
 
     // Game 1 ends: the box is up and the panel says who won.

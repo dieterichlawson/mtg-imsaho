@@ -27,7 +27,7 @@ function ok(msg) { console.log("ok: " + msg); }
 async function openTab(browser, url) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   page.on("pageerror", e => fail(`page error: ${e.message}`));
-  await page.goto(url);
+  await page.goto(url, { timeout: 15000 });
   await page.waitForFunction(() => window.mtg && window.mtg.connected, null, { timeout: 20000 });
   return page;
 }

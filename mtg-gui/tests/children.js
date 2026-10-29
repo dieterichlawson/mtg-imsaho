@@ -47,7 +47,7 @@ function spawnOwned(cmd, args, opts) {
  * Resolves to `{ runner, urls, output, exited }`: `urls` maps each gui
  * seat's flag (`--p1`, `--p2`) to its page, `output()` is everything the
  * runner has written to stdout and stderr, `exited()` its exit (null while
- * it runs). Rejects with the runner's output if it exits, or has not
+ * it runs), `gone` a promise of that exit. Rejects with the runner's output if it exits, or has not
  * named every page in 30 s.
  */
 function startRunner(args, { ms = 30000 } = {}) {
@@ -64,7 +64,12 @@ function startRunner(args, { ms = 30000 } = {}) {
   let exit = null;
   runner.stdout.on("data", d => { out += d; });
   runner.stderr.on("data", d => { out += d; });
-  const handle = { runner, urls: {}, output: () => out, exited: () => exit };
+  // `gone` settles when the runner exits, at any time: a wait on the page
+  // raced against it fails with what the runner said, where it used to sit
+  // out its whole timeout and blame the page ("no decision for 60s") for a
+  // runner that had refused its deck at once (#943).
+  let gone;
+  const handle = { runner, urls: {}, output: () => out, exited: () => exit, gone: new Promise(r => { gone = r; }) };
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`the runner named no page for ${seats.join(" and ")} in ${ms / 1000}s:\n${out}`)), ms);
     const look = () => {
@@ -75,6 +80,7 @@ function startRunner(args, { ms = 30000 } = {}) {
     runner.on("error", e => { clearTimeout(timer); reject(new Error(`the runner could not be started: ${e.message}`)); });
     runner.on("exit", (code, sig) => {
       exit = { code, sig };
+      gone(exit);
       clearTimeout(timer);
       reject(new Error(`the runner exited (${sig || code}) before its page was open:\n${out}`));
     });
@@ -92,4 +98,40 @@ function finish(main, code = () => process.exitCode || 0) {
     .finally(() => process.exit(code() || process.exitCode || 0));
 }
 
-module.exports = { spawnOwned, startRunner, finish, root };
+/**
+ * A driver's flags, read the way the runners read theirs (#943): a flag
+ * given twice takes its last value, so `$BASE --ai stub` overrides the
+ * `--ai` in `$BASE`; a value the flag does not take (`--games four`,
+ * `--games 0`, `--games` with nothing after it) is refused, and so is a
+ * flag the driver does not have (`--gmaes 3`). Each refusal is one line
+ * and exit 2, before anything is started: they used to be read as NaN or
+ * as nothing and end in "ok". `spec` maps each flag to `{ def, kind }`,
+ * `kind` one of "int" (with `min`, default 0), "number" or "string".
+ * Returns the values by flag.
+ */
+function parseArgs(spec, argv = process.argv.slice(2)) {
+  const refuse = (m) => { console.error(`FAIL: ${m}`); process.exit(2); };
+  const values = {};
+  for (const [flag, s] of Object.entries(spec)) values[flag] = s.def;
+  for (let i = 0; i < argv.length; i++) {
+    const flag = argv[i];
+    const s = spec[flag];
+    if (!s) refuse(`unknown flag ${JSON.stringify(flag)}; this driver takes ${Object.keys(spec).join(", ")}`);
+    const raw = argv[++i];
+    if (raw === undefined || raw.startsWith("--")) refuse(`${flag} needs a value`);
+    if (s.kind === "int" || s.kind === "number") {
+      const n = Number(raw);
+      const min = s.min ?? 0;
+      const whole = s.kind === "int";
+      if (!(whole ? /^[0-9]+$/ : /^[0-9]+(\.[0-9]+)?$/).test(raw) || n < min) {
+        refuse(`${flag} ${raw}: it takes ${whole ? "a whole number" : "a number"} of at least ${min}`);
+      }
+      values[flag] = n;
+    } else {
+      values[flag] = raw;
+    }
+  }
+  return values;
+}
+
+module.exports = { spawnOwned, startRunner, finish, parseArgs, root };

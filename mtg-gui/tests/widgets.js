@@ -16,7 +16,7 @@ const path = require("path");
 const fs = require("fs");
 
 const root = path.resolve(__dirname, "..", "..");
-const shotsDir = process.argv.includes("--shots") ? process.argv[process.argv.indexOf("--shots") + 1] : null;
+const shotsDir = require("./children.js").parseArgs({ "--shots": { kind: "string", def: null } })["--shots"];
 let failures = 0;
 function fail(msg) { console.error("FAIL: " + msg); failures++; }
 function ok(msg) { console.log("ok: " + msg); }
@@ -30,7 +30,7 @@ async function main() {
     const errors = [];
     page.on("pageerror", e => errors.push("pageerror: " + e.message));
     page.on("console", m => { if (m.type() === "error" && !/404/.test(m.text())) errors.push("console: " + m.text()); });
-    await page.goto(urls["--p1"]);
+    await page.goto(urls["--p1"], { timeout: 15000 });
     await page.waitForFunction(() => window.mtg && window.mtg.decision, null, { timeout: 30000 });
     // Keep, play through to a board with lands and a creature or two, then cut the socket.
     await page.evaluate(() => window.mtgSend("MulliganKeep"));

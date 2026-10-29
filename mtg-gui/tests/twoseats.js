@@ -23,7 +23,7 @@ async function main() {
     for (const p of [urls["--p1"], urls["--p2"]]) {
       const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
       page.on("pageerror", e => fail(`page ${p}: ${e.message}`));
-      await page.goto(p);
+      await page.goto(p, { timeout: 15000 });
       pages.push(page);
     }
     const asked = async (page) => page.evaluate(() => !!(window.mtg && window.mtg.decision));

@@ -23,22 +23,31 @@
 // that never ended. The server's terminal and log stay in `--out`.
 
 const { chromium } = require("playwright");
-const { spawnOwned, finish } = require("./children.js");
+const { spawnOwned, finish, parseArgs } = require("./children.js");
 const path = require("path");
 const fs = require("fs");
 const { step, snapshot } = require("./autoplay.js");
 
 const root = path.resolve(__dirname, "..", "..");
-const arg = (name, def) => { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] : def; };
-const humans = Number(arg("--humans", "2"));
-const players = Number(arg("--players", "8"));
-const bestOf = Number(arg("--best-of", "3"));
-const ai = arg("--ai", "stub");
-const seed = Number(arg("--seed", String(1 + Math.floor(Math.random() * 100000))));
-const out = path.resolve(arg("--out", path.join(root, "logs", "rehearsal", String(seed))));
-const pickSeconds = arg("--pick-seconds", "600");
+const args = parseArgs({
+  "--humans": { kind: "int", def: 2 },
+  "--players": { kind: "int", min: 2, def: 8 },
+  "--best-of": { kind: "int", min: 1, def: 3 },
+  "--ai": { kind: "string", def: "stub" },
+  "--seed": { kind: "int", def: 1 + Math.floor(Math.random() * 100000) },
+  "--out": { kind: "string", def: null },
+  "--pick-seconds": { kind: "int", min: 1, def: 600 },
+  "--hours": { kind: "number", def: 4 },
+});
+const humans = args["--humans"];
+const players = args["--players"];
+const bestOf = args["--best-of"];
+const ai = args["--ai"];
+const seed = args["--seed"];
+const out = path.resolve(args["--out"] ?? path.join(root, "logs", "rehearsal", String(seed)));
+const pickSeconds = String(args["--pick-seconds"]);
 const port = 18900 + Math.floor(Math.random() * 50);
-const deadlineMs = Number(arg("--hours", "4")) * 3600 * 1000;
+const deadlineMs = args["--hours"] * 3600 * 1000;
 
 let failures = 0;
 function fail(msg) { console.error("FAIL: " + msg); failures++; }
@@ -111,7 +120,7 @@ async function person(browser, link, tally) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   const errors = [];
   page.on("pageerror", e => errors.push("pageerror: " + e.message));
-  await page.goto(link.url);
+  await page.goto(link.url, { timeout: 15000 });
   await page.fill("#name", `Person ${link.seat}`);
   await page.press("#name", "Enter");
   const games = new Map(); // round -> promise playing that match's game page
@@ -190,7 +199,7 @@ async function playMatch(browser, seat, m, draftPage, tally) {
   page.on("pageerror", e => errors.push("pageerror: " + e.message));
   const label = `seat ${seat} round ${m.round}`;
   try {
-    await page.goto(m.url);
+    await page.goto(m.url, { timeout: 15000 });
     let lastSeq = -1, stuck = 0, committed = false;
     for (;;) {
       const done = await draftPage.evaluate((round) => {
