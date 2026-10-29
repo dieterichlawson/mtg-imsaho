@@ -1757,15 +1757,8 @@ card_proof! {
     }
 }
 
-/// Moorland Haunt's board: [`permanent`]'s, and another card of the blank
-/// card, a creature or not, in either player's graveyard.
-fn haunt() -> (Board, ObjectId) {
-    let b = permanent(Box::new(isd::moorland_haunt::MoorlandHaunt), &ANY_CREATURE, false);
-    haunt_beside(b, PlayerId(u8::from(kani::any::<bool>())), kani::any())
-}
-
-/// [`haunt`]'s board on `b`, the other card in `owner`'s graveyard and a
-/// creature card if `creature`.
+/// Moorland Haunt's board: `b`, and another card of the blank card in
+/// `owner`'s graveyard, a creature card if `creature`.
 fn haunt_beside(mut b: Board, owner: PlayerId, creature: bool) -> (Board, ObjectId) {
     let card = b.state.create_object(CardId(1), owner, Zone::Graveyard, None, None);
     let o = b.state.get_object_mut(card).expect("just created");
@@ -1832,46 +1825,59 @@ case_by_case! { haunt_has_its_ability;
     moorland_haunt_of_the_second_player_with_a_noncreature_card_has_none: (1, 1, false),
 }
 
-card_proof! {
-    /// Moorland Haunt, paying: the creature card in its controller's
-    /// graveyard exiled (CR 602.2b, a cost), or with more than one, they
-    /// are asked which (CR 601.2b) and it is exiled on the answer; then,
-    /// resolving, a 1/1 white Spirit creature token with flying for the
-    /// player who activated it. Nothing else.
-    fn moorland_haunt_exiles_a_creature_card_and_makes_a_spirit() {
-        let (mut b, card) = haunt();
-        let you = b.state.get_object(b.me).expect("on the board").controller;
-        let exilable = b.creature_cards_in_graveyard(you, &[b.others[0], card]);
-        let haunt = b.card();
-        let before = Snapshot::of(&b.state);
-        b.registry.get(haunt).expect("registered").pay_activation_cost(&mut b.state, b.me, 1, &[], &b.registry);
-        match exilable.len() {
-            0 => {
-                assert!(acted() == 0);
-            }
-            1 => {
-                assert!(asked_for(&[Act::Move(exilable[0], Zone::Exile)]));
-            }
-            _ => {
-                let Some(Act::Choose { source, player, options, effect: PendingEffect::CardEffect { source_id, .. }, optional: false }) = super::act(0) else {
-                    panic!("asks which card")
-                };
-                assert!(acted() == 1 && *source == b.me && *player == you && *source_id == b.me);
-                assert!(options.len() == 2 && options[0] == Target::Object(exilable[0]) && options[1] == Target::Object(exilable[1]));
-                let chosen = exilable[usize::from(kani::any::<bool>())];
-                b.registry.get(haunt).expect("registered").resolve_card_effect(&mut b.state, b.me, "", &Target::Object(chosen), &b.registry);
-                assert!(acted() == 2 && Some(&Act::Move(chosen, Zone::Exile)) == super::act(1));
-            }
+/// Moorland Haunt, paying: the creature card in its controller's
+/// graveyard exiled (CR 602.2b, a cost), or with more than one, they are
+/// asked which (CR 601.2b) and it is exiled on the answer; then,
+/// resolving, a 1/1 white Spirit creature token with flying for the
+/// player who activated it. Nothing else. For a Haunt `you` control, and
+/// the other card in `owner`'s graveyard, a creature card if `creature`,
+/// each a constant in each harness, as for the ability (above): with the
+/// three left open, the proof ran out of memory.
+fn haunt_exiles((you, owner, creature): (u8, u8, bool)) {
+    let you = PlayerId(you);
+    let b = permanent_of(Box::new(isd::moorland_haunt::MoorlandHaunt), &ANY_CREATURE, false, you);
+    let (mut b, card) = haunt_beside(b, PlayerId(owner), creature);
+    let exilable = b.creature_cards_in_graveyard(you, &[b.others[0], card]);
+    let haunt = b.card();
+    let before = Snapshot::of(&b.state);
+    b.registry.get(haunt).expect("registered").pay_activation_cost(&mut b.state, b.me, 1, &[], &b.registry);
+    match exilable.len() {
+        0 => {
+            assert!(acted() == 0);
         }
-        let n = acted();
-        b.registry.get(haunt).expect("registered").resolve_activated_ability(&mut b.state, b.me, 1, &[], &b.registry);
-        assert!(acted() == n + 1 && Some(&Act::Tokens {
-            n: 1, controller: b.you, power: 1, toughness: 1, colors: vec![Color::White],
-            types: vec![CardType::Creature], keywords: vec![Keyword::Flying], subtypes: vec!["Spirit".into()],
-        }) == super::act(n));
-        assert!(Snapshot::of(&b.state) == before);
-        std::mem::forget((b, exilable));
+        1 => {
+            assert!(asked_for(&[Act::Move(exilable[0], Zone::Exile)]));
+        }
+        _ => {
+            let Some(Act::Choose { source, player, options, effect: PendingEffect::CardEffect { source_id, .. }, optional: false }) = super::act(0) else {
+                panic!("asks which card")
+            };
+            assert!(acted() == 1 && *source == b.me && *player == you && *source_id == b.me);
+            assert!(options.len() == 2 && options[0] == Target::Object(exilable[0]) && options[1] == Target::Object(exilable[1]));
+            let chosen = exilable[usize::from(kani::any::<bool>())];
+            b.registry.get(haunt).expect("registered").resolve_card_effect(&mut b.state, b.me, "", &Target::Object(chosen), &b.registry);
+            assert!(acted() == 2 && Some(&Act::Move(chosen, Zone::Exile)) == super::act(1));
+        }
     }
+    let n = acted();
+    b.registry.get(haunt).expect("registered").resolve_activated_ability(&mut b.state, b.me, 1, &[], &b.registry);
+    assert!(acted() == n + 1 && Some(&Act::Tokens {
+        n: 1, controller: b.you, power: 1, toughness: 1, colors: vec![Color::White],
+        types: vec![CardType::Creature], keywords: vec![Keyword::Flying], subtypes: vec!["Spirit".into()],
+    }) == super::act(n));
+    assert!(Snapshot::of(&b.state) == before);
+    std::mem::forget((b, exilable));
+}
+
+case_by_case! { haunt_exiles;
+    moorland_haunt_of_the_first_player_with_its_creature_card_exiles_a_creature_card_and_makes_a_spirit: (0, 0, true),
+    moorland_haunt_of_the_first_player_with_a_noncreature_card_exiles_a_creature_card_and_makes_a_spirit: (0, 0, false),
+    moorland_haunt_of_the_first_player_with_the_others_creature_card_exiles_a_creature_card_and_makes_a_spirit: (0, 1, true),
+    moorland_haunt_of_the_first_player_with_the_others_noncreature_card_exiles_a_creature_card_and_makes_a_spirit: (0, 1, false),
+    moorland_haunt_of_the_second_player_with_the_others_creature_card_exiles_a_creature_card_and_makes_a_spirit: (1, 0, true),
+    moorland_haunt_of_the_second_player_with_the_others_noncreature_card_exiles_a_creature_card_and_makes_a_spirit: (1, 0, false),
+    moorland_haunt_of_the_second_player_with_its_creature_card_exiles_a_creature_card_and_makes_a_spirit: (1, 1, true),
+    moorland_haunt_of_the_second_player_with_a_noncreature_card_exiles_a_creature_card_and_makes_a_spirit: (1, 1, false),
 }
 
 card_proof! {
