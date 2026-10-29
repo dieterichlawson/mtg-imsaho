@@ -357,15 +357,16 @@ pub fn token_attack_options(
     controller: PlayerId,
     registry: &CardRegistry,
 ) -> Vec<Target> {
-    let mut options: Vec<Target> = state
-        .all_objects_in_zone(Zone::Battlefield)
-        .iter()
-        .filter(|o| {
-            o.controller != controller
-                && state.has_card_type(o.id, crate::types::CardType::Planeswalker, registry)
-        })
-        .map(|o| Target::Object(o.id))
-        .collect();
+    // Allocated at its largest and filled in a loop, as `ids_where` says why.
+    let battlefield = state.all_objects_in_zone(Zone::Battlefield);
+    let mut options: Vec<Target> = Vec::with_capacity(battlefield.len() + state.players.len());
+    for o in battlefield {
+        if o.controller != controller
+            && state.has_card_type(o.id, crate::types::CardType::Planeswalker, registry)
+        {
+            options.push(Target::Object(o.id));
+        }
+    }
     for p in &state.players {
         if p.id != controller && !p.lost {
             options.push(Target::Player(p.id));
