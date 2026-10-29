@@ -65,12 +65,12 @@ impl CardBehavior for LilianaOfTheVeil {
                 let active = state.active_player;
 
                 // Build list of players who need to discard, starting with active player.
-                let mut players_to_discard: Vec<PlayerId> = vec![];
+                // Allocated at the most it can hold, as `helpers::ids_where`
+                // says why.
+                let mut players_to_discard: Vec<PlayerId> = Vec::with_capacity(state.players.len());
                 // Active player first.
                 if !state.get_player(active).lost {
-                    let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, active)
-                        .iter().map(|o| o.id).collect();
-                    if !hand.is_empty() {
+                    if state.any_in_zone(Zone::Hand, active, |_| true) {
                         players_to_discard.push(active);
                     }
                 }
@@ -79,9 +79,7 @@ impl CardBehavior for LilianaOfTheVeil {
                     let pid = PlayerId(u8::try_from(pid_idx).unwrap_or(u8::MAX));
                     if pid == active { continue; }
                     if state.get_player(pid).lost { continue; }
-                    let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, pid)
-                        .iter().map(|o| o.id).collect();
-                    if !hand.is_empty() {
+                    if state.any_in_zone(Zone::Hand, pid, |_| true) {
                         players_to_discard.push(pid);
                     }
                 }
@@ -137,10 +135,7 @@ impl CardBehavior for LilianaOfTheVeil {
                     _ => return,
                 };
 
-                let permanents: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, target_player)
-                    .iter()
-                    .map(|o| o.id)
-                    .collect();
+                let permanents = state.ids_in_zone(Zone::Battlefield, target_player, |_| true);
 
                 if permanents.is_empty() {
                     state.log(crate::state::LogLevel::Event,
@@ -211,8 +206,7 @@ impl LilianaOfTheVeil {
 
         while !queue.is_empty() {
             let player = queue.remove(0);
-            let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, player)
-                .iter().map(|o| o.id).collect();
+            let hand = state.ids_in_zone(Zone::Hand, player, |_| true);
 
             if hand.is_empty() {
                 // A card may have left this player's hand since the ability
