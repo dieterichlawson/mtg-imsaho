@@ -837,7 +837,9 @@ stops here — pass --save {path} to keep writing it");
     // A signal (closed window, kill, timeout) landing while a CLI prompt
     // holds the terminal in raw mode must not leave the pty raw for the
     // shell (issue #78).
-    if !has_human {
+    // Only where a seat spends calls: a random-vs-random game (the fuzzer's,
+    // under `timeout`) has nothing to account for and dies as it did.
+    if !has_human && (matches!(p1, PlayerKind::Llm(_)) || matches!(p2, PlayerKind::Llm(_))) {
         stop_on_signals();
     }
     if has_human {
@@ -1140,6 +1142,8 @@ stops here — pass --save {path} to keep writing it");
                 for entry in &game_state.game_log[tail..] {
                     mtg_player::stderr_line!("  | {}", entry.message);
                 }
+                // What the seats spent before the break (#912's review).
+                print_token_usage();
                 std::process::exit(2);
             }
         }
