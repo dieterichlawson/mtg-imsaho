@@ -909,8 +909,15 @@ pub fn enters_with_counters(
     if extra.is_empty() {
         return None;
     }
+    // The counters it enters with allocated at what they come to, rather
+    // than the clone's (which is exactly as long as the counters it had)
+    // grown to take more: a proof holds a list to the room it was given
+    // (`proofs::cards::no_growing`).
     let mut e = e.clone();
-    e.counters.extend(extra);
+    let mut all = Vec::with_capacity(e.counters.len() + extra.len());
+    all.append(&mut e.counters);
+    all.extend(extra);
+    e.counters = all;
     Some(Replacement::Modified(ReplaceableEvent::EntersBattlefield(e)))
 }
 
