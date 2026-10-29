@@ -578,7 +578,7 @@ pub fn render(v: &Value, build: &Build) -> (String, String) {
                 // last: with the page's key in it (#872) it is ~70
                 // characters, and a URL cannot be wrapped and still pasted.
                 // Nor a decided one, whose games are over (#916's review).
-                let decided = status == "playing" && m["next_game"].is_null();
+                let decided = status == "playing" && m.get("next_game").is_some_and(Value::is_null);
                 let link = m["url"].as_str().filter(|_| status != "done" && !decided);
                 if let Some(r) = m["result"].as_str() {
                     s.push_str(&format!(" — {r}"));
@@ -939,6 +939,12 @@ mod tests {
         assert!(mine.contains("Round 1 vs seat 1: playing (decided; G1 seat 1)"), "{mine}");
         assert!(!mine.contains("game 2"), "{mine}");
         assert!(!mine.contains("open http://h:1/"), "no game is left to open: {mine}");
+        // A server from before `next_game` sends no such field: that is not
+        // a decided match.
+        let mut old = v.clone();
+        old["matches"][0].as_object_mut().unwrap().remove("next_game");
+        let (_, mine) = render(&old, &Build::default());
+        assert!(mine.contains("playing (game 2; G1 seat 1)\n  open http://h:1/"), "{mine}");
     }
 
     /// #918: a game stopped at the action budget has no winner and was
@@ -1168,7 +1174,12 @@ fn games_so_far(m: &Value, me: u64, who: &dyn Fn(u64) -> String) -> Option<Strin
         };
         format!("G{} {won}", i + 1)
     }).collect();
-    let on = m["next_game"].as_u64().map_or_else(|| "decided".to_string(), |n| format!("game {n}"));
+    // A server from before the field sends none: the game after the last.
+    let on = match m.get("next_game") {
+        Some(Value::Null) => "decided".to_string(),
+        Some(n) => format!("game {}", n.as_u64().unwrap_or(0)),
+        None => format!("game {}", games.len() + 1),
+    };
     Some(if done.is_empty() { on } else { format!("{on}; {}", done.join(", ")) })
 }
 
