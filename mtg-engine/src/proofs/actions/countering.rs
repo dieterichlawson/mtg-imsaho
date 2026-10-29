@@ -51,14 +51,6 @@ fn countering(on: bool, under: bool) {
     std::mem::forget((registry, state));
 }
 
-#[kani::proof]
-#[kani::unwind(7)]
-#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
-#[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
-#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
-#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
-#[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
-#[kani::stub(crate::state::GameState::move_object, crate::proofs::cards::record_move)]
 /// "Counter target spell" (CR 701.6a): a spell on the stack is taken off
 /// it, the rest of the stack left in its order, and put into its owner's
 /// graveyard, or into exile if it was cast with flashback (702.34a) or the
@@ -67,11 +59,29 @@ fn countering(on: bool, under: bool) {
 /// as it was, and the answer is that nothing was. For either player's
 /// spell, under another spell or not, through `counter_spell` and
 /// `counter_spell_exiling`. Nothing else changes.
-fn countering_takes_a_spell_off_the_stack_to_its_graveyard_or_exile() {
-    match (kani::any::<bool>(), kani::any::<bool>()) {
-        (true, true) => countering(true, true),
-        (true, false) => countering(true, false),
-        (false, true) => countering(false, true),
-        (false, false) => countering(false, false),
-    }
+///
+/// Each shape of board in a harness of its own: the four in one, each a
+/// call of its own, added up past what one proof holds.
+macro_rules! each_shape {
+    ($($name:ident: $on:literal, $under:literal;)*) => {$(
+        #[kani::proof]
+        #[kani::unwind(7)]
+        #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+        #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+        #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+        #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+        #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+        #[kani::stub(crate::state::GameState::move_object, crate::proofs::cards::record_move)]
+        /// The proof above it, for one shape of board.
+        fn $name() {
+            countering($on, $under);
+        }
+    )*};
+}
+
+each_shape! {
+    countering_a_spell_on_the_stack_under_another: true, true;
+    countering_a_spell_on_the_stack_alone: true, false;
+    countering_a_spell_gone_from_under_another: false, true;
+    countering_a_spell_gone_from_the_stack: false, false;
 }
