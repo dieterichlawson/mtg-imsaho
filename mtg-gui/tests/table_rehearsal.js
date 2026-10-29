@@ -26,7 +26,7 @@ const { chromium } = require("playwright");
 const { spawnOwned, finish, parseArgs } = require("./children.js");
 const path = require("path");
 const fs = require("fs");
-const { step, snapshot } = require("./autoplay.js");
+const { step, snapshot, seedClicks } = require("./autoplay.js");
 
 const root = path.resolve(__dirname, "..", "..");
 const args = parseArgs({
@@ -44,6 +44,7 @@ const players = args["--players"];
 const bestOf = args["--best-of"];
 const ai = args["--ai"];
 const seed = args["--seed"];
+seedClicks(seed);
 const out = path.resolve(args["--out"] ?? path.join(root, "logs", "rehearsal", String(seed)));
 const pickSeconds = String(args["--pick-seconds"]);
 const port = 18900 + Math.floor(Math.random() * 50);
@@ -79,13 +80,21 @@ async function main() {
   server.stderr.on("data", d => { terminal += d; fs.appendFileSync(path.join(out, "terminal.txt"), d); });
   server.stdout.on("data", d => fs.appendFileSync(path.join(out, "terminal.txt"), d));
   let exited = null;
-  server.on("exit", (code, sig) => { exited = sig || code; });
+  // Watched for the whole run, not only its start: a server that died
+  // mid-draft left every person's page retrying until `--hours` ran out,
+  // then "the table never finished" (#943's review).
+  let quitting = false, started = false;
+  server.on("exit", (code, sig) => {
+    exited = sig || code;
+    if (started && !quitting) { fail(`the server exited (${exited}) with the table unfinished:\n${terminal.slice(-2000)}`); stop("the server exited"); }
+  });
   const began = Date.now();
   while (!/the draft starts when/.test(terminal)) {
     if (exited !== null) { fail(`the server exited (${exited}) before printing its join lines:\n` + terminal); return; }
     if (Date.now() - began > 60000) { fail("the server never printed its join lines:\n" + terminal); server.kill(); return; }
     await new Promise(r => setTimeout(r, 100));
   }
+  started = true;
   const links = [...terminal.matchAll(/^seat (\d+)\s+(http:\/\/\S+)/gm)].map(m => ({ seat: Number(m[1]), url: m[2] }));
   log(`table on :${port}, seed ${seed}, ${seats}, best-of-${bestOf}, AI ${ai}; ${links.length} join links`);
 
@@ -94,6 +103,7 @@ async function main() {
   try {
     await Promise.all(links.map(l => person(browser, l, tally)));
   } finally {
+    quitting = true;
     server.stdin.write("quit\n");
     await new Promise(r => setTimeout(r, 3000));
     server.kill("SIGTERM");

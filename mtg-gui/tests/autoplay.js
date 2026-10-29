@@ -30,14 +30,18 @@ function readArgs() {
     "--deck1": { kind: "string", def: null },
     "--deck2": { kind: "string", def: null },
   });
-  games = a["--games"]; seed0 = a["--seed"]; maxDecisions = a["--decisions"]; shotsDir = a["--shots"];
+  games = a["--games"]; seed0 = a["--seed"]; seedClicks(seed0); maxDecisions = a["--decisions"]; shotsDir = a["--shots"];
   decksArg = [a["--deck1"], a["--deck2"]];
 }
 const DECKS = ["red-green", "white-black", "blue-white", "black-aggro", "innistrad-white", "innistrad-blue", "innistrad-green",
   "decks/coverage/ub-coverage.txt", "decks/coverage/rg-coverage.txt", "decks/coverage/wb-coverage.txt", "decks/coverage/ug-coverage.txt",
   "decks/coverage/br-coverage.txt", "decks/coverage/wu-coverage.txt", "decks/coverage/wg-coverage.txt", "decks/coverage/ur-coverage.txt"];
 
-let rngState = seed0 * 2654435761 >>> 0;
+let rngState = 0;
+/** Seed the clicks: by `--seed` run as a script, by the rehearsal's seed
+ *  when `table_rehearsal.js` borrows `step` (it read that `--seed` from
+ *  argv before the flags were parsed, #943's review). */
+function seedClicks(seed) { rngState = seed * 2654435761 >>> 0; }
 function rnd() { rngState = (rngState * 1664525 + 1013904223) >>> 0; return rngState / 4294967296; }
 function pick(arr) { return arr[Math.floor(rnd() * arr.length)]; }
 
@@ -223,4 +227,4 @@ async function main() {
 // Run as a script it plays its own games; required, it lends its step to
 // another driver (`table_rehearsal.js` plays a hosted table's game pages).
 if (require.main === module) { readArgs(); finish(main); }
-module.exports = { step, snapshot };
+module.exports = { step, snapshot, seedClicks };

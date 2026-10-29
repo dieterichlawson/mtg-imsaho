@@ -22,6 +22,9 @@ const path = require("path");
 
 const root = path.resolve(__dirname, "..", "..");
 const owned = new Set();
+// Every runner `startRunner` started, for `finish` to name one that died
+// under a driver whose own wait then blamed the page (#943's review).
+const runners = new Set();
 
 process.on("exit", () => {
   for (const child of owned) {
@@ -70,11 +73,12 @@ function startRunner(args, { ms = 30000 } = {}) {
   // runner that had refused its deck at once (#943).
   let gone;
   const handle = { runner, urls: {}, output: () => out, exited: () => exit, gone: new Promise(r => { gone = r; }) };
+  runners.add(handle);
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`the runner named no page for ${seats.join(" and ")} in ${ms / 1000}s:\n${out}`)), ms);
     const look = () => {
       for (const m of out.matchAll(/^(--p[12]) gui: open (http:\/\/\S+)\r?\n/gm)) handle.urls[m[1]] = m[2];
-      if (seats.every(s => handle.urls[s])) { clearTimeout(timer); resolve(handle); }
+      if (seats.every(s => handle.urls[s])) { clearTimeout(timer); handle.open = true; resolve(handle); }
     };
     runner.stderr.on("data", look);
     runner.on("error", e => { clearTimeout(timer); reject(new Error(`the runner could not be started: ${e.message}`)); });
@@ -95,7 +99,19 @@ function startRunner(args, { ms = 30000 } = {}) {
 function finish(main, code = () => process.exitCode || 0) {
   main()
     .catch(e => { console.error("FAIL: " + (e && e.stack || String(e))); process.exitCode = 1; })
-    .finally(() => process.exit(code() || process.exitCode || 0));
+    .finally(() => {
+      // A runner that exited on its own with a failing status, which the
+      // driver did not kill: whatever the driver's FAIL said, this is why.
+      for (const h of runners) {
+        const e = h.exited();
+        // Not one that exited before its page opened: that rejection said it.
+        if (e && h.open && !h.runner.killed && e.code !== 0) {
+          console.error(`FAIL: the runner exited (${e.sig || e.code}) under the driver:\n${h.output().slice(-1500)}`);
+          process.exitCode = 1;
+        }
+      }
+      process.exit(code() || process.exitCode || 0);
+    });
 }
 
 /**
