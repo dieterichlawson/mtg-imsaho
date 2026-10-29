@@ -663,6 +663,39 @@ pub(crate) fn targets_are_legal(
     }
 }
 
+/// Each object on the battlefield, in id order, that passes `pass`, as a
+/// target, onto `out`.
+///
+/// A loop with the tests in its body, not a chain of `filter`s collected:
+/// a filter hands out its items by an inner `find`, so in a proof where the
+/// walk stands after the first item is one of as many places as passed,
+/// and every later object, and every question asked of it, was read at a
+/// place of every value. Each question is asked in the order the chain
+/// asked it, and stops where the chain stopped.
+fn push_battlefield_targets(out: &mut Vec<crate::actions::Target>, state: &GameState, pass: impl Fn(&crate::state::GameObject) -> bool) {
+    for o in state.each_object() {
+        if o.zone == Zone::Battlefield && pass(o) {
+            out.push(crate::actions::Target::Object(o.id));
+        }
+    }
+}
+
+/// `push_battlefield_targets`, onto a new list.
+fn battlefield_targets(state: &GameState, pass: impl Fn(&crate::state::GameObject) -> bool) -> Vec<crate::actions::Target> {
+    let mut out = Vec::new();
+    push_battlefield_targets(&mut out, state, pass);
+    out
+}
+
+/// Each player, in turn order, that passes `pass`, as a target, onto `out`.
+fn push_player_targets(out: &mut Vec<crate::actions::Target>, state: &GameState, pass: impl Fn(PlayerId) -> bool) {
+    for p in &state.players {
+        if pass(p.id) {
+            out.push(crate::actions::Target::Player(p.id));
+        }
+    }
+}
+
 /// Helper: collect all valid targets for a single-target requirement.
 pub(crate) fn valid_targets_for_req(
     state: &GameState,
@@ -676,26 +709,22 @@ pub(crate) fn valid_targets_for_req(
     use crate::cards::TargetRequirement;
 
     // Each zone walked, in id order, not listed first as
-    // `all_objects_in_zone` and `objects_in_id_order` list it:
-    // `each_in_zone` says why.
+    // `all_objects_in_zone` and `objects_in_id_order` list it: a proof
+    // reads a built list's entries as pointers that could be any object's,
+    // and the questions asked through them ran out of memory. The
+    // battlefield is walked in a loop (`push_battlefield_targets` says why).
     match req {
-        TargetRequirement::Creature => {
-            state.each_in_zone(Zone::Battlefield)
-                .filter(|o| state.is_creature(o.id, registry))
-                .filter(|o| can_be_targeted_by(state, o.id, caster, Some(spell_id), registry))
-                .map(|o| Target::Object(o.id))
-                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
-                .collect()
-        }
-        TargetRequirement::CreatureWithFilter(filter) => {
-            state.each_in_zone(Zone::Battlefield)
-                .filter(|o| state.is_creature(o.id, registry))
-                .filter(|o| matches_target_filter(state, o, filter, caster, Some(spell_id), registry))
-                .filter(|o| can_be_targeted_by(state, o.id, caster, Some(spell_id), registry))
-                .map(|o| Target::Object(o.id))
-                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
-                .collect()
-        }
+        TargetRequirement::Creature => battlefield_targets(state, |o| {
+            state.is_creature(o.id, registry)
+                && can_be_targeted_by(state, o.id, caster, Some(spell_id), registry)
+                && behavior.is_valid_target(state, caster, &Target::Object(o.id), registry)
+        }),
+        TargetRequirement::CreatureWithFilter(filter) => battlefield_targets(state, |o| {
+            state.is_creature(o.id, registry)
+                && matches_target_filter(state, o, filter, caster, Some(spell_id), registry)
+                && can_be_targeted_by(state, o.id, caster, Some(spell_id), registry)
+                && behavior.is_valid_target(state, caster, &Target::Object(o.id), registry)
+        }),
         TargetRequirement::Spell => {
             // Only spells on the stack can be targeted (not triggered abilities).
             state.stack.iter()
@@ -705,30 +734,22 @@ pub(crate) fn valid_targets_for_req(
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect()
         }
-        TargetRequirement::PermanentWithFilter(filter) => {
-            state.each_in_zone(Zone::Battlefield)
-                .filter(|o| matches_target_filter(state, o, filter, caster, Some(spell_id), registry))
-                .filter(|o| can_be_targeted_by(state, o.id, caster, Some(spell_id), registry))
-                .map(|o| Target::Object(o.id))
-                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
-                .collect()
-        }
+        TargetRequirement::PermanentWithFilter(filter) => battlefield_targets(state, |o| {
+            matches_target_filter(state, o, filter, caster, Some(spell_id), registry)
+                && can_be_targeted_by(state, o.id, caster, Some(spell_id), registry)
+                && behavior.is_valid_target(state, caster, &Target::Object(o.id), registry)
+        }),
         TargetRequirement::AnyTarget => {
-            let mut targets: Vec<Target> = state.each_in_zone(Zone::Battlefield)
-                .filter(|o| state.is_creature(o.id, registry)
+            let mut targets = battlefield_targets(state, |o| {
+                (state.is_creature(o.id, registry)
                     || state.has_card_type(o.id, CardType::Planeswalker, registry))
-                .filter(|o| can_be_targeted_by(state, o.id, caster, Some(spell_id), registry))
-                .map(|o| Target::Object(o.id))
-                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
-                .collect();
-            for p in &state.players {
-                if can_target_player(state, p.id, caster, registry) {
-                    let t = Target::Player(p.id);
-                    if behavior.is_valid_target(state, caster, &t, registry) {
-                        targets.push(t);
-                    }
-                }
-            }
+                    && can_be_targeted_by(state, o.id, caster, Some(spell_id), registry)
+                    && behavior.is_valid_target(state, caster, &Target::Object(o.id), registry)
+            });
+            push_player_targets(&mut targets, state, |p| {
+                can_target_player(state, p, caster, registry)
+                    && behavior.is_valid_target(state, caster, &Target::Player(p), registry)
+            });
             targets
         }
         TargetRequirement::PlayerOnly => {
@@ -758,20 +779,16 @@ pub(crate) fn valid_targets_for_req(
                 .collect()
         }
         TargetRequirement::PlayerOrPlaneswalker => {
-            let mut targets: Vec<Target> = state.players.iter()
-                .filter(|p| can_target_player(state, p.id, caster, registry))
-                .map(|p| Target::Player(p.id))
-                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
-                .collect();
-            for obj in state.each_in_zone(Zone::Battlefield) {
-                let is_pw = state.has_card_type(obj.id, CardType::Planeswalker, registry);
-                if is_pw && can_be_targeted_by(state, obj.id, caster, Some(spell_id), registry) {
-                    let t = Target::Object(obj.id);
-                    if behavior.is_valid_target(state, caster, &t, registry) {
-                        targets.push(t);
-                    }
-                }
-            }
+            let mut targets = Vec::new();
+            push_player_targets(&mut targets, state, |p| {
+                can_target_player(state, p, caster, registry)
+                    && behavior.is_valid_target(state, caster, &Target::Player(p), registry)
+            });
+            push_battlefield_targets(&mut targets, state, |o| {
+                state.has_card_type(o.id, CardType::Planeswalker, registry)
+                    && can_be_targeted_by(state, o.id, caster, Some(spell_id), registry)
+                    && behavior.is_valid_target(state, caster, &Target::Object(o.id), registry)
+            });
             targets
         }
         TargetRequirement::GraveyardCard => {

@@ -1956,15 +1956,6 @@ impl GameState {
         self.objects.values()
     }
 
-    /// Every object in `zone` (regardless of player), in id order, as
-    /// [`Self::all_objects_in_zone`] lists them, with no list built. A
-    /// proof reads a built list's entries as pointers that could be any
-    /// object's, as many as which objects are in the zone decides, and a
-    /// filter's questions asked through them ran out of memory (targeting).
-    pub fn each_in_zone(&self, zone: Zone) -> impl Iterator<Item = &GameObject> + '_ {
-        self.objects.values().filter(move |obj| obj.zone == zone)
-    }
-
     /// Get all objects in a zone (regardless of player), in id order.
     #[must_use]
     pub fn all_objects_in_zone(&self, zone: Zone) -> Vec<&GameObject> {
