@@ -8,6 +8,27 @@ use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 /// Target player reveals their hand. You choose a nonland card from it. Exile that card.
 pub struct NightTerrors;
 
+/// The names of the cards a hand reveals, joined with ", ", or "(empty)":
+/// written only when the log line is. Joined first, the names were a
+/// string built from every card of the hand, which a proof of the card
+/// followed name by name, over an empty hand too.
+struct Revealed<'a>(&'a GameState, &'a CardRegistry, &'a [ObjectId]);
+
+impl std::fmt::Display for Revealed<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.2.is_empty() {
+            return f.write_str("(empty)");
+        }
+        for (i, id) in self.2.iter().enumerate() {
+            if i > 0 {
+                f.write_str(", ")?;
+            }
+            f.write_str(&self.0.name_of(*id, self.1))?;
+        }
+        Ok(())
+    }
+}
+
 impl CardBehavior for NightTerrors {
     fn card_data(&self) -> CardData {
         CardData {
@@ -34,24 +55,16 @@ impl CardBehavior for NightTerrors {
             // log records what was shown. Only the selection below is
             // restricted to nonland cards; the reveal used to show nothing
             // but the choosable ones (issue #133).
-            let revealed: Vec<String> = state.objects_in_zone(Zone::Hand, *target_player)
-                .iter()
-                .map(|o| state.name_of(o.id, registry))
-                .collect();
+            let hand = state.ids_in_zone(Zone::Hand, *target_player, |_| true);
             state.log(crate::state::LogLevel::Event, format!(
                 "Night Terrors: p{} reveals hand: {}",
-                target_player.0,
-                if revealed.is_empty() { "(empty)".into() } else { revealed.join(", ") }));
+                target_player.0, Revealed(state, registry, &hand)));
 
             // Reveal target player's hand — find all nonland cards.
-            let nonland_cards: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, *target_player)
-                .iter()
-                .filter(|o| {
-                    let is_land = state.face_card_types(o.id, registry).contains(&CardType::Land);
-                    !is_land
-                })
-                .map(|o| o.id)
-                .collect();
+            let nonland_cards = state.ids_in_zone(Zone::Hand, *target_player, |o| {
+                let is_land = state.face_card_types(o.id, registry).contains(&CardType::Land);
+                !is_land
+            });
 
             if nonland_cards.is_empty() {
                 state.log(crate::state::LogLevel::Event,
