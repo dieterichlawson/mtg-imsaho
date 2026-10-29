@@ -34,7 +34,9 @@ harness passes only with every loop unwound as far as it goes.
 Per batch: `cargo kani --only-codegen` for the batch's harnesses; per
 harness: Kani's goto-cc link and goto-instrument passes, the rewrite,
 then cbmc with Kani's flags, the bounds and --json-ui. A result is read as Kani reads
-it: reachability checks are not failures, and covers are counted.
+it: reachability checks are not failures, and covers are counted. A
+harness none of whose own `assert!`s is reached is VACUOUS: Kani calls it
+successful, with every one of them UNREACHABLE.
 
 CBMC's pointer and bounds checks are off (`NO_MEMORY_CHECKS` says why);
 --memory-checks keeps them.
@@ -417,9 +419,18 @@ def solve(cmd, timeout, nrec):
         # Under --mem-cap: the cap, not the machine, ran out.
         return ('OOM', f"{nrec} bounded; over the cap{';' + size if size else ' in symbolic execution'}", seconds, set(), [])
     failed, others, loops, covers, covered = [], [], set(), 0, 0
+    # Kani puts a reachability check, `assert(false)` under the check's id,
+    # before each assertion: failing, it says the assertion is reached.
+    reached = {desc for prop, status, desc in results
+               if '.reachability_check.' in prop and status == 'FAILURE'}
+    claims = claimed = 0
     for prop, status, desc in results:
         if '.reachability_check.' in prop:
             continue
+        m = re.match(r'\[(KANI_CHECK_ID_\S+)\] assertion failed', desc or '')
+        if m and prop.startswith('proofs::') and '.assertion.' in prop:
+            claims += 1
+            claimed += m.group(1) in reached
         if '.cover.' in prop:
             covers += 1
             covered += status == 'FAILURE'
@@ -440,9 +451,14 @@ def solve(cmd, timeout, nrec):
         return ('ERROR', ' '.join(errors)[:300], seconds, set(), ['error'])
     if not results and not errors:
         return ('ERROR', f'no results (exit {code})', seconds, set(), ['error'])
-    cov = (f' covers {covered}/{covers}' if covers else '') + size
+    cov = (f' covers {covered}/{covers}' if covers else '') + (f' reaches {claimed}/{claims}' if claims else '') + size
     if failed:
         return ('FAILED', f'{nrec} bounded{cov}; ' + ' | '.join(sorted(set(failed)))[:400], seconds, loops, others)
+    if claims and not claimed:
+        # Every `assert!` of the proof's own unreached: what it claims holds
+        # of no execution, so it proved nothing (an assumption, a stub or an
+        # unwinding bound that rules every case out).
+        return ('VACUOUS', f'{nrec} bounded{cov}', seconds, set(), [])
     return ('SUCCESSFUL', f'{nrec} bounded{cov}', seconds, set(), [])
 
 
