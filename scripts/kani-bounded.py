@@ -351,7 +351,9 @@ def solve(cmd, timeout, nrec):
     for line in p.stdout:
         if raw:
             raw.write(line)
-        if 'ut of memory' in line or 'bad_alloc' in line:
+        # "Solver ran out ...": the SAT solver's own allocation failing,
+        # which is the cap as much as CBMC's is.
+        if 'ut of memory' in line or 'bad_alloc' in line or 'olver ran out' in line:
             oom = True
         if line.startswith('    "messageText": '):
             text = value(line)
