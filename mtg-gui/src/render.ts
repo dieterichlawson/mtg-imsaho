@@ -24,6 +24,16 @@ const STEPS: Step[] = ["Untap", "Upkeep", "Draw", "PrecombatMain", "BeginCombat"
 const STEP_SHORT: Record<Step, string> = { Untap: "UN", Upkeep: "UP", Draw: "DR", PrecombatMain: "M1", BeginCombat: "BC",
   DeclareAttackers: "DA", DeclareBlockers: "DB", CombatDamage: "CD", EndCombat: "EC", PostcombatMain: "M2",
   EndStep: "ES", Cleanup: "CL" };
+/** Keywords as the card prints them, "First strike, flying": the
+ *  engine's `Keyword::label`, which is the variant's words in lowercase
+ *  (FirstStrike and DoubleStrike are the two with more than one). The
+ *  inspector printed the serde names, "FirstStrike" over the card's own
+ *  "First strike" (#955, the page's #363). */
+export function keywordLine(keywords: string[]): string {
+  const line = keywords.map(k => k.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase()).join(", ");
+  return line.charAt(0).toUpperCase() + line.slice(1);
+}
+
 const KEYWORD_SHORT: Record<string, string> = { Flying: "Fly", FirstStrike: "FS", DoubleStrike: "DS", Trample: "Tr", Deathtouch: "DT",
   Lifelink: "LL", Vigilance: "Vig", Flash: "Fl", Reach: "Rch", Haste: "Hst", Defender: "Def", Hexproof: "Hex",
   Intimidate: "Int", Menace: "Men", Indestructible: "Ind" };
@@ -962,7 +972,7 @@ export function inspectorFacts(state: LiveState, e: IndexEntry): string[] {
   // Galvanic Juggernaut (CR 105.2c), so it is said out loud (issue #525,
   // #357 on the fourth surface).
   if (o.colors) out.push(`Color: ${o.colors.length ? o.colors.join(", ") : "Colorless"}`);
-  if (o.keywords && o.keywords.length) out.push(o.keywords.join(", "));
+  if (o.keywords && o.keywords.length) out.push(keywordLine(o.keywords));
   if (o.counters) for (const [k, n] of Object.entries(o.counters)) if (n) out.push(counterFact(k, n));
   // The count, not just a badge. A shield is spent one per destruction
   // (CR 701.15a), so six of them and one of them are different boards —
