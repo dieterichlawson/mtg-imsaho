@@ -988,6 +988,16 @@ sits in memory. What was measured, and what the proofs do about each:
   with its list of effects already applied, and Nevermore cloned the
   name chosen. Each now reads what it needs where it lies, puts back the
   prompt it took, or moves the string out of the spent prompt.
+- **A branch an assumption rules out.** Symbolic execution drops a
+  branch only where its condition comes out a constant; `kani::assume`
+  narrows what the solver may pick, not what is walked. The proof of
+  prevention and doubling assumed the damage 1 to 3, and `queue_damage`'s
+  branch for 0 damage, which queues nothing, was walked all the same;
+  where it met the branch that queued the event, the queue's length was
+  0 or 1 rather than 1, and the settling loop was walked for every
+  length, the orders of every list of effects compared, out of memory at
+  3.5 GB. With the amount a constant in each harness, the four of those
+  harnesses tried passed in 87 to 124 seconds.
 - **CBMC's memory checks.** `kani-bounded.py` leaves out CBMC's pointer,
   bounds and division checks (`--memory-checks` keeps them): that safe
   Rust reads only memory it may is the compiler's guarantee, and Rust's
