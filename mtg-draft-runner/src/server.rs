@@ -407,9 +407,15 @@ impl Shared {
         for &(seat, opponent, open, _) in &pages {
             changed |= self.lobby().set_game_pages(seat, Some(open));
             let Some((_, _, _, their_page)) = pages.iter().find(|(s, ..)| *s == opponent) else { continue };
-            let line = (open == 0).then(|| format!(
-                "{}'s game page is closed: the game waits for them to open it again",
-                self.lobby().who(seat)));
+            // A page never opened was not closed (#926).
+            let line = (open == 0).then(|| {
+                let lobby = self.lobby();
+                if lobby.game_page_opened(seat) {
+                    format!("{}'s game page is closed: the game waits for them to open it again", lobby.who(seat))
+                } else {
+                    format!("{}'s game page is not open yet: the game waits for them to open it", lobby.who(seat))
+                }
+            });
             their_page.set_opponent(line);
         }
         if changed {

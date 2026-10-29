@@ -26,7 +26,8 @@ export interface SeatInfo {
    *  the host started without it). */
   auto?: boolean;
   /** Where the seat is, in the table's one word: "not yet", "here",
-   *  "away", "in game", "game page closed", "kicked", "not answering".
+   *  "away", "in game", "game page not opened yet", "game page closed",
+   *  "kicked", "not answering".
    *  A person in a match is wherever their game page is (#822). */
   presence?: string;
 }

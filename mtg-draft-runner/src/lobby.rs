@@ -279,8 +279,8 @@ pub struct SeatView {
     /// Live connections right now; a joined seat with none is away.
     pub connected: usize,
     /// Where the seat is, in one word every surface prints as it is: "not
-    /// yet", "here", "away", "in game", "game page closed", "kicked",
-    /// "not answering". A person in a match is wherever their game page
+    /// yet", "here", "away", "in game", "game page not opened yet", "game
+    /// page closed", "kicked", "not answering". A person in a match is wherever their game page
     /// is; the draft page's socket said "here" for a player who had closed
     /// the game and "away" for one playing it (#822).
     pub presence: &'static str,
@@ -738,6 +738,9 @@ struct SeatState {
     /// Pages attached to the seat's game while it is in a match with one;
     /// `None` outside a match.
     game_pages: Option<usize>,
+    /// Whether this match's game page has been open at all: one not opened
+    /// yet is not "closed", and its first open is not "open again" (#926).
+    game_page_opened: bool,
     deck: Option<DraftDeck>,
     deck_problem: Option<String>,
     ready: bool,
@@ -883,6 +886,7 @@ impl Lobby {
             kicked: false,
             gave_up: false,
             game_pages: None,
+            game_page_opened: false,
             deck: None,
             deck_problem: None,
             ready: false,
@@ -1061,15 +1065,28 @@ the order they happened, not in seat order", "");
     /// told when a page closes on a game and when it comes back (#822).
     pub fn set_game_pages(&mut self, seat: usize, pages: Option<usize>) -> bool {
         let before = self.seats[seat].game_pages;
+        let opened = self.seats[seat].game_page_opened;
         self.seats[seat].game_pages = pages;
         let open = |p: Option<usize>| p.is_some_and(|n| n > 0);
         match (before, pages) {
             (Some(b), Some(0)) if b > 0 => self.event(format!(
                 "{}'s game page is closed; the game waits for them to open it again", self.who(seat))),
-            (Some(0), Some(n)) if n > 0 => self.event(format!("{}'s game page is open again", self.who(seat))),
+            (Some(0), Some(n)) if n > 0 && opened => self.event(format!("{}'s game page is open again", self.who(seat))),
+            (Some(0), Some(n)) if n > 0 => self.event(format!("{}'s game page is open", self.who(seat))),
             _ => {}
         }
+        // A new match's page starts unopened; a match's end forgets it.
+        self.seats[seat].game_page_opened = match pages {
+            Some(n) => n > 0 || (opened && before.is_some()),
+            None => false,
+        };
         open(before) != open(pages) || before.is_some() != pages.is_some()
+    }
+
+    /// Whether the seat's game page for its match has been open at all.
+    #[must_use]
+    pub fn game_page_opened(&self, seat: usize) -> bool {
+        self.seats[seat].game_page_opened
     }
 
     /// The seat's presence word; see [`SeatView::presence`].
@@ -1086,7 +1103,8 @@ the order they happened, not in seat order", "");
             "here"
         } else {
             match s.game_pages {
-                Some(0) => "game page closed",
+                Some(0) if s.game_page_opened => "game page closed",
+                Some(0) => "game page not opened yet",
                 Some(_) => "in game",
                 None if s.connected > 0 => "here",
                 None => "away",

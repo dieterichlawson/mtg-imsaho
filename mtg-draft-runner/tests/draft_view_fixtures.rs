@@ -701,8 +701,12 @@ fn a_seat_is_where_its_game_page_is_and_a_kicked_seat_says_so() {
     // In a match: the game page decides, whatever the draft page does.
     l.connected(0);
     assert!(l.set_game_pages(0, Some(0)));
-    assert_eq!(presence(&l, 0), "game page closed", "a match with nobody at its game");
+    // Not yet opened is not closed, and the first open is not "again" (#926).
+    assert_eq!(presence(&l, 0), "game page not opened yet", "a match with nobody at its game yet");
+    assert!(!l.game_page_opened(0));
+    l.take_events();
     assert!(l.set_game_pages(0, Some(1)));
+    assert_eq!(l.take_events(), vec!["seat 0's game page is open".to_string()]);
     assert_eq!(presence(&l, 0), "in game");
     l.disconnected(0);
     assert_eq!(presence(&l, 0), "in game", "playing with the draft page closed is not away");
@@ -713,8 +717,15 @@ fn a_seat_is_where_its_game_page_is_and_a_kicked_seat_says_so() {
     assert!(!l.set_game_pages(0, Some(0)), "no change, nothing to send");
     assert!(l.set_game_pages(0, Some(2)));
     assert!(l.take_events().iter().any(|e| e == "seat 0's game page is open again"));
+    assert_eq!(presence(&l, 0), "in game");
+    assert!(l.set_game_pages(0, Some(0)));
+    assert_eq!(presence(&l, 0), "game page closed", "opened, then closed");
     assert!(l.set_game_pages(0, None));
     assert_eq!(presence(&l, 0), "away", "the match is over and the draft page is closed");
+    // The next match's page starts unopened again.
+    assert!(l.set_game_pages(0, Some(0)));
+    assert_eq!(presence(&l, 0), "game page not opened yet");
+    assert!(l.set_game_pages(0, None));
 
     // A kick is the seat's state from then on, and the reason the table
     // gives for everything it does for the seat.

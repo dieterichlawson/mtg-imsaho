@@ -134,6 +134,8 @@ While a match is on, closing a game page is said: the opponent's game
 page shows "<name>'s game page is closed: the game waits for them to open
 it again" where it would say "Opponent is thinking", both draft pages
 show the seat as "game page closed", and the host's terminal says so.
+A page not opened yet is said as that ("<name>'s game page is not open
+yet", "game page not opened yet"), and its first open is not "open again".
 Reopening the link carries on from the decision that was waiting. Each
 game page also says which game of the match it is and the score.
 
