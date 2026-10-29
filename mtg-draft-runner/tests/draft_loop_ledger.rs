@@ -156,6 +156,41 @@ fn a_card_is_credited_with_the_games_it_was_in_the_deck_for() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// #919: the debrief told a seat it "drew 1-1" over three games, the drawn
+/// one in no count. Its score carries the games with no winner, as the
+/// runner's own lines do.
+#[test]
+fn the_debrief_counts_a_matchs_drawn_games() {
+    let dir = std::env::temp_dir().join(format!("mtg-ledger-draw-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let deck = |cards: &[&str]| serde_json::json!({"deck": {"maindeck": cards, "lands": {"Forest": 17}, "sideboard": []}});
+    let save = serde_json::json!({
+        "seed": 1, "set": "isd", "players": 2, "best_of": 3,
+        "seats": [{"model": "cc"}, {"model": "cc"}],
+        "decks": [deck(&["Ambush Viper"]), deck(&["Darkthicket Wolf"])],
+        "picks": [],
+        "matches": [{"round": 1, "result": {"player_a": 0, "player_b": 1, "wins_a": 1, "wins_b": 1, "games": [
+            {"winner": 0, "turns": 9}, {"winner": null, "turns": 30}, {"winner": 1, "turns": 8},
+        ]}}],
+    });
+    let snap = dir.join("save.json");
+    std::fs::write(&snap, save.to_string()).unwrap();
+    let out = Command::new("python3").arg(concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/draft-loop/ledger.py"))
+        .args(["night", "--save", snap.to_str().unwrap(), "--night", "2099-01-01", "--out", dir.to_str().unwrap()])
+        .output().expect("python3 runs");
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    let story = Command::new("python3")
+        .args(["-c", "import sys, json; sys.path.insert(0, sys.argv[1]); import reflect; n = json.load(open(sys.argv[2])); print(reflect.seat_story(n, n['seats'][0]))"])
+        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/../scripts/draft-loop"))
+        .arg(dir.join("nights/2099-01-01.json"))
+        .output().expect("python3 runs");
+    assert!(story.status.success(), "{}", String::from_utf8_lossy(&story.stderr));
+    let story = String::from_utf8_lossy(&story.stdout);
+    assert!(story.contains("drew 1-1-1 (games of 9, 30, 8 turns)"), "{story}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// #923: a pack's last card is taken without asking, so no position records
 /// it, and `stats` counted it as taken but never as seen. The seat that took
 /// it saw it.

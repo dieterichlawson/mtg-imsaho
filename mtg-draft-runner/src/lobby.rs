@@ -1805,7 +1805,8 @@ for the seat from here, and its games are forfeit"), ""));
     /// A match ended. When the round is over it is recorded, the next one
     /// paired, and the matches to play next are returned.
     pub fn match_finished(&mut self, round: usize, a: usize, b: usize, result: MatchResult) -> Vec<(usize, usize, usize)> {
-        log_match_result!(self.log, round, a, b, result.wins_a, result.wins_b, result.winner());
+        log_match_result!(self.log, round, a, b,
+            &crate::standings::match_score(result.wins_a, result.wins_b, &result.games), result.winner());
         for (n, game) in result.games.iter().enumerate() {
             log_game_log!(self.log, round, n + 1, a, b, &game.game_log);
         }

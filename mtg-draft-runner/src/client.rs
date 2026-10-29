@@ -888,7 +888,7 @@ mod tests {
             "matches": [
                 {"round": 1, "opponent": 1, "url": null, "status": "done", "result": "0-1",
                  "games": [{"winner": 1, "forfeited_by": 0, "abandoned": false}]},
-                {"round": 2, "opponent": 1, "url": null, "status": "done", "result": "0-0",
+                {"round": 2, "opponent": 1, "url": null, "status": "done", "result": "0-0 (drawn)",
                  "games": [{"winner": null, "forfeited_by": null, "abandoned": true}]},
             ],
             "pairings": [], "pool": [], "picks": [], "deck": null, "notice": null,
@@ -897,7 +897,7 @@ mod tests {
         });
         let (_, mine) = render(&v, &Build::default());
         assert!(mine.contains("Round 1 vs Lawson (seat 1): done — 0-1 [1 game forfeited]\n"), "{mine}");
-        assert!(mine.contains("Round 2 vs Lawson (seat 1): done — 0-0 [1 game abandoned, no winner]\n"), "{mine}");
+        assert!(mine.contains("Round 2 vs Lawson (seat 1): done — 0-0 (drawn) [1 game abandoned, no winner]\n"), "{mine}");
         assert!(mine.contains("  1. Lawson (seat 1) 1-0-1 (4 points)\n"), "{mine}");
         assert!(mine.contains("  2. seat 0 0-1-1 (1 point) [substitute deck] [1 game forfeited]\n"), "{mine}");
     }

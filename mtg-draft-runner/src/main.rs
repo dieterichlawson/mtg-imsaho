@@ -1738,8 +1738,7 @@ the snapshot, not by this one; its games are in that run's log",
                 round_num,
                 result.player_a,
                 result.player_b,
-                result.wins_a,
-                result.wins_b,
+                &mtg_draft_runner::standings::match_score(result.wins_a, result.wins_b, &result.games),
                 result.winner(),
             );
             for (game_num, game) in result.games.iter().enumerate() {

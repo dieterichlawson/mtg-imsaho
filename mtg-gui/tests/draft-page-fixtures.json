@@ -4365,7 +4365,7 @@
       }
      ],
      "next_game": null,
-     "result": "2-0"
+     "result": "2-0-1"
     },
     {
      "round": 2,
@@ -4410,7 +4410,7 @@
      "a": 0,
      "b": 3,
      "status": "done",
-     "result": "2-0"
+     "result": "2-0-1"
     },
     {
      "round": 1,

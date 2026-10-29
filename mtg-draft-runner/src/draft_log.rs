@@ -328,8 +328,8 @@ unusable response, substituted {chosen_name} (the first card) — replayed from 
         round: usize,
         seat_a: usize,
         seat_b: usize,
-        wins_a: usize,
-        wins_b: usize,
+        // `standings::match_score`: the drawn games are in it (#919).
+        score: &str,
         winner: Option<usize>,
         file: &str,
         line: u32,
@@ -337,7 +337,7 @@ unusable response, substituted {chosen_name} (the first card) — replayed from 
         let winner_str = winner.map_or_else(|| "Draw".to_string(), |w| format!("Seat {w} wins"));
         mtg_player::game_log::write(
             file, line,
-            &format!("MATCH Round {round} — Seat {seat_a} vs Seat {seat_b}: {wins_a}-{wins_b} ({winner_str})"),
+            &format!("MATCH Round {round} — Seat {seat_a} vs Seat {seat_b}: {score} ({winner_str})"),
             "",
         );
     }
