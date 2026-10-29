@@ -31,7 +31,14 @@ The rewrite, which changes nothing a Rust program can observe:
 - every assignment `x.cases.V := v` of an enum with its own tag field
   becomes `x.cases := bytes of {v, 0...}`, so the bytes of other variants
   are zero rather than whatever they were. No program reads a variant other
-  than the one its tag names. A fieldless variant, only its tag written,
+  than the one its tag names. Not where the union is wider than
+  `WIDEST_WHOLE` bits and the variant narrower than it: there the bytes of
+  a narrow variant holding a pointer, laid over a wide union, are more
+  than CBMC gets through, and asking a yes/no question (`awaiting_action :=
+  Some(ResolutionChoice { YesNo })`, its 256-bit variant in a 1152-bit
+  union) ran out of memory at three gigabytes, where as written it is
+  sixteen seconds. The enums this rule was for (an effect copied into a
+  `Box`) are narrower. A fieldless variant, only its tag written,
   has its variants' bytes made zero too, so that CBMC knows all of a value
   holding it and propagates it: an Aura's printed effect over
   `EffectScope::Attached`, boxed as its card, was otherwise cloned as
@@ -84,6 +91,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import goto_binary as gb  # noqa: E402
 
 ASSIGN, DECL = 13, 14
+
+# The widest union, in bits, whose narrower variants' writes are made
+# writes of the whole union (the module doc says why there is a limit).
+WIDEST_WHOLE = 1024
 
 
 def rewrite(version, strings, symbols, functions):
@@ -199,7 +210,7 @@ def rewrite(version, strings, symbols, functions):
                 continue
             vt = named(rhs, K_TYPE)
             uw, vw = width(ut), (width(vt) if vt is not None else None)
-            if uw is None or vw is None or vw > uw:
+            if uw is None or vw is None or vw > uw or (vw < uw and uw > WIDEST_WHOLE):
                 continue
             # As bytes, not as the union of the member written: CBMC splits
             # a union so built into its members and does not keep the whole,
