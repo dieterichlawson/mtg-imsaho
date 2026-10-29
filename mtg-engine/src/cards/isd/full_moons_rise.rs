@@ -63,13 +63,11 @@ impl CardBehavior for FullMoonsRise {
     fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         let controller = crate::cards::helpers::ability_controller(state, object_id);
 
-        let werewolves: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
-            .iter()
-            // `registry.card_data` reads the front face only; `has_subtype`
-            // reads the active one and unions in runtime-granted subtypes.
-            .filter(|o| state.is_creature(o.id, registry) && state.has_subtype(o.id, "Werewolf", registry))
-            .map(|o| o.id)
-            .collect();
+        // `registry.card_data` reads the front face only; `has_subtype`
+        // reads the active one and unions in runtime-granted subtypes.
+        let werewolves = state.ids_in_zone(Zone::Battlefield, controller, |o| {
+            state.is_creature(o.id, registry) && state.has_subtype(o.id, "Werewolf", registry)
+        });
 
         for cid in werewolves {
             state.add_regeneration_shield(cid);

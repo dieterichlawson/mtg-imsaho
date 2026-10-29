@@ -1971,6 +1971,31 @@ impl GameState {
         self.objects.values().any(|obj| in_zone_of(obj, zone, player) && want(obj))
     }
 
+    /// The ids of `player`'s objects in `zone` that `keep` accepts, in the
+    /// order `objects_in_zone` lists them, into a list allocated at the
+    /// most it can hold (as `helpers::ids_where` says why). Every zone but
+    /// a graveyard is listed in id order, so there the objects are scanned
+    /// as they are, with no list of the zone built first, for the reason
+    /// [`Self::count_in_zone`] gives.
+    #[must_use]
+    pub fn ids_in_zone(&self, zone: Zone, player: PlayerId, mut keep: impl FnMut(&GameObject) -> bool) -> Vec<ObjectId> {
+        let mut ids = Vec::with_capacity(self.objects.len());
+        if zone == Zone::Graveyard {
+            for obj in self.objects_in_zone(zone, player) {
+                if keep(obj) {
+                    ids.push(obj.id);
+                }
+            }
+        } else {
+            for obj in self.objects.values() {
+                if in_zone_of(obj, zone, player) && keep(obj) {
+                    ids.push(obj.id);
+                }
+            }
+        }
+        ids
+    }
+
     /// Get the next player after the given player (turn order).
     #[must_use]
     pub fn next_player(&self, player: PlayerId) -> PlayerId {
