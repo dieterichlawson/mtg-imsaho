@@ -16,10 +16,14 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
         // engine asked a question; being handed something that does not answer
         // it is not an answer, and nothing about the game has moved on. Taking
         // the prompt and dropping it would resume a resolution that never got
-        // its choice.
-        let unanswered = awaiting.clone();
-        if let Some(AwaitingAction::ResolutionChoice { choice: kind, source: choice_source, player: chooser, .. }) = awaiting {
-            match (&kind, resolved) {
+        // its choice. So the prompt is read where it lies and put back as it
+        // was, not cloned to be put back: a proof reads the lists of a clone
+        // of a choice as any lists at all (CBMC loses which buffer they were
+        // copied from), and a refused answer then restored a prompt of
+        // anything, every proof of a choice's answer with it.
+        if let Some(AwaitingAction::ResolutionChoice { choice: kind, source: choice_source, player: chooser, .. }) = &awaiting {
+            let (choice_source, chooser) = (*choice_source, *chooser);
+            match (kind, resolved) {
                 (ResolutionChoiceKind::PayOrNot { spell_id, source_spell_id, cost, .. },
                  ResolvedChoice::PayDecision(pay)) => {
                     // CR 608.2g: paying may involve tapping for the mana.
@@ -69,14 +73,14 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     if chosen.as_ref().is_some_and(|t| !options.contains(t)) {
                         state.log(LogLevel::Debug, format!(
                             "choice refused, {chosen:?} was not among the options offered"));
-                        state.awaiting_action = unanswered;
+                        state.awaiting_action = awaiting;
                         return Applied::ReturnNow;
                     }
                     // Declining is only an answer when the choice allows it.
                     if chosen.is_none() && !*optional {
                         state.log(LogLevel::Debug,
                             "choice refused, this one is not optional".into());
-                        state.awaiting_action = unanswered;
+                        state.awaiting_action = awaiting;
                         return Applied::ReturnNow;
                     }
                     if let Some(t) = chosen {
@@ -105,7 +109,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     if !state.objects_in_zone(Zone::Hand, *player).iter().any(|o| o.id == *discard_id) {
                         state.log(LogLevel::Debug, format!(
                             "choice refused, {discard_id:?} is not in p{}'s hand", player.0));
-                        state.awaiting_action = unanswered;
+                        state.awaiting_action = awaiting;
                         return Applied::ReturnNow;
                     }
                     // CR 101.4: when several players are each choosing a
@@ -142,7 +146,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     if !looked_at.contains(keep_id) {
                         state.log(LogLevel::Debug, format!(
                             "choice refused, {keep_id:?} was not among the cards looked at"));
-                        state.awaiting_action = unanswered;
+                        state.awaiting_action = awaiting;
                         return Applied::ReturnNow;
                     }
                     let keep_name = state.obj_name(*keep_id);
@@ -185,7 +189,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     let Some(&blocker) = remaining.get(*index) else {
                         state.log(LogLevel::Debug, format!(
                             "choice refused, {index} is not one of the {} blockers offered", options.len()));
-                        state.awaiting_action = unanswered;
+                        state.awaiting_action = awaiting;
                         return Applied::ReturnNow;
                     };
                     let attacker = *attacker;
@@ -202,7 +206,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     if !is_permutation(order, remaining.len()) {
                         state.log(LogLevel::Debug, format!(
                             "choice refused, {order:?} is not an ordering of the {} blockers offered", options.len()));
-                        state.awaiting_action = unanswered;
+                        state.awaiting_action = awaiting;
                         return Applied::ReturnNow;
                     }
                     let attacker = *attacker;
@@ -226,7 +230,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     else {
                         state.log(LogLevel::Debug, format!(
                             "choice refused, {index} is not one of the {} amounts offered", options.len()));
-                        state.awaiting_action = unanswered;
+                        state.awaiting_action = awaiting;
                         return Applied::ReturnNow;
                     };
                     let (attacker, blocker, first_strike_only) = (*attacker, *blocker, *first_strike_only);
@@ -248,7 +252,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     let Some(effect) = effects.get(*index) else {
                         state.log(LogLevel::Debug, format!(
                             "choice refused, {index} is not one of the {} effects offered", options.len()));
-                        state.awaiting_action = unanswered;
+                        state.awaiting_action = awaiting;
                         return Applied::ReturnNow;
                     };
                     let event = crate::damage::PendingDamage {
@@ -274,7 +278,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     if !is_permutation(order, n) {
                         state.log(LogLevel::Debug, format!(
                             "choice refused, {order:?} is not an ordering of the {n} triggers offered"));
-                        state.awaiting_action = unanswered;
+                        state.awaiting_action = awaiting;
                         return Applied::ReturnNow;
                     }
                     let queue_len = if *ap_queue {
@@ -285,7 +289,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     if indices.len() != n || indices.iter().any(|&q| q >= queue_len) {
                         state.log(LogLevel::Debug,
                             "choice refused, the trigger queue no longer holds that group".into());
-                        state.awaiting_action = unanswered;
+                        state.awaiting_action = awaiting;
                         return Applied::ReturnNow;
                     }
                     // Named before anything moves, in the order chosen.
@@ -339,7 +343,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     let Some(&queue_index) = indices.get(*index) else {
                         state.log(LogLevel::Debug, format!(
                             "choice refused, {index} is not one of the {} triggers offered", options.len()));
-                        state.awaiting_action = unanswered;
+                        state.awaiting_action = awaiting;
                         return Applied::ReturnNow;
                     };
                     let queue = if *ap_queue {
@@ -350,7 +354,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     if queue_index >= queue.len() {
                         state.log(LogLevel::Debug,
                             "choice refused, the trigger queue no longer holds that entry".into());
-                        state.awaiting_action = unanswered;
+                        state.awaiting_action = awaiting;
                         return Applied::ReturnNow;
                     }
                     let trigger = queue.remove(queue_index);
@@ -380,7 +384,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     let Some(chosen_type) = options.get(*index).cloned() else {
                         state.log(LogLevel::Debug, format!(
                             "choice refused, {index} is not one of the {} types offered", options.len()));
-                        state.awaiting_action = unanswered;
+                        state.awaiting_action = awaiting;
                         return Applied::ReturnNow;
                     };
                     // What the type is *for* belongs to the card that asked.
@@ -398,7 +402,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     if let Some(stray) = pile_1_ids.iter().find(|id| !permanents.contains(id)) {
                         state.log(LogLevel::Debug, format!(
                             "choice refused, {stray:?} is not one of the permanents being divided"));
-                        state.awaiting_action = unanswered;
+                        state.awaiting_action = awaiting;
                         return Applied::ReturnNow;
                     }
                     // Controller has divided permanents into two piles.
@@ -445,7 +449,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     if *index > 1 {
                         state.log(LogLevel::Debug, format!(
                             "choice refused, {index} is not one of the two piles"));
-                        state.awaiting_action = unanswered;
+                        state.awaiting_action = awaiting;
                         return Applied::ReturnNow;
                     }
                     // Target player chose which pile to sacrifice.
@@ -469,7 +473,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     let Some(chosen_name) = options.get(*index).cloned() else {
                         state.log(LogLevel::Debug, format!(
                             "choice refused, {index} is not one of the {} names offered", options.len()));
-                        state.awaiting_action = unanswered;
+                        state.awaiting_action = awaiting;
                         return Applied::ReturnNow;
                     };
                     // Store the restriction as an instance continuous effect on the source.
@@ -688,12 +692,12 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     };
                     if let Some(err) = refusal {
                         state.log(LogLevel::Debug, format!("choice refused, {err} (CR 601.2h)"));
-                        state.awaiting_action = unanswered;
+                        state.awaiting_action = awaiting;
                         return Applied::ReturnNow;
                     }
                     let Some(pending) = state.pending_ability_effect.take() else {
                         state.log(LogLevel::Debug, "choice refused, no activation is waiting on this cost".into());
-                        state.awaiting_action = unanswered;
+                        state.awaiting_action = awaiting;
                         return Applied::ReturnNow;
                     };
                     let mut cost = pending.unpaid.clone().unwrap_or_else(|| crate::state::DeferredActivationCost {
@@ -745,7 +749,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         // rather than an effect half-applied.
                         state.log(LogLevel::Debug,
                             format!("choice refused, {err}"));
-                        state.awaiting_action = unanswered;
+                        state.awaiting_action = awaiting;
                         return Applied::ReturnNow;
                     }
                     let effect = effect.clone();
@@ -901,7 +905,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                 _ => {
                     state.log(LogLevel::Debug, format!(
                         "choice refused, {resolved:?} does not answer {kind:?}"));
-                    state.awaiting_action = unanswered;
+                    state.awaiting_action = awaiting;
                     return Applied::ReturnNow;
                 }
             }
