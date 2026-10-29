@@ -213,6 +213,27 @@ async function main() {
         await page.keyboard.press("Enter");
         await expectSent("choose-x", a => { const f = a.ResolveChoice && a.ResolveChoice.choice.XFunding; return f && f.pool.Red === 1 && f.taps.Forest === 1; });
       }
+      // #938: a long plan was one clipped line, and the cut fell on the
+      // creatures the allocator spends last. It wraps, whole, in the modal
+      // and in the panel beside it.
+      const src = (name, category, n) => ({ name, category, source_ids: Array.from({ length: n }, (_, i) => ids.mine[i % ids.mine.length]), mana_per_tap: 1, mana_type: "Red" });
+      const many = { pool: {}, groups: [src("Mountain", "BasicLand", 4), src("Forest", "BasicLand", 1), src("Shimmering Grotto", "NonbasicLand", 2), src("Avacyn's Pilgrim", "Creature", 2)], max_x: 9, x_discount: 0 };
+      if (await stage("choose-x-long", legal({ resolution_prompt: { ChooseXFunding: { description: "Choose X for Devil's Play", options: many, source_id: ids.hand[0], is_ability: false } } }), null, "number")) {
+        await page.keyboard.type("9");
+        const drawn = await page.evaluate(() => {
+          const orig = CanvasRenderingContext2D.prototype.fillText;
+          const out = [];
+          try {
+            CanvasRenderingContext2D.prototype.fillText = function (s) { out.push(String(s)); return orig.apply(this, arguments); };
+            window.mtgDebug.render();
+          } finally { CanvasRenderingContext2D.prototype.fillText = orig; }
+          return out;
+        });
+        const pilgrims = drawn.filter(t => t.includes("2x Avacyn's Pilgrim"));
+        if (pilgrims.length < 2) fail(`choose-x-long: the creatures X taps are not drawn in the modal and the panel: ${JSON.stringify(drawn.filter(t => /X = 9|Pilgrim|Grotto/.test(t)))}`);
+        else if (drawn.some(t => /Grot…|Avacyn.*…/.test(t))) fail(`choose-x-long: the plan is still clipped: ${JSON.stringify(drawn.filter(t => t.includes("…")))}`);
+        else ok("choose-x-long → the whole plan is drawn, creatures included");
+      }
     }
     // 8a. AssignCombatDamage (#637): the amount is one number, lethal to
     //     everything left, answered as the prompt's index (amount - min).

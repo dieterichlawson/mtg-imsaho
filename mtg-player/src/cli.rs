@@ -539,6 +539,15 @@ enum ChooserRows {
 /// abandons. A cast and an activation are the two things a chooser is ever
 /// opened for, and the hint line recognises a chooser by this row.
 const CANCEL_CAST: &str = "Cancel the cast";
+
+/// The most rows the X prompt's plan wraps to under its reader (#938).
+const X_PLAN_ROWS: u16 = 4;
+
+/// The plan rows the X prompt has under a reader on row `r`: up to
+/// `X_PLAN_ROWS`, leaving the screen's rows for the notice under them.
+fn x_plan_room(r: u16) -> u16 {
+    terminal::size().map_or(X_PLAN_ROWS, |(_, h)| h.saturating_sub(r + 2)).min(X_PLAN_ROWS)
+}
 const CANCEL_ACTIVATION: &str = "Cancel the activation";
 
 /// What a line typed at a target chooser means.
@@ -7177,6 +7186,22 @@ impl CliPlayer {
     /// The X prompt's plan row for what has been typed so far: what that X
     /// spends (`funding::describe_x_plan`), or nothing while the line is
     /// not a payable X — Enter's refusal says why (#845).
+    /// The X plan row as at most `rows` lines of `width`, wrapped at its
+    /// commas (`wrap_row`); a plan longer than that keeps its last line cut
+    /// with "…", which no board has reached at four rows (#938).
+    fn x_plan_lines(line: &str, width: usize, rows: usize) -> Vec<String> {
+        if line.is_empty() || rows == 0 {
+            return Vec::new();
+        }
+        let mut lines = Self::wrap_row(line, width);
+        if lines.len() > rows {
+            let rest = lines[rows - 1..].join(" ");
+            lines.truncate(rows - 1);
+            lines.push(Self::clip_closed_or_cut(&rest, width));
+        }
+        lines
+    }
+
     fn x_plan_row(options: &mtg_engine::funding::FundingOptions, typed: &str) -> String {
         typed.trim().parse::<u32>().ok()
             .and_then(|x| mtg_engine::funding::describe_x_plan(options, x))
@@ -7279,12 +7304,13 @@ impl CliPlayer {
             at.set((col, r, mid_w));
             // Clear the input row before each attempt (same as the combat
             // prompts), so a rejected entry doesn't merge with the next.
-            Self::clear_panel_row(&mut stdout(), col, r);
-            Self::clear_panel_row(&mut stdout(), col, r + 1);
-            Self::clear_panel_row(&mut stdout(), col, r + 2);
+            let room = x_plan_room(r);
+            for row in r..=r + 1 + room {
+                Self::clear_panel_row(&mut stdout(), col, row);
+            }
             if let Some(msg) = notice {
                 let msg: String = msg.chars().take(mid_w).collect();
-                let _ = execute!(stdout(), cursor::MoveTo(col, r + 2),
+                let _ = execute!(stdout(), cursor::MoveTo(col, r + 1 + room),
                     SetForegroundColor(Color::Red), Print(msg), ResetColor);
             }
             let _ = execute!(stdout(), cursor::MoveTo(col, r));
@@ -7295,14 +7321,20 @@ impl CliPlayer {
         // among them unseen, so a person learned which lands an X tapped
         // from the log afterwards (#845) — where a cast's row says it up
         // front: "Cast Ambush Viper (tap Forest, Swamp)".
+        //
+        // Wrapped, not clipped: the cut fell on the tail, and the tail is
+        // the creatures, which `order_around_demands` spends last — so the
+        // part a person needed (a blocker tapped) was the part hidden (#938).
+        // Up to X_PLAN_ROWS rows the screen has, the notice under them.
         let plan = |typed: &str| {
             let (col, r, mid_w) = at.get();
-            Self::clear_panel_row(&mut stdout(), col, r + 1);
-            let line = Self::x_plan_row(options, typed);
-            if !line.is_empty() {
-                let _ = execute!(stdout(), cursor::MoveTo(col, r + 1),
-                    SetForegroundColor(Color::Cyan),
-                    Print(Self::clip_closed_or_cut(&line, mid_w)), ResetColor);
+            let room = x_plan_room(r);
+            for i in 0..room {
+                Self::clear_panel_row(&mut stdout(), col, r + 1 + i);
+            }
+            for (i, l) in Self::x_plan_lines(&Self::x_plan_row(options, typed), mid_w, usize::from(room)).iter().enumerate() {
+                let _ = execute!(stdout(), cursor::MoveTo(col, r + 1 + i as u16),
+                    SetForegroundColor(Color::Cyan), Print(l), ResetColor);
             }
         };
         let mut notice: Option<String> = None;
@@ -9381,6 +9413,25 @@ pub(crate) mod tests {
     /// Issue #845: the X prompt took a number and tapped lands it never
     /// named. The row under the reader says what the typed X spends, and
     /// says nothing for a line that is not a payable X.
+    #[test]
+    fn the_x_plan_wraps_and_keeps_the_creatures_it_taps() {
+        // #938: one row, clipped, and the cut fell on the creatures, which
+        // the allocator spends last.
+        let line = "  X = 11: for X, tap Sol Ring, 4x Mountain, Forest, 2x Shimmering Grotto, 2x Avacyn's Pilgrim";
+        let lines = CliPlayer::x_plan_lines(line, 40, usize::from(X_PLAN_ROWS));
+        assert!(lines.len() > 1 && lines.len() <= usize::from(X_PLAN_ROWS), "{lines:?}");
+        assert!(lines.iter().all(|l| str_cols(l) <= 40), "{lines:?}");
+        assert!(lines.last().unwrap().contains("2x Avacyn's Pilgrim"), "the creatures are shown: {lines:?}");
+        assert_eq!(lines.join(" ").split_whitespace().collect::<Vec<_>>(), line.split_whitespace().collect::<Vec<_>>(), "nothing lost");
+        // A short plan is one row, and no room is no rows.
+        assert_eq!(CliPlayer::x_plan_lines("  X = 1: for X, tap Forest", 40, 3), vec!["  X = 1: for X, tap Forest"]);
+        assert!(CliPlayer::x_plan_lines(line, 40, 0).is_empty());
+        // Past the rows it has, the last row is cut and says so.
+        let two = CliPlayer::x_plan_lines(line, 30, 2);
+        assert_eq!(two.len(), 2);
+        assert!(two[1].ends_with('…') && str_cols(&two[1]) <= 30, "{two:?}");
+    }
+
     #[test]
     fn the_x_prompt_says_what_the_typed_x_taps() {
         use mtg_engine::funding::{FundingCategory, FundingGroup, FundingOptions};

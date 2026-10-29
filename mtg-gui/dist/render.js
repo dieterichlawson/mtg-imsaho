@@ -1300,6 +1300,14 @@ function promptArea(ctx, hits, state, x, y, w, h) {
         ty += 9;
     }
     if (ui && ui.mode === "number") {
+        // The typed X's plan here too, whole: the panel beside the modal showed
+        // the sources and not what they would tap (#938).
+        const p = ui.preview ? ui.preview(ui.value ?? "") : null;
+        if (p)
+            for (const l of wrapCapped(ctx, p, w - 8, "7px Silkscreen", PREVIEW_LINES)) {
+                text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#80e0ff" });
+                ty += 8;
+            }
         for (const l of fitSummary(ui.summary || [], 4)) {
             text(ctx, clip(ctx, l, w - 8, "7px Silkscreen"), x + 4, ty, { font: "7px Silkscreen", color: "#c0c8d0" });
             ty += 8;
@@ -1407,6 +1415,9 @@ export function clampScroll(ui, scroll) {
 }
 /** How many summary lines the number modal shows before "+N more". */
 const NUMBER_SUMMARY_LINES = 10;
+/** The most lines the X preview wraps to; three, at the modal's width,
+ *  hold every source list a board has reached (#938). */
+const PREVIEW_LINES = 3;
 function modal(ctx, hits, state) {
     const ui = state.ui;
     if (!ui || (ui.mode !== "list" && ui.mode !== "order" && ui.mode !== "number"))
@@ -1427,9 +1438,15 @@ function modal(ctx, hits, state) {
     // The number widget's field and its summary lines, budgeted line by line:
     // a flat 30px let a fourth line sit on the modal's border (#693).
     const summary = ui.mode === "number" ? fitSummary(ui.summary || [], NUMBER_SUMMARY_LINES) : [];
-    // The preview's line is reserved whether or not the box holds a value
-    // yet, so the modal does not jump on the first keystroke.
-    const previewRows = ui.mode === "number" && ui.preview ? 1 : 0;
+    // The preview's lines are reserved whether or not the box holds a value
+    // yet, so the modal does not jump on the first keystroke: as many as the
+    // largest X's plan needs, the longest, up to PREVIEW_LINES. It was one
+    // line, clipped, and the tail it cut was always the creatures X taps,
+    // which `order_around_demands` puts last (#938).
+    const previewOf = (v) => (ui.preview ? ui.preview(v) : null);
+    const previewRows = ui.mode === "number" && ui.preview
+        ? Math.max(1, Math.min(PREVIEW_LINES, wrap(ctx, previewOf(String(ui.max)) || "", w - 12, "7px Silkscreen").length))
+        : 0;
     const h = 30 + shown.length * rowH + (ui.mode === "number" ? 22 + (summary.length + previewRows) * 8 : 0) + (ui.filter ? 14 : 0) + 18;
     const y = Math.max(8, (H - h) / 2);
     // The background hit goes in first, so the rows drawn on it are on top.
@@ -1460,10 +1477,10 @@ function modal(ctx, hits, state) {
         text(ctx, `${ui.min ?? 0} – ${ui.max}`, x + 92, ty + 3, { color: "#b0b0c0" });
         ty += 18;
         if (previewRows) {
-            const p = ui.preview(ui.value ?? "");
-            if (p)
-                text(ctx, clip(ctx, p, w - 12, "7px Silkscreen"), x + 6, ty, { font: "7px Silkscreen", color: "#80e0ff" });
-            ty += 8;
+            const p = previewOf(ui.value ?? "");
+            const lines = p ? wrapCapped(ctx, p, w - 12, "7px Silkscreen", PREVIEW_LINES) : [];
+            lines.forEach((l, i) => text(ctx, l, x + 6, ty + i * 8, { font: "7px Silkscreen", color: "#80e0ff" }));
+            ty += 8 * Math.max(previewRows, lines.length);
         }
         for (const l of summary) {
             text(ctx, clip(ctx, l, w - 12, "7px Silkscreen"), x + 6, ty, { font: "7px Silkscreen", color: "#c0c8d0" });
