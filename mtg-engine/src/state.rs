@@ -994,8 +994,12 @@ impl GameState {
             registry,
         );
         let extra_copies = match after {
-            Some(crate::replacement::ReplaceableEvent::CreatesTokens { count, .. }) =>
-                count.saturating_sub(1),
+            // A replacement may leave none to create (CR 614.1b: the count it
+            // answers is the count created). The last token is made outside
+            // the loop below, so none must stop here, or it made one.
+            Some(crate::replacement::ReplaceableEvent::CreatesTokens { count: 0, .. }) =>
+                return Vec::new(),
+            Some(crate::replacement::ReplaceableEvent::CreatesTokens { count, .. }) => count - 1,
             // Replaced entirely, or replaced with a different kind of event:
             // no tokens are created.
             _ => return Vec::new(),

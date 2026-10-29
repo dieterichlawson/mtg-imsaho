@@ -251,6 +251,62 @@ fn a_card_that_creates_many_tokens_at_once_reports_what_entered() {
         "and never the number printed on the card: {counted:?}");
 }
 
+/// "If one or more tokens would be created, that many minus two are created
+/// instead": a replacement that can leave none. The set prints no such card,
+/// but a replacement may answer any count, and the count it answers is the
+/// count created (CR 614.1b).
+struct Dwindling;
+
+impl mtg_engine::cards::CardBehavior for Dwindling {
+    fn card_data(&self) -> mtg_engine::cards::CardData {
+        mtg_engine::cards::CardData {
+            name: "Dwindling".into(),
+            card_types: vec![CardType::Enchantment],
+            oracle_text: "If one or more tokens would be created, that many minus two are created instead.".into(),
+            ..Default::default()
+        }
+    }
+
+    fn replace_event(
+        &self,
+        _: &mut mtg_engine::state::GameState,
+        _: ObjectId,
+        event: &mtg_engine::replacement::ReplaceableEvent,
+        _: &mtg_engine::cards::CardRegistry,
+    ) -> Option<mtg_engine::replacement::Replacement> {
+        use mtg_engine::replacement::{ReplaceableEvent, Replacement};
+        let ReplaceableEvent::CreatesTokens { controller, count } = event else { return None };
+        Some(Replacement::Modified(ReplaceableEvent::CreatesTokens {
+            controller: *controller,
+            count: count.saturating_sub(2),
+        }))
+    }
+}
+
+/// The proof of token creation (`proofs::actions::tokens`) states it for every
+/// count the replacement layer may answer; read against that statement, an
+/// answer of none made one token all the same, the last of the copies being
+/// made outside the loop that makes the rest.
+#[test]
+fn a_replacement_that_leaves_no_tokens_creates_none() {
+    let mut reg = registry();
+    let dwindling = reg.register(Box::new(Dwindling));
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.create_object(dwindling, P0, Zone::Battlefield, None, None);
+
+    let made = state.create_token_with_subtypes(
+        "", P0, 1, 1, vec![Color::White], vec![CardType::Creature], vec![],
+        vec!["Spirit".to_string()], &reg);
+    assert!(made.is_empty(), "one less two is none: {made:?}");
+    assert_eq!(count_tokens_named_by(&state, "Spirit", P0), 0, "and none entered");
+
+    let three = state.create_tokens_with_subtypes(
+        3, "", P0, 1, 1, vec![Color::White], vec![CardType::Creature], vec![],
+        vec!["Spirit".to_string()], &reg);
+    assert_eq!(three.len(), 1, "three less two is one");
+    assert_eq!(count_tokens_named_by(&state, "Spirit", P0), 1);
+}
+
 // ── Heartless Summoning ──────────────────────────────────────
 
 /// Heartless Summoning's other half: "Creature spells you cast cost {2} less to
