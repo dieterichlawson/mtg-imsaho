@@ -31,7 +31,7 @@ impl CardBehavior for GrimoireOfTheDead {
             _ => return vec![],
         };
         let controller = obj.controller;
-        let has_cards_in_hand = !state.objects_in_zone(Zone::Hand, controller).is_empty();
+        let has_cards_in_hand = state.any_in_zone(Zone::Hand, controller, |_| true);
 
         let mut abilities = vec![];
 
@@ -81,8 +81,7 @@ impl CardBehavior for GrimoireOfTheDead {
             return;
         }
         let controller = crate::cards::helpers::controller_of(state, object_id);
-        let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, controller)
-            .iter().map(|o| o.id).collect();
+        let hand = state.ids_in_zone(Zone::Hand, controller, |_| true);
 
         match hand.len() {
             // `activated_abilities` does not offer the ability with an empty
