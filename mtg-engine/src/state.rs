@@ -2172,7 +2172,8 @@ impl GameState {
     ///
     /// Cost effects are keyed to who is casting, not to an `EffectScope`, so
     /// they cannot come through `walk_effects`. Reading them here still means
-    /// reading them through `continuous_effects_of` — the two cost functions
+    /// reading what `continuous_effects_of` returns, the active face's and
+    /// the granted ones, in that order — the two cost functions
     /// used to walk `card_data().continuous_effects` directly and so ignored
     /// a transformed permanent's back face and anything granted at runtime.
     #[must_use]
@@ -2186,7 +2187,11 @@ impl GameState {
             if source.zone != Zone::Battlefield || source.controller != player {
                 continue;
             }
-            for effect in self.continuous_effects_of(source.id, registry) {
+            // Read, not built, as `walk_effects` reads them.
+            let printed = registry
+                .printed_continuous_effects(source.card_id, source.is_transformed);
+            let instance = source.instance_continuous_effects.as_deref().unwrap_or(&[]);
+            for effect in printed.iter().chain(instance.iter()) {
                 let (inner, condition) = effect.unwrap_condition();
                 if condition.is_some_and(|c| !self.check_condition(c, source.id, source.controller, registry)) {
                     continue;
@@ -2207,7 +2212,15 @@ impl GameState {
             if source.zone != Zone::Battlefield {
                 continue;
             }
-            for effect in self.continuous_effects_of(source.id, registry) {
+            // Read, not built, as `walk_effects` reads them: a copy of
+            // every effect, walked by value, was an `Option` of the whole
+            // effect per step, which a proof holds field by field, every
+            // variant's every field (a payment from the pool, which asks
+            // after Stony Silence at each source, ran out of memory).
+            let printed = registry
+                .printed_continuous_effects(source.card_id, source.is_transformed);
+            let instance = source.instance_continuous_effects.as_deref().unwrap_or(&[]);
+            for effect in printed.iter().chain(instance.iter()) {
                 let (inner, condition) = effect.unwrap_condition();
                 if inner.scope().is_some() {
                     continue;
