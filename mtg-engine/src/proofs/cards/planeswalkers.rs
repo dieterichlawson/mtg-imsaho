@@ -24,7 +24,7 @@
 //! either player ("you" is the activator, CR 602.2a), beside a card and a
 //! token of any characteristics.
 
-use super::{act, acted, any_object, any_target, asked_each, asked_for, board, card_proof, each_is, picked, Act, Form, Kinds, Snapshot};
+use super::{act, acted, any_object, any_target, asked_each, asked_for, board, card_proof, case_by_case, each_is, picked, Act, Form, Kinds, Snapshot};
 use crate::actions::{ResolvedChoice, Target};
 use crate::cards::{CardBehavior, CardRegistry, LoyaltyAbilityDef, TargetRequirement};
 use crate::ids::{CardId, ObjectId, PlayerId};
@@ -190,28 +190,31 @@ card_proof! {
     }
 }
 
-card_proof! {
-    /// Garruk Relentless's second 0, a 2/2 green Wolf creature token for
-    /// the player who activated it; Garruk, the Veil-Cursed's +1, a 1/1
-    /// black Wolf creature token with deathtouch. Nothing else.
-    fn garruk_makes_wolves() {
-        let mut b = planeswalker(Box::new(isd::garruk_relentless::GarrukRelentless));
-        let veil_cursed: bool = kani::any();
-        let before = b.resolve(if veil_cursed { 10 } else { 1 }, &[]);
-        let wolf = if veil_cursed {
-            Act::Tokens {
-                n: 1, controller: b.you, power: 1, toughness: 1, colors: vec![Color::Black],
-                types: vec![CardType::Creature], keywords: vec![Keyword::Deathtouch], subtypes: vec!["Wolf".into()],
-            }
-        } else {
-            Act::Tokens {
-                n: 1, controller: b.you, power: 2, toughness: 2, colors: vec![Color::Green],
-                types: vec![CardType::Creature], keywords: vec![], subtypes: vec!["Wolf".into()],
-            }
-        };
-        assert!(asked_for(&[wolf]) && Snapshot::of(&b.state) == before);
-        std::mem::forget(b);
-    }
+/// Garruk Relentless's second 0, a 2/2 green Wolf creature token for the
+/// player who activated it; Garruk, the Veil-Cursed's +1, a 1/1 black Wolf
+/// creature token with deathtouch. Nothing else. Which ability, a constant
+/// in each harness: the two in one ran out of memory.
+fn garruk_makes_wolves(veil_cursed: bool) {
+    let mut b = planeswalker(Box::new(isd::garruk_relentless::GarrukRelentless));
+    let before = b.resolve(if veil_cursed { 10 } else { 1 }, &[]);
+    let wolf = if veil_cursed {
+        Act::Tokens {
+            n: 1, controller: b.you, power: 1, toughness: 1, colors: vec![Color::Black],
+            types: vec![CardType::Creature], keywords: vec![Keyword::Deathtouch], subtypes: vec!["Wolf".into()],
+        }
+    } else {
+        Act::Tokens {
+            n: 1, controller: b.you, power: 2, toughness: 2, colors: vec![Color::Green],
+            types: vec![CardType::Creature], keywords: vec![], subtypes: vec!["Wolf".into()],
+        }
+    };
+    assert!(asked_for(&[wolf]) && Snapshot::of(&b.state) == before);
+    std::mem::forget(b);
+}
+
+case_by_case! { garruk_makes_wolves;
+    garruk_relentless_makes_a_green_wolf: false,
+    garruk_the_veil_cursed_makes_a_deathtouch_wolf: true,
 }
 
 card_proof! {
