@@ -722,7 +722,7 @@ mod tests {
         let view = |seat: u64, matches: Value| serde_json::json!({
             "type": "view", "phase": "playing", "seat": seat, "set": "isd",
             "seats": [{"seat": 0, "name": "Ann", "kind": "human", "status": "playing", "picks": 42, "joined": true},
-                      {"seat": 1, "name": "Bea", "kind": "human", "status": "waiting", "picks": 42, "joined": true},
+                      {"seat": 1, "name": "Bea", "kind": "human", "status": "bye", "picks": 42, "joined": true},
                       {"seat": 2, "name": "Cy", "kind": "ai", "status": "playing", "picks": 42, "joined": true}],
             "matches": matches,
             "pairings": [{"round": 1, "a": 0, "b": 2, "status": "playing", "result": null},

@@ -176,7 +176,9 @@ playing (game 1)`, with the game's link on a line of its own under it, `open
 http://192.168.1.20:8800/game/8803/<key>/`: through the table's own port and
 carrying the page's key, which a bare game port without one refuses; a round you sit out is
 `Round 2: a bye — counted as a match won`, and the seats show you as
-`bye` (on the page too). Between games it prints `Before game 2 vs seat 3
+`bye` (on the page too). With no match left to play that round, a bye or
+yours finished, it says `Waiting for the others to finish their matches.`,
+as the page does. Between games it prints `Before game 2 vs seat 3
 (they lead 1-0):` with who chooses, what the opponent has shown and your
 pool: `play` or `draw` when the choice is yours, the same `add`, `drop` and
 `lands` to sideboard (a deck is sent once it has 40 cards), and `ready`.
