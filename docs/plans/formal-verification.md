@@ -906,6 +906,40 @@ sits in memory. What was measured, and what the proofs do about each:
   then ran in 37 seconds where they had run out of memory at five
   gigabytes, and the claim that the second creature can't attack fails
   as it should.
+- **An `Option` passed on by `?`.** The `?` of an `Option` returns
+  `ControlFlow::Break(None)`, which Kani builds as a declaration, a write
+  of its empty `Break` member and its niche tag; `precise-enums.py` made a
+  `None` whole only when the tag followed the declaration, so the list in
+  `Continue` beside it was of unknown length, and the tap plan the
+  planner passed on through `?` was too wherever its paths met. A payment
+  from the pool, which taps nothing on every path, then walked a plan of
+  any length, every card's mana abilities with it, out of memory at 248
+  thousand steps. A write of a member of no bits may now come between.
+  The plan's pointer still merges two values (the dangling one, or the
+  `None`'s null), so the iterator's `ptr == end` stays open where the
+  length is known: the payment walks its plan by index.
+- **A walk by value of a wide enum.** `global_effects` cloned every
+  object's effects and walked the copy by value, an `Option` of a whole
+  `ContinuousEffect` per step, which CBMC holds field by field, every
+  variant's every field; a payment asks after Stony Silence at each
+  source. It reads them in place, as `walk_effects` does.
+- **A zone listed to be counted.** A card counting or testing objects in
+  a zone built the zone's list first, whose entries a proof reads as
+  pointers that could be any object's, as many as who holds each
+  decides; comparing subtypes through them ran Bloodline Keeper's five
+  Vampires and the check lands' Mountain or Plains out of memory at
+  fifty seconds. `count_in_zone`, `any_in_zone` and `ids_in_zone` scan
+  the objects in id order with no list built (a count or an any has no
+  order; outside a graveyard the zone's order is id order), and
+  `objects_in_zone` itself lists every zone but a graveyard by that scan:
+  with no pile, the kernel's order is the members in id order. Bloodline
+  Keeper's ability proofs then passed in 101 to 174 seconds, the check
+  lands' in about a minute, Endless Ranks of the Dead's in 384 seconds,
+  Gavony Township's in 185.
+- **Text built for a log line.** Night Terrors joined the names of every
+  card in the hand into a string before the line was formatted, which a
+  proof follows name by name; a `Display` of the ids writes them only
+  when the line is (formatting stands in as nothing in the proofs).
 - **CBMC's memory checks.** `kani-bounded.py` leaves out CBMC's pointer,
   bounds and division checks (`--memory-checks` keeps them): that safe
   Rust reads only memory it may is the compiler's guarantee, and Rust's
@@ -975,12 +1009,11 @@ Ghoulcaller's Chant, Nevermore, and the ability lists of Grimoire of the
 Dead, Back from the Brink and Moorland Haunt and Ghost Quarter's
 resolution on a permanent, are past four gigabytes even a case to a
 harness, to be run alone at about ten. The results so far were of
-several commits, and the face reads and the name list above changed the
-engine and its proof model under every card, so all 970 harnesses are
-being run again at one commit, 481c7ce: the cards from both ends and the
-engine's actions beside them, at three and a half to four and a half
-gigabytes, and the 30 harnesses known to need more held for a run alone.
-This section will record which hold at that commit.
+several commits. A run at one commit, 481c7ce, reached 722 harnesses and
+was stopped: the payment, effect and zone changes above reach code under
+nearly every proof. A run at e63d2cf takes the harnesses not yet run;
+then every harness is run again at one commit, those known to need more
+memory alone, and this section will record which hold there.
 
 A counterexample can be of a board no game reaches, which is then the
 board's error and not the card's: the board the counted creatures are
