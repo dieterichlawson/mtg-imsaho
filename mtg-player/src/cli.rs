@@ -539,6 +539,7 @@ enum ChooserRows {
 /// abandons. A cast and an activation are the two things a chooser is ever
 /// opened for, and the hint line recognises a chooser by this row.
 const CANCEL_CAST: &str = "Cancel the cast";
+const CANCEL_ACTIVATION: &str = "Cancel the activation";
 
 /// The most rows the X prompt's plan wraps to under its reader (#938).
 const X_PLAN_ROWS: u16 = 4;
@@ -548,7 +549,6 @@ const X_PLAN_ROWS: u16 = 4;
 fn x_plan_room(r: u16) -> u16 {
     terminal::size().map_or(X_PLAN_ROWS, |(_, h)| h.saturating_sub(r + 2)).min(X_PLAN_ROWS)
 }
-const CANCEL_ACTIVATION: &str = "Cancel the activation";
 
 /// What a line typed at a target chooser means.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -7183,9 +7183,6 @@ impl CliPlayer {
         format!("  X (0-{max_x}, c = cancel the {what}, or concede) = ")
     }
 
-    /// The X prompt's plan row for what has been typed so far: what that X
-    /// spends (`funding::describe_x_plan`), or nothing while the line is
-    /// not a payable X — Enter's refusal says why (#845).
     /// The X plan row as at most `rows` lines of `width`, wrapped at its
     /// commas (`wrap_row`); a plan longer than that keeps its last line cut
     /// with "…", which no board has reached at four rows (#938).
@@ -7202,6 +7199,9 @@ impl CliPlayer {
         lines
     }
 
+    /// The X prompt's plan row for what has been typed so far: what that X
+    /// spends (`funding::describe_x_plan`), or nothing while the line is
+    /// not a payable X — Enter's refusal says why (#845).
     fn x_plan_row(options: &mtg_engine::funding::FundingOptions, typed: &str) -> String {
         typed.trim().parse::<u32>().ok()
             .and_then(|x| mtg_engine::funding::describe_x_plan(options, x))
@@ -7243,15 +7243,19 @@ impl CliPlayer {
             // the Max X line, the pool, one per source group, the payable
             // line, and the input, plan and refusal rows. Drawn under a plain
             // render they ran past the foot of the pane whenever the board
-            // was tall (#774).
-            let pool_rows = usize::from(options.pool.values().any(|n| *n > 0));
-            Self::render_reserving(view, Some(description), &view.display_log,
-                1 + pool_rows + options.groups.len() + usize::from(!contiguous) + 3);
+            // was tall (#774). The plan's rows are as many as the largest
+            // X's plan wraps to, the longest: one row reserved left a tall
+            // board's plan cut to one row again (#938's review).
             let (term_w, _) = terminal::size().unwrap_or((100, 30));
             let side = term_w as usize / 5;
             let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
             let w = term_w as usize;
             let mid_w = if w >= Self::CARD_SEARCH_MIN_COLS { w.saturating_sub(2 * side + 2) } else { w.saturating_sub(side + 1) };
+            let plan_rows = Self::x_plan_lines(
+                &Self::x_plan_row(options, &options.max_announceable_x().to_string()), mid_w, usize::from(X_PLAN_ROWS)).len().max(1);
+            let pool_rows = usize::from(options.pool.values().any(|n| *n > 0));
+            Self::render_reserving(view, Some(description), &view.display_log,
+                1 + pool_rows + options.groups.len() + usize::from(!contiguous) + 2 + plan_rows);
             let clip = |s: &str| -> String { Self::clip_closed_or_cut(s, mid_w) };
             let mut r = cursor::position().unwrap_or((0, 20)).1;
             let mut out = stdout();
@@ -9410,9 +9414,6 @@ pub(crate) mod tests {
         assert_eq!(CliPlayer::x_funding_hint(3, true), "  X (0-3, c = cancel the activation, or concede) = ");
     }
 
-    /// Issue #845: the X prompt took a number and tapped lands it never
-    /// named. The row under the reader says what the typed X spends, and
-    /// says nothing for a line that is not a payable X.
     #[test]
     fn the_x_plan_wraps_and_keeps_the_creatures_it_taps() {
         // #938: one row, clipped, and the cut fell on the creatures, which
@@ -9432,6 +9433,9 @@ pub(crate) mod tests {
         assert!(two[1].ends_with('…') && str_cols(&two[1]) <= 30, "{two:?}");
     }
 
+    /// Issue #845: the X prompt took a number and tapped lands it never
+    /// named. The row under the reader says what the typed X spends, and
+    /// says nothing for a line that is not a payable X.
     #[test]
     fn the_x_prompt_says_what_the_typed_x_taps() {
         use mtg_engine::funding::{FundingCategory, FundingGroup, FundingOptions};

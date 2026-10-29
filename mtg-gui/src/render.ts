@@ -139,8 +139,30 @@ export function clipKeepingTail(ctx: Ctx, s: string, maxW: number, font = "8px S
   if (at < 0) return clip(ctx, s, maxW, font);
   const tail = s.slice(at);
   const room = maxW - ctx.measureText(tail).width;
-  if (room <= ctx.measureText("x…").width) return clip(ctx, s, maxW, font);
-  return clip(ctx, s.slice(0, at), room, font) + tail;
+  if (room > ctx.measureText("x…").width) return clip(ctx, s.slice(0, at), room, font) + tail;
+  // The tail alone is wider than the row. Clipped from the end it lost the
+  // end of the tap plan, which is where the creatures it taps are: auto-tap
+  // spends them last (#938's review). Keep the head's start and the tail's
+  // end: "Cast Devil's Play (tap …2x Avacyn's Pilgrim)".
+  // The end gets most of the row, whole items of it where it can.
+  const lead = tapAt >= 0 ? " (tap " : " → ";
+  let end = suffixFitting(ctx, tail.slice(lead.length), maxW * 0.8 - ctx.measureText(lead + "…").width);
+  const item = end.indexOf(", ");
+  if (item >= 0 && !tail.slice(lead.length).startsWith(end)) end = end.slice(item + 2);
+  if (!end) return clip(ctx, s, maxW, font);
+  const head = clip(ctx, s.slice(0, at), maxW - ctx.measureText(lead + "…" + end).width, font);
+  return head + lead + "…" + end;
+}
+
+/** The longest end of `s` within `maxW`, found by bisection; "" if none. */
+function suffixFitting(ctx: Ctx, s: string, maxW: number): string {
+  if (maxW <= 0) return "";
+  let lo = 0, hi = s.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (ctx.measureText(s.slice(mid)).width <= maxW) hi = mid; else lo = mid + 1;
+  }
+  return s.slice(lo);
 }
 
 /**
@@ -1130,7 +1152,9 @@ function promptArea(ctx: Ctx, hits: Hit[], state: LiveState, x: number, y: numbe
     // The typed X's plan here too, whole: the panel beside the modal showed
     // the sources and not what they would tap (#938).
     const p = ui.preview ? ui.preview(ui.value ?? "") : null;
-    if (p) for (const l of wrapCapped(ctx, p, w - 8, "7px Silkscreen", PREVIEW_LINES)) { text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#80e0ff" }); ty += 8; }
+    // Half the modal's width, so twice its lines (#938's review); two with
+    // the log open, whose 100px panel has the buttons under them.
+    if (p) for (const l of wrapCapped(ctx, p, w - 8, "7px Silkscreen", state.logOpen ? 2 : 2 * PREVIEW_LINES)) { text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#80e0ff" }); ty += 8; }
     for (const l of fitSummary(ui.summary || [], 4)) { text(ctx, clip(ctx, l, w - 8, "7px Silkscreen"), x + 4, ty, { font: "7px Silkscreen", color: "#c0c8d0" }); ty += 8; }
   }
   if (state.notice) for (const l of wrapCapped(ctx, state.notice, w - 8, "7px Silkscreen", 3)) { text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#ff9080" }); ty += 8; }
