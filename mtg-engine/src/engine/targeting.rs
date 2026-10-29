@@ -675,9 +675,12 @@ pub(crate) fn valid_targets_for_req(
     use crate::actions::Target;
     use crate::cards::TargetRequirement;
 
+    // Each zone walked, in id order, not listed first as
+    // `all_objects_in_zone` and `objects_in_id_order` list it:
+    // `each_in_zone` says why.
     match req {
         TargetRequirement::Creature => {
-            state.all_objects_in_zone(Zone::Battlefield).iter()
+            state.each_in_zone(Zone::Battlefield)
                 .filter(|o| state.is_creature(o.id, registry))
                 .filter(|o| can_be_targeted_by(state, o.id, caster, Some(spell_id), registry))
                 .map(|o| Target::Object(o.id))
@@ -685,7 +688,7 @@ pub(crate) fn valid_targets_for_req(
                 .collect()
         }
         TargetRequirement::CreatureWithFilter(filter) => {
-            state.all_objects_in_zone(Zone::Battlefield).iter()
+            state.each_in_zone(Zone::Battlefield)
                 .filter(|o| state.is_creature(o.id, registry))
                 .filter(|o| matches_target_filter(state, o, filter, caster, Some(spell_id), registry))
                 .filter(|o| can_be_targeted_by(state, o.id, caster, Some(spell_id), registry))
@@ -703,7 +706,7 @@ pub(crate) fn valid_targets_for_req(
                 .collect()
         }
         TargetRequirement::PermanentWithFilter(filter) => {
-            state.all_objects_in_zone(Zone::Battlefield).iter()
+            state.each_in_zone(Zone::Battlefield)
                 .filter(|o| matches_target_filter(state, o, filter, caster, Some(spell_id), registry))
                 .filter(|o| can_be_targeted_by(state, o.id, caster, Some(spell_id), registry))
                 .map(|o| Target::Object(o.id))
@@ -711,7 +714,7 @@ pub(crate) fn valid_targets_for_req(
                 .collect()
         }
         TargetRequirement::AnyTarget => {
-            let mut targets: Vec<Target> = state.all_objects_in_zone(Zone::Battlefield).iter()
+            let mut targets: Vec<Target> = state.each_in_zone(Zone::Battlefield)
                 .filter(|o| state.is_creature(o.id, registry)
                     || state.has_card_type(o.id, CardType::Planeswalker, registry))
                 .filter(|o| can_be_targeted_by(state, o.id, caster, Some(spell_id), registry))
@@ -760,7 +763,7 @@ pub(crate) fn valid_targets_for_req(
                 .map(|p| Target::Player(p.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect();
-            for obj in state.all_objects_in_zone(Zone::Battlefield) {
+            for obj in state.each_in_zone(Zone::Battlefield) {
                 let is_pw = state.has_card_type(obj.id, CardType::Planeswalker, registry);
                 if is_pw && can_be_targeted_by(state, obj.id, caster, Some(spell_id), registry) {
                     let t = Target::Object(obj.id);
@@ -781,7 +784,7 @@ pub(crate) fn valid_targets_for_req(
             // graveyard any more. CR 601.2a moves the card to the stack and
             // CR 601.2c chooses targets after that, so it cannot be one of its
             // own. Purify the Grave was offered a cast targeting itself.
-            state.objects_in_id_order().into_iter()
+            state.each_object()
                 .filter(|o| o.id != spell_id && o.zone == Zone::Graveyard && state.is_card(o.id))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -789,7 +792,7 @@ pub(crate) fn valid_targets_for_req(
         }
         TargetRequirement::GraveyardCreature => {
             // Creature cards in caster's graveyard.
-            state.objects_in_id_order().into_iter()
+            state.each_object()
                 .filter(|o| {
                     o.id != spell_id
                         && o.zone == Zone::Graveyard
@@ -809,7 +812,7 @@ pub(crate) fn valid_targets_for_req(
             // back in its own `is_valid_target`. Two sibling requirements
             // disagreeing about whose graveyard they mean, with the card that
             // uses the looser one compensating, is a trap for the next card.
-            state.objects_in_id_order().into_iter()
+            state.each_object()
                 .filter(|o| {
                     o.id != spell_id
                         && o.zone == Zone::Graveyard
@@ -824,7 +827,7 @@ pub(crate) fn valid_targets_for_req(
         }
         TargetRequirement::GraveyardCardOwnedByCaster => {
             // Cards in the caster's own graveyard.
-            state.objects_in_id_order().into_iter()
+            state.each_object()
                 .filter(|o| o.id != spell_id && o.zone == Zone::Graveyard && o.owner == caster && state.is_card(o.id))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -832,7 +835,7 @@ pub(crate) fn valid_targets_for_req(
         }
         TargetRequirement::GraveyardCardOwnedByOpponent => {
             // Cards in any opponent's graveyard.
-            state.objects_in_id_order().into_iter()
+            state.each_object()
                 .filter(|o| o.id != spell_id && o.zone == Zone::Graveyard && o.owner != caster && state.is_card(o.id))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -840,7 +843,7 @@ pub(crate) fn valid_targets_for_req(
         }
         TargetRequirement::ExileCard => {
             // All cards in exile owned by the caster.
-            state.objects_in_id_order().into_iter()
+            state.each_object()
                 .filter(|o| o.id != spell_id && o.zone == Zone::Exile && o.owner == caster && state.is_card(o.id))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -884,7 +887,7 @@ pub(crate) fn valid_targets_for_req(
             // Which player is only known once the co-target is chosen, so the
             // pairing in `generate_cast_actions_with_targets` narrows this.
             // Unconstrained here, it is every graveyard card but this spell.
-            state.objects_in_id_order().into_iter()
+            state.each_object()
                 .filter(|o| o.id != spell_id && o.zone == Zone::Graveyard && state.is_card(o.id))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
