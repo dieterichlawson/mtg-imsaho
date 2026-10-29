@@ -1313,44 +1313,55 @@ function promptArea(ctx, hits, state, x, y, w, h) {
         ty += 9;
     }
     const title = ui ? ui.title : "";
+    // What is drawn here grows downwards and the buttons are anchored at the
+    // foot, so the lines that can be long — the question beside a modal, the
+    // X plan, the summary — get only the room left above the buttons, after
+    // the hint and the notice have theirs: a tall inspector or the open log
+    // shrinks the panel, and a six-line plan ran under Confirm (#938's
+    // review). `floor` is the top of the highest button.
+    const buttonCount = ((ui && ui.buttons) || []).length;
+    const floor = y + h - 18 - 15 * Math.max(0, buttonCount - 1) - 2;
+    const hintLines = ui && ui.hint ? wrapCapped(ctx, ui.hint, w - 8, "7px Silkscreen", 3) : [];
+    const noticeLines = state.notice ? wrapCapped(ctx, state.notice, w - 8, "7px Silkscreen", 3) : [];
+    const reserved = 8 * (hintLines.length + noticeLines.length) + (ui && ui.mode === "mark" ? 9 : 0);
+    const room = (lineH, want, least = 0) => Math.max(least, Math.min(want, Math.floor((floor - ty - reserved) / lineH)));
     // Beside a modal the panel holds no rows, so the question can have the
     // room: at half the modal's width the payment plan at its end was cut at
     // four lines (#939's review).
     const besideModal = ui && (ui.mode === "list" || ui.mode === "order" || ui.mode === "number");
-    for (const l of wrapCapped(ctx, title, w - 8, "8px Silkscreen", besideModal && !state.logOpen ? 8 : 4)) {
+    for (const l of wrapCapped(ctx, title, w - 8, "8px Silkscreen", room(9, besideModal ? 8 : 4, 1))) {
         text(ctx, l, x + 4, ty, { color: "#ffe080" });
         ty += 9;
     }
-    if (ui && ui.hint)
-        for (const l of wrapCapped(ctx, ui.hint, w - 8, "7px Silkscreen", 3)) {
-            text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#a098b0" });
-            ty += 8;
-        }
+    for (const l of hintLines) {
+        text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#a098b0" });
+        ty += 8;
+    }
     if (ui && ui.mode === "mark") {
         text(ctx, `Marked ${ui.marked.length} of ${ui.max}`, x + 4, ty, { color: "#c0e0a0" });
         ty += 9;
     }
     if (ui && ui.mode === "number") {
         // The typed X's plan here too, whole: the panel beside the modal showed
-        // the sources and not what they would tap (#938).
+        // the sources and not what they would tap (#938). Half the modal's
+        // width, so twice its lines, as the room allows (#938's review).
         const p = ui.preview ? ui.preview(ui.value ?? "") : null;
-        // Half the modal's width, so twice its lines (#938's review); two with
-        // the log open, whose 100px panel has the buttons under them.
         if (p)
-            for (const l of wrapCapped(ctx, p, w - 8, "7px Silkscreen", state.logOpen ? 2 : 2 * PREVIEW_LINES)) {
+            for (const l of wrapCapped(ctx, p, w - 8, "7px Silkscreen", room(8, 2 * PREVIEW_LINES))) {
                 text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#80e0ff" });
                 ty += 8;
             }
-        for (const l of fitSummary(ui.summary || [], 4)) {
-            text(ctx, clip(ctx, l, w - 8, "7px Silkscreen"), x + 4, ty, { font: "7px Silkscreen", color: "#c0c8d0" });
-            ty += 8;
-        }
+        const summaryRoom = room(8, 4);
+        if (summaryRoom > 0)
+            for (const l of fitSummary(ui.summary || [], summaryRoom)) {
+                text(ctx, clip(ctx, l, w - 8, "7px Silkscreen"), x + 4, ty, { font: "7px Silkscreen", color: "#c0c8d0" });
+                ty += 8;
+            }
     }
-    if (state.notice)
-        for (const l of wrapCapped(ctx, state.notice, w - 8, "7px Silkscreen", 3)) {
-            text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#ff9080" });
-            ty += 8;
-        }
+    for (const l of noticeLines) {
+        text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#ff9080" });
+        ty += 8;
+    }
     // Rows the board cannot show, then buttons. A modal has its own rows.
     const modal = ui && (ui.mode === "list" || ui.mode === "order" || ui.mode === "number");
     const rows = modal ? [] : ((ui && ui.rows) || (ui && ui.looseRows) || []);

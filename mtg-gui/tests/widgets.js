@@ -233,6 +233,28 @@ async function main() {
         if (pilgrims.length < 2) fail(`choose-x-long: the creatures X taps are not drawn in the modal and the panel: ${JSON.stringify(drawn.filter(t => /X = 9|Pilgrim|Grotto/.test(t)))}`);
         else if (drawn.some(t => /Grot…|Avacyn.*…/.test(t))) fail(`choose-x-long: the plan is still clipped: ${JSON.stringify(drawn.filter(t => t.includes("…")))}`);
         else ok("choose-x-long → the whole plan is drawn, creatures included");
+        // And the panel's text stays above its buttons, with the log open
+        // (a 100px panel) and a refusal notice too (#938's review).
+        for (const logOpen of [false, true]) {
+          const clash = await page.evaluate((logOpen) => {
+            window.mtg.logOpen = logOpen;
+            window.mtg.notice = "X = 8 is not payable: the sources pay 0-7 and 9.";
+            const orig = CanvasRenderingContext2D.prototype.fillText;
+            const at = [];
+            try {
+              CanvasRenderingContext2D.prototype.fillText = function (s, x, y) { at.push({ s: String(s), x, y }); return orig.apply(this, arguments); };
+              window.mtgDebug.render();
+            } finally { CanvasRenderingContext2D.prototype.fillText = orig; }
+            const buttons = window.mtg.hits.filter(h => h.kind === "button" && h.x >= 480);
+            const top = Math.min(...buttons.map(b => b.y));
+            const labels = new Set(buttons.map(b => b.label));
+            const over = at.filter(t => t.x >= 480 && !labels.has(t.s) && t.y + 7 > top && t.y < top + 30);
+            window.mtg.logOpen = false; window.mtg.notice = null;
+            return { top, over: over.map(t => `${t.s}@${t.y}`) };
+          }, logOpen);
+          if (clash.over.length) fail(`choose-x-long${logOpen ? " (log open)" : ""}: panel text under the buttons at ${clash.top}: ${JSON.stringify(clash.over)}`);
+          else ok(`choose-x-long${logOpen ? " (log open)" : ""} → the panel's text ends above its buttons`);
+        }
       }
     }
     // 8a. AssignCombatDamage (#637): the amount is one number, lethal to
