@@ -898,7 +898,11 @@ impl ClaudeCodeBackend {
         if let Some(s) = schema {
             if self.text_answers {
                 let full = self.answer_schema.as_deref().and_then(|t| serde_json::from_str(t).ok());
-                asked = Some(format!("{message}\n\n{}", super::answer_text::answer_format(full.as_ref().unwrap_or(s))));
+                let format = super::answer_text::answer_format(full.as_ref().unwrap_or(s));
+                // The `PROMPT` record is the message before this is put
+                // under it, and this is the line a re-ask answers to (#910).
+                crate::game_log::write(file!(), line!(), &api_label("FORMAT", &self.seat), &format);
+                asked = Some(format!("{message}\n\n{format}"));
             } else {
                 cmd.args(["--json-schema", &s.to_string()]);
             }

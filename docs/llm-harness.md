@@ -363,6 +363,11 @@ header rows are the ones starting with a timestamp digit.
   while Gemini and the `claude -p` seat — whose result object carries no
   thinking block — ask for it in the JSON as a `thoughts` field and take it
   out of the payload once captured.
+- `FORMAT` — the lines a text-answering `claude -p` seat puts under the
+  prompt ("Answer with only this JSON object: ..." and its fields), which
+  the `PROMPT` record does not hold: a game seat's follows its `PROMPT`,
+  a draft seat's (`[Seat N] FORMAT`) comes just before the pick's `PROMPT`.
+  Read it beside a `REASK` to see what the seat was told to send.
 - `MALFORMED`, `VALIDATION`, `BLOCKER_VALIDATION` — the model answered with
   something unusable and the harness fell back (usually to option 0 / pass).
   Grep these first when a seat plays nonsense.

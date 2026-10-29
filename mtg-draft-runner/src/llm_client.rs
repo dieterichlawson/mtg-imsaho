@@ -865,6 +865,8 @@ struct ClaudeCodeDraftBackend {
     /// written whole on every one; at the hour the seat's first writes it
     /// and the rest read it (`reports/llm-cost.md`, phase 5).
     hour_cache: bool,
+    /// The seat's number, for the records it writes itself.
+    seat: usize,
 }
 
 /// `MTG_CLAUDE_CODE_DRAFT_ANSWERS`: `schema` (the default) or `text`, how a
@@ -1067,6 +1069,7 @@ impl ClaudeCodeDraftBackend {
             answer_schema: None,
             text_answers,
             hour_cache: false,
+            seat: table.seat,
         }
     }
 
@@ -1255,7 +1258,11 @@ impl ClaudeCodeDraftBackend {
         // `--json-schema` is a tool call and a second request after it.
         let asked = if self.text_answers {
             let full = self.answer_schema.as_deref().and_then(|t| serde_json::from_str(t).ok());
-            Some(format!("{message}\n\n{}", mtg_player::llm::answer_text::answer_format(full.as_ref().unwrap_or(schema))))
+            let format = mtg_player::llm::answer_text::answer_format(full.as_ref().unwrap_or(schema));
+            // The pick's `PROMPT` record is the message without this, and
+            // this is the line a re-ask answers to (#910).
+            mtg_player::game_log::write(file!(), line!(), &format!("[Seat {}] FORMAT", self.seat), &format);
+            Some(format!("{message}\n\n{format}"))
         } else {
             cmd.args(["--json-schema", &schema.to_string()]);
             None
