@@ -842,6 +842,19 @@ sits in memory. What was measured, and what the proofs do about each:
   no memory it has not written, so neither is observable; what is read on
   a path the solver cannot rule out is then one known variant rather than
   every one.
+- **A rewrite's own cost.** Writing a variant as the bytes of its whole
+  union, the rest zero, is what lets CBMC follow an effect into a `Box`;
+  but a narrow variant holding a pointer, laid over a wide union, is more
+  than it gets through. Asking a yes/no question,
+  `awaiting_action := Some(ResolutionChoice { YesNo })` (a 256-bit
+  variant in a 1152-bit union), ran out of memory at three gigabytes,
+  and passes in sixteen seconds as Kani wrote it; every card proof whose
+  card asks one (Cloistered Youth, Thraben Sentry, Screeching Bat, Delver
+  of Secrets) ran out of memory in symbolic execution, Cloistered Youth's
+  after nine minutes at four gigabytes. Such a write is now left as
+  written over a union wider than 1024 bits, and Cloistered Youth's
+  passes in 86 seconds; the effect proofs the rewrite was for hold in the
+  time they did.
 - **A path that cannot be taken.** Where CBMC cannot tell that a path is
   impossible (moving a card onto the battlefield, on a board where no
   replacement decides a copy, still went into becoming a copy, two
