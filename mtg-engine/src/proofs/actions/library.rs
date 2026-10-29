@@ -7,8 +7,8 @@
 //! size: a library whose length the solver leaves open is one whose cards
 //! move by a distance it leaves open as one is taken out or put in, which
 //! CBMC encodes over the whole buffer, and milling such a library ran it
-//! out of memory. And for each player in a call of its own, as
-//! `each_player` says.
+//! out of memory. And for each player in a harness of its own, as
+//! `each_size_and_player` says.
 
 use crate::cards::CardRegistry;
 use crate::events::GameEvent;
@@ -161,53 +161,65 @@ fn putting<const SIZE: usize>(who: PlayerId) {
     std::mem::forget((registry, state, expected));
 }
 
-/// `proof` for each player, a constant in each call: the library a card is
-/// taken from or put into is then known, where for a player the solver
-/// chose it is either player's, every move within it a write through a
-/// pointer to one of two buffers, and milling a library of one ran out of
-/// memory at four gigabytes, where so it proves in under three minutes.
-fn each_player(proof: impl Fn(PlayerId)) {
-    let which: bool = kani::any();
-    for p in [false, true] {
-        if which == p {
-            proof(PlayerId(u8::from(p)));
-        }
-    }
-}
-
-macro_rules! for_each_size {
+/// A harness for each size of library and each player, both constants:
+/// the library a card is taken from or put into is then known, where for a
+/// player the solver chose it is either player's, every move within it a
+/// write through a pointer to one of two buffers, and milling a library of
+/// one ran out of memory at four gigabytes; and both players in one
+/// harness, each in a call of its own, were the cases of one harness, which
+/// add up: drawing from an empty library took a million steps and ran out
+/// of memory where for one player it had taken 430 thousand.
+macro_rules! each_size_and_player {
     ($body:ident, $move:path, [$($name:ident: $size:literal),*]) => {$(
-        #[kani::proof]
-        #[kani::unwind(7)]
-        #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
-        #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
-        #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
-        #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
-        #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
-        #[kani::stub(crate::state::GameState::move_object, $move)]
-        #[kani::stub(crate::replacement::apply, record_empty_draw)]
-        /// The proof above it, for a library of that many cards.
-        fn $name() {
-            each_player($body::<$size>);
+        mod $name {
+            use crate::ids::PlayerId;
+            #[kani::proof]
+            #[kani::unwind(7)]
+            #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+            #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+            #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+            #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+            #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+            #[kani::stub(crate::state::GameState::move_object, $move)]
+            #[kani::stub(crate::replacement::apply, super::record_empty_draw)]
+            /// The proof above it, for a library of that many cards, the
+            /// first player's.
+            fn for_the_first_player() {
+                super::$body::<$size>(PlayerId(0));
+            }
+            #[kani::proof]
+            #[kani::unwind(7)]
+            #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+            #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+            #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+            #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+            #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+            #[kani::stub(crate::state::GameState::move_object, $move)]
+            #[kani::stub(crate::replacement::apply, super::record_empty_draw)]
+            /// The proof above it, for a library of that many cards, the
+            /// second player's.
+            fn for_the_second_player() {
+                super::$body::<$size>(PlayerId(1));
+            }
         }
     )*};
 }
 
-for_each_size!(drawing, crate::proofs::cards::record_move, [
+each_size_and_player!(drawing, crate::proofs::cards::record_move, [
     drawing_from_an_empty_library: 0,
     drawing_from_a_library_of_one: 1,
     drawing_from_a_library_of_two: 2,
     drawing_from_a_library_of_three: 3
 ]);
 
-for_each_size!(milling, move_keeping_library_order, [
+each_size_and_player!(milling, super::move_keeping_library_order, [
     milling_an_empty_library: 0,
     milling_a_library_of_one: 1,
     milling_a_library_of_two: 2,
     milling_a_library_of_three: 3
 ]);
 
-for_each_size!(putting, move_keeping_library_order, [
+each_size_and_player!(putting, super::move_keeping_library_order, [
     putting_a_card_into_an_empty_library: 0,
     putting_a_card_into_a_library_of_one: 1,
     putting_a_card_into_a_library_of_two: 2,
