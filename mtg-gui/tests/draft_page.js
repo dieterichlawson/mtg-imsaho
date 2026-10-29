@@ -703,6 +703,21 @@ async function main() {
         check(((await text("#ready-line")) || "").includes("game 2 is starting"), `${tag}: the panel says the game is starting (${await text("#ready-line")})`);
         check(await page.$eval("#between .row", el => el.disabled), `${tag}: and nothing moves after Ready`);
 
+        // After a game with no winner the choice stays put, and a game
+        // abandoned at the action budget is not called a draw (#918).
+        for (const [last, said] of [[{ winner: null, forfeited_by: null, abandoned: true }, "Game 1 was abandoned with no winner"],
+                                    [{ winner: null, forfeited_by: null, abandoned: false }, "Game 1 was a draw"]]) {
+          const v = JSON.parse(JSON.stringify(between));
+          const m = v.matches.find(x => x.between);
+          Object.assign(m.between, { game: 2, you_choose: true, play_first: null, ready: false });
+          m.games = [last];
+          await stage(byName.done);
+          await stage(v);
+          await page.waitForTimeout(50);
+          const pd = (await text("#play-draw")) || "";
+          check(pd.includes(said) && pd.includes("the choice is still yours"), `${tag}: after ${last.abandoned ? "an abandoned" : "a drawn"} game the chooser is told so (${pd})`);
+        }
+
         // Before game 1, for the flip's winner: the choice and no deck.
         const flip = JSON.parse(JSON.stringify(between));
         Object.assign(flip.matches.find(m => m.between).between, {

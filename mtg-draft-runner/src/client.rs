@@ -938,6 +938,32 @@ mod tests {
         assert!(!mine.contains("game 2"), "{mine}");
     }
 
+    /// #918: a game stopped at the action budget has no winner and was
+    /// abandoned, not drawn; the chooser is told which.
+    #[test]
+    fn after_an_abandoned_game_the_chooser_is_not_told_it_was_a_draw() {
+        let card = |n: &str| serde_json::json!({"name": n, "line": format!("{n} {{1}}{{R}}"), "text": ""});
+        let main: Vec<String> = (0..23).map(|i| format!("Card {i}")).collect();
+        let view = |last: Value| serde_json::json!({
+            "type": "view", "phase": "playing", "seat": 0, "set": "isd",
+            "seats": [{"seat": 0, "name": "seat 0", "kind": "human", "status": "playing", "picks": 30, "joined": true},
+                      {"seat": 1, "name": "Bo", "kind": "human", "status": "playing", "picks": 30, "joined": true}],
+            "matches": [{"round": 1, "opponent": 1, "url": "http://h:1/", "status": "playing",
+                         "games": [last], "next_game": 2, "result": null,
+                         "between": {"game": 2, "sideboarding": true, "you_choose": true, "play_first": null,
+                                     "ready": false, "opponent_ready": false, "deadline_ms": null,
+                                     "deck": {"main": main, "lands": {"Mountain": 17}, "sideboard": [], "valid": true, "problem": null, "ready": false},
+                                     "opponent_showed": []}}],
+            "pool": (0..30).map(|i| card(&format!("Card {i}"))).collect::<Vec<_>>(),
+            "picks": [], "deck": null, "notice": null, "pairings": [], "standings": [],
+        });
+        let (_, mine) = render(&view(serde_json::json!({"winner": null, "abandoned": true})), &Build::default());
+        assert!(mine.contains("game 1 was abandoned with no winner, and the choice is still yours"), "{mine}");
+        assert!(!mine.contains("draw, and"), "{mine}");
+        let (_, mine) = render(&view(serde_json::json!({"winner": null, "abandoned": false})), &Build::default());
+        assert!(mine.contains("game 1 was a draw, and the choice is still yours"), "{mine}");
+    }
+
     /// Between games: who chooses, what the opponent showed, the pool to
     /// sideboard with; `play`/`draw` for the chooser only, a short deck is
     /// kept on the screen and not sent, and `ready` sends the deck and
@@ -1260,11 +1286,16 @@ fn between_listing(v: &Value, m: &Value, b: &Value, build: &Build, who: &dyn Fn(
     };
     let mut s = format!("\nBefore game {game} vs {opponent}{score}:\n");
     // The last game's loser chooses; after a draw, whoever chose it (MTR 2.2).
-    let last_winner = m["games"].as_array().and_then(|g| g.last()).and_then(|g| g["winner"].as_u64());
+    // A game stopped at the action budget had no winner either, and was
+    // abandoned, not drawn: the match list says so (#743, #918).
+    let last = m["games"].as_array().and_then(|g| g.last());
+    let last_winner = last.and_then(|g| g["winner"].as_u64());
+    let abandoned = last.is_some_and(|g| g["abandoned"] == true);
     if b["you_choose"] == true {
         let why = match last_winner {
             _ if game == 1 => "you won the coin flip".to_string(),
             Some(w) if Some(w) != me => format!("you lost game {}", game - 1),
+            None if abandoned => format!("game {} was abandoned with no winner, and the choice is still yours", game - 1),
             _ => format!("game {} was a draw, and the choice is still yours", game - 1),
         };
         let now = match b["play_first"].as_bool() {

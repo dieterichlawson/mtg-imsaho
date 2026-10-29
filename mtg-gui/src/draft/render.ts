@@ -481,9 +481,13 @@ function betweenPanel(view: DraftView, m: Match, b: Between, state: PageState, a
   }
   if (b.you_choose) {
     // The last game's loser chooses; after a draw, whoever chose it (MTR 2.2).
+    // A game stopped at the action budget was abandoned, not drawn: the
+    // match row above says "abandoned" (#743, #918).
     const last = m.games[m.games.length - 1];
     const why = b.game === 1 ? "You won the coin flip"
-      : last && last.winner === m.opponent ? `You lost game ${b.game - 1}` : `Game ${b.game - 1} was a draw, and the choice is still yours`;
+      : last && last.winner === m.opponent ? `You lost game ${b.game - 1}`
+      : last && last.winner === null && last.abandoned ? `Game ${b.game - 1} was abandoned with no winner, and the choice is still yours`
+      : `Game ${b.game - 1} was a draw, and the choice is still yours`;
     const chosen = b.play_first;
     parts.push(h("div", { class: "play-draw", id: "play-draw" },
       h("span", { text: `${why}: play first or draw first? ` }),

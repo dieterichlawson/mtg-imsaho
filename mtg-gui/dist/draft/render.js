@@ -406,9 +406,13 @@ function betweenPanel(view, m, b, state, actions) {
     }
     if (b.you_choose) {
         // The last game's loser chooses; after a draw, whoever chose it (MTR 2.2).
+        // A game stopped at the action budget was abandoned, not drawn: the
+        // match row above says "abandoned" (#743, #918).
         const last = m.games[m.games.length - 1];
         const why = b.game === 1 ? "You won the coin flip"
-            : last && last.winner === m.opponent ? `You lost game ${b.game - 1}` : `Game ${b.game - 1} was a draw, and the choice is still yours`;
+            : last && last.winner === m.opponent ? `You lost game ${b.game - 1}`
+                : last && last.winner === null && last.abandoned ? `Game ${b.game - 1} was abandoned with no winner, and the choice is still yours`
+                    : `Game ${b.game - 1} was a draw, and the choice is still yours`;
         const chosen = b.play_first;
         parts.push(h("div", { class: "play-draw", id: "play-draw" }, h("span", { text: `${why}: play first or draw first? ` }), h("button", { type: "button", id: "play-first", class: chosen === true ? "primary" : "", disabled: ready, onclick: () => actions.playDraw(true) }, "Play first"), " ", h("button", { type: "button", id: "draw-first", class: chosen === false ? "primary" : "", disabled: ready, onclick: () => actions.playDraw(false) }, "Draw first"), h("span", { class: "muted", text: chosen === null ? " (not chosen yet: you play first)" : chosen ? dashed("you play first") : dashed("you draw first") })));
     }

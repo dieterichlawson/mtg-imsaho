@@ -989,8 +989,8 @@ fn between_games(
         .filter(|p| p.seat == a || p.seat == b)
     {
         let kind = if page.seat == a { &kinds[0] } else { &kinds[1] };
-        let last_winner = bg.games.last().and_then(|g| g.winner);
-        if let Some(line) = between_line(bg.game, bg.chooser == page.seat, last_winner, page.seat, kind) {
+        let last = bg.games.last().map(|g| (g.winner, g.abandoned));
+        if let Some(line) = between_line(bg.game, bg.chooser == page.seat, last, page.seat, kind) {
             page.page.set_match_line(Some(line));
         }
     }
@@ -1027,11 +1027,11 @@ fn between_games(
 /// seat has no draft page: it answers at the server's terminal; a person
 /// may be on the page or the terminal client, both where they drafted
 /// (#879's review).
-fn between_line(game: usize, chooses: bool, last_winner: Option<usize>, seat: usize, kind: &SeatKind) -> Option<String> {
+fn between_line(game: usize, chooses: bool, last: Option<(Option<usize>, bool)>, seat: usize, kind: &SeatKind) -> Option<String> {
     let what = match (game, chooses) {
         (1, false) => return None,
         (1, true) => "you won the coin flip: choose play or draw".to_string(),
-        (_, true) => format!("{}: sideboard and choose play or draw", last_game_why(last_winner, seat, game - 1)),
+        (_, true) => format!("{}: sideboard and choose play or draw", last_game_why(last, seat, game - 1)),
         (_, false) => "sideboard".to_string(),
     };
     let place = if *kind == SeatKind::Cli { "at the server's terminal" } else { "where you drafted" };
@@ -1039,10 +1039,14 @@ fn between_line(game: usize, chooses: bool, last_winner: Option<usize>, seat: us
 }
 
 /// Why a seat chooses to play or draw: it lost the last game, or that game
-/// was a draw and the choice stays with whoever had it (MTR 2.2).
-fn last_game_why(winner: Option<usize>, seat: usize, game: usize) -> String {
-    match winner {
-        Some(w) if w != seat => format!("you lost game {game}"),
+/// had no winner and the choice stays with whoever had it (MTR 2.2). A
+/// game stopped at the action budget was abandoned, not drawn (#743): the
+/// match list beside this line says "abandoned", and this said "a draw"
+/// (#918). `last` is the last game's winner and whether it was abandoned.
+fn last_game_why(last: Option<(Option<usize>, bool)>, seat: usize, game: usize) -> String {
+    match last {
+        Some((Some(w), _)) if w != seat => format!("you lost game {game}"),
+        Some((None, true)) => format!("game {game} was abandoned"),
         _ => format!("game {game} was a draw"),
     }
 }
@@ -1442,11 +1446,14 @@ mod tests {
         assert_eq!(between_line(1, false, None, 0, &h), None);
         assert_eq!(between_line(1, true, None, 0, &SeatKind::Cli).as_deref(),
             Some("Before game 1: you won the coin flip: choose play or draw at the server's terminal"));
-        assert_eq!(between_line(3, true, None, 0, &h).as_deref(),
+        assert_eq!(between_line(3, true, Some((None, false)), 0, &h).as_deref(),
             Some("Before game 3: game 2 was a draw: sideboard and choose play or draw where you drafted"));
-        assert_eq!(between_line(2, true, Some(1), 0, &h).as_deref(),
+        // Stopped at the action budget: abandoned, not drawn (#918).
+        assert_eq!(between_line(3, true, Some((None, true)), 0, &h).as_deref(),
+            Some("Before game 3: game 2 was abandoned: sideboard and choose play or draw where you drafted"));
+        assert_eq!(between_line(2, true, Some((Some(1), false)), 0, &h).as_deref(),
             Some("Before game 2: you lost game 1: sideboard and choose play or draw where you drafted"));
-        assert_eq!(between_line(2, false, Some(1), 1, &h).as_deref(), Some("Before game 2: sideboard where you drafted"));
+        assert_eq!(between_line(2, false, Some((Some(1), false)), 1, &h).as_deref(), Some("Before game 2: sideboard where you drafted"));
     }
 
     #[test]

@@ -56,7 +56,7 @@ async function main() {
       CanvasRenderingContext2D.prototype.fillText = function (t, ...rest) { said.push(String(t)); return fill.call(this, t, ...rest); };
       const m = window.mtg;
       // The longest line the server sends (server.rs, between_games).
-      const line = "Before game 3: game 2 was a draw: sideboard and choose play or draw where you drafted";
+      const line = "Before game 3: game 2 was abandoned: sideboard and choose play or draw where you drafted";
       window.mtgDebug.message({ type: "table", match_line: line, opponent: null });
       window.mtgDebug.render();
       const between = said.join(" ");
@@ -94,7 +94,7 @@ async function main() {
     check(fit.top !== null && fit.bottom + 9 <= fit.top + 100, `with the log open the result stays in its panel (last line at ${fit.bottom}, panel ${fit.top}-${fit.top + 100})`);
     // Every word of it, the place to go last (#879's review: it was cut
     // at three lines, before "where you drafted").
-    check(squash(drawn.between).includes("Before game 3: game 2 was a draw: sideboard and choose play or draw where you drafted"),
+    check(squash(drawn.between).includes("Before game 3: game 2 was abandoned: sideboard and choose play or draw where you drafted"),
       `after a game the panel says what comes before the next (${JSON.stringify(drawn.between.slice(0, 200))})`);
     check(squash(drawn.first).includes("Before game 1: you won the coin flip: choose play or draw at the server's terminal"),
       `before the first game the page says what the table needs (${JSON.stringify(drawn.first)})`);

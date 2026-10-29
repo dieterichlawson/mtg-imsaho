@@ -1608,7 +1608,7 @@ match is still worth not losing.\n");
 previous one chooses in the same way. The mulligan prompt tells you which side you are on.\n");
                 } else {
                     writeln!(s, "\nThe loser of game {} may choose who goes first in this game \
-(after a drawn game, whoever chose before), and plays first if it does not choose. The \
+(after a game with no winner, drawn or abandoned, whoever chose before), and plays first if it does not choose. The \
 mulligan prompt tells you which side you are on.", game - 1).unwrap();
                 }
             }
