@@ -998,6 +998,32 @@ sits in memory. What was measured, and what the proofs do about each:
   length, the orders of every list of effects compared, out of memory at
   3.5 GB. With the amount a constant in each harness, the four of those
   harnesses tried passed in 87 to 124 seconds.
+- **A list as long as the answers.** The same join, for a list: one
+  pushed to only for some answers is, where the branches meet, of every
+  length the answers allow, and a loop over it is walked to the loop's
+  bound. Destroying all listed the deaths that way and walked the list to
+  announce and move them; it keeps one entry per permanent, none for one
+  that does not die, and both forms passed in 264 and 286 seconds where
+  they ran out of memory.
+- **Questions filed in a list.** `decided` kept the answers given so far
+  in a list and looked each question up in it. Which questions came
+  first depends on the answers, so where branches met the list differed
+  by path, and every later question was compared with every entry of
+  every list: 72% of the targeting proofs' symbolic execution. One place
+  per question and object, found by index, holds the same answers; the
+  filtered-creature proof went from 1.3 million steps to 480 thousand.
+- **A filter walked to its end.** `Iterator::filter` hands out its items
+  by an inner `find`, so after the first item the walk stands at one of
+  as many places as items passed, and every later item, and each
+  question asked of it, is read at a place of every value. Offering
+  targets collected chains of filters over the battlefield and the
+  players; a loop over `each_object` with the tests in its body asks the
+  same questions in the same order and reads each object at its own
+  place. The filtered-creature proof's symbolic execution fell from 121
+  seconds to 11, and it and the filtered-permanent proof passed in 44 and
+  41 seconds. With players offered as well (any target, player or
+  planeswalker) the list is pushed at a place of every value up to four,
+  and those two still run out of memory in the solver at 3.5 GB.
 - **CBMC's memory checks.** `kani-bounded.py` leaves out CBMC's pointer,
   bounds and division checks (`--memory-checks` keeps them): that safe
   Rust reads only memory it may is the compiler's guarantee, and Rust's
