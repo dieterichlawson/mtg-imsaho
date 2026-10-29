@@ -112,19 +112,36 @@ fn subtype_filters_for(form: crate::proofs::cards::Form, subtypes: &[&str]) {
     std::mem::forget((registry, state));
 }
 
-for_each_form! {
-    /// "Spirit or enchantment" matches exactly an object with the subtype
-    /// Spirit or the type enchantment, and "non-Vampire, non-Werewolf,
-    /// non-Zombie" one with none of those subtypes (CR 205.3, 205.4b). For
-    /// every set of Spirit, Vampire and Zombie.
-    fn the_subtype_filters_match_their_subtypes(form) {
-        let which: u8 = kani::any();
-        for (i, subtypes) in SUBTYPE_SETS.iter().enumerate() {
-            if usize::from(which) == i {
-                subtype_filters_for(form, subtypes);
+/// "Spirit or enchantment" matches exactly an object with the subtype
+/// Spirit or the type enchantment, and "non-Vampire, non-Werewolf,
+/// non-Zombie" one with none of those subtypes (CR 205.3, 205.4b). For
+/// every set of Spirit, Vampire and Zombie, a harness for each and for a
+/// card and a token: the eight sets in one harness ran out of memory.
+macro_rules! each_subtype_set {
+    ($($name:ident: $set:literal,)*) => {$(
+        mod $name {
+            use crate::proofs::cards::{card_proof, Form};
+            card_proof! {
+                /// The proof above it, for one set of subtypes, of a card.
+                fn of_a_card() { super::subtype_filters_for(Form::Card, super::SUBTYPE_SETS[$set]) }
+            }
+            card_proof! {
+                /// The proof above it, for one set of subtypes, of a token.
+                fn of_a_token() { super::subtype_filters_for(Form::Token, super::SUBTYPE_SETS[$set]) }
             }
         }
-    }
+    )*};
+}
+
+each_subtype_set! {
+    the_subtype_filters_match_no_subtype: 0,
+    the_subtype_filters_match_a_spirit: 1,
+    the_subtype_filters_match_a_vampire: 2,
+    the_subtype_filters_match_a_zombie: 3,
+    the_subtype_filters_match_a_spirit_vampire: 4,
+    the_subtype_filters_match_a_spirit_zombie: 5,
+    the_subtype_filters_match_a_vampire_zombie: 6,
+    the_subtype_filters_match_all_three: 7,
 }
 
 for_each_form! {
