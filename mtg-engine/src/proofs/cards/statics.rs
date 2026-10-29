@@ -71,11 +71,11 @@ statics! {
         && matches!(**indestructible, E::GrantKeyword { keyword: Keyword::Indestructible, scope: OnSelf }))),
     battleground_geist_pumps_your_other_spirits: isd::battleground_geist::BattlegroundGeist
         => (where |e| matches!(e, [E::ModifyPT { power: 1, toughness: 0, scope: GlobalOther(f) }] if other_spirits_you_control(f))),
-    elite_inquisitor_has_protection_from_vampires_werewolves_and_zombies: isd::elite_inquisitor::EliteInquisitor => [
-        E::ProtectionFromSubtype { subtype: "Vampire".into(), scope: OnSelf },
-        E::ProtectionFromSubtype { subtype: "Werewolf".into(), scope: OnSelf },
-        E::ProtectionFromSubtype { subtype: "Zombie".into(), scope: OnSelf },
-    ],
+    elite_inquisitor_has_protection_from_vampires_werewolves_and_zombies: isd::elite_inquisitor::EliteInquisitor => (where |e| matches!(e, [
+        E::ProtectionFromSubtype { subtype: v, scope: OnSelf },
+        E::ProtectionFromSubtype { subtype: w, scope: OnSelf },
+        E::ProtectionFromSubtype { subtype: z, scope: OnSelf },
+    ] if v == "Vampire" && w == "Werewolf" && z == "Zombie")),
     gallows_warden_toughens_your_other_spirits: isd::gallows_warden::GallowsWarden
         => (where |e| matches!(e, [E::ModifyPT { power: 0, toughness: 1, scope: GlobalOther(f) }] if other_spirits_you_control(f))),
     grave_bramble_has_protection_from_zombies: isd::grave_bramble::GraveBramble
