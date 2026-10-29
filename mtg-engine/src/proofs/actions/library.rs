@@ -129,14 +129,13 @@ fn milling<const SIZE: usize>(who: PlayerId) {
 /// into that library and is then its top card, or its bottom one, with the
 /// others in the order they were (CR 401.2: nothing else changes the
 /// order of a library). A card already in the library moves within it.
-/// For a card of either player's, one of a library of `SIZE` cards or one
-/// in exile, put on top or at the bottom; nothing else changes.
-fn putting<const SIZE: usize>(who: PlayerId) {
+/// For `who`'s card, the `pick`th of a library of `SIZE` cards or, at
+/// `pick == SIZE`, one in exile, put on top or at the bottom; nothing
+/// else changes.
+fn putting<const SIZE: usize>(who: PlayerId, pick: usize) {
     let (registry, mut state, blank) = blank_board();
     let cards = a_library::<SIZE>(&mut state, blank, who);
     let outside = state.create_object(blank, who, Zone::Exile, None, None);
-    let pick: usize = kani::any();
-    kani::assume(pick <= SIZE);
     let id = if pick < SIZE { cards[pick] } else { outside };
     let top: bool = kani::any();
     let before = Snapshot::of(&state);
@@ -219,12 +218,58 @@ each_size_and_player!(milling, super::move_keeping_library_order, [
     milling_a_library_of_three: 3
 ]);
 
-each_size_and_player!(putting, super::move_keeping_library_order, [
-    putting_a_card_into_an_empty_library: 0,
-    putting_a_card_into_a_library_of_one: 1,
-    putting_a_card_into_a_library_of_two: 2,
-    putting_a_card_into_a_library_of_three: 3
-]);
+/// The proof of putting a card into a library, for each card it might be,
+/// size of library and player, all constants: with the card the solver's,
+/// the library's order was moved around a place it left open, and the
+/// solver ran out of memory taking it in before it began to search (a
+/// library of one, either player's, at three and a half gigabytes), where
+/// the card a constant proves in a hundred seconds.
+macro_rules! each_pick_and_player {
+    ($($name:ident: $size:literal, $pick:literal;)*) => {$(
+        mod $name {
+            use crate::ids::PlayerId;
+            #[kani::proof]
+            #[kani::unwind(7)]
+            #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+            #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+            #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+            #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+            #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+            #[kani::stub(crate::state::GameState::move_object, super::move_keeping_library_order)]
+            #[kani::stub(crate::replacement::apply, super::record_empty_draw)]
+            /// The proof above it, for that card, the first player's.
+            fn for_the_first_player() {
+                super::putting::<$size>(PlayerId(0), $pick);
+            }
+            #[kani::proof]
+            #[kani::unwind(7)]
+            #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+            #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+            #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+            #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+            #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+            #[kani::stub(crate::state::GameState::move_object, super::move_keeping_library_order)]
+            #[kani::stub(crate::replacement::apply, super::record_empty_draw)]
+            /// The proof above it, for that card, the second player's.
+            fn for_the_second_player() {
+                super::putting::<$size>(PlayerId(1), $pick);
+            }
+        }
+    )*};
+}
+
+each_pick_and_player! {
+    putting_a_card_from_exile_into_an_empty_library: 0, 0;
+    putting_the_only_card_of_a_library_of_one: 1, 0;
+    putting_a_card_from_exile_into_a_library_of_one: 1, 1;
+    putting_the_first_card_of_a_library_of_two: 2, 0;
+    putting_the_second_card_of_a_library_of_two: 2, 1;
+    putting_a_card_from_exile_into_a_library_of_two: 2, 2;
+    putting_the_first_card_of_a_library_of_three: 3, 0;
+    putting_the_second_card_of_a_library_of_three: 3, 1;
+    putting_the_third_card_of_a_library_of_three: 3, 2;
+    putting_a_card_from_exile_into_a_library_of_three: 3, 3;
+}
 
 #[kani::proof]
 #[kani::unwind(7)]
