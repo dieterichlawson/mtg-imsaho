@@ -49,9 +49,8 @@ impl CardBehavior for DearlyDeparted {
         if e.controller != owner || !state.has_subtype(e.object, "Human", registry) {
             return None;
         }
-        let mut e = e.clone();
-        e.counters.push((CounterType::PlusOnePlusOne, 1));
-        Some(Replacement::Modified(ReplaceableEvent::EntersBattlefield(e)))
+        Some(Replacement::Modified(ReplaceableEvent::EntersBattlefield(
+            crate::cards::helpers::entering_with_more_counters(e, vec![(CounterType::PlusOnePlusOne, 1)]))))
     }
 
 }

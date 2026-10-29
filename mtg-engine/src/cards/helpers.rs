@@ -910,16 +910,26 @@ pub fn enters_with_counters(
     if extra.is_empty() {
         return None;
     }
-    // The counters it enters with allocated at what they come to, rather
-    // than the clone's (which is exactly as long as the counters it had)
-    // grown to take more: a proof holds a list to the room it was given
-    // (`proofs::cards::no_growing`).
+    Some(Replacement::Modified(ReplaceableEvent::EntersBattlefield(entering_with_more_counters(e, extra))))
+}
+
+/// The permanent `e` entering with `extra` counters after the ones it
+/// already enters with.
+///
+/// Its counters allocated at what they come to, rather than a clone's
+/// (exactly as long as the counters it had) grown to take more: a proof
+/// holds a list to the room it was given (`proofs::cards::no_growing`).
+#[must_use]
+pub fn entering_with_more_counters(
+    e: &crate::replacement::EnteringPermanent,
+    extra: Vec<(crate::types::CounterType, u32)>,
+) -> crate::replacement::EnteringPermanent {
     let mut e = e.clone();
     let mut all = Vec::with_capacity(e.counters.len() + extra.len());
     all.append(&mut e.counters);
     all.extend(extra);
     e.counters = all;
-    Some(Replacement::Modified(ReplaceableEvent::EntersBattlefield(e)))
+    e
 }
 
 /// Whether the ability of `source` resolving now is its back face's: the face
