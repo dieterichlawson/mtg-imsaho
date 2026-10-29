@@ -246,17 +246,64 @@ macro_rules! from_each_zone {
     )*};
 }
 
+/// A move onto the battlefield from another zone, for each owner in a
+/// harness of its own: it is the move a replacement, a copy and an
+/// entering controller are asked about, and both owners in one harness,
+/// each a call of its own, added up past what one proof holds (the other
+/// moves prove with both).
+macro_rules! into_play_from_each_zone {
+    ($($name:ident: $from:ident),* $(,)?) => {$(
+        mod $name {
+            use crate::ids::PlayerId;
+            use crate::types::Zone;
+            #[kani::proof]
+            #[kani::unwind(7)]
+            #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+            #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+            #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+            #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+            #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+            #[kani::stub(crate::replacement::for_entering, super::unchanged)]
+            #[kani::stub(crate::state::GameState::become_copy_of, super::no_copy)]
+            /// The proof above it, for that move, of the first player's card.
+            fn for_the_first_player() {
+                super::moving(Zone::$from, Zone::Battlefield, PlayerId(0));
+            }
+            #[kani::proof]
+            #[kani::unwind(7)]
+            #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+            #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+            #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+            #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+            #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+            #[kani::stub(crate::replacement::for_entering, super::unchanged)]
+            #[kani::stub(crate::state::GameState::become_copy_of, super::no_copy)]
+            /// The proof above it, for that move, of the second player's card.
+            fn for_the_second_player() {
+                super::moving(Zone::$from, Zone::Battlefield, PlayerId(1));
+            }
+        }
+    )*};
+}
+
+into_play_from_each_zone! {
+    moving_from_library_to_battlefield: Library,
+    moving_from_hand_to_battlefield: Hand,
+    moving_from_graveyard_to_battlefield: Graveyard,
+    moving_from_stack_to_battlefield: Stack,
+    moving_from_exile_to_battlefield: Exile,
+    moving_from_command_to_battlefield: Command,
+}
+
 from_each_zone! {
     moving_from_library_to_library: Library => Library,
     moving_from_library_to_hand: Library => Hand,
-    moving_from_library_to_battlefield: Library => Battlefield,
     moving_from_library_to_graveyard: Library => Graveyard,
     moving_from_library_to_stack: Library => Stack,
     moving_from_library_to_exile: Library => Exile,
     moving_from_library_to_command: Library => Command,
     moving_from_hand_to_library: Hand => Library,
     moving_from_hand_to_hand: Hand => Hand,
-    moving_from_hand_to_battlefield: Hand => Battlefield,
     moving_from_hand_to_graveyard: Hand => Graveyard,
     moving_from_hand_to_stack: Hand => Stack,
     moving_from_hand_to_exile: Hand => Exile,
@@ -270,28 +317,24 @@ from_each_zone! {
     moving_from_battlefield_to_command: Battlefield => Command,
     moving_from_graveyard_to_library: Graveyard => Library,
     moving_from_graveyard_to_hand: Graveyard => Hand,
-    moving_from_graveyard_to_battlefield: Graveyard => Battlefield,
     moving_from_graveyard_to_graveyard: Graveyard => Graveyard,
     moving_from_graveyard_to_stack: Graveyard => Stack,
     moving_from_graveyard_to_exile: Graveyard => Exile,
     moving_from_graveyard_to_command: Graveyard => Command,
     moving_from_stack_to_library: Stack => Library,
     moving_from_stack_to_hand: Stack => Hand,
-    moving_from_stack_to_battlefield: Stack => Battlefield,
     moving_from_stack_to_graveyard: Stack => Graveyard,
     moving_from_stack_to_stack: Stack => Stack,
     moving_from_stack_to_exile: Stack => Exile,
     moving_from_stack_to_command: Stack => Command,
     moving_from_exile_to_library: Exile => Library,
     moving_from_exile_to_hand: Exile => Hand,
-    moving_from_exile_to_battlefield: Exile => Battlefield,
     moving_from_exile_to_graveyard: Exile => Graveyard,
     moving_from_exile_to_stack: Exile => Stack,
     moving_from_exile_to_exile: Exile => Exile,
     moving_from_exile_to_command: Exile => Command,
     moving_from_command_to_library: Command => Library,
     moving_from_command_to_hand: Command => Hand,
-    moving_from_command_to_battlefield: Command => Battlefield,
     moving_from_command_to_graveyard: Command => Graveyard,
     moving_from_command_to_stack: Command => Stack,
     moving_from_command_to_exile: Command => Exile,

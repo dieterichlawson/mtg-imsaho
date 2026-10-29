@@ -72,6 +72,7 @@ FORMS = {'reaches_what_it_describes', 'holds_exactly_then', 'each_subtype_set'}
 # Tables whose every entry is a module of these harnesses.
 SUFFIXED = {
     'each_size_and_player': ['for_the_first_player', 'for_the_second_player'],
+    'into_play_from_each_zone': ['for_the_first_player', 'for_the_second_player'],
     'each_board_and_player': ['for_the_first_player', 'for_the_first_player_with_the_opponent_gone',
                               'for_the_second_player', 'for_the_second_player_with_the_opponent_gone'],
 }
