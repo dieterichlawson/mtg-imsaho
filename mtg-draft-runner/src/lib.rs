@@ -63,6 +63,30 @@ pub fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
 
 /// A user error: report it and exit without a Rust panic/backtrace.
 pub fn die(msg: &str) -> ! {
+    end_run(&format!("Error: {msg}"), &format!("FATAL {msg}"), 1)
+}
+
+/// Stop on Ctrl-C, SIGTERM or SIGHUP the way a fatal stops: the in-flight
+/// calls are taken down at once (as they were), and then a thread of the
+/// runner's own prints the usage summary, flushes the log, says why in it
+/// and exits with the status the signal would have given. The handler
+/// used to end the process on the spot, so an interrupted run published
+/// no account of what it had spent, though a fatal had since #578 (#912).
+/// A second signal still ends it at once.
+pub fn stop_on_signals() {
+    mtg_player::llm::stop_gracefully_on_signal();
+    let _ = std::thread::Builder::new().name("signals".into()).spawn(|| loop {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        if let Some(sig) = mtg_player::llm::stop_signal() {
+            let why = format!("stopped by {}", server::signal_name(sig));
+            end_run(&format!("Stopped: {why}"), &format!("NOTE {why}; the run is not finished"), 128 + sig);
+        }
+    });
+}
+
+/// The end of a run that did not finish: `said` on stderr, the usage so
+/// far, the log flushed and `logged` as its last record, then `status`.
+fn end_run(said: &str, logged: &str, status: i32) -> ! {
     // `process::exit` runs no destructors and raises no signal, so nothing
     // else takes this run's in-flight `claude -p` subprocesses down with
     // it. Every other seat is mid-call when one seat fatals — all seats
@@ -81,7 +105,7 @@ pub fn die(msg: &str) -> ! {
     // not stop the exit.
     let _ = std::panic::catch_unwind(|| {
         use std::io::Write;
-        let _ = writeln!(std::io::stderr(), "{}Error: {msg}", end_progress_line());
+        let _ = writeln!(std::io::stderr(), "{}{said}", end_progress_line());
         // A run that stopped still spent what it spent. The usage summary
         // was printed only at the end of the happy path, so a seat's fatal,
         // a worker panic or a config error published no account of the
@@ -98,6 +122,6 @@ pub fn die(msg: &str) -> ! {
     // and a refused or failed run's ended mid-section with no word of why
     // (#735). Nothing is written when no log is open yet.
     let _ = std::panic::catch_unwind(|| mtg_player::game_log::write_at(
-        mtg_player::game_log::LogLevel::Error, file!(), line!(), &format!("FATAL {msg}"), ""));
-    std::process::exit(1);
+        mtg_player::game_log::LogLevel::Error, file!(), line!(), logged, ""));
+    std::process::exit(status);
 }

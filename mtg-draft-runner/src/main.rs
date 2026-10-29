@@ -803,6 +803,8 @@ fn validate_model_specs(models: &[String]) {
 
 fn main() {
     install_panic_hook();
+    // A Ctrl-C ends the run with its usage summary, as a fatal does (#912).
+    mtg_draft_runner::stop_on_signals();
     let mut args = parse_args();
     validate_model_specs(&args.models);
 
@@ -1711,6 +1713,7 @@ and the FINAL STANDINGS below record none",
 
         let mut played = played.into_iter();
         let from_save: Vec<bool> = carried.iter().map(Option::is_some).collect();
+        llm_client::note_replayed_matches(from_save.iter().filter(|&&c| c).count());
         let results: Vec<MatchResult> = carried.into_iter()
             .map(|c| c.unwrap_or_else(|| played.next().expect("a played result for every match not carried")))
             .collect();

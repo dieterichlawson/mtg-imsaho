@@ -48,10 +48,33 @@ static MODEL_USAGE: std::sync::LazyLock<Mutex<HashMap<String, ModelUsage>>> =
 /// that died published no number to add to it (issue #578).
 static REPLAYED_PICKS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// The note under a resumed run's totals: what came out of the snapshot,
+/// whose cost is the earlier run's and in no number here (#578, #912).
+fn replayed_note(picks: u64, matches: u64) -> Option<String> {
+    let parts: Vec<String> = [(picks, "pick", "picks"), (matches, "match", "matches")].into_iter()
+        .filter(|(n, ..)| *n > 0).map(|(n, one, many)| crate::count(n, one, many)).collect();
+    if parts.is_empty() {
+        return None;
+    }
+    Some(format!("(this run only: {} came from a snapshot, and what the earlier run(s) spent \
+making {} is counted in no number above)", parts.join(" and "),
+        if picks + matches == 1 { "it" } else { "them" }))
+}
+
 /// Tell the summary how many picks came out of a snapshot rather than a
 /// model call. Called once, by `main`, when a resume replays one.
 pub fn note_replayed_picks(picks: usize) {
     REPLAYED_PICKS.store(picks as u64, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Matches this run took from a `--resume` snapshot instead of playing:
+/// their games' calls are the earlier run's too, and the note under the
+/// totals named only the picks (#912).
+static REPLAYED_MATCHES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Add a round's matches carried from the snapshot. Called by `main`.
+pub fn note_replayed_matches(matches: usize) {
+    REPLAYED_MATCHES.fetch_add(matches as u64, std::sync::atomic::Ordering::Relaxed);
 }
 
 fn record_model_usage(model: &str, input: u64, output: u64, cache_read: u64, cache_create: u64) {
@@ -263,11 +286,11 @@ pub fn print_usage_summary(outcome: RunOutcome) {
     // fragment of the draft's real cost. Say so next to them: the number
     // the operator is reading covers this process, and the calls the run
     // that died spent on the replayed picks are in no total here (#578).
-    let replayed = REPLAYED_PICKS.load(std::sync::atomic::Ordering::Relaxed);
-    if replayed > 0 {
-        writeln!(summary, "  (this run only: {replayed} pick{} came from a snapshot, and what \
-the earlier run(s) spent making them is counted in no number above)",
-            if replayed == 1 { "" } else { "s" }).unwrap();
+    if let Some(note) = replayed_note(
+        REPLAYED_PICKS.load(std::sync::atomic::Ordering::Relaxed),
+        REPLAYED_MATCHES.load(std::sync::atomic::Ordering::Relaxed),
+    ) {
+        writeln!(summary, "  {note}").unwrap();
     }
 
     // Whose answers those were. Every `cc` seat shares one model label, so
@@ -1790,6 +1813,18 @@ back to you on your next pick"
 #[cfg(test)]
 mod usage_summary_tests {
     use super::{as_llm_usage, ModelUsage};
+
+    /// #912: a resumed run's note named the picks from the snapshot and not
+    /// the matches, whose games the earlier run also paid for.
+    #[test]
+    fn the_resume_note_names_the_matches_from_the_snapshot_too() {
+        assert_eq!(super::replayed_note(0, 0), None);
+        assert_eq!(super::replayed_note(336, 4).as_deref(), Some("(this run only: 336 picks and 4 matches came \
+from a snapshot, and what the earlier run(s) spent making them is counted in no number above)"));
+        assert_eq!(super::replayed_note(0, 1).as_deref(), Some("(this run only: 1 match came from a snapshot, \
+and what the earlier run(s) spent making it is counted in no number above)"));
+        assert!(super::replayed_note(1, 0).unwrap().starts_with("(this run only: 1 pick came"));
+    }
 
     /// #489: the tournament's usage was copied into this crate's struct
     /// field by field, `rejected` was not in the list, and a run with 14
