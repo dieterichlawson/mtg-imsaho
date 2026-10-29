@@ -776,16 +776,6 @@ pub fn werewolf_on_upkeep(
     }
 }
 
-/// Format a tap plan as a short human-readable string like `tap 2x Swamp, Sol Ring`.
-/// Groups identical names with a count prefix; returns an empty string if the
-/// tap plan is empty. Engine-side analogue of `format_tap_plan` in mtg-player,
-/// for use in resolution-prompt descriptions (e.g. Screeching Bat's may-pay,
-/// and the "(Pay: …)" every seat shows for a may-pay, #621).
-///
-/// The sources are the payer's own and the payer does not choose them, so
-/// they are named bare. Through `obj_name`, which always adds the id, no two
-/// names were equal and it read "tap Swamp (#3), Swamp (#4)" — the grouping
-/// this function exists for never happened (#746).
 /// "You may pay {cost}": ask `player` with a Yes/No naming what Yes taps,
 /// when the cost can be paid. When it cannot, the "may" is a no (CR 117.3:
 /// no player can choose to pay a cost they cannot pay) and nothing is
@@ -817,6 +807,16 @@ pub fn ask_may_pay(
     true
 }
 
+/// Format a tap plan as a short human-readable string like `tap 2x Swamp, Sol Ring`.
+/// Groups identical names with a count prefix; returns an empty string if the
+/// tap plan is empty. Engine-side analogue of `format_tap_plan` in mtg-player,
+/// for use in resolution-prompt descriptions (e.g. Screeching Bat's may-pay,
+/// and the "(Pay: …)" every seat shows for a may-pay, #621).
+///
+/// The sources are the payer's own and the payer does not choose them, so
+/// they are named bare. Through `obj_name`, which always adds the id, no two
+/// names were equal and it read "tap Swamp (#3), Swamp (#4)" — the grouping
+/// this function exists for never happened (#746).
 #[must_use]
 pub fn format_tap_plan_names(state: &GameState, tap_plan: &[(ObjectId, usize)]) -> String {
     if tap_plan.is_empty() {
