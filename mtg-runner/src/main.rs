@@ -193,14 +193,30 @@ fn leave_game() {
 
 /// A user error: report it and exit without a Rust panic/backtrace.
 fn die(msg: &str) -> ! {
+    end_run(&format!("Error: {msg}"), &format!("FATAL {msg}"), 1)
+}
+
+/// The end of a run that did not finish: `said` on stderr, the usage so
+/// far, `logged` as the log's last record, then `status`. Once: a fatal
+/// and a signal from two threads would each print it.
+fn end_run(said: &str, logged: &str, status: i32) -> ! {
+    static ENDING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if ENDING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        loop {
+            std::thread::park();
+        }
+    }
+    mtg_player::llm::claude_code_kill_live_calls();
     leave_game();
-    mtg_player::stderr_line!("Error: {msg}");
+    mtg_player::stderr_line!("{said}");
+    print_token_usage();
     // The log is the run's record: a refused `--resume` or any later fatal
     // left it ending with no word of why the run stopped, as the draft
     // runner's did (#735). Nothing is written when no log is open.
     mtg_player::game_log::write_at(
-        mtg_player::game_log::LogLevel::Error, file!(), line!(), &format!("FATAL {msg}"), "");
-    std::process::exit(1);
+        mtg_player::game_log::LogLevel::Error, file!(), line!(), logged, "");
+    mtg_player::game_log::flush_all();
+    std::process::exit(status);
 }
 
 /// Stream engine game-log entries `[from..]` to the `--log` file (a no-op
@@ -821,6 +837,9 @@ stops here — pass --save {path} to keep writing it");
     // A signal (closed window, kill, timeout) landing while a CLI prompt
     // holds the terminal in raw mode must not leave the pty raw for the
     // shell (issue #78).
+    if !has_human {
+        stop_on_signals();
+    }
     if has_human {
         mtg_player::cli::install_terminal_restore_signal_handlers();
         // Everything before the first frame — a `--resume` of a large save
@@ -1327,7 +1346,20 @@ use --save if you need a resumable file.");
     mtg_player::stdout_line!("\n{summary}");
     mtg_player::game_log::write(file!(), line!(), "RESULT", &summary);
 
-    // Log token usage per model.
+    print_token_usage();
+}
+
+/// What the seats spent, one line per model, on stdout and as the log's
+/// `TOKEN_USAGE` record. Once per process: the end of a game, a fatal and
+/// a stop signal each print it, and only the first does. A run that
+/// stopped before it ended still spent what it spent, and printed nothing
+/// of it on a fatal or a Ctrl-C, as the draft runner did before #578 and
+/// #912.
+fn print_token_usage() {
+    static PRINTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if PRINTED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
     let usage = mtg_player::llm::get_llm_model_usage();
     if !usage.is_empty() {
         let mut usage_lines = String::new();
@@ -1363,6 +1395,23 @@ use --save if you need a resumable file.");
         mtg_player::stdout_line!("{}", usage_lines.trim());
         mtg_player::game_log::write(file!(), line!(), "TOKEN_USAGE", usage_lines.trim());
     }
+}
+
+/// Stop on Ctrl-C, SIGTERM or SIGHUP with the account a finished game
+/// gives: the handler takes the calls down at once, as it did, and then
+/// this thread prints the usage so far, says why in the log and exits with
+/// the status the signal gives (#912's review). Not with a cli seat: its
+/// terminal-restoring handler is installed after this and is the one that
+/// runs (#78, #686).
+fn stop_on_signals() {
+    mtg_player::llm::stop_gracefully_on_signal();
+    let _ = std::thread::Builder::new().name("signals".into()).spawn(|| loop {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        if let Some(sig) = mtg_player::llm::stop_signal() {
+            let why = format!("stopped by {}", mtg_player::llm::signal_name(sig));
+            end_run(&format!("Stopped: {why}"), &format!("NOTE {why}; the game is not finished"), 128 + sig);
+        }
+    });
 }
 
 /// An API key that is present but empty cannot authenticate any better than

@@ -50,15 +50,18 @@ static REPLAYED_PICKS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU
 
 /// The note under a resumed run's totals: what came out of the snapshot,
 /// whose cost is the earlier run's and in no number here (#578, #912).
-fn replayed_note(picks: u64, matches: u64) -> Option<String> {
-    let parts: Vec<String> = [(picks, "pick", "picks"), (matches, "match", "matches")].into_iter()
+fn replayed_note(picks: u64, decks: u64, matches: u64) -> Option<String> {
+    let parts: Vec<String> = [(picks, "pick", "picks"), (decks, "deck", "decks"), (matches, "match", "matches")].into_iter()
         .filter(|(n, ..)| *n > 0).map(|(n, one, many)| crate::count(n, one, many)).collect();
     if parts.is_empty() {
         return None;
     }
-    Some(format!("(this run only: {} came from a snapshot, and what the earlier run(s) spent \
-making {} is counted in no number above)", parts.join(" and "),
-        if picks + matches == 1 { "it" } else { "them" }))
+    let listed = match parts.as_slice() {
+        [.., last] if parts.len() > 1 => format!("{} and {last}", parts[..parts.len() - 1].join(", ")),
+        _ => parts.join(""),
+    };
+    Some(format!("(this run only: {listed} came from a snapshot, and what the earlier run(s) spent \
+making {} is counted in no number above)", if picks + decks + matches == 1 { "it" } else { "them" }))
 }
 
 /// Tell the summary how many picks came out of a snapshot rather than a
@@ -71,6 +74,16 @@ pub fn note_replayed_picks(picks: usize) {
 /// their games' calls are the earlier run's too, and the note under the
 /// totals named only the picks (#912).
 static REPLAYED_MATCHES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Decks this run took from a `--resume` snapshot instead of building
+/// (#581): their build calls are the earlier run's too (#912's review).
+static REPLAYED_DECKS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Tell the summary how many decks came out of the snapshot. Called once,
+/// by `main`.
+pub fn note_replayed_decks(decks: usize) {
+    REPLAYED_DECKS.store(decks as u64, std::sync::atomic::Ordering::Relaxed);
+}
 
 /// Add a round's matches carried from the snapshot. Called by `main`.
 pub fn note_replayed_matches(matches: usize) {
@@ -288,6 +301,7 @@ pub fn print_usage_summary(outcome: RunOutcome) {
     // that died spent on the replayed picks are in no total here (#578).
     if let Some(note) = replayed_note(
         REPLAYED_PICKS.load(std::sync::atomic::Ordering::Relaxed),
+        REPLAYED_DECKS.load(std::sync::atomic::Ordering::Relaxed),
         REPLAYED_MATCHES.load(std::sync::atomic::Ordering::Relaxed),
     ) {
         writeln!(summary, "  {note}").unwrap();
@@ -1819,15 +1833,17 @@ mod usage_summary_tests {
     use super::{as_llm_usage, ModelUsage};
 
     /// #912: a resumed run's note named the picks from the snapshot and not
-    /// the matches, whose games the earlier run also paid for.
+    /// the decks or the matches, which the earlier run also paid for.
     #[test]
     fn the_resume_note_names_the_matches_from_the_snapshot_too() {
-        assert_eq!(super::replayed_note(0, 0), None);
-        assert_eq!(super::replayed_note(336, 4).as_deref(), Some("(this run only: 336 picks and 4 matches came \
+        assert_eq!(super::replayed_note(0, 0, 0), None);
+        assert_eq!(super::replayed_note(336, 8, 4).as_deref(), Some("(this run only: 336 picks, 8 decks and 4 matches \
+came from a snapshot, and what the earlier run(s) spent making them is counted in no number above)"));
+        assert_eq!(super::replayed_note(336, 0, 4).as_deref(), Some("(this run only: 336 picks and 4 matches came \
 from a snapshot, and what the earlier run(s) spent making them is counted in no number above)"));
-        assert_eq!(super::replayed_note(0, 1).as_deref(), Some("(this run only: 1 match came from a snapshot, \
+        assert_eq!(super::replayed_note(0, 0, 1).as_deref(), Some("(this run only: 1 match came from a snapshot, \
 and what the earlier run(s) spent making it is counted in no number above)"));
-        assert!(super::replayed_note(1, 0).unwrap().starts_with("(this run only: 1 pick came"));
+        assert!(super::replayed_note(1, 0, 0).unwrap().starts_with("(this run only: 1 pick came"));
     }
 
     /// #489: the tournament's usage was copied into this crate's struct

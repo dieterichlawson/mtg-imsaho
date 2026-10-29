@@ -510,7 +510,10 @@ the deck build, and the games all through `claude -p`.
 `draft.log` in the working directory — always pass a path under `logs/`
 instead. The log holds the packs, every pick with its prompt and response, the
 deck builds, the match results, and the final standings; the run also prints
-standings and a token-usage summary to stderr.
+standings and a token-usage summary to stderr. A run that stops early (a
+fatal, or Ctrl-C, SIGTERM or SIGHUP, which exit 128 + the signal) prints the
+summary of what it spent so far, headed "run stopped early", and a resumed
+run's summary says which picks, decks and matches came from the snapshot.
 
 `--help` and `--version` answer and exit without drafting, an unknown flag or
 a missing value is refused, and an unknown provider is refused by name — a

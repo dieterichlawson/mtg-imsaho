@@ -583,16 +583,8 @@ pub fn run(shared: &Arc<Shared>, listener: TcpListener) -> Result<(), String> {
     Ok(())
 }
 
-/// A stop signal as a host knows it.
-#[must_use]
-pub fn signal_name(sig: i32) -> String {
-    match sig {
-        2 => "Ctrl-C (SIGINT)".to_string(),
-        15 => "SIGTERM".to_string(),
-        1 => "SIGHUP".to_string(),
-        n => format!("signal {n}"),
-    }
-}
+/// A stop signal as a host knows it; the runners say it the same way.
+pub use mtg_player::llm::signal_name;
 
 /// The host's keyboard: Enter or `start` starts the draft, `kick N` hands
 /// a seat to the table, `status` prints where everybody is, `quit` ends

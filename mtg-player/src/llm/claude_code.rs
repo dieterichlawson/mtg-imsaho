@@ -481,6 +481,18 @@ pub fn stop_signal() -> Option<i32> {
     }
 }
 
+/// A stop signal as an operator knows it, for the line a run that stopped
+/// on one ends with.
+#[must_use]
+pub fn signal_name(sig: i32) -> String {
+    match sig {
+        2 => "Ctrl-C (SIGINT)".to_string(),
+        15 => "SIGTERM".to_string(),
+        1 => "SIGHUP".to_string(),
+        n => format!("signal {n}"),
+    }
+}
+
 /// Kill every in-flight `claude -p` group, from inside a signal handler:
 /// only atomics and `killpg`, which are async-signal-safe.
 pub fn kill_live_calls_from_signal() {

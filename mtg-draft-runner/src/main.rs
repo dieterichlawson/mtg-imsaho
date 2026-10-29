@@ -1430,6 +1430,7 @@ an interruption from here costs the build or the match in progress, not the run"
         if !args.quiet {
             mtg_player::stderr_line!("Taking the {} decks from the snapshot...", args.players);
         }
+        llm_client::note_replayed_decks(args.players);
         resumed_decks.iter().enumerate().map(|(seat, saved)| {
             log_deck_building!(log, seat, &saved.deck.maindeck, &saved.deck.lands,
                 &saved.deck.sideboard, &[], saved.retries, saved.fallback);

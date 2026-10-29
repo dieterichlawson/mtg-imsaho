@@ -87,6 +87,15 @@ pub fn stop_on_signals() {
 /// The end of a run that did not finish: `said` on stderr, the usage so
 /// far, the log flushed and `logged` as its last record, then `status`.
 fn end_run(said: &str, logged: &str, status: i32) -> ! {
+    // Once: a seat's fatal and a signal can arrive together, from two
+    // threads, and the run would print its account twice and end with
+    // both reasons. The second waits for the first's exit.
+    static ENDING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if ENDING.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        loop {
+            std::thread::park();
+        }
+    }
     // `process::exit` runs no destructors and raises no signal, so nothing
     // else takes this run's in-flight `claude -p` subprocesses down with
     // it. Every other seat is mid-call when one seat fatals — all seats
