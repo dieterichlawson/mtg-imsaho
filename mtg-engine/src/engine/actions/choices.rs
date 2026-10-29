@@ -11,19 +11,21 @@ use super::super::*;
 pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::ResolvedChoice, registry: &CardRegistry) -> Applied {
         use crate::state::ResolutionChoiceKind;
         use crate::actions::ResolvedChoice;
-        let awaiting = state.awaiting_action.take();
+        let mut awaiting = state.awaiting_action.take();
         // A refused answer has to leave the prompt exactly where it was. The
         // engine asked a question; being handed something that does not answer
         // it is not an answer, and nothing about the game has moved on. Taking
         // the prompt and dropping it would resume a resolution that never got
         // its choice. So the prompt is read where it lies and put back as it
-        // was, not cloned to be put back: a proof reads the lists of a clone
-        // of a choice as any lists at all (CBMC loses which buffer they were
-        // copied from), and a refused answer then restored a prompt of
-        // anything, every proof of a choice's answer with it.
-        if let Some(AwaitingAction::ResolutionChoice { choice: kind, source: choice_source, player: chooser, .. }) = &awaiting {
+        // was, not cloned to be put back, and what an answer keeps of it is
+        // taken out of it: a proof reads the lists and strings of a clone of
+        // a choice as any at all (CBMC's copy of a buffer it reaches through
+        // a pointer of more than one target keeps only its first byte), and
+        // a refused answer then restored a prompt of anything, every proof
+        // of a choice's answer with it.
+        if let Some(AwaitingAction::ResolutionChoice { choice: kind, source: choice_source, player: chooser, .. }) = &mut awaiting {
             let (choice_source, chooser) = (*choice_source, *chooser);
-            match (kind, resolved) {
+            match (&mut *kind, resolved) {
                 (ResolutionChoiceKind::PayOrNot { spell_id, source_spell_id, cost, .. },
                  ResolvedChoice::PayDecision(pay)) => {
                     // CR 608.2g: paying may involve tapping for the mana.
@@ -135,7 +137,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     if *discard_immediately && *remaining > 1 && state.awaiting_action.is_none() {
                         let source = description.split(':').next().unwrap_or("Discard").to_string();
                         crate::engine::discard_cards(
-                            &mut *state, *player, remaining - 1, choice_source, &source, registry);
+                            &mut *state, *player, *remaining - 1, choice_source, &source, registry);
                     }
                 }
                 (ResolutionChoiceKind::ChooseFromLookedAt { looked_at, .. },
@@ -155,7 +157,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     // graveyard, so it goes through `mill_one` and emits
                     // CreatureCardMilled. Moving them directly hid them from
                     // an opponent's Undead Alchemist.
-                    for &card_id in looked_at {
+                    for &card_id in looked_at.iter() {
                         if card_id != *keep_id {
                             crate::engine::mill_one(state, card_id, registry);
                         }
@@ -225,7 +227,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     // blocker. The step asks about the next open division,
                     // or deals its damage once none is left.
                     let Some(amount) = (*index < options.len())
-                        .then(|| u32::try_from(*index).ok().map(|i| min + i))
+                        .then(|| u32::try_from(*index).ok().map(|i| *min + i))
                         .flatten()
                     else {
                         state.log(LogLevel::Debug, format!(
@@ -381,7 +383,10 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     // An index past the end used to fall through
                     // `unwrap_or_default()` to an empty string and then to a
                     // `_` arm, quietly choosing "Creature".
-                    let Some(chosen_type) = options.get(*index).cloned() else {
+                    // Taken out of the prompt, which is spent once answered,
+                    // not cloned: a proof reads a clone of a string held in
+                    // the prompt as any string at all (`awaiting` says why).
+                    let Some(chosen_type) = options.get_mut(*index).map(std::mem::take) else {
                         state.log(LogLevel::Debug, format!(
                             "choice refused, {index} is not one of the {} types offered", options.len()));
                         state.awaiting_action = awaiting;
@@ -461,7 +466,7 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     state.log(LogLevel::Event,
                         format!("p{} chose to sacrifice {pile_label} ({})", chooser.0, state.obj_name(choice_source)));
                     let reason = format!("to {}", state.obj_name(choice_source));
-                    for &perm_id in chosen_pile {
+                    for &perm_id in chosen_pile.iter() {
                         crate::destruction::sacrifice_by(&mut *state, perm_id, &reason, registry);
                     }
                 }
@@ -470,19 +475,20 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     // Same as the card-type choice: an index past the end used
                     // to name the empty string, which names nothing and
                     // prevents nothing.
-                    let Some(chosen_name) = options.get(*index).cloned() else {
+                    // Taken out of the prompt, as the card type is above.
+                    let Some(chosen_name) = options.get_mut(*index).map(std::mem::take) else {
                         state.log(LogLevel::Debug, format!(
                             "choice refused, {index} is not one of the {} names offered", options.len()));
                         state.awaiting_action = awaiting;
                         return Applied::ReturnNow;
                     };
-                    // Store the restriction as an instance continuous effect on the source.
-                    if let Some(obj) = state.get_object_mut(*source_id) {
-                        let effect = ContinuousEffect::PreventCastingNamed { name: chosen_name.clone() };
-                        obj.instance_continuous_effects = Some(vec![effect]);
-                    }
                     state.log(LogLevel::Event,
                         format!("{} names \"{chosen_name}\"", state.obj_name(*source_id)));
+                    // Store the restriction as an instance continuous effect on the source.
+                    if let Some(obj) = state.get_object_mut(*source_id) {
+                        let effect = ContinuousEffect::PreventCastingNamed { name: chosen_name };
+                        obj.instance_continuous_effects = Some(vec![effect]);
+                    }
                 }
                 // X-cost funding resolution: rules-strict atomic cast.
                 // For spells: the spell is still in its origin zone.
@@ -752,10 +758,10 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         state.awaiting_action = awaiting;
                         return Applied::ReturnNow;
                     }
-                    let effect = effect.clone();
-                    for id in chosen.clone() {
+                    // The effect read in the prompt, not cloned out of it.
+                    for &id in chosen {
                         apply_pending_effect(
-                            &mut *state, &crate::actions::Target::Object(id), &effect, registry);
+                            &mut *state, &crate::actions::Target::Object(id), effect, registry);
                     }
                 }
                 (ResolutionChoiceKind::ChooseTargetSet { min, max, options, fixed, by_count, .. },
