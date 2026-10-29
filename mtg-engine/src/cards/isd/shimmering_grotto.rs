@@ -27,16 +27,17 @@ impl CardBehavior for ShimmeringGrotto {
     }
 
     fn mana_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<ManaAbilityDef> {
-        let mut abilities = vec![
-            ManaAbilityDef {
-                ability_index: 0,
-                description: "Add {C}".into(),
-                produced: vec![(ManaType::Colorless, 1)],
-                requires_tap: true,
-                cost: ManaCost::free(),
-                has_side_effects: false,
-            },
-        ];
+        // Room for all six from the start, rather than one grown to take the
+        // rest: a proof holds a list to the room it was given.
+        let mut abilities = Vec::with_capacity(6);
+        abilities.push(ManaAbilityDef {
+            ability_index: 0,
+            description: "Add {C}".into(),
+            produced: vec![(ManaType::Colorless, 1)],
+            requires_tap: true,
+            cost: ManaCost::free(),
+            has_side_effects: false,
+        });
         // "{1}, {T}: Add one mana of any color" — one entry per color, indexed
         // 1..=5 so the indices match the descriptions a player sees.
         for (i, mana_type) in [ManaType::White, ManaType::Blue, ManaType::Black,
