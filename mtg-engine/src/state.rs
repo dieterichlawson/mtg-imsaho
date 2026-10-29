@@ -1952,6 +1952,25 @@ impl GameState {
         result
     }
 
+    /// How many of `player`'s objects in `zone` `keep` accepts: the count
+    /// of `objects_in_zone(zone, player)` filtered by `keep`, with no list
+    /// built. A count has no order to keep, and a proof reads that list's
+    /// entries as pointers that could be any object's, as many as who
+    /// holds each decides: comparing subtypes through them ran out of
+    /// memory (Bloodline Keeper's five Vampires).
+    #[must_use]
+    pub fn count_in_zone(&self, zone: Zone, player: PlayerId, mut keep: impl FnMut(&GameObject) -> bool) -> usize {
+        self.objects.values().filter(|obj| in_zone_of(obj, zone, player) && keep(obj)).count()
+    }
+
+    /// Whether any of `player`'s objects in `zone` is one `want` accepts,
+    /// as [`Self::count_in_zone`] counts them: an answer with no order
+    /// either (a check land's Mountain or Plains).
+    #[must_use]
+    pub fn any_in_zone(&self, zone: Zone, player: PlayerId, mut want: impl FnMut(&GameObject) -> bool) -> bool {
+        self.objects.values().any(|obj| in_zone_of(obj, zone, player) && want(obj))
+    }
+
     /// Get the next player after the given player (turn order).
     #[must_use]
     pub fn next_player(&self, player: PlayerId) -> PlayerId {
