@@ -66,7 +66,13 @@ KANI_LIB = f'{K}/library/kani/kani_lib.c'
 # says the same at the price of building every harness, gigabytes of goto
 # files.
 TABLES = {'abilities', 'declares', 'werewolves', 'mana', 'statics', 'check_land', 'choosing_at_random', 'for_each_size', 'from_each_zone', 'for_each_key', 'each_printed', 'by_each_way', 'each_target', 'each_board', 'each_cost', 'each_pruning', 'each_path', 'each_set', 'over_each_library', 'over_each_hand', 'case_by_case'}
-FORMS = {'reaches_what_it_describes', 'holds_exactly_then'}
+FORMS = {'reaches_what_it_describes', 'holds_exactly_then', 'each_subtype_set'}
+# Tables whose every entry is a module of these harnesses.
+SUFFIXED = {
+    'each_size_and_player': ['for_the_first_player', 'for_the_second_player'],
+    'each_board_and_player': ['for_the_first_player', 'for_the_first_player_with_the_opponent_gone',
+                              'for_the_second_player', 'for_the_second_player_with_the_opponent_gone'],
+}
 def block(text, i):
     # text[i] is an opening bracket; return the index of its match
     open_, close = text[i], {'{': '}', '(': ')', '[': ']'}[text[i]]
@@ -115,18 +121,24 @@ def list_harnesses(src):
             n = re.search(r'\bfn (\w+)\(', body)
             if n:
                 out.append(path + '::' + n.group(1))
+        # A harness written out inside a macro's definition is the macro's,
+        # named by the table that uses it (below).
+        macros = [(m.start(), block(t, m.end() - 1)) for m in re.finditer(r'\bmacro_rules!\s*\w+\s*\{', t)]
         for m in re.finditer(r'#\[kani::proof\][^\n]*\n(?:\s*#\[[^\n]*\n)*\s*(?:pub )?fn (\w+)', t):
-            out.append(path + '::' + m.group(1))
+            if not any(a <= m.start() <= b for a, b in macros):
+                out.append(path + '::' + m.group(1))
         for m in re.finditer(r'\bfor_each_form!\s*\{', t):
             body = t[m.end()-1:block(t, m.end()-1)+1]
             n = re.search(r'\bfn (\w+)\(form\)', body)
             if n: out += [path + '::' + n.group(1) + '::of_a_card', path + '::' + n.group(1) + '::of_a_token']
-        for name in TABLES | FORMS:
+        for name in TABLES | FORMS | set(SUFFIXED):
             for m in re.finditer(r'(?<!macro_rules! )\b' + name + r'!\s*[{(]', t):
                 body = t[m.end()-1:block(t, m.end()-1)+1]
                 for e in re.finditer(r'(?m)^\s{4}(\w+):', body):
                     if name in FORMS:
                         out += [path + '::' + e.group(1) + '::of_a_card', path + '::' + e.group(1) + '::of_a_token']
+                    elif name in SUFFIXED:
+                        out += [path + '::' + e.group(1) + '::' + x for x in SUFFIXED[name]]
                     else:
                         out.append(path + '::' + e.group(1))
         for name, k in [('equipment', 2), ('aura', 2), ('resolves', 1), ('destroys', 1)]:
