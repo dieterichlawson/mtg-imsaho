@@ -26,7 +26,7 @@
 //! effects then do, until the cleanup step ends them (CR 514.2), is the
 //! engine's, proved in `proofs::actions`.
 
-use super::{acted, any_object, asked_each, asked_for, board, card_proof, each_is, picked, Act, ANY_PERMANENT, Form, Snapshot};
+use super::{acted, any_object, asked_each, asked_for, board, card_proof, case_by_case, each_is, picked, Act, ANY_PERMANENT, Form, Snapshot};
 use crate::actions::Target;
 use crate::cards::{CardBehavior, TargetFilter, TargetRequirement};
 use crate::ids::{ObjectId, PlayerId};
@@ -36,7 +36,7 @@ use crate::types::{CounterType, Keyword, Zone};
 /// `card` resolving holding `targets` (picked from two objects of the
 /// board, each a permanent or card of any characteristics), cast by player
 /// 0: the game after, the objects, and the board before.
-fn resolve_holding(card: Box<dyn CardBehavior>, targets: fn([ObjectId; 2]) -> Vec<Target>) -> (crate::cards::CardRegistry, GameState, [ObjectId; 2], Vec<Target>, Snapshot) {
+fn resolve_holding(card: Box<dyn CardBehavior>, targets: impl FnOnce([ObjectId; 2]) -> Vec<Target>) -> (crate::cards::CardRegistry, GameState, [ObjectId; 2], Vec<Target>, Snapshot) {
     let (registry, mut state, blank, card) = board(card);
     let objects = [any_object(&mut state, blank, &ANY_PERMANENT, Form::Card), any_object(&mut state, blank, &ANY_PERMANENT, Form::Card)];
     let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
@@ -60,7 +60,13 @@ fn one(objects: [ObjectId; 2]) -> Vec<Target> {
 
 /// Up to two: none, either, or both, in either order.
 fn up_to_two(objects: [ObjectId; 2]) -> Vec<Target> {
-    match kani::any::<u8>() % 5 {
+    up_to_two_of(kani::any::<u8>() % 5, objects)
+}
+
+/// [`up_to_two`]'s choice `which`: none, the first, the second, both, or
+/// both the other way round.
+fn up_to_two_of(which: u8, objects: [ObjectId; 2]) -> Vec<Target> {
+    match which {
         0 => vec![],
         1 => vec![Target::Object(objects[0])],
         2 => vec![Target::Object(objects[1])],
@@ -142,16 +148,24 @@ card_proof! {
     }
 }
 
-card_proof! {
-    /// Feeling of Dread: "up to two target creatures" (CR 115.1, 601.2c),
-    /// each still a permanent tapped (701.21a), in order, and nothing else.
-    fn feeling_of_dread_taps_up_to_two() {
-        assert!(up_to_two_creatures(&crate::cards::isd::feeling_of_dread::FeelingOfDread));
-        let (registry, state, _, targets, before) = resolve_holding(Box::new(crate::cards::isd::feeling_of_dread::FeelingOfDread), up_to_two);
-        let tapped = on_battlefield(&state, &targets);
-        assert!(asked_each(tapped.len(), |i| Act::Tap(tapped[i])) && Snapshot::of(&state) == before);
-        std::mem::forget((registry, state, tapped));
-    }
+/// Feeling of Dread: "up to two target creatures" (CR 115.1, 601.2c),
+/// each still a permanent tapped (701.21a), in order, and nothing else.
+/// Holding [`up_to_two_of`]'s choice `which`, a constant in each harness:
+/// the five in one ran out of memory.
+fn feeling_of_dread_taps_up_to_two(which: u8) {
+    assert!(up_to_two_creatures(&crate::cards::isd::feeling_of_dread::FeelingOfDread));
+    let (registry, state, _, targets, before) = resolve_holding(Box::new(crate::cards::isd::feeling_of_dread::FeelingOfDread), |o| up_to_two_of(which, o));
+    let tapped = on_battlefield(&state, &targets);
+    assert!(asked_each(tapped.len(), |i| Act::Tap(tapped[i])) && Snapshot::of(&state) == before);
+    std::mem::forget((registry, state, tapped));
+}
+
+case_by_case! { feeling_of_dread_taps_up_to_two;
+    feeling_of_dread_with_no_target: 0,
+    feeling_of_dread_holding_the_first: 1,
+    feeling_of_dread_holding_the_second: 2,
+    feeling_of_dread_holding_both: 3,
+    feeling_of_dread_holding_both_the_other_way_round: 4,
 }
 
 card_proof! {
@@ -168,19 +182,27 @@ card_proof! {
     }
 }
 
-card_proof! {
-    /// Travel Preparations: "up to two target creatures", a +1/+1 counter
-    /// on each, in order, and nothing else. A target no longer a permanent
-    /// takes none, which `add_counters` decides (CR 122.1, and its proof in
-    /// `proofs::actions`), so the card asks for each.
-    fn travel_preparations_counts_up_to_two() {
-        assert!(up_to_two_creatures(&crate::cards::isd::travel_preparations::TravelPreparations));
-        let (registry, state, _, targets, before) = resolve_holding(Box::new(crate::cards::isd::travel_preparations::TravelPreparations), up_to_two);
-        let countered = picked(&targets, |t| match t { Target::Object(id) => Some(*id), _ => unreachable!() });
-        assert!(asked_each(countered.len(), |i| Act::Counters(countered[i], CounterType::PlusOnePlusOne, 1)));
-        assert!(Snapshot::of(&state) == before);
-        std::mem::forget((registry, state, countered));
-    }
+/// Travel Preparations: "up to two target creatures", a +1/+1 counter
+/// on each, in order, and nothing else. A target no longer a permanent
+/// takes none, which `add_counters` decides (CR 122.1, and its proof in
+/// `proofs::actions`), so the card asks for each. Holding
+/// [`up_to_two_of`]'s choice `which`, a constant in each harness: the five
+/// in one ran out of memory.
+fn travel_preparations_counts_up_to_two(which: u8) {
+    assert!(up_to_two_creatures(&crate::cards::isd::travel_preparations::TravelPreparations));
+    let (registry, state, _, targets, before) = resolve_holding(Box::new(crate::cards::isd::travel_preparations::TravelPreparations), |o| up_to_two_of(which, o));
+    let countered = picked(&targets, |t| match t { Target::Object(id) => Some(*id), _ => unreachable!() });
+    assert!(asked_each(countered.len(), |i| Act::Counters(countered[i], CounterType::PlusOnePlusOne, 1)));
+    assert!(Snapshot::of(&state) == before);
+    std::mem::forget((registry, state, countered));
+}
+
+case_by_case! { travel_preparations_counts_up_to_two;
+    travel_preparations_with_no_target: 0,
+    travel_preparations_holding_the_first: 1,
+    travel_preparations_holding_the_second: 2,
+    travel_preparations_holding_both: 3,
+    travel_preparations_holding_both_the_other_way_round: 4,
 }
 
 card_proof! {
