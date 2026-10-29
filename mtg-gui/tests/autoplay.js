@@ -13,7 +13,6 @@
 // widget's state. Page errors fail the run too. Every prompt kind reached
 // is counted, so a run's summary says what was exercised.
 
-const { chromium } = require("playwright");
 const { startRunner, finish, parseArgs } = require("./children.js");
 const path = require("path");
 const fs = require("fs");
@@ -101,6 +100,15 @@ async function playOne(browser, seed, deck1, deck2, kinds) {
   return decisions;
 }
 
+/** The attackers (page keys, "o<id>") the blocker `key` may block, from
+ *  the decision's `legal_blocks` (by bare id); every attacker when the
+ *  decision has none to say (#944). */
+function blockable(attackerKeys, legal, key) {
+  if (!legal) return attackerKeys;
+  const may = (legal[String(key).replace(/^o/, "")] || []).map(id => `o${id}`);
+  return attackerKeys.filter(k => may.includes(k));
+}
+
 /** What the page is asking, and what on it can be clicked. */
 function snapshot(page) {
   return page.evaluate(() => {
@@ -173,11 +181,21 @@ async function step(page, s) {
     }
     case "blockers": {
       const attackerKeys = await page.evaluate(() => [...(window.mtg.ui.attackers || [])]);
+      // Which attackers each blocker may block, as the engine offered them:
+      // an arbitrary attacker left a blocker selected on a flyer it could
+      // not block, the page then (rightly) refused "No blocks", and the
+      // run failed as stuck (#944).
+      const legal = await page.evaluate(() => {
+        const c = window.mtg.decision && window.mtg.decision.combat;
+        const blocks = c && Object.values(c)[0] && Object.values(c)[0].legal_blocks;
+        return blocks || null;
+      });
       const blockers = s.options.filter(o => o.kind === "perm" && !attackerKeys.includes(o.key));
       for (const b of blockers) {
         if (rnd() >= 0.6) continue;
         await click(page, b);
-        const targets = (await clickableNow(page, ["perm"])).filter(h => attackerKeys.includes(h.key));
+        const may = blockable(attackerKeys, legal, b.key);
+        const targets = (await clickableNow(page, ["perm"])).filter(h => may.includes(h.key));
         if (targets.length) await click(page, pick(targets)); else await click(page, b);
       }
       if (!(await clickButton(page, s, primary))) await page.keyboard.press("Enter");
@@ -206,6 +224,9 @@ async function step(page, s) {
 }
 
 async function main() {
+  // Here, not at the top: `autoplay_blocks.mjs` loads the helpers in the
+  // workflow's no-browser step.
+  const { chromium } = require("playwright");
   const browser = await chromium.launch();
   const kinds = new Map();
   let total = 0;
@@ -227,4 +248,4 @@ async function main() {
 // Run as a script it plays its own games; required, it lends its step to
 // another driver (`table_rehearsal.js` plays a hosted table's game pages).
 if (require.main === module) { readArgs(); finish(main); }
-module.exports = { step, snapshot, seedClicks };
+module.exports = { step, snapshot, seedClicks, blockable };
