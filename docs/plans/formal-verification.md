@@ -969,6 +969,25 @@ sits in memory. What was measured, and what the proofs do about each:
   card in the hand into a string before the line was formatted, which a
   proof follows name by name; a `Display` of the ids writes them only
   when the line is (formatting stands in as nothing in the proofs).
+- **A zone listed to be filtered.** Offering targets built the
+  battlefield's list of references and filtered it, each question a
+  filter asks being asked through an entry that could be any object.
+  `each_in_zone` and `each_object` walk the map in id order with no list
+  built, as `count_in_zone` does.
+- **A string cloned to compare.** Protection from a subtype built the
+  source's subtype list, a clone of every string, and searched it; it
+  asks `has_subtype` of each protected subtype instead.
+- **A copy read through a pointer of more than one target.** Where
+  symbolic execution cannot tell which object a pointer points into (a
+  list held in an engine prompt, read back through the prompt's union),
+  CBMC's `memcpy` copies the first byte and leaves the rest open ("What
+  is trusted" says why that is sound). So a clone of a prompt, or of a
+  string or a list of ids in one, is a value of any contents, and the
+  proof explores every one: the choice handler cloned the whole prompt
+  to put back on a refused answer, the damage queue cloned each event
+  with its list of effects already applied, and Nevermore cloned the
+  name chosen. Each now reads what it needs where it lies, puts back the
+  prompt it took, or moves the string out of the spent prompt.
 - **CBMC's memory checks.** `kani-bounded.py` leaves out CBMC's pointer,
   bounds and division checks (`--memory-checks` keeps them): that safe
   Rust reads only memory it may is the compiler's guarantee, and Rust's
