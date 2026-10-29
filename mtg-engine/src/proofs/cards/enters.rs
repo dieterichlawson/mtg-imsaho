@@ -139,10 +139,6 @@ declares! {
     crossway_vampire_declares_its_trigger: isd::crossway_vampire::CrosswayVampire => Some(R::Creature), false;
     geistcatchers_rig_declares_its_trigger: isd::geistcatchers_rig::GeistcatchersRig
         => Some(R::CreatureWithFilter(TargetFilter::HasKeyword(Keyword::Flying))), false;
-    slayer_of_the_wicked_declares_its_trigger: isd::slayer_of_the_wicked::SlayerOfTheWicked
-        => Some(R::CreatureWithFilter(TargetFilter::SubtypeOrCardType {
-            subtypes: vec!["Vampire".into(), "Werewolf".into(), "Zombie".into()], card_types: vec![],
-        })), false;
     village_bell_ringer_declares_its_trigger: isd::village_bell_ringer::VillageBellRinger => None, false;
     hollowhenge_scavenger_declares_its_morbid_trigger: isd::hollowhenge_scavenger::HollowhengeScavenger => None, true;
     morkrut_banshee_declares_its_morbid_trigger: isd::morkrut_banshee::MorkrutBanshee => Some(R::Creature), true;
@@ -150,6 +146,28 @@ declares! {
     ghoulraiser_declares_its_trigger: isd::ghoulraiser::Ghoulraiser => None, false;
     snapcaster_mage_declares_its_trigger: isd::snapcaster_mage::SnapcasterMage => Some(R::GraveyardCardOwnedByCaster), false;
     witchbane_orb_declares_its_trigger: isd::witchbane_orb::WitchbaneOrb => None, false;
+}
+
+card_proof! {
+    /// Slayer of the Wicked: as [`declares_an_enters_trigger`] says, its
+    /// target a Vampire, Werewolf or Zombie creature, unconditioned. The
+    /// target is matched as a pattern, not compared with a requirement
+    /// built and handed in: two target requirements read from the heap,
+    /// one holding a list of names, are what CBMC ran out of memory on
+    /// (`prints_effects` says why), and only this card's held a list.
+    fn slayer_of_the_wicked_declares_its_trigger() {
+        let card = isd::slayer_of_the_wicked::SlayerOfTheWicked;
+        assert!(card.has_etb_handler());
+        let declared = std::mem::ManuallyDrop::new(triggers(&card));
+        assert!(matches!(declared.as_slice(), [(TriggerKind::EntersBattlefield,
+            Some(R::CreatureWithFilter(TargetFilter::SubtypeOrCardType { subtypes, card_types })))]
+            if card_types.is_empty() && subtypes.len() == 3
+                && subtypes[0] == "Vampire" && subtypes[1] == "Werewolf" && subtypes[2] == "Zombie"));
+        let (registry, mut state, _) = super::blank_board();
+        state.creature_died_this_turn = kani::any();
+        assert!(card.should_trigger(&state, ObjectId(1), &TriggerKind::EntersBattlefield, &registry));
+        std::mem::forget((registry, state));
+    }
 }
 
 card_proof! {
