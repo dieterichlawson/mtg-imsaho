@@ -164,9 +164,13 @@ async function step(page, s) {
     }
     case "mark": {
       const want = Math.min(s.max, s.min + Math.floor(rnd() * (s.max - s.min + 1)));
-      for (let n = s.marked; n < want; n++) {
+      // Until the page says `want` are marked: a click that marked nothing
+      // was counted as a mark, and the step confirmed short of `min` and
+      // ended stuck on the refusal (#944's review).
+      for (let tries = 0; tries < 3 * (want + 1); tries++) {
         // Only things not yet marked: clicking a marked one unmarks it.
         const marked = await page.evaluate(() => window.mtg.ui.marked.slice());
+        if (marked.length >= want) break;
         const opts = (await clickableNow(page, ["perm", "hand", "player", "stack", "card", "row"])).filter(h => !h.key || !marked.includes(h.key));
         if (!opts.length) break;
         await click(page, pick(opts));
@@ -185,18 +189,34 @@ async function step(page, s) {
       // an arbitrary attacker left a blocker selected on a flyer it could
       // not block, the page then (rightly) refused "No blocks", and the
       // run failed as stuck (#944).
-      const legal = await page.evaluate(() => {
+      const { legal, least } = await page.evaluate(() => {
         const c = window.mtg.decision && window.mtg.decision.combat;
-        const blocks = c && Object.values(c)[0] && Object.values(c)[0].legal_blocks;
-        return blocks || null;
+        const d = c && Object.values(c)[0];
+        return { legal: (d && d.legal_blocks) || null, least: (d && d.min_blockers) || {} };
       });
       const blockers = s.options.filter(o => o.kind === "perm" && !attackerKeys.includes(o.key));
+      const used = new Set();
       for (const b of blockers) {
-        if (rnd() >= 0.6) continue;
+        if (used.has(b.key) || rnd() >= 0.6) continue;
         await click(page, b);
-        const may = blockable(attackerKeys, legal, b.key);
+        used.add(b.key);
+        // An attacker with menace takes two blockers or none: it is a target
+        // only with a second unused blocker that may block it too, sent with
+        // it, or the page refuses the block and the run ends stuck.
+        const partnerFor = (t) => blockers.find(o => !used.has(o.key) && blockable(attackerKeys, legal, o.key).includes(t));
+        const may = blockable(attackerKeys, legal, b.key)
+          .filter(t => (least[t.replace(/^o/, "")] || 1) < 2 || partnerFor(t));
         const targets = (await clickableNow(page, ["perm"])).filter(h => may.includes(h.key));
-        if (targets.length) await click(page, pick(targets)); else await click(page, b);
+        if (!targets.length) { await click(page, b); continue; }
+        const t = pick(targets);
+        await click(page, t);
+        if ((least[String(t.key).replace(/^o/, "")] || 1) >= 2) {
+          const second = partnerFor(t.key);
+          used.add(second.key);
+          await click(page, second);
+          const again = (await clickableNow(page, ["perm"])).find(h => h.key === t.key);
+          if (again) await click(page, again);
+        }
       }
       if (!(await clickButton(page, s, primary))) await page.keyboard.press("Enter");
       return true;
