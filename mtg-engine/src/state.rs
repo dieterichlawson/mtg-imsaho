@@ -1913,14 +1913,25 @@ impl GameState {
         // The order is `mtg_kernel::zones::zone_order`'s, proved there for
         // every board. It is handed every object, in id order (the map is
         // ordered by id, and its keys are distinct, as the kernel requires).
+        //
+        // With no pile, what it lists (the members not in the pile, in the
+        // order they were handed) is the members in id order, which is a
+        // scan of the map: every zone but a graveyard is listed so, into a
+        // list allocated at the most it can hold, with no lists of every
+        // object's id and membership built first for a proof to follow.
+        if zone != Zone::Graveyard {
+            let mut members = Vec::with_capacity(self.objects.len());
+            for obj in self.objects.values() {
+                if in_zone_of(obj, zone, player) {
+                    members.push(obj);
+                }
+            }
+            return members;
+        }
         let all: Vec<&GameObject> = self.objects.values().collect();
         let ids: Vec<u64> = all.iter().map(|obj| obj.id.0).collect();
         let members: Vec<bool> = all.iter().map(|obj| in_zone_of(obj, zone, player)).collect();
-        let pile: Vec<u64> = if zone == Zone::Graveyard {
-            self.get_player(player).graveyard_order.iter().map(|id| id.0).collect()
-        } else {
-            Vec::new()
-        };
+        let pile: Vec<u64> = self.get_player(player).graveyard_order.iter().map(|id| id.0).collect();
         mtg_kernel::zones::zone_order(&ids, &members, &pile).into_iter().map(|k| all[k]).collect()
     }
 
