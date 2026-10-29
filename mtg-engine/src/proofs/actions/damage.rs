@@ -368,10 +368,10 @@ const FLAIL: ObjectId = ObjectId(2);
 /// the player the damage would be dealt to is asked, once, which applies
 /// first, and nothing is dealt until they answer. Where every order comes
 /// out the same (protection and a doubler, a shield and a doubler), nobody
-/// is asked. For `which` of the three apply, combat damage of 1 to 3 to
+/// is asked. For `which` of the three apply, combat damage of `amount` to
 /// `p`, and a shield with a counter or not; `perform` recorded, as
 /// `queueing` says.
-fn preventing_and_doubling(which: [bool; 3], p: PlayerId) {
+fn preventing_and_doubling(which: [bool; 3], p: PlayerId, amount: u32) {
     // SAFETY: a proof runs on one thread, and only this module names it.
     unsafe { *std::ptr::addr_of_mut!(WHICH) = which };
     let (registry, mut state, blank) = blank_board();
@@ -383,8 +383,6 @@ fn preventing_and_doubling(which: [bool; 3], p: PlayerId) {
         state.get_object_mut(shield).expect("just created").counters.insert(crate::types::CounterType::PlusOnePlusOne, 1);
     }
     let source = state.create_object(blank, PlayerId(0), Zone::Battlefield, Some(3), Some(3));
-    let amount: u32 = kani::any();
-    kani::assume((1..=3).contains(&amount));
     let before = Snapshot::of(&state);
 
     damage::deal_damage(&mut state, source, DamageTarget::Player(p), amount, DamageKind::Combat, &registry);
@@ -419,12 +417,26 @@ fn preventing_and_doubling(which: [bool; 3], p: PlayerId) {
 }
 
 /// The proof of prevention and doubling above, for each set of the three
-/// that applies and each player damaged, each a constant: a set the solver
-/// left open was a list of effects of every length, each order of it
-/// compared, and the proof ran out of memory at four gigabytes even with
-/// the player a constant; and the cases of one harness add up.
+/// that applies, each player damaged and each amount from 1 to 3, each a
+/// constant: a set the solver left open was a list of effects of every
+/// length, each order of it compared, and the proof ran out of memory at
+/// four gigabytes even with the player a constant; an amount left open
+/// ran the branch that queues nothing for 0 damage (an assumption does
+/// not prune a branch in symbolic execution), and where the two branches
+/// meet the queue's length was no longer a constant, so the settling loop
+/// ran for every length and the proof out of memory at 3.5 gigabytes;
+/// and the cases of one harness add up.
 macro_rules! each_set {
     ($($name:ident: $which:expr, $p:literal;)*) => {$(
+        mod $name {
+            of_each_amount!($which, $p; of_one_point: 1, of_two_points: 2, of_three_points: 3);
+        }
+    )*};
+}
+
+/// The harnesses of one row of `each_set`, one for each amount.
+macro_rules! of_each_amount {
+    ($which:expr, $p:literal; $($fn:ident: $amount:literal),*) => {$(
         #[kani::proof]
         #[kani::unwind(7)]
         #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
@@ -432,13 +444,13 @@ macro_rules! each_set {
         #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
         #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
         #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
-        #[kani::stub(crate::damage::applicable_effects, some_effects)]
-        #[kani::stub(crate::state::GameState::has_keyword, has_keyword)]
-        #[kani::stub(crate::damage::perform, record_perform)]
-        /// The proof of prevention and doubling, for one set of effects and
-        /// one player damaged.
-        fn $name() {
-            preventing_and_doubling($which, PlayerId($p));
+        #[kani::stub(crate::damage::applicable_effects, super::some_effects)]
+        #[kani::stub(crate::state::GameState::has_keyword, super::has_keyword)]
+        #[kani::stub(crate::damage::perform, super::record_perform)]
+        /// The proof of prevention and doubling, for one set of effects,
+        /// one player damaged and one amount.
+        fn $fn() {
+            super::preventing_and_doubling($which, crate::ids::PlayerId($p), $amount);
         }
     )*};
 }
