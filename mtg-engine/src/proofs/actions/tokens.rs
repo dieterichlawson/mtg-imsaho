@@ -40,14 +40,6 @@ fn any_count(_: &mut GameState, event: ReplaceableEvent, _: &CardRegistry) -> Op
     answer.map(|count| ReplaceableEvent::CreatesTokens { controller, count })
 }
 
-#[kani::proof]
-#[kani::unwind(7)]
-#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
-#[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
-#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
-#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
-#[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
-#[kani::stub(crate::replacement::apply, any_count)]
 /// "Create N P/T [colour] [subtype] [type] tokens [with keyword]" (CR
 /// 111.2): creating none asks nothing and makes nothing; otherwise the
 /// replacement layer is asked once about all N, as one event (614.1b), and
@@ -59,15 +51,16 @@ fn any_count(_: &mut GameState, event: ReplaceableEvent, _: &CardRegistry) -> Op
 /// does not, after its subtypes (111.4); each one's entering is announced,
 /// in order, and what comes back is the new tokens, in order. For either
 /// player, N up to two, any power and toughness an `i8` holds, and with or
-/// without a keyword, a subtype and a name. Nothing else changes.
-fn creating_tokens_makes_as_many_as_the_replacements_say_with_those_characteristics() {
+/// without a keyword; with or without a subtype and a name, as the harness
+/// says. Nothing else changes.
+fn creating_tokens(zombie: bool, named: bool) {
     let (registry, mut state, blank) = blank_board();
     let there = state.create_object(blank, PlayerId(0), Zone::Battlefield, None, None);
     let owner = PlayerId(u8::from(kani::any::<bool>()));
     let n: u32 = kani::any();
     kani::assume(n <= 2);
     let (power, toughness) = (i32::from(kani::any::<i8>()), i32::from(kani::any::<i8>()));
-    let (flying, zombie, named): (bool, bool, bool) = (kani::any(), kani::any(), kani::any());
+    let flying: bool = kani::any();
     let keywords = if flying { vec![Keyword::Flying] } else { vec![] };
     let subtypes: Vec<String> = if zombie { vec!["Zombie".into()] } else { vec![] };
     let name = if named { "Named" } else { "" };
@@ -94,9 +87,12 @@ fn creating_tokens_makes_as_many_as_the_replacements_say_with_those_characterist
         assert!(o.owner == owner && o.controller == owner && o.base_controller == owner && o.summoning_sick);
         assert!(o.power == Some(power) && o.toughness == Some(toughness) && o.name == named_as);
         assert!(o.colors == [Color::Black] && o.card_types == [CardType::Creature] && o.keywords == keywords && o.subtypes == subtypes);
-        assert!(o.token_face.as_ref().is_some_and(|f| *f == TokenFace {
-            name: named_as.into(), power: Some(power), toughness: Some(toughness), colors: vec![Color::Black],
-            keywords: keywords.clone(), card_types: vec![CardType::Creature], subtypes: subtypes.clone(),
+        // Field by field, every field of the face: a face built to compare
+        // with was strings and lists built and cloned to compare.
+        assert!(o.token_face.as_ref().is_some_and(|f| {
+            let TokenFace { name, power: p, toughness: t, colors, keywords: k, card_types, subtypes: st } = f;
+            name == named_as && *p == Some(power) && *t == Some(toughness) && *colors == [Color::Black]
+                && *k == keywords && *card_types == [CardType::Creature] && *st == subtypes
         }));
     }
     assert!(state.events.len() == made && (0..made).all(|i| matches!(state.events[i],
@@ -105,6 +101,34 @@ fn creating_tokens_makes_as_many_as_the_replacements_say_with_those_characterist
     kani::cover!(made == 2 && n == 1, "doubled");
     kani::cover!(answer.is_none(), "replaced");
     std::mem::forget((registry, state, ids, keywords, subtypes));
+}
+
+/// The proof above it for each name and subtype, each a constant: a name
+/// and a subtype list the solver chose were strings of either length to
+/// compare with every token's, byte by byte, and with the player, the
+/// count and the answer left open they ran out of memory.
+macro_rules! each_name_and_subtype {
+    ($($name:ident: $zombie:literal, $named:literal;)*) => {$(
+        #[kani::proof]
+        #[kani::unwind(7)]
+        #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+        #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+        #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+        #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+        #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+        #[kani::stub(crate::replacement::apply, any_count)]
+        /// The proof above it, for one name and subtype.
+        fn $name() {
+            creating_tokens($zombie, $named);
+        }
+    )*};
+}
+
+each_name_and_subtype! {
+    creating_unnamed_tokens_of_no_subtype_makes_as_many_as_the_replacements_say: false, false;
+    creating_named_tokens_of_no_subtype_makes_as_many_as_the_replacements_say: false, true;
+    creating_unnamed_zombie_tokens_makes_as_many_as_the_replacements_say: true, false;
+    creating_named_zombie_tokens_makes_as_many_as_the_replacements_say: true, true;
 }
 
 /// A 2/2 green Bear creature, {1}{G}.
