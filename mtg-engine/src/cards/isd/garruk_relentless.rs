@@ -166,10 +166,9 @@ impl CardBehavior for GarrukRelentless {
                 // reveal it, put it into your hand, then shuffle.
                 // Per ruling: "doesn't target a creature. However, when that ability resolves,
                 // you must sacrifice a creature if you control one."
-                let creatures: Vec<Target> = state.objects_in_zone(Zone::Battlefield, controller)
-                    .iter()
-                    .filter(|o| state.is_creature(o.id, registry))
-                    .map(|o| Target::Object(o.id))
+                let creatures: Vec<Target> = state.ids_in_zone(Zone::Battlefield, controller, |o| state.is_creature(o.id, registry))
+                    .into_iter()
+                    .map(Target::Object)
                     .collect();
 
                 if creatures.is_empty() {
@@ -199,21 +198,15 @@ impl CardBehavior for GarrukRelentless {
             12 => {
                 // -3: Creatures you control gain trample and get +X/+X until end of turn,
                 // where X is the number of creature cards in your graveyard.
-                let x = i32::try_from(state.objects_in_zone(Zone::Graveyard, controller)
-                    .iter()
-                    // "the number of creature **cards** in your graveyard" —
-                    // CR 109.1, so a token that has just died does not count.
-                    .filter(|o| state.is_card(o.id) && state.is_creature(o.id, registry))
-                    .count()).unwrap_or(i32::MAX);
+                // "the number of creature **cards** in your graveyard" —
+                // CR 109.1, so a token that has just died does not count.
+                let x = i32::try_from(state.count_in_zone(Zone::Graveyard, controller,
+                    |o| state.is_card(o.id) && state.is_creature(o.id, registry))).unwrap_or(i32::MAX);
 
                 // `obj.card_types` is empty for every non-token permanent, so
                 // reading it directly silently excluded ordinary creatures from
                 // the buff. `is_creature` resolves through the active face.
-                let creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
-                    .iter()
-                    .filter(|o| state.is_creature(o.id, registry))
-                    .map(|o| o.id)
-                    .collect();
+                let creatures = state.ids_in_zone(Zone::Battlefield, controller, |o| state.is_creature(o.id, registry));
 
                 for cid in &creatures {
                     state.until_end_of_turn.push(crate::state::TemporaryEffect::ModifyPT {
@@ -274,10 +267,14 @@ impl CardBehavior for GarrukRelentless {
         crate::destruction::sacrifice_by(
             state, *id, "to Garruk, the Veil-Cursed", registry);
 
-        let creature_options: Vec<ObjectId> = state.get_player(controller).library_order.iter()
-            .copied()
-            .filter(|&lib_id| state.has_card_type(lib_id, CardType::Creature, registry))
-            .collect();
+        // Allocated at the most it can hold, as `helpers::ids_where` says why.
+        let library = &state.get_player(controller).library_order;
+        let mut creature_options: Vec<ObjectId> = Vec::with_capacity(library.len());
+        for &lib_id in library {
+            if state.has_card_type(lib_id, CardType::Creature, registry) {
+                creature_options.push(lib_id);
+            }
+        }
 
         // "Search your library for a creature card, reveal it, put it into
         // your hand, then shuffle."
