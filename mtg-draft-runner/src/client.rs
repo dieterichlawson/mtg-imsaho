@@ -598,6 +598,19 @@ pub fn render(v: &Value, build: &Build) -> (String, String) {
                     s.push_str(&format!("  open {url}\n"));
                 }
             }
+            // With no match left to play this round, what the seat waits
+            // for, as the page says it; the client said nothing, and a bye
+            // or an early finish read like the end of the night (#927).
+            let live = v["matches"].as_array().into_iter().flatten().any(|m| m["status"] != "done");
+            if phase == "playing" && !live {
+                let pairings = v["pairings"].as_array().map(Vec::as_slice).unwrap_or_default();
+                let latest = pairings.iter().filter_map(|p| p["round"].as_u64()).max().unwrap_or(0);
+                let bye = pairings.iter().any(|p| p["b"].is_null() && p["a"].as_u64() == me && p["round"].as_u64() == Some(latest));
+                if bye {
+                    s.push_str(&format!("You have a bye in round {latest}. "));
+                }
+                s.push_str("Waiting for the others to finish their matches.\n");
+            }
             for p in v["pairings"].as_array().into_iter().flatten() {
                 let a = who(p["a"].as_u64().unwrap_or(0));
                 match p["b"].as_u64() {
@@ -700,6 +713,31 @@ mod tests {
         // The table's lines name a seat as the page does (#816).
         assert!(mine.contains("  round 2: Bea (seat 1) has a bye\n"), "{mine}");
         assert!(mine.contains("  round 2: Ann (seat 0) vs Cy (seat 2) (playing)\n"), "{mine}");
+    }
+
+    /// #927: a seat with no match left this round, given a bye or done
+    /// early, was told nothing of what it waits for; the page says it.
+    #[test]
+    fn a_seat_with_nothing_to_play_is_told_what_it_waits_for() {
+        let view = |seat: u64, matches: Value| serde_json::json!({
+            "type": "view", "phase": "playing", "seat": seat, "set": "isd",
+            "seats": [{"seat": 0, "name": "Ann", "kind": "human", "status": "playing", "picks": 42, "joined": true},
+                      {"seat": 1, "name": "Bea", "kind": "human", "status": "waiting", "picks": 42, "joined": true},
+                      {"seat": 2, "name": "Cy", "kind": "ai", "status": "playing", "picks": 42, "joined": true}],
+            "matches": matches,
+            "pairings": [{"round": 1, "a": 0, "b": 2, "status": "playing", "result": null},
+                         {"round": 1, "a": 1, "b": null, "status": "done", "result": "bye"}],
+            "standings": [], "pool": [], "picks": [], "deck": null, "notice": null,
+        });
+        let (_, mine) = render(&view(1, serde_json::json!([])), &Build::default());
+        assert!(mine.contains("You have a bye in round 1. Waiting for the others to finish their matches.\n"), "{mine}");
+        let done = serde_json::json!([{"round": 1, "opponent": 2, "url": null, "status": "done", "games": [{"winner": 2}], "result": "0-1"}]);
+        let (_, mine) = render(&view(0, done), &Build::default());
+        assert!(mine.contains("Waiting for the others to finish their matches.\n") && !mine.contains("a bye in"), "{mine}");
+        // A seat still in its match is not waiting on the others.
+        let live = serde_json::json!([{"round": 1, "opponent": 2, "url": null, "status": "playing", "games": [], "next_game": 1, "result": null}]);
+        let (_, mine) = render(&view(0, live), &Build::default());
+        assert!(!mine.contains("Waiting for the others"), "{mine}");
     }
 
     /// #816: the one-line table summary names a seat as the page does.
