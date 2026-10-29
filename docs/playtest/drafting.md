@@ -1159,3 +1159,10 @@ then add it, per "Adding an idea" in `docs/playtest/README.md`.
   measured nothing. Then read the night reports for the guide's word count
   against `wc -w` (10-28 says 1,075 and the file holds 1,099 with its
   header).
+  Run 2026-10-29 (#965-#967): the edge is argv, not tokens. The draft seat
+  passes its system prompt as one argument, so a guide over ~89 KB on top
+  of the 41,299 B base is E2BIG, and that is retried as if it were
+  transient. The word-count gap is the loop's 24-word header. Re-run it
+  with the guide's real size each time the guide passes 5,000 words. Also
+  try a guide in CRLF or with a byte-order mark: `sections()` and the
+  heading check both match on exact strings.
