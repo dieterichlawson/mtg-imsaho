@@ -6,12 +6,14 @@
 //! is a choice to make; the answer is taken by the engine's handler for
 //! that question (`engine::actions::choices`), proved here with it, since
 //! nothing else asks it. Over a library of each size up to five cards (so
-//! that one is past the fourth), a harness each, and every answer: each
-//! card of the library, those not looked at among them. A library whose
-//! length the solver left open was a list of every length, and every read
-//! of the question and the answer a question of which.
+//! that one is past the fourth), and every answer: each card of the
+//! library, those not looked at among them, a harness for each size and
+//! answer. A library whose length the solver left open was a list of every
+//! length, and every read of the question and the answer a question of
+//! which; an answer it left open made the cards milled a list of an open
+//! length, compared act by act, which ran out of memory over two cards.
 
-use super::{acted, asked_for, board, card_proof, kept, were, Act, Snapshot};
+use super::{acted, asked_for, board, case_by_case, kept, were, Act, Snapshot};
 use crate::actions::ResolvedChoice;
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{AwaitingAction, ResolutionChoiceKind};
@@ -25,8 +27,9 @@ use crate::cards::isd;
 /// an answer that is one of those, it goes to their hand and the rest
 /// of those are milled into their graveyard, in order; an answer that
 /// is not one of them is refused and the question stands. Over a
-/// library of `n` cards.
-fn forbidden_alchemy(n: u8) {
+/// library of `n` cards, answered with its `pick`th card from the top
+/// (when there is a question).
+fn forbidden_alchemy((n, pick): (u8, usize)) {
     let (registry, mut state, blank, card) = board(Box::new(isd::forbidden_alchemy::ForbiddenAlchemy));
     let mut library = Vec::with_capacity(5);
     for _ in 0..n {
@@ -49,7 +52,7 @@ fn forbidden_alchemy(n: u8) {
                 player: PlayerId(0), source, choice: ResolutionChoiceKind::ChooseFromLookedAt { looked_at, .. },
             }) if *source == spell && *looked_at == looked);
             assert!(asks(&state.awaiting_action) && acted() == 0);
-            let answer = library[usize::from(kani::any::<u8>() % n)];
+            let answer = library[pick];
             let _ = crate::engine::actions::choices::resolve_choice(&mut state, &ResolvedChoice::ChosenCard(answer), &registry);
             if looked.contains(&answer) {
                 let rest = kept(&looked, |id| id != answer);
@@ -64,23 +67,21 @@ fn forbidden_alchemy(n: u8) {
     std::mem::forget((registry, state, library, looked));
 }
 
-/// The proof above, a harness for each size of library.
-macro_rules! for_each_size {
-    ($($name:ident: $n:literal;)*) => {$(
-        card_proof! {
-            /// The proof above it, for one size of library.
-            fn $name() {
-                forbidden_alchemy($n);
-            }
-        }
-    )*};
-}
-
-for_each_size! {
-    forbidden_alchemy_over_an_empty_library: 0;
-    forbidden_alchemy_over_a_library_of_one: 1;
-    forbidden_alchemy_over_a_library_of_two: 2;
-    forbidden_alchemy_over_a_library_of_three: 3;
-    forbidden_alchemy_over_a_library_of_four: 4;
-    forbidden_alchemy_over_a_library_of_five: 5;
+case_by_case! { forbidden_alchemy;
+    forbidden_alchemy_over_an_empty_library: (0, 0),
+    forbidden_alchemy_over_a_library_of_one: (1, 0),
+    forbidden_alchemy_over_two_keeping_the_first: (2, 0),
+    forbidden_alchemy_over_two_keeping_the_second: (2, 1),
+    forbidden_alchemy_over_three_keeping_the_first: (3, 0),
+    forbidden_alchemy_over_three_keeping_the_second: (3, 1),
+    forbidden_alchemy_over_three_keeping_the_third: (3, 2),
+    forbidden_alchemy_over_four_keeping_the_first: (4, 0),
+    forbidden_alchemy_over_four_keeping_the_second: (4, 1),
+    forbidden_alchemy_over_four_keeping_the_third: (4, 2),
+    forbidden_alchemy_over_four_keeping_the_fourth: (4, 3),
+    forbidden_alchemy_over_five_keeping_the_first: (5, 0),
+    forbidden_alchemy_over_five_keeping_the_second: (5, 1),
+    forbidden_alchemy_over_five_keeping_the_third: (5, 2),
+    forbidden_alchemy_over_five_keeping_the_fourth: (5, 3),
+    forbidden_alchemy_over_five_answering_the_fifth_not_looked_at: (5, 4),
 }
