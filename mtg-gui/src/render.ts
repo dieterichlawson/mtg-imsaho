@@ -1145,7 +1145,11 @@ function promptArea(ctx: Ctx, hits: Hit[], state: LiveState, x: number, y: numbe
   }
   if (state.autoPass) { text(ctx, "AUTO-PASS on (f to stop)", x + 4, ty, { font: "7px Silkscreen", color: "#ffe080" }); ty += 9; }
   const title = ui ? ui.title : "";
-  for (const l of wrapCapped(ctx, title, w - 8, "8px Silkscreen", 4)) { text(ctx, l, x + 4, ty, { color: "#ffe080" }); ty += 9; }
+  // Beside a modal the panel holds no rows, so the question can have the
+  // room: at half the modal's width the payment plan at its end was cut at
+  // four lines (#939's review).
+  const besideModal = ui && (ui.mode === "list" || ui.mode === "order" || ui.mode === "number");
+  for (const l of wrapCapped(ctx, title, w - 8, "8px Silkscreen", besideModal && !state.logOpen ? 8 : 4)) { text(ctx, l, x + 4, ty, { color: "#ffe080" }); ty += 9; }
   if (ui && ui.hint) for (const l of wrapCapped(ctx, ui.hint, w - 8, "7px Silkscreen", 3)) { text(ctx, l, x + 4, ty, { font: "7px Silkscreen", color: "#a098b0" }); ty += 8; }
   if (ui && ui.mode === "mark") { text(ctx, `Marked ${ui.marked.length} of ${ui.max}`, x + 4, ty, { color: "#c0e0a0" }); ty += 9; }
   if (ui && ui.mode === "number") {

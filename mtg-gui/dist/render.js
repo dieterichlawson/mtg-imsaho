@@ -1313,7 +1313,11 @@ function promptArea(ctx, hits, state, x, y, w, h) {
         ty += 9;
     }
     const title = ui ? ui.title : "";
-    for (const l of wrapCapped(ctx, title, w - 8, "8px Silkscreen", 4)) {
+    // Beside a modal the panel holds no rows, so the question can have the
+    // room: at half the modal's width the payment plan at its end was cut at
+    // four lines (#939's review).
+    const besideModal = ui && (ui.mode === "list" || ui.mode === "order" || ui.mode === "number");
+    for (const l of wrapCapped(ctx, title, w - 8, "8px Silkscreen", besideModal && !state.logOpen ? 8 : 4)) {
         text(ctx, l, x + 4, ty, { color: "#ffe080" });
         ty += 9;
     }

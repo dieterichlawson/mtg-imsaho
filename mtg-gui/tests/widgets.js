@@ -398,7 +398,8 @@ async function main() {
           return out;
         });
         const said = drawn.join(" ");
-        if (!said.includes("Grotto)") || drawn.some(t => t.endsWith("tap…") || t.endsWith("Shimmering…"))) fail(`pay-or-not-long: the plan at the question's end is cut: ${JSON.stringify(drawn.filter(t => /Pay|Grotto|countered/.test(t)))}`);
+        // In the modal and in the panel beside it (#939's review).
+        if (drawn.filter(t => /Grotto\)$/i.test(t)).length < 2 || drawn.some(t => t.endsWith("…"))) fail(`pay-or-not-long: the plan at the question's end is cut: ${JSON.stringify(drawn.filter(t => /Pay|Grotto|countered/.test(t)))}`);
         else ok("pay-or-not-long → the whole question, plan included");
         const fits = await page.evaluate(() => { const m = window.mtg.hits.find(h => h.kind === "modal"); return m && m.y >= 0 && m.y + m.h <= 360; });
         if (!fits) fail("pay-or-not-long: the modal runs off the board");
