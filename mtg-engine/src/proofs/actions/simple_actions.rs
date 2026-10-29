@@ -645,15 +645,6 @@ fn adding_mana_adds_it_to_that_players_pool() {
     std::mem::forget(state);
 }
 
-#[kani::proof]
-#[kani::unwind(7)]
-#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
-#[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
-#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
-#[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
-#[kani::stub(crate::state::GameState::discard_card_for, crate::proofs::cards::record_discard_for)]
-#[kani::stub(crate::state::GameState::objects_in_zone, crate::proofs::cards::objects_in_zone_in_id_order)]
-#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 /// "Target player discards N cards" (CR 701.8a): the player chooses N
 /// cards of their hand, and a player with no more than N discards them
 /// all, unasked (as much as they can, 101.3), each of the hand in its
@@ -661,11 +652,13 @@ fn adding_mana_adds_it_to_that_players_pool() {
 /// hand to discard, with N still to go. Discarding none, or from an empty
 /// hand, does nothing. For either player, hands of up to two cards beside
 /// a card in the other player's, and N up to three. Nothing else changes.
-fn discarding_n_discards_the_hand_or_asks_for_the_cards() {
+/// For the player `who` and a hand of `held` cards, each a constant in its
+/// harness: with both the solver's, the player was an index into the
+/// players it left open and the hand a list of every length, together past
+/// what one proof holds.
+fn discarding_n_discards_the_hand_or_asks_for_the_cards((who, held): (u8, usize)) {
     let (registry, mut state, blank) = blank_board();
-    let who = PlayerId(u8::from(kani::any::<bool>()));
-    let held: usize = kani::any();
-    kani::assume(held <= 2);
+    let who = PlayerId(who);
     // Both cards made, the ones not held in exile, so that every id is
     // known (`cards_in_zones` says why).
     let cards = [0, 1].map(|i| state.create_object(blank, who, if i < held { Zone::Hand } else { Zone::Exile }, None, None));
@@ -691,4 +684,32 @@ fn discarding_n_discards_the_hand_or_asks_for_the_cards() {
     }
     kani::cover!(held == 2 && n == 1, "asked to choose");
     std::mem::forget((registry, state));
+}
+
+/// The proof above, a harness for each player and hand.
+macro_rules! each_hand_of_discard {
+    ($($name:ident: $case:expr;)*) => {$(
+        #[kani::proof]
+        #[kani::unwind(7)]
+        #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+        #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+        #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+        #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+        #[kani::stub(crate::state::GameState::discard_card_for, crate::proofs::cards::record_discard_for)]
+        #[kani::stub(crate::state::GameState::objects_in_zone, crate::proofs::cards::objects_in_zone_in_id_order)]
+        #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+        /// The proof above it, for one player and hand.
+        fn $name() {
+            discarding_n_discards_the_hand_or_asks_for_the_cards($case);
+        }
+    )*};
+}
+
+each_hand_of_discard! {
+    discarding_n_from_the_first_players_empty_hand: (0, 0);
+    discarding_n_from_the_first_players_hand_of_one: (0, 1);
+    discarding_n_from_the_first_players_hand_of_two: (0, 2);
+    discarding_n_from_the_second_players_empty_hand: (1, 0);
+    discarding_n_from_the_second_players_hand_of_one: (1, 1);
+    discarding_n_from_the_second_players_hand_of_two: (1, 2);
 }
