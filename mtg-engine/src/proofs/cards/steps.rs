@@ -155,7 +155,12 @@ card_proof! {
     /// target a non-Demon creature on the battlefield; destroyed.
     fn reaper_from_the_abyss_destroys_a_non_demon_after_a_death() {
         let reaper = isd::reaper_from_the_abyss::ReaperFromTheAbyss;
-        assert!(triggers(&reaper) == [(TriggerKind::EndStep, Some(R::CreatureWithFilter(TargetFilter::NotSubtypes(vec!["Demon".into()]))))]);
+        // Matched as a pattern: a requirement holding a list of names,
+        // compared with one built to compare, is two read from the heap
+        // (`prints_effects` says why that is not done).
+        let declared = std::mem::ManuallyDrop::new(triggers(&reaper));
+        assert!(matches!(declared.as_slice(), [(TriggerKind::EndStep, Some(R::CreatureWithFilter(TargetFilter::NotSubtypes(names))))]
+            if names.len() == 1 && names[0] == "Demon"));
         for back in [false, true] {
             assert!(reaper.step_trigger_scope(&TriggerKind::EndStep, back) == TriggerScope::Each);
         }
