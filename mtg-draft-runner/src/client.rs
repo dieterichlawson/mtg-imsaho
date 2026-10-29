@@ -577,7 +577,9 @@ pub fn render(v: &Value, build: &Build) -> (String, String) {
                 // not something to open). It goes on a line of its own,
                 // last: with the page's key in it (#872) it is ~70
                 // characters, and a URL cannot be wrapped and still pasted.
-                let link = m["url"].as_str().filter(|_| status != "done");
+                // Nor a decided one, whose games are over (#916's review).
+                let decided = status == "playing" && m["next_game"].is_null();
+                let link = m["url"].as_str().filter(|_| status != "done" && !decided);
                 if let Some(r) = m["result"].as_str() {
                     s.push_str(&format!(" — {r}"));
                 }
@@ -936,6 +938,7 @@ mod tests {
         let (_, mine) = render(&v, &Build::default());
         assert!(mine.contains("Round 1 vs seat 1: playing (decided; G1 seat 1)"), "{mine}");
         assert!(!mine.contains("game 2"), "{mine}");
+        assert!(!mine.contains("open http://h:1/"), "no game is left to open: {mine}");
     }
 
     /// #918: a game stopped at the action budget has no winner and was

@@ -646,6 +646,9 @@ async function main() {
           await page.waitForTimeout(50);
           const head = (await text(".match-playing .match-head")) || "";
           check(head.includes("decided") && !head.includes("playing now"), `${tag}: a decided match says so (${head})`);
+          check(await page.$(".match-playing .match-link") === null, `${tag}: and offers no game to open`);
+          if (v.matches.every(m => m.status === "done" || m === live))
+            check((await text(".waiting") || "").includes("decided"), `${tag}: the waiting line says the match is decided (${await text(".waiting")})`);
         }
         await stage(byName.done);
         await page.waitForTimeout(50);

@@ -199,9 +199,10 @@ function matchRow(view: DraftView, m: Match): HTMLElement {
   const status = m.status === "done" ? `done${m.result ? `, ${tagText(m.result)}` : ""}` : m.status === "playing" ? playing : "waiting to start";
   // The link is this seat's own page. It is null until the match's pages
   // are open (a beat after the pairing), and stays null for a match the
-  // table settled without one (a forfeit).
+  // table settled without one (a forfeit). A decided match has no game
+  // left to open (#916's review).
   let link: HTMLElement | null = null;
-  if (m.status !== "done") {
+  if (m.status !== "done" && !(m.status === "playing" && m.next_game === null)) {
     link = m.url
       ? h("div", { class: "match-link" }, "Open your game: ", h("a", { href: m.url, target: "_blank", rel: "noopener" }, ...urlPieces(m.url)))
       : h("div", { class: "match-link muted", text: m.status === "waiting" ? "Your game page opens when the match starts." : "No game page for this match." });
@@ -547,7 +548,10 @@ function playing(view: DraftView, done: boolean, state: PageState, actions: Acti
     sections.push(h("div", { class: "waiting" },
       mine.length === 0
         ? (byes.includes(latest) ? `You have a bye in round ${latest}. Waiting for the others to finish their matches.` : "Waiting for the others to finish their matches.")
-        : me && me.status === "waiting" ? "Waiting for your opponent." : "Your match is on."));
+        : me && me.status === "waiting" ? "Waiting for your opponent."
+        // Decided by its games, its result a beat from recorded (#916's review).
+        : mine.every(m => m.status === "playing" && m.next_game === null) ? "Your match is decided; its result is being recorded."
+        : "Your match is on."));
     const m = view.matches.find(x => x.between);
     if (m && m.between) sections.push(betweenPanel(view, m, m.between, state, actions));
   }
