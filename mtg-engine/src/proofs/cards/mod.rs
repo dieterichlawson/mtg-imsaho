@@ -1678,6 +1678,16 @@ pub fn each_is<T: PartialEq>(actual: &[T], n: usize, expected: impl Fn(usize) ->
     })
 }
 
+/// Whether `actual` holds exactly `n` entries, the `i`th of which `is(i, ..)`
+/// accepts: `each_is` for entries that are told apart by matching on their
+/// kind rather than compared whole. An entry pushed where the solver leaves
+/// open how many came before is, to symbolic execution, of any kind, and
+/// `==` on a temporary effect walks every filter tree a protection grant
+/// could hold (Vampiric Fury's proof ran out of memory comparing so).
+pub fn each_matches<T>(actual: &[T], n: usize, is: impl Fn(usize, &T) -> bool) -> bool {
+    actual.len() == n && (0..n).all(|i| is(i, &actual[i]))
+}
+
 /// Whether `f` is the filter "has subtype `subtype`".
 pub fn has_subtype(f: &crate::types::CreatureFilter, subtype: &str) -> bool {
     matches!(f, crate::types::CreatureFilter::HasSubtype(s) if s == subtype)

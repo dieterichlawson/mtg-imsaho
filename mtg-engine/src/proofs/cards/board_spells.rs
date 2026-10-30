@@ -161,10 +161,10 @@ fn vampiric_fury_pumps_each_of_your_vampires(vampires: [bool; 2]) {
     const CREATURE: Kinds = Kinds { types: &[CardType::Creature], subtypes: &[], keywords: &[] };
     let r = resolve_of(Box::new(isd::vampiric_fury::VampiricFury), &CREATURE, vampires.map(|v| if v { &["Vampire"][..] } else { &[] }));
     let ids = r.those(|o| creature(o) && yours(o) && o.subtypes.iter().any(|s| s == "Vampire"));
-    assert!(each_is(r.added(), 2 * ids.len(), |i| if i % 2 == 0 {
-        T::ModifyPT { target: ids[i / 2], power_mod: 2, toughness_mod: 0 }
+    assert!(crate::proofs::cards::each_matches(r.added(), 2 * ids.len(), |i, t| if i % 2 == 0 {
+        matches!(t, T::ModifyPT { target, power_mod: 2, toughness_mod: 0 } if *target == ids[i / 2])
     } else {
-        T::GrantKeyword { target: ids[i / 2], keyword: Keyword::FirstStrike }
+        matches!(t, T::GrantKeyword { target, keyword: Keyword::FirstStrike } if *target == ids[i / 2])
     }));
     assert!(acted() == 0 && r.nothing_else_changed());
     std::mem::forget((r, ids));
