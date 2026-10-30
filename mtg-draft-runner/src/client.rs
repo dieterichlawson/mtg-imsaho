@@ -81,12 +81,39 @@ pub enum Ended {
     Refused,
 }
 
+/// The lobby's own `http://host:port` in a `ws://host:port/ws?...` join
+/// link (`https` for `wss`): the host the seat reached the table by.
+#[must_use]
+pub fn lobby_origin(ws_url: &str) -> Option<String> {
+    let (scheme, rest) = if let Some(rest) = ws_url.strip_prefix("wss://") {
+        ("https", rest)
+    } else {
+        ("http", ws_url.strip_prefix("ws://")?)
+    };
+    let host = rest.split(['/', '?']).next().filter(|h| !h.is_empty())?;
+    Some(format!("{scheme}://{host}"))
+}
+
+/// A game link through the lobby's port is a path on whatever host the
+/// seat reached the lobby by (#969); printed, it is a whole URL on that
+/// host. An absolute link (`--direct-game-ports`) is left as it is.
+pub fn resolve_links(view: &mut Value, origin: &str) {
+    let Some(matches) = view["matches"].as_array_mut() else { return };
+    for m in matches {
+        if let Some(path) = m["url"].as_str().filter(|u| u.starts_with('/')) {
+            m["url"] = Value::String(format!("{origin}{path}"));
+        }
+    }
+}
+
 /// A seat's session: print each view as it comes, run each line from
 /// `lines` (stamped with when it was typed), until the person quits or the
 /// table closes. A line `"\u{0}eof"` says nobody is typing any more.
+/// `origin` is the lobby as this seat reached it ([`lobby_origin`]).
 pub fn run(
     ws: &mut tungstenite::WebSocket<tungstenite::stream::MaybeTlsStream<std::net::TcpStream>>,
     rx: &mpsc::Receiver<(Instant, String)>,
+    origin: &str,
 ) -> Ended {
     let mut view: Option<Value> = None;
     let mut shown = String::new();
@@ -123,9 +150,10 @@ pub fn run(
         }
         match ws.read() {
             Ok(tungstenite::Message::Text(text)) => {
-                let Ok(msg) = serde_json::from_str::<Value>(&text) else { continue };
+                let Ok(mut msg) = serde_json::from_str::<Value>(&text) else { continue };
                 match msg["type"].as_str() {
                     Some("view") => {
+                        resolve_links(&mut msg, origin);
                         refresh_build(&msg, &mut build, &mut built_for_phase);
                         // Reprinted when something of this seat's own
                         // changed, not on every other seat's pick; the
@@ -963,6 +991,21 @@ mod tests {
     /// match is still "playing", and the client counted one game more: a
     /// best-of-1 read "playing (game 2; G1 seat 1)". The view says no game
     /// is next.
+    #[test]
+    fn a_game_link_is_on_the_host_the_seat_joined_by() {
+        // Through a tunnel the lobby is reached at a host it does not
+        // know; the link it sends is a path on it (#969).
+        let origin = lobby_origin("ws://tunnel.example:9866/ws?seat=0&key=k").unwrap();
+        assert_eq!(origin, "http://tunnel.example:9866");
+        assert_eq!(lobby_origin("wss://t.example/ws?seat=0&key=k").as_deref(), Some("https://t.example"));
+        let mut v = serde_json::json!({"matches": [
+            {"url": "/game/9861/abc/"}, {"url": "http://192.0.2.2:9861/abc/"}, {"url": null}]});
+        resolve_links(&mut v, &origin);
+        assert_eq!(v["matches"][0]["url"], "http://tunnel.example:9866/game/9861/abc/");
+        assert_eq!(v["matches"][1]["url"], "http://192.0.2.2:9861/abc/", "a direct link is left as sent");
+        assert!(v["matches"][2]["url"].is_null());
+    }
+
     #[test]
     fn a_decided_match_is_not_on_a_next_game() {
         let v = serde_json::json!({

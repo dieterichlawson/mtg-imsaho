@@ -206,14 +206,12 @@ fn two_humans_and_two_ai_seats_draft_build_and_the_ai_match_plays() {
     assert_eq!(m["round"], 1);
     assert_eq!(m["opponent"], 1);
     let url0 = m["url"].as_str().expect("a game link for the human");
-    assert!(url0.starts_with("http://127.0.0.1:"), "{url0}");
+    assert!(url0.starts_with("/game/"), "a path on the lobby's host (#969): {url0}");
     let v1 = c1.view_until("seat 1 is paired", T, |v| !v["matches"].as_array().unwrap().is_empty() && !v["matches"][0]["url"].is_null());
     let url1 = v1["matches"][0]["url"].as_str().unwrap();
     assert_ne!(url0, url1, "human-vs-human is two pages");
     // The page is really there, through the lobby's port.
-    let path = url0.trim_start_matches(&format!("http://127.0.0.1:{}", server.port));
-    assert!(path.starts_with("/game/"), "{url0}");
-    let (status, page) = server.http_get(path);
+    let (status, page) = server.http_get(url0);
     assert_eq!(status, 200, "{page}");
 
     // The game's line is written after the match's header: waiting for the

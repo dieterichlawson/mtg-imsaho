@@ -842,6 +842,9 @@ pub struct Lobby {
     round_pairings: Vec<(usize, usize)>,
     /// Lines for the host's terminal, drained by the server.
     events: Vec<String>,
+    /// What a game link that is a path is on, for the host's terminal: the
+    /// seats are sent the path alone (#969).
+    link_origin: String,
     started_pool_log: bool,
     /// Every pick in the order it was made, for the snapshot.
     pick_log: Vec<SavedPick>,
@@ -928,6 +931,7 @@ the order they happened, not in seat order", "");
             matches: Vec::new(),
             round_pairings: Vec::new(),
             events: Vec::new(),
+            link_origin: String::new(),
             started_pool_log: false,
             pick_log: Vec::new(),
             ai_notes: vec![None; pod],
@@ -1766,7 +1770,14 @@ for the seat from here, and its games are forfeit"), ""));
         self.matches.iter_mut().find(|m| m.round == round && m.a == a && m.b == b)
     }
 
-    /// A match's game pages are up: `urls` are seat `a`'s and seat `b`'s.
+    /// The lobby as the host reaches it (`http://host:port`): the host's
+    /// terminal prints a game link that is a path on it.
+    pub fn set_link_origin(&mut self, origin: String) {
+        self.link_origin = origin;
+    }
+
+    /// A match's game pages are up: `urls` are seat `a`'s and seat `b`'s,
+    /// as each seat is sent it.
     pub fn match_started(&mut self, round: usize, a: usize, b: usize, urls: [Option<String>; 2]) {
         if let Some(m) = self.match_mut(round, a, b) {
             m.urls.clone_from(&urls);
@@ -1774,7 +1785,8 @@ for the seat from here, and its games are forfeit"), ""));
         }
         for (seat, url) in [a, b].into_iter().zip(urls) {
             if let Some(url) = url {
-                self.event(format!("round {round}: {} plays at {url}", self.who(seat)));
+                let origin = if url.starts_with('/') { self.link_origin.as_str() } else { "" };
+                self.event(format!("round {round}: {} plays at {origin}{url}", self.who(seat)));
             }
         }
     }

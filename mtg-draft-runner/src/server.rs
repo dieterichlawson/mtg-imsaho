@@ -35,7 +35,9 @@ pub const PAGE: &str = "draft.html";
 pub struct ServerConfig {
     pub bind: String,
     pub port: u16,
-    /// The host name the join lines and the game links carry.
+    /// The host name the join lines, the host's terminal and
+    /// `--direct-game-ports` links carry; a seat's link through the lobby
+    /// is a path on the host it joined by (#969).
     pub advertise: String,
     pub game_ports: (u16, u16),
     pub web_dir: PathBuf,
@@ -117,6 +119,8 @@ impl Shared {
         lobby: Lobby, config: ServerConfig, registry: Arc<CardRegistry>, card_lines: CardLines,
         card_reference: String, set_name: String,
     ) -> Arc<Self> {
+        let mut lobby = lobby;
+        lobby.set_link_origin(format!("http://{}:{}", config.advertise, config.port));
         Arc::new(Self {
             lobby: Mutex::new(lobby),
             changed: Condvar::new(),
@@ -497,6 +501,7 @@ pub fn run(shared: &Arc<Shared>, listener: TcpListener) -> Result<(), String> {
             other => other.to_string(),
         };
         let url = format!("ws://{host}:{}/ws?seat={seat}&key={key}", shared.config.port);
+        let origin = format!("http://{host}:{}", shared.config.port);
         // Joined before the keyboard is read: a `start` or a name typed at
         // once went to a table the seat was not at yet, which picked for it.
         let join = move || -> Result<_, String> {
@@ -516,7 +521,7 @@ pub fn run(shared: &Arc<Shared>, listener: TcpListener) -> Result<(), String> {
         *shared.cli_lines.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(tx);
         let seat_shared = Arc::clone(shared);
         thread::Builder::new().name("cli-seat".into()).spawn(move || loop {
-            let ended = crate::client::run(&mut ws, &rx);
+            let ended = crate::client::run(&mut ws, &rx, &origin);
             if seat_shared.quitting() || matches!(ended, crate::client::Ended::Refused) {
                 return;
             }
@@ -868,7 +873,7 @@ fn play_one(shared: &Arc<Shared>, round: usize, a: usize, b: usize) -> Vec<(usiz
                 make_game_player(&model, &name, shared.config.guide.as_deref()))),
             SeatKind::Human | SeatKind::Cli => match game_page(shared, &name, &label_of(seat)) {
                 Ok(gui) => {
-                    urls[i] = Some(gui.url.clone());
+                    urls[i] = Some(seat_link(&shared.config, &gui.url));
                     shared.set_in_game(seat, Some(InGame {
                         seat, opponent: if seat == a { b } else { a },
                         withdraw: gui.withdraw_handle(), wake: gui.wake_handle(),
@@ -1089,7 +1094,7 @@ fn game_page(shared: &Shared, name: &str, label: &str) -> Result<GuiPlayer, Stri
                 gui.url = if shared.config.direct_game_ports {
                     format!("http://{}:{port}/{key}/", shared.config.advertise)
                 } else {
-                    format!("http://{}:{}/game/{port}/{key}/", shared.config.advertise, shared.config.port)
+                    format!("http://{}:{}{}", shared.config.advertise, shared.config.port, lobby_game_path(port, &key))
                 };
                 gui.notice_name = label.to_string();
                 *next = port.checked_add(1);
@@ -1099,6 +1104,24 @@ fn game_page(shared: &Shared, name: &str, label: &str) -> Result<GuiPlayer, Stri
         }
     }
     Err(format!("no free port in {lo}-{hi} ({last})"))
+}
+
+/// A game page's path on the lobby's own port.
+fn lobby_game_path(port: u16, key: &str) -> String {
+    format!("/game/{port}/{key}/")
+}
+
+/// The link a seat is sent for its game page. Through the lobby it is the
+/// path alone, on whatever host the seat reached the lobby by: the
+/// advertised LAN address is not reachable from the far end of a tunnel
+/// or by a tailnet name (#969), and the page and the client resolve it
+/// against their own. The host's terminal keeps the absolute `gui.url`.
+fn seat_link(config: &ServerConfig, gui_url: &str) -> String {
+    if config.direct_game_ports {
+        return gui_url.to_string();
+    }
+    let lobby = format!("http://{}:{}", config.advertise, config.port);
+    gui_url.strip_prefix(&lobby).unwrap_or(gui_url).to_string()
 }
 
 /// Every port in `lo..=hi` once, from `from` (when it is in the range)

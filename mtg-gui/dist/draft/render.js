@@ -169,10 +169,13 @@ function matchRow(view, m) {
     // are open (a beat after the pairing), and stays null for a match the
     // table settled without one (a forfeit). A decided match has no game
     // left to open (#916's review).
+    // Through the lobby's port it is a path, on the host this page was
+    // opened on (a tunnel's, a tailnet name), and is shown resolved (#969).
     let link = null;
     if (m.status !== "done" && !(m.status === "playing" && m.next_game === null)) {
-        link = m.url
-            ? h("div", { class: "match-link" }, "Open your game: ", h("a", { href: m.url, target: "_blank", rel: "noopener" }, ...urlPieces(m.url)))
+        const url = m.url ? gameLink(m.url) : null;
+        link = url
+            ? h("div", { class: "match-link" }, "Open your game: ", h("a", { href: url, target: "_blank", rel: "noopener" }, ...urlPieces(url)))
             : h("div", { class: "match-link muted", text: m.status === "waiting" ? "Your game page opens when the match starts." : "No game page for this match." });
     }
     return h("li", { class: `match match-${m.status}` }, h("div", { class: "match-head" }, h("span", {}, ...withRecords(`Round ${m.round} vs ${seatName(view, m.opponent)}${dashed(status)}`))), link, games ? h("div", { class: "match-games muted", text: games }) : null);
@@ -533,6 +536,10 @@ export function packColumns(root) {
         return 1;
     const top = tiles[0].offsetTop;
     return Math.max(1, tiles.filter(t => t.offsetTop === top).length);
+}
+/** A game link as this page reaches it: a path is on the page's own host. */
+export function gameLink(url) {
+    return new URL(url, location.href).href;
 }
 /**
  * A URL as text pieces with a line break allowed only before a ':' or '/'

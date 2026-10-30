@@ -82,8 +82,9 @@ export interface Deck {
 export interface GameResult { winner: number | null; forfeited_by?: number | null; abandoned?: boolean }
 
 /**
- * One of the viewing seat's own matches. `url` is this seat's game page;
- * it is null while the match waits for its pages to open, for a match
+ * One of the viewing seat's own matches. `url` is this seat's game page:
+ * a path on the lobby's own host when the pages go through its port
+ * (#969), absolute with `--direct-game-ports`. It is null while the match waits for its pages to open, for a match
  * the table forfeited without opening one, and on the opponent's side
  * of the same match (each seat gets its own link, never the other's).
  */

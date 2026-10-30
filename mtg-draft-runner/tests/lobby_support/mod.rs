@@ -206,6 +206,12 @@ impl Server {
         format!("ws://127.0.0.1:{}/ws?seat={seat}&key={key}", self.port)
     }
 
+    /// A match link as a seat that reached the lobby here opens it: a link
+    /// through the lobby's port is a path on the lobby's host (#969).
+    pub fn link(&self, url: &str) -> String {
+        if url.starts_with('/') { format!("http://127.0.0.1:{}{url}", self.port) } else { url.to_string() }
+    }
+
     pub fn client(&self, seat: usize) -> WsClient {
         WsClient::connect(&self.ws_url(seat, self.key(seat)))
     }

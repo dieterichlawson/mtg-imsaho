@@ -519,6 +519,21 @@ async function main() {
           await stage(byName.playing);
           await page.waitForTimeout(50);
         }
+        // Through the lobby's port the link is a path, opened on the host
+        // this page was (a tunnel's, a tailnet name), not the LAN address
+        // the server advertises (#969).
+        {
+          const pathed = JSON.parse(JSON.stringify(byName.playing));
+          const path = `/game/8805/${"0123456789abcdef".repeat(2)}/`;
+          for (const m of pathed.matches) if (m.url) m.url = path;
+          await stage(pathed);
+          await page.waitForTimeout(50);
+          const a = await page.evaluate(() => { const a = document.querySelector(".match-link a"); return a && { href: a.href, text: a.textContent }; });
+          const want = `http://127.0.0.1:${port}${path}`;
+          check(a && a.href === want && a.text === want, `${tag}: a path link is on the page's own host (${JSON.stringify(a)})`);
+          await stage(byName.playing);
+          await page.waitForTimeout(50);
+        }
         // A long one-word name and the #744 tags fit a phone (#789), and a
         // record is never broken at its hyphen (#790). The tiebreak heading
         // may wrap, at a "/", as its numbers do (#881; checked below).

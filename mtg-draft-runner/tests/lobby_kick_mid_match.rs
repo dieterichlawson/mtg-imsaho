@@ -102,7 +102,7 @@ fn a_kick_while_the_opponent_holds_the_decision_forfeits_the_game_now() {
         assert!(Instant::now() < deadline, "the match never started:\n{}", server.stderr());
     }
     let mut pages: Vec<(usize, lobby_support::WsClient)> = urls.iter().enumerate().map(|(seat, url)| {
-        let ws = url.as_deref().unwrap().replacen("http://", "ws://", 1) + "ws";
+        let ws = server.link(url.as_deref().unwrap()).replacen("http://", "ws://", 1) + "ws";
         let mut page = lobby_support::WsClient::connect(&ws);
         page.send(serde_json::json!({"type": "hello"}));
         (seat, page)

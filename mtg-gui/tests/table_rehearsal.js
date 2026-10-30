@@ -209,7 +209,8 @@ async function playMatch(browser, seat, m, draftPage, tally) {
   page.on("pageerror", e => errors.push("pageerror: " + e.message));
   const label = `seat ${seat} round ${m.round}`;
   try {
-    await page.goto(m.url, { timeout: 15000 });
+    // A link through the lobby is a path on the draft page's host (#969).
+    await page.goto(new URL(m.url, draftPage.url()).href, { timeout: 15000 });
     let lastSeq = -1, stuck = 0, committed = false;
     for (;;) {
       const done = await draftPage.evaluate((round) => {

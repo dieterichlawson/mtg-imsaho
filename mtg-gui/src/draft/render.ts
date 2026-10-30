@@ -201,10 +201,13 @@ function matchRow(view: DraftView, m: Match): HTMLElement {
   // are open (a beat after the pairing), and stays null for a match the
   // table settled without one (a forfeit). A decided match has no game
   // left to open (#916's review).
+  // Through the lobby's port it is a path, on the host this page was
+  // opened on (a tunnel's, a tailnet name), and is shown resolved (#969).
   let link: HTMLElement | null = null;
   if (m.status !== "done" && !(m.status === "playing" && m.next_game === null)) {
-    link = m.url
-      ? h("div", { class: "match-link" }, "Open your game: ", h("a", { href: m.url, target: "_blank", rel: "noopener" }, ...urlPieces(m.url)))
+    const url = m.url ? gameLink(m.url) : null;
+    link = url
+      ? h("div", { class: "match-link" }, "Open your game: ", h("a", { href: url, target: "_blank", rel: "noopener" }, ...urlPieces(url)))
       : h("div", { class: "match-link muted", text: m.status === "waiting" ? "Your game page opens when the match starts." : "No game page for this match." });
   }
   return h("li", { class: `match match-${m.status}` },
@@ -615,6 +618,11 @@ export function packColumns(root: HTMLElement): number {
   if (tiles.length === 0) return 1;
   const top = tiles[0].offsetTop;
   return Math.max(1, tiles.filter(t => t.offsetTop === top).length);
+}
+
+/** A game link as this page reaches it: a path is on the page's own host. */
+export function gameLink(url: string): string {
+  return new URL(url, location.href).href;
 }
 
 /**

@@ -35,7 +35,9 @@ the lobby's one port, so that is the only port to open: on a LAN,
 put the machine on a tailnet (Tailscale and the like: `--bind 0.0.0.0` and
 give friends the tailnet address), or tunnel it (`ssh -R`, a Cloudflare
 tunnel) and hand out the tunnel's address in place of the join line's
-host. The game pages themselves listen on this machine's loopback only.
+host. A friend's game link is on whatever host they joined by, so the
+tunnel's or tailnet's address carries their games too (#969). The game
+pages themselves listen on this machine's loopback only.
 
 The key is the whole access control: a seat
 is whoever holds its key, a second tab with the same key is the same seat
