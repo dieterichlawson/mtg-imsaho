@@ -74,14 +74,18 @@ impl CardBehavior for GhostQuarter {
 
             // "Its controller may search their library for a basic land card,
             // put it onto the battlefield, then shuffle."
-            // Find all basic lands in the controller's library.
-            let basic_lands: Vec<ObjectId> = state.get_player(target_controller).library_order.iter()
-                .filter(|&&lib_id| {
-                    state.face_card_types(lib_id, registry).contains(&CardType::Land)
-                        && state.face_supertypes(lib_id, registry).contains(&Supertype::Basic)
-                })
-                .copied()
-                .collect();
+            // Find all basic lands in the controller's library, in library
+            // order: in a loop, not a filter collected, as Bitterheart Witch
+            // searches (a proof walks a filter's inner `find` again for each
+            // item collected).
+            let mut basic_lands: Vec<ObjectId> = Vec::new();
+            for &lib_id in &state.get_player(target_controller).library_order {
+                if state.face_card_types(lib_id, registry).contains(&CardType::Land)
+                    && state.face_supertypes(lib_id, registry).contains(&Supertype::Basic)
+                {
+                    basic_lands.push(lib_id);
+                }
+            }
 
             // A controller with no basic lands is still offered the "may
             // search" — declining is their choice to make, and a player who
