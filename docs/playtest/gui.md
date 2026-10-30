@@ -244,6 +244,15 @@ random game happened to reach.
   stack in a window where you could actually respond — `main.ts:96` auto-passes
   pass-only priorities before `autoPassDecides` is ever consulted, so the
   "stops for a spell on the stack" clause may be unreachable by construction.
+  [2026-10-30] The stack clause is reachable and holds when you can answer
+  (5/5 stops on the opponent's spell with instants and mana; refused over
+  your own spell 8/8). What is unreachable is every stop on a *pass-only*
+  priority: the short-circuit at `main.ts:148` answers before
+  `autoPassDecides`, so `f` passes a pass-only Main Phase 1 and stays on
+  (#972). Under `s` the same stops fire, so `s` changes which of `f`'s
+  stops exist. G12 the same night: seed 32 (innistrad-white v white-black)
+  hides 406 of 491 priorities; see #973-#975 for what the notice, the
+  heading under `s` and the band lose.
 - G9 two tabs on one seat, and a tab closed mid-prompt and reopened: the
   pending decision must come back, and an answer from the stale tab
   must not land on a newer prompt.
