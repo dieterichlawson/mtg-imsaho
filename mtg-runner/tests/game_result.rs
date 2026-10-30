@@ -152,6 +152,37 @@ fn a_run_stopped_by_stop_after_still_writes_its_decision_stats() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Issue #957: what is shown only because `--check-invariants` watches
+/// every submit (the loop's own passes, an attack prompt with nothing
+/// eligible) is no decision, as `--stop-after` already counts it: the same
+/// game was 248 decisions to one and 1,152 to the other, and its
+/// `ChooseAttackers` count grew by the attacks nobody could make. It is
+/// kept apart, under `observed`.
+#[test]
+fn decision_stats_count_the_same_game_the_same_with_an_observer() {
+    let dir = std::env::temp_dir().join(format!("mtg-957-stats-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let stats = |name: &str, extra: &[&str]| -> serde_json::Value {
+        let path = dir.join(name);
+        let out = runner()
+            .current_dir(repo_root())
+            .args(["--p1", "random", "--p2", "random", "--seed", "2", "-q", "--decision-stats", path.to_str().unwrap()])
+            .args(extra)
+            .output()
+            .expect("runner did not start");
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap()
+    };
+    let plain = stats("plain.json", &[]);
+    let watched = stats("watched.json", &["--check-invariants"]);
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(plain["decisions"], watched["decisions"], "plain {plain}\nwatched {watched}");
+    assert_eq!(plain["kinds"], watched["kinds"], "plain {plain}\nwatched {watched}");
+    assert!(watched["observed"]["priority:pass-only"].as_u64().unwrap_or(0) > 0,
+        "the observer's passes are kept apart: {watched}");
+}
+
 /// Issue #869: the keep/mulligan menu and the London mulligan's bottoming
 /// are counted under names of their own, and those are names
 /// `scripts/fuzz_reach.py` expects. The menu used to be counted as

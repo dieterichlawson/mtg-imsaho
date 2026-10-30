@@ -143,6 +143,16 @@ black-aggro (ba), innistrad-white (iw), innistrad-blue (iu), innistrad-green (ig
 /// London mulligan's bottoming as the same `set_prompt` as a cleanup
 /// discard, so the report would have read the same had the random seat
 /// stopped mulliganing again, the blind spot #456 found (#869).
+/// A pass or an empty attack shown only because something watches every
+/// submit (`--check-invariants`, a gui seat) is no decision: unwatched, the
+/// loop makes it and no seat is asked. `--stop-after` does not count it
+/// (#956's review), and nor does `--decision-stats` (#957).
+fn observed_only(legal: &engine::LegalActions) -> bool {
+    legal.is_observed_pass() || matches!(&legal.combat_prompt,
+        Some(mtg_engine::actions::CombatPrompt::ChooseAttackers { eligible, must_attack, .. })
+            if eligible.is_empty() && must_attack.is_empty())
+}
+
 fn decision_kind_name(legal: &engine::LegalActions) -> String {
     fn variant<T: serde::Serialize>(value: &T) -> String {
         match serde_json::to_value(value) {
@@ -923,6 +933,11 @@ stops here — pass --save {path} to keep writing it");
     // mode in 1.8% of casts (#664-#667), and nothing was red. Counting the
     // kinds asked lets the campaign say which ones it never was.
     let decision_kinds: std::cell::RefCell<std::collections::BTreeMap<String, u64>> = Default::default();
+    // What was shown only to an observer ([`observed_only`]), apart: in
+    // `kinds` it made one game 248 decisions without `--check-invariants`
+    // and 1,152 with it, and an attack prompt with nothing eligible read as
+    // `ChooseAttackers` reached (#957).
+    let observed_kinds: std::cell::RefCell<std::collections::BTreeMap<String, u64>> = Default::default();
     // The widest board the game reached, for the same report: the walls at
     // 500-2,000 permanents (#565, #640-#642) were found on boards no fuzz
     // game ever built, and nothing said so.
@@ -938,6 +953,7 @@ stops here — pass --save {path} to keep writing it");
                 "decisions": kinds.values().sum::<u64>(),
                 "max_permanents": max_permanents.get(),
                 "kinds": *kinds,
+                "observed": *observed_kinds.borrow(),
             });
             let text = serde_json::to_string_pretty(&stats).unwrap_or_default();
             if let Err(e) = fs::write(path, text) {
@@ -998,17 +1014,13 @@ stops here — pass --save {path} to keep writing it");
         } else {
             choose_action(player, &view, legal)
         };
-        // A pass or an empty attack shown only because something watches
-        // every submit is no decision: unwatched, the loop makes it and no
-        // seat is asked, and `--stop-after N` stopped at another decision
-        // under `--check-invariants` (#956's review).
-        let observed_only = legal.is_observed_pass() || matches!(&legal.combat_prompt,
-            Some(mtg_engine::actions::CombatPrompt::ChooseAttackers { eligible, must_attack, .. })
-                if eligible.is_empty() && must_attack.is_empty());
-        if !observed_only {
+        // `--stop-after N` stopped at another decision under
+        // `--check-invariants` when these counted (#956's review).
+        let observed = observed_only(legal);
+        if !observed {
             decisions_made.set(decisions_made.get() + 1);
         }
-        if !observed_only && stop_after == Some(decisions_made.get()) {
+        if !observed && stop_after == Some(decisions_made.get()) {
             let json = serde_json::to_string(&answer).unwrap_or_else(|e| format!("\"unserializable: {e}\""));
             leave_game();
             write_decision_stats();
@@ -1046,7 +1058,8 @@ stops here — pass --save {path} to keep writing it");
 
     let mut game_callback = |game_state: &GameState, acting_player: PlayerId, legal: &engine::LegalActions| -> mtg_engine::actions::Action {
         action_count += 1;
-        *decision_kinds.borrow_mut().entry(decision_kind_name(legal)).or_insert(0) += 1;
+        let kinds = if observed_only(legal) { &observed_kinds } else { &decision_kinds };
+        *kinds.borrow_mut().entry(decision_kind_name(legal)).or_insert(0) += 1;
         max_permanents.set(max_permanents.get().max(
             game_state.all_objects_in_zone(mtg_engine::types::Zone::Battlefield).len()));
 
@@ -1131,8 +1144,11 @@ stops here — pass --save {path} to keep writing it");
             if !all.is_empty() {
                 leave_game();
                 write_decision_stats();
-                mtg_player::stderr_line!("INVARIANT VIOLATION at action {action_count} (turn {}, step {:?}):",
-                    game_state.turn_number, game_state.step);
+                // The action count includes what the checker alone was
+                // shown; the decision count is the N `--stop-after` takes
+                // to stop just before it (#957's review).
+                mtg_player::stderr_line!("INVARIANT VIOLATION at action {action_count}, after decision {} (turn {}, step {:?}):",
+                    decisions_made.get(), game_state.turn_number, game_state.step);
                 for msg in &all {
                     mtg_player::stderr_line!("  - {msg}");
                     mtg_player::game_log::write(file!(), line!(), "INVARIANT", msg);

@@ -55,6 +55,7 @@ def main() -> int:
 
     files = sorted(glob.glob(os.path.join(args.stats, "*.json")))
     counts: dict[str, int] = {}
+    observed: dict[str, int] = {}
     games, decisions, unreadable = 0, 0, 0
     widest: tuple[int, str] = (0, "")
     for f in files:
@@ -70,6 +71,12 @@ def main() -> int:
             widest = (width, os.path.basename(f)[: -len(".json")])
         for k, n in (d.get("kinds") or {}).items():
             counts[k] = counts.get(k, 0) + int(n)
+        # Shown only to an observer (`--check-invariants`): the loop's own
+        # passes and attack prompts with nothing eligible. Not decisions,
+        # and not reach: an empty ChooseAttackers says no attack was
+        # possible (#957).
+        for k, n in (d.get("observed") or {}).items():
+            observed[k] = observed.get(k, 0) + int(n)
 
     expected = {"mulligan", "priority", "priority:pass-only"}
     expected |= {"set:" + v for v in enum_variants(
@@ -79,7 +86,10 @@ def main() -> int:
     expected |= {"combat:" + v for v in enum_variants(
         os.path.join(args.repo, "mtg-engine/src/actions.rs"), "CombatPrompt")}
 
-    never = sorted(expected - set(counts))
+    # `priority:pass-only` is the observer's pass by name: reached when the
+    # campaign watched any priority it would otherwise have passed itself.
+    reached = set(counts) | ({"priority:pass-only"} & set(observed))
+    never = sorted(expected - reached)
     unknown = sorted(set(counts) - expected)
 
     lines = [f"### Prompt-kind reach: {games} games, {decisions} decisions"
@@ -91,6 +101,10 @@ def main() -> int:
         for k, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])):
             lines.append(f"| `{k}` | {n} | {n / games:.2f} |")
         lines.append("")
+        if observed:
+            lines.append("Shown only to the observer, not counted above: "
+                         + ", ".join(f"`{k}` {n}" for k, n in sorted(observed.items())) + ".")
+            lines.append("")
         if widest[0]:
             lines.append(f"Widest board: {widest[0]} permanents (`{widest[1]}`).")
             lines.append("")
