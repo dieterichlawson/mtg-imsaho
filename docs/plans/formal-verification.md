@@ -1125,8 +1125,9 @@ four), putting a card into a library, the prevention's pruning, paying
 a cost (the autotap planner's symbolic execution past half an hour, a
 pool the solver chose or not), the subtype filters and the creature
 groups that name a subtype, a filtered target requirement, a search's
-question and discarding several cards (past two and a half), and the
-`KindMap` proofs (heavy, to be run alone at a larger cap). Of the cards,
+question and discarding several cards (past two and a half). (The
+`KindMap` proofs, listed here before, pass since their comparison was
+made at fixed places: 37 to 205 seconds.) Of the cards,
 Full Moon's Rise's ability, Vampiric Fury, Moonmist, Spare from Evil,
 Rolling Temblor, Make a Wish, Mulch, Balefire Dragon, Hamlet Captain,
 Tribute to Hunger, Sever the Bloodline, Blasphemous Act, Past in Flames,
