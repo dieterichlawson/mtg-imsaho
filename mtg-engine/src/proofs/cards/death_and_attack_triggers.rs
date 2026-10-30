@@ -499,7 +499,10 @@ card_proof! {
         let caster = PlayerId(u8::from(kani::any::<bool>()));
         for id in [b.me, b.others[0], b.others[1]] {
             let o = b.state.get_object(id).expect("on the board");
-            let theirs = o.zone == Zone::Battlefield && o.controller != caster && o.card_types.contains(&CardType::Creature);
+            // Grimgrin a creature card, printed so; the blank card's objects
+            // creatures by the types they were given.
+            let theirs = o.zone == Zone::Battlefield && o.controller != caster
+                && (id == b.me || o.card_types.contains(&CardType::Creature));
             assert!(behavior.is_valid_target(&b.state, caster, &Target::Object(id), &b.registry) == theirs);
         }
         assert!(!behavior.is_valid_target(&b.state, caster, &Target::Player(PlayerId(1 - caster.0)), &b.registry));
