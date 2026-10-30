@@ -1041,6 +1041,21 @@ sits in memory. What was measured, and what the proofs do about each:
   and Civilized Scholar's proofs then passed in 109 to 228 seconds where
   they ran out of memory; Graveyard Shovel's and Creeping Renaissance's
   finish symbolic execution and still run out of memory in the solver.
+- **A B-tree followed.** A card's state was a `BTreeMap` in every build,
+  and a proof follows a B-tree's rebalancing: 57% of Divine Reckoning's
+  symbolic execution was in removing its kept ids. It is a `VecMap` in
+  the proofs (`CardState`), as the objects and counters already were.
+- **An entry moved as bytes.** `VecMap` shifted its entries with
+  `slice::swap`, which copies two values as bytes, eight at a time, and a
+  proof reading a key's string back from bytes so copied no longer knows
+  which allocation it points into: after an insertion out of key order,
+  every comparison of a key was of any string and every value any value.
+  Each entry is now read out and written back whole. Divine Reckoning's
+  stored list reads back as written, and its proofs where a player chooses
+  finish symbolic execution in 51 seconds (they still run out of memory in
+  the solver at 3.5 GB); its proof over a board of no creatures, listing
+  the battlefield by scanning it rather than through a list of references,
+  passed in 261 seconds.
 - **CBMC's memory checks.** `kani-bounded.py` leaves out CBMC's pointer,
   bounds and division checks (`--memory-checks` keeps them): that safe
   Rust reads only memory it may is the compiler's guarantee, and Rust's
