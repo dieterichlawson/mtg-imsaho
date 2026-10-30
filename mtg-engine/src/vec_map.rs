@@ -128,14 +128,14 @@ impl<K: Ord, V> VecMap<K, V> {
     // copy, of a length that depends on where `i` is; CBMC encodes a copy of
     // a length it leaves open over the whole buffer, and adding one counter
     // to an object ran it out of memory. One entry moved one place at a
-    // time is a swap of two known places at each step.
+    // time is an exchange of two known places at each step.
 
     /// As `Vec::insert(i, entry)`.
     fn insert_at(&mut self, i: usize, entry: (K, Box<V>)) {
         self.entries.push(entry);
         let mut j = self.entries.len() - 1;
         while j > i {
-            self.entries.swap(j - 1, j);
+            self.exchange(j - 1, j);
             j -= 1;
         }
     }
@@ -144,10 +144,31 @@ impl<K: Ord, V> VecMap<K, V> {
     fn remove_at(&mut self, i: usize) -> (K, Box<V>) {
         let mut j = i;
         while j + 1 < self.entries.len() {
-            self.entries.swap(j, j + 1);
+            self.exchange(j, j + 1);
             j += 1;
         }
         self.entries.pop().expect("an entry at i")
+    }
+
+    /// Exchange entries `a` and `b`, as `slice::swap`, each moved whole.
+    /// `slice::swap` copies the two as bytes, eight at a time, and a proof
+    /// that reads a key's string back from bytes copied so no longer knows
+    /// which allocation it points into: every comparison of a key after an
+    /// insertion out of order was then of any string, and every value read
+    /// of any value (Divine Reckoning's kept creatures, read back from the
+    /// card's state as a list of any length).
+    fn exchange(&mut self, a: usize, b: usize) {
+        assert!(a < b && b < self.entries.len());
+        let base = self.entries.as_mut_ptr();
+        // SAFETY: `a` and `b` are distinct indices in bounds of `entries`;
+        // each value is read out once and written back once, into the
+        // other's place, so none is dropped or duplicated.
+        unsafe {
+            let first = std::ptr::read(base.add(a));
+            let second = std::ptr::read(base.add(b));
+            std::ptr::write(base.add(a), second);
+            std::ptr::write(base.add(b), first);
+        }
     }
 
     /// Room for `additional` more entries without reallocating, as
