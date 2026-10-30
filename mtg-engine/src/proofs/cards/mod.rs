@@ -902,6 +902,17 @@ const LISTED: usize = 8;
 static mut LISTING_POOL: [[*const crate::state::GameObject; LISTED]; LISTINGS] = [[std::ptr::null(); LISTED]; LISTINGS];
 static mut LISTINGS_HANDED: usize = 0;
 
+/// Take the prompt down without dropping it, as a proof does that has
+/// checked what was asked and goes on as if it were answered. Assigning
+/// `None` drops the old prompt, and one that symbolic execution cannot
+/// tell from every other kind of question is dropped as each of them, a
+/// mana-funding plan's map and every list among them: Graveyard Shovel's
+/// proof ran out of memory in that drop. Freeing is nothing in a proof
+/// (`no_freeing`), so the board is left as dropping it would leave it.
+pub fn clear_prompt(state: &mut GameState) {
+    std::mem::forget(state.awaiting_action.take());
+}
+
 /// Stands in for the global allocator's freeing: nothing. A proof's memory
 /// lasts the proof, and freeing decides nothing a proof asserts; and the
 /// lists `objects_in_zone_in_id_order` hands out are static.

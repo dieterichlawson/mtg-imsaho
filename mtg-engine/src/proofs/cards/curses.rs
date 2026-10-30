@@ -176,7 +176,7 @@ card_proof! {
                 = &state.awaiting_action else { panic!("a question") };
             assert!(*player == controller && !*optional && *effect == damage);
             assert!(*options == [Target::Player(cursed), Target::Object(walker)]);
-            state.awaiting_action = None;
+            crate::proofs::cards::clear_prompt(&mut state);
         } else {
             assert!(asked_for(&[Act::Effect(Target::Player(cursed), damage)]));
         }

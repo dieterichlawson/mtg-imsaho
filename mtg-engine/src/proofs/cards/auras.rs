@@ -193,7 +193,7 @@ card_proof! {
             player, source, choice: ResolutionChoiceKind::YesNo { source_card, .. },
         }) if *player == you && *source == aura && *source_card == aura);
         assert!(asked && acted() == 0);
-        state.awaiting_action = None;
+        crate::proofs::cards::clear_prompt(&mut state);
         let yes: bool = kani::any();
         behavior.on_yes_no_choice(&mut state, aura, yes, &registry);
         if yes {

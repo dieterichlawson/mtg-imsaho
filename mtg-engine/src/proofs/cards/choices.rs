@@ -233,7 +233,7 @@ fn caravan_vigil_puts_the_land_into_your_hand_or_with_morbid_onto_the_battlefiel
         player, source, choice: ResolutionChoiceKind::YesNo { source_card, .. },
     }) if *player == you && *source == spell && *source_card == spell);
     assert!(asked && acted() == 0 && Snapshot::of(&state) == asking(&before, true));
-    state.awaiting_action = None;
+    crate::proofs::cards::clear_prompt(&mut state);
     let yes = way == 2;
     vigil.on_yes_no_choice(&mut state, spell, yes, &registry);
     let to = if yes { Zone::Battlefield } else { Zone::Hand };
@@ -438,7 +438,7 @@ fn divine_reckoning_keeps_one_creature_each_and_destroys_the_rest((active, shape
                 let Some((asked, offered)) = r.asked() else { panic!("a player with a choice is asked it") };
                 assert!(asked == player && offered == theirs && acted() == 0);
                 let chosen = theirs[usize::from(kani::any::<bool>()) % theirs.len()];
-                r.state.awaiting_action = None;
+                crate::proofs::cards::clear_prompt(&mut r.state);
                 r.registry.get(r.card).expect("registered").resolve_card_effect(&mut r.state, spell, "", &Target::Object(chosen), &r.registry);
                 kept.push(chosen);
             }

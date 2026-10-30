@@ -361,7 +361,7 @@ card_proof! {
         }) if *player == you && *source == me && *source_card == me);
         assert!(asked && acted() == 0);
         assert!(state.get_object(me).expect("on the board").card_state.get("curse_target") == Some(&ObjectId(u64::from(p.0))));
-        state.awaiting_action = None;
+        crate::proofs::cards::clear_prompt(&mut state);
         let yes: bool = kani::any();
         witch.on_yes_no_choice(&mut state, me, yes, &registry);
         if !yes {

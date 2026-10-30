@@ -171,7 +171,7 @@ fn mentor_of_the_meek_draws_for_a_small_creature_if_you_pay(yes: bool) {
         player, source, choice: ResolutionChoiceKind::YesNo { source_card, .. },
     }) if *player == b.you && *source == b.me && *source_card == b.me);
     assert!(asked && acted() == 0);
-    b.state.awaiting_action = None;
+    crate::proofs::cards::clear_prompt(&mut b.state);
     assert!(Snapshot::of(&b.state) == before);
     b.registry.get(card).expect("registered").on_yes_no_choice(&mut b.state, b.me, yes, &b.registry);
     let one = ManaCost::new(vec![ManaSymbol::Generic(1)]);

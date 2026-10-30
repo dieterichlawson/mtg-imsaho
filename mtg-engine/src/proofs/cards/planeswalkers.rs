@@ -263,7 +263,7 @@ card_proof! {
                 }) if *player == you && *source == b.me && *source_id == b.me
                     && options.len() == 2 && options[0] == Target::Object(creatures[0]) && options[1] == Target::Object(creatures[1]));
                 assert!(asked && acted() == 0);
-                b.state.awaiting_action = None;
+                crate::proofs::cards::clear_prompt(&mut b.state);
                 let chosen = creatures[usize::from(kani::any::<bool>())];
                 let card = b.card();
                 b.registry.get(card).expect("registered").resolve_card_effect(&mut b.state, b.me, "", &Target::Object(chosen), &b.registry);
@@ -365,7 +365,7 @@ card_proof! {
                 },
             }) if *player == p && *from == p && *source == me && *cards == hand);
             assert!(asked && acted() == 0);
-            state.awaiting_action = None;
+            crate::proofs::cards::clear_prompt(&mut state);
             let card = hand[usize::from(kani::any::<bool>())];
             liliana.on_discard_choice(&mut state, me, card, &registry);
             chosen.push(card);

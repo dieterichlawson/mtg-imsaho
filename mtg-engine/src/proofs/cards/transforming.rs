@@ -83,7 +83,7 @@ impl Board {
 
     /// The answer to the question, after it was asked.
     fn answer(&mut self, yes: bool) {
-        self.state.awaiting_action = None;
+        crate::proofs::cards::clear_prompt(&mut self.state);
         let card = self.card();
         self.registry.get(card).expect("registered").on_yes_no_choice(&mut self.state, self.me, yes, &self.registry);
     }
@@ -409,7 +409,7 @@ fn civilized_scholar_draws_discards_and_transforms_on_a_creature((in_library, in
             }) if *player == b.you && *source == b.me && *chooser == b.you && *cards == hand);
             assert!(asked && acted() == 1);
             let discarded = hand[usize::from(kani::any::<bool>())];
-            b.state.awaiting_action = None;
+            crate::proofs::cards::clear_prompt(&mut b.state);
             b.registry.get(card).expect("registered").on_discard_choice(&mut b.state, b.me, discarded, &b.registry);
             if creature_card(discarded) {
                 assert!(asked_for(&[Act::Draw(b.you, 1), Act::Untap(b.me), Act::Transform(b.me)]));

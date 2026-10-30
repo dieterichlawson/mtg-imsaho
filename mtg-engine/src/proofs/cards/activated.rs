@@ -1501,7 +1501,7 @@ card_proof! {
                 }) if *player == p && *source == b.me && *source_id == b.me
                     && options.len() == 2 && options[0] == Target::Object(cards[0]) && options[1] == Target::Object(cards[1]));
                 assert!(asked && acted() == 0);
-                b.state.awaiting_action = None;
+                crate::proofs::cards::clear_prompt(&mut b.state);
                 let chosen = cards[usize::from(kani::any::<bool>())];
                 let card = b.card();
                 b.registry.get(card).expect("registered").resolve_card_effect(&mut b.state, b.me, "", &Target::Object(chosen), &b.registry);

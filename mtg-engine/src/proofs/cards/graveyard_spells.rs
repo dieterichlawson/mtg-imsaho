@@ -65,7 +65,7 @@ card_proof! {
         }) if *source == spell && options.len() == 5 && options[0] == "Creature" && options[1] == "Artifact"
             && options[2] == "Enchantment" && options[3] == "Land" && options[4] == "Planeswalker");
         assert!(asked && acted() == 0);
-        state.awaiting_action = None;
+        crate::proofs::cards::clear_prompt(&mut state);
         let land: bool = kani::any();
         let (name, kind) = if land { ("Land", CardType::Land) } else { ("Creature", CardType::Creature) };
         registry.get(card).expect("registered").on_card_type_choice(&mut state, spell, name, &registry);
@@ -151,7 +151,7 @@ fn murder_of_crows_may_draw_then_discards(case: u8) {
         player, source, choice: ResolutionChoiceKind::YesNo { source_card, .. },
     }) if *player == you && *source == me && *source_card == me);
     assert!(asked && acted() == 0);
-    state.awaiting_action = None;
+    crate::proofs::cards::clear_prompt(&mut state);
     let yes: bool = kani::any();
     behavior.on_yes_no_choice(&mut state, me, yes, &registry);
     let hand = picked(&state.objects_in_zone(Zone::Hand, you), |o| Some(o.id));
