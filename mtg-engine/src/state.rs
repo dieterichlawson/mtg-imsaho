@@ -168,6 +168,17 @@ pub type CounterMap = std::collections::BTreeMap<crate::types::CounterType, u32>
 #[cfg(kani)]
 pub type CounterMap = crate::kind_map::KindMap<crate::types::CounterType>;
 
+/// What a card keeps on its object (`GameObject::card_state`): a
+/// `BTreeMap`, except in the proofs, which keep it as a vector in key order
+/// (`crate::vec_map` says why: a proof follows a B-tree's rebalancing, and
+/// Divine Reckoning's, clearing the ids it kept, ran out of memory in it).
+/// The engine asks it for `get`, `insert`, `remove`, `len`, `is_empty` and
+/// `clear`.
+#[cfg(not(kani))]
+pub type CardState = std::collections::BTreeMap<String, ObjectId>;
+#[cfg(kani)]
+pub type CardState = crate::vec_map::VecMap<String, ObjectId>;
+
 /// The complete, immutable game state. Clone to produce new states.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameState {
@@ -805,7 +816,7 @@ impl GameState {
             cast_from_zone: None,
             instance_oracle_text: None,
             instance_continuous_effects: None,
-            card_state: std::collections::BTreeMap::new(),
+            card_state: CardState::new(),
             counters: CounterMap::new(),
             regeneration_shields: 0,
             is_transformed: false,
@@ -1109,9 +1120,13 @@ impl GameState {
             // — written afterwards it is one step too late, and everything
             // that reads the token's P/T as it enters reads 0/0 instead
             // (issue #505).
-            card_state: pt_defined_by.map_or_else(
-                std::collections::BTreeMap::new,
-                |src| std::iter::once((crate::cards::PT_DEFINED_BY.to_string(), src)).collect()),
+            card_state: {
+                let mut card_state = CardState::new();
+                if let Some(src) = pt_defined_by {
+                    card_state.insert(crate::cards::PT_DEFINED_BY.to_string(), src);
+                }
+                card_state
+            },
             counters: CounterMap::new(),
             regeneration_shields: 0,
             // CR 707.8a: a copy of a permanent with its back face up shows
@@ -4365,7 +4380,7 @@ pub struct GameObject {
     /// Card-specific persistent state (e.g., Fiend Hunter stores the exiled creature ID).
     /// Keyed by purpose string, value is an `ObjectId`.
     #[serde(default)]
-    pub card_state: std::collections::BTreeMap<String, ObjectId>,
+    pub card_state: CardState,
 
     /// Counters on this permanent (+1/+1, -1/-1, etc.).
     pub counters: CounterMap,
