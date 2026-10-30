@@ -1056,6 +1056,15 @@ sits in memory. What was measured, and what the proofs do about each:
   the solver at 3.5 GB); its proof over a board of no creatures, listing
   the battlefield by scanning it rather than through a list of references,
   passed in 261 seconds.
+- **A sort walked.** The standard sort (driftsort, its runs and its
+  networks of copies) is walked for every length the list might be.
+  The payment proofs were still in symbolic execution after an hour in
+  `greedy_autotap`'s sort of a handful of pips and sources; a stable
+  insertion sort, each key computed once, gives the same order, and they
+  finish symbolic execution in about 70 seconds (and run out of memory in
+  the solver at 3.5 GB). A proof's own sort of ids already in order
+  (Kessig Cagebreakers', 15 minutes and still walking) is an assertion
+  of the order instead.
 - **CBMC's memory checks.** `kani-bounded.py` leaves out CBMC's pointer,
   bounds and division checks (`--memory-checks` keeps them): that safe
   Rust reads only memory it may is the compiler's guarantee, and Rust's
