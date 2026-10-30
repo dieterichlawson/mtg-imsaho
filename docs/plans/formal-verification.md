@@ -1032,6 +1032,15 @@ sits in memory. What was measured, and what the proofs do about each:
   memory. A card that builds the effect where it prints it (the pool's
   cards all do) gives a constant; those four proofs passed in 34 to 39
   seconds.
+- **A prompt dropped.** A card proof that had checked a prompt and went
+  on as if it were answered cleared it by assigning `None`, which drops
+  the old prompt; one symbolic execution cannot tell from every other
+  kind of question is dropped as each of them, a mana-funding plan's
+  B-tree map among them. `clear_prompt` takes it out and forgets it
+  (freeing is nothing in a proof). Cloistered Youth's, Thraben Sentry's
+  and Civilized Scholar's proofs then passed in 109 to 228 seconds where
+  they ran out of memory; Graveyard Shovel's and Creeping Renaissance's
+  finish symbolic execution and still run out of memory in the solver.
 - **CBMC's memory checks.** `kani-bounded.py` leaves out CBMC's pointer,
   bounds and division checks (`--memory-checks` keeps them): that safe
   Rust reads only memory it may is the compiler's guarantee, and Rust's
