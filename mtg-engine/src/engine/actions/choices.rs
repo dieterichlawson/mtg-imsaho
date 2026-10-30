@@ -484,10 +484,21 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     };
                     state.log(LogLevel::Event,
                         format!("{} names \"{chosen_name}\"", state.obj_name(*source_id)));
-                    // Store the restriction as an instance continuous effect on the source.
-                    if let Some(obj) = state.get_object_mut(*source_id) {
-                        let effect = ContinuousEffect::PreventCastingNamed { name: chosen_name };
-                        obj.instance_continuous_effects = Some(vec![effect]);
+                    // Store the restriction as an instance continuous effect on
+                    // the source, found by a scan of the objects rather than
+                    // looked up by its id. A proof reads the id back out of the
+                    // prompt as one it cannot pin down, and a lookup by such an
+                    // id hands back a reference that may be to no object at
+                    // all: through it the effects the assignment replaces are
+                    // any value, and dropping them went into every variant of
+                    // every effect (Nevermore's proof, out of memory). An
+                    // object the scan hands out is one that exists.
+                    for obj in state.objects.values_mut() {
+                        if obj.id == *source_id {
+                            let effect = ContinuousEffect::PreventCastingNamed { name: chosen_name };
+                            obj.instance_continuous_effects = Some(vec![effect]);
+                            break;
+                        }
                     }
                 }
                 // X-cost funding resolution: rules-strict atomic cast.
