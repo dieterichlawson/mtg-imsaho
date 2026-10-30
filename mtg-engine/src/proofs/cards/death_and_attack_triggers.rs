@@ -109,12 +109,16 @@ impl Board {
     /// The creature cards in `you`'s graveyard but the card's own (CR
     /// 404.1, a graveyard is its owner's).
     fn creature_cards_in_your_graveyard(&self) -> Vec<ObjectId> {
-        let mut graveyard: Vec<ObjectId> = self.those(|o| {
+        let graveyard: Vec<ObjectId> = self.those(|o| {
             o.zone == Zone::Graveyard && o.owner == self.you && !o.is_token && o.card_types.contains(&CardType::Creature)
         });
         // In the graveyard's order (CR 404.2), which `any_object` made the
-        // order of creation.
-        graveyard.sort();
+        // order of creation: the others are made one after the other, so
+        // kept in their order they are in id order already. Checked, not
+        // sorted: a proof walks the standard sort's networks of copies for
+        // every length the list might be (Kessig Cagebreakers' proof was
+        // still in symbolic execution there after fifteen minutes).
+        assert!(graveyard.windows(2).all(|w| w[0] < w[1]), "the others are made in id order");
         graveyard
     }
 
