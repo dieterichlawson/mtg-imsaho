@@ -1024,6 +1024,14 @@ sits in memory. What was measured, and what the proofs do about each:
   41 seconds. With players offered as well (any target, player or
   planeswalker) the list is pushed at a place of every value up to four,
   and those two still run out of memory in the solver at 3.5 GB.
+- **An effect held and cloned.** The scope proofs' card held its
+  continuous effect and cloned it into its card data. The clone's kind
+  came back exact and its scope did not: protection from Zombies,
+  printed on itself, was matched against every filter tree the scope
+  might have been, and it and "Spirit creatures you control" ran out of
+  memory. A card that builds the effect where it prints it (the pool's
+  cards all do) gives a constant; those four proofs passed in 34 to 39
+  seconds.
 - **CBMC's memory checks.** `kani-bounded.py` leaves out CBMC's pointer,
   bounds and division checks (`--memory-checks` keeps them): that safe
   Rust reads only memory it may is the compiler's guarantee, and Rust's
