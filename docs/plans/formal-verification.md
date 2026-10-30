@@ -1065,6 +1065,19 @@ sits in memory. What was measured, and what the proofs do about each:
   the solver at 3.5 GB). A proof's own sort of ids already in order
   (Kessig Cagebreakers', 15 minutes and still walking) is an assertion
   of the order instead.
+- **An object looked up by an id read back from a prompt.** A choice
+  that is a narrow variant of a union wider than 1024 bits is written as
+  that member (`precise-enums.py` says why), so the prompt holding it is
+  not propagated, and every field read back out of it is one symbolic
+  execution cannot pin down: Nevermore's object id among them. A lookup
+  by such an id hands back a reference that is to the object on one path
+  and null on the other, a read through it is the object's field or an
+  unconstrained one's, and assigning the chosen name over the object's
+  old effects dropped those as any value, every variant of every effect
+  and filter. The handler finds the object by scanning the objects (a
+  reference the scan hands out is to one that exists), and Nevermore's
+  six proofs pass in 148 to 171 seconds, where they ran out of memory in
+  symbolic execution.
 - **CBMC's memory checks.** `kani-bounded.py` leaves out CBMC's pointer,
   bounds and division checks (`--memory-checks` keeps them): that safe
   Rust reads only memory it may is the compiler's guarantee, and Rust's
