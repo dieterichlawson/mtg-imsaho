@@ -563,6 +563,14 @@ random game happened to reach.
   back to the last `view`, never to a pack it invented. Also the game
   link: the URL the draft page shows must be the one the game page
   answers on, on the `--bind` address, not on loopback
+  [2026-10-30] The page matches the view (635 comparisons, three tables),
+  timers survive reloads, refusals fall back to the server's pack. Found:
+  the link names the advertised address, not the host the page was opened
+  on, so a tunnel gets a LAN URL (#969); a pick racing the timer is refused
+  in internal pack ids (#970). Test a "tunnel" by forwarding a loopback port
+  to the `--bind` address and comparing the shown link with
+  `location.host`. Under the sandbox proxy, unset `HTTPS_PROXY` in the
+  driver or Chromium's `ws://` to a non-loopback address gets a 502.
 - G29 [proposed 2026-10-10, from the R1 sweep, #752/#753 and #758] the page's
   `f` against the CLI's auto-pass, clause by clause. Each auto-pass fix has
   copied only the stop it was filed about, so `autoPassStop` in `mtg-gui/src/`
