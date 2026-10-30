@@ -122,6 +122,14 @@ random game happened to reach.
   engine dedups by name (a second copy of the same spell, an ability offered
   once for two identical sources) and what the page owes the copies it draws.
   #512 is the CLI's version of the same question.
+  [2026-10-30] Hand, attack, block, sacrifice and target copies all hold
+  (G25's row). **The graveyard does not**: the engine collapses identical
+  untargeted flashbacks (`casting.rs:483`), the borrowing walks only
+  `your_hand`, so two of three Think Twice answer no click (#968). Any zone
+  the page draws per card while the engine offers per name is this bug —
+  look for the next one (an ability offered once for two identical sources
+  on the battlefield). Wait ~250 ms after `mtg.decision` before reading
+  `mtg.hits`, or you read the previous frame's.
 
 - G25 [proposed 2026-09-22, from #572 and #573, both found by a person at the
   page and neither by a night] the copies, by hand: gw-humans against
