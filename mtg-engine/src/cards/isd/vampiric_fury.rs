@@ -31,11 +31,14 @@ impl CardBehavior for VampiricFury {
         // permanent's static ability, which picks up newcomers) and a pump
         // spell (which does not) — so the creatures are snapshotted here rather
         // than matched by a live filter every time P/T is computed.
-        let vampires: Vec<_> = state.creatures_controlled_snapshot(controller, registry)
-            .into_iter()
-            .filter(|&id| state.has_subtype(id, "Vampire", registry))
-            .collect();
-        for id in vampires {
+        //
+        // Each Vampire of that set in a loop, not a filter collected, as
+        // Bitterheart Witch searches (a proof walks a filter's inner `find`
+        // again for each item collected).
+        for id in state.creatures_controlled_snapshot(controller, registry) {
+            if !state.has_subtype(id, "Vampire", registry) {
+                continue;
+            }
             state.until_end_of_turn.push(crate::state::TemporaryEffect::ModifyPT {
                 target: id, power_mod: 2, toughness_mod: 0,
             });
