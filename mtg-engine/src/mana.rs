@@ -97,6 +97,24 @@ fn hand_demand_score(source: &ManaSource, hand_demand: &PerColor) -> u32 {
     score
 }
 
+/// `v.sort_by_key(key)`: stable, so entries with equal keys keep their
+/// order, each key computed once. An insertion sort, for the handful of
+/// pips and sources a payment orders: the standard sort's runs and
+/// networks of copies are what a proof of a payment spent its time in, and
+/// it was still in symbolic execution after an hour
+/// (`proofs::actions::paying`).
+fn sort_by_key_stable<T, K: Ord>(v: &mut [T], key: impl FnMut(&T) -> K) {
+    let mut keys: Vec<K> = v.iter().map(key).collect();
+    for i in 1..v.len() {
+        let mut j = i;
+        while j > 0 && keys[j - 1] > keys[j] {
+            keys.swap(j - 1, j);
+            v.swap(j - 1, j);
+            j -= 1;
+        }
+    }
+}
+
 /// Composite sort key for source priority: (opportunity cost tier, flexibility, hand demand).
 /// Lower = prefer tapping first. Within a tier, mono-color sources are preferred over
 /// dual/multi-color (to preserve flexibility), and sources whose colors are less demanded
@@ -593,7 +611,7 @@ fn greedy_autotap(
     // Phase 2: Satisfy colored requirements (most-constrained color first).
     // Sort colored needs by scarcity: colors with fewest available sources first.
     let mut colored_needs = remaining.colored.clone();
-    colored_needs.sort_by_key(|&color| {
+    sort_by_key_stable(&mut colored_needs, |&color| {
         available.iter()
             .filter(|&&src_idx| can_produce_color(&sources[src_idx], color))
             .count()
@@ -617,7 +635,7 @@ fn greedy_autotap(
                     .map(|ability| (ability_cost(ability), source_sort_key(&sources[src_idx], &hand_demand), src_idx)))
                 .collect();
             // Stable, so equal keys keep the order the sources were given.
-            can.sort_by_key(|&(cost, key, _)| (cost, key));
+            sort_by_key_stable(&mut can, |&(cost, key, _)| (cost, key));
             can.into_iter().map(|(_, _, src_idx)| src_idx).collect()
         })
         .collect();
