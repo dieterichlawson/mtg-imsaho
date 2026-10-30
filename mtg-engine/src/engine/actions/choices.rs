@@ -411,36 +411,32 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                         return Applied::ReturnNow;
                     }
                     // Controller has divided permanents into two piles.
-                    // pile_1 = the chosen subset, pile_2 = the rest.
+                    // pile_1 = the chosen subset, pile_2 = the rest, in the
+                    // order offered: a loop, not a filter collected
+                    // (`engine::targeting`'s `push_battlefield_targets` says
+                    // why).
                     let pile_1: Vec<ObjectId> = pile_1_ids.clone();
-                    let pile_2: Vec<ObjectId> = permanents.iter()
-                        .filter(|id| !pile_1_ids.contains(id))
-                        .copied()
-                        .collect();
+                    let mut pile_2: Vec<ObjectId> = Vec::new();
+                    for id in permanents.iter() {
+                        if !pile_1_ids.contains(id) {
+                            pile_2.push(*id);
+                        }
+                    }
 
                     // Log the division.
-                    let pile_1_names: Vec<String> = pile_1.iter()
-                        .map(|id| state.obj_name(*id))
-                        .collect();
-                    let pile_2_names: Vec<String> = pile_2.iter()
-                        .map(|id| state.obj_name(*id))
-                        .collect();
                     state.log(LogLevel::Event,
                         format!("{}: Pile A: [{}], Pile B: [{}]",
-                            state.obj_name(*source_id),
-                            if pile_1_names.is_empty() { "empty".into() } else { pile_1_names.join(", ") },
-                            if pile_2_names.is_empty() { "empty".into() } else { pile_2_names.join(", ") }));
+                            state.obj_name(*source_id), PileNames(state, &pile_1), PileNames(state, &pile_2)));
 
                     // Now the target player chooses which pile to sacrifice.
+                    let description = format!(
+                        "{}: Choose a pile to sacrifice.\nPile A: [{}]\nPile B: [{}]",
+                        state.obj_name(*source_id), PileNames(state, &pile_1), PileNames(state, &pile_2));
                     state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
                         player: *target_player,
                         source: *source_id,
                         choice: ResolutionChoiceKind::ChoosePile {
-                            description: format!(
-                                "{}: Choose a pile to sacrifice.\nPile A: [{}]\nPile B: [{}]",
-                                state.obj_name(*source_id),
-                                if pile_1_names.is_empty() { "empty".into() } else { pile_1_names.join(", ") },
-                                if pile_2_names.is_empty() { "empty".into() } else { pile_2_names.join(", ") }),
+                            description,
                             pile_1,
                             pile_2,
                             source_id: *source_id,
@@ -937,6 +933,27 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
         state.resolving_ability = None;
     }
     Applied::Continue
+}
+
+/// A pile's permanents by name, joined with ", ", or "empty": written
+/// only when the line or the prompt's text is. Joined first, the names were
+/// strings built for every permanent of each pile, twice, which a proof of
+/// Liliana of the Veil's piles followed name by name.
+struct PileNames<'a>(&'a GameState, &'a [ObjectId]);
+
+impl std::fmt::Display for PileNames<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.1.is_empty() {
+            return f.write_str("empty");
+        }
+        for (i, id) in self.1.iter().enumerate() {
+            if i > 0 {
+                f.write_str(", ")?;
+            }
+            f.write_str(&self.0.obj_name(*id))?;
+        }
+        Ok(())
+    }
 }
 
 /// Whether `order` lists each of `0..n` exactly once — what a whole-order
