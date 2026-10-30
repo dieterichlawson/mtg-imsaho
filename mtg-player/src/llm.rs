@@ -989,7 +989,7 @@ const PASS_UNTIL_RULES: &str = r#"
 
 ## Pass until something happens
 
-Every priority offer has one more row, right after `Pass`: `1: Pass until something happens`, with the engine's rows after it numbered from 2. It is the way a person says "go", and the usual way to pass: answer it whenever you would answer `Pass` again at the next offer, and keep plain `Pass` for a window you mean to use later this turn (an instant at the end step). It passes now and keeps passing later priority offers for you, unasked, until something of the opponent's is put on the stack; a blocker is declared against your attacker; the opponent attacks you and blocks are in (your window after blocks); your next first main phase; a later main phase of yours with a land drop or a sorcery-speed cast or activation on offer; or, once the opponent has put something on the stack since you said go, any prompt that is not a plain priority pass (combat declarations, targets and choices are always asked, except an attack you named in your first main phase). After you declare attackers you pass this way too, until a block or your second main phase. You are never asked to respond to your own spell or ability while only yours are on the stack. When it stops, the next prompt says why in one line, e.g. `After 6 priority offers passed for you unasked, the pass stopped: Grizzly Bears (the opponent's) is on the stack.`"#;
+Every priority offer has one more row, right after `Pass`: `1: Pass until something happens`, with the engine's rows after it numbered from 2. It is the way a person says "go", and the usual way to pass: answer it whenever you would answer `Pass` again at the next offer, and keep plain `Pass` for a window you mean to use later this turn (an instant at the end step). It passes now and keeps passing later priority offers for you, unasked, until something of the opponent's is put on the stack; a blocker is declared against your attacker; the opponent attacks you and blocks are in (your window after blocks); your next first main phase (or the first offer after it, if it had nothing on offer and went by); a later main phase of yours with a land drop or a sorcery-speed cast or activation on offer; or, once the opponent has put something on the stack since you said go, any prompt that is not a plain priority pass (combat declarations, targets and choices are always asked, except an attack you named in your first main phase). After you declare attackers you pass this way too, until a block or your second main phase. You are never asked to respond to your own spell or ability while only yours are on the stack. When it stops, the next prompt says why in one line, e.g. `After 6 priority offers passed for you unasked, the pass stopped: Grizzly Bears (the opponent's) is on the stack.`"#;
 
 /// The seat said "go": it is passing every plain priority offer without a
 /// model call until something it would want to see happens. What it was
@@ -6259,6 +6259,8 @@ impl LlmPlayer {
     ///   activation is on offer. A second main phase with nothing
     ///   to do at sorcery speed is not a decision: an instant can be cast
     ///   at the next stop as well;
+    /// - the first offer after that first main phase, when it had nothing
+    ///   on offer and the engine passed it without asking (#972);
     /// - no Pass on the menu, which is not a priority offer at all.
     ///
     /// The seat's own turn beginning used to stop it too, and was a model
@@ -6334,6 +6336,23 @@ impl LlmPlayer {
             if let Some(ab) = legal.activatable_abilities.iter().find(|ab| ab.sorcery_speed) {
                 return Some(format!("you could activate {} ({}) at sorcery speed", ab.name, ab.description));
             }
+        }
+        // The first main phase it passes towards, gone by unasked: one with
+        // nothing on offer is passed by the engine (or as an observed pass,
+        // #956), and the pass ran on into the next turn (#972). The first
+        // offer after it is the stop — later that turn, or on the
+        // opponent's turn after it (two players alternate: the turn before
+        // theirs was the seat's).
+        let before_main = |step: Step| matches!(step, Step::Untap | Step::Upkeep | Step::Draw);
+        let this_turns = mode.our_turn && before_main(mode.step);
+        let went_by = if our_turn {
+            !before_main(view.step) && (view.turn_number > mode.turn || (this_turns && view.turn_number == mode.turn))
+        } else {
+            let prev = view.turn_number.saturating_sub(1);
+            prev > mode.turn || (this_turns && prev == mode.turn)
+        };
+        if went_by {
+            return Some("your first main phase went by with nothing to do in it".to_string());
         }
         None
     }
@@ -6858,8 +6877,12 @@ from your hand to put on the bottom of your library.\n\
         // model call that came back "pass" (reports/llm-cost.md, phase 3).
         let action = self.decide_combat_prompt(view, prompt);
         // Attackers declared, the seat waits for blocks as a person does.
+        // A pass-until from an earlier turn is replaced: this turn's first
+        // main phase is behind the seat, which was just asked, and its "went
+        // by" stop would fire at the next offer with a reason that is not
+        // so (#972's review).
         if self.offer_pass_until && matches!(prompt, CombatPrompt::ChooseAttackers { .. })
-            && self.pass_until.is_none()
+            && self.pass_until.as_ref().map_or(true, |m| m.turn != view.turn_number)
         {
             let mode = PassUntil::engaged_at(view);
             self.log("AUTO_PASS", &format!("engaged at {} after declaring attackers: passing until a block or your second main phase", mode.since()));
@@ -7483,6 +7506,7 @@ pub(crate) mod tests {
             "a blocker is declared against your attacker",
             "the opponent attacks you and blocks are in",
             "your next first main phase",
+            "the first offer after it, if it had nothing on offer and went by",
             "a later main phase of yours with a land drop or a sorcery-speed cast or activation on offer",
             "any prompt that is not a plain priority pass",
             "After you declare attackers you pass this way too",

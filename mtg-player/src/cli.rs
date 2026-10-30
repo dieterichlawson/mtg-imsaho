@@ -590,6 +590,10 @@ enum BreakReason {
     Blocked,
     /// Your own postcombat main, for removal on damaged creatures.
     YourPostcombatMain,
+    /// The Main Phase 1 auto-pass was passing towards went by unseen (a
+    /// pass-only one, which the engine or the menu passes): the first
+    /// priority after it (#972).
+    TargetMainPassed,
 }
 
 impl BreakReason {
@@ -612,6 +616,8 @@ impl BreakReason {
             BreakReason::YourPostcombatMain =>
                 "your postcombat main phase, a stop auto-pass always honours. \
                  Pass with 0 to move on",
+            BreakReason::TargetMainPassed =>
+                "the Main Phase 1 auto-pass passes towards behind it — there is nothing left to skip",
         }
     }
 }
@@ -1431,6 +1437,19 @@ impl CliPlayer {
                 // OWN postcombat main, not the opponent's.
                 if our_turn && view.step == Step::PostcombatMain {
                     return Some(BreakReason::YourPostcombatMain);
+                }
+
+                // The target Main Phase 1 went by without a menu: one with
+                // only Pass on offer is passed by the engine, or by this
+                // seat, and auto-pass ran on into the next turn passing what
+                // it would have shown (#972). The first priority after it
+                // ends it — later that turn, or on the opponent's turn after
+                // it (two players alternate: the turn before theirs was ours).
+                let before_main = matches!(view.step, Step::Untap | Step::Upkeep | Step::Draw);
+                let prev = view.turn_number.saturating_sub(1);
+                let ours_went_by = prev > *activated_turn || (*before_our_main && prev == *activated_turn);
+                if (our_turn && reached_target_turn && !before_main) || (!our_turn && ours_went_by) {
+                    return Some(BreakReason::TargetMainPassed);
                 }
 
                 None
@@ -8954,6 +8973,10 @@ impl CliPlayer {
         let only_pass_concede = legal_actions.iter().all(|a| matches!(a,
             Action::PassPriority | Action::Concede
         ));
+        // Pass mode's stops are not asked here: the engine shows a pass-only
+        // menu only when something observes every submit, and passes it
+        // otherwise. A target Main Phase 1 that goes by this way ends it at
+        // the next menu (`BreakReason::TargetMainPassed`, #972).
         if only_pass_concede && has_pass {
             return Action::PassPriority;
         }
@@ -11721,6 +11744,26 @@ Wolves or Werewolves is prevented".into()];
         let v = view(Step::PrecombatMain, 9, true);
         assert_eq!(CliPlayer::should_break_pass(&v, &pass_concede_plus(vec![]), &mode),
             Some(BreakReason::TargetMainPhase));
+    }
+
+    // A target Main Phase 1 that went by unseen (pass-only, passed by the
+    // engine) ends auto-pass at the next priority: it ran on into the
+    // following turn (#972).
+    #[test]
+    fn an_unseen_target_main_phase_still_ends_the_pass() {
+        // f on the opponent's turn 8; our turn 9's main phase was never shown.
+        let mode = CliPlayer::new_pass_mode(&view(Step::EndStep, 8, false));
+        let nothing = pass_concede_plus(vec![]);
+        assert_eq!(CliPlayer::should_break_pass(&view(Step::Upkeep, 9, true), &nothing, &mode), None);
+        assert_eq!(CliPlayer::should_break_pass(&view(Step::EndStep, 9, true), &nothing, &mode),
+            Some(BreakReason::TargetMainPassed));
+        assert_eq!(CliPlayer::should_break_pass(&view(Step::EndStep, 10, false), &nothing, &mode),
+            Some(BreakReason::TargetMainPassed));
+        // f at our own main phase: the opponent's next turn is on the way.
+        let mode = CliPlayer::new_pass_mode(&view(Step::PrecombatMain, 6, true));
+        assert_eq!(CliPlayer::should_break_pass(&view(Step::EndStep, 7, false), &nothing, &mode), None);
+        assert_eq!(CliPlayer::should_break_pass(&view(Step::EndStep, 9, false), &nothing, &mode),
+            Some(BreakReason::TargetMainPassed));
     }
 
     // 'f' pressed AT our Main Phase 1 is a deliberate skip of the rest of

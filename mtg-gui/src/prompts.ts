@@ -249,6 +249,14 @@ export function autoPassStop(view: GameView, actions: Action[], sinceTurn: numbe
   // YourPostcombatMain and the LLM seat's pass-until both keep it, and `f` at
   // your Main Phase 1 passed it and the whole of the opponent's turn (#758).
   if (ourTurn && view.step === "PostcombatMain") return "your postcombat main phase.";
+  // A Main Phase 1 with nothing to do is passed without the page seeing it
+  // (the engine's own pass, or the page's pass-only short-circuit), and
+  // auto-pass then ran on into the next turn, passing what it would have
+  // shown (#972). The first priority after it is the stop instead: later in
+  // that turn, or on the opponent's turn after it (two players alternate,
+  // so the turn before theirs was yours).
+  const beforeMain = view.step === "Untap" || view.step === "Upkeep" || view.step === "Draw";
+  if ((ourTurn && reached && !beforeMain) || (!ourTurn && view.turn_number - 1 > sinceTurn)) return "your main phase went by.";
   return null;
 }
 

@@ -637,6 +637,34 @@ async function main() {
           }
         }
       }
+      // A pass-only Main Phase 1 is answered unseen, and auto-pass ran on
+      // past it into the next turn, passing what it would have shown (#972).
+      // The next priority it is shown ends it, on the opponent's turn too.
+      {
+        const res = await page.evaluate((seq) => {
+          const m = window.mtg, v = m.view;
+          const was = { turn: v.turn_number, step: v.step, active: v.active_player, stack: v.stack };
+          m.stopAtPass = false;
+          m.autoPass = { sinceTurn: was.turn, declined: 0 };
+          const menu = (actions, context) => ({ actions, combat_prompt: null, castable_spells: [], activatable_abilities: [], context, resolution_prompt: null, set_prompt: null });
+          const n0 = window.mtgDebug.sent.length;
+          Object.assign(v, { turn_number: was.turn + 1, step: "PrecombatMain", active_player: v.you, stack: [] });
+          window.mtgDebug.message({ type: "decision", seq, view: v, combat: null, legal: menu(["PassPriority", "Concede"], null) });
+          const afterMain = { autoPass: m.autoPass, sent: window.mtgDebug.sent.length - n0 };
+          const cast = { CastSpell: { object_id: m.view.your_hand.length ? m.view.your_hand[0].object_id : 1, targets: [], sacrifice: null, exile_count: null, exile_ids: [], alternative_cost: null, tap_plan: [] } };
+          Object.assign(v, { turn_number: was.turn + 2, step: "EndStep", active_player: 1 - v.you });
+          window.mtgDebug.message({ type: "decision", seq: seq + 1, view: v, combat: null, legal: menu(["PassPriority", "Concede", cast], "END STEP") });
+          const out = { afterMain, autoPass: m.autoPass, notice: m.notice, mode: m.ui && m.ui.mode };
+          Object.assign(v, { turn_number: was.turn, step: was.step, active_player: was.active, stack: was.stack });
+          m.autoPass = null;
+          return out;
+        }, seq + 550);
+        if (res.afterMain.sent !== 1) fail(`f-main-went-by: the pass-only main was not passed unseen (${JSON.stringify(res)})`);
+        else if (res.autoPass) fail(`f-main-went-by: auto-pass still on the turn after (${JSON.stringify(res)})`);
+        else if (!(res.notice || "").startsWith("Auto-pass off: your main phase went by.")) fail(`f-main-went-by: notice ${JSON.stringify(res.notice)}`);
+        else if (res.mode !== "menu") fail(`f-main-went-by: the priority is not shown (${JSON.stringify(res)})`);
+        else ok("f-main-went-by → " + res.notice);
+      }
       // A double-click on Pass that straddles the next decision passes once
       // (#806): the second click would answer a question nobody saw drawn.
       const passMenu = legal({ context: "MAIN PHASE 1", actions: ["PassPriority", "Concede"] });

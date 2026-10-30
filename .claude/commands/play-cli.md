@@ -144,7 +144,7 @@ Two different things pass for you, and they stop at different places.
 **`f` (auto-pass mode)** then passes the windows that are left, until your next Main Phase 1. It stops early only for these, and nothing else:
 
 - a **land play** on offer — once per turn and free, never passed;
-- your **next Main Phase 1**, which is where it was going;
+- your **next Main Phase 1**, which is where it was going — or, when that main phase offered nothing and the engine passed it, the first window after it (later that turn, or on the opponent's next turn);
 - an action of yours — a **cast or an activated ability** — on **your own turn**, once that turn is reached;
 - something **on the stack** that you have a real answer to (a mana ability alone does not count);
 - the opponent **actually attacking** (an opponent who declares no attackers is not a stop);

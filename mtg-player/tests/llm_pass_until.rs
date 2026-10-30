@@ -425,6 +425,43 @@ fn the_seats_own_turn_is_passed_into_and_its_first_main_phase_asked() {
     assert!(stop_line(&fake).contains("your Main Phase 1"), "{}", stop_line(&fake));
 }
 
+/// A first main phase with nothing on offer is passed by the engine and
+/// never reaches the seat; the pass ran on past it into the opponent's next
+/// turn, passing an instant's window there unasked (#972). The first offer
+/// after it stops it, on that turn or the opponent's next.
+#[test]
+fn a_first_main_phase_that_went_by_unasked_still_stops_it() {
+    let fake = Fake::new("main-went-by");
+    // Turn 3's main phase never came; the next offer is its end step.
+    let mut seat = engaged_on_opponents_turn(&fake);
+    seat.choose_action(&view(3, Step::EndStep, YOU), &offer("END STEP"));
+    assert_eq!(fake.calls().len(), 2, "the end step after an unseen first main phase is asked");
+    assert!(stop_line(&fake).contains("your first main phase went by"), "{}", stop_line(&fake));
+    // Nor did turn 3 offer anything: the opponent's turn 4 is asked.
+    let mut seat = engaged_on_opponents_turn(&fake);
+    seat.choose_action(&view(4, Step::EndStep, OPP), &offer("OPPONENT'S TURN: End Step"));
+    assert_eq!(fake.calls().len(), 4, "the opponent's next turn is asked");
+    assert!(stop_line(&fake).contains("your first main phase went by"), "{}", stop_line(&fake));
+    // Engaged in the seat's own main phase, the opponent's next turn is on
+    // the way to the next one, and is passed.
+    let mut seat = engaged_on_own_turn(&fake);
+    assert!(matches!(seat.choose_action(&view(4, Step::EndStep, OPP), &offer("OPPONENT'S TURN: End Step")), Action::PassPriority));
+    assert_eq!(fake.calls().len(), 5, "the opponent's turn before the seat's next is passed");
+    // Asked to attack on turn 3, the seat has that turn in hand: the offer
+    // after its declaration is passed, not stopped as "went by".
+    let mut seat = engaged_on_opponents_turn(&fake);
+    let mut v = view(3, Step::DeclareAttackers, YOU);
+    v.battlefield.push(perm(30, "Savannah Lions", YOU));
+    v.battlefield.push(perm(31, "Grizzly Bears", YOU));
+    seat.choose_combat(&v, &CombatPrompt::ChooseAttackers {
+        eligible: vec![ObjectId(30), ObjectId(31)], must_attack: vec![],
+        defending_player: OPP, defending_planeswalkers: vec![],
+    });
+    assert_eq!(fake.calls().len(), 7, "the attack is asked");
+    assert!(matches!(seat.choose_action(&view(3, Step::DeclareAttackers, YOU), &offer("AFTER ATTACKERS DECLARED")), Action::PassPriority));
+    assert_eq!(fake.calls().len(), 7, "the offer after the declaration is passed");
+}
+
 /// An attack on the seat is asked once, after blocks: the window a trick
 /// or a removal spell is cast in. Before blocks it was asked too, and that
 /// was a second call per attack whose answer a person gives after blocks

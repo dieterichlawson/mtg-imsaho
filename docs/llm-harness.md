@@ -187,7 +187,9 @@ The stops are where a decision may be owed, and not where none is:
 - a blocker declared against its attacker;
 - its own first main phase, and a later main phase of its own when a land
   drop or a sorcery-speed cast or activation is on offer — not the main
-  phase it said it was done with;
+  phase it said it was done with. A first main phase with nothing on offer
+  is passed by the engine without asking; the first offer after it is the
+  stop instead, that turn or the opponent's next (#972);
 - a target or set or resolution prompt, once the opponent has put
   something on the stack since the pass began. The prompt is always
   asked; one the seat's own cast or trigger raises (its X, its target, a

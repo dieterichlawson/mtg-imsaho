@@ -52,7 +52,8 @@ passes to your next precombat main phase — this turn's, if pressed at
 your upkeep or draw step (and stops for any prompt, a spell on the
 stack, a land you can play, the opponent's attack on you, your attacker
 blocked, your own postcombat main phase, a spell or ability on offer on your own turn once
-that turn is reached, or that main phase — the CLI's stops; it will not
+that turn is reached, or that main phase — or the first priority after
+it, if it offered nothing and went by unseen — the CLI's stops; it will not
 start where it would stop at once, and says what it passed up), `l`
 opens the log, `g`/`G` a
 graveyard, `e` exile, `d` your library, `s` stops at every priority

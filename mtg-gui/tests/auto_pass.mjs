@@ -59,7 +59,7 @@ if (P.autoPassStop(theirs("DeclareAttackers", true), ["PassPriority", bolt], 6, 
   fail("an attack on you stops auto-pass");
 if (P.autoPassStop(theirs("DeclareAttackers", false), ["PassPriority", bolt], 6, false) !== null)
   fail("a declare-attackers step with no attacker is passed");
-if (P.autoPassStop(view({ step: "DeclareAttackers", battlefield: [{ object_id: 5, controller: 0, attacking: { Player: 1 } }] }), ["PassPriority"], 5, false) !== null)
+if (P.autoPassStop(view({ step: "DeclareAttackers", battlefield: [{ object_id: 5, controller: 0, attacking: { Player: 1 } }] }), ["PassPriority"], 6, false) !== null)
   fail("your own attack is not an attack on you");
 // The stops it had before still hold.
 if (P.autoPassStop(theirs("Upkeep", false), ["PassPriority"], 6, true) === null) fail("a question is a stop");
@@ -101,6 +101,25 @@ if (P.autoPassStop(view({ active_player: 1, step: "EndStep" }), ["PassPriority",
     fail("your blocked attacker is a stop");
   if (P.autoPassStop(view({ step: "DeclareBlockers", battlefield: [tusker(false)] }), ["PassPriority", growth], since, false) !== null)
     fail("an unblocked attacker is not");
+}
+
+// A Main Phase 1 the page never saw (passed by the engine, or by the page as
+// pass-only) still ends auto-pass at the next priority it does see: later
+// that turn, or on the opponent's next turn. It ran on past both (#972).
+{
+  const since = P.autoPassSince(view({ active_player: 1, step: "EndStep", turn_number: 5 }));
+  if (P.autoPassStop(view({ step: "BeginCombat" }), ["PassPriority", mana], since, false) !== "your main phase went by.")
+    fail("a priority after your unseen Main Phase 1 is a stop");
+  if (P.autoPassStop(view({ active_player: 1, step: "EndStep", turn_number: 7 }), ["PassPriority", bolt], since, false) !== "your main phase went by.")
+    fail("the opponent's turn after your unseen Main Phase 1 is a stop");
+  if (P.autoPassStop(view({ step: "Upkeep" }), ["PassPriority", mana], since, false) !== null)
+    fail("your upkeep, before the main phase, is not");
+  // Pressed at your own main phase, the opponent's next turn is still on the way to the target.
+  const mine = P.autoPassSince(view({ step: "PrecombatMain" }));
+  if (P.autoPassStop(view({ active_player: 1, step: "EndStep", turn_number: 7 }), ["PassPriority", bolt], mine, false) !== null)
+    fail("the opponent's turn before your target turn is not a stop");
+  if (P.autoPassStop(view({ step: "EndStep" }), ["PassPriority", bolt], mine, false) !== null)
+    fail("the rest of the turn f was pressed in is not a stop");
 }
 
 if (failures) { console.error(`${failures} failure(s)`); process.exit(1); }

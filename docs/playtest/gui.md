@@ -250,7 +250,11 @@ random game happened to reach.
   priority: the short-circuit at `main.ts:148` answers before
   `autoPassDecides`, so `f` passes a pass-only Main Phase 1 and stays on
   (#972). Under `s` the same stops fire, so `s` changes which of `f`'s
-  stops exist. G12 the same night: seed 32 (innistrad-white v white-black)
+  stops exist. [fixed 2026-10-30, #972] The main-phase stop is now "reached
+  or gone by": the first priority shown after a Main Phase 1 that went by
+  unseen ends `f` (and the CLI's `f`, and the LLM seat's pass-until); the
+  pass-only short-circuit stays ahead of the stops, so the other stops
+  still fire only where the page is shown the priority. G12 the same night: seed 32 (innistrad-white v white-black)
   hides 406 of 491 priorities; see #973-#975 for what the notice, the
   heading under `s` and the band lose.
 - G9 two tabs on one seat, and a tab closed mid-prompt and reopened: the
