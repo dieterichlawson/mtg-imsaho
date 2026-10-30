@@ -24,21 +24,39 @@ fn sorted<K: Kind + Ord>() -> bool {
 }
 
 fn agrees<K: Kind>(map: &KindMap<K>, reference: &[Option<u32>; 6]) -> bool {
-    let held = reference.iter().filter(|n| n.is_some()).count();
-    let mut expected = K::ALL.iter().zip(reference).filter_map(|(k, n)| n.map(|n| (*k, n)));
-    let mut by_ref = expected.clone();
-    let mut keys = expected.clone();
-    let mut values = expected.clone();
+    // What the reference holds, in kind order, each entry at a known place.
+    let mut expected: [Option<(K, u32)>; 6] = [None; 6];
+    let mut held = 0;
+    for (i, kind) in K::ALL.iter().enumerate() {
+        if let Some(n) = reference[i] {
+            expected[held] = Some((*kind, n));
+            held += 1;
+        }
+    }
+    let same = |(got, n): ([Option<(K, u32)>; 6], usize)| n == held && got == expected;
     map.len() == held
         && map.is_empty() == (held == 0)
-        && map.iter().all(|(k, n)| expected.next() == Some((*k, *n)))
-        && expected.next().is_none()
-        && map.into_iter().all(|(k, n)| by_ref.next() == Some((*k, *n)))
-        && by_ref.next().is_none()
-        && map.keys().all(|k| keys.next().map(|(j, _)| j) == Some(*k))
-        && keys.next().is_none()
-        && map.values().all(|n| values.next().map(|(_, m)| m) == Some(*n))
-        && values.next().is_none()
+        && same(taken(map.iter().map(|(k, n)| (*k, *n))))
+        && same(taken(map.into_iter().map(|(k, n)| (*k, *n))))
+        && same(taken(map.keys().zip(map.values()).map(|(k, n)| (*k, *n))))
+}
+
+/// The entries an iteration hands out, each at the place it lands, and how
+/// many (at most seven taken, so one too many shows). Compared so, rather
+/// than walked beside another iterator, each entry is read at a known
+/// place: two iterators that each skip to their next entry stand, after the
+/// first, at places of every value, and walking one beside the other ran
+/// these proofs out of memory.
+fn taken<K: Kind>(it: impl Iterator<Item = (K, u32)>) -> ([Option<(K, u32)>; 6], usize) {
+    let mut got = [None; 6];
+    let mut n = 0;
+    for entry in it.take(7) {
+        if n < 6 {
+            got[n] = Some(entry);
+        }
+        n += 1;
+    }
+    (got, n)
 }
 
 /// Any map holding any reference's entries.
