@@ -21,7 +21,7 @@
 //! its trigger scope says, and resolves for the player it enchants, or
 //! enchanted last if it has since left the battlefield (113.7a).
 
-use super::{acted, asked_each, asked_for, board, card_proof, case_by_case, prints_where, triggers, Act, Snapshot};
+use super::{acted, asked_each, asked_for, board, card_proof, case_by_case, has_trigger, prints_where, Act, Snapshot};
 use crate::actions::Target;
 use crate::cards::{CardBehavior, TriggerKind, TriggerScope, TargetRequirement};
 use crate::ids::{ObjectId, PlayerId};
@@ -125,7 +125,7 @@ card_proof! {
             &isd::curse_of_oblivion::CurseOfOblivion,
         ] {
             assert!(curse.step_trigger_scope(&TriggerKind::Upkeep, false) == TriggerScope::AttachedPlayer);
-            assert!(triggers(curse).iter().any(|(kind, _)| *kind == TriggerKind::Upkeep));
+            assert!(has_trigger(curse, &TriggerKind::Upkeep));
         }
     }
 }

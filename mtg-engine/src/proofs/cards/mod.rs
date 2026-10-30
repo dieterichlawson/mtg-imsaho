@@ -1645,6 +1645,15 @@ pub fn triggers(card: &dyn CardBehavior) -> Vec<(crate::cards::TriggerKind, Opti
     data.triggered_abilities.iter().map(|t| (t.kind.clone(), t.target_requirement.clone())).collect()
 }
 
+/// Whether `card` prints a triggered ability that triggers on `kind`, what
+/// it targets unread: [`triggers`] clones each target requirement, filters
+/// and all, and three Curses' requirements cloned so ran their proof out of
+/// memory where it asked only when they trigger.
+pub fn has_trigger(card: &dyn CardBehavior, kind: &crate::cards::TriggerKind) -> bool {
+    let data = std::mem::ManuallyDrop::new(card.card_data());
+    data.triggered_abilities.iter().any(|t| t.kind == *kind)
+}
+
 /// Whether `card` prints exactly `effects`, its static abilities' effects
 /// (CR 604.1, 611.3), which the engine reads off its face to apply them.
 ///
