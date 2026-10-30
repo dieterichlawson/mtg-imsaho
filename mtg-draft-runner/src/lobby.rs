@@ -1229,7 +1229,13 @@ the order they happened, not in seat order", "");
         }
         let front = self.table.in_front(seat).ok_or("no pack in front of you")?;
         if front.id != pack_id {
-            return Err(format!("pack {pack_id} is not the pack in front of you (pack {} is)", front.id));
+            // Said as the page and the client number packs: the table's own
+            // ids ("pack 0 ... (pack 2 is)") read against a heading of "Pack
+            // 1, pick 8" (#970). The usual cause is a pick that lost the
+            // race with the pick timer, or one from another tab.
+            return Err(format!(
+                "that pick was for a pack no longer in front of you (the pick timer or another tab already \
+                 picked from it); you are on pack {}, pick {}", front.round, front.pick));
         }
         let card = front.cards.get(index)
             .ok_or_else(|| format!("card {index} is past the end of the pack ({})", crate::count(front.cards.len(), "card", "cards")))?

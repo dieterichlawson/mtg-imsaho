@@ -463,6 +463,27 @@ fn the_build_clock_keeps_the_deck_a_person_sent() {
     }
 }
 
+/// #970: a pick for a pack that has moved on (it lost the race with the
+/// pick timer, or came from another tab) is refused in the page's own
+/// numbering, "pack 1, pick 2", not the table's ids ("pack 0 is not the
+/// pack in front of you (pack 2 is)") beside a heading of "Pack 1, pick 2".
+#[test]
+fn a_pick_for_a_pack_that_moved_on_is_refused_in_the_pages_numbering() {
+    let (mut lobby, _) = lobby_timed(vec![SeatKind::Human, SeatKind::Ai("cc".into())], None, None);
+    lobby.connected(0);
+    lobby.start();
+    let first = jv(&lobby, 0)["pack"]["id"].as_u64().unwrap() as usize;
+    lobby.pick(0, first, 0).unwrap();
+    // The AI seat passes its pack on, so seat 0 has a second one in front.
+    let id = jv(&lobby, 1)["pack"]["id"].as_u64().expect("the AI seat holds a pack");
+    lobby.ai_pick(1, id as usize, 0, "prompt", "{\"pick\":0}", false).unwrap();
+    let v = jv(&lobby, 0);
+    let (round, pick) = (v["pack"]["round"].as_u64().unwrap(), v["pack"]["pick"].as_u64().unwrap());
+    let reason = lobby.pick(0, first, 0).unwrap_err();
+    assert!(reason.contains(&format!("you are on pack {round}, pick {pick}")), "{reason}");
+    assert!(!reason.contains(&format!("pack {first} ")), "no table id: {reason}");
+}
+
 /// #811: a seat that has drafted all its cards is building — its view
 /// says so, with its deck and its clock — while a slower seat still picks.
 /// The view carried the table's phase, so the page and the client showed
