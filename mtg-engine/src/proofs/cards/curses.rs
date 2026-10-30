@@ -21,7 +21,7 @@
 //! its trigger scope says, and resolves for the player it enchants, or
 //! enchanted last if it has since left the battlefield (113.7a).
 
-use super::{acted, asked_each, asked_for, board, card_proof, case_by_case, prints_effects, triggers, Act, Snapshot};
+use super::{acted, asked_each, asked_for, board, card_proof, case_by_case, prints_where, triggers, Act, Snapshot};
 use crate::actions::Target;
 use crate::cards::{CardBehavior, TriggerKind, TriggerScope, TargetRequirement};
 use crate::ids::{ObjectId, PlayerId};
@@ -105,10 +105,13 @@ card_proof! {
     /// player controls attacks each combat if able", read by the engine as
     /// `proofs::actions::effects` proves for a player-wide scope.
     fn the_static_curses_print_what_their_text_says() {
-        let scope = EffectScope::Global(CreatureFilter::ControlledByAttachedPlayer);
-        assert!(prints_effects(&isd::curse_of_deaths_hold::CurseOfDeathsHold,
-            &[E::ModifyPT { power: -1, toughness: -1, scope: scope.clone() }]));
-        assert!(prints_effects(&isd::curse_of_the_nightly_hunt::CurseOfTheNightlyHunt, &[E::ForceAttack { scope }]));
+        // As patterns (`prints_where`): each effect holds a filter, and two
+        // filters read from the heap compared whole are what a proof cannot
+        // settle (`prints_effects` says why).
+        assert!(prints_where(&isd::curse_of_deaths_hold::CurseOfDeathsHold, |e| matches!(e,
+            [E::ModifyPT { power: -1, toughness: -1, scope: EffectScope::Global(CreatureFilter::ControlledByAttachedPlayer) }])));
+        assert!(prints_where(&isd::curse_of_the_nightly_hunt::CurseOfTheNightlyHunt, |e| matches!(e,
+            [E::ForceAttack { scope: EffectScope::Global(CreatureFilter::ControlledByAttachedPlayer) }])));
     }
 }
 
