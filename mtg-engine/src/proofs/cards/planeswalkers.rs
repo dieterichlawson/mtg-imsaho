@@ -410,15 +410,12 @@ card_proof! {
 }
 
 card_proof! {
-    /// Liliana of the Veil's −6: the player who activated her divides every
-    /// permanent her target player controls into two piles (asked of them,
-    /// with those permanents); with none, nothing; her target gone,
-    /// nothing. Then, the engine's handler for the answer: a division
-    /// naming anything not among those permanents is refused and the
-    /// question stands; otherwise the target player is asked which pile to
-    /// sacrifice, the one named and the rest, and sacrifices every
-    /// permanent in the pile they choose.
-    fn liliana_of_the_veil_makes_her_target_sacrifice_a_pile() {
+    /// Liliana of the Veil's −6: the player who activated her is asked to
+    /// divide every permanent her target player controls into two piles,
+    /// with those permanents; with none, nothing; her target gone,
+    /// nothing. What the engine's handler does with the answer is
+    /// [`liliana_divides`]'s.
+    fn liliana_of_the_veil_asks_for_piles_of_her_targets_permanents() {
         let mut b = planeswalker(Box::new(isd::liliana_of_the_veil::LilianaOfTheVeil));
         let target = any_target(b.others);
         let mut permanents = Vec::with_capacity(3);
@@ -444,37 +441,142 @@ card_proof! {
         let asked = matches!(&b.state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
             player, source, choice: ResolutionChoiceKind::DividePermanentsIntoPiles { permanents: offered, target_player, source_id, .. },
         }) if *player == b.you && *source == b.me && *source_id == b.me && *target_player == p && *offered == permanents);
-        assert!(asked && acted() == 0);
-        let mut pile = Vec::with_capacity(3);
-        let mut rest = Vec::with_capacity(3);
-        for id in &permanents {
-            if kani::any() {
-                pile.push(*id);
-            } else {
-                rest.push(*id);
-            }
-        }
-        let stray = kani::any::<bool>() && !permanents.contains(&b.others[1]);
-        if stray {
-            pile.push(b.others[1]);
-        }
-        let _ = crate::engine::actions::choices::resolve_choice(&mut b.state, &ResolvedChoice::ChosenSubset(pile.clone()), &b.registry);
-        if stray {
-            let stands = matches!(&b.state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
-                choice: ResolutionChoiceKind::DividePermanentsIntoPiles { .. }, ..
-            }));
-            assert!(stands && acted() == 0);
-            std::mem::forget((b, permanents, pile, rest));
-            return;
-        }
-        let piles = matches!(&b.state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
-            player, source, choice: ResolutionChoiceKind::ChoosePile { pile_1, pile_2, .. },
-        }) if *player == p && *source == b.me && *pile_1 == pile && *pile_2 == rest);
-        assert!(piles && acted() == 0);
-        let first: bool = kani::any();
-        let _ = crate::engine::actions::choices::resolve_choice(&mut b.state, &ResolvedChoice::ChosenIndex(usize::from(!first), String::new()), &b.registry);
-        let sacrificed = if first { &pile } else { &rest };
-        assert!(asked_each(sacrificed.len(), |i| Act::Sacrifice(sacrificed[i])) && b.state.awaiting_action.is_none());
-        std::mem::forget((b, permanents, pile, rest));
+        assert!(asked && acted() == 0 && Snapshot::of(&b.state) == Snapshot { asking: true, ..before.clone() });
+        std::mem::forget((b, permanents));
     }
+}
+
+/// The board of Liliana of the Veil's −6 answered: the registry, the
+/// game, Liliana (on the battlefield under player 0, who activated her),
+/// her target `p`'s permanents in id order (two of `p`'s beside her, and
+/// Liliana herself if `p` is player 0), and, if `stray`, a card in exile.
+fn liliana_board(p: PlayerId, stray: bool) -> (CardRegistry, GameState, ObjectId, Vec<ObjectId>, Option<ObjectId>) {
+    let (registry, mut state, blank, card) = board(Box::new(isd::liliana_of_the_veil::LilianaOfTheVeil));
+    let you = PlayerId(0);
+    let me = state.create_object(card, you, Zone::Battlefield, None, None);
+    let others = [state.create_object(blank, p, Zone::Battlefield, None, None), state.create_object(blank, p, Zone::Battlefield, None, None)];
+    let exiled = stray.then(|| state.create_object(blank, you, Zone::Exile, None, None));
+    state.resolving_ability_activator = Some(you);
+    let permanents = if p == you { vec![me, others[0], others[1]] } else { vec![others[0], others[1]] };
+    (registry, state, me, permanents, exiled)
+}
+
+/// `permanents` as `split` divides them (its `k`th digit, 1 for the first
+/// pile, for the `k`th of them): the first pile and the second.
+fn piles(permanents: &[ObjectId], split: &str) -> (Vec<ObjectId>, Vec<ObjectId>) {
+    assert!(split.len() == permanents.len());
+    let mut pile = Vec::with_capacity(4);
+    let mut rest = Vec::with_capacity(3);
+    for (id, digit) in permanents.iter().zip(split.bytes()) {
+        if digit == b'1' { pile.push(*id) } else { rest.push(*id) }
+    }
+    (pile, rest)
+}
+
+/// Liliana of the Veil's −6 asking for piles, over [`liliana_board`],
+/// answered with the division `split` says ([`piles`]), and the exiled
+/// card put in the first pile too if `stray`; the engine's handler for
+/// the answer run with the card. A division naming anything not among
+/// the permanents is refused and the question stands; otherwise the
+/// target is asked which pile to sacrifice, the one named and the rest,
+/// and nothing else. What the handler does with that answer is
+/// [`liliana_sacrifices_a_pile`]'s. Each a constant in its harness: with
+/// the board, the division and the choice the solver's, the proof of the
+/// whole ran out of memory in symbolic execution before it reached the
+/// handler, and answering both questions in one harness, with the piles
+/// the first answer left read back for the second, did too.
+fn liliana_divides((p, split, stray): (u8, &str, bool)) {
+    let p = PlayerId(p);
+    let (registry, mut state, me, permanents, exiled) = liliana_board(p, stray);
+    let before = Snapshot::of(&state);
+    let card = state.get_object(me).expect("on the board").card_id;
+    registry.get(card).expect("registered").on_loyalty_ability(&mut state, me, 2, &[Target::Player(p)], &registry);
+    let asked = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+        player, source, choice: ResolutionChoiceKind::DividePermanentsIntoPiles { permanents: offered, target_player, .. },
+    }) if *player == PlayerId(0) && *source == me && *target_player == p && *offered == permanents);
+    assert!(asked && acted() == 0);
+    let (mut pile, rest) = piles(&permanents, split);
+    if let Some(exiled) = exiled {
+        pile.push(exiled);
+    }
+    let _ = crate::engine::actions::choices::resolve_choice(&mut state, &ResolvedChoice::ChosenSubset(pile.clone()), &registry);
+    let asks = if stray {
+        matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::DividePermanentsIntoPiles { .. }, ..
+        }))
+    } else {
+        matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+            player, source, choice: ResolutionChoiceKind::ChoosePile { pile_1, pile_2, .. },
+        }) if *player == p && *source == me && *pile_1 == pile && *pile_2 == rest)
+    };
+    assert!(asks && acted() == 0 && Snapshot::of(&state) == Snapshot { asking: true, ..before.clone() });
+    std::mem::forget((registry, state, permanents, pile, rest));
+}
+
+case_by_case! { liliana_divides;
+    liliana_of_the_veil_against_her_controller_refuses_a_division_naming_another_card: (0, "101", true),
+    liliana_of_the_veil_against_the_other_player_refuses_a_division_naming_another_card: (1, "10", true),
+    liliana_of_the_veil_against_her_controller_divided_000_asks_which_pile: (0, "000", false),
+    liliana_of_the_veil_against_her_controller_divided_001_asks_which_pile: (0, "001", false),
+    liliana_of_the_veil_against_her_controller_divided_010_asks_which_pile: (0, "010", false),
+    liliana_of_the_veil_against_her_controller_divided_011_asks_which_pile: (0, "011", false),
+    liliana_of_the_veil_against_her_controller_divided_100_asks_which_pile: (0, "100", false),
+    liliana_of_the_veil_against_her_controller_divided_101_asks_which_pile: (0, "101", false),
+    liliana_of_the_veil_against_her_controller_divided_110_asks_which_pile: (0, "110", false),
+    liliana_of_the_veil_against_her_controller_divided_111_asks_which_pile: (0, "111", false),
+    liliana_of_the_veil_against_the_other_player_divided_00_asks_which_pile: (1, "00", false),
+    liliana_of_the_veil_against_the_other_player_divided_01_asks_which_pile: (1, "01", false),
+    liliana_of_the_veil_against_the_other_player_divided_10_asks_which_pile: (1, "10", false),
+    liliana_of_the_veil_against_the_other_player_divided_11_asks_which_pile: (1, "11", false),
+}
+
+/// The question [`liliana_divides`] leaves, which pile to sacrifice, over
+/// the same board, asked of the target `p` by Liliana with the piles
+/// `split` makes, the named pile first; answered with the first if
+/// `first`, the engine's handler run. The target sacrifices every
+/// permanent of that pile, and nothing else. The question is written
+/// here as that proof finds it: the handler reads of it the player
+/// asked, the source, and the two piles, which that proof checks, and
+/// nothing else of it.
+fn liliana_sacrifices_a_pile((p, split, first): (u8, &str, bool)) {
+    let p = PlayerId(p);
+    let (registry, mut state, me, permanents, _) = liliana_board(p, false);
+    let (pile, rest) = piles(&permanents, split);
+    state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+        player: p,
+        source: me,
+        choice: ResolutionChoiceKind::ChoosePile { description: String::new(), pile_1: pile.clone(), pile_2: rest.clone(), source_id: me },
+    });
+    let before = Snapshot::of(&state);
+    let _ = crate::engine::actions::choices::resolve_choice(&mut state, &ResolvedChoice::ChosenIndex(usize::from(!first), String::new()), &registry);
+    let sacrificed = if first { &pile } else { &rest };
+    assert!(asked_each(sacrificed.len(), |i| Act::Sacrifice(sacrificed[i])) && Snapshot::of(&state) == Snapshot { asking: false, ..before.clone() });
+    std::mem::forget((registry, state, permanents, pile, rest));
+}
+
+case_by_case! { liliana_sacrifices_a_pile;
+    liliana_of_the_veil_against_her_controller_with_piles_000_sacrifices_the_first: (0, "000", true),
+    liliana_of_the_veil_against_her_controller_with_piles_000_sacrifices_the_second: (0, "000", false),
+    liliana_of_the_veil_against_her_controller_with_piles_001_sacrifices_the_first: (0, "001", true),
+    liliana_of_the_veil_against_her_controller_with_piles_001_sacrifices_the_second: (0, "001", false),
+    liliana_of_the_veil_against_her_controller_with_piles_010_sacrifices_the_first: (0, "010", true),
+    liliana_of_the_veil_against_her_controller_with_piles_010_sacrifices_the_second: (0, "010", false),
+    liliana_of_the_veil_against_her_controller_with_piles_011_sacrifices_the_first: (0, "011", true),
+    liliana_of_the_veil_against_her_controller_with_piles_011_sacrifices_the_second: (0, "011", false),
+    liliana_of_the_veil_against_her_controller_with_piles_100_sacrifices_the_first: (0, "100", true),
+    liliana_of_the_veil_against_her_controller_with_piles_100_sacrifices_the_second: (0, "100", false),
+    liliana_of_the_veil_against_her_controller_with_piles_101_sacrifices_the_first: (0, "101", true),
+    liliana_of_the_veil_against_her_controller_with_piles_101_sacrifices_the_second: (0, "101", false),
+    liliana_of_the_veil_against_her_controller_with_piles_110_sacrifices_the_first: (0, "110", true),
+    liliana_of_the_veil_against_her_controller_with_piles_110_sacrifices_the_second: (0, "110", false),
+    liliana_of_the_veil_against_her_controller_with_piles_111_sacrifices_the_first: (0, "111", true),
+    liliana_of_the_veil_against_her_controller_with_piles_111_sacrifices_the_second: (0, "111", false),
+    liliana_of_the_veil_against_the_other_player_with_piles_00_sacrifices_the_first: (1, "00", true),
+    liliana_of_the_veil_against_the_other_player_with_piles_00_sacrifices_the_second: (1, "00", false),
+    liliana_of_the_veil_against_the_other_player_with_piles_01_sacrifices_the_first: (1, "01", true),
+    liliana_of_the_veil_against_the_other_player_with_piles_01_sacrifices_the_second: (1, "01", false),
+    liliana_of_the_veil_against_the_other_player_with_piles_10_sacrifices_the_first: (1, "10", true),
+    liliana_of_the_veil_against_the_other_player_with_piles_10_sacrifices_the_second: (1, "10", false),
+    liliana_of_the_veil_against_the_other_player_with_piles_11_sacrifices_the_first: (1, "11", true),
+    liliana_of_the_veil_against_the_other_player_with_piles_11_sacrifices_the_second: (1, "11", false),
 }
