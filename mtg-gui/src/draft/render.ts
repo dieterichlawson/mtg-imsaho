@@ -462,8 +462,13 @@ export function ownByes(view: DraftView): number[] {
 export function matchScore(view: DraftView, m: Match): string {
   const mine = m.games.filter(g => g.winner === view.seat).length;
   const theirs = m.games.filter(g => g.winner === m.opponent).length;
-  if (mine === theirs) return `${mine}-${theirs}`;
-  return mine > theirs ? `you lead ${mine}-${theirs}` : `your opponent leads ${theirs}-${mine}`;
+  // A drawn game is counted as the match's score counts it, W-L-D: a bare
+  // "0-0" after a drawn game 1 read as no game played (#919, #971). An
+  // abandoned game has no winner and is no draw (#744).
+  const drawn = m.games.filter(g => g.winner === null && !g.abandoned).length;
+  const d = drawn ? `-${drawn}` : "";
+  if (mine === theirs) return `${mine}-${theirs}${d}`;
+  return mine > theirs ? `you lead ${mine}-${theirs}${d}` : `your opponent leads ${theirs}-${mine}${d}`;
 }
 
 /**

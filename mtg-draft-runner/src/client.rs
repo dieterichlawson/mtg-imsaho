@@ -1082,6 +1082,14 @@ mod tests {
         let (table, mine) = render(&v, &build);
         assert!(table.contains("90s left before game 2"), "{table}");
         assert!(mine.contains("Before game 2 vs Bo (seat 1) (they lead 1-0):"), "{mine}");
+        // A drawn game is in the score (#919, #971); an abandoned one is not (#744).
+        for (games, want) in [(serde_json::json!([{"winner": null}]), "(0-0-1)"),
+                              (serde_json::json!([{"winner": null, "abandoned": true}]), "(0-0)")] {
+            let mut d = v.clone();
+            d["matches"][0]["games"] = games;
+            let (_, text) = render(&d, &build);
+            assert!(text.contains(&format!("Before game 2 vs Bo (seat 1) {want}:")), "{text}");
+        }
         assert!(mine.contains("you lost game 1: type play or draw (not chosen yet: you play first)"), "{mine}");
         assert!(mine.contains("Bo (seat 1) has shown: Brimstone Volley"), "{mine}");
         assert!(mine.contains(" 23 [side] Card 23"), "{mine}");
@@ -1373,11 +1381,17 @@ fn between_listing(v: &Value, m: &Value, b: &Value, build: &Build, who: &dyn Fn(
     let me = v["seat"].as_u64();
     let wins = |s: Option<u64>| m["games"].as_array().into_iter().flatten().filter(|g| g["winner"].as_u64() == s).count();
     let (mine, theirs) = (wins(me), wins(m["opponent"].as_u64()));
+    // A drawn game is in the score, W-L-D, as the match's own score says it
+    // (#919): "(0-0)" after a drawn game 1 read as no game played (#971).
+    // An abandoned game has no winner and is no draw (#744).
+    let drawn = m["games"].as_array().into_iter().flatten()
+        .filter(|g| g["winner"].is_null() && g["abandoned"] != true).count();
+    let d = if drawn > 0 { format!("-{drawn}") } else { String::new() };
     let score = match mine.cmp(&theirs) {
         _ if game == 1 => String::new(),
-        std::cmp::Ordering::Equal => format!(" ({mine}-{theirs})"),
-        std::cmp::Ordering::Greater => format!(" (you lead {mine}-{theirs})"),
-        std::cmp::Ordering::Less => format!(" (they lead {theirs}-{mine})"),
+        std::cmp::Ordering::Equal => format!(" ({mine}-{theirs}{d})"),
+        std::cmp::Ordering::Greater => format!(" (you lead {mine}-{theirs}{d})"),
+        std::cmp::Ordering::Less => format!(" (they lead {theirs}-{mine}{d})"),
     };
     let mut s = format!("\nBefore game {game} vs {opponent}{score}:\n");
     // The last game's loser chooses; after a draw, whoever chose it (MTR 2.2).

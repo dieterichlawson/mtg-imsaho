@@ -680,6 +680,18 @@ async function main() {
         await stage(between);
         await page.waitForTimeout(50);
         check(((await text("#between-head")) || "").startsWith("Before game 2 vs"), `${tag}: the panel says which game is next (${await text("#between-head")})`);
+        // A drawn game 1 is scored as one, W-L-D, as the pairings say it
+        // (#919, #971); a bare "0-0" read as no game played.
+        {
+          const drawn = JSON.parse(JSON.stringify(between));
+          drawn.matches.find(m => m.between).games = [{ winner: null, abandoned: false }];
+          await stage(drawn);
+          await page.waitForTimeout(50);
+          const head = (await text("#between-head")) || "";
+          check(/—\s0-0-1$/.test(head), `${tag}: a drawn game is in the between-games score (${head})`);
+          await stage(between);
+          await page.waitForTimeout(50);
+        }
         check(((await text("#play-draw")) || "").includes("chooses whether to play or draw"), `${tag}: the opponent's choice is said as theirs`);
         check(((await text("#opponent-showed")) || "").includes(b.opponent_showed[0].name), `${tag}: what the opponent showed is listed`);
         const rows = await page.$$eval("#between .row", r => r.length);

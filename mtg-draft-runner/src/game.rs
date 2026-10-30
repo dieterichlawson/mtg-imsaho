@@ -106,7 +106,14 @@ pub fn match_line(format: MatchFormat) -> Option<String> {
         MatchFormat::BestOf { best_of, game, your_wins, their_wins } => Some(if game == 1 {
             format!("Game 1 of a best-of-{best_of}")
         } else {
-            format!("Game {game} of a best-of-{best_of} · you {your_wins}, them {their_wins}")
+            // A drawn or abandoned game wins nothing: "you 0, them 0" before
+            // game 2 read as no game played (#971's review).
+            let none = match game.saturating_sub(1 + your_wins + their_wins) {
+                0 => String::new(),
+                1 => ", 1 game with no winner".to_string(),
+                n => format!(", {n} games with no winner"),
+            };
+            format!("Game {game} of a best-of-{best_of} · you {your_wins}, them {their_wins}{none}")
         }),
     }
 }
@@ -807,6 +814,14 @@ mod harness_stop_tests {
         // recorded as a forfeit, not as a concede it never chose (#742).
         assert!(matches!(harness_move(true, 10, 50_000), Some(Action::Forfeit)));
         assert!(matches!(harness_move(true, 50_000, 50_000), Some(Action::Forfeit)));
+    }
+
+    #[test]
+    fn the_match_line_counts_a_game_with_no_winner() {
+        assert_eq!(super::match_line(super::MatchFormat::BestOf { best_of: 3, game: 2, your_wins: 0, their_wins: 0 }).unwrap(),
+            "Game 2 of a best-of-3 · you 0, them 0, 1 game with no winner");
+        assert_eq!(super::match_line(super::MatchFormat::BestOf { best_of: 3, game: 3, your_wins: 1, their_wins: 1 }).unwrap(),
+            "Game 3 of a best-of-3 · you 1, them 1");
     }
 
     #[test]
