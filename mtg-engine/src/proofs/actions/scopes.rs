@@ -19,12 +19,17 @@ use crate::proofs::cards::{case_by_case, for_each_form, Blank, Form};
 use crate::state::GameState;
 use crate::types::{CardType, ContinuousEffect as E, CreatureFilter as F, EffectCondition as If, EffectScope, Keyword, Zone};
 
-/// A card that prints exactly one continuous effect.
-struct Prints(E);
+/// A card that prints exactly one continuous effect, the one its function
+/// builds. Built where it is printed, not held and cloned: the effect a
+/// card held came back from its clone with a scope symbolic execution
+/// could not tell from any other, and every filter it might have been was
+/// matched (protection from Zombies, "Spirit creatures you control", out
+/// of memory).
+struct Prints(fn() -> E);
 
 impl CardBehavior for Prints {
     fn card_data(&self) -> CardData {
-        CardData { name: "Prints".into(), continuous_effects: vec![self.0.clone()], ..CardData::default() }
+        CardData { name: "Prints".into(), continuous_effects: vec![(self.0)()], ..CardData::default() }
     }
 }
 
@@ -38,7 +43,7 @@ struct Board {
     creature: ObjectId,
 }
 
-fn board(effect: E, form: Form) -> Board {
+fn board(effect: fn() -> E, form: Form) -> Board {
     let mut registry = CardRegistry::new();
     let blank = registry.register(Box::new(Blank));
     let printer = registry.register(Box::new(Prints(effect)));
@@ -88,7 +93,7 @@ macro_rules! reaches_what_it_describes {
         $(
             for_each_form! {
                 fn $name(form) {
-                    let $b = board(E::PreventAttack { scope: EffectScope::Global($filter) }, form);
+                    let $b = board(|| E::PreventAttack { scope: EffectScope::Global($filter) }, form);
                     let $yours = $b.controller($b.creature) == $b.controller($b.source);
                     let described = $described;
                     assert!($b.reached() == ($b.source_on() && described));
@@ -120,10 +125,14 @@ reaches_what_it_describes! {
 /// its source alone. Which scope, a constant in each harness: the two in
 /// one ran out of memory.
 fn other_skips_its_source_and_this_creature_is_its_source(other: bool) {
-    let scope = if other { EffectScope::GlobalOther(F::ControlledByYou) } else { EffectScope::OnSelf };
+    let printed: fn() -> E = if other {
+        || E::PreventAttack { scope: EffectScope::GlobalOther(F::ControlledByYou) }
+    } else {
+        || E::PreventAttack { scope: EffectScope::OnSelf }
+    };
     let mut registry = CardRegistry::new();
     let blank = registry.register(Box::new(Blank));
-    let printer = registry.register(Box::new(Prints(E::PreventAttack { scope })));
+    let printer = registry.register(Box::new(Prints(printed)));
     let mut state = crate::proofs::cards::new_game();
     let controller = PlayerId(u8::from(kani::any::<bool>()));
     let source = state.create_object(printer, controller, Zone::Battlefield, Some(1), Some(1));
@@ -149,7 +158,7 @@ macro_rules! holds_exactly_then {
         $(
             for_each_form! {
                 fn $name(form) {
-                    let b = board(E::when($condition, E::PreventAttack { scope: EffectScope::Global(F::ControlledByYou) }), form);
+                    let b = board(|| E::when($condition, E::PreventAttack { scope: EffectScope::Global(F::ControlledByYou) }), form);
                     let yours = b.controller(b.creature) == b.controller(b.source);
                     let holds = b.is("Human") && (yours != $opponent);
                     assert!(b.reached() == (b.source_on() && yours && holds));
@@ -173,7 +182,7 @@ holds_exactly_then! {
 fn protection_from_a_subtype_is_from_exactly_that_subtype(zombie: bool) {
     let mut registry = CardRegistry::new();
     let blank = registry.register(Box::new(Blank));
-    let printer = registry.register(Box::new(Prints(E::ProtectionFromSubtype { subtype: "Zombie".into(), scope: EffectScope::OnSelf })));
+    let printer = registry.register(Box::new(Prints(|| E::ProtectionFromSubtype { subtype: "Zombie".into(), scope: EffectScope::OnSelf })));
     let mut state = crate::proofs::cards::new_game();
     let on: bool = kani::any();
     let protected = state.create_object(printer, PlayerId(0), if on { Zone::Battlefield } else { Zone::Graveyard }, Some(1), Some(1));
