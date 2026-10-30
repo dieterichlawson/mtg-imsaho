@@ -95,14 +95,12 @@ impl DivineReckoning {
         let mut queue = remaining;
         while let Some(player) = queue.first().copied() {
             queue.remove(0);
-            // Through `objects_in_zone`, which sorts by id, rather than
-            // `state.objects.values()`, which is a HashMap iterator in
-            // arbitrary order. The player picks from this list by position, so
+            // In id order (`ids_in_zone`, as `objects_in_zone` lists the
+            // battlefield). The player picks from this list by position, so
             // an unstable order makes the same game replay differently.
-            let options: Vec<Target> = state.objects_in_zone(Zone::Battlefield, player)
-                .iter()
-                .filter(|o| state.is_creature(o.id, registry))
-                .map(|o| Target::Object(o.id))
+            let options: Vec<Target> = state.ids_in_zone(Zone::Battlefield, player, |o| state.is_creature(o.id, registry))
+                .into_iter()
+                .map(Target::Object)
                 .collect();
 
             match options.len() {
@@ -140,14 +138,11 @@ impl DivineReckoning {
             crate::cards::clear_ids(&mut obj.card_state, Self::KEPT);
             crate::cards::clear_ids(&mut obj.card_state, Self::QUEUE);
         }
-        // Sorted by id (`all_objects_in_zone`) for a reproducible log; the
+        // Sorted by id (`all_ids_in_zone`) for a reproducible log; the
         // destruction itself is simultaneous so the order does not affect the
         // outcome.
-        let doomed: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield).into_iter()
-            .filter(|o| state.is_creature(o.id, registry))
-            .map(|o| o.id)
-            .filter(|id| !kept.contains(id))
-            .collect();
+        let doomed = state.all_ids_in_zone(Zone::Battlefield,
+            |o| state.is_creature(o.id, registry) && !kept.contains(&o.id));
         // "Destroy the rest" is one event (CR 700.2c). Destroying them one at
         // a time lets each death change the answer for the next — an Angelic
         // Overseer and the last Human its controller has are both doomed here,

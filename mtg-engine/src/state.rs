@@ -1975,6 +1975,21 @@ impl GameState {
         self.objects.values()
     }
 
+    /// The ids of every object in `zone`, whoever's, that `keep` accepts, in
+    /// id order as [`Self::all_objects_in_zone`] lists them, into a list
+    /// allocated at the most it can hold, with no list of the zone built
+    /// first: [`Self::count_in_zone`] says why.
+    #[must_use]
+    pub fn all_ids_in_zone(&self, zone: Zone, mut keep: impl FnMut(&GameObject) -> bool) -> Vec<ObjectId> {
+        let mut ids = Vec::with_capacity(self.objects.len());
+        for obj in self.objects.values() {
+            if obj.zone == zone && keep(obj) {
+                ids.push(obj.id);
+            }
+        }
+        ids
+    }
+
     /// Get all objects in a zone (regardless of player), in id order.
     #[must_use]
     pub fn all_objects_in_zone(&self, zone: Zone) -> Vec<&GameObject> {
