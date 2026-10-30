@@ -104,7 +104,11 @@ card_proof! {
         let replaced = registry.get(card).expect("registered").replace_event(&mut state, me, &event, &registry);
         match &event {
             Ev::EntersBattlefield(_) if in_graveyard && human && controller == PlayerId(0) => {
-                let mut more = e.counters.clone();
+                // Built at its size: a clone is exactly as long as the
+                // counters were, and one grown stands in as a failure
+                // (`no_growing`).
+                let mut more = Vec::with_capacity(e.counters.len() + 1);
+                more.extend_from_slice(&e.counters);
                 more.push((CounterType::PlusOnePlusOne, 1));
                 assert!(replaced == Some(Replacement::Modified(Ev::EntersBattlefield(EnteringPermanent { counters: more, ..e.clone() }))));
             }
