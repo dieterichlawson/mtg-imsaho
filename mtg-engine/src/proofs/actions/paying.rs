@@ -76,7 +76,9 @@ fn from_the_pool(which: u8, who: PlayerId) {
     assert!(state.players[usize::from(who.0)].mana_pool == expected);
     assert!(state.players[usize::from(1 - who.0)].mana_pool.is_empty());
     assert!(Snapshot::of(&state) == before);
-    kani::cover!(paid && which == 2, "one and green paid from the pool");
+    // Both outcomes reached, for every cost: each is paid by some pool.
+    kani::cover!(paid, "the cost paid from the pool");
+    kani::cover!(!paid, "the cost refused");
     std::mem::forget((registry, state, cost, pool, expected, plan));
 }
 
@@ -141,7 +143,11 @@ fn tapping_a_forest(which: u8, who: PlayerId) {
     } else {
         assert!(Snapshot::of(&state) == before);
     }
-    kani::cover!(tap && which == 2, "one and green paid with the Forest's green");
+    // Every outcome reached, the Forest's but for a cost its {G} cannot
+    // help pay ({W}{W}, {C}).
+    kani::cover!(alone, "the cost paid from the pool alone");
+    kani::cover!(tap || matches!(which, 3 | 4), "the cost paid with the Forest's green");
+    kani::cover!(!alone && !tap, "the cost refused");
     std::mem::forget((registry, state, cost, pool, with_forest, expected, plan, expected_plan));
 }
 
