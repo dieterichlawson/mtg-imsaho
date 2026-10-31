@@ -1188,31 +1188,26 @@ permanent, and `attach` left an Aura attached to the player it came off;
 no game reached any of them, every caller offering only what the rule
 allows, and each has a regular test besides.
 
-Not yet finished: moving a card between zones (each past two and a half
-gigabytes, to be run at a larger cap); destroying permanents together
-(past eleven); the damage queue, `perform` on a permanent, and
-prevention and doubling, a harness for each target, board and set of
-effects (those on a permanent, and those a doubler or a shield applies
-to, past four); the other boards of tokens entering attacking (past
-four), putting a card into a library, the prevention's pruning, paying
-a cost (the autotap planner's symbolic execution past half an hour, a
-pool the solver chose or not), the subtype filters and the creature
-groups that name a subtype, a filtered target requirement, a search's
-question and discarding several cards (past two and a half). (The
-`KindMap` proofs, listed here before, pass since their comparison was
-made at fixed places: 37 to 205 seconds.) Of the cards,
-Full Moon's Rise's ability, Vampiric Fury, Moonmist, Spare from Evil,
-Rolling Temblor, Make a Wish, Mulch, Balefire Dragon, Hamlet Captain,
-Tribute to Hunger, Sever the Bloodline, Blasphemous Act, Past in Flames,
-Ghoulcaller's Chant, Nevermore, and the ability lists of Grimoire of the
-Dead, Back from the Brink and Moorland Haunt and Ghost Quarter's
-resolution on a permanent, are past four gigabytes even a case to a
-harness, to be run alone at about ten. The results so far were of
-several commits. A run at one commit, 481c7ce, reached 722 harnesses and
-was stopped: the payment, effect and zone changes above reach code under
-nearly every proof. A run at e63d2cf takes the harnesses not yet run;
-then every harness is run again at one commit, those known to need more
-memory alone, and this section will record which hold there.
+Where it stands. Every harness was run at one commit, d461ae7 (1,194
+of them then), and those whose code changed after it were run again at
+4f3cf9d, or at the commit that changed them since, with what the
+changes reached listed beside the results (five card files, the choice
+handler and the payment planner's sort, and the proofs of payment,
+choices, Liliana of the Veil, Grimgrin, the kept lists, the pruning and
+two loop bounds). Of the 1,337 harnesses at the head of this branch,
+1,294 pass, at 3.5 GB or, the heaviest, at 7; none fails. The 43 left
+are run alone at 12 GB: paying with a Forest to tap (twelve), the two
+proofs of the targets a requirement of any target or of a player or
+planeswalker offers, counting a cost's pips, and of the cards Stitcher's
+Apprentice, Grimoire of the Dead's return and its ability list with an
+empty hand, Moorland Haunt, Rolling Temblor, Make a Wish, Mulch, Past in
+Flames, Vampiric Fury, Balefire Dragon, Curse of the Pierced Heart,
+Bitterheart Witch, Moldgraf Monstrosity, Ghoulraiser, Creeping
+Renaissance, Garruk, the Veil-Cursed's −1, Liliana of the Veil's −2,
+Reaper from the Abyss, Sever the Bloodline and Tribute to Hunger. Each
+ran out of memory at 7 GB (Moldgraf's two, split by zone since, at 3.5),
+most of them in the solver once symbolic execution had finished. This
+section will record which hold there.
 
 A counterexample can be of a board no game reaches, which is then the
 board's error and not the card's: the board the counted creatures are
