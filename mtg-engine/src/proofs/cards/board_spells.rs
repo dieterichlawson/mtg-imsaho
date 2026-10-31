@@ -446,9 +446,17 @@ card_proof! { unwind(15)
 /// first, cut to its length, for the same reason: a card pushed or not
 /// moves where the next one goes.
 fn cards_in_zones(card: Box<dyn CardBehavior>, library: usize, hand: usize) -> (CardRegistry, GameState, ObjectId, CardId) {
-    let (registry, mut state, blank, card) = board(card);
     let (in_library, in_hand): (usize, usize) = (kani::any(), kani::any());
     kani::assume(in_library <= library && in_hand <= hand);
+    cards_held(card, library, hand, in_library, in_hand)
+}
+
+/// [`cards_in_zones`]'s board with `in_library` of its `library` cards in
+/// the library and `in_hand` of its `hand` in the hand, as the caller
+/// says.
+fn cards_held(card: Box<dyn CardBehavior>, library: usize, hand: usize, in_library: usize, in_hand: usize)
+    -> (CardRegistry, GameState, ObjectId, CardId) {
+    let (registry, mut state, blank, card) = board(card);
     state.players[0].library_order = Vec::with_capacity(library);
     for i in 0..library + hand {
         let held = if i < library { i < in_library } else { i - library < in_hand };
@@ -492,25 +500,34 @@ card_proof! {
     }
 }
 
-card_proof! {
-    /// Mulch: of the top four cards of its controller's library (all of
-    /// them, if fewer), the lands put into their hand and the rest milled
-    /// into their graveyard, in library order; and nothing else. Proved for
-    /// libraries of up to five cards, so that one is past the fourth.
-    fn mulch_puts_the_lands_of_the_top_four_in_hand_and_the_rest_in_the_graveyard() {
-        let (registry, mut state, spell, _) = cards_in_zones(Box::new(isd::mulch::Mulch), 5, 0);
-        let before = Snapshot::of(&state);
-        let top: Vec<ObjectId> = state.players[0].library_order.iter().take(4).copied().collect();
-        registry.get(state.get_object(spell).expect("on the stack").card_id).expect("registered")
-            .on_resolve(&mut state, spell, &[], &registry);
-        let land = |id: &ObjectId| state.get_object(*id).expect("on the board").card_types.contains(&CardType::Land);
-        let lands = kept(&top, |id| land(&id));
-        let rest = kept(&top, |id| !land(&id));
-        assert!(acted() == top.len() && were(0, lands.len(), |i| Act::Move(lands[i], Zone::Hand))
-            && were(lands.len(), rest.len(), |i| Act::MillCard(rest[i])));
-        assert!(Snapshot::of(&state) == before);
-        std::mem::forget((registry, state));
-    }
+/// Mulch: of the top four cards of its controller's library (all of them,
+/// if fewer), the lands put into their hand and the rest milled into their
+/// graveyard, in library order; and nothing else. Proved for libraries of
+/// up to five cards, so that one is past the fourth, each card a land or
+/// not, the library's length a constant in each harness: over a length
+/// the solver chose, the proof ran out of memory at twelve gigabytes.
+fn mulch_puts_the_lands_of_the_top_four_in_hand_and_the_rest_in_the_graveyard(library: usize) {
+    let (registry, mut state, spell, _) = cards_held(Box::new(isd::mulch::Mulch), library, 0, library, 0);
+    let before = Snapshot::of(&state);
+    let top: Vec<ObjectId> = state.players[0].library_order.iter().take(4).copied().collect();
+    registry.get(state.get_object(spell).expect("on the stack").card_id).expect("registered")
+        .on_resolve(&mut state, spell, &[], &registry);
+    let land = |id: &ObjectId| state.get_object(*id).expect("on the board").card_types.contains(&CardType::Land);
+    let lands = kept(&top, |id| land(&id));
+    let rest = kept(&top, |id| !land(&id));
+    assert!(acted() == top.len() && were(0, lands.len(), |i| Act::Move(lands[i], Zone::Hand))
+        && were(lands.len(), rest.len(), |i| Act::MillCard(rest[i])));
+    assert!(Snapshot::of(&state) == before);
+    std::mem::forget((registry, state));
+}
+
+case_by_case! { mulch_puts_the_lands_of_the_top_four_in_hand_and_the_rest_in_the_graveyard;
+    mulch_over_an_empty_library: 0,
+    mulch_over_a_library_of_one: 1,
+    mulch_over_a_library_of_two: 2,
+    mulch_over_a_library_of_three: 3,
+    mulch_over_a_library_of_four: 4,
+    mulch_over_a_library_of_five: 5,
 }
 
 /// Past in Flames resolving over its board: an instant, a sorcery and a
