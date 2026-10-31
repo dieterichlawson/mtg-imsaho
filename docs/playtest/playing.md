@@ -18,6 +18,26 @@ the contract it is supposed to satisfy, and find where the two disagree.
 When you find a way to look that the list doesn't have, take it — and
 then add it, per "Adding an idea" in `docs/playtest/README.md`.
 
+**Reach the board you came for by editing a save, not by shuffling.** On
+2026-10-31 all three Competitor probes found on their own that natural
+shuffles spend a C night on mana screw and on Enter presses. A bare `C-m`
+in a hotseat game auto-passes a seat that has only mana abilities, which
+skips the other seat's main phase, so read `Your turn (you are pN)` before
+every pass. Two edits keep the position legal and the invariants checked:
+
+- **Re-deal at the mulligan:** `--stop-after 1 --save`, then swap card
+  identities between hand and library objects. Zones, ids and events are
+  untouched, so `--resume` accepts it.
+- **Place a board on turn 1, main phase 1:** move objects out of
+  `players[*].library_order` into the battlefield, the hand, the graveyard
+  or the library top. The validator then wants `state.events` cleared and
+  `trigger_event_index` set to 0. A planeswalker placed this way needs
+  `is_legendary` and its loyalty counters set by hand. Permanents cannot be
+  placed during the mulligan.
+
+A repro built this way lists the board it built, or ships the edit script,
+so a fresh reader gets the same position.
+
 ## Where to look
 
 - `mtg-engine/src/` is the engine: `engine.rs` (priority, casting, action
