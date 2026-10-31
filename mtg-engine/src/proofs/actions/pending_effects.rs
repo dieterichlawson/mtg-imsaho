@@ -177,6 +177,27 @@ fn an_effect(kind: u8, target: crate::ids::ObjectId) -> (crate::state::Temporary
     }
 }
 
+/// Whether `t` is the effect [`an_effect`] makes of `kind` about `target`,
+/// matched by kind rather than compared whole: an effect the pruning kept
+/// is, to symbolic execution, one of any kind, and `==` on a temporary
+/// effect walked every filter a protection grant could hold and compared
+/// every string (the prevention's proof ran out of memory there).
+fn is_effect(t: &crate::state::TemporaryEffect, kind: u8, target: crate::ids::ObjectId) -> bool {
+    use crate::state::TemporaryEffect as T;
+    use crate::types::{CreatureFilter, Keyword};
+    match kind % 9 {
+        0 => matches!(t, T::ModifyPT { target: x, power_mod: 1, toughness_mod: -1 } if *x == target),
+        1 => matches!(t, T::GrantKeyword { target: x, keyword: Keyword::Flying } if *x == target),
+        2 => matches!(t, T::RemoveKeyword { target: x, keyword: Keyword::Defender } if *x == target),
+        3 => matches!(t, T::CantBlock { target: x } if *x == target),
+        4 => matches!(t, T::GrantProtection { target: x, filter: CreatureFilter::ControlledByOpponent } if *x == target),
+        5 => matches!(t, T::ChangeControl { target: x, controller: PlayerId(1), timestamp: 3 } if *x == target),
+        6 => matches!(t, T::ModifyPTWhileSourceInPlay { target: x, source, power_mod: 1, toughness_mod: 0 } if *x == target && *source == target),
+        7 => matches!(t, T::GrantFlashback { target: x, cost } if *x == target && cost.symbols.is_empty()),
+        _ => matches!(t, T::PreventCombatDamageExcept { filter: CreatureFilter::ControlledByYou, source_name } if source_name.is_empty()),
+    }
+}
+
 /// `prune_effects_on_departed_objects` over effects of the kinds given, in
 /// that order, effect `j` about object `about[j]`: either of two objects
 /// (each on the battlefield or in a graveyard), or, for 2, one no longer
@@ -210,7 +231,7 @@ fn pruning<const N: usize>(kinds: [u8; N], about: [u8; N]) {
         let (effect, about_a_permanent) = an_effect(kinds[j], target(j));
         let on_battlefield = about[j] < 2 && on[usize::from(about[j])];
         if !about_a_permanent || on_battlefield {
-            assert!(state.until_end_of_turn.get(n) == Some(&effect));
+            assert!(state.until_end_of_turn.get(n).is_some_and(|t| is_effect(t, kinds[j], target(j))));
             n += 1;
         }
         std::mem::forget(effect);
