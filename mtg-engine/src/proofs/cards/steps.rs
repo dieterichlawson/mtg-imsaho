@@ -152,8 +152,9 @@ card_proof! {
 card_proof! {
     /// Reaper from the Abyss: triggers at each end step, if a creature died
     /// this turn (checked as it triggers and as it resolves, CR 603.4); its
-    /// target a non-Demon creature on the battlefield; destroyed.
-    fn reaper_from_the_abyss_destroys_a_non_demon_after_a_death() {
+    /// target a non-Demon creature on the battlefield. Resolving is the
+    /// next proof's: the two in one harness ran out of memory at 7 GB.
+    fn reaper_from_the_abyss_triggers_after_a_death_targeting_a_non_demon() {
         let reaper = isd::reaper_from_the_abyss::ReaperFromTheAbyss;
         // Matched as a pattern: a requirement holding a list of names,
         // compared with one built to compare, is two read from the heap
@@ -164,13 +165,23 @@ card_proof! {
         for back in [false, true] {
             assert!(reaper.step_trigger_scope(&TriggerKind::EndStep, back) == TriggerScope::Each);
         }
-        let mut b = permanent(Box::new(isd::reaper_from_the_abyss::ReaperFromTheAbyss));
+        let b = permanent(Box::new(isd::reaper_from_the_abyss::ReaperFromTheAbyss));
         let died = b.state.creature_died_this_turn;
         assert!(reaper.should_trigger(&b.state, b.me, &TriggerKind::EndStep, &b.registry) == died);
         let candidate = b.others[0];
         let o = b.get(candidate);
         let creature = o.zone == Zone::Battlefield && o.card_types.contains(&CardType::Creature);
         assert!(reaper.is_valid_target(&b.state, b.you, &Target::Object(candidate), &b.registry) == (creature && !b.is(candidate, "Demon")));
+        std::mem::forget(b);
+    }
+}
+
+card_proof! {
+    /// Reaper from the Abyss resolving: if a creature died this turn, its
+    /// target destroyed; otherwise nothing.
+    fn reaper_from_the_abyss_destroys_its_target_after_a_death() {
+        let mut b = permanent(Box::new(isd::reaper_from_the_abyss::ReaperFromTheAbyss));
+        let died = b.state.creature_died_this_turn;
         let target = any_target(b.others);
         let before = Snapshot::of(&b.state);
         let card = b.card();
