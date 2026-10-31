@@ -16,17 +16,33 @@ use crate::mana;
 use crate::proofs::cards::{blank_board, board, Snapshot};
 use crate::types::{Color, ManaCost, ManaPool, ManaSymbol, ManaType, Zone};
 
-/// Any pool of up to two white, two green and two colorless mana.
-fn any_pool() -> ManaPool {
+/// Any pool of up to two white, two green and two colorless mana; but, if
+/// `held` is given, exactly that much of the cost's colour (`colour_of`).
+fn any_pool(colour: Option<ManaType>, held: Option<u32>) -> ManaPool {
     let mut pool = ManaPool::new();
     for t in [ManaType::White, ManaType::Green, ManaType::Colorless] {
-        let n: u8 = kani::any();
-        kani::assume(n <= 2);
+        let n = match (colour, held) {
+            (Some(c), Some(h)) if c == t => h,
+            _ => {
+                let n: u8 = kani::any();
+                kani::assume(n <= 2);
+                u32::from(n)
+            }
+        };
         if n > 0 {
-            pool.add(t, u32::from(n));
+            pool.add(t, n);
         }
     }
     pool
+}
+
+/// The colour cost `which` (`a_cost`) has pips of, if any.
+fn colour_of(which: u8) -> Option<ManaType> {
+    match which {
+        1 | 2 | 5 => Some(ManaType::Green),
+        3 => Some(ManaType::White),
+        _ => None,
+    }
 }
 
 /// The costs the proofs pay, one per call: `{1}`, `{G}`, `{1}{G}`,
@@ -56,13 +72,19 @@ fn spent(pool: &ManaPool, cost: &ManaCost) -> ManaPool {
 /// any pool of up to two of three types, either player's.
 ///
 /// `who` pays cost `which` with nothing to tap: a permanent of each
-/// player's that makes no mana.
-fn from_the_pool(which: u8, who: PlayerId) {
+/// player's that makes no mana; the pool holding `held` of the cost's
+/// colour, if given, a constant in each harness. With that the solver's
+/// too, the pips still owed after the pool paid what it could were a list
+/// of a length it left open, which the planner sorts and walks, and the
+/// proofs of every cost with a colour ran out of memory in the solver at
+/// 7 GB. A harness may then reach one outcome only (no green never pays
+/// {G}), and its other cover is unreached.
+fn from_the_pool(which: u8, who: PlayerId, held: Option<u32>) {
     let (registry, mut state, blank) = blank_board();
     state.create_object(blank, PlayerId(0), Zone::Battlefield, None, None);
     state.create_object(blank, PlayerId(1), Zone::Battlefield, None, None);
     let cost = a_cost(which);
-    let pool = any_pool();
+    let pool = any_pool(colour_of(which), held);
     state.players[usize::from(who.0)].mana_pool = pool.clone();
     let before = Snapshot::of(&state);
     let can = mana::can_pay(&pool, &cost);
@@ -76,7 +98,8 @@ fn from_the_pool(which: u8, who: PlayerId) {
     assert!(state.players[usize::from(who.0)].mana_pool == expected);
     assert!(state.players[usize::from(1 - who.0)].mana_pool.is_empty());
     assert!(Snapshot::of(&state) == before);
-    // Both outcomes reached, for every cost: each is paid by some pool.
+    // Both outcomes reached, for every cost a pool of any colour pays;
+    // with the colour's amount given, the one that amount allows.
     kani::cover!(paid, "the cost paid from the pool");
     kani::cover!(!paid, "the cost refused");
     std::mem::forget((registry, state, cost, pool, expected, plan));
@@ -94,7 +117,7 @@ fn from_the_pool(which: u8, who: PlayerId) {
 ///
 /// `who` pays cost `which` with a Forest of theirs, untapped or not, and a
 /// permanent of the other player's that makes no mana.
-fn tapping_a_forest(which: u8, who: PlayerId) {
+fn tapping_a_forest(which: u8, who: PlayerId, held: Option<u32>) {
     let (registry, mut state, blank, forest_card) = board(Box::new(crate::cards::forest::Forest));
     let forest = state.create_object(forest_card, who, Zone::Battlefield, None, None);
     let untapped: bool = kani::any();
@@ -103,7 +126,7 @@ fn tapping_a_forest(which: u8, who: PlayerId) {
     o.summoning_sick = kani::any();
     state.create_object(blank, PlayerId(1 - who.0), Zone::Battlefield, None, None);
     let cost = a_cost(which);
-    let pool = any_pool();
+    let pool = any_pool(colour_of(which), held);
     state.players[usize::from(who.0)].mana_pool = pool.clone();
     let before = Snapshot::of(&state);
 
@@ -152,11 +175,12 @@ fn tapping_a_forest(which: u8, who: PlayerId) {
 }
 
 /// A proof above for each cost and each player paying, both constants in
-/// each harness: a player index left to the solver blurs both players'
-/// pools into one question, a cost left to it is a list of every cost at
-/// once, and the cases of one harness add up.
+/// each harness, and how much of the cost's colour the pool holds, if
+/// given: a player index left to the solver blurs both players' pools
+/// into one question, a cost left to it is a list of every cost at once,
+/// and the cases of one harness add up.
 macro_rules! each_cost {
-    ($($name:ident: $proof:ident($which:literal, $who:literal);)*) => {$(
+    ($($name:ident: $proof:ident($which:literal, $who:literal, $held:expr);)*) => {$(
         #[kani::proof]
         #[kani::unwind(7)]
         #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
@@ -166,34 +190,50 @@ macro_rules! each_cost {
         #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
         /// The proof above it, for one cost and one player.
         fn $name() {
-            $proof($which, PlayerId($who));
+            $proof($which, PlayerId($who), $held);
         }
     )*};
 }
 
 each_cost! {
-    one_is_paid_from_the_pool_exactly_when_it_can_be_for_the_first_player: from_the_pool(0, 0);
-    one_is_paid_from_the_pool_exactly_when_it_can_be_for_the_second_player: from_the_pool(0, 1);
-    green_is_paid_from_the_pool_exactly_when_it_can_be_for_the_first_player: from_the_pool(1, 0);
-    green_is_paid_from_the_pool_exactly_when_it_can_be_for_the_second_player: from_the_pool(1, 1);
-    one_and_green_are_paid_from_the_pool_exactly_when_they_can_be_for_the_first_player: from_the_pool(2, 0);
-    one_and_green_are_paid_from_the_pool_exactly_when_they_can_be_for_the_second_player: from_the_pool(2, 1);
-    two_white_are_paid_from_the_pool_exactly_when_they_can_be_for_the_first_player: from_the_pool(3, 0);
-    two_white_are_paid_from_the_pool_exactly_when_they_can_be_for_the_second_player: from_the_pool(3, 1);
-    colorless_is_paid_from_the_pool_exactly_when_it_can_be_for_the_first_player: from_the_pool(4, 0);
-    colorless_is_paid_from_the_pool_exactly_when_it_can_be_for_the_second_player: from_the_pool(4, 1);
-    two_green_are_paid_from_the_pool_exactly_when_they_can_be_for_the_first_player: from_the_pool(5, 0);
-    two_green_are_paid_from_the_pool_exactly_when_they_can_be_for_the_second_player: from_the_pool(5, 1);
-    one_is_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_first_player: tapping_a_forest(0, 0);
-    one_is_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_second_player: tapping_a_forest(0, 1);
-    green_is_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_first_player: tapping_a_forest(1, 0);
-    green_is_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_second_player: tapping_a_forest(1, 1);
-    one_and_green_are_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_first_player: tapping_a_forest(2, 0);
-    one_and_green_are_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_second_player: tapping_a_forest(2, 1);
-    two_white_are_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_first_player: tapping_a_forest(3, 0);
-    two_white_are_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_second_player: tapping_a_forest(3, 1);
-    colorless_is_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_first_player: tapping_a_forest(4, 0);
-    colorless_is_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_second_player: tapping_a_forest(4, 1);
-    two_green_are_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_first_player: tapping_a_forest(5, 0);
-    two_green_are_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_second_player: tapping_a_forest(5, 1);
+    one_is_paid_from_the_pool_exactly_when_it_can_be_for_the_first_player: from_the_pool(0, 0, None);
+    one_is_paid_from_the_pool_exactly_when_it_can_be_for_the_second_player: from_the_pool(0, 1, None);
+    green_is_paid_from_the_pool_exactly_when_it_can_be_with_no_green_for_the_first_player: from_the_pool(1, 0, Some(0));
+    green_is_paid_from_the_pool_exactly_when_it_can_be_with_no_green_for_the_second_player: from_the_pool(1, 1, Some(0));
+    green_is_paid_from_the_pool_exactly_when_it_can_be_with_one_green_for_the_first_player: from_the_pool(1, 0, Some(1));
+    green_is_paid_from_the_pool_exactly_when_it_can_be_with_one_green_for_the_second_player: from_the_pool(1, 1, Some(1));
+    green_is_paid_from_the_pool_exactly_when_it_can_be_with_two_green_for_the_first_player: from_the_pool(1, 0, Some(2));
+    green_is_paid_from_the_pool_exactly_when_it_can_be_with_two_green_for_the_second_player: from_the_pool(1, 1, Some(2));
+    one_and_green_are_paid_from_the_pool_exactly_when_they_can_be_with_no_green_for_the_first_player: from_the_pool(2, 0, Some(0));
+    one_and_green_are_paid_from_the_pool_exactly_when_they_can_be_with_no_green_for_the_second_player: from_the_pool(2, 1, Some(0));
+    one_and_green_are_paid_from_the_pool_exactly_when_they_can_be_with_one_green_for_the_first_player: from_the_pool(2, 0, Some(1));
+    one_and_green_are_paid_from_the_pool_exactly_when_they_can_be_with_one_green_for_the_second_player: from_the_pool(2, 1, Some(1));
+    one_and_green_are_paid_from_the_pool_exactly_when_they_can_be_with_two_green_for_the_first_player: from_the_pool(2, 0, Some(2));
+    one_and_green_are_paid_from_the_pool_exactly_when_they_can_be_with_two_green_for_the_second_player: from_the_pool(2, 1, Some(2));
+    two_white_are_paid_from_the_pool_exactly_when_they_can_be_with_no_white_for_the_first_player: from_the_pool(3, 0, Some(0));
+    two_white_are_paid_from_the_pool_exactly_when_they_can_be_with_no_white_for_the_second_player: from_the_pool(3, 1, Some(0));
+    two_white_are_paid_from_the_pool_exactly_when_they_can_be_with_one_white_for_the_first_player: from_the_pool(3, 0, Some(1));
+    two_white_are_paid_from_the_pool_exactly_when_they_can_be_with_one_white_for_the_second_player: from_the_pool(3, 1, Some(1));
+    two_white_are_paid_from_the_pool_exactly_when_they_can_be_with_two_white_for_the_first_player: from_the_pool(3, 0, Some(2));
+    two_white_are_paid_from_the_pool_exactly_when_they_can_be_with_two_white_for_the_second_player: from_the_pool(3, 1, Some(2));
+    two_green_are_paid_from_the_pool_exactly_when_they_can_be_with_no_green_for_the_first_player: from_the_pool(5, 0, Some(0));
+    two_green_are_paid_from_the_pool_exactly_when_they_can_be_with_no_green_for_the_second_player: from_the_pool(5, 1, Some(0));
+    two_green_are_paid_from_the_pool_exactly_when_they_can_be_with_one_green_for_the_first_player: from_the_pool(5, 0, Some(1));
+    two_green_are_paid_from_the_pool_exactly_when_they_can_be_with_one_green_for_the_second_player: from_the_pool(5, 1, Some(1));
+    two_green_are_paid_from_the_pool_exactly_when_they_can_be_with_two_green_for_the_first_player: from_the_pool(5, 0, Some(2));
+    two_green_are_paid_from_the_pool_exactly_when_they_can_be_with_two_green_for_the_second_player: from_the_pool(5, 1, Some(2));
+    colorless_is_paid_from_the_pool_exactly_when_it_can_be_for_the_first_player: from_the_pool(4, 0, None);
+    colorless_is_paid_from_the_pool_exactly_when_it_can_be_for_the_second_player: from_the_pool(4, 1, None);
+    one_is_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_first_player: tapping_a_forest(0, 0, None);
+    one_is_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_second_player: tapping_a_forest(0, 1, None);
+    green_is_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_first_player: tapping_a_forest(1, 0, None);
+    green_is_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_second_player: tapping_a_forest(1, 1, None);
+    one_and_green_are_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_first_player: tapping_a_forest(2, 0, None);
+    one_and_green_are_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_second_player: tapping_a_forest(2, 1, None);
+    two_white_are_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_first_player: tapping_a_forest(3, 0, None);
+    two_white_are_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_second_player: tapping_a_forest(3, 1, None);
+    colorless_is_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_first_player: tapping_a_forest(4, 0, None);
+    colorless_is_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_second_player: tapping_a_forest(4, 1, None);
+    two_green_are_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_first_player: tapping_a_forest(5, 0, None);
+    two_green_are_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_second_player: tapping_a_forest(5, 1, None);
 }
