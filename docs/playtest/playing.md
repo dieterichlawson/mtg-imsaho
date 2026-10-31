@@ -72,7 +72,7 @@ contradict the CR.
 - C2 control mirror: counterspells, instant-speed battles, priority holds
 - C3 attrition: removal-heavy, graveyard value, flashback
 - C4 tribal synergy: humans/vampires/zombies/spirits deck vs another tribe
-- C5 planeswalker-centric: protect and ultimate a walker; attack one down
+- C5 [tried 2026-10-31, with C24] planeswalker-centric: protect and ultimate a walker; attack one down
 - C6 equipment voltron vs token swarm
 - C7 curses: stack multiple curses on one player and play through them
 - C8 transform tempo: werewolf day/night flip manipulation via spell counts
@@ -134,7 +134,8 @@ contradict the CR.
   first draw (CR 103.7a), the London mulligan counts, summoning sickness
   on turn 1 (CR 302.6), APNAP consistency (CR 101.4), and whether the
   CLI ever says which seat is on the play
-- C24 planeswalkers as a combat target: attack a walker, defend it, and
+- C24 [tried 2026-10-31 → #980, #981; every CR claim held, trample onto the
+  walker (702.19c) included] planeswalkers as a combat target: attack a walker, defend it, and
   kill it. Verify the attack target is chosen per attacker at declare
   attackers and the CLI offers it per attacker (CR 508.1a), that combat
   damage removes that many loyalty counters (CR 306.7, 120.3c) and stays
@@ -1387,3 +1388,13 @@ illegal or dubious resolutions do.
   Mikaeus or Travel Preparations every turn, X as large as the lands allow,
   a long game's turn number; play them out under a release build and check
   nothing panics and no number shown wraps
+- L66 [proposed 2026-10-31, from #980] a transformed source that leaves while
+  its ability is on the stack. The Veil-Cursed's −1 or −3 taking Garruk to 0
+  named the ability "Garruk Relentless ability", the front face read from the
+  graveyard, against CR 113.7a's last-known information. Do the same for every
+  double-faced card whose back face has an activated or triggered ability
+  (the werewolves' back faces, Garruk, Delver's Insectile Aberration): kill or
+  bounce the source in response. Read the name on the stack, in the RESPOND
+  TO header, in each prompt the ability asks, in the log, in the LLM prompt
+  and on the page. Also check that the ability uses the back face's
+  characteristics where it reads its source's power, colour or name
