@@ -1102,6 +1102,42 @@ sits in memory. What was measured, and what the proofs do about each:
   `core::array::from_fn` ran out of memory, where those of one to three
   ids passed in under a minute. Built as slices of a three-id buffer,
   the empty ones pass in 9 to 39 seconds.
+- **A list rotated.** Divine Reckoning put its players in turn order by
+  rotating the list of them to start at the active player, and a
+  rotation moves its entries as bytes through a buffer of its own: with
+  the second player active (the first, the rotation is a no-op), every
+  player read back was either, and each proof where the first player was
+  asked ran out of memory in symbolic execution, where the same boards
+  with the first player active passed. Read in that order instead, the
+  players are each one known, and those proofs pass in about 270
+  seconds.
+- **An action recorded or not.** Moldgraf Monstrosity exiles itself only
+  if it is still in its graveyard, and its proof left that to the
+  solver: whether the exile was recorded left every action after it at
+  a place the solver left open, each written over whatever might have
+  been there and each read back as any kind of action, a token's
+  subtypes and all. With the zone a constant in each harness, both
+  finish symbolic execution in about 65 seconds (and still run out of
+  memory in the solver at 3.5 GB).
+- **A filter walked again, in a card.** The cards that return a card at
+  random from a graveyard (Woodland Sleuth, Ghoulraiser, Charmbreaker
+  Devils, Moldgraf Monstrosity) found their candidates as a filter
+  collected, which a proof walks again for each one it keeps, looking
+  each card up by id each time. As loops, their proofs' symbolic
+  execution halves; Charmbreaker Devils' passes at 7 GB, and Woodland
+  Sleuth's too once its loop is held to the five passes its board needs
+  (`// loop bound:` now takes a trait method's name, spaces and all)
+  rather than the harness's seven. Copying each chosen card's name for
+  the log line, which looked like the cost, was not: borrowed instead,
+  nothing moved.
+- **An effect compared whole, again.** Garruk, the Veil-Cursed's −3 and
+  the pruning of departed objects' effects compared each effect they
+  checked with `==`, over effects read back from a list the solver had
+  pushed to, or the pruning had moved, to symbolic execution of any
+  kind: half and seven eighths of those proofs. Matched by kind instead,
+  as Vampiric Fury's was, Garruk's passes in 372 seconds at 3.5 GB
+  (from out of memory at 7) and the prevention's pruning in 70 (from out
+  of memory in symbolic execution at 7).
 - **CBMC's memory checks.** `kani-bounded.py` leaves out CBMC's pointer,
   bounds and division checks (`--memory-checks` keeps them): that safe
   Rust reads only memory it may is the compiler's guarantee, and Rust's
