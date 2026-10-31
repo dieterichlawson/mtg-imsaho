@@ -110,6 +110,12 @@ export interface PermanentView {
   is_copy: boolean;
   attacking: AttackTarget | null;
   blocking: ObjectId[];
+  /**
+   * A blocking creature (CR 509.1g), which stays true when the attacker it
+   * blocked has left combat — `blocking` is then empty and it deals no
+   * combat damage (CR 510.1d, #983).
+   */
+  is_blocking: boolean;
   blocked_by: ObjectId[];
   /**
    * Blocked (CR 509.1h), which stays true when every blocker has left

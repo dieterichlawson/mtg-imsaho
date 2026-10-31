@@ -338,7 +338,9 @@ export function permBadges(p: PermanentView, state: State): { t: string; c: stri
   // An attacker whose blockers all left combat is still blocked (CR
   // 509.1h) and deals no combat damage; a bare ATK read as unblocked (#725).
   if (p.attacking) b.push(p.blocked && !(p.blocked_by && p.blocked_by.length) ? { t: "BLKD", c: "#a08060" } : { t: "ATK", c: "#e07040" });
-  if (p.blocking && p.blocking.length) b.push({ t: "BLK", c: "#60a0e0" });
+  // A blocker whose attacker left combat is still blocking (CR 510.1d), so
+  // it keeps its mark to the end of combat (#983).
+  if ((p.blocking && p.blocking.length) || p.is_blocking) b.push({ t: "BLK", c: "#60a0e0" });
   if (p.affected_by_summoning_sickness) b.push({ t: "z", c: "#8080a0" });
   const c = p.counters || {};
   if (c.PlusOnePlusOne) b.push({ t: `+${c.PlusOnePlusOne}`, c: "#80e080" });
@@ -522,7 +524,7 @@ export function stackKey(p: PermanentView, attachedTo: Set<ObjectId>): string | 
   if (attachedTo.has(p.object_id)) return null;
   if (p.counters && Object.values(p.counters).some(n => n)) return null;
   if (p.damage_marked || p.regeneration_shields) return null;
-  if (p.attacking || (p.blocking && p.blocking.length) || (p.blocked_by && p.blocked_by.length)) return null;
+  if (p.attacking || (p.blocking && p.blocking.length) || p.is_blocking || (p.blocked_by && p.blocked_by.length)) return null;
   if (p.named_card) return null;
   return [
     p.name, p.tapped, p.is_token,
@@ -1001,6 +1003,7 @@ export function inspectorFacts(state: LiveState, e: IndexEntry): string[] {
   if (o.attached_to_player !== undefined && o.attached_to_player !== null) out.push(`Enchants ${playerLabel(state, o.attached_to_player)}`);
   if (o.attacking) out.push("Attacking " + ("Player" in o.attacking ? playerLabel(state, o.attacking.Player) : nameOf(state, o.attacking.Planeswalker)));
   if (o.blocking && o.blocking.length) out.push("Blocking " + o.blocking.map(id => nameOf(state, id)).join(", "));
+  else if (o.is_blocking) out.push("Blocking nothing: its attacker left combat, so it deals no combat damage");
   if (o.blocked_by && o.blocked_by.length) out.push("Blocked by " + o.blocked_by.map(id => nameOf(state, id)).join(", "));
   else if (o.attacking && o.blocked) out.push("Blocked: its blockers left combat, so it deals no combat damage unless it has trample");
   for (const p of o.protections || []) out.push(p);

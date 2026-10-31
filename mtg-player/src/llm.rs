@@ -1659,7 +1659,7 @@ Every prompt restates the whole position, in this order:
 - `Opp's cards in view:` rules text for the opponent's cards on the battlefield, on the stack, in exile or revealed, and for a graveyard card that works from there (flashback; cast or returned from a graveyard) or that the question or a stack object points at. You learn them as they come into view, never before. `(×N)` ends a line repeated N times; `3x` is three of a card.
 - A context line (`[MAIN PHASE 1]`, `[RESPOND TO opp's <spell>]`, `[AFTER BLOCKERS DECLARED]`, ...) and the question.
 
-Boards group lands (`2x Forest (1 tapped)`); any other permanent is `Name (#id) P/T keywords [flags]`. The `#id` tells apart permanents of one name. P/T is current, bonuses included, and a creature has exactly the keywords printed after it. Status flags after a permanent, in one bracket: `T` tapped; `S` summoning sick (no attacking or {T} abilities until its controller's next turn; it can block); `attacking you`/`attacking Opp`/`attacking <planeswalker> (#id)`; `blocking <attacker> (#id)`; `blocked by <blocker> (#id)`; `blocked (no blockers left)` (deals no combat damage unless it has trample); `Ndmg` damage marked; `damaged this turn by <permanent> (#id)` (what on the battlefield has dealt it damage this turn, marked or since removed); `regen shield`/`N regen shields`; `attacked this turn` (no longer attacking); `once-per-turn ability used` (its "only once each turn" or loyalty ability is spent this turn); `token`; `copy`; `owned by opponent`/`owned by you` (it returns to its owner when the control effect ends, and goes to its owner's graveyard); `+1+1xN`, `-1-1xN`, `LOYxN` or another counter by kind (`Slimex2`); `names: <card>`; `enchanting you`/`enchanting opponent` (a Curse's player); `legendary` (CR 704.5j: of two with one name under your control, you keep one). Elsewhere an object carries its id and whose it is: `(your)`, `(opponent's)`, `(in your graveyard)`, `(in opponent's exile)`.
+Boards group lands (`2x Forest (1 tapped)`); any other permanent is `Name (#id) P/T keywords [flags]`. The `#id` tells apart permanents of one name. P/T is current, bonuses included, and a creature has exactly the keywords printed after it. Status flags after a permanent, in one bracket: `T` tapped; `S` summoning sick (no attacking or {T} abilities until its controller's next turn; it can block); `attacking you`/`attacking Opp`/`attacking <planeswalker> (#id)`; `blocking <attacker> (#id)`; `blocked by <blocker> (#id)`; `blocked (no blockers left)` (deals no combat damage unless it has trample); `blocking (no attacker left)` (still blocking, deals no combat damage); `Ndmg` damage marked; `damaged this turn by <permanent> (#id)` (what on the battlefield has dealt it damage this turn, marked or since removed); `regen shield`/`N regen shields`; `attacked this turn` (no longer attacking); `once-per-turn ability used` (its "only once each turn" or loyalty ability is spent this turn); `token`; `copy`; `owned by opponent`/`owned by you` (it returns to its owner when the control effect ends, and goes to its owner's graveyard); `+1+1xN`, `-1-1xN`, `LOYxN` or another counter by kind (`Slimex2`); `names: <card>`; `enchanting you`/`enchanting opponent` (a Curse's player); `legendary` (CR 704.5j: of two with one name under your control, you keep one). Elsewhere an object carries its id and whose it is: `(your)`, `(opponent's)`, `(in your graveyard)`, `(in opponent's exile)`.
 
 ## Answering
 
@@ -3696,6 +3696,11 @@ impl LlmPlayer {
             if !c.blocking.is_empty() {
                 flag_parts.push(format!("blocking {}",
                     c.blocking.iter().map(|id| named(*id)).collect::<Vec<_>>().join(" and ")));
+            } else if c.is_blocking {
+                // A blocking creature whose attacker left combat (CR
+                // 510.1d): it deals no combat damage, and with no flag it
+                // read as an idle creature out of combat (#983).
+                flag_parts.push("blocking (no attacker left)".into());
             }
             if !c.blocked_by.is_empty() {
                 flag_parts.push(format!("blocked by {}",
@@ -10311,9 +10316,13 @@ this Aura deals 1 damage to that player.";
         let mut h = perm(55, "Homicidal Brute", 5, 1, you);
         h.attacked_this_turn = true;
         h.once_per_turn_used = true;
-        let all = vec![&a, &alone, &b, &c, &d, &e, &f, &g, &h];
+        // A blocker whose attacker left combat (#983).
+        let mut lone = perm(56, "Elite Inquisitor", 2, 2, opp);
+        lone.is_blocking = true;
+        let all = vec![&a, &alone, &b, &c, &d, &e, &f, &g, &h, &lone];
         let board = LlmPlayer::format_perms_compact(&all, &all, you);
         assert!(board.contains("blocked (no blockers left)"), "{board}");
+        assert!(board.contains("Elite Inquisitor (#56) 2/2 colorless [blocking (no attacker left)]"), "{board}");
         assert!(board.contains("[attacked this turn,once-per-turn ability used]"), "{board}");
         assert!(board.contains("enchanting you") && board.contains("enchanting opponent"), "{board}");
         assert!(board.contains("1x Forest [owned by opponent]"), "{board}");

@@ -2973,7 +2973,9 @@ impl CliPlayer {
             " [ATK, blocked]"
         } else if c.attacking.is_some() {
             " [ATK]"
-        } else if !c.blocking.is_empty() {
+        } else if !c.blocking.is_empty() || c.is_blocking {
+            // Still a blocking creature with its attacker gone (CR
+            // 510.1d): it stays in combat to the end of combat (#983).
             " [BLK]"
         } else {
             ""
@@ -5658,6 +5660,10 @@ impl CliPlayer {
         if !perm.blocking.is_empty() {
             let names: Vec<String> = perm.blocking.iter().map(|&a| named(a)).collect();
             let _ = execute!(out, Print(format!("  Blocking: {}\n", names.join(", "))));
+        } else if perm.is_blocking {
+            // CR 510.1d: a blocking creature whose attacker has left combat
+            // blocks nothing and deals no combat damage (#983).
+            let _ = execute!(out, Print("  Blocking: nothing, its attacker has left combat; it deals no combat damage\n".to_string()));
         }
         if !perm.blocked_by.is_empty() {
             let names: Vec<String> = perm.blocked_by.iter().map(|&b| named(b)).collect();
@@ -13278,6 +13284,29 @@ Wolves or Werewolves is prevented".into()];
         let (a, b, c) = CliPlayer::creature_row_parts(&perm, None);
         let row = format!("{a}{b}{c}");
         assert!(!row.contains("blocked"), "an unblocked attacker is plain [ATK]: {row}");
+    }
+
+    /// Issue #983: a blocker whose attacker left combat is still a blocking
+    /// creature (CR 510.1d) to the end of combat; its row keeps `[BLK]` and
+    /// the detail page says it blocks nothing.
+    #[test]
+    fn a_blocker_whose_attacker_left_still_says_it_is_blocking() {
+        let mut v = view(Step::CombatDamage, 4, true);
+        let mut perm = creature(41, "Elite Inquisitor", 1);
+        perm.is_blocking = true;
+        v.battlefield = vec![perm.clone()];
+        let (a, b, c) = CliPlayer::creature_row_parts(&perm, None);
+        let row = format!("{a}{b}{c}");
+        assert!(row.contains("[BLK]"), "{row}");
+        let mut buf: Vec<u8> = Vec::new();
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &perm);
+        let text = String::from_utf8_lossy(&buf).to_string();
+        assert!(text.contains("Blocking: nothing, its attacker has left combat"), "{text}");
+
+        perm.is_blocking = false;
+        let (a, b, c) = CliPlayer::creature_row_parts(&perm, None);
+        let row = format!("{a}{b}{c}");
+        assert!(!row.contains("BLK"), "a creature out of combat has no mark: {row}");
     }
 
     /// Issue #727: the detail page says what a Nevermore named, and that a
