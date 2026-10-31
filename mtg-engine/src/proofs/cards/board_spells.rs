@@ -513,52 +513,84 @@ card_proof! {
     }
 }
 
-card_proof! {
-    /// Past in Flames: flashback until end of turn, at its mana cost, for
-    /// each instant and sorcery card in its controller's graveyard that
-    /// does not have it from an earlier one; no other card, and nothing
-    /// else. The board: an instant, a sorcery and a creature card, each in
-    /// either player's graveyard, the instant perhaps granted flashback
-    /// already.
-    fn past_in_flames_gives_flashback_to_each_instant_and_sorcery_in_your_graveyard() {
-        // Four cards, no more: a registry's lists start empty and are given
-        // room for four, and a fifth card would grow them.
-        let mut registry = CardRegistry::new();
-        let cards = [
-            registry.register(Box::new(crate::cards::lightning_bolt::LightningBolt)),
-            registry.register(Box::new(crate::cards::lava_axe::LavaAxe)),
-            registry.register(Box::new(crate::cards::grizzly_bears::GrizzlyBears)),
-        ];
-        let past = registry.register(Box::new(isd::past_in_flames::PastInFlames));
-        let mut state = super::new_game();
-        let mut objects = Vec::with_capacity(3);
-        for card in cards {
-            let owner: bool = kani::any();
-            let id = state.create_object(card, PlayerId(u8::from(owner)), Zone::Graveyard, None, None);
-            if owner {
-                state.players[1].graveyard_order.push(id);
-            } else {
-                state.players[0].graveyard_order.push(id);
-            }
-            objects.push(id);
-        }
-        let granted: bool = kani::any();
-        let bolt_cost = registry.get(cards[0]).expect("registered").card_data().cost.expect("a cost");
-        if granted {
-            state.until_end_of_turn.push(T::GrantFlashback { target: objects[0], cost: bolt_cost.clone() });
-        }
-        let spell = state.create_object(past, PlayerId(0), Zone::Stack, None, None);
-        let before = Snapshot::of(&state);
-        registry.get(past).expect("registered").on_resolve(&mut state, spell, &[], &registry);
-        let granted_now = kept(&[0, 1], |i: usize| state.get_object(objects[i]).expect("on the board").owner == PlayerId(0) && !(i == 0 && granted));
-        let costs = [bolt_cost, crate::cards::lava_axe::LavaAxe.card_data().cost.expect("a cost")];
-        let added = &state.until_end_of_turn[before.until_end_of_turn()..];
-        // Matched by kind, not compared whole (`each_matches` says why).
-        assert!(crate::proofs::cards::each_matches(added, granted_now.len(), |k, t| {
-            matches!(t, T::GrantFlashback { target, cost } if *target == objects[granted_now[k]] && *cost == costs[granted_now[k]])
-        }));
-        assert!(acted() == 0);
-        assert!(Snapshot::of(&state).without_until_end_of_turn() == before.without_until_end_of_turn());
-        std::mem::forget((registry, state));
+/// Past in Flames resolving over its board: an instant, a sorcery and a
+/// creature card, each in the graveyard of player 1 if `theirs` says so
+/// and of player 0 otherwise, and the instant granted flashback already if
+/// `granted`; both constants in each harness. Over owners the solver
+/// chose, the cards its controller's graveyard listed were a list it left
+/// open, every cost copied from them a copy of a length it left open, and
+/// the proof ran out of memory at twelve gigabytes. The game after, the
+/// three cards, the instant's and the sorcery's mana costs, and the board
+/// before; the effects' list has room for the three the board can hold.
+struct PastInFlamesBoard {
+    _registry: CardRegistry,
+    state: GameState,
+    objects: Vec<ObjectId>,
+    costs: [crate::types::ManaCost; 2],
+    before: Snapshot,
+}
+
+fn past_in_flames_resolves(theirs: [bool; 3], granted: bool) -> PastInFlamesBoard {
+    // Four cards, no more: a registry's lists start empty and are given
+    // room for four, and a fifth card would grow them.
+    let mut registry = CardRegistry::new();
+    let cards = [
+        registry.register(Box::new(crate::cards::lightning_bolt::LightningBolt)),
+        registry.register(Box::new(crate::cards::lava_axe::LavaAxe)),
+        registry.register(Box::new(crate::cards::grizzly_bears::GrizzlyBears)),
+    ];
+    let past = registry.register(Box::new(isd::past_in_flames::PastInFlames));
+    let mut state = super::new_game();
+    state.until_end_of_turn = Vec::with_capacity(3);
+    let mut objects = Vec::with_capacity(3);
+    for i in 0..3 {
+        let owner = PlayerId(u8::from(theirs[i]));
+        let id = state.create_object(cards[i], owner, Zone::Graveyard, None, None);
+        state.players[usize::from(owner.0)].graveyard_order.push(id);
+        objects.push(id);
     }
+    let bolt_cost = registry.get(cards[0]).expect("registered").card_data().cost.expect("a cost");
+    if granted {
+        state.until_end_of_turn.push(T::GrantFlashback { target: objects[0], cost: bolt_cost.clone() });
+    }
+    let spell = state.create_object(past, PlayerId(0), Zone::Stack, None, None);
+    let before = Snapshot::of(&state);
+    registry.get(past).expect("registered").on_resolve(&mut state, spell, &[], &registry);
+    let costs = [bolt_cost, crate::cards::lava_axe::LavaAxe.card_data().cost.expect("a cost")];
+    PastInFlamesBoard { _registry: registry, state, objects, costs, before }
+}
+
+/// Past in Flames: flashback until end of turn, at its mana cost, for each
+/// instant and sorcery card in its controller's graveyard that does not
+/// have it from an earlier one; no other card, and nothing else.
+fn past_in_flames_gives_flashback_to_each_instant_and_sorcery_in_your_graveyard((theirs, granted): ([bool; 3], bool)) {
+    let p = past_in_flames_resolves(theirs, granted);
+    let granted_now = kept(&[0, 1], |i: usize| !theirs[i] && !(i == 0 && granted));
+    let added = &p.state.until_end_of_turn[p.before.until_end_of_turn()..];
+    // Matched by kind, not compared whole (`each_matches` says why).
+    assert!(crate::proofs::cards::each_matches(added, granted_now.len(), |k, t| {
+        matches!(t, T::GrantFlashback { target, cost } if *target == p.objects[granted_now[k]] && *cost == p.costs[granted_now[k]])
+    }));
+    assert!(acted() == 0);
+    assert!(Snapshot::of(&p.state).without_until_end_of_turn() == p.before.without_until_end_of_turn());
+    std::mem::forget((p, granted_now));
+}
+
+case_by_case! { past_in_flames_gives_flashback_to_each_instant_and_sorcery_in_your_graveyard;
+    past_in_flames_over_your_instant_sorcery_and_creature: ([false, false, false], false),
+    past_in_flames_over_your_instant_sorcery_and_creature_the_instant_with_flashback: ([false, false, false], true),
+    past_in_flames_over_your_instant_and_sorcery_and_their_creature: ([false, false, true], false),
+    past_in_flames_over_your_instant_and_sorcery_and_their_creature_the_instant_with_flashback: ([false, false, true], true),
+    past_in_flames_over_your_instant_and_creature_and_their_sorcery: ([false, true, false], false),
+    past_in_flames_over_your_instant_and_creature_and_their_sorcery_the_instant_with_flashback: ([false, true, false], true),
+    past_in_flames_over_your_instant_and_their_sorcery_and_creature: ([false, true, true], false),
+    past_in_flames_over_your_instant_and_their_sorcery_and_creature_the_instant_with_flashback: ([false, true, true], true),
+    past_in_flames_over_your_sorcery_and_creature_and_their_instant: ([true, false, false], false),
+    past_in_flames_over_your_sorcery_and_creature_and_their_instant_with_flashback: ([true, false, false], true),
+    past_in_flames_over_your_sorcery_and_their_instant_and_creature: ([true, false, true], false),
+    past_in_flames_over_your_sorcery_and_their_instant_with_flashback_and_creature: ([true, false, true], true),
+    past_in_flames_over_your_creature_and_their_instant_and_sorcery: ([true, true, false], false),
+    past_in_flames_over_your_creature_and_their_instant_with_flashback_and_sorcery: ([true, true, false], true),
+    past_in_flames_over_their_instant_sorcery_and_creature: ([true, true, true], false),
+    past_in_flames_over_their_instant_with_flashback_sorcery_and_creature: ([true, true, true], true),
 }
