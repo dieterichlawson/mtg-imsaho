@@ -775,6 +775,90 @@ pub fn names_in_order(names: Vec<String>) -> Vec<String> {
     names
 }
 
+/// How many lists [`record_store_ids`] keeps, and how long each may be:
+/// more of either fails the proof, naming which.
+const KEPT_LISTS: usize = 2;
+const KEPT_IDS: usize = 4;
+
+/// A list a card keeps in its state while it waits on an answer, as
+/// [`record_store_ids`] keeps it: whose state, under what prefix, and the
+/// ids.
+#[derive(Clone, Copy)]
+struct KeptList {
+    owner: *const crate::state::CardState,
+    prefix: &'static str,
+    len: usize,
+    ids: [ObjectId; KEPT_IDS],
+}
+
+static mut KEPT: [Option<KeptList>; KEPT_LISTS] = [None; KEPT_LISTS];
+
+/// Where the list `owner` keeps under `prefix` is, if it keeps one.
+fn kept_at(owner: *const crate::state::CardState, prefix: &str) -> Option<usize> {
+    // SAFETY: a proof runs on one thread, and only these stand-ins name KEPT.
+    let kept = unsafe { &*std::ptr::addr_of!(KEPT) };
+    (0..KEPT_LISTS).find(|&i| matches!(&kept[i], Some(k) if std::ptr::eq(k.owner, owner) && k.prefix == prefix))
+}
+
+/// Stands in for `cards::store_ids`: `ids` kept for `card_state` under
+/// `prefix`, in place of the list kept there, in a table of the proof's
+/// rather than in the card's state, whose keys are strings built byte by
+/// byte and compared in a map. The helpers' own proofs
+/// (`proofs::actions::card_state`) show that what they keep reads back as
+/// this does: the list last stored under a prefix, or none once cleared,
+/// and every other entry as it was. Liliana of the Veil's proof of her +1
+/// spent three quarters of its symbolic execution in them, and ran out of
+/// memory.
+#[allow(dead_code)] // named only by `kani::stub`
+pub fn record_store_ids(card_state: &mut crate::state::CardState, prefix: &str, ids: &[ObjectId]) {
+    assert!(ids.len() <= KEPT_IDS, "a longer list than a proof here keeps");
+    let owner: *const crate::state::CardState = card_state;
+    let at = kept_at(owner, prefix);
+    // SAFETY: as in `kept_at`.
+    let kept = unsafe { &mut *std::ptr::addr_of_mut!(KEPT) };
+    let at = at.or_else(|| kept.iter().position(Option::is_none)).expect("more kept lists than a proof here holds");
+    let mut list = [ObjectId(0); KEPT_IDS];
+    for (slot, id) in list.iter_mut().zip(ids) {
+        *slot = *id;
+    }
+    // SAFETY: the prefixes are the cards' own constants, and a proof frees
+    // nothing (`no_freeing`).
+    let prefix: &'static str = unsafe { std::mem::transmute::<&str, &'static str>(prefix) };
+    kept[at] = Some(KeptList { owner, prefix, len: ids.len(), ids: list });
+}
+
+/// Stands in for `cards::load_ids`: the list [`record_store_ids`] kept for
+/// `card_state` under `prefix`, or none.
+#[allow(dead_code)] // named only by `kani::stub`
+pub fn record_load_ids(card_state: &crate::state::CardState, prefix: &str) -> Vec<ObjectId> {
+    let mut ids = Vec::with_capacity(KEPT_IDS);
+    if let Some(at) = kept_at(card_state, prefix) {
+        // SAFETY: as in `kept_at`.
+        let k = unsafe { (*std::ptr::addr_of!(KEPT))[at] }.expect("kept");
+        for id in &k.ids[..k.len] {
+            ids.push(*id);
+        }
+    }
+    ids
+}
+
+/// Stands in for `cards::clear_ids`: nothing kept for `card_state` under
+/// `prefix` any more.
+#[allow(dead_code)] // named only by `kani::stub`
+pub fn record_clear_ids(card_state: &mut crate::state::CardState, prefix: &str) {
+    if let Some(at) = kept_at(card_state, prefix) {
+        // SAFETY: as in `kept_at`.
+        unsafe { (*std::ptr::addr_of_mut!(KEPT))[at] = None };
+    }
+}
+
+/// Whether [`record_store_ids`] keeps no list: every card that kept one has
+/// cleared it.
+pub fn no_ids_kept() -> bool {
+    // SAFETY: as in `kept_at`.
+    unsafe { (*std::ptr::addr_of!(KEPT)).iter().all(Option::is_none) }
+}
+
 /// Stands in for `helpers::shuffle_library`.
 #[allow(dead_code)] // named only by `kani::stub`
 pub fn record_shuffle(_: &mut GameState, player: PlayerId) {
@@ -1024,6 +1108,9 @@ macro_rules! card_proof {
         #[kani::stub($crate::state::GameState::move_object_under_control, $crate::proofs::cards::record_move_under)]
         #[kani::stub($crate::cards::helpers::shuffle_library, $crate::proofs::cards::record_shuffle)]
         #[kani::stub($crate::cards::helpers::sorted, $crate::proofs::cards::names_in_order)]
+        #[kani::stub($crate::cards::store_ids, $crate::proofs::cards::record_store_ids)]
+        #[kani::stub($crate::cards::load_ids, $crate::proofs::cards::record_load_ids)]
+        #[kani::stub($crate::cards::clear_ids, $crate::proofs::cards::record_clear_ids)]
         #[kani::stub($crate::state::GameState::add_regeneration_shield, $crate::proofs::cards::record_regenerate)]
         #[kani::stub($crate::state::GameState::add_mana, $crate::proofs::cards::record_mana)]
         #[kani::stub($crate::destruction::sacrifice_by, $crate::proofs::cards::record_sacrifice)]

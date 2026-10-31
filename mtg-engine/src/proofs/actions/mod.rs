@@ -3,6 +3,7 @@
 //! halves fit). Each action is proved with the actions *it* asks for
 //! recorded in turn, so each proof is of one function's own logic.
 
+mod card_state;
 mod choosing_targets;
 mod countering;
 mod damage;

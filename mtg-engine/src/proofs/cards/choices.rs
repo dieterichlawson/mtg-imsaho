@@ -415,7 +415,7 @@ impl Reckoning {
 /// turn order (CR 101.4), chooses a creature they control: asked when
 /// they control more than one, the one when they control one, none when
 /// none; then every creature not chosen is destroyed, all at once (CR
-/// 701.8a, one event). Over three permanents, each a creature of either
+/// 701.8a, one event), and nothing is left kept on the spell. Over three permanents, each a creature of either
 /// player or not a creature, either player active, and every choice of a
 /// player asked. The active player and which permanents are whose
 /// creatures (`reckoning_of`'s shape) are constants in each harness: with
@@ -456,7 +456,7 @@ fn divine_reckoning_keeps_one_creature_each_and_destroys_the_rest((active, shape
     for (i, (id, _)) in outcomes.iter().enumerate() {
         assert!(*id == destroyed[i]);
     }
-    assert!(Snapshot::of(&r.state) == before);
+    assert!(Snapshot::of(&r.state) == before && crate::proofs::cards::no_ids_kept());
     std::mem::forget((r, kept, destroyed, outcomes));
 }
 
