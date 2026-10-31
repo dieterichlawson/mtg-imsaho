@@ -14,10 +14,10 @@
 
 use super::{acted, any_object, asked_each, asked_for, board, card_proof, case_by_case, kept, picked, triggers, Act, Form, Kinds, Snapshot};
 use crate::actions::Target;
-use crate::cards::{CardBehavior, TargetFilter, TargetRequirement as R, TriggerKind};
+use crate::cards::{CardBehavior, CardRegistry, TargetFilter, TargetRequirement as R, TriggerKind};
 use crate::ids::{ObjectId, PlayerId};
 use crate::replacement::{EnteringPermanent, ReplaceableEvent as Ev, Replacement};
-use crate::state::{AwaitingAction, ResolutionChoiceKind};
+use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind};
 use crate::types::{CardType, CounterType, Zone};
 
 use crate::cards::isd;
@@ -48,34 +48,54 @@ card_proof! {
     }
 }
 
+/// Creeping Renaissance's board: two cards, each either player's, in a
+/// graveyard or not, a creature, a land, or neither; the spell resolved,
+/// and whether it asked its controller to choose a permanent type of the
+/// five (CR 110.4). The registry, the game after, the spell, the two
+/// cards, and the board before.
+fn creeping_renaissance_resolves() -> (CardRegistry, GameState, ObjectId, [ObjectId; 2], Snapshot, bool) {
+    let (registry, mut state, blank, card) = board(Box::new(isd::creeping_renaissance::CreepingRenaissance));
+    let others = [any_object(&mut state, blank, &KINDS, Form::Card), any_object(&mut state, blank, &KINDS, Form::Card)];
+    let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
+    let before = Snapshot::of(&state);
+    registry.get(card).expect("registered").on_resolve(&mut state, spell, &[], &registry);
+    let asked = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+        player: PlayerId(0), source, choice: ResolutionChoiceKind::ChooseCardType { options, controller: PlayerId(0), .. },
+    }) if *source == spell && options.len() == 5 && options[0] == "Creature" && options[1] == "Artifact"
+        && options[2] == "Enchantment" && options[3] == "Land" && options[4] == "Planeswalker");
+    (registry, state, spell, others, before, asked)
+}
+
 card_proof! {
     /// Creeping Renaissance: its controller is asked to choose a permanent
-    /// type of the five (CR 110.4); then every card of that type in their
-    /// graveyard is returned to their hand, and no other card. Over the
-    /// choices "Creature" and "Land", and two cards, each either player's,
-    /// in a graveyard or not, a creature, a land, or neither.
-    fn creeping_renaissance_returns_every_card_of_the_chosen_type() {
-        let (registry, mut state, blank, card) = board(Box::new(isd::creeping_renaissance::CreepingRenaissance));
-        let others = [any_object(&mut state, blank, &KINDS, Form::Card), any_object(&mut state, blank, &KINDS, Form::Card)];
-        let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
-        let before = Snapshot::of(&state);
-        registry.get(card).expect("registered").on_resolve(&mut state, spell, &[], &registry);
-        let asked = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
-            player: PlayerId(0), source, choice: ResolutionChoiceKind::ChooseCardType { options, controller: PlayerId(0), .. },
-        }) if *source == spell && options.len() == 5 && options[0] == "Creature" && options[1] == "Artifact"
-            && options[2] == "Enchantment" && options[3] == "Land" && options[4] == "Planeswalker");
+    /// type of the five, and nothing more is done yet.
+    fn creeping_renaissance_asks_for_a_permanent_type() {
+        let (registry, state, _, _, _, asked) = creeping_renaissance_resolves();
         assert!(asked && acted() == 0);
-        crate::proofs::cards::clear_prompt(&mut state);
-        let land: bool = kani::any();
-        let (name, kind) = if land { ("Land", CardType::Land) } else { ("Creature", CardType::Creature) };
-        registry.get(card).expect("registered").on_card_type_choice(&mut state, spell, name, &registry);
-        let returned = kept(&others, |id| {
-            let o = state.get_object(id).expect("on the board");
-            o.zone == Zone::Graveyard && o.owner == PlayerId(0) && o.card_types.contains(&kind)
-        });
-        assert!(asked_each(returned.len(), |i| Act::Move(returned[i], Zone::Hand)) && Snapshot::of(&state) == before);
-        std::mem::forget((registry, state, returned));
+        std::mem::forget((registry, state));
     }
+}
+
+/// Creeping Renaissance answered `name`: every card of that type in its
+/// controller's graveyard returned to their hand, and no other card. The
+/// answer a constant in each harness, and apart from the question's proof:
+/// the question and both answers in one harness ran out of memory at 7 GB.
+fn creeping_renaissance_returns_every_card_of_the_chosen_type((name, kind): (&str, CardType)) {
+    let (registry, mut state, spell, others, before, _) = creeping_renaissance_resolves();
+    crate::proofs::cards::clear_prompt(&mut state);
+    let card = state.get_object(spell).expect("on the stack").card_id;
+    registry.get(card).expect("registered").on_card_type_choice(&mut state, spell, name, &registry);
+    let returned = kept(&others, |id| {
+        let o = state.get_object(id).expect("on the board");
+        o.zone == Zone::Graveyard && o.owner == PlayerId(0) && o.card_types.contains(&kind)
+    });
+    assert!(asked_each(returned.len(), |i| Act::Move(returned[i], Zone::Hand)) && Snapshot::of(&state) == before);
+    std::mem::forget((registry, state, returned));
+}
+
+case_by_case! { creeping_renaissance_returns_every_card_of_the_chosen_type;
+    creeping_renaissance_returns_every_creature_card: ("Creature", CardType::Creature),
+    creeping_renaissance_returns_every_land_card: ("Land", CardType::Land),
 }
 
 card_proof! {
