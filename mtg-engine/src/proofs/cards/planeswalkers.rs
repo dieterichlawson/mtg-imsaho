@@ -24,7 +24,7 @@
 //! either player ("you" is the activator, CR 602.2a), beside a card and a
 //! token of any characteristics.
 
-use super::{act, acted, any_object, any_target, asked_each, asked_for, board, card_proof, case_by_case, each_is, no_ids_kept, Act, Form, Kinds, Snapshot};
+use super::{act, acted, any_object, any_target, asked_each, asked_for, board, card_proof, case_by_case, each_matches, no_ids_kept, Act, Form, Kinds, Snapshot};
 use crate::actions::{ResolvedChoice, Target};
 use crate::cards::{CardBehavior, CardRegistry, LoyaltyAbilityDef, TargetRequirement};
 use crate::ids::{CardId, ObjectId, PlayerId};
@@ -297,10 +297,14 @@ card_proof! {
         let creatures = b.creatures_of(you);
         let before = b.resolve(12, &[]);
         let added = &b.state.until_end_of_turn[before.until_end_of_turn()..];
-        assert!(each_is(added, 2 * creatures.len(), |i| if i % 2 == 0 {
-            T::ModifyPT { target: creatures[i / 2], power_mod: x, toughness_mod: x }
+        // Matched by kind, not compared whole: an effect pushed where the
+        // solver leaves open how many came before is, to symbolic
+        // execution, of any kind, and `==` walked every filter a temporary
+        // effect could hold (`each_matches` says more).
+        assert!(each_matches(added, 2 * creatures.len(), |i, t| if i % 2 == 0 {
+            matches!(t, T::ModifyPT { target, power_mod, toughness_mod } if *target == creatures[i / 2] && *power_mod == x && *toughness_mod == x)
         } else {
-            T::GrantKeyword { target: creatures[i / 2], keyword: Keyword::Trample }
+            matches!(t, T::GrantKeyword { target, keyword: Keyword::Trample } if *target == creatures[i / 2])
         }));
         assert!(acted() == 0 && Snapshot::of(&b.state).without_until_end_of_turn() == before.without_until_end_of_turn());
         std::mem::forget((b, creatures));

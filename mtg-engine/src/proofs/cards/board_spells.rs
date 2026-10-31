@@ -516,7 +516,10 @@ card_proof! {
         let granted_now = kept(&[0, 1], |i: usize| state.get_object(objects[i]).expect("on the board").owner == PlayerId(0) && !(i == 0 && granted));
         let costs = [bolt_cost, crate::cards::lava_axe::LavaAxe.card_data().cost.expect("a cost")];
         let added = &state.until_end_of_turn[before.until_end_of_turn()..];
-        assert!(each_is(added, granted_now.len(), |k| T::GrantFlashback { target: objects[granted_now[k]], cost: costs[granted_now[k]].clone() }));
+        // Matched by kind, not compared whole (`each_matches` says why).
+        assert!(crate::proofs::cards::each_matches(added, granted_now.len(), |k, t| {
+            matches!(t, T::GrantFlashback { target, cost } if *target == objects[granted_now[k]] && *cost == costs[granted_now[k]])
+        }));
         assert!(acted() == 0);
         assert!(Snapshot::of(&state).without_until_end_of_turn() == before.without_until_end_of_turn());
         std::mem::forget((registry, state));
