@@ -1078,6 +1078,30 @@ sits in memory. What was measured, and what the proofs do about each:
   reference the scan hands out is to one that exists), and Nevermore's
   six proofs pass in 148 to 171 seconds, where they ran out of memory in
   symbolic execution.
+- **A prompt's lists read back for a second answer.** Liliana of the
+  Veil's −6 asks two questions, the second with the piles the first
+  answer made, and its handler loops over those piles as read back out
+  of the prompt: lists of a length symbolic execution cannot pin down,
+  carrying every expression of the first answer. Both answers in one
+  harness ran out of memory in symbolic execution, a constant board and
+  division notwithstanding. Each answer has harnesses of its own, the
+  second from the question as the first's proof finds it (its handler
+  reads of it only what that proof checks), and all 39 pass in 146 to
+  238 seconds.
+- **Lists kept in a card's state.** A card that waits on several answers
+  keeps lists between them under string keys, built byte by byte, in a
+  map a proof follows comparison by comparison: three quarters of
+  Liliana's +1 proof, every case a constant, and out of memory at seven
+  gigabytes. The card proofs keep the lists in a table of their own
+  (`record_store_ids`), and `proofs::actions::card_state` proves the
+  helpers keep them as the table does. The +1's cases then pass in
+  about four minutes at 3.5 GB, and so does a case of Divine
+  Reckoning's that ran out of memory in the solver.
+- **An array of no size.** Kani does not follow a zero-sized array: each
+  proof of the kept lists that built an empty one with
+  `core::array::from_fn` ran out of memory, where those of one to three
+  ids passed in under a minute. Built as slices of a three-id buffer,
+  the empty ones pass in 9 to 39 seconds.
 - **CBMC's memory checks.** `kani-bounded.py` leaves out CBMC's pointer,
   bounds and division checks (`--memory-checks` keeps them): that safe
   Rust reads only memory it may is the compiler's guarantee, and Rust's
@@ -1163,7 +1187,12 @@ gives one only to a creature, and the proof holds. And a failure can be
 the proof's own: Memory's Journey's built its two targets in a list with
 room for one, and failed on the list growing, whatever the card did; and
 holding the ids of new tokens to eight failed Army of the Damned's
-thirteen, until they had room of their own.
+thirteen, until they had room of their own; and Grimgrin, Corpse-Born's
+expected targets read each object's own card types, which a card's
+object does not carry (they are printed), so with the player choosing
+Grimgrin's opponent, the engine rightly offered Grimgrin itself and the
+proof failed on it, at seven gigabytes, until it counted Grimgrin a
+creature as printed.
 
 ### The whole engine under libFuzzer
 
