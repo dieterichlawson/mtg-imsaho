@@ -1095,10 +1095,15 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
                     "Regular combat damage step (second of two, CR 510.5)".into());
             }
 
-            let has_attackers = state.combat.as_ref()
-                .is_some_and(|c| !c.attackers.is_empty());
+            // Attacking or blocking creatures: a first-strike blocker whose
+            // lone attacker was destroyed after blocks is still a blocking
+            // creature (CR 510.1d), and the phase still gets its
+            // first-strike step (CR 510.4) though no attacker is left
+            // (#983).
+            let has_combatants = state.combat.as_ref()
+                .is_some_and(|c| !c.attackers.is_empty() || !c.blocking().is_empty());
 
-            if has_attackers {
+            if has_combatants {
                 if second_damage_step {
                     // Second combat damage step (CR 510.5): regular damage
                     // from creatures that didn't deal first-strike damage,

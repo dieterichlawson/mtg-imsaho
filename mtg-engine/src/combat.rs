@@ -90,6 +90,10 @@ pub fn declare_blockers(
                 // CR 509.2: blocked-ness is permanent for this combat, even
                 // if every blocker later leaves combat.
                 combat.blocked_attackers.insert(attacker_id);
+                // CR 509.1g: and the blocker is a blocking creature until
+                // it is itself removed from combat, whatever becomes of the
+                // attacker (CR 510.1d, #983).
+                combat.blocking_creatures.insert(blocker_id);
             }
         }
     }
@@ -366,9 +370,7 @@ pub fn deal_combat_damage(state: &mut GameState, registry: &CardRegistry) {
     };
 
     // Check if any creature has first/double strike to determine damage steps.
-    let any_first_strike = combat.attackers.keys().chain(
-        combat.blocker_assignments.values().flat_map(|v| v.iter())
-    ).any(|&id| {
+    let any_first_strike = combat.attackers.keys().copied().chain(combat.blocking()).any(|id| {
         state.has_keyword(id, Keyword::FirstStrike, registry)
             || state.has_keyword(id, Keyword::DoubleStrike, registry)
     });
@@ -404,9 +406,11 @@ pub fn deal_combat_damage(state: &mut GameState, registry: &CardRegistry) {
 #[must_use]
 pub fn any_first_strike_in_combat(state: &GameState, registry: &CardRegistry) -> bool {
     let Some(combat) = &state.combat else { return false };
-    combat.attackers.keys()
-        .chain(combat.blocker_assignments.values().flat_map(|v| v.iter()))
-        .any(|&id| {
+    // CR 510.4 asks about every attacking or blocking creature, and a
+    // blocker whose attacker left combat is still one (CR 510.1d, #983).
+    combat.attackers.keys().copied()
+        .chain(combat.blocking())
+        .any(|id| {
             state.has_keyword(id, Keyword::FirstStrike, registry)
                 || state.has_keyword(id, Keyword::DoubleStrike, registry)
         })

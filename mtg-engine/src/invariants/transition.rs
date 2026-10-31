@@ -402,7 +402,7 @@ fn status_ledgers(prev: &GameState, cur: &GameState, events: &[GameEvent], staye
                 v.push(format!("{tag} regenerated without tapping (CR 701.15a)"));
             }
             if let Some(c) = &cur.combat {
-                if c.attackers.contains_key(&b.id) || c.blocker_assignments.values().flatten().any(|x| *x == b.id) {
+                if c.attackers.contains_key(&b.id) || c.is_blocking(b.id) {
                     v.push(format!("{tag} regenerated but is still in combat (CR 701.15a)"));
                 }
             }
@@ -1040,7 +1040,8 @@ fn quiet_digest(s: &GameState) -> String {
         b.sort();
         let mut blocked: Vec<_> = c.blocked_attackers.iter().map(|x| x.0).collect();
         blocked.sort_unstable();
-        format!("{a:?}/{b:?}/{blocked:?}")
+        let blocking: Vec<_> = c.blocking_creatures.iter().map(|x| x.0).collect();
+        format!("{a:?}/{b:?}/{blocked:?}/{blocking:?}")
     });
     format!("{objs:?}|{players:?}|{stack:?}|{:?}/{}/{}|{combat:?}|{}/{}", s.step, s.turn_number, s.active_player.0,
         s.until_end_of_turn.len(), s.control_effects.len())

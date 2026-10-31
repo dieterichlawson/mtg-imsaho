@@ -279,6 +279,13 @@ pub struct PermanentView {
     pub attacking: Option<AttackTarget>,
     /// The attackers this creature is blocking (CR 509.1a).
     pub blocking: Vec<ObjectId>,
+    /// Whether this is a blocking creature (CR 509.1g). It stays true when
+    /// every attacker it blocked has left combat: it is then blocking
+    /// nothing and deals no combat damage (CR 510.1d), a fact `blocking`,
+    /// which lists only the attackers still there, cannot say — every
+    /// surface dropped its blocker mark the moment the attacker died
+    /// (#983, the blocker side of #725's `blocked`).
+    pub is_blocking: bool,
     /// The creatures blocking this attacker.
     pub blocked_by: Vec<ObjectId>,
     /// Whether this attacker is blocked (CR 509.1h). It stays blocked when
@@ -566,6 +573,7 @@ impl GameView {
                             .map(|(attacker, _)| *attacker)
                             .collect()
                     }),
+                    is_blocking: state.combat.as_ref().is_some_and(|c| c.is_blocking(obj.id)),
                     blocked_by: state.combat.as_ref()
                         .and_then(|c| c.blocker_assignments.get(&obj.id).cloned())
                         .unwrap_or_default(),

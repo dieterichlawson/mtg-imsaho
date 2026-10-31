@@ -1925,8 +1925,7 @@ impl GameState {
                 self.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&creature_id))
             }
             CreatureFilter::Blocking => {
-                self.combat.as_ref().is_some_and(|c|
-                    c.blocker_assignments.values().any(|bs| bs.contains(&creature_id)))
+                self.combat.as_ref().is_some_and(|c| c.is_blocking(creature_id))
             }
             CreatureFilter::ControlledByAttachedPlayer => {
                 self.get_object(source_id)
@@ -2965,11 +2964,15 @@ impl GameState {
     /// combat state says was blocked but never says attacked. (CR 509.2's
     /// "blocked forever" is about an attacker whose *blockers* leave; a
     /// creature removed from combat is not an attacker at all, CR 506.4c.)
+    /// The same holds the other way: removing an attacker takes its list of
+    /// blockers with it, but those blockers stay blocking creatures (CR
+    /// 510.1d) — only their own removal ends that (#983).
     pub fn remove_from_combat(&mut self, id: ObjectId) {
         if let Some(ref mut combat) = self.combat {
             combat.attackers.remove(&id);
             combat.blocker_assignments.remove(&id);
             combat.blocked_attackers.remove(&id);
+            combat.blocking_creatures.remove(&id);
             combat.planeswalker_defenders.remove(&id);
             combat.dealt_first_strike.remove(&id);
             for blockers in combat.blocker_assignments.values_mut() {
@@ -4390,6 +4393,17 @@ pub struct CombatState {
     /// which `blocker_assignments` alone can't express once its list empties.
     #[serde(default)]
     pub blocked_attackers: std::collections::BTreeSet<ObjectId>,
+    /// Creatures that blocked when blockers were declared and have not
+    /// themselves been removed from combat: the blocking creatures (CR
+    /// 509.1g). The mirror of `blocked_attackers`. A blocker whose attacker
+    /// leaves combat is still a blocking creature, blocking nothing — it
+    /// assigns no combat damage (CR 510.1d), but it still counts for
+    /// whether the phase gets a first-strike step (CR 510.4) and for
+    /// "blocking creature" (CR 506.4). `blocker_assignments` alone can't say
+    /// this once the attacker's entry is gone (#983, the blocker side of
+    /// #725). Read through `CombatState::blocking`.
+    #[serde(default)]
+    pub blocking_creatures: std::collections::BTreeSet<ObjectId>,
     /// Creatures that had first/double strike when first-strike combat damage
     /// was dealt (CR 510.5): they don't deal damage again in the regular
     /// combat damage step unless they have double strike.
@@ -4417,6 +4431,25 @@ impl CombatState {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Whether `id` is a blocking creature (CR 509.1g) — including one
+    /// blocking nothing because its attacker left combat (CR 510.1d).
+    ///
+    /// Also reads `blocker_assignments`, so a save from before
+    /// `blocking_creatures` existed answers the same way it used to.
+    #[must_use]
+    pub fn is_blocking(&self, id: ObjectId) -> bool {
+        self.blocking_creatures.contains(&id)
+            || self.blocker_assignments.values().any(|bs| bs.contains(&id))
+    }
+
+    /// Every blocking creature (see `is_blocking`), in id order.
+    #[must_use]
+    pub fn blocking(&self) -> std::collections::BTreeSet<ObjectId> {
+        let mut all = self.blocking_creatures.clone();
+        all.extend(self.blocker_assignments.values().flatten().copied());
+        all
     }
 }
 

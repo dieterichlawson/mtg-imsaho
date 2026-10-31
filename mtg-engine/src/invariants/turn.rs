@@ -179,6 +179,7 @@ pub(super) fn check_settled(state: &GameState, registry: &CardRegistry, v: &mut 
         .chain(c.blocker_assignments.keys().map(|id| ("attacked", *id)))
         .chain(c.blocker_assignments.values().flatten().map(|id| ("blocker", *id)))
         .chain(c.blocked_attackers.iter().map(|id| ("blocked attacker", *id)))
+        .chain(c.blocking_creatures.iter().map(|id| ("blocking creature", *id)))
         .chain(c.planeswalker_defenders.keys().map(|id| ("planeswalker attacker", *id)))
         .collect();
     for (role, id) in participants {
@@ -192,6 +193,12 @@ pub(super) fn check_settled(state: &GameState, registry: &CardRegistry, v: &mut 
     for (a, blockers) in &c.blocker_assignments {
         if !blockers.is_empty() && !c.blocked_attackers.contains(a) {
             v.push(format!("attacker #{} has blockers but is not marked blocked (CR 509.1h)", a.0));
+        }
+        // CR 509.1g: and each of them is a blocking creature (#983).
+        for b in blockers {
+            if !c.blocking_creatures.contains(b) {
+                v.push(format!("#{} blocks attacker #{} but is not marked a blocking creature (CR 509.1g)", b.0, a.0));
+            }
         }
     }
     // CR 506.2: the non-active player is the only defending player.

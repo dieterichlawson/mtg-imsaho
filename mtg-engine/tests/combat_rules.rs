@@ -1060,6 +1060,91 @@ fn a_blocked_attacker_whose_blocker_left_combat_hits_nobody() {
         "a creature removed from combat receives no combat damage either");
 }
 
+/// CR 510.1d + 510.4 (#983, the blocker side of #725): a blocker whose
+/// attacker is destroyed after blocks is still a blocking creature — it is
+/// blocking nothing and deals no combat damage, but a first striker among
+/// them still gives the phase its first-strike damage step, and every
+/// surface still marks it blocking. Removing the attacker used to delete
+/// the only record of the block, so the step and the `[BLK]` went with it.
+#[test]
+fn a_blocker_whose_attacker_died_is_still_a_blocking_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+    grant_keyword(&mut state, blocker, Keyword::FirstStrike);
+    // The engine's own declarations, not a hand-built state: they are the
+    // one writer of the record this test is about.
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &[], &reg);
+    combat::declare_blockers(&mut state, &[(blocker, attacker)]);
+    assert!(combat::any_first_strike_in_combat(&state, &reg),
+        "test precondition: a first-strike blocker gives the phase two damage steps");
+
+    // Rebuke: the attacker is destroyed, and leaves combat (CR 506.4c).
+    state.move_object(attacker, Zone::Graveyard, &reg);
+
+    let c = state.combat.as_ref().unwrap();
+    assert!(c.is_blocking(blocker),
+        "the blocker was not itself removed from combat, so it is still a \
+         blocking creature (CR 506.4, 510.1d)");
+    assert!(combat::any_first_strike_in_combat(&state, &reg),
+        "CR 510.4 counts every attacking or blocking creature: the phase \
+         still gets a first-strike combat damage step");
+    assert!(state.matches_filter(blocker, &CreatureFilter::Blocking, blocker, P1, &reg),
+        "\"blocking creature\" still matches it");
+    let view = mtg_engine::view::GameView::for_player(&state, P1, &reg);
+    let shown = view.battlefield.iter().find(|p| p.object_id == blocker).unwrap();
+    assert!(shown.blocking.is_empty() && shown.is_blocking,
+        "the view says it is blocking, though no attacker is left to name");
+    // The test state is synthetic (no registry cards, no turn history), so
+    // only the combat clauses are this test's business.
+    let violations = mtg_engine::invariants::check_settled(&state, &reg);
+    assert!(!violations.iter().any(|v| v.contains("block") || v.contains("combat")),
+        "invariant violations: {violations:?}");
+
+    // It assigns no combat damage (CR 510.1d), and only its own removal
+    // from combat ends its blocking.
+    let p0_life = state.get_player(P0).life;
+    combat::deal_combat_damage(&mut state, &reg);
+    assert_eq!(state.get_player(P0).life, p0_life, "a blocker blocking nothing deals no damage");
+    state.remove_from_combat(blocker);
+    assert!(!state.combat.as_ref().unwrap().is_blocking(blocker),
+        "removed from combat itself, it stops being a blocking creature (CR 506.4)");
+    assert!(!combat::any_first_strike_in_combat(&state, &reg));
+}
+
+/// #983 through the turn machinery: the lone attacker is destroyed after
+/// blocks, which empties `attackers`. The first-strike blocker left behind
+/// still gives the phase two combat damage steps (CR 510.4), each with its
+/// priority window, though it deals damage in neither (CR 510.1d). The game
+/// loop asked about first strike only while an attacker remained, so the
+/// fix to the question alone did not reach the issue's own game.
+#[test]
+fn a_lone_attacker_destroyed_after_blocks_still_leaves_a_first_strike_step() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+    grant_keyword(&mut state, blocker, Keyword::FirstStrike);
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &[], &reg);
+    combat::declare_blockers(&mut state, &[(blocker, attacker)]);
+    // Rebuke, in the declare blockers step.
+    state.move_object(attacker, Zone::Graveyard, &reg);
+    let p0_life = state.get_player(P0).life;
+
+    engine::advance_step(&mut state, &reg);
+    assert_eq!(state.step, Step::CombatDamage);
+    assert!(state.combat_damage_step_pending,
+        "the first-strike combat damage step happened, so a regular one follows (CR 510.4)");
+    assert!(state.game_log.iter().any(|e| e.message.contains("First-strike combat damage step")));
+    engine::advance_step(&mut state, &reg);
+    assert_eq!(state.step, Step::CombatDamage, "the regular step is its own step");
+    assert!(!state.combat_damage_step_pending);
+    engine::advance_step(&mut state, &reg);
+    assert_eq!(state.step, Step::EndCombat);
+    assert_eq!(state.get_player(P0).life, p0_life, "the blocker blocking nothing dealt no damage");
+}
+
 /// CR 506.4c: a creature that dies leaves combat — the live combat state
 /// drops its id, not just the damage step's snapshot. Object ids survive
 /// zone changes, so a dead blocker left in `blocker_assignments` becomes

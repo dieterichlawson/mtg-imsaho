@@ -907,6 +907,7 @@ pub fn declare_combat(state: &mut GameState, attacks: &[(ObjectId, PlayerId, &[O
         if !blockers.is_empty() {
             combat.blocked_attackers.insert(attacker);
         }
+        combat.blocking_creatures.extend(blockers.iter().copied());
     }
     state.combat = Some(combat);
 }

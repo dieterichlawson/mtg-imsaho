@@ -169,6 +169,7 @@ fn perm(id: u64, name: &str, controller: PlayerId) -> PermanentView {
         blocking: vec![],
         blocked_by: vec![],
         blocked: false,
+        is_blocking: false,
         oracle_text: String::new(),
         counters: HashMap::new(),
         loyalty_abilities: vec![],

@@ -78,7 +78,8 @@ pub(super) fn check_core(state: &GameState, registry: &CardRegistry, v: &mut Vio
                         v.push(format!("{w} but an attacker attacks someone other than p{}", d.0));
                     }
                     if c.blocker_assignments.values().any(|b| !b.is_empty())
-                        || !c.blocked_attackers.is_empty() || !c.dealt_first_strike.is_empty()
+                        || !c.blocked_attackers.is_empty() || !c.blocking_creatures.is_empty()
+                        || !c.dealt_first_strike.is_empty()
                     {
                         v.push(format!("{w} but blocks or damage are already recorded"));
                     }

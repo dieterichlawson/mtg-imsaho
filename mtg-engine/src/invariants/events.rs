@@ -261,6 +261,9 @@ fn blockers(state: &GameState, registry: &CardRegistry, events: &[GameEvent], qu
         if left.contains(b) {
             continue;
         }
+        if !c.blocking_creatures.contains(b) {
+            v.push(format!("{what}: the blocker is not recorded as a blocking creature (CR 509.1g)"));
+        }
         let Some(bo) = state.get_object(*b) else { continue };
         if bo.zone != Zone::Battlefield || bo.controller != def || !state.is_creature(*b, registry) {
             v.push(format!("{what}: blocker is not a creature the defending player controls (CR 509.1a)"));
@@ -310,6 +313,11 @@ fn blockers(state: &GameState, registry: &CardRegistry, events: &[GameEvent], qu
         for a in &c.blocked_attackers {
             if !assignments.iter().any(|(_, x)| x == a) {
                 v.push(format!("#{} is marked blocked but no block was declared for it", a.0));
+            }
+        }
+        for b in &c.blocking_creatures {
+            if !assignments.iter().any(|(x, _)| x == b) {
+                v.push(format!("#{} is marked a blocking creature but no block was declared with it", b.0));
             }
         }
     }
@@ -442,6 +450,12 @@ fn damage(state: &GameState, registry: &CardRegistry, events: &[GameEvent], quie
                 if !matches!(target, DamageTarget::Object(t) if t == a) && on_bf(state, *a) {
                     v.push(format!("{what}: a blocker of #{} hit something else (CR 510.1d)", a.0));
                 }
+            } else if c.blocking_creatures.contains(&source) && matches!(target, DamageTarget::Player(_)) {
+                // A blocking creature blocking nothing assigns no combat
+                // damage (CR 510.1d, #983), and no blocker ever hits a
+                // player. (An object target is not flagged: an attacker
+                // that died to this same step has already left the lists.)
+                v.push(format!("{what}: a blocking creature blocking nothing dealt combat damage (CR 510.1d)"));
             }
             // CR 510.4: first-strike step discipline.
             if quiet && on_bf(state, source) {
