@@ -152,21 +152,43 @@ card_proof! {
     }
 }
 
-/// Vampiric Fury: +2/+0 and first strike until end of turn on each
-/// Vampire creature its controller controls, and nothing else. With each
-/// of the other two objects a Vampire or not, a constant in each harness:
-/// over subtypes the solver chose, the proof ran out of memory at four and
-/// a half gigabytes.
-fn vampiric_fury_pumps_each_of_your_vampires(vampires: [bool; 2]) {
+/// Vampiric Fury's board: [`resolve_of`]'s, each of the other two objects
+/// a Vampire or not as `vampires` says, with room for the four effects two
+/// Vampires are given and no more. The list's next entry is written at a
+/// place the solver leaves open (how many of the objects were pumped), and
+/// such a write is of every byte of the list, each a choice among all of
+/// them: over the board's room for eight effects of 64 bytes that was two
+/// thirds of the proof's formula.
+fn vampiric_fury_resolves(vampires: [bool; 2]) -> Resolved {
     const CREATURE: Kinds = Kinds { types: &[CardType::Creature], subtypes: &[], keywords: &[] };
-    let r = resolve_of(Box::new(isd::vampiric_fury::VampiricFury), &CREATURE, vampires.map(|v| if v { &["Vampire"][..] } else { &[] }));
+    let (registry, mut state, blank, card) = board(Box::new(isd::vampiric_fury::VampiricFury));
+    state.until_end_of_turn = Vec::with_capacity(4);
+    // Each list picked by an `if`, not by `vampires.map`: an array mapped
+    // goes through iterators the solver follows, and the lists came out of
+    // it as values it left open, and every check of a subtype with them
+    // (731 thousand steps of symbolic execution, where this is 558).
+    let subtypes = |v: bool| -> &'static [&'static str] { if v { &["Vampire"] } else { &[] } };
+    let others = [
+        any_object_of(&mut state, blank, &CREATURE, Form::Card, subtypes(vampires[0])),
+        any_object_of(&mut state, blank, &CREATURE, Form::Token, subtypes(vampires[1])),
+    ];
+    resolve_on(registry, state, card, others)
+}
+
+/// Vampiric Fury: +2/+0 and first strike until end of turn on each
+/// Vampire creature its controller controls. With each of the other two
+/// objects a Vampire or not, a constant in each harness: over subtypes the
+/// solver chose, the proof ran out of memory at four and a half gigabytes.
+/// That it does nothing else is the next proof's: the two in one harness
+/// ran out of memory at twelve, and each alone passes at six.
+fn vampiric_fury_pumps_each_of_your_vampires(vampires: [bool; 2]) {
+    let r = vampiric_fury_resolves(vampires);
     let ids = r.those(|o| creature(o) && yours(o) && o.subtypes.iter().any(|s| s == "Vampire"));
     assert!(crate::proofs::cards::each_matches(r.added(), 2 * ids.len(), |i, t| if i % 2 == 0 {
         matches!(t, T::ModifyPT { target, power_mod: 2, toughness_mod: 0 } if *target == ids[i / 2])
     } else {
         matches!(t, T::GrantKeyword { target, keyword: Keyword::FirstStrike } if *target == ids[i / 2])
     }));
-    assert!(acted() == 0 && r.nothing_else_changed());
     std::mem::forget((r, ids));
 }
 
@@ -175,6 +197,21 @@ case_by_case! { vampiric_fury_pumps_each_of_your_vampires;
     vampiric_fury_with_the_token_a_vampire: [false, true],
     vampiric_fury_with_the_card_a_vampire: [true, false],
     vampiric_fury_with_both_vampires: [true, true],
+}
+
+/// Vampiric Fury, as above: nothing changed but by the effects it adds,
+/// and nothing asked for.
+fn vampiric_fury_does_nothing_else(vampires: [bool; 2]) {
+    let r = vampiric_fury_resolves(vampires);
+    assert!(acted() == 0 && r.nothing_else_changed());
+    std::mem::forget(r);
+}
+
+case_by_case! { vampiric_fury_does_nothing_else;
+    vampiric_fury_does_nothing_else_with_neither_other_object_a_vampire: [false, false],
+    vampiric_fury_does_nothing_else_with_the_token_a_vampire: [false, true],
+    vampiric_fury_does_nothing_else_with_the_card_a_vampire: [true, false],
+    vampiric_fury_does_nothing_else_with_both_vampires: [true, true],
 }
 
 card_proof! {
