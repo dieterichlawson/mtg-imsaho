@@ -120,15 +120,20 @@ card_proof! {
 
 card_proof! {
     /// Balefire Dragon: as much damage as it dealt the player, from the
-    /// Dragon, to each creature that player controls, all at once; and
-    /// nothing else. Whether the Dragon is still there does not matter
-    /// (CR 113.7a, 608.2h: it deals the damage as it last existed).
+    /// Dragon, to each creature that player controls, all at once, the
+    /// Dragon among them when it is that player's; and nothing else.
+    /// Whether the Dragon is still there does not matter (CR 113.7a,
+    /// 608.2h: it deals the damage as it last existed).
     fn balefire_dragon_deals_that_much_to_each_of_their_creatures() {
         assert!(prints_effects(&isd::balefire_dragon::BalefireDragon, &[]));
         let (registry, state, me, others, player, amount, before) =
             deals_combat_damage_to_a_player(Box::new(isd::balefire_dragon::BalefireDragon));
-        let theirs = kept(&others, |id| state.get_object(id).is_some_and(|o| {
-            o.zone == Zone::Battlefield && o.controller == player && o.card_types.contains(&CardType::Creature)
+        // The Dragon a creature card, printed so, and one of that player's
+        // creatures when it is theirs; the blank card's objects creatures by
+        // the types they were given. In id order, the Dragon's the first.
+        let theirs = kept(&[me, others[0], others[1]], |id| state.get_object(id).is_some_and(|o| {
+            o.zone == Zone::Battlefield && o.controller == player
+                && (id == me || o.card_types.contains(&CardType::Creature))
         }));
         let n = theirs.len();
         let queued = |i: usize| Act::Queue { source: me, target: DamageTarget::Object(theirs[i]), amount, kind: DamageKind::NonCombat };
