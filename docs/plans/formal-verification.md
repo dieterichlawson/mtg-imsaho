@@ -1138,6 +1138,52 @@ sits in memory. What was measured, and what the proofs do about each:
   as Vampiric Fury's was, Garruk's passes in 372 seconds at 3.5 GB
   (from out of memory at 7) and the prevention's pruning in 70 (from out
   of memory in symbolic execution at 7).
+- **A write at a place the solver leaves open, again.** CBMC follows a
+  heap buffer of up to 4096 bytes byte by byte (see above), and a write
+  to it at an index it leaves open is a write of every byte, each a
+  choice among all of them: the cost of a push goes with the square of
+  the buffer's size, not the entry's. Vampiric Fury pushes two 64-byte
+  effects per Vampire onto a list the board gave room for eight, and
+  those pushes were two thirds of its formula (`cbmc --program-only`,
+  sized by function). With room for the four it can push, the formula
+  halved (37 to 19 million characters). A proof that pushes in a loop
+  gives the list the room it needs and no more.
+- **An array mapped.** `[T; N]::map` goes through `try_from_fn` and an
+  array `Drain`, which CBMC follows, and what comes out is a value it
+  leaves open: Vampiric Fury's subtype lists, picked by
+  `vampires.map(...)`, made every check of a subtype with them a
+  question (731 thousand steps of symbolic execution; 558 with each
+  list picked by an `if`). The proofs build such arrays element by
+  element. `Snapshot::of` still maps two arrays, and every card proof
+  goes through it; changing it would mean proving all of them again.
+- **Two assertions, one harness.** Vampiric Fury's effects, and that it
+  did nothing else, each passed at 6 GB in a harness of its own (about
+  seven million clauses), where the two in one harness ran out of memory
+  at 12. A proof whose parts each read the whole board is split into a
+  harness per part; together they say what the one said.
+- **A board's length, and its owners.** Mulch's library of up to five
+  cards, its length the solver's, was 1.45 million steps and out of
+  memory at 12 GB; with a harness per length, none to three cards pass at
+  3.5 to 7 GB, and four and five reach the solver at 7 with 21.5 and 21.8
+  million clauses. Past in Flames' three cards, each in either player's
+  graveyard, gave a graveyard listing the solver left open and copies of
+  each card's cost of lengths it left open; with the owners, and whether
+  the instant already had flashback, constants of each of sixteen
+  harnesses, each passes at 6 GB in about three minutes (1.6 million
+  clauses). Counting a cost's pips over a length the solver chose ran out
+  of memory at 3.5 GB; a harness per length takes one to four seconds.
+- **A payment planned twice.** `pay_cost_with_sources` plans before it
+  taps, so a proof that checked the plan and then paid ran the planner
+  twice. The Forest's plan alone, over a pool holding a constant amount
+  of the cost's colour and the Forest untapped or not as a constant,
+  passes at 7 GB (1.7 million clauses); over a pool and a Forest the
+  solver chose, it runs out of memory at 7 in symbolic execution. Paying
+  by tapping the Forest is the weight: activating its ability (more than
+  half of what symbolic execution traced) built the Forest's list of
+  abilities as a filter collected and dropped it, and joined a log line's
+  description of the pool that the proof never reads. Written without
+  either, paying took 1.82 million steps rather than 2.50, and still ran
+  out of memory at 7 GB.
 - **CBMC's memory checks.** `kani-bounded.py` leaves out CBMC's pointer,
   bounds and division checks (`--memory-checks` keeps them): that safe
   Rust reads only memory it may is the compiler's guarantee, and Rust's
