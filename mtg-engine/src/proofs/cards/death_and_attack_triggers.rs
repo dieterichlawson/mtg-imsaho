@@ -330,18 +330,25 @@ struct Witch {
 }
 
 fn witch() -> Witch {
+    witch_of(PlayerId(u8::from(kani::any::<bool>())), [kani::any(), kani::any(), kani::any()])
+}
+
+/// [`witch`]'s board, last controlled by `you`, with each of player 0's
+/// three library cards in the library if `in_library` says so and in
+/// their hand otherwise.
+fn witch_of(you: PlayerId, in_library: [bool; 3]) -> Witch {
     let (mut registry, mut state, blank, card) = board(Box::new(isd::bitterheart_witch::BitterheartWitch));
     let curse_card = registry.register(Box::new(isd::curse_of_the_pierced_heart::CurseOfThePiercedHeart));
-    let you = PlayerId(u8::from(kani::any::<bool>()));
     let me = state.create_object(card, PlayerId(0), Zone::Graveyard, None, None);
     state.players[0].graveyard_order.push(me);
     state.get_object_mut(me).expect("just created").last_controller = Some(you);
     let mut first = [None; 2];
-    for of in [blank, curse_card, curse_card] {
-        let id = state.create_object(of, PlayerId(0), Zone::Library, None, None);
-        if kani::any() {
+    let cards = [blank, curse_card, curse_card];
+    for i in 0..3 {
+        let id = state.create_object(cards[i], PlayerId(0), Zone::Library, None, None);
+        if in_library[i] {
             state.players[0].library_order.push(id);
-            if of == curse_card && first[0].is_none() {
+            if cards[i] == curse_card && first[0].is_none() {
                 first[0] = Some(id);
             }
         } else {
@@ -355,53 +362,87 @@ fn witch() -> Witch {
     Witch { registry, state, card, me, you, curse }
 }
 
+/// Bitterheart Witch dying with `target` its trigger's target: whether it
+/// asked whoever controlled it as it died whether to search ("you may"),
+/// having kept the player targeted for the search's answer; and with no
+/// player targeted, nothing at all. The game after, the Witch's board,
+/// and the board before.
+fn witch_dies(w: &mut Witch, target: &Target) -> Snapshot {
+    assert!(triggers(&isd::bitterheart_witch::BitterheartWitch) == [(TriggerKind::SelfDies, Some(TargetRequirement::PlayerOnly))]);
+    let before = Snapshot::of(&w.state);
+    w.registry.get(w.card).expect("registered").on_dies(&mut w.state, w.me, &[target.clone()], &w.registry);
+    let Target::Player(p) = target else {
+        assert!(acted() == 0 && Snapshot::of(&w.state) == before);
+        return before;
+    };
+    let asked = matches!(&w.state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+        player, source, choice: ResolutionChoiceKind::YesNo { source_card, .. },
+    }) if *player == w.you && *source == w.me && *source_card == w.me);
+    assert!(asked && acted() == 0);
+    assert!(w.state.get_object(w.me).expect("on the board").card_state.get("curse_target") == Some(&ObjectId(u64::from(p.0))));
+    crate::proofs::cards::clear_prompt(&mut w.state);
+    before
+}
+
 card_proof! {
     /// Bitterheart Witch dying: "target player", chosen as it triggers
-    /// (CR 603.3d); resolving, whoever controlled the Witch as it died is
-    /// asked whether to search ("you may"). Declining, nothing. Searching,
-    /// they search their own library and shuffle it (CR 701.23a: a search
-    /// happens, and so does the shuffle, whether or not a card is found),
-    /// and are offered one of each Curse card there, "none" an answer too
-    /// (CR 701.23b); with none there, nothing more. With no player
-    /// targeted, nothing at all. Nothing else.
-    fn bitterheart_witch_may_search_for_a_curse() {
-        assert!(triggers(&isd::bitterheart_witch::BitterheartWitch) == [(TriggerKind::SelfDies, Some(TargetRequirement::PlayerOnly))]);
-        let Witch { registry, mut state, card, me, you, curse } = witch();
-        let witch = registry.get(card).expect("registered");
-        let before = Snapshot::of(&state);
-        let target = match kani::any::<u8>() % 3 {
-            0 => Target::Player(PlayerId(0)),
-            1 => Target::Player(PlayerId(1)),
-            _ => Target::Illegal,
-        };
-        witch.on_dies(&mut state, me, &[target.clone()], &registry);
-        let Target::Player(p) = target else {
-            assert!(acted() == 0 && Snapshot::of(&state) == before);
-            std::mem::forget((registry, state));
-            return;
-        };
-        let asked = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
-            player, source, choice: ResolutionChoiceKind::YesNo { source_card, .. },
-        }) if *player == you && *source == me && *source_card == me);
-        assert!(asked && acted() == 0);
-        assert!(state.get_object(me).expect("on the board").card_state.get("curse_target") == Some(&ObjectId(u64::from(p.0))));
-        crate::proofs::cards::clear_prompt(&mut state);
-        let yes: bool = kani::any();
-        witch.on_yes_no_choice(&mut state, me, yes, &registry);
-        if !yes {
-            assert!(acted() == 0 && Snapshot::of(&state) == before);
-        } else if let Some(curse) = curse {
-            let asked = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
-                player, source, choice: ResolutionChoiceKind::ChooseTarget {
-                    options, optional: true, effect: PendingEffect::CardEffect { source_id, .. }, ..
-                },
-            }) if *player == you && *source == me && *source_id == me && options.len() == 1 && options[0] == Target::Object(curse));
-            assert!(asked && asked_for(&[Act::Shuffle(you)]));
-        } else {
-            assert!(asked_for(&[Act::Shuffle(you)]) && Snapshot::of(&state) == before);
-        }
-        std::mem::forget((registry, state));
+    /// (CR 603.3d); with no player targeted, nothing at all.
+    fn bitterheart_witch_with_no_player_targeted_does_nothing() {
+        let mut w = witch();
+        witch_dies(&mut w, &Target::Illegal);
+        std::mem::forget(w);
     }
+}
+
+card_proof! {
+    /// Bitterheart Witch dying with a player targeted: whoever controlled
+    /// the Witch as it died is asked whether to search ("you may");
+    /// declining, nothing.
+    fn bitterheart_witch_asks_whether_to_search_and_declined_does_nothing() {
+        let mut w = witch();
+        let before = witch_dies(&mut w, &Target::Player(PlayerId(u8::from(kani::any::<bool>()))));
+        w.registry.get(w.card).expect("registered").on_yes_no_choice(&mut w.state, w.me, false, &w.registry);
+        assert!(acted() == 0 && Snapshot::of(&w.state) == before);
+        std::mem::forget(w);
+    }
+}
+
+/// Bitterheart Witch, its controller having said yes: they search their
+/// own library and shuffle it (CR 701.23a: a search happens, and so does
+/// the shuffle, whether or not a card is found), and are offered one of
+/// each Curse card there, "none" an answer too (CR 701.23b); with none
+/// there, nothing more; and nothing else. Who searches, and which of
+/// player 0's cards are in their library, constants of each harness: over
+/// both left to the solver, every card checked for the Curse subtype was
+/// one it left open, its subtypes strings compared byte by byte, and the
+/// proof ran out of memory at 12 GB.
+fn bitterheart_witch_searches_for_a_curse((you, in_library): (u8, [bool; 3])) {
+    let mut w = witch_of(PlayerId(you), in_library);
+    let before = witch_dies(&mut w, &Target::Player(PlayerId(u8::from(kani::any::<bool>()))));
+    w.registry.get(w.card).expect("registered").on_yes_no_choice(&mut w.state, w.me, true, &w.registry);
+    if let Some(curse) = w.curse {
+        let asked = matches!(&w.state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+            player, source, choice: ResolutionChoiceKind::ChooseTarget {
+                options, optional: true, effect: PendingEffect::CardEffect { source_id, .. }, ..
+            },
+        }) if *player == w.you && *source == w.me && *source_id == w.me && options.len() == 1 && options[0] == Target::Object(curse));
+        assert!(asked && asked_for(&[Act::Shuffle(w.you)]));
+    } else {
+        assert!(asked_for(&[Act::Shuffle(w.you)]) && Snapshot::of(&w.state) == before);
+    }
+    std::mem::forget(w);
+}
+
+case_by_case! { bitterheart_witch_searches_for_a_curse;
+    bitterheart_witch_searches_the_second_players_library_for_a_curse: (1, [false, false, false]),
+    bitterheart_witch_searches_the_first_players_library_of_no_card_for_a_curse: (0, [false, false, false]),
+    bitterheart_witch_searches_the_first_players_library_of_the_blank_card_for_a_curse: (0, [true, false, false]),
+    bitterheart_witch_searches_the_first_players_library_of_the_first_curse_for_a_curse: (0, [false, true, false]),
+    bitterheart_witch_searches_the_first_players_library_of_the_second_curse_for_a_curse: (0, [false, false, true]),
+    bitterheart_witch_searches_the_first_players_library_of_the_blank_card_and_the_first_curse_for_a_curse: (0, [true, true, false]),
+    bitterheart_witch_searches_the_first_players_library_of_the_blank_card_and_the_second_curse_for_a_curse: (0, [true, false, true]),
+    bitterheart_witch_searches_the_first_players_library_of_both_curses_for_a_curse: (0, [false, true, true]),
+    bitterheart_witch_searches_the_first_players_library_of_all_three_for_a_curse: (0, [true, true, true]),
 }
 
 card_proof! {
