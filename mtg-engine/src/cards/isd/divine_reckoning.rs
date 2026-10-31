@@ -31,10 +31,16 @@ impl CardBehavior for DivineReckoning {
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         // Players choose in turn order starting with the active player (CR 101.4).
+        // Each player read in that order, not the list rotated: a rotation
+        // moves the ids as bytes through a buffer of its own, and a proof
+        // read every player back as either (Divine Reckoning's proofs with
+        // the second player active ran out of memory there).
         let active = state.active_player;
-        let mut player_order: Vec<PlayerId> = state.players.iter().map(|p| p.id).collect();
-        if let Some(pos) = player_order.iter().position(|&p| p == active) {
-            player_order.rotate_left(pos);
+        let n = state.players.len();
+        let start = state.players.iter().position(|p| p.id == active).unwrap_or(0);
+        let mut player_order: Vec<PlayerId> = Vec::with_capacity(n);
+        for i in 0..n {
+            player_order.push(state.players[(start + i) % n].id);
         }
         Self::advance(state, object_id, Vec::new(), player_order, registry);
     }
