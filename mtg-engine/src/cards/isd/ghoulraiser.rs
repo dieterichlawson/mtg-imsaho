@@ -48,14 +48,16 @@ impl CardBehavior for Ghoulraiser {
         let controller = crate::cards::helpers::controller_of(state, object_id);
 
         // Find Zombie cards in graveyard (not restricted to creatures).
-        let zombies: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
-            .iter()
+        // In the graveyard's order, by a loop rather than a filter collected
+        // (Bitterheart Witch's search says why).
+        let mut zombies: Vec<ObjectId> = Vec::new();
+        for o in state.objects_in_zone(Zone::Graveyard, controller) {
             // "a Zombie **card**" — CR 109.1, said rather than left to
             // `face_data` happening to be None for a token.
-            .filter(|o| state.is_card(o.id)
-                && state.face_subtypes(o.id, registry).iter().any(|s| s == "Zombie"))
-            .map(|o| o.id)
-            .collect();
+            if state.is_card(o.id) && state.face_subtypes(o.id, registry).iter().any(|s| s == "Zombie") {
+                zombies.push(o.id);
+            }
+        }
 
         if !zombies.is_empty() {
             let Some(chosen) = state.choose_at_random(&zombies, 1).first().copied()

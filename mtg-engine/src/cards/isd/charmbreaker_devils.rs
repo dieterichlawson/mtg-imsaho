@@ -52,19 +52,22 @@ impl CardBehavior for CharmbreakerDevils {
         // `step_trigger_scope` already gates this to the controller's own
         // step; re-deriving it here is duplication, not defence.
         // Find instant or sorcery cards in graveyard.
-        let candidates: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
-            .iter()
+        // In the graveyard's order, by a loop rather than a filter collected
+        // (Bitterheart Witch's search says why).
+        let mut candidates: Vec<ObjectId> = Vec::new();
+        for o in state.objects_in_zone(Zone::Graveyard, controller) {
             // "an instant or sorcery **card**" — CR 109.1, so no token. The
             // card types are read as the cast trigger below reads them, with
             // `has_card_type`, rather than off a freshly built `face_data`:
             // the same answer for a card in a graveyard, whose types are its
             // printed ones (CR 400.7), without building the whole card to
             // read one list.
-            .filter(|o| state.is_card(o.id)
+            if state.is_card(o.id)
                 && (state.has_card_type(o.id, CardType::Instant, registry)
-                    || state.has_card_type(o.id, CardType::Sorcery, registry)))
-            .map(|o| o.id)
-            .collect();
+                    || state.has_card_type(o.id, CardType::Sorcery, registry)) {
+                candidates.push(o.id);
+            }
+        }
         if !candidates.is_empty() {
             let Some(chosen) = state.choose_at_random(&candidates, 1).first().copied()
             else { return };

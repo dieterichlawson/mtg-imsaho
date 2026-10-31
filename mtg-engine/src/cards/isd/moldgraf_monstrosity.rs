@@ -54,15 +54,17 @@ impl CardBehavior for MoldgrafMonstrosity {
                 "Moldgraf Monstrosity: exiled on death".into());
         }
 
-        // Find creature cards in the graveyard (excluding the Monstrosity itself, which is now exiled).
-        let creatures_in_gy: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
-            .iter()
+        // Find creature cards in the graveyard (excluding the Monstrosity
+        // itself, which is now exiled), in the graveyard's order, by a loop
+        // rather than a filter collected (Bitterheart Witch's search says why).
+        let mut creatures_in_gy: Vec<ObjectId> = Vec::new();
+        for o in state.objects_in_zone(Zone::Graveyard, controller) {
             // "return two creature **cards** at random from your graveyard" —
             // CR 109.1, so a token waiting on the next SBA check is not one.
-            .filter(|o| state.is_card(o.id) && state.is_creature(o.id, registry)
-                && o.id != object_id)
-            .map(|o| o.id)
-            .collect();
+            if state.is_card(o.id) && state.is_creature(o.id, registry) && o.id != object_id {
+                creatures_in_gy.push(o.id);
+            }
+        }
 
         // "return two creature cards AT RANDOM".
         let to_return = state.choose_at_random(&creatures_in_gy, 2);
