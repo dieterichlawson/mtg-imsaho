@@ -285,6 +285,14 @@ card_proof! {
     }
 }
 
+// A graveyard of these boards holds at most four cards (the card's own,
+// the card beside it, the Zombie and the blank), and the cards' scans of
+// it go round at most four times: a bound of five, not the harness's
+// seven, which ran Ghoulraiser's and Woodland Sleuth's proofs out of
+// memory in the solver at seven gigabytes.
+// loop bound: <cards::isd::ghoulraiser::Ghoulraiser as cards::CardBehavior>::on_enter_battlefield 5 ghoulraiser
+// loop bound: <cards::isd::woodland_sleuth::WoodlandSleuth as cards::CardBehavior>::on_enter_battlefield 5 woodland_sleuth
+
 /// A board for the cards that return a card at random from a graveyard:
 /// the card's permanent as in [`entered`], and in the graveyards a Zombie
 /// creature card (Diregraf Ghoul) and the blank card, each either player's,

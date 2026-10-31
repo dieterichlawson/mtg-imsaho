@@ -96,7 +96,8 @@ def strip(text):
     return text
 # Loops a proof module bounds below the start, by its comment
 # `// loop bound: <function> <n> [<part of a harness name>]`: every loop of
-# that function (its pretty name, as `pretty_names` has it) is unwound to n
+# that function (its pretty name, as `pretty_names` has it, spaces and all:
+# a trait method's is `<Type as Trait>::method`) is unwound to n
 # in each harness of the module (whose name holds the part, if one is
 # given), the unwinding assertions on as everywhere, so a bound too small
 # fails the proof. For a loop the solver cannot see the end of in symbolic
@@ -113,7 +114,7 @@ def list_harnesses(src):
         mod = [p for p in rel if p != 'mod']
         path = '::'.join(mod)
         raw = open(f).read()
-        for m in re.finditer(r'(?m)^\s*// loop bound: (\S+) (\d+)(?: (\w+))?\s*$', raw):
+        for m in re.finditer(r'(?m)^\s*// loop bound: (.+?) (\d+)(?: (\w+))?\s*$', raw):
             LOOP_CAPS.setdefault(path, []).append((m.group(1), int(m.group(2)), m.group(3) or ''))
         t = strip(raw)
         for m in re.finditer(r'\b(card_proof|action_proof)!\s*\{', t):
