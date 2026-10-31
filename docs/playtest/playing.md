@@ -98,7 +98,7 @@ contradict the CR.
   every step/phase boundary (CR 500.4), verify no mana burn, verify the
   one-land-per-turn rule and that lands are refused off-turn or with a
   non-empty stack (CR 305.1)
-- C16 combat trick war across every combat priority window: cast instants
+- C16 [tried 2026-10-31; every window exists] combat trick war across every combat priority window: cast instants
   at beginning of combat, after attackers, after blockers, between
   first-strike and regular damage, and at end of combat; verify priority
   exists at each and that removing a blocker doesn't unblock the
@@ -111,7 +111,8 @@ contradict the CR.
   with Divine Reckoning; verify each player chooses their own keeper in
   APNAP order (CR 101.4) before any simultaneous sacrifice (CR 701.17),
   and that tokens cease to exist rather than resting in a graveyard
-- C19 multi-block combat math: force double and triple blocks every
+- C19 [tried 2026-10-31 → #982, #983; every damage-split claim held under the
+  old order rule] multi-block combat math: force double and triple blocks every
   combat; verify P/T after anthems, damage marked, who dies, life lost,
   and that the attacking player gets the ordering and assignment choices
   the CR gives them (CR 509.2, 510.1a-d)
@@ -396,6 +397,18 @@ contradict the CR.
   open: granting intimidate AFTER blockers are declared (509.1h) — Gruesome
   Deformity is a sorcery-speed Aura and ISD has no flash grant — and any mid-combat
   colour change, which ISD cannot produce
+
+- C41 [proposed 2026-10-31, from #983 and #725] remove one side of a combat
+  pairing and look at the other side. Destroying an attacker took its blockers
+  out of combat (#983), the mirror of #725. Set up a first-strike or
+  double-strike creature that blocks, or is blocked by, a creature destroyed
+  after blocks, and do the same with a creature bounced, flickered or
+  sacrificed. On every surface (CLI pane, LLM board text, page), verify that
+  the survivor is still marked attacking, blocking or blocked, that a
+  first-strike step is still created for it (CR 510.4, 506.4), and that it
+  deals and receives no combat damage. Then read `combat.rs` for every map
+  keyed by one side of a pairing and ask what deleting a key does to the
+  values
 
 **The Rules Lawyer** plays both seats to *maximize rules interaction* and
 verifies every step against the CR as it goes. Wins don't matter;
