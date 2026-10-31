@@ -24,7 +24,7 @@
 //! either player ("you" is the activator, CR 602.2a), beside a card and a
 //! token of any characteristics.
 
-use super::{act, acted, any_object, any_target, asked_each, asked_for, board, card_proof, case_by_case, each_is, picked, Act, Form, Kinds, Snapshot};
+use super::{act, acted, any_object, any_target, asked_each, asked_for, board, card_proof, case_by_case, each_is, no_ids_kept, Act, Form, Kinds, Snapshot};
 use crate::actions::{ResolvedChoice, Target};
 use crate::cards::{CardBehavior, CardRegistry, LoyaltyAbilityDef, TargetRequirement};
 use crate::ids::{CardId, ObjectId, PlayerId};
@@ -323,58 +323,132 @@ card_proof! {
     }
 }
 
-card_proof! {
-    /// Liliana of the Veil's +1: each player still in the game discards a
-    /// card, the active player choosing first and then the other (CR
-    /// 101.4): a player with one card in hand discards it, a player with
-    /// more is asked which, and one with none discards nothing; and the
-    /// cards are discarded together once every player has chosen, in the
-    /// order chosen. Over each player's hand of up to two cards, either
-    /// player active, and either having lost.
-    fn liliana_of_the_veil_makes_each_player_discard() {
-        let (registry, mut state, blank, card) = board(Box::new(isd::liliana_of_the_veil::LilianaOfTheVeil));
-        let me = state.create_object(card, PlayerId(0), Zone::Battlefield, None, None);
-        state.active_player = PlayerId(u8::from(kani::any::<bool>()));
-        let mut hands = [[None; 2]; 2];
-        for (p, hand) in hands.iter_mut().enumerate() {
-            for slot in hand.iter_mut() {
-                if kani::any() {
-                    *slot = Some(state.create_object(blank, PlayerId(p as u8), Zone::Hand, None, None));
-                }
-            }
-            state.players[p].lost = kani::any();
+/// Liliana of the Veil's +1: each player still in the game discards a
+/// card, the active player choosing first and then the other (CR
+/// 101.4): a player with one card in hand discards it, a player with
+/// more is asked which, and one with none discards nothing; and the
+/// cards are discarded together once every player has chosen, in the
+/// order chosen, and nothing is left kept for the next time. With
+/// player `active` active, player `p` holding `sizes[p]` cards and lost
+/// if `lost[p]`, each a constant in its harness (which card a player
+/// asked chooses is the solver's): with the hands and who had lost the
+/// solver's too, the queue of players kept between the questions had a
+/// length it left open, and the proof ran out of memory in symbolic
+/// execution.
+fn liliana_makes_each_player_discard((active, sizes, lost): (u8, [usize; 2], [bool; 2])) {
+    let (registry, mut state, blank, card) = board(Box::new(isd::liliana_of_the_veil::LilianaOfTheVeil));
+    let me = state.create_object(card, PlayerId(0), Zone::Battlefield, None, None);
+    state.active_player = PlayerId(active);
+    let mut hands: [Vec<ObjectId>; 2] = [Vec::with_capacity(2), Vec::with_capacity(2)];
+    for (p, hand) in hands.iter_mut().enumerate() {
+        for _ in 0..sizes[p] {
+            hand.push(state.create_object(blank, PlayerId(p as u8), Zone::Hand, None, None));
         }
-        let liliana = registry.get(card).expect("registered");
-        let before = Snapshot::of(&state);
-        liliana.on_loyalty_ability(&mut state, me, 0, &[], &registry);
-        let active = state.active_player;
-        let mut chosen = Vec::with_capacity(2);
-        for p in [active, PlayerId(1 - active.0)] {
-            let hand = picked(&hands[usize::from(p.0)], |c| *c);
-            let lost = if p == PlayerId(0) { state.players[0].lost } else { state.players[1].lost };
-            if lost || hand.is_empty() {
-                continue;
-            }
-            if hand.len() == 1 {
-                chosen.push(hand[0]);
-                continue;
-            }
-            let asked = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
-                player, source, choice: ResolutionChoiceKind::ChooseCardFromHand {
-                    player: from, cards, discard_immediately: false, remaining: 1, ..
-                },
-            }) if *player == p && *from == p && *source == me && *cards == hand);
-            assert!(asked && acted() == 0);
-            crate::proofs::cards::clear_prompt(&mut state);
-            let card = hand[usize::from(kani::any::<bool>())];
-            liliana.on_discard_choice(&mut state, me, card, &registry);
-            chosen.push(card);
-        }
-        assert!(state.awaiting_action.is_none());
-        assert!(asked_each(chosen.len(), |i| Act::Discard(chosen[i])) && Snapshot::of(&state) == before);
-        assert!(state.get_object(me).expect("on the board").card_state.is_empty());
-        std::mem::forget((registry, state, chosen));
+        state.players[p].lost = lost[p];
     }
+    let liliana = registry.get(card).expect("registered");
+    let before = Snapshot::of(&state);
+    liliana.on_loyalty_ability(&mut state, me, 0, &[], &registry);
+    let mut chosen = Vec::with_capacity(2);
+    for p in [PlayerId(active), PlayerId(1 - active)] {
+        let hand = &hands[usize::from(p.0)];
+        if lost[usize::from(p.0)] || hand.is_empty() {
+            continue;
+        }
+        if hand.len() == 1 {
+            chosen.push(hand[0]);
+            continue;
+        }
+        let asked = matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+            player, source, choice: ResolutionChoiceKind::ChooseCardFromHand {
+                player: from, cards, discard_immediately: false, remaining: 1, ..
+            },
+        }) if *player == p && *from == p && *source == me && cards == hand);
+        assert!(asked && acted() == 0);
+        crate::proofs::cards::clear_prompt(&mut state);
+        let card = hand[usize::from(kani::any::<bool>())];
+        liliana.on_discard_choice(&mut state, me, card, &registry);
+        chosen.push(card);
+    }
+    assert!(state.awaiting_action.is_none());
+    assert!(asked_each(chosen.len(), |i| Act::Discard(chosen[i])) && Snapshot::of(&state) == before);
+    assert!(state.get_object(me).expect("on the board").card_state.is_empty() && no_ids_kept());
+    std::mem::forget((registry, state, chosen, hands));
+}
+
+case_by_case! { liliana_makes_each_player_discard;
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_no_and_no_neither_lost: (0, [0, 0], [false, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_no_and_no_the_first_lost: (0, [0, 0], [true, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_no_and_no_the_second_lost: (0, [0, 0], [false, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_no_and_no_both_lost: (0, [0, 0], [true, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_no_and_one_neither_lost: (0, [0, 1], [false, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_no_and_one_the_first_lost: (0, [0, 1], [true, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_no_and_one_the_second_lost: (0, [0, 1], [false, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_no_and_one_both_lost: (0, [0, 1], [true, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_no_and_two_neither_lost: (0, [0, 2], [false, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_no_and_two_the_first_lost: (0, [0, 2], [true, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_no_and_two_the_second_lost: (0, [0, 2], [false, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_no_and_two_both_lost: (0, [0, 2], [true, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_one_and_no_neither_lost: (0, [1, 0], [false, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_one_and_no_the_first_lost: (0, [1, 0], [true, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_one_and_no_the_second_lost: (0, [1, 0], [false, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_one_and_no_both_lost: (0, [1, 0], [true, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_one_and_one_neither_lost: (0, [1, 1], [false, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_one_and_one_the_first_lost: (0, [1, 1], [true, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_one_and_one_the_second_lost: (0, [1, 1], [false, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_one_and_one_both_lost: (0, [1, 1], [true, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_one_and_two_neither_lost: (0, [1, 2], [false, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_one_and_two_the_first_lost: (0, [1, 2], [true, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_one_and_two_the_second_lost: (0, [1, 2], [false, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_one_and_two_both_lost: (0, [1, 2], [true, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_two_and_no_neither_lost: (0, [2, 0], [false, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_two_and_no_the_first_lost: (0, [2, 0], [true, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_two_and_no_the_second_lost: (0, [2, 0], [false, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_two_and_no_both_lost: (0, [2, 0], [true, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_two_and_one_neither_lost: (0, [2, 1], [false, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_two_and_one_the_first_lost: (0, [2, 1], [true, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_two_and_one_the_second_lost: (0, [2, 1], [false, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_two_and_one_both_lost: (0, [2, 1], [true, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_two_and_two_neither_lost: (0, [2, 2], [false, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_two_and_two_the_first_lost: (0, [2, 2], [true, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_two_and_two_the_second_lost: (0, [2, 2], [false, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_first_player_active_over_hands_of_two_and_two_both_lost: (0, [2, 2], [true, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_no_and_no_neither_lost: (1, [0, 0], [false, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_no_and_no_the_first_lost: (1, [0, 0], [true, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_no_and_no_the_second_lost: (1, [0, 0], [false, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_no_and_no_both_lost: (1, [0, 0], [true, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_no_and_one_neither_lost: (1, [0, 1], [false, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_no_and_one_the_first_lost: (1, [0, 1], [true, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_no_and_one_the_second_lost: (1, [0, 1], [false, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_no_and_one_both_lost: (1, [0, 1], [true, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_no_and_two_neither_lost: (1, [0, 2], [false, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_no_and_two_the_first_lost: (1, [0, 2], [true, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_no_and_two_the_second_lost: (1, [0, 2], [false, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_no_and_two_both_lost: (1, [0, 2], [true, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_one_and_no_neither_lost: (1, [1, 0], [false, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_one_and_no_the_first_lost: (1, [1, 0], [true, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_one_and_no_the_second_lost: (1, [1, 0], [false, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_one_and_no_both_lost: (1, [1, 0], [true, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_one_and_one_neither_lost: (1, [1, 1], [false, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_one_and_one_the_first_lost: (1, [1, 1], [true, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_one_and_one_the_second_lost: (1, [1, 1], [false, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_one_and_one_both_lost: (1, [1, 1], [true, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_one_and_two_neither_lost: (1, [1, 2], [false, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_one_and_two_the_first_lost: (1, [1, 2], [true, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_one_and_two_the_second_lost: (1, [1, 2], [false, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_one_and_two_both_lost: (1, [1, 2], [true, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_two_and_no_neither_lost: (1, [2, 0], [false, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_two_and_no_the_first_lost: (1, [2, 0], [true, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_two_and_no_the_second_lost: (1, [2, 0], [false, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_two_and_no_both_lost: (1, [2, 0], [true, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_two_and_one_neither_lost: (1, [2, 1], [false, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_two_and_one_the_first_lost: (1, [2, 1], [true, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_two_and_one_the_second_lost: (1, [2, 1], [false, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_two_and_one_both_lost: (1, [2, 1], [true, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_two_and_two_neither_lost: (1, [2, 2], [false, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_two_and_two_the_first_lost: (1, [2, 2], [true, false]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_two_and_two_the_second_lost: (1, [2, 2], [false, true]),
+    liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_two_and_two_both_lost: (1, [2, 2], [true, true]),
 }
 
 card_proof! {
