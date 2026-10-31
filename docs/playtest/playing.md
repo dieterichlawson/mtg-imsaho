@@ -156,7 +156,7 @@ contradict the CR.
   cards and check the creature dies at the next SBA check when toughness hits
   0 (CR 704.5f), and stack an anthem and a counter on top to check 7a→7c→7d
   order. No coverage pairing has both halves; write one-off decks
-- C26 alternative costs and cost reduction: Rooftop Storm ("cast Zombie
+- C26 [tried 2026-10-31 → #978, #979; every CR claim held] alternative costs and cost reduction: Rooftop Storm ("cast Zombie
   creature spells without paying their mana costs", CR 118.9) and Heartless
   Summoning ({2} less, and -1/-1 that kills your own X/1s). Verify the free
   cast is offered for Zombie CREATURE spells only, that both the paid and the
@@ -164,7 +164,7 @@ contradict the CR.
   never eats a coloured symbol (CR 601.2f), that an additional cost survives
   an alternative cost, and that killing the cost source with the spell on the
   stack does not rebill it (CR 601.2h)
-- C27 the nonbasic mana base: the five check lands (Isolated Chapel, Clifftop
+- C27 [tried 2026-10-31; held] the nonbasic mana base: the five check lands (Isolated Chapel, Clifftop
   Retreat, Woodland Cemetery, Hinterland Harbor, Sulfur Falls) enter tapped or
   untapped as a replacement checked AS they enter (CR 614.1c) and are never
   re-evaluated later; Ghost Quarter's search belongs to the DESTROYED land's
@@ -185,7 +185,7 @@ contradict the CR.
   answering to both creature and artifact removal. Demonmail Hauberk's
   "Equip—Sacrifice a creature", Runechanter's Pike, Inquisitor's Flail and all
   four Ancient Grudge modes went undrawn in two games — stack them higher
-- C29 X spells and variable damage: Devil's Play ({X}{R}, flashback {X}{R}{R}{R}
+- C29 [tried 2026-10-31 → #977] X spells and variable damage: Devil's Play ({X}{R}, flashback {X}{R}{R}{R}
   — a SECOND independently chosen X), Harvest Pyre (X paid by exiling from your
   own graveyard), Heretic's Punishment, Blasphemous Act (a cost that varies with
   the board). Verify X is chosen at announcement and locked (CR 601.2b), X=0 is
@@ -410,6 +410,17 @@ contradict the CR.
   deals and receives no combat damage. Then read `combat.rs` for every map
   keyed by one side of a pairing and ask what deleting a key does to the
   values
+
+- C42 [proposed 2026-10-31, from #977] demands with an X, against the
+  autotap's hand protection. `Demand::payable` calls `greedy_autotap`, which
+  returns `None` for any cost with an X, so no X demand is protected by
+  `keep_the_hand_castable` or `order_around_demands`. Kessig Wolf Run was
+  tapped for a Brimstone Volley with three Mountains idle. For each X demand
+  (the Wolf Run's ability, Devil's Play and its flashback {X}{R}{R}{R} in the
+  graveyard, Mikaeus, Blasphemous Act's reduction), cast an unrelated spell
+  that the spare lands can pay. Verify the X row is still on the menu
+  afterwards, with the X it had before. Then grep for every other `payable`
+  filter built on the same call
 
 **The Rules Lawyer** plays both seats to *maximize rules interaction* and
 verifies every step against the CR as it goes. Wins don't matter;
