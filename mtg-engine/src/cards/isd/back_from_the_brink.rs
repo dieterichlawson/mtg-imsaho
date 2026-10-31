@@ -47,29 +47,28 @@ impl CardBehavior for BackFromTheBrink {
         // The names seen are a list, not a `HashSet`: a graveyard is a few
         // dozen cards at most, and a hash set's keys are random, which a
         // proof of this card has to take as any keys at all.
-        let graveyard = state.objects_in_zone(Zone::Graveyard, controller);
-        let mut seen: Vec<&str> = Vec::with_capacity(graveyard.len());
-        let creatures: Vec<_> = graveyard
-            .into_iter()
-            .filter(|o| {
-                // "exile a creature **card**" — CR 109.1: a token in a graveyard
-                // is not a card, and is only there until the next SBA check.
-                //
-                // `&&` binds tighter than `||`, so the second half of this used
-                // to read `... || face_data says Creature` with no `is_card`
-                // guard at all — saying the opposite of the comment above it.
-                // It was also redundant: `is_creature` already consults the
-                // active face's card types.
-                state.is_card(o.id) && state.is_creature(o.id, registry)
-            })
-            .filter(|o| {
-                if seen.contains(&o.name.as_str()) {
-                    return false;
-                }
-                seen.push(&o.name);
-                true
-            })
-            .collect();
+        //
+        // In the graveyard's order, by a loop rather than filters collected
+        // (Bitterheart Witch's search says why), each list starting empty: a
+        // list allocated at the graveyard's length is one of a size a proof
+        // leaves open.
+        let mut seen: Vec<&str> = Vec::new();
+        let mut creatures: Vec<&crate::state::GameObject> = Vec::new();
+        for o in state.objects_in_zone(Zone::Graveyard, controller) {
+            // "exile a creature **card**" — CR 109.1: a token in a graveyard
+            // is not a card, and is only there until the next SBA check.
+            //
+            // `&&` binds tighter than `||`, so the second half of this used
+            // to read `... || face_data says Creature` with no `is_card`
+            // guard at all — saying the opposite of the comment above it.
+            // It was also redundant: `is_creature` already consults the
+            // active face's card types.
+            if !(state.is_card(o.id) && state.is_creature(o.id, registry)) || seen.contains(&o.name.as_str()) {
+                continue;
+            }
+            seen.push(&o.name);
+            creatures.push(o);
+        }
 
         creatures.into_iter().map(|creature| {
             // Look up the creature's mana cost from the registry. X is 0 in a

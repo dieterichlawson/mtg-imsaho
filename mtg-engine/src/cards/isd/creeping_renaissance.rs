@@ -69,11 +69,14 @@ impl CardBehavior for CreepingRenaissance {
         };
         // "all **cards** of the chosen type from **your** graveyard": CR 109.1
         // excludes a token, and a graveyard is keyed by owner (CR 404.3).
-        let to_return: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
-            .iter()
-            .map(|o| o.id)
-            .filter(|id| state.is_card(*id) && state.has_card_type(*id, card_type, registry))
-            .collect();
+        // In the graveyard's order, by a loop rather than a filter collected
+        // (Bitterheart Witch's search says why).
+        let mut to_return: Vec<ObjectId> = Vec::new();
+        for o in state.objects_in_zone(Zone::Graveyard, controller) {
+            if state.is_card(o.id) && state.has_card_type(o.id, card_type, registry) {
+                to_return.push(o.id);
+            }
+        }
         let count = to_return.len();
         for id in to_return {
             state.move_object(id, Zone::Hand, registry);
