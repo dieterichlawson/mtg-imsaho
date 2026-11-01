@@ -1269,24 +1269,25 @@ allows, and each has a regular test besides.
 
 Where it stands. Every harness was run at one commit, d461ae7 (1,194
 of them then), and those whose code changed after it were run again at
-4f3cf9d, or at the commit that changed them since, with what the
-changes reached listed beside the results (five card files, the choice
-handler and the payment planner's sort, and the proofs of payment,
-choices, Liliana of the Veil, Grimgrin, the kept lists, the pruning and
-two loop bounds). Of the 1,337 harnesses at the head of this branch,
-1,294 pass, at 3.5 GB or, the heaviest, at 7; none fails. The 43 left
-are run alone at 12 GB: paying with a Forest to tap (twelve), the two
-proofs of the targets a requirement of any target or of a player or
-planeswalker offers, counting a cost's pips, and of the cards Stitcher's
-Apprentice, Grimoire of the Dead's return and its ability list with an
-empty hand, Moorland Haunt, Rolling Temblor, Make a Wish, Mulch, Past in
-Flames, Vampiric Fury, Balefire Dragon, Curse of the Pierced Heart,
-Bitterheart Witch, Moldgraf Monstrosity, Ghoulraiser, Creeping
-Renaissance, Garruk, the Veil-Cursed's −1, Liliana of the Veil's −2,
-Reaper from the Abyss, Sever the Bloodline and Tribute to Hunger. Each
-ran out of memory at 7 GB (Moldgraf's two, split by zone since, at 3.5),
-most of them in the solver once symbolic execution had finished. This
-section will record which hold there.
+the commit that changed them, with what each change reached listed
+beside the results. The 43 that had run out of memory at 7 GB were run
+alone at 12, and those that did there too were restructured, as the
+entries above say: a constant in each harness for what the solver had
+left open (a library's length, a graveyard's owners, a planeswalker
+board's shapes, Make a Wish's objects), a harness per assertion where
+the parts were cheaper apart, room for exactly what a list is pushed,
+an engine action proved once and stood in for, and two cheaper engine
+lists (`creatures_controlled_by`, Grimoire of the Dead's scan), the
+engine's tests passing after each. Every harness those changes reached
+was run again.
+
+Every card proof passes: 989 harnesses over the 248 cards and four
+tables of cards, at the code of the head (`reports/kani-card-ledger.md`,
+card by card). Of the 1,586 harnesses in all, 1,565 pass and none fails.
+The 21 left are proofs of paying with a Forest to tap, which the card
+proofs' stand-in for a payment rests on: mostly the payments of a cost
+with a generic pip, or of no colour, by an untapped Forest, out of
+memory at 6.5 GB and running alone at 12.
 
 A counterexample can be of a board no game reaches, which is then the
 board's error and not the card's: the board the counted creatures are
