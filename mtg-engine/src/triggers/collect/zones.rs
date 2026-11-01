@@ -81,7 +81,9 @@ pub(super) fn creature_died(
     let dead_id = *object;
     let dead_card_id = *card_id;
     let dead_controller = *controller;
-    let dead = DeadCreature {
+    // What a watcher's trigger carries of the death, built for each trigger
+    // raised and only then: a death no watcher sees copies nothing.
+    let dead = || DeadCreature {
         id: dead_id,
         name: name.clone(),
         controller: dead_controller,
@@ -128,11 +130,11 @@ pub(super) fn creature_died(
         let condition_holds = registry.get(watcher_card_id).is_some_and(|b|
             b.should_trigger_on_creature_dies(
                 state, watcher_id, dead_id, dead_controller,
-                &dead.damaged_by, dead.toughness, dead.is_token, &dead.subtypes, registry));
+                damaged_by, *last_known_toughness, *is_token, subtypes, registry));
         if has_death_trigger && condition_holds {
             let desc = face_trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyCreatureDies, watcher_transformed);
             c.emit(watcher_id, watcher_card_id, watcher_controller, desc,
-                TriggerEvent::CreatureDied { dead: dead.clone() });
+                TriggerEvent::CreatureDied { dead: dead() });
         }
     }
 }

@@ -466,6 +466,11 @@ impl PendingTrigger {
 /// Look up the description for a trigger from the card's `TriggeredAbilityDef`.
 /// For transformed DFCs, also check the back face's triggered abilities.
 fn trigger_description(registry: &CardRegistry, card_id: CardId, kind: &crate::cards::TriggerKind, is_transformed: bool) -> String {
+    // The printed faces say whether there is one to find, without building
+    // the card's data: most cards asked print no trigger of the kind.
+    if !registry.prints_trigger(card_id, false, kind) && !(is_transformed && registry.prints_trigger(card_id, true, kind)) {
+        return String::new();
+    }
     if let Some(behavior) = registry.get(card_id) {
         // Check front face triggers.
         if let Some(t) = crate::cards::transient(behavior.card_data()).triggered_abilities.iter().find(|t| &t.kind == kind) {
@@ -491,12 +496,7 @@ fn trigger_description(registry: &CardRegistry, card_id: CardId, kind: &crate::c
 /// (b) either face having the ability means the card legitimately cares about
 /// the event.
 fn card_has_trigger(registry: &CardRegistry, card_id: CardId, kind: &crate::cards::TriggerKind) -> bool {
-    let Some(behavior) = registry.get(card_id) else { return false };
-    if crate::cards::transient(behavior.card_data()).triggered_abilities.iter().any(|t| &t.kind == kind) {
-        return true;
-    }
-    crate::cards::transient(behavior.back_face_data()).as_ref()
-        .is_some_and(|back| back.triggered_abilities.iter().any(|t| &t.kind == kind))
+    registry.prints_trigger(card_id, false, kind) || registry.prints_trigger(card_id, true, kind)
 }
 
 /// Look up a trigger description from the currently visible face only.
@@ -505,6 +505,12 @@ fn card_has_trigger(registry: &CardRegistry, card_id: CardId, kind: &crate::card
 /// Used where a per-face ability (e.g. Homicidal Brute's end-step trigger)
 /// must not fire when the card is on the other face.
 fn face_trigger_description(registry: &CardRegistry, card_id: CardId, kind: &crate::cards::TriggerKind, is_transformed: bool) -> String {
+    // As in `trigger_description`. The face read when transformed is the
+    // front, for a card with no back, which prints at least what the body
+    // below finds there (nothing).
+    if !registry.prints_trigger(card_id, is_transformed, kind) {
+        return String::new();
+    }
     let Some(behavior) = registry.get(card_id) else { return String::new() };
     let face = crate::cards::transient(if is_transformed { behavior.back_face_data() } else { Some(behavior.card_data()) });
     face.as_ref()
