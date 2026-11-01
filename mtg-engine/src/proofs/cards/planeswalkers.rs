@@ -65,6 +65,98 @@ fn planeswalker(card: Box<dyn CardBehavior>) -> Board {
     Board { registry, state, me, others, you }
 }
 
+/// What one of the board's other two objects is to a player (for an
+/// ability that reads the creatures a player controls, that player): a
+/// creature of theirs on the battlefield, an enchantment of theirs there
+/// that is no creature, the other player's
+/// permanent there, or (a card only: a token is on the battlefield) a card
+/// in either player's graveyard. Its other characteristics are any of
+/// [`ANY_CREATURE`]'s, as [`any_object`]'s are.
+#[derive(Clone, Copy, PartialEq)]
+enum Shape {
+    Theirs,
+    TheirNoncreature,
+    Opponents,
+    InAGraveyard,
+}
+
+/// [`planeswalker`]'s board, activated by `you`, its other two objects (the
+/// card first) of the shapes `shapes` says to player `of`: for an ability
+/// that reads the creatures `of` controls, a board whose list of them is
+/// one the solver knows. Over shapes it left open, Garruk, the
+/// Veil-Cursed's −1 ran out of memory at 12 GB.
+fn planeswalker_shaped(card: Box<dyn CardBehavior>, you: PlayerId, of: PlayerId, shapes: [Shape; 2]) -> Board {
+    let (registry, mut state, blank, card) = board(card);
+    let controller = PlayerId(u8::from(kani::any::<bool>()));
+    let gone: bool = kani::any();
+    let me = state.create_object(card, PlayerId(0), if gone { Zone::Graveyard } else { Zone::Battlefield }, None, None);
+    let o = state.get_object_mut(me).expect("just created");
+    if gone {
+        o.last_controller = Some(controller);
+        state.players[0].graveyard_order.push(me);
+    } else {
+        o.controller = controller;
+    }
+    let others = [
+        shaped_object(&mut state, blank, Form::Card, of, shapes[0]),
+        shaped_object(&mut state, blank, Form::Token, of, shapes[1]),
+    ];
+    state.resolving_ability_activator = Some(you);
+    Board { registry, state, me, others, you }
+}
+
+/// An object of `shape` to `of`, as [`planeswalker_shaped`] says.
+fn shaped_object(state: &mut GameState, blank: CardId, form: Form, of: PlayerId, shape: Shape) -> ObjectId {
+    let token = form == Form::Token;
+    assert!(!(token && shape == Shape::InAGraveyard), "a token is on the battlefield");
+    let (zone, owner) = match shape {
+        Shape::Theirs | Shape::TheirNoncreature => (Zone::Battlefield, of),
+        Shape::Opponents => (Zone::Battlefield, PlayerId(1 - of.0)),
+        Shape::InAGraveyard => (Zone::Graveyard, PlayerId(u8::from(kani::any::<bool>()))),
+    };
+    let id = state.create_object(if token { CardId(0) } else { blank }, owner, zone, None, None);
+    if zone == Zone::Graveyard {
+        if owner == PlayerId(0) {
+            state.players[0].graveyard_order.push(id);
+        } else {
+            state.players[1].graveyard_order.push(id);
+        }
+    }
+    let o = state.get_object_mut(id).expect("just created");
+    o.is_token = token;
+    o.colors = Vec::with_capacity(5);
+    for c in Color::ALL {
+        if kani::any() {
+            o.colors.push(c);
+        }
+    }
+    let creature = match shape {
+        Shape::Theirs => true,
+        Shape::TheirNoncreature => false,
+        Shape::Opponents | Shape::InAGraveyard => kani::any(),
+    };
+    // A noncreature of theirs an enchantment and nothing else, every other
+    // object's types any of `ANY_CREATURE`'s: a list of types of a length
+    // the solver leaves open makes whether it holds Creature a question
+    // even where it cannot, and their creatures a list it leaves open
+    // (every case with such a noncreature of theirs ran out of memory in
+    // symbolic execution at 3.5 GB, every other passed).
+    o.card_types = Vec::with_capacity(2);
+    if creature {
+        o.card_types.push(CardType::Creature);
+    }
+    if shape == Shape::TheirNoncreature || kani::any() {
+        o.card_types.push(CardType::Enchantment);
+    }
+    if creature {
+        let (p, t): (u8, u8) = (kani::any(), kani::any());
+        kani::assume(p <= 5 && (1..=5).contains(&t));
+        o.power = Some(i32::from(p));
+        o.toughness = Some(i32::from(t));
+    }
+    id
+}
+
 impl Board {
     fn card(&self) -> CardId {
         self.state.get_object(self.me).expect("on the board").card_id
@@ -217,66 +309,92 @@ case_by_case! { garruk_makes_wolves;
     garruk_the_veil_cursed_makes_a_deathtouch_wolf: true,
 }
 
-card_proof! {
-    /// Garruk, the Veil-Cursed's −1: the player who activated it
-    /// sacrifices a creature they control (CR 701.21a: the one there is,
-    /// or one they choose from theirs; it does not target, the card's
-    /// ruling), and having done so, searches their library for a creature
-    /// card to put into their hand, the search and its shuffle the
-    /// engine's (`search_library`, every creature card in that library
-    /// offered, in order, finding none allowed, CR 701.23b); with no
-    /// creature to sacrifice, nothing. Over that player's library of a
-    /// creature card and a land card, in either order, and the other's of a
-    /// creature card.
-    fn garruk_the_veil_cursed_sacrifices_then_searches() {
-        let mut b = planeswalker(Box::new(isd::garruk_relentless::GarrukRelentless));
-        let you = b.you;
-        let mut library = [b.me; 3];
-        for (i, slot) in library.iter_mut().enumerate() {
-            let owner = if i < 2 { you } else { PlayerId(1 - you.0) };
-            let id = b.state.create_object(CardId(1), owner, Zone::Library, None, None);
-            b.state.get_object_mut(id).expect("just created").card_types = vec![if i == 1 { CardType::Land } else { CardType::Creature }];
-            *slot = id;
-        }
-        let order = if kani::any() { [library[0], library[1]] } else { [library[1], library[0]] };
-        if you == PlayerId(0) {
-            b.state.players[0].library_order.extend_from_slice(&order);
-            b.state.players[1].library_order.push(library[2]);
-        } else {
-            b.state.players[1].library_order.extend_from_slice(&order);
-            b.state.players[0].library_order.push(library[2]);
-        }
-        let creatures = b.creatures_of(you);
-        let before = b.resolve(11, &[]);
-        let sacrificed = match creatures.len() {
-            0 => {
-                assert!(acted() == 0 && Snapshot::of(&b.state) == before);
-                std::mem::forget(b);
-                return;
-            }
-            1 => creatures[0],
-            _ => {
-                let asked = matches!(&b.state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
-                    player, source, choice: ResolutionChoiceKind::ChooseTarget {
-                        options, optional: false, effect: PendingEffect::CardEffect { source_id, .. }, ..
-                    },
-                }) if *player == you && *source == b.me && *source_id == b.me
-                    && options.len() == 2 && options[0] == Target::Object(creatures[0]) && options[1] == Target::Object(creatures[1]));
-                assert!(asked && acted() == 0);
-                crate::proofs::cards::clear_prompt(&mut b.state);
-                let chosen = creatures[usize::from(kani::any::<bool>())];
-                let card = b.card();
-                b.registry.get(card).expect("registered").resolve_card_effect(&mut b.state, b.me, "", &Target::Object(chosen), &b.registry);
-                chosen
-            }
-        };
-        assert!(asked_for(&[
-            Act::Sacrifice(sacrificed),
-            Act::Search { source: b.me, player: you, candidates: vec![library[0]], to: Zone::Hand, tapped: false, optional: false },
-        ]));
-        assert!(Snapshot::of(&b.state) == before);
-        std::mem::forget((b, creatures));
+/// Garruk, the Veil-Cursed's −1: the player who activated it
+/// sacrifices a creature they control (CR 701.21a: the one there is,
+/// or one they choose from theirs; it does not target, the card's
+/// ruling), and having done so, searches their library for a creature
+/// card to put into their hand, the search and its shuffle the
+/// engine's (`search_library`, every creature card in that library
+/// offered, in order, finding none allowed, CR 701.23b); with no
+/// creature to sacrifice, nothing. Over that player's library of a
+/// creature card and a land card, in either order, and the other's of a
+/// creature card. Who activated it, and what each of the other two objects
+/// is to them, constants of each harness (`planeswalker_shaped`).
+fn garruk_the_veil_cursed_sacrifices_then_searches((you, shapes): (u8, [Shape; 2])) {
+    let mut b = planeswalker_shaped(Box::new(isd::garruk_relentless::GarrukRelentless), PlayerId(you), PlayerId(you), shapes);
+    let you = b.you;
+    let mut library = [b.me; 3];
+    for (i, slot) in library.iter_mut().enumerate() {
+        let owner = if i < 2 { you } else { PlayerId(1 - you.0) };
+        let id = b.state.create_object(CardId(1), owner, Zone::Library, None, None);
+        b.state.get_object_mut(id).expect("just created").card_types = vec![if i == 1 { CardType::Land } else { CardType::Creature }];
+        *slot = id;
     }
+    let order = if kani::any() { [library[0], library[1]] } else { [library[1], library[0]] };
+    if you == PlayerId(0) {
+        b.state.players[0].library_order.extend_from_slice(&order);
+        b.state.players[1].library_order.push(library[2]);
+    } else {
+        b.state.players[1].library_order.extend_from_slice(&order);
+        b.state.players[0].library_order.push(library[2]);
+    }
+    let creatures = b.creatures_of(you);
+    let before = b.resolve(11, &[]);
+    let sacrificed = match creatures.len() {
+        0 => {
+            assert!(acted() == 0 && Snapshot::of(&b.state) == before);
+            std::mem::forget(b);
+            return;
+        }
+        1 => creatures[0],
+        _ => {
+            let asked = matches!(&b.state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+                player, source, choice: ResolutionChoiceKind::ChooseTarget {
+                    options, optional: false, effect: PendingEffect::CardEffect { source_id, .. }, ..
+                },
+            }) if *player == you && *source == b.me && *source_id == b.me
+                && options.len() == 2 && options[0] == Target::Object(creatures[0]) && options[1] == Target::Object(creatures[1]));
+            assert!(asked && acted() == 0);
+            crate::proofs::cards::clear_prompt(&mut b.state);
+            let chosen = creatures[usize::from(kani::any::<bool>())];
+            let card = b.card();
+            b.registry.get(card).expect("registered").resolve_card_effect(&mut b.state, b.me, "", &Target::Object(chosen), &b.registry);
+            chosen
+        }
+    };
+    assert!(asked_for(&[
+        Act::Sacrifice(sacrificed),
+        Act::Search { source: b.me, player: you, candidates: vec![library[0]], to: Zone::Hand, tapped: false, optional: false },
+    ]));
+    assert!(Snapshot::of(&b.state) == before);
+    std::mem::forget((b, creatures));
+}
+
+case_by_case! { garruk_the_veil_cursed_sacrifices_then_searches;
+    garruk_the_veil_cursed_sacrifices_then_searches_for_the_first_player_over_their_creature_card_and_their_creature_token: (0, [Shape::Theirs, Shape::Theirs]),
+    garruk_the_veil_cursed_sacrifices_then_searches_for_the_first_player_over_their_creature_card_and_their_noncreature_token: (0, [Shape::Theirs, Shape::TheirNoncreature]),
+    garruk_the_veil_cursed_sacrifices_then_searches_for_the_first_player_over_their_creature_card_and_an_opponents_token: (0, [Shape::Theirs, Shape::Opponents]),
+    garruk_the_veil_cursed_sacrifices_then_searches_for_the_first_player_over_their_noncreature_card_and_their_creature_token: (0, [Shape::TheirNoncreature, Shape::Theirs]),
+    garruk_the_veil_cursed_sacrifices_then_searches_for_the_first_player_over_their_noncreature_card_and_their_noncreature_token: (0, [Shape::TheirNoncreature, Shape::TheirNoncreature]),
+    garruk_the_veil_cursed_sacrifices_then_searches_for_the_first_player_over_their_noncreature_card_and_an_opponents_token: (0, [Shape::TheirNoncreature, Shape::Opponents]),
+    garruk_the_veil_cursed_sacrifices_then_searches_for_the_first_player_over_an_opponents_card_and_their_creature_token: (0, [Shape::Opponents, Shape::Theirs]),
+    garruk_the_veil_cursed_sacrifices_then_searches_for_the_first_player_over_an_opponents_card_and_their_noncreature_token: (0, [Shape::Opponents, Shape::TheirNoncreature]),
+    garruk_the_veil_cursed_sacrifices_then_searches_for_the_first_player_over_an_opponents_card_and_an_opponents_token: (0, [Shape::Opponents, Shape::Opponents]),
+    garruk_the_veil_cursed_sacrifices_then_searches_for_the_first_player_over_a_card_in_a_graveyard_and_their_creature_token: (0, [Shape::InAGraveyard, Shape::Theirs]),
+    garruk_the_veil_cursed_sacrifices_then_searches_for_the_first_player_over_a_card_in_a_graveyard_and_their_noncreature_token: (0, [Shape::InAGraveyard, Shape::TheirNoncreature]),
+    garruk_the_veil_cursed_sacrifices_then_searches_for_the_first_player_over_a_card_in_a_graveyard_and_an_opponents_token: (0, [Shape::InAGraveyard, Shape::Opponents]),
+    garruk_the_veil_cursed_sacrifices_then_searches_for_the_second_player_over_their_creature_card_and_their_creature_token: (1, [Shape::Theirs, Shape::Theirs]),
+    garruk_the_veil_cursed_sacrifices_then_searches_for_the_second_player_over_their_creature_card_and_their_noncreature_token: (1, [Shape::Theirs, Shape::TheirNoncreature]),
+    garruk_the_veil_cursed_sacrifices_then_searches_for_the_second_player_over_their_creature_card_and_an_opponents_token: (1, [Shape::Theirs, Shape::Opponents]),
+    garruk_the_veil_cursed_sacrifices_then_searches_for_the_second_player_over_their_noncreature_card_and_their_creature_token: (1, [Shape::TheirNoncreature, Shape::Theirs]),
+    garruk_the_veil_cursed_sacrifices_then_searches_for_the_second_player_over_their_noncreature_card_and_their_noncreature_token: (1, [Shape::TheirNoncreature, Shape::TheirNoncreature]),
+    garruk_the_veil_cursed_sacrifices_then_searches_for_the_second_player_over_their_noncreature_card_and_an_opponents_token: (1, [Shape::TheirNoncreature, Shape::Opponents]),
+    garruk_the_veil_cursed_sacrifices_then_searches_for_the_second_player_over_an_opponents_card_and_their_creature_token: (1, [Shape::Opponents, Shape::Theirs]),
+    garruk_the_veil_cursed_sacrifices_then_searches_for_the_second_player_over_an_opponents_card_and_their_noncreature_token: (1, [Shape::Opponents, Shape::TheirNoncreature]),
+    garruk_the_veil_cursed_sacrifices_then_searches_for_the_second_player_over_an_opponents_card_and_an_opponents_token: (1, [Shape::Opponents, Shape::Opponents]),
+    garruk_the_veil_cursed_sacrifices_then_searches_for_the_second_player_over_a_card_in_a_graveyard_and_their_creature_token: (1, [Shape::InAGraveyard, Shape::Theirs]),
+    garruk_the_veil_cursed_sacrifices_then_searches_for_the_second_player_over_a_card_in_a_graveyard_and_their_noncreature_token: (1, [Shape::InAGraveyard, Shape::TheirNoncreature]),
+    garruk_the_veil_cursed_sacrifices_then_searches_for_the_second_player_over_a_card_in_a_graveyard_and_an_opponents_token: (1, [Shape::InAGraveyard, Shape::Opponents]),
 }
 
 card_proof! {
