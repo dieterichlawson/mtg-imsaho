@@ -135,8 +135,9 @@ pub fn pay_cost_with_sources(
 /// Stony Silence and friends: no artifact ability may be activated, mana
 /// abilities included.
 pub(crate) fn prevents_artifact_abilities(state: &GameState, registry: &CardRegistry) -> bool {
-    state.global_effects(registry).iter()
-        .any(|e| matches!(e, ContinuousEffect::PreventArtifactAbilities))
+    let mut prevents = false;
+    state.visit_global_effects(registry, &mut |e| prevents |= matches!(e, ContinuousEffect::PreventArtifactAbilities));
+    prevents
 }
 /// Gather all available mana sources for a player, classified by opportunity cost.
 ///

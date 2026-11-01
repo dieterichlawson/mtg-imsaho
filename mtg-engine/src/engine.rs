@@ -1155,18 +1155,20 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
 }
 
 /// The names of the spells no player may cast (Nevermore's "Spells with
-/// the chosen name can't be cast"), from the effects in force.
+/// the chosen name can't be cast"), from the effects in force, read where
+/// they lie.
 ///
 /// Nevermore stores its chosen name as an instance effect, but reading
 /// only instance effects meant a card that declared the ban on its face
 /// would have been ignored.
-pub(crate) fn names_that_cant_be_cast(state: &GameState, registry: &CardRegistry) -> Vec<String> {
-    state.global_effects(registry).into_iter()
-        .filter_map(|e| match e {
-            ContinuousEffect::PreventCastingNamed { name } => Some(name),
-            _ => None,
-        })
-        .collect()
+pub(crate) fn names_that_cant_be_cast<'a>(state: &'a GameState, registry: &'a CardRegistry) -> Vec<&'a str> {
+    let mut names = Vec::new();
+    state.visit_global_effects(registry, &mut |e| {
+        if let ContinuousEffect::PreventCastingNamed { name } = e {
+            names.push(name.as_str());
+        }
+    });
+    names
 }
 
 /// CR 514.2: the cleanup step's end of the "until end of turn" effects.

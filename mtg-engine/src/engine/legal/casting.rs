@@ -26,7 +26,7 @@ pub(crate) fn from_hand(
             let data = behavior.card_data();
 
             // Check PreventCastingNamed: spells with the banned name can't be cast.
-            if casting_banned.contains(&data.name) {
+            if casting_banned.contains(&data.name.as_str()) {
                 continue;
             }
 
@@ -422,7 +422,7 @@ pub(crate) fn flashback(
             let data = behavior.card_data();
 
             // Check PreventCastingNamed: banned spells can't be cast, even via flashback.
-            if casting_banned.contains(&data.name) {
+            if casting_banned.contains(&data.name.as_str()) {
                 continue;
             }
 

@@ -2313,12 +2313,15 @@ impl GameState {
         out
     }
 
-    /// Continuous effects that modify the rules of the game rather than a
-    /// permanent — the ones with no `EffectScope`. Conditions are evaluated,
-    /// so a `When`-wrapped rule modification only shows up while it holds.
-    #[must_use]
-    pub fn global_effects(&self, registry: &crate::cards::CardRegistry) -> Vec<crate::types::ContinuousEffect> {
-        let mut out = Vec::new();
+    /// Visit each continuous effect that modifies the rules of the game
+    /// rather than a permanent — the ones with no `EffectScope` — where it
+    /// lies. Conditions are evaluated, so a `When`-wrapped rule
+    /// modification is visited only while it holds.
+    pub fn visit_global_effects<'a>(
+        &'a self,
+        registry: &'a crate::cards::CardRegistry,
+        visit: &mut dyn FnMut(&'a crate::types::ContinuousEffect),
+    ) {
         for source in self.objects.values() {
             if source.zone != Zone::Battlefield {
                 continue;
@@ -2339,9 +2342,16 @@ impl GameState {
                 if condition.is_some_and(|c| !self.check_condition(c, source.id, source.controller, registry)) {
                     continue;
                 }
-                out.push(inner.clone());
+                visit(inner);
             }
         }
+    }
+
+    /// [`Self::visit_global_effects`]'s effects, collected.
+    #[must_use]
+    pub fn global_effects(&self, registry: &crate::cards::CardRegistry) -> Vec<crate::types::ContinuousEffect> {
+        let mut out = Vec::new();
+        self.visit_global_effects(registry, &mut |e| out.push(e.clone()));
         out
     }
 
