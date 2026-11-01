@@ -1167,6 +1167,14 @@ macro_rules! case_by_case {
             }
         }
     )*};
+    (making_tokens $proof:expr; $($name:ident: $case:expr),* $(,)?) => {$(
+        $crate::proofs::cards::card_proof! { making_tokens
+            /// The proof above it, for one case.
+            fn $name() {
+                ($proof)($case);
+            }
+        }
+    )*};
     (taking_milled $proof:expr; $($name:ident: $case:expr),* $(,)?) => {$(
         $crate::proofs::cards::card_proof! { taking_milled
             /// The proof above it, for one case.

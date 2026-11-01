@@ -642,37 +642,45 @@ card_proof! {
     }
 }
 
-card_proof! { making_tokens
-    /// Stitcher's Apprentice: a 2/2 blue Homunculus creature token for the
-    /// player who activated it, then that player sacrifices a creature
-    /// they control as it is then, the Homunculus among them: they are
-    /// asked which, and must choose one (CR 701.21a).
-    fn stitchers_apprentice_makes_a_homunculus_then_sacrifices_a_creature() {
-        let mut b = permanent(Box::new(isd::stitchers_apprentice::StitchersApprentice), &ANY_CREATURE, true);
-        let mine = b.on() && b.state.get_object(b.me).expect("on the board").controller == b.you;
-        let homunculus = new_ids(&b.state, 1)[0];
-        let before = b.resolve(0, &[]);
-        let mut options = Vec::with_capacity(4);
-        if mine {
-            options.push(Target::Object(b.me));
-        }
-        for id in b.those(|o| o.zone == Zone::Battlefield && o.controller == b.you && o.card_types.contains(&CardType::Creature)) {
-            options.push(Target::Object(id));
-        }
-        options.push(Target::Object(homunculus));
-        assert!(asked_for(&[
-            Act::Tokens {
-                n: 1, controller: b.you, power: 2, toughness: 2, colors: vec![Color::Blue],
-                types: vec![CardType::Creature], keywords: vec![], subtypes: vec!["Homunculus".into()],
-            },
-            Act::Choose {
-                source: b.me, player: b.you, options,
-                effect: PendingEffect::SacrificeCreature { source_name: "Stitcher's Apprentice".into() }, optional: false,
-            },
-        ]));
-        assert!(b.added(&before).is_empty());
-        std::mem::forget((b, before));
+/// Stitcher's Apprentice: a 2/2 blue Homunculus creature token for the
+/// player who activated it, then that player sacrifices a creature they
+/// control as it is then, the Homunculus among them: they are asked
+/// which, and must choose one (CR 701.21a). Whether the Apprentice is
+/// still on the battlefield, and who activated it, constants of each
+/// harness: over both left to the solver, the proof ran out of memory at
+/// 12 GB.
+fn stitchers_apprentice_makes_a_homunculus_then_sacrifices_a_creature((gone, you): (bool, u8)) {
+    let mut b = permanent_at(Box::new(isd::stitchers_apprentice::StitchersApprentice), &ANY_CREATURE, gone, PlayerId(you));
+    let mine = b.on() && b.state.get_object(b.me).expect("on the board").controller == b.you;
+    let homunculus = new_ids(&b.state, 1)[0];
+    let before = b.resolve(0, &[]);
+    let mut options = Vec::with_capacity(4);
+    if mine {
+        options.push(Target::Object(b.me));
     }
+    for id in b.those(|o| o.zone == Zone::Battlefield && o.controller == b.you && o.card_types.contains(&CardType::Creature)) {
+        options.push(Target::Object(id));
+    }
+    options.push(Target::Object(homunculus));
+    assert!(asked_for(&[
+        Act::Tokens {
+            n: 1, controller: b.you, power: 2, toughness: 2, colors: vec![Color::Blue],
+            types: vec![CardType::Creature], keywords: vec![], subtypes: vec!["Homunculus".into()],
+        },
+        Act::Choose {
+            source: b.me, player: b.you, options,
+            effect: PendingEffect::SacrificeCreature { source_name: "Stitcher's Apprentice".into() }, optional: false,
+        },
+    ]));
+    assert!(b.added(&before).is_empty());
+    std::mem::forget((b, before));
+}
+
+case_by_case! { making_tokens stitchers_apprentice_makes_a_homunculus_then_sacrifices_a_creature;
+    stitchers_apprentice_of_the_first_player_makes_a_homunculus_then_sacrifices_a_creature: (false, 0),
+    stitchers_apprentice_of_the_second_player_makes_a_homunculus_then_sacrifices_a_creature: (false, 1),
+    stitchers_apprentice_gone_makes_the_first_player_a_homunculus_then_sacrifices_a_creature: (true, 0),
+    stitchers_apprentice_gone_makes_the_second_player_a_homunculus_then_sacrifices_a_creature: (true, 1),
 }
 
 card_proof! {

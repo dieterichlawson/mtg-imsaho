@@ -517,15 +517,20 @@ pub fn any_targets_except(state: &GameState, exclude: ObjectId, source_id: Objec
 /// All creatures controlled by a specific player.
 #[must_use]
 pub fn creatures_controlled_by(state: &GameState, player: PlayerId, registry: &CardRegistry) -> Vec<Target> {
-    // Allocated at its largest and filled in a loop, as `ids_where` says why.
-    let battlefield = state.objects_in_zone(Zone::Battlefield, player);
-    let mut creatures = Vec::with_capacity(battlefield.len());
-    for o in battlefield {
+    // Allocated at the most it can hold, every object, and filled in a
+    // loop, as `ids_where` says why: allocated at the length of the
+    // battlefield's listing, a length a proof leaves open, it was a buffer
+    // of that open size. Not sorted after: `objects_in_zone` lists the
+    // battlefield in id order, which is the order `stable` gives a list of
+    // objects, and a proof walked the sort's swaps over places it left open
+    // all the same.
+    let mut creatures = Vec::with_capacity(state.objects.len());
+    for o in state.objects_in_zone(Zone::Battlefield, player) {
         if state.is_creature(o.id, registry) {
             creatures.push(Target::Object(o.id));
         }
     }
-    stable(creatures)
+    creatures
 }
 
 /// The single opponent in a 2-player game (auto-target convenience).
