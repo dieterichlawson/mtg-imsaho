@@ -45,7 +45,7 @@
 //! that the proof covers what the card does with one it no longer finds
 //! where it was.
 
-use super::{acted, any_object, asked_each, asked_for, board, card_proof, kept, picked, were, Act, Form, Kinds, Snapshot};
+use super::{acted, any_object, asked_each, asked_for, board, card_proof, case_by_case, kept, picked, were, Act, Form, Kinds, Snapshot};
 use crate::actions::Target;
 use crate::cards::{AdditionalCost, CardBehavior, CardRegistry, TargetFilter, TargetRequirement as R};
 use crate::damage::DamageKind;
@@ -403,27 +403,38 @@ card_proof! {
     }
 }
 
-card_proof! {
-    /// Sever the Bloodline: its target, if still on the battlefield, and
-    /// every other creature on the battlefield with its name (CR 201.2),
-    /// exiled; and nothing else. The token is named as the card is, or not.
-    fn sever_the_bloodline_exiles_every_creature_with_its_targets_name() {
-        let mut b = spell(Box::new(isd::sever_the_bloodline::SeverTheBloodline));
-        assert!(*b.requirement() == R::Creature);
-        let token = b.others[1];
-        b.state.get_object_mut(token).expect("on the board").name = if kani::any() { "Blank".into() } else { "Spirit".into() };
-        let target = b.any_object_target();
-        let exiled: Vec<ObjectId> = match target {
-            Target::Object(id) if b.on(id) => {
-                let name = b.state.name_of(id, &b.registry);
-                kept(&b.others, |o| b.on(o) && b.get(o).card_types.contains(&CardType::Creature) && b.state.name_of(o, &b.registry) == name)
-            }
-            _ => kept(&[], |_: ObjectId| false),
-        };
-        let before = b.resolve(&[target]);
-        assert!(asked_each(exiled.len(), |i| Act::Move(exiled[i], Zone::Exile)) && Snapshot::of(&b.state) == before);
-        std::mem::forget((b, exiled));
-    }
+/// Sever the Bloodline: its target, if still on the battlefield, and every
+/// other creature on the battlefield with its name (CR 201.2), exiled; and
+/// nothing else. The token named as the card is, or not (`named`); the
+/// target the card, the token, or a target gone illegal (`which`, 0, 1,
+/// 2); each a constant in each harness: over both left to the solver, the
+/// names compared were names it left open, and the proof ran out of memory
+/// at 7 GB.
+fn sever_the_bloodline_exiles_every_creature_with_its_targets_name((which, named): (usize, bool)) {
+    let mut b = spell(Box::new(isd::sever_the_bloodline::SeverTheBloodline));
+    assert!(*b.requirement() == R::Creature);
+    let token = b.others[1];
+    b.state.get_object_mut(token).expect("on the board").name = if named { "Blank".into() } else { "Spirit".into() };
+    let target = if which < 2 { Target::Object(b.others[which]) } else { Target::Illegal };
+    let exiled: Vec<ObjectId> = match target {
+        Target::Object(id) if b.on(id) => {
+            let name = b.state.name_of(id, &b.registry);
+            kept(&b.others, |o| b.on(o) && b.get(o).card_types.contains(&CardType::Creature) && b.state.name_of(o, &b.registry) == name)
+        }
+        _ => kept(&[], |_: ObjectId| false),
+    };
+    let before = b.resolve(&[target]);
+    assert!(asked_each(exiled.len(), |i| Act::Move(exiled[i], Zone::Exile)) && Snapshot::of(&b.state) == before);
+    std::mem::forget((b, exiled));
+}
+
+case_by_case! { sever_the_bloodline_exiles_every_creature_with_its_targets_name;
+    sever_the_bloodline_targeting_the_card_with_the_token_of_its_name: (0, true),
+    sever_the_bloodline_targeting_the_card_with_the_token_of_another_name: (0, false),
+    sever_the_bloodline_targeting_the_token_of_the_cards_name: (1, true),
+    sever_the_bloodline_targeting_the_token_of_another_name: (1, false),
+    sever_the_bloodline_with_its_target_gone_and_the_token_of_the_cards_name: (2, true),
+    sever_the_bloodline_with_its_target_gone_and_the_token_of_another_name: (2, false),
 }
 
 card_proof! {
