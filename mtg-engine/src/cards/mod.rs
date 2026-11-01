@@ -1117,6 +1117,29 @@ type NameMap = HashMap<String, CardId>;
 #[cfg(kani)]
 type NameMap = NameList;
 
+/// A value built to be read and then dropped: the value itself, except in
+/// the proofs, where it is not dropped.
+///
+/// Building a card's data to read one part of it (whether it prints a
+/// trigger, what the trigger says, what a spell targets) and dropping it
+/// after is, in a proof that cannot tell which shapes the value holds,
+/// dropping every shape it might, recursively through the target
+/// requirements and filters inside it: nine tenths of what proving the
+/// trigger collector cost, out of memory at 7 GB. The proofs stand in for
+/// freeing as nothing (`proofs::cards::no_freeing`), and nothing in a
+/// card's data has a destructor that does anything but free, so leaving it
+/// undropped changes nothing a proof reads.
+#[cfg(not(kani))]
+pub(crate) fn transient<T>(value: T) -> T {
+    value
+}
+
+/// See the other `transient`.
+#[cfg(kani)]
+pub(crate) fn transient<T>(value: T) -> std::mem::ManuallyDrop<T> {
+    std::mem::ManuallyDrop::new(value)
+}
+
 /// The proofs' name map: each name with its card, in the order the cards
 /// were registered.
 ///

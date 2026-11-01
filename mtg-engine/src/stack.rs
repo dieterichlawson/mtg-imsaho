@@ -322,12 +322,13 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
     // CR 608.2b: Check target legality. If the spell has targets and ALL
     // are illegal, it's countered by game rules (fizzled).
     // This now checks hexproof at resolution time (not just at cast time).
-    let target_req = registry.get(card_id)
-        .map_or(crate::cards::TargetRequirement::None, super::cards::CardBehavior::target_requirement);
+    // Read and not dropped in a proof (`cards::transient`).
+    let target_req: &crate::cards::TargetRequirement = &crate::cards::transient(registry.get(card_id)
+        .map_or(crate::cards::TargetRequirement::None, super::cards::CardBehavior::target_requirement));
     if !targets.is_empty() {
         let behavior = registry.get(card_id);
         let legal = |t: &Target| {
-            if !is_target_legal(state, t, &target_req, caster, Some(object_id), registry) {
+            if !is_target_legal(state, t, target_req, caster, Some(object_id), registry) {
                 return false;
             }
             // Also re-check card-specific validity (e.g., "power 4 or greater").
