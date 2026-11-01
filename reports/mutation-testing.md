@@ -1361,6 +1361,19 @@ Two new survivors, both accepted. Each was applied by hand and the whole
 
 ## 2026-10-31 run 41209900536 (issues #984, #985)
 
+### Shard 9 (issue #985): 34 survivors in a file no test compiles
+
+All 34 sit in `mtg-engine/src/proofs/mana_payment.rs`, the Kani harnesses
+that prove `mana::slot_of` / `mana::pips_of` (`any_color`, `any_symbol`,
+`any_cost`, `any_amount`, `total`, and the two `#[kani::proof]` functions).
+The module is `#[cfg(kani)]`, so `cargo test` never compiles it, and every
+mutation of it "survives" against a suite that cannot see it. Those 34 lines
+are not a test gap. `proofs.yml` (`scripts/prove.sh kani`) checks the
+harnesses, and a weakened generator is what a proof review has to catch.
+They are not accepted line by line. The directory is excluded from the
+run (`-e proofs` in `weekly-mutants.yml`), next to `-e isd`, so the next
+harness added there is not filed either.
+
 ### Shard 1 (issue #984): `funding.rs`, three killed and one accepted
 
 - `allocate_for_x`: `delete !` (the `pool_keep` and the `pool_order`
