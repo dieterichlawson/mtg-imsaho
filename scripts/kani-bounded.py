@@ -67,7 +67,7 @@ KANI_LIB = f'{K}/library/kani/kani_lib.c'
 # harnesses with (abilities!, statics!, equipment!, ...). `cargo kani list`
 # says the same at the price of building every harness, gigabytes of goto
 # files.
-TABLES = {'abilities', 'declares', 'werewolves', 'mana', 'statics', 'check_land', 'choosing_at_random', 'for_each_size', 'from_each_zone', 'for_each_key', 'each_printed', 'by_each_way', 'each_target', 'each_board', 'each_cost', 'each_pruning', 'each_path', 'over_each_library', 'over_each_hand', 'case_by_case', 'each_shape', 'each_hand_of_discard', 'each_pair', 'each_length', 'each_forest', 'each_player', 'each_holding', 'each_effect', 'each_count', 'each_setting', 'each_source'}
+TABLES = {'abilities', 'declares', 'werewolves', 'mana', 'statics', 'check_land', 'choosing_at_random', 'for_each_size', 'from_each_zone', 'for_each_key', 'each_printed', 'by_each_way', 'each_target', 'each_board', 'each_cost', 'each_pruning', 'each_path', 'over_each_library', 'over_each_hand', 'case_by_case', 'each_shape', 'each_hand_of_discard', 'each_pair', 'each_length', 'each_forest', 'each_player', 'each_holding', 'each_effect', 'each_count', 'each_setting', 'each_source', 'each_damage'}
 FORMS = {'reaches_what_it_describes', 'holds_exactly_then', 'each_subtype_set', 'reaches_its_subtypes'}
 # Tables whose every entry is a module of these harnesses.
 SUFFIXED = {
@@ -117,7 +117,7 @@ def list_harnesses(src):
         for m in re.finditer(r'(?m)^\s*// loop bound: (.+?) (\d+)(?: (\w+))?\s*$', raw):
             LOOP_CAPS.setdefault(path, []).append((m.group(1), int(m.group(2)), m.group(3) or ''))
         t = strip(raw)
-        for m in re.finditer(r'\b(card_proof|action_proof)!\s*\{', t):
+        for m in re.finditer(r'\b(card_proof|action_proof|damage_proof)!\s*\{', t):
             if t[m.start()-13:m.start()].endswith('macro_rules! '): continue
             body = t[m.end()-1:block(t, m.end()-1)+1]
             n = re.search(r'\bfn (\w+)\(\)', body)
