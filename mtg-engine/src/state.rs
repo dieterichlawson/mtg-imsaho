@@ -2197,12 +2197,12 @@ impl GameState {
     /// `visit` receives the effect and the permanent providing it — several
     /// effects are relative to their source's controller — and returns false
     /// to stop the walk.
-    pub(crate) fn walk_effects(
-        &self,
+    pub(crate) fn walk_effects<'a>(
+        &'a self,
         id: ObjectId,
         want: &dyn Fn(&crate::types::ContinuousEffect) -> bool,
-        registry: &crate::cards::CardRegistry,
-        visit: &mut dyn FnMut(&crate::types::ContinuousEffect, &GameObject) -> bool,
+        registry: &'a crate::cards::CardRegistry,
+        visit: &mut dyn FnMut(&'a crate::types::ContinuousEffect, &'a GameObject) -> bool,
     ) {
         #[cfg(test)]
         EFFECT_WALKS.with(|n| n.set(n.get() + 1));

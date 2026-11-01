@@ -934,15 +934,18 @@ pub fn legal_blocks(
     }).collect()
 }
 
-/// What an attacker's evasion asks of any blocker.
-struct AttackerEvasion {
+/// What an attacker's evasion asks of any blocker. Its block restrictions
+/// are the filters where they are printed, not clones of them: a filter
+/// cloned off the heap is one a proof cannot tell from any other, and
+/// matching a blocker against it was every filter there is.
+struct AttackerEvasion<'a> {
     id: ObjectId,
     flying: bool,
     intimidate: bool,
     palette: Vec<crate::types::Color>,
     unblockable: bool,
     /// `CanOnlyBeBlockedBy` filters, with the source each is read against.
-    only_by: Vec<(crate::types::CreatureFilter, ObjectId, PlayerId)>,
+    only_by: Vec<(&'a crate::types::CreatureFilter, ObjectId, PlayerId)>,
     protections: crate::state::Protections,
 }
 
@@ -969,8 +972,8 @@ impl BlockerReach {
     }
 }
 
-impl AttackerEvasion {
-    fn of(state: &GameState, id: ObjectId, registry: &CardRegistry) -> Self {
+impl<'a> AttackerEvasion<'a> {
+    fn of(state: &'a GameState, id: ObjectId, registry: &'a CardRegistry) -> Self {
         let intimidate = state.has_keyword(id, Keyword::Intimidate, registry);
         let mut only_by = Vec::new();
         // Block restriction (e.g., Orchard Spirit: only flying/reach can
@@ -982,7 +985,7 @@ impl AttackerEvasion {
             registry,
             &mut |e, source| {
                 if let ContinuousEffect::CanOnlyBeBlockedBy { allowed_blockers, .. } = e {
-                    only_by.push((allowed_blockers.clone(), source.id, source.controller));
+                    only_by.push((allowed_blockers, source.id, source.controller));
                 }
                 true
             },
