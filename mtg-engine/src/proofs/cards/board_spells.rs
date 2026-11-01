@@ -338,68 +338,146 @@ card_proof! {
     }
 }
 
+/// What one of [`graveyard_board`]'s objects is: a card in its
+/// controller's (player 0's) graveyard, a token there (one state-based
+/// actions have yet to see, CR 704.5d), the other player's in their
+/// graveyard, a card or a token, or on the battlefield, either player's, a
+/// card or a token.
+#[derive(Clone, Copy, PartialEq)]
+enum Grave {
+    Card,
+    Token,
+    Theirs,
+    Battlefield,
+}
+
 /// A board for the spells that read their caster's graveyard: the spell,
-/// cast by player 0, and `N` objects, each either player's, in their
-/// graveyard or on the battlefield, a card or a token (a token in a
-/// graveyard is one state-based actions have yet to see, CR 704.5d); each
-/// object in a graveyard put on its pile as it arrives (CR 404.2). The
-/// objects' ids, in order.
-fn graveyard_board<const N: usize>(card: Box<dyn CardBehavior>) -> (CardRegistry, GameState, ObjectId, [ObjectId; N]) {
+/// cast by player 0, and an object of each of `shapes`, each in a
+/// graveyard put on its owner's pile as it arrives (CR 404.2). The
+/// objects' ids, in order. Each object's shape a constant of the harness:
+/// over owners, zones and tokens the solver chose, the cards Make a Wish
+/// chose among were a list it left open, and the proof of the choice
+/// alone ran out of memory at 12 GB (56 million clauses).
+fn graveyard_board(card: Box<dyn CardBehavior>, shapes: [Grave; 3]) -> (CardRegistry, GameState, ObjectId, [ObjectId; 3]) {
     let (registry, mut state, blank, card) = board(card);
-    let mut ids = [ObjectId(0); N];
-    for slot in &mut ids {
-        let owner = PlayerId(u8::from(kani::any::<bool>()));
-        let zone = if kani::any() { Zone::Graveyard } else { Zone::Battlefield };
+    let mut ids = [ObjectId(0); 3];
+    for i in 0..3 {
+        let (owner, zone, token) = match shapes[i] {
+            Grave::Card => (PlayerId(0), Zone::Graveyard, false),
+            Grave::Token => (PlayerId(0), Zone::Graveyard, true),
+            Grave::Theirs => (PlayerId(1), Zone::Graveyard, kani::any()),
+            Grave::Battlefield => (PlayerId(u8::from(kani::any::<bool>())), Zone::Battlefield, kani::any()),
+        };
         let id = state.create_object(blank, owner, zone, None, None);
-        state.get_object_mut(id).expect("just created").is_token = kani::any();
-        if zone == Zone::Graveyard {
-            if owner == PlayerId(0) {
-                state.players[0].graveyard_order.push(id);
-            } else {
-                state.players[1].graveyard_order.push(id);
-            }
+        state.get_object_mut(id).expect("just created").is_token = token;
+        if shapes[i] != Grave::Battlefield {
+            state.players[usize::from(owner.0)].graveyard_order.push(id);
         }
-        *slot = id;
+        ids[i] = id;
     }
     let spell = state.create_object(card, PlayerId(0), Zone::Stack, None, None);
     (registry, state, spell, ids)
 }
 
-card_proof! {
-    /// Make a Wish: two of the cards in its controller's graveyard (all of
-    /// them, if fewer) chosen at random and returned to their hand, and
-    /// nothing else. A token there is not a card (CR 111.1), and the other
-    /// player's graveyard is not "your graveyard" (404.1). On a board of
-    /// four objects, so that two are chosen of as many as three.
-    fn make_a_wish_returns_two_at_random() {
-        let (registry, mut state, spell, ids) = graveyard_board::<4>(Box::new(isd::make_a_wish::MakeAWish));
-        let mut cards = Vec::with_capacity(4);
-        for id in ids {
-            let o = state.get_object(id).expect("on the board");
-            if o.zone == Zone::Graveyard && o.owner == PlayerId(0) && !o.is_token {
-                cards.push(id);
-            }
+/// Make a Wish: two of the cards in its controller's graveyard (all of
+/// them, if fewer) chosen at random and returned to their hand, and
+/// nothing else. A token there is not a card (CR 111.1), and the other
+/// player's graveyard is not "your graveyard" (404.1). On a board of three
+/// objects of the shapes `shapes`, so that two are chosen of as many as
+/// three.
+fn make_a_wish_returns_two_at_random(shapes: [Grave; 3]) {
+    let (registry, mut state, spell, ids) = graveyard_board(Box::new(isd::make_a_wish::MakeAWish), shapes);
+    let mut cards = Vec::with_capacity(3);
+    for i in 0..3 {
+        if shapes[i] == Grave::Card {
+            cards.push(ids[i]);
         }
-        let before = Snapshot::of(&state);
-        let card = state.get_object(spell).expect("on the stack").card_id;
-        registry.get(card).expect("registered").on_resolve(&mut state, spell, &[], &registry);
-        assert!(Some(&Act::Random(listed(&cards), 2)) == act(0));
-        assert!(acted() == 1 + cards.len().min(2));
-        // The cards returned are told apart by the ids their moves name, not
-        // by comparing the two moves: each is a recorded action, of a variant
-        // the solver leaves open, and `!=` between two of them is every
-        // variant compared with every other.
-        let mut returned = [ObjectId(0); 2];
-        for i in 1..acted() {
-            let Some(Act::Move(id, Zone::Hand)) = act(i) else { panic!("returns to the hand") };
-            assert!(cards.contains(id));
-            returned[i - 1] = *id;
-        }
-        assert!(acted() < 3 || returned[0] != returned[1]);
-        assert!(Snapshot::of(&state) == before);
-        kani::cover!(cards.len() == 3, "two chosen of three");
-        std::mem::forget((registry, state, cards, before));
     }
+    let before = Snapshot::of(&state);
+    let card = state.get_object(spell).expect("on the stack").card_id;
+    registry.get(card).expect("registered").on_resolve(&mut state, spell, &[], &registry);
+    assert!(Some(&Act::Random(listed(&cards), 2)) == act(0));
+    assert!(acted() == 1 + cards.len().min(2));
+    // The cards returned are told apart by the ids their moves name, not by
+    // comparing the two moves: each is a recorded action, of a variant the
+    // solver leaves open, and `!=` between two of them is every variant
+    // compared with every other.
+    let mut returned = [ObjectId(0); 2];
+    for i in 1..acted() {
+        let Some(Act::Move(id, Zone::Hand)) = act(i) else { panic!("returns to the hand") };
+        assert!(cards.contains(id));
+        returned[i - 1] = *id;
+    }
+    assert!(acted() < 3 || returned[0] != returned[1]);
+    assert!(Snapshot::of(&state) == before);
+    std::mem::forget((registry, state, cards, before));
+}
+
+case_by_case! { make_a_wish_returns_two_at_random;
+    make_a_wish_over_card_card_card: [Grave::Card, Grave::Card, Grave::Card],
+    make_a_wish_over_card_card_token: [Grave::Card, Grave::Card, Grave::Token],
+    make_a_wish_over_card_card_theirs: [Grave::Card, Grave::Card, Grave::Theirs],
+    make_a_wish_over_card_card_battlefield: [Grave::Card, Grave::Card, Grave::Battlefield],
+    make_a_wish_over_card_token_card: [Grave::Card, Grave::Token, Grave::Card],
+    make_a_wish_over_card_token_token: [Grave::Card, Grave::Token, Grave::Token],
+    make_a_wish_over_card_token_theirs: [Grave::Card, Grave::Token, Grave::Theirs],
+    make_a_wish_over_card_token_battlefield: [Grave::Card, Grave::Token, Grave::Battlefield],
+    make_a_wish_over_card_theirs_card: [Grave::Card, Grave::Theirs, Grave::Card],
+    make_a_wish_over_card_theirs_token: [Grave::Card, Grave::Theirs, Grave::Token],
+    make_a_wish_over_card_theirs_theirs: [Grave::Card, Grave::Theirs, Grave::Theirs],
+    make_a_wish_over_card_theirs_battlefield: [Grave::Card, Grave::Theirs, Grave::Battlefield],
+    make_a_wish_over_card_battlefield_card: [Grave::Card, Grave::Battlefield, Grave::Card],
+    make_a_wish_over_card_battlefield_token: [Grave::Card, Grave::Battlefield, Grave::Token],
+    make_a_wish_over_card_battlefield_theirs: [Grave::Card, Grave::Battlefield, Grave::Theirs],
+    make_a_wish_over_card_battlefield_battlefield: [Grave::Card, Grave::Battlefield, Grave::Battlefield],
+    make_a_wish_over_token_card_card: [Grave::Token, Grave::Card, Grave::Card],
+    make_a_wish_over_token_card_token: [Grave::Token, Grave::Card, Grave::Token],
+    make_a_wish_over_token_card_theirs: [Grave::Token, Grave::Card, Grave::Theirs],
+    make_a_wish_over_token_card_battlefield: [Grave::Token, Grave::Card, Grave::Battlefield],
+    make_a_wish_over_token_token_card: [Grave::Token, Grave::Token, Grave::Card],
+    make_a_wish_over_token_token_token: [Grave::Token, Grave::Token, Grave::Token],
+    make_a_wish_over_token_token_theirs: [Grave::Token, Grave::Token, Grave::Theirs],
+    make_a_wish_over_token_token_battlefield: [Grave::Token, Grave::Token, Grave::Battlefield],
+    make_a_wish_over_token_theirs_card: [Grave::Token, Grave::Theirs, Grave::Card],
+    make_a_wish_over_token_theirs_token: [Grave::Token, Grave::Theirs, Grave::Token],
+    make_a_wish_over_token_theirs_theirs: [Grave::Token, Grave::Theirs, Grave::Theirs],
+    make_a_wish_over_token_theirs_battlefield: [Grave::Token, Grave::Theirs, Grave::Battlefield],
+    make_a_wish_over_token_battlefield_card: [Grave::Token, Grave::Battlefield, Grave::Card],
+    make_a_wish_over_token_battlefield_token: [Grave::Token, Grave::Battlefield, Grave::Token],
+    make_a_wish_over_token_battlefield_theirs: [Grave::Token, Grave::Battlefield, Grave::Theirs],
+    make_a_wish_over_token_battlefield_battlefield: [Grave::Token, Grave::Battlefield, Grave::Battlefield],
+    make_a_wish_over_theirs_card_card: [Grave::Theirs, Grave::Card, Grave::Card],
+    make_a_wish_over_theirs_card_token: [Grave::Theirs, Grave::Card, Grave::Token],
+    make_a_wish_over_theirs_card_theirs: [Grave::Theirs, Grave::Card, Grave::Theirs],
+    make_a_wish_over_theirs_card_battlefield: [Grave::Theirs, Grave::Card, Grave::Battlefield],
+    make_a_wish_over_theirs_token_card: [Grave::Theirs, Grave::Token, Grave::Card],
+    make_a_wish_over_theirs_token_token: [Grave::Theirs, Grave::Token, Grave::Token],
+    make_a_wish_over_theirs_token_theirs: [Grave::Theirs, Grave::Token, Grave::Theirs],
+    make_a_wish_over_theirs_token_battlefield: [Grave::Theirs, Grave::Token, Grave::Battlefield],
+    make_a_wish_over_theirs_theirs_card: [Grave::Theirs, Grave::Theirs, Grave::Card],
+    make_a_wish_over_theirs_theirs_token: [Grave::Theirs, Grave::Theirs, Grave::Token],
+    make_a_wish_over_theirs_theirs_theirs: [Grave::Theirs, Grave::Theirs, Grave::Theirs],
+    make_a_wish_over_theirs_theirs_battlefield: [Grave::Theirs, Grave::Theirs, Grave::Battlefield],
+    make_a_wish_over_theirs_battlefield_card: [Grave::Theirs, Grave::Battlefield, Grave::Card],
+    make_a_wish_over_theirs_battlefield_token: [Grave::Theirs, Grave::Battlefield, Grave::Token],
+    make_a_wish_over_theirs_battlefield_theirs: [Grave::Theirs, Grave::Battlefield, Grave::Theirs],
+    make_a_wish_over_theirs_battlefield_battlefield: [Grave::Theirs, Grave::Battlefield, Grave::Battlefield],
+    make_a_wish_over_battlefield_card_card: [Grave::Battlefield, Grave::Card, Grave::Card],
+    make_a_wish_over_battlefield_card_token: [Grave::Battlefield, Grave::Card, Grave::Token],
+    make_a_wish_over_battlefield_card_theirs: [Grave::Battlefield, Grave::Card, Grave::Theirs],
+    make_a_wish_over_battlefield_card_battlefield: [Grave::Battlefield, Grave::Card, Grave::Battlefield],
+    make_a_wish_over_battlefield_token_card: [Grave::Battlefield, Grave::Token, Grave::Card],
+    make_a_wish_over_battlefield_token_token: [Grave::Battlefield, Grave::Token, Grave::Token],
+    make_a_wish_over_battlefield_token_theirs: [Grave::Battlefield, Grave::Token, Grave::Theirs],
+    make_a_wish_over_battlefield_token_battlefield: [Grave::Battlefield, Grave::Token, Grave::Battlefield],
+    make_a_wish_over_battlefield_theirs_card: [Grave::Battlefield, Grave::Theirs, Grave::Card],
+    make_a_wish_over_battlefield_theirs_token: [Grave::Battlefield, Grave::Theirs, Grave::Token],
+    make_a_wish_over_battlefield_theirs_theirs: [Grave::Battlefield, Grave::Theirs, Grave::Theirs],
+    make_a_wish_over_battlefield_theirs_battlefield: [Grave::Battlefield, Grave::Theirs, Grave::Battlefield],
+    make_a_wish_over_battlefield_battlefield_card: [Grave::Battlefield, Grave::Battlefield, Grave::Card],
+    make_a_wish_over_battlefield_battlefield_token: [Grave::Battlefield, Grave::Battlefield, Grave::Token],
+    make_a_wish_over_battlefield_battlefield_theirs: [Grave::Battlefield, Grave::Battlefield, Grave::Theirs],
+    make_a_wish_over_battlefield_battlefield_battlefield: [Grave::Battlefield, Grave::Battlefield, Grave::Battlefield],
 }
 
 card_proof! {
