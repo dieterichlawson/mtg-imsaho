@@ -106,21 +106,27 @@ fn from_the_pool(which: u8, who: PlayerId, held: Option<u32>) {
 }
 
 
-/// A cost the floating mana does not pay is paid by tapping an untapped
-/// land of the player's, a land's mana not waiting on summoning sickness
-/// (CR 302.6 is of creatures): the plan names the Forest exactly when the
-/// pool falls short and its {G} makes up the difference; then the Forest
-/// is tapped, its {G} added, announced in that order, and the cost paid
-/// from the pool so made. A cost the pool pays alone taps nothing, and one
-/// neither pays is refused with nothing changed. For each of the six
-/// costs, any pool of up to two of three types, and either player.
-///
-/// `who` pays cost `which` with a Forest of theirs, untapped or not, and a
-/// permanent of the other player's that makes no mana.
-fn tapping_a_forest(which: u8, who: PlayerId, held: Option<u32>) {
+/// A Forest's board: `who` pays cost `which` with a Forest of theirs,
+/// untapped if `untapped`, its summoning sickness any, and a permanent of
+/// the other player's that makes no mana; the pool any of up to two of
+/// three types, holding `held` of the cost's colour if given. What the
+/// payment should come to: whether the pool pays alone, and whether the
+/// Forest is to be tapped for the rest.
+struct ForestBoard {
+    registry: crate::cards::CardRegistry,
+    state: crate::state::GameState,
+    forest: ObjectId,
+    cost: ManaCost,
+    pool: ManaPool,
+    with_forest: ManaPool,
+    alone: bool,
+    tap: bool,
+    before: Snapshot,
+}
+
+fn forest_board(which: u8, who: PlayerId, held: Option<u32>, untapped: bool) -> ForestBoard {
     let (registry, mut state, blank, forest_card) = board(Box::new(crate::cards::forest::Forest));
     let forest = state.create_object(forest_card, who, Zone::Battlefield, None, None);
-    let untapped: bool = kani::any();
     let o = state.get_object_mut(forest).expect("just created");
     o.tapped = !untapped;
     o.summoning_sick = kani::any();
@@ -129,7 +135,6 @@ fn tapping_a_forest(which: u8, who: PlayerId, held: Option<u32>) {
     let pool = any_pool(colour_of(which), held);
     state.players[usize::from(who.0)].mana_pool = pool.clone();
     let before = Snapshot::of(&state);
-
     // The pool alone, or with the Forest's {G} (CR 605.3a: a mana ability
     // may be activated while paying), and the Forest only when the pool
     // alone falls short.
@@ -137,41 +142,105 @@ fn tapping_a_forest(which: u8, who: PlayerId, held: Option<u32>) {
     with_forest.add(ManaType::Green, 1);
     let alone = mana::can_pay(&pool, &cost);
     let tap = !alone && untapped && mana::can_pay(&with_forest, &cost);
+    ForestBoard { registry, state, forest, cost, pool, with_forest, alone, tap, before }
+}
 
-    let plan = crate::engine::payment_plan_with_sources(&state, who, &cost, &registry);
-    let expected_plan: Option<Vec<(ObjectId, usize)>> = if alone {
+/// A cost the floating mana does not pay is paid by tapping an untapped
+/// land of the player's, a land's mana not waiting on summoning sickness
+/// (CR 302.6 is of creatures): the plan names the Forest exactly when the
+/// pool falls short and its {G} makes up the difference; a cost the pool
+/// pays alone plans to tap nothing, and one neither pays has no plan. For
+/// each of the six costs, either player, the Forest untapped or not, and
+/// any pool of up to two of three types, holding a constant amount of the
+/// cost's colour (`from_the_pool` says why), each a constant in each
+/// harness. Paying is the next proof's: `pay_cost_with_sources` plans
+/// before it taps, and a harness that planned and then paid planned
+/// twice.
+fn planning_with_a_forest(which: u8, who: PlayerId, held: Option<u32>, untapped: bool) {
+    let f = forest_board(which, who, held, untapped);
+    let plan = crate::engine::payment_plan_with_sources(&f.state, who, &f.cost, &f.registry);
+    let expected: Option<Vec<(ObjectId, usize)>> = if f.alone {
         Some(Vec::new())
-    } else if tap {
-        Some(vec![(forest, 0)])
+    } else if f.tap {
+        Some(vec![(f.forest, 0)])
     } else {
         None
     };
-    assert!(plan == expected_plan);
-    let paid = crate::engine::pay_cost_with_sources(&mut state, who, &cost, &registry);
+    assert!(plan == expected);
+    kani::cover!(f.alone, "the pool alone");
+    kani::cover!(f.tap, "the pool and the Forest");
+    kani::cover!(!f.alone && !f.tap, "neither");
+    std::mem::forget((f, plan, expected));
+}
 
-    assert!(paid == (alone || tap));
-    let expected = if alone {
-        spent(&pool, &cost)
-    } else if tap {
-        spent(&with_forest, &cost)
+/// Activating the Forest's ability, as a payment by tapping it does (CR
+/// 605.3a): the Forest tapped, then its {G} added to its controller's
+/// pool, announced in that order, and nothing else; over any pool, the
+/// Forest untapped, its summoning sickness any (a land's mana does not
+/// wait on it, CR 302.6). This is what [`forest_activation`] does, which
+/// stands in for the activation in [`paying_with_a_forest`]: the
+/// payment's proofs follow the planner, the payment from the pool and
+/// the board, and this one the activation, once.
+fn activating_the_forest(who: PlayerId) {
+    let mut f = forest_board(1, who, None, true);
+    crate::engine::activate_mana_source_reserving(&mut f.state, f.forest, 0, Some(&f.cost), &f.registry);
+    assert!(f.state.players[usize::from(who.0)].mana_pool == f.with_forest);
+    assert!(f.state.players[usize::from(1 - who.0)].mana_pool.is_empty());
+    assert!(matches!(f.state.events.as_slice(), [GameEvent::Tapped { object }, GameEvent::ManaAdded { player, mana_type: ManaType::Green, amount: 1 }]
+        if *object == f.forest && *player == who));
+    assert!(Snapshot::of(&f.state).without_events() == f.before.with_tapped(f.forest, true).without_events());
+    std::mem::forget(f);
+}
+
+/// Stands in for `engine::activate_mana_source_reserving` in the proofs of
+/// paying with a Forest: on their boards the only source a plan can name
+/// is the Forest's ability, and [`activating_the_forest`] proves that the
+/// engine's activation of it is this.
+#[allow(dead_code)] // named only by `kani::stub`
+fn forest_activation(
+    state: &mut crate::state::GameState,
+    source: ObjectId,
+    _: usize,
+    _: Option<&ManaCost>,
+    _: &crate::cards::CardRegistry,
+) {
+    let controller = state.get_object(source).expect("the Forest").controller;
+    state.tap(source);
+    state.add_mana(controller, ManaType::Green, 1);
+}
+
+/// Paying as [`planning_with_a_forest`] plans: the Forest, when it is to be
+/// tapped, tapped and its {G} added, announced in that order, and the cost
+/// paid from the pool so made; a cost the pool pays alone paid from it,
+/// tapping nothing; one neither pays refused, nothing changed. The
+/// Forest's activation is [`forest_activation`]'s here, which
+/// [`activating_the_forest`] proves the engine's is: with the engine's own
+/// followed, the proof of tapping it for {G} ran out of memory at 7 GB in
+/// symbolic execution.
+fn paying_with_a_forest(which: u8, who: PlayerId, held: Option<u32>, untapped: bool) {
+    let mut f = forest_board(which, who, held, untapped);
+    let paid = crate::engine::pay_cost_with_sources(&mut f.state, who, &f.cost, &f.registry);
+    assert!(paid == (f.alone || f.tap));
+    let expected = if f.alone {
+        spent(&f.pool, &f.cost)
+    } else if f.tap {
+        spent(&f.with_forest, &f.cost)
     } else {
-        pool.clone()
+        f.pool.clone()
     };
-    assert!(state.players[usize::from(who.0)].mana_pool == expected);
-    assert!(state.players[usize::from(1 - who.0)].mana_pool.is_empty());
-    if tap {
-        assert!(matches!(state.events.as_slice(), [GameEvent::Tapped { object }, GameEvent::ManaAdded { player, mana_type: ManaType::Green, amount: 1 }]
-            if *object == forest && *player == who));
-        assert!(Snapshot::of(&state).without_events() == before.with_tapped(forest, true).without_events());
+    assert!(f.state.players[usize::from(who.0)].mana_pool == expected);
+    assert!(f.state.players[usize::from(1 - who.0)].mana_pool.is_empty());
+    if f.tap {
+        assert!(matches!(f.state.events.as_slice(), [GameEvent::Tapped { object }, GameEvent::ManaAdded { player, mana_type: ManaType::Green, amount: 1 }]
+            if *object == f.forest && *player == who));
+        assert!(Snapshot::of(&f.state).without_events() == f.before.with_tapped(f.forest, true).without_events());
     } else {
-        assert!(Snapshot::of(&state) == before);
+        assert!(Snapshot::of(&f.state) == f.before);
     }
-    // Every outcome reached, the Forest's but for a cost its {G} cannot
-    // help pay ({W}{W}, {C}).
-    kani::cover!(alone, "the cost paid from the pool alone");
-    kani::cover!(tap || matches!(which, 3 | 4), "the cost paid with the Forest's green");
-    kani::cover!(!alone && !tap, "the cost refused");
-    std::mem::forget((registry, state, cost, pool, with_forest, expected, plan, expected_plan));
+    kani::cover!(f.alone, "the cost paid from the pool alone");
+    kani::cover!(f.tap, "the cost paid with the Forest's green");
+    kani::cover!(!f.alone && !f.tap, "the cost refused");
+    std::mem::forget((f, expected));
 }
 
 /// A proof above for each cost and each player paying, both constants in
@@ -224,16 +293,161 @@ each_cost! {
     two_green_are_paid_from_the_pool_exactly_when_they_can_be_with_two_green_for_the_second_player: from_the_pool(5, 1, Some(2));
     colorless_is_paid_from_the_pool_exactly_when_it_can_be_for_the_first_player: from_the_pool(4, 0, None);
     colorless_is_paid_from_the_pool_exactly_when_it_can_be_for_the_second_player: from_the_pool(4, 1, None);
-    one_is_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_first_player: tapping_a_forest(0, 0, None);
-    one_is_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_second_player: tapping_a_forest(0, 1, None);
-    green_is_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_first_player: tapping_a_forest(1, 0, None);
-    green_is_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_second_player: tapping_a_forest(1, 1, None);
-    one_and_green_are_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_first_player: tapping_a_forest(2, 0, None);
-    one_and_green_are_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_second_player: tapping_a_forest(2, 1, None);
-    two_white_are_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_first_player: tapping_a_forest(3, 0, None);
-    two_white_are_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_second_player: tapping_a_forest(3, 1, None);
-    colorless_is_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_first_player: tapping_a_forest(4, 0, None);
-    colorless_is_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_second_player: tapping_a_forest(4, 1, None);
-    two_green_are_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_first_player: tapping_a_forest(5, 0, None);
-    two_green_are_paid_by_tapping_a_forest_only_when_the_pool_falls_short_for_the_second_player: tapping_a_forest(5, 1, None);
+}
+
+/// A Forest proof above for each cost, each player paying, the Forest
+/// untapped or not, and how much of the cost's colour the pool holds, if
+/// it has one: each a constant in each harness, as [`each_cost`] says.
+macro_rules! each_forest {
+    ($($name:ident: $proof:ident($which:literal, $who:literal, $held:expr, $untapped:literal);)*) => {$(
+        #[kani::proof]
+        #[kani::unwind(7)]
+        #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+        #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+        #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+        #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+        #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+        #[kani::stub(crate::engine::activate_mana_source_reserving, forest_activation)]
+        /// The proof above it, for one cost, one player and one Forest.
+        fn $name() {
+            $proof($which, PlayerId($who), $held, $untapped);
+        }
+    )*};
+}
+
+each_forest! {
+    one_is_planned_with_an_untapped_forest_for_the_first_player: planning_with_a_forest(0, 0, None, true);
+    one_is_planned_with_an_untapped_forest_for_the_second_player: planning_with_a_forest(0, 1, None, true);
+    one_is_planned_with_a_tapped_forest_for_the_first_player: planning_with_a_forest(0, 0, None, false);
+    one_is_planned_with_a_tapped_forest_for_the_second_player: planning_with_a_forest(0, 1, None, false);
+    green_is_planned_with_an_untapped_forest_and_no_green_floating_for_the_first_player: planning_with_a_forest(1, 0, Some(0), true);
+    green_is_planned_with_an_untapped_forest_and_no_green_floating_for_the_second_player: planning_with_a_forest(1, 1, Some(0), true);
+    green_is_planned_with_an_untapped_forest_and_one_green_floating_for_the_first_player: planning_with_a_forest(1, 0, Some(1), true);
+    green_is_planned_with_an_untapped_forest_and_one_green_floating_for_the_second_player: planning_with_a_forest(1, 1, Some(1), true);
+    green_is_planned_with_an_untapped_forest_and_two_green_floating_for_the_first_player: planning_with_a_forest(1, 0, Some(2), true);
+    green_is_planned_with_an_untapped_forest_and_two_green_floating_for_the_second_player: planning_with_a_forest(1, 1, Some(2), true);
+    green_is_planned_with_a_tapped_forest_and_no_green_floating_for_the_first_player: planning_with_a_forest(1, 0, Some(0), false);
+    green_is_planned_with_a_tapped_forest_and_no_green_floating_for_the_second_player: planning_with_a_forest(1, 1, Some(0), false);
+    green_is_planned_with_a_tapped_forest_and_one_green_floating_for_the_first_player: planning_with_a_forest(1, 0, Some(1), false);
+    green_is_planned_with_a_tapped_forest_and_one_green_floating_for_the_second_player: planning_with_a_forest(1, 1, Some(1), false);
+    green_is_planned_with_a_tapped_forest_and_two_green_floating_for_the_first_player: planning_with_a_forest(1, 0, Some(2), false);
+    green_is_planned_with_a_tapped_forest_and_two_green_floating_for_the_second_player: planning_with_a_forest(1, 1, Some(2), false);
+    one_and_green_are_planned_with_an_untapped_forest_and_no_green_floating_for_the_first_player: planning_with_a_forest(2, 0, Some(0), true);
+    one_and_green_are_planned_with_an_untapped_forest_and_no_green_floating_for_the_second_player: planning_with_a_forest(2, 1, Some(0), true);
+    one_and_green_are_planned_with_an_untapped_forest_and_one_green_floating_for_the_first_player: planning_with_a_forest(2, 0, Some(1), true);
+    one_and_green_are_planned_with_an_untapped_forest_and_one_green_floating_for_the_second_player: planning_with_a_forest(2, 1, Some(1), true);
+    one_and_green_are_planned_with_an_untapped_forest_and_two_green_floating_for_the_first_player: planning_with_a_forest(2, 0, Some(2), true);
+    one_and_green_are_planned_with_an_untapped_forest_and_two_green_floating_for_the_second_player: planning_with_a_forest(2, 1, Some(2), true);
+    one_and_green_are_planned_with_a_tapped_forest_and_no_green_floating_for_the_first_player: planning_with_a_forest(2, 0, Some(0), false);
+    one_and_green_are_planned_with_a_tapped_forest_and_no_green_floating_for_the_second_player: planning_with_a_forest(2, 1, Some(0), false);
+    one_and_green_are_planned_with_a_tapped_forest_and_one_green_floating_for_the_first_player: planning_with_a_forest(2, 0, Some(1), false);
+    one_and_green_are_planned_with_a_tapped_forest_and_one_green_floating_for_the_second_player: planning_with_a_forest(2, 1, Some(1), false);
+    one_and_green_are_planned_with_a_tapped_forest_and_two_green_floating_for_the_first_player: planning_with_a_forest(2, 0, Some(2), false);
+    one_and_green_are_planned_with_a_tapped_forest_and_two_green_floating_for_the_second_player: planning_with_a_forest(2, 1, Some(2), false);
+    two_white_are_planned_with_an_untapped_forest_and_no_white_floating_for_the_first_player: planning_with_a_forest(3, 0, Some(0), true);
+    two_white_are_planned_with_an_untapped_forest_and_no_white_floating_for_the_second_player: planning_with_a_forest(3, 1, Some(0), true);
+    two_white_are_planned_with_an_untapped_forest_and_one_white_floating_for_the_first_player: planning_with_a_forest(3, 0, Some(1), true);
+    two_white_are_planned_with_an_untapped_forest_and_one_white_floating_for_the_second_player: planning_with_a_forest(3, 1, Some(1), true);
+    two_white_are_planned_with_an_untapped_forest_and_two_white_floating_for_the_first_player: planning_with_a_forest(3, 0, Some(2), true);
+    two_white_are_planned_with_an_untapped_forest_and_two_white_floating_for_the_second_player: planning_with_a_forest(3, 1, Some(2), true);
+    two_white_are_planned_with_a_tapped_forest_and_no_white_floating_for_the_first_player: planning_with_a_forest(3, 0, Some(0), false);
+    two_white_are_planned_with_a_tapped_forest_and_no_white_floating_for_the_second_player: planning_with_a_forest(3, 1, Some(0), false);
+    two_white_are_planned_with_a_tapped_forest_and_one_white_floating_for_the_first_player: planning_with_a_forest(3, 0, Some(1), false);
+    two_white_are_planned_with_a_tapped_forest_and_one_white_floating_for_the_second_player: planning_with_a_forest(3, 1, Some(1), false);
+    two_white_are_planned_with_a_tapped_forest_and_two_white_floating_for_the_first_player: planning_with_a_forest(3, 0, Some(2), false);
+    two_white_are_planned_with_a_tapped_forest_and_two_white_floating_for_the_second_player: planning_with_a_forest(3, 1, Some(2), false);
+    colorless_is_planned_with_an_untapped_forest_for_the_first_player: planning_with_a_forest(4, 0, None, true);
+    colorless_is_planned_with_an_untapped_forest_for_the_second_player: planning_with_a_forest(4, 1, None, true);
+    colorless_is_planned_with_a_tapped_forest_for_the_first_player: planning_with_a_forest(4, 0, None, false);
+    colorless_is_planned_with_a_tapped_forest_for_the_second_player: planning_with_a_forest(4, 1, None, false);
+    two_green_are_planned_with_an_untapped_forest_and_no_green_floating_for_the_first_player: planning_with_a_forest(5, 0, Some(0), true);
+    two_green_are_planned_with_an_untapped_forest_and_no_green_floating_for_the_second_player: planning_with_a_forest(5, 1, Some(0), true);
+    two_green_are_planned_with_an_untapped_forest_and_one_green_floating_for_the_first_player: planning_with_a_forest(5, 0, Some(1), true);
+    two_green_are_planned_with_an_untapped_forest_and_one_green_floating_for_the_second_player: planning_with_a_forest(5, 1, Some(1), true);
+    two_green_are_planned_with_an_untapped_forest_and_two_green_floating_for_the_first_player: planning_with_a_forest(5, 0, Some(2), true);
+    two_green_are_planned_with_an_untapped_forest_and_two_green_floating_for_the_second_player: planning_with_a_forest(5, 1, Some(2), true);
+    two_green_are_planned_with_a_tapped_forest_and_no_green_floating_for_the_first_player: planning_with_a_forest(5, 0, Some(0), false);
+    two_green_are_planned_with_a_tapped_forest_and_no_green_floating_for_the_second_player: planning_with_a_forest(5, 1, Some(0), false);
+    two_green_are_planned_with_a_tapped_forest_and_one_green_floating_for_the_first_player: planning_with_a_forest(5, 0, Some(1), false);
+    two_green_are_planned_with_a_tapped_forest_and_one_green_floating_for_the_second_player: planning_with_a_forest(5, 1, Some(1), false);
+    two_green_are_planned_with_a_tapped_forest_and_two_green_floating_for_the_first_player: planning_with_a_forest(5, 0, Some(2), false);
+    two_green_are_planned_with_a_tapped_forest_and_two_green_floating_for_the_second_player: planning_with_a_forest(5, 1, Some(2), false);
+    one_is_paid_with_an_untapped_forest_for_the_first_player: paying_with_a_forest(0, 0, None, true);
+    one_is_paid_with_an_untapped_forest_for_the_second_player: paying_with_a_forest(0, 1, None, true);
+    one_is_paid_with_a_tapped_forest_for_the_first_player: paying_with_a_forest(0, 0, None, false);
+    one_is_paid_with_a_tapped_forest_for_the_second_player: paying_with_a_forest(0, 1, None, false);
+    green_is_paid_with_an_untapped_forest_and_no_green_floating_for_the_first_player: paying_with_a_forest(1, 0, Some(0), true);
+    green_is_paid_with_an_untapped_forest_and_no_green_floating_for_the_second_player: paying_with_a_forest(1, 1, Some(0), true);
+    green_is_paid_with_an_untapped_forest_and_one_green_floating_for_the_first_player: paying_with_a_forest(1, 0, Some(1), true);
+    green_is_paid_with_an_untapped_forest_and_one_green_floating_for_the_second_player: paying_with_a_forest(1, 1, Some(1), true);
+    green_is_paid_with_an_untapped_forest_and_two_green_floating_for_the_first_player: paying_with_a_forest(1, 0, Some(2), true);
+    green_is_paid_with_an_untapped_forest_and_two_green_floating_for_the_second_player: paying_with_a_forest(1, 1, Some(2), true);
+    green_is_paid_with_a_tapped_forest_and_no_green_floating_for_the_first_player: paying_with_a_forest(1, 0, Some(0), false);
+    green_is_paid_with_a_tapped_forest_and_no_green_floating_for_the_second_player: paying_with_a_forest(1, 1, Some(0), false);
+    green_is_paid_with_a_tapped_forest_and_one_green_floating_for_the_first_player: paying_with_a_forest(1, 0, Some(1), false);
+    green_is_paid_with_a_tapped_forest_and_one_green_floating_for_the_second_player: paying_with_a_forest(1, 1, Some(1), false);
+    green_is_paid_with_a_tapped_forest_and_two_green_floating_for_the_first_player: paying_with_a_forest(1, 0, Some(2), false);
+    green_is_paid_with_a_tapped_forest_and_two_green_floating_for_the_second_player: paying_with_a_forest(1, 1, Some(2), false);
+    one_and_green_are_paid_with_an_untapped_forest_and_no_green_floating_for_the_first_player: paying_with_a_forest(2, 0, Some(0), true);
+    one_and_green_are_paid_with_an_untapped_forest_and_no_green_floating_for_the_second_player: paying_with_a_forest(2, 1, Some(0), true);
+    one_and_green_are_paid_with_an_untapped_forest_and_one_green_floating_for_the_first_player: paying_with_a_forest(2, 0, Some(1), true);
+    one_and_green_are_paid_with_an_untapped_forest_and_one_green_floating_for_the_second_player: paying_with_a_forest(2, 1, Some(1), true);
+    one_and_green_are_paid_with_an_untapped_forest_and_two_green_floating_for_the_first_player: paying_with_a_forest(2, 0, Some(2), true);
+    one_and_green_are_paid_with_an_untapped_forest_and_two_green_floating_for_the_second_player: paying_with_a_forest(2, 1, Some(2), true);
+    one_and_green_are_paid_with_a_tapped_forest_and_no_green_floating_for_the_first_player: paying_with_a_forest(2, 0, Some(0), false);
+    one_and_green_are_paid_with_a_tapped_forest_and_no_green_floating_for_the_second_player: paying_with_a_forest(2, 1, Some(0), false);
+    one_and_green_are_paid_with_a_tapped_forest_and_one_green_floating_for_the_first_player: paying_with_a_forest(2, 0, Some(1), false);
+    one_and_green_are_paid_with_a_tapped_forest_and_one_green_floating_for_the_second_player: paying_with_a_forest(2, 1, Some(1), false);
+    one_and_green_are_paid_with_a_tapped_forest_and_two_green_floating_for_the_first_player: paying_with_a_forest(2, 0, Some(2), false);
+    one_and_green_are_paid_with_a_tapped_forest_and_two_green_floating_for_the_second_player: paying_with_a_forest(2, 1, Some(2), false);
+    two_white_are_paid_with_an_untapped_forest_and_no_white_floating_for_the_first_player: paying_with_a_forest(3, 0, Some(0), true);
+    two_white_are_paid_with_an_untapped_forest_and_no_white_floating_for_the_second_player: paying_with_a_forest(3, 1, Some(0), true);
+    two_white_are_paid_with_an_untapped_forest_and_one_white_floating_for_the_first_player: paying_with_a_forest(3, 0, Some(1), true);
+    two_white_are_paid_with_an_untapped_forest_and_one_white_floating_for_the_second_player: paying_with_a_forest(3, 1, Some(1), true);
+    two_white_are_paid_with_an_untapped_forest_and_two_white_floating_for_the_first_player: paying_with_a_forest(3, 0, Some(2), true);
+    two_white_are_paid_with_an_untapped_forest_and_two_white_floating_for_the_second_player: paying_with_a_forest(3, 1, Some(2), true);
+    two_white_are_paid_with_a_tapped_forest_and_no_white_floating_for_the_first_player: paying_with_a_forest(3, 0, Some(0), false);
+    two_white_are_paid_with_a_tapped_forest_and_no_white_floating_for_the_second_player: paying_with_a_forest(3, 1, Some(0), false);
+    two_white_are_paid_with_a_tapped_forest_and_one_white_floating_for_the_first_player: paying_with_a_forest(3, 0, Some(1), false);
+    two_white_are_paid_with_a_tapped_forest_and_one_white_floating_for_the_second_player: paying_with_a_forest(3, 1, Some(1), false);
+    two_white_are_paid_with_a_tapped_forest_and_two_white_floating_for_the_first_player: paying_with_a_forest(3, 0, Some(2), false);
+    two_white_are_paid_with_a_tapped_forest_and_two_white_floating_for_the_second_player: paying_with_a_forest(3, 1, Some(2), false);
+    colorless_is_paid_with_an_untapped_forest_for_the_first_player: paying_with_a_forest(4, 0, None, true);
+    colorless_is_paid_with_an_untapped_forest_for_the_second_player: paying_with_a_forest(4, 1, None, true);
+    colorless_is_paid_with_a_tapped_forest_for_the_first_player: paying_with_a_forest(4, 0, None, false);
+    colorless_is_paid_with_a_tapped_forest_for_the_second_player: paying_with_a_forest(4, 1, None, false);
+    two_green_are_paid_with_an_untapped_forest_and_no_green_floating_for_the_first_player: paying_with_a_forest(5, 0, Some(0), true);
+    two_green_are_paid_with_an_untapped_forest_and_no_green_floating_for_the_second_player: paying_with_a_forest(5, 1, Some(0), true);
+    two_green_are_paid_with_an_untapped_forest_and_one_green_floating_for_the_first_player: paying_with_a_forest(5, 0, Some(1), true);
+    two_green_are_paid_with_an_untapped_forest_and_one_green_floating_for_the_second_player: paying_with_a_forest(5, 1, Some(1), true);
+    two_green_are_paid_with_an_untapped_forest_and_two_green_floating_for_the_first_player: paying_with_a_forest(5, 0, Some(2), true);
+    two_green_are_paid_with_an_untapped_forest_and_two_green_floating_for_the_second_player: paying_with_a_forest(5, 1, Some(2), true);
+    two_green_are_paid_with_a_tapped_forest_and_no_green_floating_for_the_first_player: paying_with_a_forest(5, 0, Some(0), false);
+    two_green_are_paid_with_a_tapped_forest_and_no_green_floating_for_the_second_player: paying_with_a_forest(5, 1, Some(0), false);
+    two_green_are_paid_with_a_tapped_forest_and_one_green_floating_for_the_first_player: paying_with_a_forest(5, 0, Some(1), false);
+    two_green_are_paid_with_a_tapped_forest_and_one_green_floating_for_the_second_player: paying_with_a_forest(5, 1, Some(1), false);
+    two_green_are_paid_with_a_tapped_forest_and_two_green_floating_for_the_first_player: paying_with_a_forest(5, 0, Some(2), false);
+    two_green_are_paid_with_a_tapped_forest_and_two_green_floating_for_the_second_player: paying_with_a_forest(5, 1, Some(2), false);
+}
+
+/// A proof above for each player, with [`each_cost`]'s stand-ins.
+macro_rules! each_player {
+    ($($name:ident: $proof:ident($who:literal);)*) => {$(
+        #[kani::proof]
+        #[kani::unwind(7)]
+        #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+        #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+        #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+        #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+        #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+        /// The proof above it, for one player.
+        fn $name() {
+            $proof(PlayerId($who));
+        }
+    )*};
+}
+
+each_player! {
+    the_forests_ability_taps_it_and_adds_green_for_the_first_player: activating_the_forest(0);
+    the_forests_ability_taps_it_and_adds_green_for_the_second_player: activating_the_forest(1);
 }
