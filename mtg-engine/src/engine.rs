@@ -328,15 +328,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             && state.active_player == player,
         mana_sources: gather_mana_sources(state, player, registry),
         demands: mana_demands(state, registry, player),
-        // Nevermore stores its chosen name as an instance effect, but reading
-        // only instance effects meant a card that declared the ban on its face
-        // would have been ignored.
-        casting_banned: state.global_effects(registry).into_iter()
-            .filter_map(|e| match e {
-                ContinuousEffect::PreventCastingNamed { name } => Some(name),
-                _ => None,
-            })
-            .collect(),
+        casting_banned: names_that_cant_be_cast(state, registry),
     };
 
     // Mana abilities: can activate anytime you have priority.
@@ -1156,6 +1148,21 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
             state.priority_player = Some(active);
         }
     }
+}
+
+/// The names of the spells no player may cast (Nevermore's "Spells with
+/// the chosen name can't be cast"), from the effects in force.
+///
+/// Nevermore stores its chosen name as an instance effect, but reading
+/// only instance effects meant a card that declared the ban on its face
+/// would have been ignored.
+pub(crate) fn names_that_cant_be_cast(state: &GameState, registry: &CardRegistry) -> Vec<String> {
+    state.global_effects(registry).into_iter()
+        .filter_map(|e| match e {
+            ContinuousEffect::PreventCastingNamed { name } => Some(name),
+            _ => None,
+        })
+        .collect()
 }
 
 /// CR 514.2: the cleanup step's end of the "until end of turn" effects.
