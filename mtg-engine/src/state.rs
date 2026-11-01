@@ -58,6 +58,11 @@ pub enum StackEntry {
         /// longer existed by the time anyone could answer it.
         #[serde(default)]
         loyalty: bool,
+        /// The source's transform count as this went on the stack (CR
+        /// 701.28f); stamped by [`GameState::put_on_stack`]. `None` on an
+        /// entry made before it was recorded, which is not checked.
+        #[serde(default)]
+        source_transforms: Option<u32>,
     },
 }
 
@@ -534,7 +539,18 @@ pub fn default_rng_seed() -> u64 {
 
 impl GameState {
     /// Put an entry on top of the stack (CR 405.1), counting it.
-    pub fn put_on_stack(&mut self, entry: StackEntry) {
+    pub fn put_on_stack(&mut self, mut entry: StackEntry) {
+        // CR 701.28f: "since the ability was put onto the stack" is measured
+        // from here, so the source's transform count is recorded here.
+        match &mut entry {
+            StackEntry::Spell(_) => {}
+            StackEntry::Trigger(t) => {
+                t.source.source_transforms = self.get_object(t.source.id).map(|o| o.transforms);
+            }
+            StackEntry::Ability { source_id, source_transforms, .. } => {
+                *source_transforms = self.get_object(*source_id).map(|o| o.transforms);
+            }
+        }
         let controller = match &entry {
             StackEntry::Spell(id) => self.get_object(*id).map(|o| o.controller),
             StackEntry::Trigger(trigger) => Some(trigger.controller()),
@@ -726,6 +742,7 @@ impl GameState {
             counters: std::collections::BTreeMap::new(),
             regeneration_shields: 0,
             is_transformed: false,
+            transforms: 0,
             x_value: None,
             chosen_mode: None,
             abilities_activated_this_turn: std::collections::BTreeSet::new(),
@@ -1029,6 +1046,7 @@ impl GameState {
             // CR 707.8a: a copy of a permanent with its back face up shows
             // that face too, and the flag is what makes every accessor agree.
             is_transformed: face.is_some_and(|f| f.is_transformed),
+            transforms: 0,
             x_value: None,
             abilities_activated_this_turn: std::collections::BTreeSet::new(),
             chosen_mode: None,
@@ -4129,6 +4147,15 @@ pub struct GameObject {
     /// Whether this double-faced card is on its back face.
     #[serde(default)]
     pub is_transformed: bool,
+
+    /// How many times this object has transformed. It only ever counts up.
+    ///
+    /// CR 701.28f: an ability of a permanent that tries to transform it does
+    /// so only if the permanent hasn't transformed since the ability was put
+    /// onto the stack. The stack entry records this count as it goes on
+    /// ([`GameState::put_on_stack`]), and `transform_quietly` compares (#987).
+    #[serde(default)]
+    pub transforms: u32,
 
     /// Whether a state-triggered ability (CR 603.8) for this object is currently
     /// on the stack. While true, the trigger won't fire again.

@@ -605,6 +605,9 @@ pub enum TransformResult {
     /// CR 400.7: there is nothing on the battlefield to transform. The
     /// ability still resolves (CR 113.7a); it just has no permanent.
     NotAPermanent,
+    /// CR 701.28f: the permanent's own ability tried to transform it, and it
+    /// has transformed since that ability was put onto the stack.
+    AlreadyTransformed,
 }
 
 impl TransformResult {
@@ -631,6 +634,8 @@ pub fn transform_line(name: &str, result: TransformResult, new_name: &str) -> St
             format!("{name} does not transform — the card under it has only one face (CR 701.28c)"),
         TransformResult::NotAPermanent =>
             format!("{name} does not transform — it is no longer on the battlefield (CR 400.7)"),
+        TransformResult::AlreadyTransformed =>
+            format!("{name} does not transform — it has transformed since this ability was put on the stack (CR 701.28f)"),
     }
 }
 
@@ -698,6 +703,9 @@ pub fn transform_quietly(
         _ => return TransformResult::NotAPermanent,
     };
     let (card_id, was_transformed, copy_grantor) = (card_id.0, card_id.1, card_id.2);
+    if transformed_since_its_own_ability_was_stacked(state, object_id) {
+        return TransformResult::AlreadyTransformed;
+    }
     let Some(behavior) = registry.get(card_id) else { return TransformResult::SingleFaced; };
 
     // CR 701.28c: it is the *card* that has to be double-faced. A single-faced
@@ -731,11 +739,37 @@ pub fn transform_quietly(
 
     if let Some(obj) = state.get_object_mut(object_id) {
         obj.is_transformed = !was_transformed;
+        obj.transforms += 1;
         if let Some(name) = new_name {
             obj.name = name;
         }
     }
     TransformResult::Transformed
+}
+
+/// CR 701.28f: "If an activated or triggered ability of a permanent that
+/// isn't a delayed triggered ability of that permanent tries to transform it,
+/// the permanent transforms only if it hasn't transformed or converted since
+/// the ability was put onto the stack."
+///
+/// The ability asking is the one resolving, and its stack entry carries the
+/// source's transform count from when it went on (`put_on_stack`). A spell
+/// (Moonmist), another permanent's ability, and the engine's one delayed
+/// trigger are not this rule's business. Each werewolf's upkeep trigger
+/// re-checked only its CR 603.4 condition, so Moonmist in response flipped it
+/// forward and the trigger flipped it straight back (#987).
+fn transformed_since_its_own_ability_was_stacked(state: &GameState, object_id: ObjectId) -> bool {
+    use crate::state::StackEntry;
+    let stamped = match &state.resolving_ability {
+        Some(StackEntry::Trigger(t))
+            if t.source.id == object_id
+                && !matches!(t.event, crate::triggers::TriggerEvent::DelayedTokenExile { .. }) =>
+            t.source.source_transforms,
+        Some(StackEntry::Ability { source_id, source_transforms, .. }) if *source_id == object_id =>
+            *source_transforms,
+        _ => None,
+    };
+    stamped.is_some_and(|then| state.get_object(object_id).is_some_and(|o| o.transforms != then))
 }
 
 /// The werewolf upkeep trigger: "At the beginning of each upkeep, if <no
@@ -917,10 +951,11 @@ pub fn werewolf_should_transform(state: &GameState, object_id: ObjectId) -> bool
     //
     // These differ when the permanent transforms between the trigger and its
     // resolution: Moonmist in response to a front-face Werewolf's upkeep
-    // trigger flips it forward, and the front face's ability must still resolve
-    // and flip it back, because "no spells were cast last turn" is unchanged by
-    // anything cast this turn. Reading the current face instead tested the back
-    // face's condition and did nothing.
+    // trigger flips it forward. The front face's condition is the one
+    // re-checked, and it is still true ("no spells were cast last turn" is
+    // unchanged by anything cast this turn) — but the transform it asks for
+    // then does nothing, because the permanent has transformed since the
+    // ability went on the stack (CR 701.28f, `transform_quietly`; #987).
     let back_face = state.resolving_trigger_from_back_face
         .unwrap_or_else(|| state.get_object(object_id).is_some_and(|o| o.is_transformed));
     if back_face {

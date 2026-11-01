@@ -781,6 +781,34 @@ fn bloodline_keeper_creates_vampire_token() {
     assert_eq!(obj.toughness, Some(2));
 }
 
+/// CR 701.28f, #987: an activated ability of a permanent that transforms it
+/// does nothing if the permanent has transformed since the ability went on
+/// the stack. Two Bloodline Keeper "{B}: Transform" activations on the stack
+/// at once flip it once: the second resolves against a Lord of Lineage and
+/// must not turn it back into a Keeper.
+#[test]
+fn two_bloodline_keeper_transforms_on_the_stack_transform_it_once() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let keeper = named_permanent(&mut state, &reg, "Bloodline Keeper", P0);
+    for _ in 0..4 {
+        state.create_token_with_subtypes("", P0, 2, 2, vec![Color::Black], vec![CardType::Creature],
+            vec![Keyword::Flying], vec!["Vampire".into()], &reg);
+    }
+
+    activate_via_hooks(&mut state, &reg, keeper, 1, &[]);
+    activate_via_hooks(&mut state, &reg, keeper, 1, &[]);
+    assert_eq!(state.stack.len(), 2, "both activations are on the stack");
+
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert_eq!(state.name_of(keeper, &reg), "Lord of Lineage", "the first one transforms it");
+
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert_eq!(state.name_of(keeper, &reg), "Lord of Lineage",
+        "the second does nothing: it has transformed since that ability went on the stack");
+}
+
 // -------------------------------------------------------------------------
 // Mikaeus, the Lunarch
 // -------------------------------------------------------------------------

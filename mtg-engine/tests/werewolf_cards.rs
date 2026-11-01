@@ -1136,22 +1136,21 @@ fn howlpack_alphas_wolf_arrives_even_if_the_alpha_dies_in_response() {
         "under the player who controlled the Alpha when it triggered");
 }
 
-/// CR 603.4 + CR 712.8: an intervening-if re-checked on resolution is the
-/// condition of the ability that *triggered*, and that ability belongs to one
-/// face. Transforming in between does not hand the trigger the other face's
-/// condition.
+/// CR 701.28f, #987: "If an activated or triggered ability of a permanent
+/// that isn't a delayed triggered ability of that permanent tries to transform
+/// it, the permanent transforms only if it hasn't transformed or converted
+/// since the ability was put onto the stack."
 ///
 /// Moonmist ("Transform all Humans") in response to a front-face Werewolf's
 /// upkeep trigger is the reachable case. Mayor of Avabruck is a Human, so
 /// Moonmist flips it to Howlpack Alpha. The trigger on the stack is still the
-/// front face's — "if no spells were cast last turn, transform this creature" —
-/// and casting Moonmist this turn does not change what was cast *last* turn, so
-/// it resolves and flips the Alpha back.
-///
-/// Reading the current face instead tested the back face's condition ("a player
-/// cast two or more spells last turn"), found it false, and did nothing.
+/// front face's (CR 603.4 re-checks *its* condition, "no spells were cast last
+/// turn", which casting Moonmist this turn does not change) — but the Alpha
+/// has transformed since the trigger went on the stack, so the trigger's
+/// transform does nothing and it stays an Alpha. The engine used to flip it
+/// straight back to the Mayor.
 #[test]
-fn a_werewolf_trigger_keeps_its_own_faces_condition_across_a_transform() {
+fn a_werewolf_trigger_does_not_transform_it_again_after_moonmist_flipped_it_in_response() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
     // Nobody cast anything last turn: the front face's condition holds.
@@ -1169,12 +1168,62 @@ fn a_werewolf_trigger_keeps_its_own_faces_condition_across_a_transform() {
     mtg_engine::cards::helpers::apply_transform(&mut state, mayor, &reg);
     assert_eq!(state.name_of(mayor, &reg), "Howlpack Alpha");
 
-    // The front face's ability resolves. Its condition is still true.
+    // The front face's ability resolves. Its condition is still true, and the
+    // transform it asks for does nothing.
     mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
 
-    assert!(!state.get_object(mayor).unwrap().is_transformed,
-        "the front face's ability transformed it, so it is a Mayor again");
+    assert!(state.get_object(mayor).unwrap().is_transformed,
+        "it has transformed since the trigger went on the stack, so it stays an Alpha");
+    assert_eq!(state.name_of(mayor, &reg), "Howlpack Alpha");
+    assert!(state.game_log.iter().any(|l| l.message.contains("CR 701.28f")),
+        "the log says why it did not transform");
+}
+
+/// #987's mirror: a back face's "if a player cast two or more spells last
+/// turn" trigger, with the permanent flipped to its front face in response,
+/// does not flip it back either.
+#[test]
+fn a_back_face_werewolf_trigger_does_not_transform_it_again_after_it_flipped_in_response() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+    state.num_spells_cast_last_turn.clear();
+    state.num_spells_cast_last_turn.insert(P1, 2);
+
+    let mayor = named_permanent(&mut state, &reg, "Mayor of Avabruck", P0);
+    mtg_engine::cards::helpers::apply_transform(&mut state, mayor, &reg);
+    assert_eq!(state.name_of(mayor, &reg), "Howlpack Alpha");
+
+    state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::Upkeep });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+    assert!(!state.stack.is_empty(), "the back face's transform trigger is on the stack");
+
+    // Something flips it back in response.
+    mtg_engine::cards::helpers::apply_transform(&mut state, mayor, &reg);
     assert_eq!(state.name_of(mayor, &reg), "Mayor of Avabruck");
+
+    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
+    assert_eq!(state.name_of(mayor, &reg), "Mayor of Avabruck",
+        "it has transformed since the trigger went on the stack");
+}
+
+/// The rule is about the transform since the ability went on the stack, not
+/// any transform ever: a werewolf that transformed on an earlier turn and
+/// triggers now still transforms.
+#[test]
+fn a_werewolf_that_transformed_before_its_trigger_went_on_the_stack_still_transforms() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+    state.num_spells_cast_last_turn.clear();
+
+    let mayor = named_permanent(&mut state, &reg, "Mayor of Avabruck", P0);
+    mtg_engine::cards::helpers::apply_transform(&mut state, mayor, &reg);
+    mtg_engine::cards::helpers::apply_transform(&mut state, mayor, &reg);
+    assert_eq!(state.name_of(mayor, &reg), "Mayor of Avabruck");
+
+    state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::Upkeep });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
+    assert_eq!(state.name_of(mayor, &reg), "Howlpack Alpha");
 }
 
 /// CR 701.12b: "If one or both creatures instructed to fight are no longer on

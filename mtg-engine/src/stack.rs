@@ -217,7 +217,7 @@ fn resolve_top_of_stack_inner(state: &mut GameState, registry: &CardRegistry) {
             state.stack.pop(); // Remove the spell from the stack.
             resolve_spell(state, registry, object_id);
         }
-        StackEntry::Ability { source_id, ability_index, behavior_card_id, targets, x_value, activator, target_requirement, sacrificed, sacrificed_toughness, loyalty } => {
+        StackEntry::Ability { source_id, ability_index, behavior_card_id, targets, x_value, activator, target_requirement, sacrificed, sacrificed_toughness, loyalty, .. } => {
             // Still on the stack while it resolves (CR 608.2n), so a question
             // it asks is asked under it (#833).
             let on_stack = state.stack.pop();
