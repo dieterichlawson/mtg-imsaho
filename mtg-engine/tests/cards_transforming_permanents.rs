@@ -81,6 +81,40 @@ fn delver_transforms_when_player_reveals_instant() {
     assert_eq!(state.players[0].library_order.first().copied(), Some(bolt));
 }
 
+/// CR 113.7a, CR 701.28f: a front-face Delver flipped in response to its own
+/// upkeep trigger still has that trigger resolve: its controller looks at the
+/// top card and may reveal it. Only the transform does nothing, since the
+/// Delver has transformed since the trigger went on the stack. The trigger
+/// used to read the face up at resolution and return, so the look and the
+/// reveal never happened (#986's review).
+#[test]
+fn a_delver_flipped_in_response_still_looks_and_does_not_flip_back() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+    let delver = named_permanent(&mut state, &reg, "Delver of Secrets", P0);
+    let bolt = spell_in_hand(&mut state, &reg, "Lightning Bolt", P0);
+    state.move_object(bolt, Zone::Library, &reg);
+    state.players[0].library_order.insert(0, bolt);
+
+    state.events.push(GameEvent::StepStarted { step: Step::Upkeep });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+    assert!(!state.stack.is_empty(), "the front face's upkeep trigger is on the stack");
+
+    // In response, something transforms it.
+    helpers::apply_transform(&mut state, delver, &reg);
+    assert_eq!(state.name_of(delver, &reg), "Insectile Aberration");
+
+    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
+    assert!(state.awaiting_action.is_some(), "the trigger still asks about the top card");
+    let state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
+        &reg,
+    );
+    assert_eq!(state.name_of(delver, &reg), "Insectile Aberration",
+        "revealing an instant does not flip it back (CR 701.28f)");
+}
+
 #[test]
 fn delver_does_not_transform_when_player_declines_reveal() {
     let reg = registry();

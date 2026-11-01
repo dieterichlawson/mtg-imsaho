@@ -76,9 +76,12 @@ impl CardBehavior for DelverOfSecrets {
             return;
         }
         let controller = crate::cards::helpers::controller_of(state, self_id);
-        let is_transformed = state.get_object(self_id).is_some_and(|o| o.is_transformed);
-        // Only trigger on the front face, during controller's upkeep.
-        if is_transformed {
+        // The front face's trigger; the back face has none. Which face the
+        // trigger came from is recorded with it, not read off the permanent
+        // now: a Delver flipped in response still resolves the front face's
+        // look-and-reveal (CR 113.7a), and only the transform does nothing
+        // (CR 701.28f, `transform_quietly`).
+        if state.resolving_trigger_from_back_face == Some(true) {
             return;
         }
         // "look at the top card of your library. You may reveal that card." —
