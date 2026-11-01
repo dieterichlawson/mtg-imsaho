@@ -38,6 +38,11 @@ every pass. Two edits keep the position legal and the invariants checked:
 A repro built this way lists the board it built, or ships the edit script,
 so a fresh reader gets the same position.
 
+To *watch* a step, give the seat that is not acting a castable instant
+(Geistflame and a Mountain). A seat with only mana abilities is passed for,
+and a whole combat can go by between two captures. `--log` appends, so
+delete the log before re-running a board whose log you grep (2026-11-01).
+
 ## Where to look
 
 - `mtg-engine/src/` is the engine: `engine.rs` (priority, casting, action
@@ -409,7 +414,9 @@ contradict the CR.
   first-strike step is still created for it (CR 510.4, 506.4), and that it
   deals and receives no combat damage. Then read `combat.rs` for every map
   keyed by one side of a pairing and ask what deleting a key does to the
-  values
+  values. First run 2026-11-01: held for
+  sacrifice, burn and regeneration on the CLI and in the LLM board. Bounce and
+  flicker are still unplayed, because the pool has no instant-speed bounce
 
 - C42 [proposed 2026-10-31, from #977] demands with an X, against the
   autotap's hand protection. `Demand::payable` calls `greedy_autotap`, which
@@ -420,7 +427,9 @@ contradict the CR.
   graveyard, Mikaeus, Blasphemous Act's reduction), cast an unrelated spell
   that the spare lands can pay. Verify the X row is still on the menu
   afterwards, with the X it had before. Then grep for every other `payable`
-  filter built on the same call
+  filter built on the same call. First run 2026-11-01: held on
+  seven boards. The open question left is that protection keeps only X = 0
+  castable (a Devil's Play for 0 is protected the same as one for 3)
 
 **The Rules Lawyer** plays both seats to *maximize rules interaction* and
 verifies every step against the CR as it goes. Wins don't matter;
