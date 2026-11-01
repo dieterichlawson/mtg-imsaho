@@ -1184,6 +1184,39 @@ sits in memory. What was measured, and what the proofs do about each:
   description of the pool that the proof never reads. Written without
   either, paying took 1.82 million steps rather than 2.50, and still ran
   out of memory at 7 GB.
+- **A sort of what is in order, and room of an open length.**
+  `creatures_controlled_by`, which three cards ask whom to sacrifice
+  from (Stitcher's Apprentice, Tribute to Hunger, Liliana of the Veil's
+  −2), gave its list the battlefield listing's length as its room and
+  then sorted it by id. The listing is in id order already
+  (`objects_in_zone`, its order proved with Verus), so the sort changed
+  nothing, but a proof walked its swaps over places it left open, and
+  the room was a buffer of a length it left open. Without either,
+  Liliana's −2 over a player went from out of memory at 12 GB to 7.3
+  million clauses at 7, and Stitcher's Apprentice and Tribute to Hunger
+  pass at 7.
+- **A board of shapes, and a list of types the solver leaves open.**
+  Garruk, the Veil-Cursed's −1 sacrifices one of its activator's
+  creatures, and over two objects of any characteristics their list of
+  creatures was one the solver left open (out of memory at 12 GB, 50
+  million clauses). On a board whose objects are each of a shape to that
+  player (a creature of theirs, an enchantment of theirs, the other
+  player's permanent, a card in a graveyard), the rest of their
+  characteristics any, 23 of the 24 cases pass at 3.5 GB in 160 to 384
+  seconds (576fd1f gives 180 to 433, an earlier run's). A noncreature
+  had first been given types any of an enchantment's or none, and with
+  its list of types of a length the solver chose, whether it held
+  Creature was a question even where it could not: every case with one
+  ran out of memory, every other passed.
+- **An engine action stood in for, inside an engine action's proof.**
+  Paying by tapping a Forest activates the Forest's ability, and that
+  activation was more than half of what the payment's proof followed.
+  The activation is proved once on its own (tapped, then {G} added,
+  nothing else), and a stand-in that does exactly that takes its place
+  in the payment's proofs, as the card proofs' recorders stand in for
+  the engine actions proved beside them: the payment went from out of
+  memory at 7 GB in symbolic execution (2.5 million steps) to 984
+  thousand steps and 13.8 million clauses.
 - **CBMC's memory checks.** `kani-bounded.py` leaves out CBMC's pointer,
   bounds and division checks (`--memory-checks` keeps them): that safe
   Rust reads only memory it may is the compiler's guarantee, and Rust's
