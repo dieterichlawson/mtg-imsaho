@@ -128,13 +128,18 @@ impl CardBehavior for GrimoireOfTheDead {
                 // it has additional types (ruling 2011-09-22). We check card_types
                 // for Creature in addition to checking power (which is the heuristic
                 // for creatures created by the engine).
-                let creatures: Vec<ObjectId> = state.all_objects_in_zone(Zone::Graveyard).into_iter()
-                    .filter(|o| o.id != object_id && state.is_card(o.id))
-                    .filter(|o| {
-                        state.is_creature(o.id, registry)
-                    })
-                    .map(|o| o.id)
-                    .collect();
+                //
+                // In id order, by a loop into a list with room for every
+                // object, not filters collected into one that grows: a proof
+                // walks a filter's inner `find` again for each item it
+                // collects, and a list allocated at its first push is one it
+                // follows into two buffers (`helpers::ids_where`).
+                let mut creatures: Vec<ObjectId> = Vec::with_capacity(state.objects.len());
+                for o in state.all_objects_in_zone(Zone::Graveyard) {
+                    if o.id != object_id && state.is_card(o.id) && state.is_creature(o.id, registry) {
+                        creatures.push(o.id);
+                    }
+                }
 
                 let count = creatures.len();
                 for cid in creatures {
@@ -157,7 +162,7 @@ impl CardBehavior for GrimoireOfTheDead {
                     // say so.
                     if let Some(obj) = state.get_object_mut(cid) {
                         // They're black Zombies in addition to their other colors and types.
-                        if !obj.subtypes.contains(&"Zombie".into()) {
+                        if !obj.subtypes.iter().any(|s| s == "Zombie") {
                             obj.subtypes.push("Zombie".into());
                         }
                         if !obj.colors.contains(&Color::Black) {

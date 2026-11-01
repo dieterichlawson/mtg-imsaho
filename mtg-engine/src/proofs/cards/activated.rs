@@ -1289,34 +1289,112 @@ card_proof! {
     }
 }
 
-card_proof! {
-    /// Grimoire of the Dead's second ability resolving: every creature
-    /// card in every graveyard (no token, CR 109.1, and not itself,
-    /// sacrificed to pay for it, which is not a creature) put onto the
-    /// battlefield under the control of the player who activated it, each
-    /// of them then black and a Zombie besides whatever else it is, once
-    /// (CR 205.1b: in addition to its other types), and nothing else made
-    /// either. Apart from the first ability's proof above: the two in one
-    /// harness ran out of memory at ten gigabytes.
-    fn grimoire_of_the_dead_returns_every_creature_card_as_a_black_zombie() {
-        let mut b = permanent(Box::new(isd::grimoire_of_the_dead::GrimoireOfTheDead), &ANY_CREATURE, true);
-        let returned = b.those(|o| o.zone == Zone::Graveyard && !o.is_token && o.card_types.contains(&CardType::Creature));
-        let black = b.others.map(|id| b.state.get_object(id).expect("on the board").colors.contains(&Color::Black));
-        let before = b.resolve(1, &[]);
-        assert!(asked_each(returned.len(), |i| Act::MoveUnder(returned[i], Zone::Battlefield, b.you)));
-        for (i, id) in b.others.iter().enumerate() {
-            let o = b.state.get_object(*id).expect("on the board");
-            let zombies = o.subtypes.iter().filter(|s| *s == "Zombie").count();
-            let blacks = o.colors.iter().filter(|c| **c == Color::Black).count();
-            if returned.contains(id) {
-                assert!(zombies == 1 && blacks == 1);
-            } else {
-                assert!(zombies == 0 && (blacks == 1) == black[i]);
-            }
-        }
-        assert!(Snapshot::of(&b.state) == before);
-        std::mem::forget((b, returned));
+/// Grimoire of the Dead's board for its second ability: [`permanent`]'s,
+/// the Grimoire gone to its owner's graveyard if `gone` (sacrificed to pay
+/// for the ability, as it always is) and on the battlefield otherwise,
+/// activated by either player, but with the
+/// card of the other two objects in `zone`, owned by either player, a
+/// creature (an enchantment besides or not) or an enchantment as
+/// `creature` says, of any colours; the token as
+/// [`any_object`] makes it, on the battlefield. Only the card can be
+/// returned, and with its zone and its being a creature left to the
+/// solver, the proof ran out of memory at 12 GB in symbolic execution;
+/// with those given and the Grimoire's own place left to it, it did
+/// again: the graveyards' listing was then of a length it left open, and
+/// every check of a creature card through it a question.
+/// The card's list of subtypes has room for the Zombie the ability adds,
+/// which no program can tell from none: each push grew a list, 14% of the
+/// card's formula alone.
+fn grimoire_board(zone: Zone, creature: bool, gone: bool) -> Board {
+    let (registry, mut state, blank, card) = board(Box::new(isd::grimoire_of_the_dead::GrimoireOfTheDead));
+    let you = PlayerId(u8::from(kani::any::<bool>()));
+    let me = state.create_object(card, PlayerId(0), if gone { Zone::Graveyard } else { Zone::Battlefield }, None, None);
+    let o = state.get_object_mut(me).expect("just created");
+    if gone {
+        o.last_controller = Some(you);
+        state.players[0].graveyard_order.push(me);
+    } else {
+        o.controller = you;
     }
+    let owner = PlayerId(u8::from(kani::any::<bool>()));
+    let other = state.create_object(blank, owner, zone, None, None);
+    if zone == Zone::Graveyard {
+        if owner == PlayerId(0) {
+            state.players[0].graveyard_order.push(other);
+        } else {
+            state.players[1].graveyard_order.push(other);
+        }
+    }
+    let o = state.get_object_mut(other).expect("just created");
+    o.colors = Vec::with_capacity(5);
+    for c in Color::ALL {
+        if kani::any() {
+            o.colors.push(c);
+        }
+    }
+    // A creature, an enchantment besides or not; or an enchantment and
+    // nothing else: a list of types of a length the solver leaves open
+    // makes whether it holds Creature a question even where it cannot
+    // (Garruk, the Veil-Cursed's proof says more).
+    o.card_types = Vec::with_capacity(2);
+    if creature {
+        o.card_types.push(CardType::Creature);
+    }
+    if !creature || kani::any() {
+        o.card_types.push(CardType::Enchantment);
+    }
+    o.subtypes = Vec::with_capacity(1);
+    if creature {
+        let (p, t): (u8, u8) = (kani::any(), kani::any());
+        kani::assume(p <= 5 && (1..=5).contains(&t));
+        o.power = Some(i32::from(p));
+        o.toughness = Some(i32::from(t));
+    }
+    let token = any_object(&mut state, blank, &ANY_CREATURE, Form::Token);
+    state.resolving_ability_activator = Some(you);
+    Board { registry, state, me, others: [other, token], you }
+}
+
+/// Grimoire of the Dead's second ability resolving: every creature card in
+/// every graveyard (no token, CR 109.1, and not itself, sacrificed to pay
+/// for it, which is not a creature) put onto the battlefield under the
+/// control of the player who activated it, each of them then black and a
+/// Zombie besides whatever else it is, once (CR 205.1b: in addition to its
+/// other types), and nothing else made either. Apart from the first
+/// ability's proof above: the two in one harness ran out of memory at ten
+/// gigabytes.
+fn grimoire_of_the_dead_returns_every_creature_card_as_a_black_zombie((zone, creature, gone): (Zone, bool, bool)) {
+    let mut b = grimoire_board(zone, creature, gone);
+    let returned = b.those(|o| o.zone == Zone::Graveyard && !o.is_token && o.card_types.contains(&CardType::Creature));
+    // Element by element, not `b.others.map`: an array mapped is a value
+    // the solver leaves open (Vampiric Fury's proof says more).
+    let is_black = |id: ObjectId| b.state.get_object(id).expect("on the board").colors.contains(&Color::Black);
+    let black = [is_black(b.others[0]), is_black(b.others[1])];
+    let before = b.resolve(1, &[]);
+    assert!(asked_each(returned.len(), |i| Act::MoveUnder(returned[i], Zone::Battlefield, b.you)));
+    for (i, id) in b.others.iter().enumerate() {
+        let o = b.state.get_object(*id).expect("on the board");
+        let zombies = o.subtypes.iter().filter(|s| *s == "Zombie").count();
+        let blacks = o.colors.iter().filter(|c| **c == Color::Black).count();
+        if returned.contains(id) {
+            assert!(zombies == 1 && blacks == 1);
+        } else {
+            assert!(zombies == 0 && (blacks == 1) == black[i]);
+        }
+    }
+    assert!(Snapshot::of(&b.state) == before);
+    std::mem::forget((b, returned));
+}
+
+case_by_case! { grimoire_of_the_dead_returns_every_creature_card_as_a_black_zombie;
+    grimoire_of_the_dead_gone_returns_a_creature_card_in_a_graveyard_as_a_black_zombie: (Zone::Graveyard, true, true),
+    grimoire_of_the_dead_gone_leaves_a_noncreature_card_in_a_graveyard: (Zone::Graveyard, false, true),
+    grimoire_of_the_dead_gone_leaves_a_creature_on_the_battlefield: (Zone::Battlefield, true, true),
+    grimoire_of_the_dead_gone_leaves_a_noncreature_on_the_battlefield: (Zone::Battlefield, false, true),
+    grimoire_of_the_dead_still_there_returns_a_creature_card_in_a_graveyard_as_a_black_zombie: (Zone::Graveyard, true, false),
+    grimoire_of_the_dead_still_there_leaves_a_noncreature_card_in_a_graveyard: (Zone::Graveyard, false, false),
+    grimoire_of_the_dead_still_there_leaves_a_creature_on_the_battlefield: (Zone::Battlefield, true, false),
+    grimoire_of_the_dead_still_there_leaves_a_noncreature_on_the_battlefield: (Zone::Battlefield, false, false),
 }
 
 /// Back from the Brink's board: the enchantment on the battlefield under
