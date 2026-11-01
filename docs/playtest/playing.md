@@ -1408,4 +1408,23 @@ illegal or dubious resolutions do.
   bounce the source in response. Read the name on the stack, in the RESPOND
   TO header, in each prompt the ability asks, in the log, in the LLM prompt
   and on the page. Also check that the ability uses the back face's
-  characteristics where it reads its source's power, colour or name
+  characteristics where it reads its source's power, colour or name.
+  First run 2026-11-01: Daybreak Ranger resolved whichever face was up at
+  resolution, in both directions (#986), and the name is #980. The face
+  that matters is not only the one that left: a source that *flips* in
+  response (Moonmist on a Human werewolf) is the other half, and it found
+  the same bug
+
+- L67 [proposed 2026-11-01, from #986 and #987] every "transform this"
+  ability against CR 701.27f, and every card that keys its two faces'
+  abilities alike. (a) For each ability that transforms its own source
+  (werewolf upkeep triggers both ways, Civilized Scholar's untap-then-
+  transform, Homicidal Brute's end step, Thraben Sentry, Delver of Secrets,
+  Garruk's state trigger, Bloodline Keeper's {B}), flip the source in
+  response with Moonmist or another transform, then let the ability
+  resolve. It must do nothing (#987 is the werewolves). (b) grep
+  `mtg-engine/src/cards/` for `activated_abilities` that return the same
+  `ability_index` from both faces, or resolve hooks that read
+  `is_transformed`. For each one, activate on one face and change the face
+  before resolution (leave the battlefield, Moonmist, a werewolf upkeep).
+  Verify that the ability that resolves is the one that was activated
