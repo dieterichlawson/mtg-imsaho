@@ -1114,50 +1114,7 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
             }
 
             // Remove "until end of turn" effects.
-            // First, revert control changes before clearing. Who a permanent
-            // goes to is derived from the control effects that are still in
-            // force once this one is gone (CR 613.7a): a durable "for as long
-            // as you control this" effect that outlives the cleanup step
-            // keeps it (issue #253), and with nothing left it goes to its
-            // default controller (CR 110.2a) — not to whoever happened to
-            // hold it when the temporary effect was created, which for a
-            // creature stolen back from a thief was the thief (issue #285).
-            let ending: Vec<ObjectId> = state.until_end_of_turn.iter()
-                .filter_map(|effect| match effect {
-                    crate::state::TemporaryEffect::ChangeControl { target, .. } => Some(*target),
-                    _ => None,
-                })
-                .collect();
-            // The effects are removed first so the derivation sees the board
-            // as it will be, not as it is.
-            state.until_end_of_turn.retain(|e|
-                !matches!(e, crate::state::TemporaryEffect::ChangeControl { .. }));
-            let reverts: Vec<(ObjectId, PlayerId)> = ending.into_iter()
-                .filter_map(|target| state.derived_controller(target).map(|c| (target, c)))
-                .collect();
-            for (target, controller) in reverts {
-                if state.get_object(target).is_none_or(|o| o.zone != Zone::Battlefield) {
-                    continue;
-                }
-                let changing = state.get_object(target)
-                    .is_some_and(|o| o.controller != controller);
-                let name = state.obj_name(target);
-                // `change_control`, not a direct assignment: it is the single
-                // correct way to reassign an in-play permanent's controller,
-                // and it carries the summoning-sickness reset (CR 302.6) and
-                // the removal from combat (CR 506.4d) with it (issue #256).
-                state.change_control(target, controller);
-                if changing {
-                    // The other duration (`expire_control_effects`) says so;
-                    // this one moved a permanent from one side of the board
-                    // to the other with no record at all, which in a hotseat
-                    // game is the only signal a player gets (issue #256).
-                    state.log(crate::state::LogLevel::Event, format!(
-                        "{name} returns to p{}: the control effect has ended (CR 514.2)",
-                        controller.0));
-                }
-            }
-            state.until_end_of_turn.clear();
+            end_until_end_of_turn_effects(state);
 
             // Clear unused regeneration shields.
             for obj in state.objects.values_mut() {
@@ -1199,6 +1156,56 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
             state.priority_player = Some(active);
         }
     }
+}
+
+/// CR 514.2: the cleanup step's end of the "until end of turn" effects.
+/// Every one ends, and a permanent whose control one of them changed goes
+/// to whoever the control effects still in force give it to.
+pub(crate) fn end_until_end_of_turn_effects(state: &mut GameState) {
+    // First, revert control changes before clearing. Who a permanent
+    // goes to is derived from the control effects that are still in
+    // force once this one is gone (CR 613.7a): a durable "for as long
+    // as you control this" effect that outlives the cleanup step
+    // keeps it (issue #253), and with nothing left it goes to its
+    // default controller (CR 110.2a) — not to whoever happened to
+    // hold it when the temporary effect was created, which for a
+    // creature stolen back from a thief was the thief (issue #285).
+    let ending: Vec<ObjectId> = state.until_end_of_turn.iter()
+        .filter_map(|effect| match effect {
+            crate::state::TemporaryEffect::ChangeControl { target, .. } => Some(*target),
+            _ => None,
+        })
+        .collect();
+    // The effects are removed first so the derivation sees the board
+    // as it will be, not as it is.
+    state.until_end_of_turn.retain(|e|
+        !matches!(e, crate::state::TemporaryEffect::ChangeControl { .. }));
+    let reverts: Vec<(ObjectId, PlayerId)> = ending.into_iter()
+        .filter_map(|target| state.derived_controller(target).map(|c| (target, c)))
+        .collect();
+    for (target, controller) in reverts {
+        if state.get_object(target).is_none_or(|o| o.zone != Zone::Battlefield) {
+            continue;
+        }
+        let changing = state.get_object(target)
+            .is_some_and(|o| o.controller != controller);
+        let name = state.obj_name(target);
+        // `change_control`, not a direct assignment: it is the single
+        // correct way to reassign an in-play permanent's controller,
+        // and it carries the summoning-sickness reset (CR 302.6) and
+        // the removal from combat (CR 506.4d) with it (issue #256).
+        state.change_control(target, controller);
+        if changing {
+            // The other duration (`expire_control_effects`) says so;
+            // this one moved a permanent from one side of the board
+            // to the other with no record at all, which in a hotseat
+            // game is the only signal a player gets (issue #256).
+            state.log(crate::state::LogLevel::Event, format!(
+                "{name} returns to p{}: the control effect has ended (CR 514.2)",
+                controller.0));
+        }
+    }
+    state.until_end_of_turn.clear();
 }
 
 /// The player a pending cast-time prompt belongs to: the caster of a spell
