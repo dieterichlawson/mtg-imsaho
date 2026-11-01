@@ -173,6 +173,73 @@ fn planning_with_a_forest(which: u8, who: PlayerId, held: Option<u32>, untapped:
     std::mem::forget((f, plan, expected));
 }
 
+/// Any pool of up to two white, two green and two colorless mana, but
+/// with exactly the amounts `held` gives of the types it names.
+fn pool_holding(held: &[(ManaType, u32)]) -> ManaPool {
+    let mut pool = ManaPool::new();
+    for t in [ManaType::White, ManaType::Green, ManaType::Colorless] {
+        let mut n = None;
+        for &(h, amount) in held {
+            if h == t {
+                n = Some(amount);
+            }
+        }
+        let n = n.unwrap_or_else(|| {
+            let n: u8 = kani::any();
+            kani::assume(n <= 2);
+            u32::from(n)
+        });
+        if n > 0 {
+            pool.add(t, n);
+        }
+    }
+    pool
+}
+
+/// [`paying_with_a_forest`] by an untapped Forest, the pool holding the
+/// amounts `held` gives (`pool_holding`): each harness one pool, and
+/// together the pools `paying_with_a_forest` is over. Over a pool the
+/// solver chose, paying `{1}`, and `{1}{G}` with green floating, ran out
+/// of memory at 12 GB (41 million clauses), `{1}` with its green held as
+/// well: a generic pip is paid by ordering what the pool holds beyond the
+/// colours' needs, and over amounts left open that order was the
+/// formula. Its board is `forest_board`'s with those amounts given, built
+/// beside it rather than through it so that the proofs over that board
+/// are of the code they were run on.
+fn paying_with_a_forest_holding(which: u8, who: PlayerId, held: &[(ManaType, u32)]) {
+    let (registry, mut state, blank, forest_card) = board(Box::new(crate::cards::forest::Forest));
+    let forest = state.create_object(forest_card, who, Zone::Battlefield, None, None);
+    state.get_object_mut(forest).expect("just created").summoning_sick = kani::any();
+    state.create_object(blank, PlayerId(1 - who.0), Zone::Battlefield, None, None);
+    let cost = a_cost(which);
+    let pool = pool_holding(held);
+    state.players[usize::from(who.0)].mana_pool = pool.clone();
+    let before = Snapshot::of(&state);
+    let mut with_forest = pool.clone();
+    with_forest.add(ManaType::Green, 1);
+    let alone = mana::can_pay(&pool, &cost);
+    let tap = !alone && mana::can_pay(&with_forest, &cost);
+    let paid = crate::engine::pay_cost_with_sources(&mut state, who, &cost, &registry);
+    assert!(paid == (alone || tap));
+    let expected = if alone {
+        spent(&pool, &cost)
+    } else if tap {
+        spent(&with_forest, &cost)
+    } else {
+        pool.clone()
+    };
+    assert!(state.players[usize::from(who.0)].mana_pool == expected);
+    assert!(state.players[usize::from(1 - who.0)].mana_pool.is_empty());
+    if tap {
+        assert!(matches!(state.events.as_slice(), [GameEvent::Tapped { object }, GameEvent::ManaAdded { player, mana_type: ManaType::Green, amount: 1 }]
+            if *object == forest && *player == who));
+        assert!(Snapshot::of(&state).without_events() == before.with_tapped(forest, true).without_events());
+    } else {
+        assert!(Snapshot::of(&state) == before);
+    }
+    std::mem::forget((registry, state, cost, pool, with_forest, expected));
+}
+
 /// Activating the Forest's ability, as a payment by tapping it does (CR
 /// 605.3a): the Forest tapped, then its {G} added to its controller's
 /// pool, announced in that order, and nothing else; over any pool, the
@@ -372,8 +439,6 @@ each_forest! {
     two_green_are_planned_with_a_tapped_forest_and_one_green_floating_for_the_second_player: planning_with_a_forest(5, 1, Some(1), false);
     two_green_are_planned_with_a_tapped_forest_and_two_green_floating_for_the_first_player: planning_with_a_forest(5, 0, Some(2), false);
     two_green_are_planned_with_a_tapped_forest_and_two_green_floating_for_the_second_player: planning_with_a_forest(5, 1, Some(2), false);
-    one_is_paid_with_an_untapped_forest_for_the_first_player: paying_with_a_forest(0, 0, None, true);
-    one_is_paid_with_an_untapped_forest_for_the_second_player: paying_with_a_forest(0, 1, None, true);
     one_is_paid_with_a_tapped_forest_for_the_first_player: paying_with_a_forest(0, 0, None, false);
     one_is_paid_with_a_tapped_forest_for_the_second_player: paying_with_a_forest(0, 1, None, false);
     green_is_paid_with_an_untapped_forest_and_no_green_floating_for_the_first_player: paying_with_a_forest(1, 0, Some(0), true);
@@ -390,10 +455,6 @@ each_forest! {
     green_is_paid_with_a_tapped_forest_and_two_green_floating_for_the_second_player: paying_with_a_forest(1, 1, Some(2), false);
     one_and_green_are_paid_with_an_untapped_forest_and_no_green_floating_for_the_first_player: paying_with_a_forest(2, 0, Some(0), true);
     one_and_green_are_paid_with_an_untapped_forest_and_no_green_floating_for_the_second_player: paying_with_a_forest(2, 1, Some(0), true);
-    one_and_green_are_paid_with_an_untapped_forest_and_one_green_floating_for_the_first_player: paying_with_a_forest(2, 0, Some(1), true);
-    one_and_green_are_paid_with_an_untapped_forest_and_one_green_floating_for_the_second_player: paying_with_a_forest(2, 1, Some(1), true);
-    one_and_green_are_paid_with_an_untapped_forest_and_two_green_floating_for_the_first_player: paying_with_a_forest(2, 0, Some(2), true);
-    one_and_green_are_paid_with_an_untapped_forest_and_two_green_floating_for_the_second_player: paying_with_a_forest(2, 1, Some(2), true);
     one_and_green_are_paid_with_a_tapped_forest_and_no_green_floating_for_the_first_player: paying_with_a_forest(2, 0, Some(0), false);
     one_and_green_are_paid_with_a_tapped_forest_and_no_green_floating_for_the_second_player: paying_with_a_forest(2, 1, Some(0), false);
     one_and_green_are_paid_with_a_tapped_forest_and_one_green_floating_for_the_first_player: paying_with_a_forest(2, 0, Some(1), false);
@@ -450,4 +511,116 @@ macro_rules! each_player {
 each_player! {
     the_forests_ability_taps_it_and_adds_green_for_the_first_player: activating_the_forest(0);
     the_forests_ability_taps_it_and_adds_green_for_the_second_player: activating_the_forest(1);
+}
+
+/// [`paying_with_a_forest_holding`] for each cost, player and pool
+/// amounts given, with [`each_forest`]'s stand-ins.
+macro_rules! each_holding {
+    ($($name:ident: ($which:literal, $who:literal, $held:expr);)*) => {$(
+        #[kani::proof]
+        #[kani::unwind(7)]
+        #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+        #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+        #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+        #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+        #[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+        #[kani::stub(crate::engine::activate_mana_source_reserving, forest_activation)]
+        /// The proof above it, for one cost, one player and one pool.
+        fn $name() {
+            paying_with_a_forest_holding($which, PlayerId($who), &$held);
+        }
+    )*};
+}
+
+each_holding! {
+    one_and_green_are_paid_with_an_untapped_forest_from_no_white_one_green_and_no_colorless_for_the_first_player: (2, 0, [(ManaType::White, 0), (ManaType::Green, 1), (ManaType::Colorless, 0)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_no_white_one_green_and_one_colorless_for_the_first_player: (2, 0, [(ManaType::White, 0), (ManaType::Green, 1), (ManaType::Colorless, 1)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_no_white_one_green_and_two_colorless_for_the_first_player: (2, 0, [(ManaType::White, 0), (ManaType::Green, 1), (ManaType::Colorless, 2)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_one_white_one_green_and_no_colorless_for_the_first_player: (2, 0, [(ManaType::White, 1), (ManaType::Green, 1), (ManaType::Colorless, 0)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_one_white_one_green_and_one_colorless_for_the_first_player: (2, 0, [(ManaType::White, 1), (ManaType::Green, 1), (ManaType::Colorless, 1)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_one_white_one_green_and_two_colorless_for_the_first_player: (2, 0, [(ManaType::White, 1), (ManaType::Green, 1), (ManaType::Colorless, 2)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_two_white_one_green_and_no_colorless_for_the_first_player: (2, 0, [(ManaType::White, 2), (ManaType::Green, 1), (ManaType::Colorless, 0)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_two_white_one_green_and_one_colorless_for_the_first_player: (2, 0, [(ManaType::White, 2), (ManaType::Green, 1), (ManaType::Colorless, 1)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_two_white_one_green_and_two_colorless_for_the_first_player: (2, 0, [(ManaType::White, 2), (ManaType::Green, 1), (ManaType::Colorless, 2)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_no_white_two_green_and_no_colorless_for_the_first_player: (2, 0, [(ManaType::White, 0), (ManaType::Green, 2), (ManaType::Colorless, 0)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_no_white_two_green_and_one_colorless_for_the_first_player: (2, 0, [(ManaType::White, 0), (ManaType::Green, 2), (ManaType::Colorless, 1)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_no_white_two_green_and_two_colorless_for_the_first_player: (2, 0, [(ManaType::White, 0), (ManaType::Green, 2), (ManaType::Colorless, 2)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_one_white_two_green_and_no_colorless_for_the_first_player: (2, 0, [(ManaType::White, 1), (ManaType::Green, 2), (ManaType::Colorless, 0)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_one_white_two_green_and_one_colorless_for_the_first_player: (2, 0, [(ManaType::White, 1), (ManaType::Green, 2), (ManaType::Colorless, 1)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_one_white_two_green_and_two_colorless_for_the_first_player: (2, 0, [(ManaType::White, 1), (ManaType::Green, 2), (ManaType::Colorless, 2)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_two_white_two_green_and_no_colorless_for_the_first_player: (2, 0, [(ManaType::White, 2), (ManaType::Green, 2), (ManaType::Colorless, 0)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_two_white_two_green_and_one_colorless_for_the_first_player: (2, 0, [(ManaType::White, 2), (ManaType::Green, 2), (ManaType::Colorless, 1)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_two_white_two_green_and_two_colorless_for_the_first_player: (2, 0, [(ManaType::White, 2), (ManaType::Green, 2), (ManaType::Colorless, 2)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_no_white_one_green_and_no_colorless_for_the_second_player: (2, 1, [(ManaType::White, 0), (ManaType::Green, 1), (ManaType::Colorless, 0)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_no_white_one_green_and_one_colorless_for_the_second_player: (2, 1, [(ManaType::White, 0), (ManaType::Green, 1), (ManaType::Colorless, 1)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_no_white_one_green_and_two_colorless_for_the_second_player: (2, 1, [(ManaType::White, 0), (ManaType::Green, 1), (ManaType::Colorless, 2)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_one_white_one_green_and_no_colorless_for_the_second_player: (2, 1, [(ManaType::White, 1), (ManaType::Green, 1), (ManaType::Colorless, 0)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_one_white_one_green_and_one_colorless_for_the_second_player: (2, 1, [(ManaType::White, 1), (ManaType::Green, 1), (ManaType::Colorless, 1)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_one_white_one_green_and_two_colorless_for_the_second_player: (2, 1, [(ManaType::White, 1), (ManaType::Green, 1), (ManaType::Colorless, 2)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_two_white_one_green_and_no_colorless_for_the_second_player: (2, 1, [(ManaType::White, 2), (ManaType::Green, 1), (ManaType::Colorless, 0)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_two_white_one_green_and_one_colorless_for_the_second_player: (2, 1, [(ManaType::White, 2), (ManaType::Green, 1), (ManaType::Colorless, 1)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_two_white_one_green_and_two_colorless_for_the_second_player: (2, 1, [(ManaType::White, 2), (ManaType::Green, 1), (ManaType::Colorless, 2)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_no_white_two_green_and_no_colorless_for_the_second_player: (2, 1, [(ManaType::White, 0), (ManaType::Green, 2), (ManaType::Colorless, 0)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_no_white_two_green_and_one_colorless_for_the_second_player: (2, 1, [(ManaType::White, 0), (ManaType::Green, 2), (ManaType::Colorless, 1)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_no_white_two_green_and_two_colorless_for_the_second_player: (2, 1, [(ManaType::White, 0), (ManaType::Green, 2), (ManaType::Colorless, 2)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_one_white_two_green_and_no_colorless_for_the_second_player: (2, 1, [(ManaType::White, 1), (ManaType::Green, 2), (ManaType::Colorless, 0)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_one_white_two_green_and_one_colorless_for_the_second_player: (2, 1, [(ManaType::White, 1), (ManaType::Green, 2), (ManaType::Colorless, 1)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_one_white_two_green_and_two_colorless_for_the_second_player: (2, 1, [(ManaType::White, 1), (ManaType::Green, 2), (ManaType::Colorless, 2)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_two_white_two_green_and_no_colorless_for_the_second_player: (2, 1, [(ManaType::White, 2), (ManaType::Green, 2), (ManaType::Colorless, 0)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_two_white_two_green_and_one_colorless_for_the_second_player: (2, 1, [(ManaType::White, 2), (ManaType::Green, 2), (ManaType::Colorless, 1)]);
+    one_and_green_are_paid_with_an_untapped_forest_from_two_white_two_green_and_two_colorless_for_the_second_player: (2, 1, [(ManaType::White, 2), (ManaType::Green, 2), (ManaType::Colorless, 2)]);
+    one_is_paid_with_an_untapped_forest_from_no_white_no_green_and_no_colorless_for_the_first_player: (0, 0, [(ManaType::White, 0), (ManaType::Green, 0), (ManaType::Colorless, 0)]);
+    one_is_paid_with_an_untapped_forest_from_no_white_no_green_and_one_colorless_for_the_first_player: (0, 0, [(ManaType::White, 0), (ManaType::Green, 0), (ManaType::Colorless, 1)]);
+    one_is_paid_with_an_untapped_forest_from_no_white_no_green_and_two_colorless_for_the_first_player: (0, 0, [(ManaType::White, 0), (ManaType::Green, 0), (ManaType::Colorless, 2)]);
+    one_is_paid_with_an_untapped_forest_from_no_white_one_green_and_no_colorless_for_the_first_player: (0, 0, [(ManaType::White, 0), (ManaType::Green, 1), (ManaType::Colorless, 0)]);
+    one_is_paid_with_an_untapped_forest_from_no_white_one_green_and_one_colorless_for_the_first_player: (0, 0, [(ManaType::White, 0), (ManaType::Green, 1), (ManaType::Colorless, 1)]);
+    one_is_paid_with_an_untapped_forest_from_no_white_one_green_and_two_colorless_for_the_first_player: (0, 0, [(ManaType::White, 0), (ManaType::Green, 1), (ManaType::Colorless, 2)]);
+    one_is_paid_with_an_untapped_forest_from_no_white_two_green_and_no_colorless_for_the_first_player: (0, 0, [(ManaType::White, 0), (ManaType::Green, 2), (ManaType::Colorless, 0)]);
+    one_is_paid_with_an_untapped_forest_from_no_white_two_green_and_one_colorless_for_the_first_player: (0, 0, [(ManaType::White, 0), (ManaType::Green, 2), (ManaType::Colorless, 1)]);
+    one_is_paid_with_an_untapped_forest_from_no_white_two_green_and_two_colorless_for_the_first_player: (0, 0, [(ManaType::White, 0), (ManaType::Green, 2), (ManaType::Colorless, 2)]);
+    one_is_paid_with_an_untapped_forest_from_one_white_no_green_and_no_colorless_for_the_first_player: (0, 0, [(ManaType::White, 1), (ManaType::Green, 0), (ManaType::Colorless, 0)]);
+    one_is_paid_with_an_untapped_forest_from_one_white_no_green_and_one_colorless_for_the_first_player: (0, 0, [(ManaType::White, 1), (ManaType::Green, 0), (ManaType::Colorless, 1)]);
+    one_is_paid_with_an_untapped_forest_from_one_white_no_green_and_two_colorless_for_the_first_player: (0, 0, [(ManaType::White, 1), (ManaType::Green, 0), (ManaType::Colorless, 2)]);
+    one_is_paid_with_an_untapped_forest_from_one_white_one_green_and_no_colorless_for_the_first_player: (0, 0, [(ManaType::White, 1), (ManaType::Green, 1), (ManaType::Colorless, 0)]);
+    one_is_paid_with_an_untapped_forest_from_one_white_one_green_and_one_colorless_for_the_first_player: (0, 0, [(ManaType::White, 1), (ManaType::Green, 1), (ManaType::Colorless, 1)]);
+    one_is_paid_with_an_untapped_forest_from_one_white_one_green_and_two_colorless_for_the_first_player: (0, 0, [(ManaType::White, 1), (ManaType::Green, 1), (ManaType::Colorless, 2)]);
+    one_is_paid_with_an_untapped_forest_from_one_white_two_green_and_no_colorless_for_the_first_player: (0, 0, [(ManaType::White, 1), (ManaType::Green, 2), (ManaType::Colorless, 0)]);
+    one_is_paid_with_an_untapped_forest_from_one_white_two_green_and_one_colorless_for_the_first_player: (0, 0, [(ManaType::White, 1), (ManaType::Green, 2), (ManaType::Colorless, 1)]);
+    one_is_paid_with_an_untapped_forest_from_one_white_two_green_and_two_colorless_for_the_first_player: (0, 0, [(ManaType::White, 1), (ManaType::Green, 2), (ManaType::Colorless, 2)]);
+    one_is_paid_with_an_untapped_forest_from_two_white_no_green_and_no_colorless_for_the_first_player: (0, 0, [(ManaType::White, 2), (ManaType::Green, 0), (ManaType::Colorless, 0)]);
+    one_is_paid_with_an_untapped_forest_from_two_white_no_green_and_one_colorless_for_the_first_player: (0, 0, [(ManaType::White, 2), (ManaType::Green, 0), (ManaType::Colorless, 1)]);
+    one_is_paid_with_an_untapped_forest_from_two_white_no_green_and_two_colorless_for_the_first_player: (0, 0, [(ManaType::White, 2), (ManaType::Green, 0), (ManaType::Colorless, 2)]);
+    one_is_paid_with_an_untapped_forest_from_two_white_one_green_and_no_colorless_for_the_first_player: (0, 0, [(ManaType::White, 2), (ManaType::Green, 1), (ManaType::Colorless, 0)]);
+    one_is_paid_with_an_untapped_forest_from_two_white_one_green_and_one_colorless_for_the_first_player: (0, 0, [(ManaType::White, 2), (ManaType::Green, 1), (ManaType::Colorless, 1)]);
+    one_is_paid_with_an_untapped_forest_from_two_white_one_green_and_two_colorless_for_the_first_player: (0, 0, [(ManaType::White, 2), (ManaType::Green, 1), (ManaType::Colorless, 2)]);
+    one_is_paid_with_an_untapped_forest_from_two_white_two_green_and_no_colorless_for_the_first_player: (0, 0, [(ManaType::White, 2), (ManaType::Green, 2), (ManaType::Colorless, 0)]);
+    one_is_paid_with_an_untapped_forest_from_two_white_two_green_and_one_colorless_for_the_first_player: (0, 0, [(ManaType::White, 2), (ManaType::Green, 2), (ManaType::Colorless, 1)]);
+    one_is_paid_with_an_untapped_forest_from_two_white_two_green_and_two_colorless_for_the_first_player: (0, 0, [(ManaType::White, 2), (ManaType::Green, 2), (ManaType::Colorless, 2)]);
+    one_is_paid_with_an_untapped_forest_from_no_white_no_green_and_no_colorless_for_the_second_player: (0, 1, [(ManaType::White, 0), (ManaType::Green, 0), (ManaType::Colorless, 0)]);
+    one_is_paid_with_an_untapped_forest_from_no_white_no_green_and_one_colorless_for_the_second_player: (0, 1, [(ManaType::White, 0), (ManaType::Green, 0), (ManaType::Colorless, 1)]);
+    one_is_paid_with_an_untapped_forest_from_no_white_no_green_and_two_colorless_for_the_second_player: (0, 1, [(ManaType::White, 0), (ManaType::Green, 0), (ManaType::Colorless, 2)]);
+    one_is_paid_with_an_untapped_forest_from_no_white_one_green_and_no_colorless_for_the_second_player: (0, 1, [(ManaType::White, 0), (ManaType::Green, 1), (ManaType::Colorless, 0)]);
+    one_is_paid_with_an_untapped_forest_from_no_white_one_green_and_one_colorless_for_the_second_player: (0, 1, [(ManaType::White, 0), (ManaType::Green, 1), (ManaType::Colorless, 1)]);
+    one_is_paid_with_an_untapped_forest_from_no_white_one_green_and_two_colorless_for_the_second_player: (0, 1, [(ManaType::White, 0), (ManaType::Green, 1), (ManaType::Colorless, 2)]);
+    one_is_paid_with_an_untapped_forest_from_no_white_two_green_and_no_colorless_for_the_second_player: (0, 1, [(ManaType::White, 0), (ManaType::Green, 2), (ManaType::Colorless, 0)]);
+    one_is_paid_with_an_untapped_forest_from_no_white_two_green_and_one_colorless_for_the_second_player: (0, 1, [(ManaType::White, 0), (ManaType::Green, 2), (ManaType::Colorless, 1)]);
+    one_is_paid_with_an_untapped_forest_from_no_white_two_green_and_two_colorless_for_the_second_player: (0, 1, [(ManaType::White, 0), (ManaType::Green, 2), (ManaType::Colorless, 2)]);
+    one_is_paid_with_an_untapped_forest_from_one_white_no_green_and_no_colorless_for_the_second_player: (0, 1, [(ManaType::White, 1), (ManaType::Green, 0), (ManaType::Colorless, 0)]);
+    one_is_paid_with_an_untapped_forest_from_one_white_no_green_and_one_colorless_for_the_second_player: (0, 1, [(ManaType::White, 1), (ManaType::Green, 0), (ManaType::Colorless, 1)]);
+    one_is_paid_with_an_untapped_forest_from_one_white_no_green_and_two_colorless_for_the_second_player: (0, 1, [(ManaType::White, 1), (ManaType::Green, 0), (ManaType::Colorless, 2)]);
+    one_is_paid_with_an_untapped_forest_from_one_white_one_green_and_no_colorless_for_the_second_player: (0, 1, [(ManaType::White, 1), (ManaType::Green, 1), (ManaType::Colorless, 0)]);
+    one_is_paid_with_an_untapped_forest_from_one_white_one_green_and_one_colorless_for_the_second_player: (0, 1, [(ManaType::White, 1), (ManaType::Green, 1), (ManaType::Colorless, 1)]);
+    one_is_paid_with_an_untapped_forest_from_one_white_one_green_and_two_colorless_for_the_second_player: (0, 1, [(ManaType::White, 1), (ManaType::Green, 1), (ManaType::Colorless, 2)]);
+    one_is_paid_with_an_untapped_forest_from_one_white_two_green_and_no_colorless_for_the_second_player: (0, 1, [(ManaType::White, 1), (ManaType::Green, 2), (ManaType::Colorless, 0)]);
+    one_is_paid_with_an_untapped_forest_from_one_white_two_green_and_one_colorless_for_the_second_player: (0, 1, [(ManaType::White, 1), (ManaType::Green, 2), (ManaType::Colorless, 1)]);
+    one_is_paid_with_an_untapped_forest_from_one_white_two_green_and_two_colorless_for_the_second_player: (0, 1, [(ManaType::White, 1), (ManaType::Green, 2), (ManaType::Colorless, 2)]);
+    one_is_paid_with_an_untapped_forest_from_two_white_no_green_and_no_colorless_for_the_second_player: (0, 1, [(ManaType::White, 2), (ManaType::Green, 0), (ManaType::Colorless, 0)]);
+    one_is_paid_with_an_untapped_forest_from_two_white_no_green_and_one_colorless_for_the_second_player: (0, 1, [(ManaType::White, 2), (ManaType::Green, 0), (ManaType::Colorless, 1)]);
+    one_is_paid_with_an_untapped_forest_from_two_white_no_green_and_two_colorless_for_the_second_player: (0, 1, [(ManaType::White, 2), (ManaType::Green, 0), (ManaType::Colorless, 2)]);
+    one_is_paid_with_an_untapped_forest_from_two_white_one_green_and_no_colorless_for_the_second_player: (0, 1, [(ManaType::White, 2), (ManaType::Green, 1), (ManaType::Colorless, 0)]);
+    one_is_paid_with_an_untapped_forest_from_two_white_one_green_and_one_colorless_for_the_second_player: (0, 1, [(ManaType::White, 2), (ManaType::Green, 1), (ManaType::Colorless, 1)]);
+    one_is_paid_with_an_untapped_forest_from_two_white_one_green_and_two_colorless_for_the_second_player: (0, 1, [(ManaType::White, 2), (ManaType::Green, 1), (ManaType::Colorless, 2)]);
+    one_is_paid_with_an_untapped_forest_from_two_white_two_green_and_no_colorless_for_the_second_player: (0, 1, [(ManaType::White, 2), (ManaType::Green, 2), (ManaType::Colorless, 0)]);
+    one_is_paid_with_an_untapped_forest_from_two_white_two_green_and_one_colorless_for_the_second_player: (0, 1, [(ManaType::White, 2), (ManaType::Green, 2), (ManaType::Colorless, 1)]);
+    one_is_paid_with_an_untapped_forest_from_two_white_two_green_and_two_colorless_for_the_second_player: (0, 1, [(ManaType::White, 2), (ManaType::Green, 2), (ManaType::Colorless, 2)]);
 }
