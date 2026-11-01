@@ -455,36 +455,49 @@ case_by_case! { liliana_makes_each_player_discard;
     liliana_of_the_veil_makes_each_player_discard_with_the_second_player_active_over_hands_of_two_and_two_both_lost: (1, [2, 2], [true, true]),
 }
 
-card_proof! {
-    /// Liliana of the Veil's −2: her target player sacrifices a creature
-    /// they control, chosen by them from every creature they control, and
-    /// must (CR 701.21a); with none, nothing; her target gone, nothing.
-    fn liliana_of_the_veil_makes_her_target_sacrifice_a_creature() {
-        let mut b = planeswalker(Box::new(isd::liliana_of_the_veil::LilianaOfTheVeil));
-        let target = any_target(b.others);
-        let creatures = match target {
-            Target::Player(p) => b.creatures_of(p),
-            _ => Vec::new(),
-        };
-        let before = b.resolve(1, &[target.clone()]);
-        match target {
-            Target::Player(p) if !creatures.is_empty() => {
-                let Some(Act::Choose { source, player, options, effect: PendingEffect::SacrificeCreature { source_name }, optional: false }) = act(0) else {
-                    panic!("asks which creature")
-                };
-                assert!(acted() == 1 && *source == b.me && *player == p && source_name == "Liliana of the Veil");
-                assert!(options.len() == creatures.len());
-                for (o, c) in options.iter().zip(&creatures) {
-                    assert!(*o == Target::Object(*c));
-                }
-            }
-            _ => {
-                assert!(acted() == 0);
+/// Liliana of the Veil's −2: her target player sacrifices a creature they
+/// control, chosen by them from every creature they control, and must (CR
+/// 701.21a); with none, nothing; her target gone, nothing. What she
+/// targets a constant in each harness (`which`: the first player, the
+/// second, one of the board's permanents, or a target no longer legal):
+/// over a target the solver chose, the proof ran out of memory at 7 GB.
+fn liliana_of_the_veil_makes_her_target_sacrifice_a_creature(which: u8) {
+    let mut b = planeswalker(Box::new(isd::liliana_of_the_veil::LilianaOfTheVeil));
+    let target = match which {
+        0 => Target::Player(PlayerId(0)),
+        1 => Target::Player(PlayerId(1)),
+        2 => Target::Object(if kani::any() { b.others[0] } else { b.others[1] }),
+        _ => Target::Illegal,
+    };
+    let creatures = match target {
+        Target::Player(p) => b.creatures_of(p),
+        _ => Vec::new(),
+    };
+    let before = b.resolve(1, &[target.clone()]);
+    match target {
+        Target::Player(p) if !creatures.is_empty() => {
+            let Some(Act::Choose { source, player, options, effect: PendingEffect::SacrificeCreature { source_name }, optional: false }) = act(0) else {
+                panic!("asks which creature")
+            };
+            assert!(acted() == 1 && *source == b.me && *player == p && source_name == "Liliana of the Veil");
+            assert!(options.len() == creatures.len());
+            for (o, c) in options.iter().zip(&creatures) {
+                assert!(*o == Target::Object(*c));
             }
         }
-        assert!(Snapshot::of(&b.state) == before);
-        std::mem::forget((b, creatures));
+        _ => {
+            assert!(acted() == 0);
+        }
     }
+    assert!(Snapshot::of(&b.state) == before);
+    std::mem::forget((b, creatures));
+}
+
+case_by_case! { liliana_of_the_veil_makes_her_target_sacrifice_a_creature;
+    liliana_of_the_veil_makes_the_first_player_sacrifice_a_creature: 0,
+    liliana_of_the_veil_makes_the_second_player_sacrifice_a_creature: 1,
+    liliana_of_the_veil_targeting_a_permanent_makes_no_one_sacrifice: 2,
+    liliana_of_the_veil_targeting_nothing_legal_makes_no_one_sacrifice: 3,
 }
 
 card_proof! {
