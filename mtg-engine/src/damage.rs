@@ -298,6 +298,18 @@ fn effect_choice_is_open(state: &GameState) -> bool {
         choice: ResolutionChoiceKind::ChooseDamageEffect { .. }, .. }))
 }
 
+/// `item` put into `list` where it belongs, unless it is there already:
+/// a list in order and without repeats, as sorting and deduplicating it
+/// once collected gives. Built so, rather than sorted after, because a
+/// proof that leaves the list's length open follows a sort through every
+/// length's sorting network (most of what an effect that applies to damage
+/// cost to prove).
+fn insert_once_in_order<T: Ord>(list: &mut Vec<T>, item: T) {
+    if let Err(i) = list.binary_search(&item) {
+        list.insert(i, item);
+    }
+}
+
 /// The replacement and prevention effects that apply to `pd` as it stands,
 /// with the preventions first, then Unbreathing Horde's, then Inquisitor's
 /// Flail's, then cards' own; within each, by object id. Effects that have
@@ -320,30 +332,26 @@ pub fn applicable_effects(state: &GameState, pd: &PendingDamage, registry: &Card
             state.walk_effects(id,
                 &|e| matches!(e, ContinuousEffect::PreventCombatDamage { .. }),
                 registry,
-                &mut |_, by| { shields.push(by.id); true });
+                &mut |_, by| { insert_once_in_order(&mut shields, by.id); true });
         }
-        shields.sort_unstable_by_key(|id| id.0);
-        shields.dedup();
         out.extend(shields.into_iter().map(|id| DamageEffect::PreventAll(Prevention::Permanent(id))));
 
         // "Prevent all combat damage that would be dealt this turn by
         // creatures other than <filter>" (Moonmist). The filter names the
         // exceptions; a source that matches none of them is prevented.
         let controller = state.get_object(source).map_or(PlayerId(0), |o| o.controller);
-        let mut turn_wide: Vec<String> = state.until_end_of_turn.iter()
-            .filter_map(|e| match e {
-                crate::state::TemporaryEffect::PreventCombatDamageExcept { filter, source_name }
-                    // No permanent stands behind the effect, so the damage
-                    // source stands in as the "source" the filter is read
-                    // against, which only `ControlledByAttachedPlayer` would
-                    // notice and no such effect uses.
-                    if !state.matches_filter(source, filter, source, controller, registry) =>
-                        Some(source_name.clone()),
-                _ => None,
-            })
-            .collect();
-        turn_wide.sort();
-        turn_wide.dedup();
+        let mut turn_wide: Vec<String> = Vec::new();
+        for e in &state.until_end_of_turn {
+            if let crate::state::TemporaryEffect::PreventCombatDamageExcept { filter, source_name } = e {
+                // No permanent stands behind the effect, so the damage
+                // source stands in as the "source" the filter is read
+                // against, which only `ControlledByAttachedPlayer` would
+                // notice and no such effect uses.
+                if !state.matches_filter(source, filter, source, controller, registry) {
+                    insert_once_in_order(&mut turn_wide, source_name.clone());
+                }
+            }
+        }
         out.extend(turn_wide.into_iter().map(|name| DamageEffect::PreventAll(Prevention::ThisTurn(name))));
     }
 
@@ -363,9 +371,7 @@ pub fn applicable_effects(state: &GameState, pd: &PendingDamage, registry: &Card
         state.walk_effects(t,
             &|e| matches!(e, ContinuousEffect::PreventDamageRemoveCounter { .. }),
             registry,
-            &mut |_, by| { hordes.push(by.id); true });
-        hordes.sort_unstable_by_key(|id| id.0);
-        hordes.dedup();
+            &mut |_, by| { insert_once_in_order(&mut hordes, by.id); true });
         out.extend(hordes.into_iter().map(|by| DamageEffect::PreventAndRemoveCounter { by }));
     }
 
@@ -378,10 +384,8 @@ pub fn applicable_effects(state: &GameState, pd: &PendingDamage, registry: &Card
             state.walk_effects(id,
                 &|e| matches!(e, ContinuousEffect::DoubleCombatDamage { .. }),
                 registry,
-                &mut |_, by| { flails.push(by.id); true });
+                &mut |_, by| { insert_once_in_order(&mut flails, by.id); true });
         }
-        flails.sort_unstable_by_key(|id| id.0);
-        flails.dedup();
         out.extend(flails.into_iter().map(|by| DamageEffect::Double { by }));
     }
 
