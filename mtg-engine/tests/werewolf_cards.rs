@@ -644,7 +644,7 @@ fn nightfall_predator_can_fight_own_creature() {
     // Give mana for the {R} cost.
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
 
-    let new_state = activate(&state, &reg, ranger, 0, vec![Target::Object(own_creature)]);
+    let new_state = activate(&state, &reg, ranger, 1, vec![Target::Object(own_creature)]);
 
     // Both creatures should have dealt damage to each other.
     // Nightfall Predator is 4/4, own creature is 2/2.
@@ -1355,4 +1355,75 @@ fn a_non_token_clone_of_a_werewolf_triggers_and_does_not_transform() {
     assert_eq!(announced, 2, "the clone's ability triggers like the card's");
     assert!(state.get_object(twin).unwrap().is_transformed,
         "and does nothing on resolution: the card under it has no other face");
+}
+
+/// The ability a Daybreak Ranger activated, offered and put on the stack at
+/// `target` — not yet resolved.
+fn ranger_ability_on_the_stack(
+    state: &mtg_engine::state::GameState,
+    reg: &CardRegistry,
+    ranger: mtg_engine::ids::ObjectId,
+    target: mtg_engine::ids::ObjectId,
+) -> mtg_engine::state::GameState {
+    let legal = mtg_engine::engine::legal_actions(state, reg);
+    let action = legal.actions.iter()
+        .find(|a| matches!(a, mtg_engine::actions::Action::ActivateAbility { object_id, targets, .. }
+            if *object_id == ranger && targets.contains(&Target::Object(target))))
+        .expect("the ability is offered at the target");
+    let after = mtg_engine::engine::submit_action(state, action, reg);
+    assert!(matches!(after.stack.last(), Some(mtg_engine::state::StackEntry::Ability { .. })),
+        "the ability is on the stack");
+    after
+}
+
+/// #986, A. CR 113.7a: the Predator's fight is on the stack independently of
+/// the Predator, and it stays a fight when the Predator dies in response.
+/// CR 701.12b: a fight whose creature has left deals no damage. A card in the
+/// graveyard shows its front face, and the ability used to resolve as that
+/// face's "2 damage to target creature with flying".
+#[test]
+fn nightfall_predators_fight_stays_a_fight_when_the_predator_is_sacrificed_in_response() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let ranger = named_permanent(&mut state, &reg, "Daybreak Ranger", P0);
+    mtg_engine::cards::helpers::apply_transform(&mut state, ranger, &reg);
+    let spirit = named_permanent(&mut state, &reg, "Voiceless Spirit", P1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
+
+    let mut state = ranger_ability_on_the_stack(&state, &reg, ranger, spirit);
+    // In response, the Predator is sacrificed (Tribute to Hunger).
+    state.move_object(ranger, Zone::Graveyard, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    let spirit_obj = state.get_object(spirit).unwrap();
+    assert_eq!(spirit_obj.zone, Zone::Battlefield, "the Spirit survives");
+    assert_eq!(spirit_obj.damage_marked, 0,
+        "a fight whose fighter has left deals no damage (CR 701.12b)");
+}
+
+/// #986, B. CR 712.8 and CR 113.7a: transforming the source does not change
+/// the ability already on the stack. The front face's "2 damage to target
+/// creature with flying", with Moonmist cast in response, used to resolve as
+/// the Predator's 4-power fight, and the Spirit dealt 2 back.
+#[test]
+fn daybreak_rangers_two_damage_stays_two_damage_when_it_transforms_in_response() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let ranger = named_permanent(&mut state, &reg, "Daybreak Ranger", P0);
+    let spirit = named_permanent(&mut state, &reg, "Voiceless Spirit", P1);
+
+    let mut state = ranger_ability_on_the_stack(&state, &reg, ranger, spirit);
+    // In response, Moonmist transforms it.
+    mtg_engine::cards::helpers::apply_transform(&mut state, ranger, &reg);
+    assert_eq!(state.name_of(ranger, &reg), "Nightfall Predator");
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert_eq!(state.get_object(ranger).unwrap().damage_marked, 0,
+        "nothing fought, so nothing dealt damage back");
+    let spirit_obj = state.get_object(spirit).unwrap();
+    assert!(spirit_obj.zone != Zone::Battlefield || spirit_obj.damage_marked == 2,
+        "the Spirit took the activated ability's 2 damage, not 4");
+    assert!(state.game_log.iter().any(|l| l.message.contains("dealt 2 damage to Voiceless Spirit")),
+        "the front face's 2 damage was dealt: {:?}",
+        state.game_log.iter().rev().take(8).map(|l| &l.message).collect::<Vec<_>>());
 }

@@ -10,6 +10,12 @@ use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, Keyword};
 /// // Nightfall Predator 4/4 Werewolf — {R},{T}: this creature fights target creature
 pub struct DaybreakRanger;
 
+/// The two faces' abilities are numbered apart: the stack entry names the
+/// ability by index alone, and it resolves as the ability that was activated
+/// whichever face is up by then (#986).
+const RANGER_DAMAGE: usize = 0;
+const PREDATOR_FIGHT: usize = 1;
+
 
 impl CardBehavior for DaybreakRanger {
     fn card_data(&self) -> CardData {
@@ -74,7 +80,7 @@ impl CardBehavior for DaybreakRanger {
         if obj.is_transformed {
             // Nightfall Predator: {R}, {T}: fight target creature
             vec![ActivatedAbilityDef {
-                ability_index: 0,
+                ability_index: PREDATOR_FIGHT,
                 description: "{R}, {T}: Fight target creature".into(),
                 cost: ManaCost::new(vec![ManaSymbol::Colored(Color::Red)]),
                 requires_tap: true,
@@ -88,7 +94,7 @@ impl CardBehavior for DaybreakRanger {
         } else {
             // Daybreak Ranger: {T}: deal 2 to creature with flying
             vec![ActivatedAbilityDef {
-                ability_index: 0,
+                ability_index: RANGER_DAMAGE,
                 description: "{T}: Deal 2 damage to target creature with flying".into(),
                 cost: ManaCost::free(),
                 requires_tap: true,
@@ -102,14 +108,20 @@ impl CardBehavior for DaybreakRanger {
         }
     }
 
-    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
-        let is_transformed = state.get_object(object_id).is_some_and(|o| o.is_transformed);
-        if let Some(Target::Object(target_id)) = targets.first() {
-            if is_transformed {
-                // Nightfall Predator: fight
-                crate::combat::fight(state, object_id, *target_id, registry);
-            } else {
-                // Daybreak Ranger: deal 2 damage to creature with flying
+    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, targets: &[Target], registry: &CardRegistry) {
+        // CR 113.7a, CR 712.8: the ability is the one that was activated —
+        // named by its index — not the one the face up now would have. This
+        // read `is_transformed` at resolution, so a Predator sacrificed in
+        // response (a card in the graveyard shows its front face) resolved as
+        // the Ranger's 2 damage, and a Ranger flipped by Moonmist in response
+        // resolved as a 4-power fight (#986).
+        let Some(Target::Object(target_id)) = targets.first() else { return };
+        match ability_index {
+            // Nightfall Predator: fight. CR 701.12b: with the Predator gone,
+            // no damage is dealt.
+            PREDATOR_FIGHT => crate::combat::fight(state, object_id, *target_id, registry),
+            // Daybreak Ranger: deal 2 damage to creature with flying.
+            RANGER_DAMAGE => {
                 let effect = crate::state::PendingEffect::DealDamage {
                     amount: 2,
                     source_id: object_id,
@@ -121,6 +133,7 @@ impl CardBehavior for DaybreakRanger {
                     registry,
                 );
             }
+            _ => {}
         }
     }
 

@@ -2364,3 +2364,59 @@ fn every_auras_enchant_ability_is_one_the_attachment_rules_model() {
     assert_none(&unmodelled, "are Auras whose enchant ability the host-eligibility match has no arm for");
     assert_covers(checked, 15, "are Auras");
 }
+
+/// CR 113.7a and CR 712.8: an ability on the stack is the ability that was
+/// activated, whichever face is up when it resolves and whether or not its
+/// source is still there. The stack entry names that ability by
+/// `ability_index` alone, so a double-faced card whose two faces both call
+/// their ability 0 cannot tell them apart at resolution, and it resolves the
+/// face that is up *now*.
+///
+/// Daybreak Ranger did exactly that (#986). Its Nightfall Predator, sacrificed
+/// in response to its own fight, dealt the front face's 2 damage to a flyer
+/// (a card in the graveyard shows its front face). Its front face's 2-to-a-flyer,
+/// with Moonmist cast in response, resolved as a 4-power fight. Garruk Relentless
+/// numbers its faces apart (0/1 and 10/11/12), which is the shape this holds
+/// every double-faced card to.
+#[test]
+fn a_double_faced_cards_two_faces_never_give_different_abilities_one_index() {
+    let reg = registry();
+    let mut offenders = Vec::new();
+    let mut checked = 0;
+    let mut names: Vec<String> = reg.all_names().iter().map(|s| (*s).to_string()).collect();
+    names.sort();
+    for name in &names {
+        let Some(behavior) = reg.get_id_by_name(name).and_then(|id| reg.get(id)) else { continue };
+        if behavior.back_face_data().is_none() {
+            continue;
+        }
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let id = named_permanent(&mut state, &reg, name, P0);
+        // Each face's abilities, by index, with the text the index names.
+        let abilities = |state: &mtg_engine::state::GameState| -> Vec<(usize, String)> {
+            let mut v: Vec<(usize, String)> = behavior.activated_abilities(state, id, &reg)
+                .into_iter().map(|a| (a.ability_index, a.description)).collect();
+            v.extend(behavior.loyalty_abilities(state, id).into_iter()
+                .map(|a| (a.ability_index, a.description)));
+            v
+        };
+        let front = abilities(&state);
+        mtg_engine::cards::helpers::apply_transform(&mut state, id, &reg);
+        assert!(state.get_object(id).unwrap().is_transformed, "{name} transforms");
+        let back = abilities(&state);
+        checked += 1;
+        // The same ability printed on both faces (Bloodline Keeper's and Lord
+        // of Lineage's "{T}: Create a 2/2 Vampire") may share an index: it
+        // resolves the same either way. Two different abilities may not.
+        for (fi, fdesc) in &front {
+            for (bi, bdesc) in &back {
+                if fi == bi && fdesc != bdesc {
+                    offenders.push(format!(
+                        "{name}: ability index {fi} is {fdesc:?} on the front and {bdesc:?} on the back"));
+                }
+            }
+        }
+    }
+    assert_covers(checked, 15, "have a back face");
+    assert_none(&offenders, "give two faces' different abilities the same index");
+}
