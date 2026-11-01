@@ -1358,3 +1358,28 @@ Two new survivors, both accepted. Each was applied by hand and the whole
   around the wrong demands; `compute_autotap_around` still returns a plan
   that pays, so it is a choice among correct plans, as the same filter's
   survivor in `from_hand` already accepted is. Bucket 3.
+
+## 2026-10-31 run 41209900536 (issues #984, #985)
+
+### Shard 1 (issue #984): `funding.rs`, three killed and one accepted
+
+- `allocate_for_x`: `delete !` (the `pool_keep` and the `pool_order`
+  guards) and `== → !=` (the `pool_order` rank, and `remaining == 0`).
+  These are the allocator's own promises about floating mana: it spends
+  around `pool_keep` (#252, #678) and in `pool_order`, and it funds what
+  it can. All of them are killed by one property over every small pool,
+  keep and order:
+  `x_cost_funding_flow::x_is_paid_from_the_pool_in_its_order_and_around_what_the_hand_keeps`.
+  No test had called the allocator with floating mana and no groups.
+- `order_around_demands`: `== → !=` on `g.category == FundingCategory::Dorks`
+  sends mana creatures to the front, so X taps a creature, and with it an
+  attacker or a blocker, while a land sits idle. Killed by
+  `x_cost_funding_flow::x_is_funded_from_a_land_before_a_mana_creature`.
+- `order_around_demands`: `delete !` on `!g.colors_produced.is_empty()`,
+  the last tie-break of the rank, which puts a `{C}`-only source ahead of
+  a coloured one. Accepted (bucket 3). It orders only groups the earlier
+  keys tie on: neither group holds a permanent whose own ability is a
+  payable demand, and both pay the same number of the hand's coloured
+  pips. When the hand needs the colour, the pips key already holds the
+  coloured source back. What is left is a choice among sources nothing
+  else needs, and every such order funds X correctly.

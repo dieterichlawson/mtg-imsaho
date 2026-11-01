@@ -760,3 +760,100 @@ fn an_ability_funding_prompt_names_the_target_it_funds() {
     assert!(desc.contains(&format!("targeting {}", state.obj_name(bear))),
         "the X prompt names the creature it pumps: {desc:?}");
 }
+
+/// What `allocate_for_x` promises about floating mana, over every small pool:
+/// it spends exactly as much of X as the pool can cover, never more of a type
+/// than is floating, in `pool_order` when it is given one, and around
+/// `pool_keep` when it is given one — mana the rest of the hand needs is spent
+/// only once nothing spare is left (#252, #678). The engine sets both from the
+/// same demands (`order_around_demands`); each is the allocator's promise on
+/// its own, so each is checked on its own.
+#[test]
+fn x_is_paid_from_the_pool_in_its_order_and_around_what_the_hand_keeps() {
+    use mtg_engine::funding::{allocate_for_x, FundingOptions};
+    use std::collections::BTreeMap;
+    let types = [ManaType::White, ManaType::Blue, ManaType::Red];
+    let orders: [&[ManaType]; 4] = [
+        &[],
+        &[ManaType::White, ManaType::Blue, ManaType::Red],
+        &[ManaType::Red, ManaType::Blue, ManaType::White],
+        &[ManaType::Blue, ManaType::Red, ManaType::White],
+    ];
+    let mut cases = 0;
+    for amounts in 0..27u32 {
+        let pool: BTreeMap<ManaType, u32> = types.iter().enumerate()
+            .map(|(i, t)| (*t, amounts / 3u32.pow(u32::try_from(i).unwrap()) % 3))
+            .filter(|(_, n)| *n > 0)
+            .collect();
+        let total: u32 = pool.values().sum();
+        for keep_mask in 0..8u32 {
+            // Keep back all of each type the mask names.
+            let keep: BTreeMap<ManaType, u32> = types.iter().enumerate()
+                .filter(|(i, t)| keep_mask >> i & 1 == 1 && pool.contains_key(t))
+                .map(|(_, t)| (*t, pool[t]))
+                .collect();
+            for order in orders {
+                // `pool_keep` and `pool_order` are checked one at a time.
+                if !keep.is_empty() && !order.is_empty() {
+                    continue;
+                }
+                let options = FundingOptions {
+                    pool: pool.clone(), groups: vec![], max_x: total, x_discount: 0,
+                    pool_order: order.to_vec(), pool_keep: keep.clone(),
+                };
+                for x in 0..=total + 1 {
+                    cases += 1;
+                    let (response, shortfall) = allocate_for_x(&options, x);
+                    let spent = |t: &ManaType| response.pool.get(t).copied().unwrap_or(0);
+                    let what = format!("pool {pool:?}, keep {keep:?}, order {order:?}, X = {x}: spent {:?}", response.pool);
+                    assert_eq!(response.pool.values().sum::<u32>(), x.min(total), "funds what it can: {what}");
+                    assert_eq!(shortfall, x.saturating_sub(total), "and says what it could not: {what}");
+                    for t in &types {
+                        assert!(spent(t) <= pool.get(t).copied().unwrap_or(0), "never more than floats: {what}");
+                    }
+                    let spare_left: u32 = types.iter()
+                        .map(|t| pool.get(t).copied().unwrap_or(0) - keep.get(t).copied().unwrap_or(0))
+                        .zip(types.iter().map(spent))
+                        .map(|(spare, s)| spare.saturating_sub(s))
+                        .sum();
+                    let kept_spent = types.iter()
+                        .any(|t| spent(t) > pool.get(t).copied().unwrap_or(0) - keep.get(t).copied().unwrap_or(0));
+                    assert!(!kept_spent || spare_left == 0,
+                        "what the hand keeps is spent only once nothing spare is left: {what}");
+                    for (i, earlier) in order.iter().enumerate() {
+                        for later in &order[i + 1..] {
+                            assert!(spent(later) == 0 || spent(earlier) == pool.get(earlier).copied().unwrap_or(0),
+                                "{later:?} is spent only once {earlier:?}, ahead of it in the order, is gone: {what}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(cases > 500, "only {cases} cases");
+}
+
+/// The groups X is funded from, in the order `order_around_demands` left
+/// them, for Devil's Play cast on `board`.
+fn x_funding_after_casting_devils_play(board: &[&str]) -> mtg_engine::funding::FundingOptions {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let dp = spell_in_hand(&mut state, &registry, "Devil's Play", P0);
+    for name in board {
+        named_permanent(&mut state, &registry, name, P0);
+    }
+    let post_cast = cast_devils_play(&state, &registry, dp);
+    extract_funding(&post_cast).clone()
+}
+
+/// Tapping a mana creature for X costs an attacker or a blocker, and a land
+/// costs nothing: X = 1 with a Plains and an Avacyn's Pilgrim beside the
+/// Mountain that pays {R} taps the Plains.
+#[test]
+fn x_is_funded_from_a_land_before_a_mana_creature() {
+    let options = x_funding_after_casting_devils_play(&["Mountain", "Avacyn's Pilgrim", "Plains"]);
+    let (response, shortfall) = mtg_engine::funding::allocate_for_x(&options, 1);
+    assert_eq!(shortfall, 0);
+    assert_eq!(response.taps.keys().collect::<Vec<_>>(), vec!["Plains"],
+        "the land pays X and the Pilgrim stays untapped: {options:?}");
+}

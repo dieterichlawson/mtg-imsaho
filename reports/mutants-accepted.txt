@@ -673,3 +673,4 @@ mtg-engine/src/engine/actions/cast.rs: replace == with != in set_mode_phrase
 # 2026-10-17 run 39030913251 (#848, #849); reasons in reports/mutation-testing.md.
 mtg-engine/src/cards/helpers.rs: replace && with || in exile_from_graveyard_for_ability
 mtg-engine/src/engine/legal/casting.rs: replace != with == in flashback
+mtg-engine/src/funding.rs: delete ! in order_around_demands
