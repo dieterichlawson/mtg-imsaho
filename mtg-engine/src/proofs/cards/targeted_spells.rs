@@ -642,9 +642,9 @@ card_proof! {
     /// Tribute to Hunger: "target opponent", who chooses a creature they
     /// control and must sacrifice it (the only one is still theirs to
     /// choose: the engine applies a one-option choice, `proofs::actions`);
-    /// with none, nothing. Then the spell's controller gains life equal to
-    /// that creature's toughness as it was sacrificed, none for 0.
-    fn tribute_to_hunger_makes_them_sacrifice_and_you_gain_its_toughness() {
+    /// with none, nothing; and nothing else yet. Their answer is the next
+    /// proof's: the two in one harness ran out of memory at 7 GB.
+    fn tribute_to_hunger_makes_them_choose_a_creature_to_sacrifice() {
         let mut b = spell(Box::new(isd::tribute_to_hunger::TributeToHunger));
         assert!(*b.requirement() == R::OpponentOnly);
         let target = if kani::any() { Target::Player(PlayerId(1)) } else { Target::Illegal };
@@ -661,18 +661,36 @@ card_proof! {
                 source: b.spell, player: PlayerId(1), options,
                 effect: PendingEffect::CardEffect { source_id: b.spell, key: String::new() }, optional: false,
             }]));
-            let chosen = theirs[usize::from(kani::any::<bool>()) % theirs.len()];
-            let toughness = b.state.effective_toughness(chosen, &b.registry).unwrap_or(0);
-            let card = b.get(b.spell).card_id;
-            b.registry.get(card).expect("registered").resolve_card_effect(&mut b.state, b.spell, "", &Target::Object(chosen), &b.registry);
-            assert!(Some(&Act::Sacrifice(chosen)) == super::act(1));
-            if toughness > 0 {
-                assert!(acted() == 3 && Some(&Act::Life(PlayerId(0), toughness)) == super::act(2));
-            } else {
-                assert!(acted() == 2);
-            }
         }
         assert!(Snapshot::of(&b.state) == before);
         std::mem::forget((b, theirs));
     }
+}
+
+/// Tribute to Hunger, its target having chosen the board's object `which`,
+/// a creature of theirs (a constant in each harness): that creature
+/// sacrificed, then the spell's controller gains life equal to its
+/// toughness as it was sacrificed, none for 0; and nothing else.
+fn tribute_to_hunger_sacrifices_the_choice_and_you_gain_its_toughness(which: usize) {
+    let mut b = spell(Box::new(isd::tribute_to_hunger::TributeToHunger));
+    let chosen = b.others[which];
+    let o = b.get(chosen);
+    kani::assume(o.zone == Zone::Battlefield && o.controller == PlayerId(1) && o.card_types.contains(&CardType::Creature));
+    let before = b.resolve(&[Target::Player(PlayerId(1))]);
+    let toughness = b.state.effective_toughness(chosen, &b.registry).unwrap_or(0);
+    let card = b.get(b.spell).card_id;
+    b.registry.get(card).expect("registered").resolve_card_effect(&mut b.state, b.spell, "", &Target::Object(chosen), &b.registry);
+    assert!(Some(&Act::Sacrifice(chosen)) == super::act(1));
+    if toughness > 0 {
+        assert!(acted() == 3 && Some(&Act::Life(PlayerId(0), toughness)) == super::act(2));
+    } else {
+        assert!(acted() == 2);
+    }
+    assert!(Snapshot::of(&b.state) == before);
+    std::mem::forget(b);
+}
+
+case_by_case! { tribute_to_hunger_sacrifices_the_choice_and_you_gain_its_toughness;
+    tribute_to_hunger_sacrifices_the_card_they_chose_and_you_gain_its_toughness: 0,
+    tribute_to_hunger_sacrifices_the_token_they_chose_and_you_gain_its_toughness: 1,
 }
