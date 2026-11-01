@@ -946,7 +946,7 @@ struct AttackerEvasion<'a> {
     unblockable: bool,
     /// `CanOnlyBeBlockedBy` filters, with the source each is read against.
     only_by: Vec<(&'a crate::types::CreatureFilter, ObjectId, PlayerId)>,
-    protections: crate::state::Protections,
+    protections: crate::state::Protections<'a>,
 }
 
 /// What a blocker brings to any attacker.

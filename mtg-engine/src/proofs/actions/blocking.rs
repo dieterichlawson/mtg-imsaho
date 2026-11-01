@@ -102,7 +102,7 @@ fn colors_of(_: &GameState, id: ObjectId, _: &CardRegistry) -> Vec<Color> {
 /// Stands in for `Protections::covers`: whether the attacker has
 /// protection from the blocker, any answer.
 #[allow(dead_code)] // named only by `kani::stub`
-fn covers(_: &Protections, _: &GameState, source: ObjectId, _: &CardRegistry) -> bool {
+fn covers(_: &Protections<'_>, _: &GameState, source: ObjectId, _: &CardRegistry) -> bool {
     answer(source, Asked::Protects)
 }
 

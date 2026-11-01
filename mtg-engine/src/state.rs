@@ -2883,7 +2883,7 @@ impl GameState {
     /// one decision at 2,000 permanents (#641). The walk depends only on the
     /// protected permanent; only the match depends on the source.
     #[must_use]
-    pub fn protection_set(&self, target_id: ObjectId, registry: &crate::cards::CardRegistry) -> Protections {
+    pub fn protection_set<'a>(&'a self, target_id: ObjectId, registry: &'a crate::cards::CardRegistry) -> Protections<'a> {
         use crate::types::ContinuousEffect;
         let mut p = Protections {
             target: target_id,
@@ -2899,11 +2899,11 @@ impl GameState {
             registry,
             &mut |e, src_obj| {
                 match e {
-                    ContinuousEffect::ProtectionFromSubtype { subtype, .. } => p.subtypes.push(subtype.clone()),
+                    ContinuousEffect::ProtectionFromSubtype { subtype, .. } => p.subtypes.push(subtype),
                     // The filter is read against the granting permanent's
                     // controller, so this keeps the source the walk found it on.
                     ContinuousEffect::ProtectionFrom { filter, .. } =>
-                        p.statics.push((filter.clone(), src_obj.id, src_obj.controller)),
+                        p.statics.push((filter, src_obj.id, src_obj.controller)),
                     _ => {}
                 }
                 true
@@ -2913,7 +2913,7 @@ impl GameState {
         for effect in &self.until_end_of_turn {
             if let TemporaryEffect::GrantProtection { target, filter } = effect {
                 if *target == target_id {
-                    p.grants.push(filter.clone());
+                    p.grants.push(filter);
                 }
             }
         }
@@ -5441,20 +5441,24 @@ mod tests {
 
 /// What one permanent has protection from (CR 702.16), as
 /// [`GameState::protection_set`] read it.
+///
+/// It borrows what it holds from the board it was read off: a filter cloned
+/// off the heap is one a proof cannot tell from any other, and matching a
+/// source against it matched every filter there is.
 #[derive(Debug, Clone)]
-pub struct Protections {
+pub struct Protections<'a> {
     target: ObjectId,
     target_controller: PlayerId,
     /// `ProtectionFromSubtype` — from any source with one of these subtypes.
-    subtypes: Vec<String>,
+    subtypes: Vec<&'a str>,
     /// Static `ProtectionFrom` filters, with the permanent granting each and
     /// its controller.
-    statics: Vec<(crate::types::CreatureFilter, ObjectId, PlayerId)>,
+    statics: Vec<(&'a crate::types::CreatureFilter, ObjectId, PlayerId)>,
     /// Until-end-of-turn grants.
-    grants: Vec<crate::types::CreatureFilter>,
+    grants: Vec<&'a crate::types::CreatureFilter>,
 }
 
-impl Protections {
+impl Protections<'_> {
     /// Whether this permanent has protection from `source_id`.
     #[must_use]
     pub fn covers(&self, state: &GameState, source_id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
