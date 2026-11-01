@@ -286,7 +286,10 @@ fn graveyard_casts(
 ) -> Vec<(ManaCost, GyCast)> {
     let Some(obj) = state.get_object(object_id) else { return Vec::new() };
     let Some(behavior) = registry.get(obj.card_id) else { return Vec::new() };
-    let data = behavior.card_data();
+    // The printed costs, read from the registry rather than built with the
+    // rest of the card's data: a card in a graveyard shows its front face.
+    let (printed_cost, printed_flashback) =
+        (registry.printed_cost(obj.card_id, false), registry.printed_flashback_cost(obj.card_id, false));
     // CR 702.33: a card can have several instances of flashback at
     // once — a granted one (Snapcaster Mage, Past in Flames) alongside
     // its printed one — and the player may pay ANY of them. This used
@@ -310,12 +313,12 @@ fn graveyard_casts(
             if *target == obj.id { Some((cost.clone(), GyCast::Flashback)) } else { None }
         } else { None })
         .collect();
-    if let Some(c) = &data.flashback_cost {
+    if let Some(c) = printed_flashback {
         fb_costs.push((c.clone(), GyCast::Flashback));
     }
     if cast_from_gy {
         // Cast from graveyard uses the normal mana cost.
-        if let Some(c) = &data.cost {
+        if let Some(c) = printed_cost {
             fb_costs.push((c.clone(), GyCast::Permitted));
         }
         // CR 601.2b: an alternative cost replaces the mana cost of

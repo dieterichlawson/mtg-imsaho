@@ -99,13 +99,15 @@ pub fn alternative_costs(
     card_id: CardId,
     caster: PlayerId,
 ) -> Vec<ManaCost> {
-    state.effects_controlled_by(caster, registry).into_iter()
-        .filter_map(|e| match e {
-            ContinuousEffect::AlternativeCost { cost, filter }
-                if spell_matches(registry, card_id, &filter) => Some(cost),
-            _ => None,
-        })
-        .collect()
+    let mut costs = Vec::new();
+    state.visit_effects_controlled_by(caster, registry, &mut |e| {
+        if let ContinuousEffect::AlternativeCost { cost, filter } = e {
+            if spell_matches(registry, card_id, filter) {
+                costs.push(cost.clone());
+            }
+        }
+    });
+    costs
 }
 
 /// How much generic mana every applicable `ReduceCost` effect takes off.
@@ -115,23 +117,26 @@ fn total_reduction(
     card_id: CardId,
     caster: PlayerId,
 ) -> u32 {
-    state.effects_controlled_by(caster, registry).iter()
-        .filter_map(|e| match e {
-            ContinuousEffect::ReduceCost { reduction, filter }
-                if spell_matches(registry, card_id, filter) => Some(*reduction),
-            _ => None,
-        })
-        .sum()
+    let mut total = 0;
+    state.visit_effects_controlled_by(caster, registry, &mut |e| {
+        if let ContinuousEffect::ReduceCost { reduction, filter } = e {
+            if spell_matches(registry, card_id, filter) {
+                total += *reduction;
+            }
+        }
+    });
+    total
 }
 
+/// Whether the spell `card_id` is one `filter` names, by its printed front
+/// face (what a spell is cast as), read from the registry rather than built.
 fn spell_matches(registry: &CardRegistry, card_id: CardId, filter: &SpellFilter) -> bool {
-    let Some(data) = registry.card_data(card_id) else { return false };
-    if !data.card_types.contains(&CardType::Creature) {
+    if !registry.printed_card_types(card_id, false).contains(&CardType::Creature) {
         return false;
     }
     match filter {
         SpellFilter::CreatureSpells => true,
-        SpellFilter::CreatureWithSubtype(sub) => data.subtypes.iter().any(|s| s == sub),
+        SpellFilter::CreatureWithSubtype(sub) => registry.printed_subtypes(card_id, false).iter().any(|s| s == sub),
     }
 }
 

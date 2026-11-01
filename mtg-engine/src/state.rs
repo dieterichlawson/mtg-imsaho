@@ -2271,13 +2271,18 @@ impl GameState {
     /// the granted ones, in that order — the two cost functions
     /// used to walk `card_data().continuous_effects` directly and so ignored
     /// a transformed permanent's back face and anything granted at runtime.
-    #[must_use]
-    pub fn effects_controlled_by(
+    ///
+    /// Each is handed to `visit` where it lies rather than collected: a list
+    /// of their clones, dropped once read, is dropped as every shape of
+    /// effect and filter there is in a proof that cannot tell which it holds
+    /// (what a spell costs ran out of memory on it). `effects_controlled_by`
+    /// collects them.
+    pub fn visit_effects_controlled_by(
         &self,
         player: crate::ids::PlayerId,
         registry: &crate::cards::CardRegistry,
-    ) -> Vec<crate::types::ContinuousEffect> {
-        let mut out = Vec::new();
+        visit: &mut dyn FnMut(&crate::types::ContinuousEffect),
+    ) {
         for source in self.objects.values() {
             if source.zone != Zone::Battlefield || source.controller != player {
                 continue;
@@ -2291,9 +2296,20 @@ impl GameState {
                 if condition.is_some_and(|c| !self.check_condition(c, source.id, source.controller, registry)) {
                     continue;
                 }
-                out.push(inner.clone());
+                visit(inner);
             }
         }
+    }
+
+    /// [`Self::visit_effects_controlled_by`]'s effects, collected.
+    #[must_use]
+    pub fn effects_controlled_by(
+        &self,
+        player: crate::ids::PlayerId,
+        registry: &crate::cards::CardRegistry,
+    ) -> Vec<crate::types::ContinuousEffect> {
+        let mut out = Vec::new();
+        self.visit_effects_controlled_by(player, registry, &mut |e| out.push(e.clone()));
         out
     }
 
