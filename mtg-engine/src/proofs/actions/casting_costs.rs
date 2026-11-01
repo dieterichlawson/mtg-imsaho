@@ -144,6 +144,7 @@ card_proof! {
         } else {
             assert!(banned.is_empty());
         }
-        std::mem::forget((registry, state, banned));
+        std::mem::forget(banned);
+        std::mem::forget((registry, state));
     }
 }
