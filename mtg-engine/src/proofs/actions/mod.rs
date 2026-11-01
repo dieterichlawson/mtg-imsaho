@@ -14,6 +14,7 @@ mod library;
 mod moving;
 mod paying;
 mod pending_effects;
+mod power_and_toughness;
 mod predicates;
 mod random;
 mod scopes;
