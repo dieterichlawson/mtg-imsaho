@@ -34,8 +34,8 @@ impl CardBehavior for Prints {
 }
 
 /// The source, on the battlefield or not and either player's, and a
-/// creature of `form` (either player's, on the battlefield, a Spirit or a
-/// Human or neither, with flying or not if a token).
+/// creature of `form` (either player's, on the battlefield, of one of two
+/// subtypes or neither, with flying or not if a token).
 struct Board {
     state: GameState,
     registry: CardRegistry,
@@ -43,7 +43,13 @@ struct Board {
     creature: ObjectId,
 }
 
+/// The board, its creature a Spirit, a Human or neither.
 fn board(effect: fn() -> E, form: Form) -> Board {
+    board_of(effect, form, ["Spirit", "Human"])
+}
+
+/// The board, its creature of either of `kinds` or neither.
+fn board_of(effect: fn() -> E, form: Form, kinds: [&str; 2]) -> Board {
     let mut registry = CardRegistry::new();
     let blank = registry.register(Box::new(Blank));
     let printer = registry.register(Box::new(Prints(effect)));
@@ -58,8 +64,8 @@ fn board(effect: fn() -> E, form: Form) -> Board {
     o.card_types = vec![CardType::Creature];
     o.subtypes = Vec::with_capacity(1);
     match kani::any::<u8>() % 3 {
-        0 => o.subtypes.push("Spirit".into()),
-        1 => o.subtypes.push("Human".into()),
+        0 => o.subtypes.push(kinds[0].into()),
+        1 => o.subtypes.push(kinds[1].into()),
         _ => {}
     }
     o.keywords = Vec::with_capacity(1);
@@ -118,6 +124,42 @@ reaches_what_it_describes! {
     creatures_with_flying_your_opponents_control_are_their_fliers:
         F::And(vec![F::ControlledByOpponent, F::HasKeyword(Keyword::Flying)])
         => |b, yours| !yours && b.state.get_object(b.creature).expect("on the board").keywords.contains(&Keyword::Flying);
+}
+
+/// One proof for each "<subtype> creatures you control" filter the pool's
+/// effects use besides Spirits, over a creature of that subtype, of
+/// another one, or of neither.
+macro_rules! reaches_its_subtypes {
+    ($($name:ident: $filter:expr, $kinds:expr => |$b:ident| $described:expr;)*) => {
+        $(
+            for_each_form! {
+                fn $name(form) {
+                    let $b = board_of(|| E::PreventAttack { scope: EffectScope::Global($filter) }, form, $kinds);
+                    let yours = $b.controller($b.creature) == $b.controller($b.source);
+                    let described = $described;
+                    assert!($b.reached() == ($b.source_on() && yours && described));
+                    std::mem::forget($b);
+                }
+            }
+        )*
+    };
+}
+
+// "Vampire creatures you control" (Lord of Lineage's), "Werewolf
+// creatures you control" (Full Moon's Rise's, Terror of Kruin Pass's),
+// "Human creatures you control" (Mayor of Avabruck's) and "Werewolf and
+// Wolf creatures you control" (Howlpack Alpha's) reach exactly the
+// creatures of theirs those words describe.
+reaches_its_subtypes! {
+    vampire_creatures_you_control_are_your_vampires:
+        F::And(vec![F::ControlledByYou, F::HasSubtype("Vampire".into())]), ["Vampire", "Human"] => |b| b.is("Vampire");
+    werewolf_creatures_you_control_are_your_werewolves:
+        F::And(vec![F::ControlledByYou, F::HasSubtype("Werewolf".into())]), ["Werewolf", "Wolf"] => |b| b.is("Werewolf");
+    human_creatures_you_control_are_your_humans:
+        F::And(vec![F::ControlledByYou, F::HasSubtype("Human".into())]), ["Human", "Spirit"] => |b| b.is("Human");
+    werewolf_and_wolf_creatures_you_control_are_your_werewolves_and_wolves:
+        F::And(vec![F::ControlledByYou, F::Or(vec![F::HasSubtype("Werewolf".into()), F::HasSubtype("Wolf".into())])]), ["Werewolf", "Wolf"]
+        => |b| b.is("Werewolf") || b.is("Wolf");
 }
 
 /// "Other ... creatures you control" reaches the creatures those words
@@ -197,4 +239,43 @@ fn protection_from_a_subtype_is_from_exactly_that_subtype(zombie: bool) {
 case_by_case! { protection_from_a_subtype_is_from_exactly_that_subtype;
     protection_from_zombies_is_from_a_zombie: true,
     protection_from_zombies_is_not_from_another_creature: false,
+}
+
+for_each_form! {
+    /// "Creatures enchanted player controls" (CR 303.4e, a Curse's
+    /// "enchanted player": Curse of Death's Hold, Curse of the Nightly
+    /// Hunt): an effect so scoped reaches exactly the creatures that the
+    /// player its source is attached to controls, while its source is on
+    /// the battlefield. For a source attached to either player.
+    fn creatures_enchanted_player_controls_are_that_players(form) {
+        let mut b = board(|| E::PreventAttack { scope: EffectScope::Global(F::ControlledByAttachedPlayer) }, form);
+        let cursed = PlayerId(u8::from(kani::any::<bool>()));
+        b.state.get_object_mut(b.source).expect("on the board").attached_to_player = Some(cursed);
+        assert!(b.reached() == (b.source_on() && b.controller(b.creature) == cursed));
+        std::mem::forget(b);
+    }
+}
+
+for_each_form! {
+    /// "Attacking creatures you control" (CR 506.4, Instigator Gang's):
+    /// an effect so scoped reaches exactly the creatures its source's
+    /// controller controls that are attacking this combat, while its
+    /// source is on the battlefield. With a combat in which the creature
+    /// attacks or does not, or with no combat.
+    fn attacking_creatures_you_control_are_your_attackers(form) {
+        let mut b = board(|| E::PreventAttack { scope: EffectScope::Global(F::And(vec![F::ControlledByYou, F::Attacking])) }, form);
+        let attacking: bool = kani::any();
+        if kani::any() {
+            let mut combat = crate::state::CombatState::new();
+            if attacking {
+                combat.attackers.insert(b.creature, PlayerId(1));
+            }
+            b.state.combat = Some(combat);
+        } else {
+            kani::assume(!attacking);
+        }
+        let yours = b.controller(b.creature) == b.controller(b.source);
+        assert!(b.reached() == (b.source_on() && yours && attacking));
+        std::mem::forget(b);
+    }
 }
