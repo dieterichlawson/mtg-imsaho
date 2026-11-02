@@ -24,7 +24,7 @@
 //! the trigger resolving, the permanent on the battlefield or gone since,
 //! under either player's control. That the watcher is never told about its
 //! own entering ("another") is the engine's (`triggers::collect`), proved
-//! in `proofs::actions`.
+//! in `proofs::actions::triggering`.
 
 use super::{act, acted, any_object, any_object_of, any_target, asked_for, board, card_proof, case_by_case, each_is, kept, triggers, Act, Form, Kinds, Snapshot};
 use crate::cards::{AttackInfo, CardBehavior, CardRegistry, TargetRequirement as R, TriggerKind};

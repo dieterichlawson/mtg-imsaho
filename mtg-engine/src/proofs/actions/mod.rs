@@ -25,6 +25,7 @@ mod simple_actions;
 mod targeting;
 mod tokens;
 mod transforming;
+mod triggering;
 mod until_end_of_turn;
 
 /// An action proof: the stubs and bounds of a card proof, so that one

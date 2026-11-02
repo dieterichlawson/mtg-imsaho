@@ -44,7 +44,7 @@
 //! card and a token of any characteristics. "Another creature" is the
 //! engine's to decide as the ability triggers (a creature's own death does
 //! not trigger its watcher, `triggers::collect`), proved in
-//! `proofs::actions`.
+//! `proofs::actions::triggering`.
 
 use super::{
     act, acted, any_object, any_target, asked_for, board, card_proof, case_by_case, kept, listed, new_ids, prints_effects,
