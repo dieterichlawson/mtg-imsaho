@@ -146,31 +146,86 @@ fn resolved_with(hook: Hook, expected: &[Option<Target>; 2], n: usize) -> bool {
     r.as_ref().is_some_and(|(h, held, m)| *h == hook && *m == n && held == expected)
 }
 
-/// A spell resolving (CR 608.2b): with targets, none still legal (none
-/// meeting its requirement and the card's), it is countered by the rules,
-/// its effect not happening, and leaves the stack; otherwise it resolves,
-/// its card's resolution handed each target as it was chosen or, where it
-/// may no longer be targeted, as illegal, its other targets kept in place,
-/// and it then leaves the stack. A spell with none resolves. For a spell
-/// either player's with `n` targets, each target either player's.
+/// What [`a_spell_on_top`] finds the engine hands the rest of a spell's
+/// resolution: the spell, its card, its targets (the first two, and how
+/// many) and its controller.
+static mut HANDED: Option<(ObjectId, crate::ids::CardId, [Option<Target>; 2], usize, PlayerId)> = None;
+
+/// Stands in for `stack::resolve_spell_as`: records what it is handed.
+#[allow(dead_code)] // named only by `kani::stub`
+fn resolve_spell_as(
+    _: &mut GameState,
+    _: &CardRegistry,
+    object_id: ObjectId,
+    card_id: crate::ids::CardId,
+    targets: Vec<Target>,
+    caster: PlayerId,
+) {
+    assert!(targets.len() <= 2, "no more targets than this proof gives");
+    let held = [targets.first().cloned(), targets.get(1).cloned()];
+    // SAFETY: as in `answer`.
+    let handed = unsafe { &mut *std::ptr::addr_of_mut!(HANDED) };
+    assert!(handed.is_none(), "handed once");
+    *handed = Some((object_id, card_id, held, targets.len(), caster));
+    std::mem::forget(targets);
+}
+
+/// A spell on top of the stack resolving: it leaves the stack, and the
+/// rest of its resolution (`stack::resolve_spell_as`, the proof below) is
+/// handed the spell, its card, the targets it was cast with, in order,
+/// and its controller. For a spell either player's with `n` targets, each
+/// target either player's. With [`a_spell_resolving`], what a spell
+/// resolving does.
+fn a_spell_on_top(n: usize) {
+    let mut registry = CardRegistry::new();
+    let blank = registry.register(Box::new(Blank));
+    let card = registry.register(Box::new(Resolving));
+    let mut state = crate::proofs::cards::new_game();
+    let (ids, targets) = targets_of(&mut state, blank, n);
+    let controller = PlayerId(u8::from(kani::any::<bool>()));
+    let spell = state.create_object(card, controller, Zone::Stack, None, None);
+    state.get_object_mut(spell).expect("just created").targets = targets;
+    state.stack.push(StackEntry::Spell(spell));
+
+    crate::stack::resolve_top_of_stack(&mut state, &registry);
+
+    let mut chosen = [None, None];
+    for (c, &id) in chosen.iter_mut().zip(&ids[..n]) {
+        *c = Some(Target::Object(id));
+    }
+    // SAFETY: as in `answer`.
+    let handed = unsafe { &*std::ptr::addr_of!(HANDED) };
+    assert!(state.stack.is_empty());
+    assert!(handed.as_ref().is_some_and(|(o, c, held, m, p)| *o == spell && *c == card && *held == chosen && *m == n && *p == controller));
+    std::mem::forget((registry, state));
+}
+
+/// The rest of a spell's resolution (CR 608.2b), from its card, its
+/// targets and its controller (read off it as [`a_spell_on_top`] shows):
+/// with targets, none still legal (none meeting its requirement and the
+/// card's), it is countered by the rules, its effect not happening, and
+/// leaves the stack; otherwise it resolves, its card's resolution handed
+/// each target as it was chosen or, where it may no longer be targeted,
+/// as illegal, its other targets kept in place, and it then leaves the
+/// stack. A spell with none resolves. For a spell either player's with
+/// `n` targets, each target either player's.
 ///
-/// Not yet proved: the solver runs out of memory reducing the formula, at
-/// 12 GB as at 7. A spell's targets are read back off its object, a list
-/// whose length symbolic execution cannot see; with the engine handed an
-/// empty list in its place the case of no target passes in 50 seconds,
-/// and a copy of the list made element by element does not help.
+/// Proved apart from the read: read back off the spell's object, the
+/// targets are a list whose length symbolic execution does not see, and
+/// with the re-check walking that list the solver ran out of memory
+/// reducing the formula, at 12 GB as at 7. Apart, each half proves in
+/// about a minute.
 fn a_spell_resolving(n: usize) {
     let mut registry = CardRegistry::new();
     let blank = registry.register(Box::new(Blank));
     let card = registry.register(Box::new(Resolving));
     let mut state = crate::proofs::cards::new_game();
     let (ids, targets) = targets_of(&mut state, blank, n);
-    let spell = state.create_object(card, PlayerId(u8::from(kani::any::<bool>())), Zone::Stack, None, None);
-    state.get_object_mut(spell).expect("just created").targets = targets;
-    state.stack.push(StackEntry::Spell(spell));
+    let controller = PlayerId(u8::from(kani::any::<bool>()));
+    let spell = state.create_object(card, controller, Zone::Stack, None, None);
     let events = state.events.len();
 
-    crate::stack::resolve_top_of_stack(&mut state, &registry);
+    crate::stack::resolve_spell_as(&mut state, &registry, spell, card, targets, controller);
 
     let chosen = &ids[..n];
     let any_legal = chosen.iter().any(|&id| answer(id, Asked::Legal) && answer(id, Asked::Valid));
@@ -180,7 +235,7 @@ fn a_spell_resolving(n: usize) {
     }
     // SAFETY: as in `answer`.
     let (none, moved) = unsafe { ((*std::ptr::addr_of!(RESOLVED)).is_none(), *std::ptr::addr_of!(MOVED)) };
-    assert!(state.stack.is_empty() && moved == 1);
+    assert!(moved == 1);
     if n == 0 || any_legal {
         assert!(resolved_with(Hook::Spell, &handed, n));
         assert!(matches!(&state.events[events..], [GameEvent::SpellResolved { object }] if *object == spell));
@@ -193,7 +248,7 @@ fn a_spell_resolving(n: usize) {
 /// The proofs of resolving, the re-check's questions and the spell's move
 /// answered as above.
 macro_rules! each_resolution {
-    ($($name:ident: $proof:ident($case:expr)),* $(,)?) => {$(
+    ($($(#[$stub:meta])* $name:ident: $proof:ident($case:expr)),* $(,)?) => {$(
         #[kani::proof]
         #[kani::unwind(7)]
         #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
@@ -204,11 +259,21 @@ macro_rules! each_resolution {
         #[kani::stub(crate::stack::is_target_legal, is_target_legal)]
         #[kani::stub(crate::engine::can_be_targeted_by, can_be_targeted_by)]
         #[kani::stub(crate::state::GameState::move_spell_after_resolve, move_spell_after_resolve)]
+        $(#[$stub])*
         /// The proof above it, for one case.
         fn $name() {
             $proof($case);
         }
     )*};
+}
+
+each_resolution! {
+    #[kani::stub(crate::stack::resolve_spell_as, resolve_spell_as)]
+    a_spell_with_no_target_is_resolved_with_none: a_spell_on_top(0),
+    #[kani::stub(crate::stack::resolve_spell_as, resolve_spell_as)]
+    a_spell_with_one_target_is_resolved_with_it: a_spell_on_top(1),
+    #[kani::stub(crate::stack::resolve_spell_as, resolve_spell_as)]
+    a_spell_with_two_targets_is_resolved_with_both_in_order: a_spell_on_top(2),
 }
 
 each_resolution! {

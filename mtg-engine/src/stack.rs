@@ -360,11 +360,30 @@ fn resolve_top_of_stack_inner(state: &mut GameState, registry: &CardRegistry) {
 
 /// Resolve a spell from the stack.
 fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crate::ids::ObjectId) {
-    let (card_id, mut targets, caster) = match state.get_object(object_id) {
+    let (card_id, targets, caster) = match state.get_object(object_id) {
         Some(obj) => (obj.card_id, obj.targets.clone(), obj.controller),
         None => return,
     };
+    resolve_spell_as(state, registry, object_id, card_id, targets, caster);
+}
 
+/// [`resolve_spell`] once its card, its targets and its controller are
+/// read off the spell.
+///
+/// Its own function so that each half is proved apart
+/// (`proofs::actions::resolving`): read back off the spell's object, the
+/// targets are a list whose length symbolic execution does not see, and
+/// with the re-check walking that list the solver ran out of memory, at
+/// 12 GB as at 7. The read alone, or the re-check of a list it is handed,
+/// proves in about a minute.
+pub(crate) fn resolve_spell_as(
+    state: &mut GameState,
+    registry: &CardRegistry,
+    object_id: crate::ids::ObjectId,
+    card_id: crate::ids::CardId,
+    mut targets: Vec<Target>,
+    caster: crate::ids::PlayerId,
+) {
     // CR 608.2b: Check target legality. If the spell has targets and ALL
     // are illegal, it's countered by game rules (fizzled).
     // This now checks hexproof at resolution time (not just at cast time).
