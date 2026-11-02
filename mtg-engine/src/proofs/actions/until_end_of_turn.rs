@@ -379,6 +379,34 @@ each_count! {
     the_cleanup_step_ends_the_turns_effects_and_control_changes_of_each_the_other_way: [1, 0],
 }
 
+/// The effects [`granted_as_given`] answers from: the harness's own list,
+/// each effect on the card or not, and how many there are.
+static mut GIVEN: (*const (bool, crate::types::ManaCost), usize) = (std::ptr::null(), 0);
+
+/// Stands in for `engine::granted_flashback_costs`, as its proof
+/// ([`reading_the_grants`]) shows it answers: the costs of the effects on
+/// the card, in the order granted. Read off [`GIVEN`], the harness's own
+/// list, which the effects on the board were copied from: off the board's
+/// list of effects, which card each is on is left open to symbolic
+/// execution (that proof says why), and each cost after was walked every
+/// way.
+#[allow(dead_code)] // named only by `kani::stub`
+fn granted_as_given(_: &GameState, id: ObjectId) -> Vec<&crate::types::ManaCost> {
+    assert!(id == ObjectId(1), "asked of the card");
+    // SAFETY: a proof runs on one thread; GIVEN points at the harness's
+    // list, which outlives the call.
+    let (effects, n) = unsafe { *std::ptr::addr_of!(GIVEN) };
+    let mut costs = Vec::with_capacity(2);
+    for i in 0..n {
+        // SAFETY: as above, `i` within the list.
+        let (on_it, cost) = unsafe { &*effects.add(i) };
+        if *on_it {
+            costs.push(cost);
+        }
+    }
+    costs
+}
+
 /// "Gains flashback until end of turn" (CR 702.34a), as Snapcaster Mage
 /// and Past in Flames add it, the cost each gives a card's own mana cost:
 /// a card in its owner's graveyard may be cast from there at each cost
@@ -387,18 +415,22 @@ each_count! {
 /// (which prints no flashback and no permission to cast from a graveyard,
 /// and costs nothing to change) and another, either player's, and an
 /// effect for each of `effects`, on the card or on the other as it says,
-/// a constant in each harness: which card each was on, left to the
-/// solver, and the costs' lists copied to every place one might be,
-/// ran symbolic execution out of memory at 3.5 GB.
+/// a constant in each harness. Which of the turn's effects are on the
+/// card is `engine::granted_flashback_costs`, proved apart
+/// ([`reading_the_grants`]) and standing in here as that proof shows it
+/// answers ([`granted_as_given`]).
 fn granting_flashback<const N: usize>(effects: [(bool, crate::types::ManaCost); N]) {
     let mut registry = CardRegistry::new();
     let blank = registry.register(Box::new(Blank));
     let mut state = crate::proofs::cards::new_game();
     let card = state.create_object(blank, PlayerId(u8::from(kani::any::<bool>())), Zone::Graveyard, None, None);
-    let other = state.create_object(blank, PlayerId(u8::from(kani::any::<bool>())), Zone::Graveyard, None, None);
+    let _other = state.create_object(blank, PlayerId(u8::from(kani::any::<bool>())), Zone::Graveyard, None, None);
+    assert!(card == ObjectId(1));
+    // SAFETY: a proof runs on one thread, and `effects` outlives every
+    // call made below.
+    unsafe { *std::ptr::addr_of_mut!(GIVEN) = (effects.as_ptr(), N) };
     let mut expected: Vec<&crate::types::ManaCost> = Vec::with_capacity(N);
     for (on_it, cost) in &effects {
-        state.until_end_of_turn.push(TemporaryEffect::GrantFlashback { target: if *on_it { card } else { other }, cost: cost.clone() });
         if *on_it && !expected.contains(&cost) {
             expected.push(cost);
         }
@@ -408,6 +440,47 @@ fn granting_flashback<const N: usize>(effects: [(bool, crate::types::ManaCost); 
     assert!(offered.len() == expected.len() && offered.iter().zip(&expected).all(|(a, b)| a == *b));
     std::mem::forget((expected, offered));
     std::mem::forget((registry, state, effects));
+}
+
+/// What `engine::granted_flashback_costs` reads off the turn's effects:
+/// for each of two cards, exactly the costs of the effects that grant it
+/// flashback, each the effect's own (the same object, not one like it), in
+/// the order granted. Over `n` effects granting flashback, each on either
+/// card, and the card and the other each either player's.
+///
+/// Read back off the turn's list, an effect is a union to symbolic
+/// execution: which card one is on it does not see, and the costs walked
+/// after it walked every way, until the solver ran out of memory. Here
+/// nothing is read of a cost but where it is.
+fn reading_the_grants(n: usize) {
+    let mut registry = CardRegistry::new();
+    let blank = registry.register(Box::new(Blank));
+    let mut state = crate::proofs::cards::new_game();
+    let card = state.create_object(blank, PlayerId(u8::from(kani::any::<bool>())), Zone::Graveyard, None, None);
+    let other = state.create_object(blank, PlayerId(u8::from(kani::any::<bool>())), Zone::Graveyard, None, None);
+    let mut on_card = [false; 2];
+    state.until_end_of_turn = Vec::with_capacity(2);
+    for on in on_card.iter_mut().take(n) {
+        *on = kani::any();
+        state.until_end_of_turn.push(TemporaryEffect::GrantFlashback {
+            target: if *on { card } else { other },
+            cost: crate::types::ManaCost::new(Vec::new()),
+        });
+    }
+    let costs: [Option<&crate::types::ManaCost>; 2] = std::array::from_fn(|i| match state.until_end_of_turn.get(i) {
+        Some(TemporaryEffect::GrantFlashback { cost, .. }) => Some(cost),
+        _ => None,
+    });
+    for (id, on) in [(card, true), (other, false)] {
+        let granted = crate::engine::granted_flashback_costs(&state, id);
+        let mut expected = costs.iter().zip(on_card).take(n).filter(|(_, o)| *o == on).map(|(c, _)| c.expect("an effect"));
+        for cost in &granted {
+            assert!(expected.next().is_some_and(|e| std::ptr::eq(*cost, e)));
+        }
+        assert!(expected.next().is_none());
+        std::mem::forget(granted);
+    }
+    std::mem::forget((registry, state));
 }
 
 /// {1}{U}, Snapcaster Mage's own mana cost, as a cost it gives.
@@ -423,6 +496,7 @@ fn red() -> crate::types::ManaCost {
 }
 
 card_proof! {
+    #[kani::stub(crate::engine::granted_flashback_costs, granted_as_given)]
     /// [`granting_flashback`] for one effect on the card.
     fn flashback_until_end_of_turn_reaches_the_card_it_is_on() {
         granting_flashback([(true, one_and_blue())]);
@@ -430,6 +504,7 @@ card_proof! {
 }
 
 card_proof! {
+    #[kani::stub(crate::engine::granted_flashback_costs, granted_as_given)]
     /// [`granting_flashback`] for one effect on the other card.
     fn flashback_until_end_of_turn_on_another_card_gives_this_one_none() {
         granting_flashback([(false, one_and_blue())]);
@@ -437,6 +512,7 @@ card_proof! {
 }
 
 card_proof! {
+    #[kani::stub(crate::engine::granted_flashback_costs, granted_as_given)]
     /// [`granting_flashback`] for two effects of one cost on the card, as
     /// two Past in Flames give it: one way to cast it, not two.
     fn flashback_granted_twice_at_one_cost_is_one_way_to_cast_it() {
@@ -445,6 +521,7 @@ card_proof! {
 }
 
 card_proof! {
+    #[kani::stub(crate::engine::granted_flashback_costs, granted_as_given)]
     /// [`granting_flashback`] for two effects of two costs on the card.
     fn flashback_granted_at_two_costs_is_two_ways_to_cast_it() {
         granting_flashback([(true, one_and_blue()), (true, red())]);
@@ -452,9 +529,31 @@ card_proof! {
 }
 
 card_proof! {
+    #[kani::stub(crate::engine::granted_flashback_costs, granted_as_given)]
     /// [`granting_flashback`] for an effect on the card and one on the
     /// other.
     fn flashback_granted_to_it_and_another_is_one_way_to_cast_it() {
         granting_flashback([(true, one_and_blue()), (false, red())]);
+    }
+}
+
+card_proof! {
+    /// [`reading_the_grants`] with no effect granting flashback.
+    fn no_flashback_granted_until_end_of_turn_is_read_as_none() {
+        reading_the_grants(0);
+    }
+}
+
+card_proof! {
+    /// [`reading_the_grants`] for one effect, on either card.
+    fn flashback_granted_until_end_of_turn_is_read_as_the_effects_on_each_card() {
+        reading_the_grants(1);
+    }
+}
+
+card_proof! {
+    /// [`reading_the_grants`] for two effects, each on either card.
+    fn flashback_granted_twice_until_end_of_turn_is_read_in_order_for_each_card() {
+        reading_the_grants(2);
     }
 }

@@ -308,10 +308,8 @@ fn graveyard_casts(
     // {1}{U}{U})" for a {1}{U}{U} card, which reads as a discount
     // that is not there, and left the hand copy and the graveyard
     // copy with indistinguishable menu rows (issue #300).
-    let mut fb_costs: Vec<(ManaCost, GyCast)> = state.until_end_of_turn.iter()
-        .filter_map(|e| if let crate::state::TemporaryEffect::GrantFlashback { target, cost } = e {
-            if *target == obj.id { Some((cost.clone(), GyCast::Flashback)) } else { None }
-        } else { None })
+    let mut fb_costs: Vec<(ManaCost, GyCast)> = granted_flashback_costs(state, obj.id).into_iter()
+        .map(|cost| (cost.clone(), GyCast::Flashback))
         .collect();
     if let Some(c) = printed_flashback {
         fb_costs.push((c.clone(), GyCast::Flashback));
@@ -349,6 +347,23 @@ fn graveyard_casts(
         }
     }
     unique
+}
+
+/// The costs flashback granted until end of turn gives object `id` (CR
+/// 702.34a: Snapcaster Mage's, Past in Flames'), in the order granted.
+///
+/// Its own function so that it is proved apart from what
+/// [`graveyard_casts`] makes of the costs (`proofs::actions::until_end_of_turn`):
+/// an effect read back off the turn's list is a union to symbolic
+/// execution, which leaves open which card a grant is on, and walked every
+/// way after, the costs offered ran the solver out of memory.
+pub(crate) fn granted_flashback_costs(state: &GameState, id: crate::ids::ObjectId) -> Vec<&ManaCost> {
+    state.until_end_of_turn.iter()
+        .filter_map(|e| match e {
+            crate::state::TemporaryEffect::GrantFlashback { target, cost } if *target == id => Some(cost),
+            _ => None,
+        })
+        .collect()
 }
 
 /// What casting a graveyard card one of [`graveyard_casts`]' ways costs
