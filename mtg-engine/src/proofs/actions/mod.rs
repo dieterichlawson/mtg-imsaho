@@ -12,6 +12,7 @@ mod damage;
 mod delayed;
 mod destruction;
 mod effects;
+mod filters;
 mod fighting;
 mod library;
 mod moving;

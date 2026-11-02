@@ -233,43 +233,70 @@ card_proof! {
     }
 }
 
+/// Points `filters::stand_in` at the filter the board's permanent prints.
+fn print_filter(a: &Attached, registry: &CardRegistry) {
+    let card = a.state.get_object(a.permanent).expect("on the board").card_id;
+    let ContinuousEffect::CanOnlyBeBlockedBy { allowed_blockers, .. } = &registry.printed_continuous_effects(card, false)[0]
+    else {
+        panic!("the permanent prints the restriction")
+    };
+    super::filters::asked_of(allowed_blockers);
+}
+
 /// "Can't be blocked except by <filter>" (CR 509.1b): of the two
-/// creatures, either attacking, the other may block it exactly when the
-/// effect does not reach the attacker or the blocker is what `allowed`
-/// says, the blocker's subtypes any of `subtypes`. On this board nothing
-/// else restricts a block: no creature has flying, intimidate or
-/// protection, and each is an untapped creature that can block.
-fn only_blocked_by(printed: fn() -> ContinuousEffect, subtypes: &[&str], allowed: fn(&[String]) -> bool) {
-    let (a, registry) = attached_printing(Box::new(Builds(printed)), subtypes);
+/// creatures, either attacking and each with flying, reach, both or
+/// neither (as [`flying_or_reach`] answers), the other may block it
+/// exactly when the effect does not reach the attacker or the blocker
+/// matches the effect's filter, and the attacker has no flying or the
+/// blocker has flying or reach (702.9b). On this board nothing else
+/// restricts a block: no creature has intimidate or protection, and each
+/// is an untapped creature that can block.
+fn only_blocked_by(printed: fn() -> ContinuousEffect) {
+    let (a, registry) = attached_printing(Box::new(Builds(printed)), &[]);
+    assert!(a.creatures == [ObjectId(1), ObjectId(2)]);
+    print_filter(&a, &registry);
     let attacker = usize::from(kani::any::<bool>());
     let (at, bl) = (a.creatures[attacker], a.creatures[1 - attacker]);
-    let blocker_subtypes = &a.state.get_object(bl).expect("on the board").subtypes;
     let can = crate::combat::can_block_attacker(&a.state, bl, at, &registry);
-    assert!(can == (!a.reaches[attacker] || allowed(blocker_subtypes)));
+    let up = flying_or_reach(&a.state, bl, Keyword::Flying, &registry) || flying_or_reach(&a.state, bl, Keyword::Reach, &registry);
+    let flies = flying_or_reach(&a.state, at, Keyword::Flying, &registry);
+    assert!(can == ((!a.reaches[attacker] || super::filters::matches(bl)) && (!flies || up)));
     std::mem::forget((a, registry));
 }
 
-card_proof! {
-    /// [`only_blocked_by`] for Stromkirk Noble's "can't be blocked by
-    /// Humans".
-    fn cant_be_blocked_by_humans_reaches_the_creature_it_is_on() {
-        use crate::types::CreatureFilter as F;
-        only_blocked_by(|| ContinuousEffect::CanOnlyBeBlockedBy {
-            allowed_blockers: F::Not(Box::new(F::HasSubtype("Human".into()))), scope: EffectScope::Attached,
-        }, &["Human"], |s| !s.iter().any(|x| x == "Human"));
-    }
+/// The proofs of "can't be blocked except by", the filter standing in as
+/// above.
+macro_rules! each_restriction {
+    ($($name:ident: $printed:expr,)*) => {$(
+        #[kani::proof]
+        #[kani::unwind(7)]
+        #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+        #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+        #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+        #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+        #[kani::stub(crate::state::GameState::has_keyword, flying_or_reach)]
+        #[kani::stub(crate::state::GameState::matches_filter, super::filters::stand_in)]
+        /// [`only_blocked_by`] for the restriction of its name.
+        fn $name() {
+            only_blocked_by($printed);
+        }
+    )*};
 }
 
-card_proof! {
-    /// [`only_blocked_by`] for Blazing Torch's "can't be blocked by
-    /// Vampires or Zombies".
-    fn cant_be_blocked_by_vampires_or_zombies_reaches_the_creature_it_is_attached_to() {
-        use crate::types::CreatureFilter as F;
-        only_blocked_by(|| ContinuousEffect::CanOnlyBeBlockedBy {
-            allowed_blockers: F::Not(Box::new(F::Or(vec![F::HasSubtype("Vampire".into()), F::HasSubtype("Zombie".into())]))),
-            scope: EffectScope::Attached,
-        }, &["Vampire", "Zombie"], |s| !s.iter().any(|x| x == "Vampire" || x == "Zombie"));
-    }
+each_restriction! {
+    // Stromkirk Noble's "can't be blocked by Humans".
+    cant_be_blocked_by_humans_reaches_the_creature_it_is_on: || ContinuousEffect::CanOnlyBeBlockedBy {
+        allowed_blockers: crate::types::CreatureFilter::Not(Box::new(crate::types::CreatureFilter::HasSubtype("Human".into()))),
+        scope: EffectScope::Attached,
+    },
+    // Blazing Torch's "can't be blocked by Vampires or Zombies".
+    cant_be_blocked_by_vampires_or_zombies_reaches_the_creature_it_is_attached_to: || ContinuousEffect::CanOnlyBeBlockedBy {
+        allowed_blockers: crate::types::CreatureFilter::Not(Box::new(crate::types::CreatureFilter::Or(vec![
+            crate::types::CreatureFilter::HasSubtype("Vampire".into()),
+            crate::types::CreatureFilter::HasSubtype("Zombie".into()),
+        ]))),
+        scope: EffectScope::Attached,
+    },
 }
 
 /// Whether each of the two creatures has flying and reach, as
@@ -305,11 +332,14 @@ fn flying_or_reach(_: &GameState, id: ObjectId, keyword: Keyword, _: &CardRegist
 #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
 #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
 #[kani::stub(crate::state::GameState::has_keyword, flying_or_reach)]
+#[kani::stub(crate::state::GameState::matches_filter, super::filters::stand_in)]
 /// "Can't be blocked except by creatures with flying or reach" (CR
 /// 509.1b), Orchard Spirit's: of the two creatures, either attacking and
 /// each with flying, reach, both or neither, the other may block it
-/// exactly when it has flying or reach, or the effect does not reach the
-/// attacker and the attacker has no flying (702.9b, which asks the same).
+/// exactly when the effect does not reach the attacker or the blocker
+/// matches the effect's filter (which is having flying or reach,
+/// `filters`), and the attacker has no flying or the blocker has flying
+/// or reach (702.9b).
 fn blocked_only_by_flying_or_reach() {
     use crate::types::CreatureFilter as F;
     let (a, registry) = attached_printing(Box::new(Builds(|| ContinuousEffect::CanOnlyBeBlockedBy {
@@ -317,12 +347,13 @@ fn blocked_only_by_flying_or_reach() {
         scope: EffectScope::Attached,
     })), &[]);
     assert!(a.creatures == [ObjectId(1), ObjectId(2)]);
+    print_filter(&a, &registry);
     let attacker = usize::from(kani::any::<bool>());
     let (at, bl) = (a.creatures[attacker], a.creatures[1 - attacker]);
     let can = crate::combat::can_block_attacker(&a.state, bl, at, &registry);
     let up = flying_or_reach(&a.state, bl, Keyword::Flying, &registry) || flying_or_reach(&a.state, bl, Keyword::Reach, &registry);
     let flies = flying_or_reach(&a.state, at, Keyword::Flying, &registry);
-    assert!(can == (up || (!a.reaches[attacker] && !flies)));
+    assert!(can == ((!a.reaches[attacker] || super::filters::matches(bl)) && (!flies || up)));
     std::mem::forget((a, registry));
 }
 

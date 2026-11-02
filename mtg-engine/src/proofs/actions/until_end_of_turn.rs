@@ -184,24 +184,25 @@ card_proof! {
     }
 }
 
-/// "Gain protection from non-Human creatures until end of turn" (CR
-/// 702.16), the protection Spare from Evil gives: a creature with such an
-/// effect on it has protection from a source exactly when that source is
-/// a creature and not a Human, and the other creature has protection from
-/// nothing. Both creatures on the battlefield; the source either player's,
-/// on the battlefield, a creature or an enchantment and a Human or not as
-/// `(creature, human)` says, a constant in each harness.
-fn protection_from_non_humans((creature, human): (bool, bool)) {
+/// "Gains protection from non-Human creatures until end of turn" (CR
+/// 702.16), as Spare from Evil adds it: of two creatures, the one the
+/// effect is on has protection from a source, either player's, exactly
+/// when the source matches the effect's filter, and the other has none.
+/// The filter stands in as any answer, checked to be the effect's own
+/// (`filters::stand_in`); that it matches exactly a creature that is not
+/// a Human is `filters`'s proof.
+#[kani::proof]
+#[kani::unwind(7)]
+#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+#[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+#[kani::stub(crate::state::GameState::matches_filter, super::filters::stand_in)]
+fn protection_until_end_of_turn_is_from_what_its_filter_matches() {
     let mut registry = CardRegistry::new();
     let blank = registry.register(Box::new(Blank));
     let mut b = two_creatures([blank, blank], false);
-    let source = b.state.create_object(blank, PlayerId(u8::from(kani::any::<bool>())), Zone::Battlefield,
-        if creature { Some(1) } else { None }, if creature { Some(1) } else { None });
-    let s = b.state.get_object_mut(source).expect("just created");
-    s.card_types = vec![if creature { CardType::Creature } else { CardType::Enchantment }];
-    if human {
-        s.subtypes = vec!["Human".to_string()];
-    }
+    let source = b.state.create_object(blank, PlayerId(u8::from(kani::any::<bool>())), Zone::Battlefield, Some(1), Some(1));
     let on = either();
     b.state.until_end_of_turn.push(TemporaryEffect::GrantProtection {
         target: b.creatures[on],
@@ -210,16 +211,12 @@ fn protection_from_non_humans((creature, human): (bool, bool)) {
             CreatureFilter::Not(Box::new(CreatureFilter::HasSubtype("Human".into()))),
         ]),
     });
+    let TemporaryEffect::GrantProtection { filter, .. } = &b.state.until_end_of_turn[0] else { unreachable!("just pushed") };
+    super::filters::asked_of(filter);
     for i in 0..2 {
-        assert!(b.state.has_protection_from(b.creatures[i], source, &registry) == (i == on && creature && !human));
+        assert!(b.state.has_protection_from(b.creatures[i], source, &registry) == (i == on && super::filters::matches(source)));
     }
     std::mem::forget((b, registry));
-}
-
-case_by_case! { protection_from_non_humans;
-    protection_from_non_humans_until_end_of_turn_is_from_a_non_human_creature: (true, false),
-    protection_from_non_humans_until_end_of_turn_is_not_from_a_human: (true, true),
-    protection_from_non_humans_until_end_of_turn_is_not_from_a_noncreature: (false, false),
 }
 
 /// Stands in for `GameState::has_protection_from`: nothing has protection
@@ -235,11 +232,21 @@ fn protected_from_nothing(_: &GameState, _: ObjectId, _: ObjectId, _: &CardRegis
 /// other than Werewolves and Wolves" (CR 615.1), as Moonmist adds it: the
 /// one effect that applies to damage (616.1) is that prevention, named
 /// for the card that made it, exactly when the damage is combat damage
-/// and its source is neither a Wolf nor a Werewolf; to other damage, none
-/// applies. For damage combat or not, from a creature of either player's
-/// of the subtype `kind` names (a constant in each harness), to another
-/// creature or to either player.
-fn moonmist_prevention(kind: Option<&str>) {
+/// and its source does not match the effect's filter; to other damage,
+/// none applies. For damage combat or not, from a creature of either
+/// player's, to another creature or to either player. The filter stands
+/// in as any answer, checked to be the effect's own
+/// (`filters::stand_in`); that it matches exactly a Wolf or a Werewolf is
+/// `filters`'s proof.
+#[kani::proof]
+#[kani::unwind(7)]
+#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+#[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+#[kani::stub(crate::state::GameState::has_protection_from, protected_from_nothing)]
+#[kani::stub(crate::state::GameState::matches_filter, super::filters::stand_in)]
+fn combat_damage_this_turn_is_prevented_from_what_the_filter_does_not_match() {
     use crate::damage::{applicable_effects, DamageEffect, DamageKind, PendingDamage, Prevention};
     use crate::events::DamageTarget;
     let mut registry = CardRegistry::new();
@@ -247,13 +254,12 @@ fn moonmist_prevention(kind: Option<&str>) {
     let b = two_creatures([blank, blank], false);
     let mut state = b.state;
     let (source, other) = (b.creatures[0], b.creatures[1]);
-    if let Some(kind) = kind {
-        state.get_object_mut(source).expect("on the board").subtypes = vec![kind.to_string()];
-    }
     state.until_end_of_turn.push(TemporaryEffect::PreventCombatDamageExcept {
         filter: CreatureFilter::Or(vec![CreatureFilter::HasSubtype("Wolf".into()), CreatureFilter::HasSubtype("Werewolf".into())]),
         source_name: "a prevention".into(),
     });
+    let TemporaryEffect::PreventCombatDamageExcept { filter, .. } = &state.until_end_of_turn[0] else { unreachable!("just pushed") };
+    super::filters::asked_of(filter);
     let combat: bool = kani::any();
     let target = if kani::any() { DamageTarget::Object(other) } else { DamageTarget::Player(PlayerId(u8::from(kani::any::<bool>()))) };
     let pd = PendingDamage {
@@ -263,35 +269,12 @@ fn moonmist_prevention(kind: Option<&str>) {
 
     let effects = applicable_effects(&state, &pd, &registry);
 
-    if combat && kind.is_none() {
+    if combat && !super::filters::matches(source) {
         assert!(effects.len() == 1 && matches!(&effects[0], DamageEffect::PreventAll(Prevention::ThisTurn(name)) if name == "a prevention"));
     } else {
         assert!(effects.is_empty());
     }
     std::mem::forget((registry, state, pd, effects));
-}
-
-/// [`moonmist_prevention`] for each kind of source.
-macro_rules! each_source {
-    ($($name:ident: $kind:expr),* $(,)?) => {$(
-        #[kani::proof]
-        #[kani::unwind(7)]
-        #[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
-        #[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
-        #[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
-        #[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
-        #[kani::stub(crate::state::GameState::has_protection_from, protected_from_nothing)]
-        /// The proof above it, for one kind of source.
-        fn $name() {
-            moonmist_prevention($kind);
-        }
-    )*};
-}
-
-each_source! {
-    combat_damage_this_turn_from_a_creature_neither_wolf_nor_werewolf_is_prevented: None,
-    combat_damage_this_turn_from_a_wolf_is_not_prevented: Some("Wolf"),
-    combat_damage_this_turn_from_a_werewolf_is_not_prevented: Some("Werewolf"),
 }
 
 /// The cleanup step's end of the turn's effects (CR 514.2,
