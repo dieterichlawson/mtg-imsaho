@@ -142,10 +142,13 @@ A proof is a proof relative to what it assumes. Here that is:
 - the **glue** that is not proved: reading `ManaPool`'s `BTreeMap` into six
   counts and writing the result back, mapping blockers' ids to positions,
   turning X's source groups into counts and the kernel's taps back into
-  mana, reading the board into the turn's four facts and into the matrix
-  of blocks the rules allow pair by pair, and acting on a creature's fate. Each is a few lines with unit tests; the combat mapping is also
-  covered by the exhaustive division test, and the X pool step is asserted
-  against the kernel's proved amounts on every call in a debug build.
+  mana, reading the board into the turn's four facts, and acting on a
+  creature's fate (the matrix of blocks the rules allow pair by pair, read
+  off the board by `combat::can_block_attacker`, is proved with Kani:
+  `proofs::actions::blocking`). Each is a few lines with unit tests; the
+  combat mapping is also covered by the exhaustive division test, and the
+  X pool step is asserted against the kernel's proved amounts on every
+  call in a debug build.
 
 ## The tiers
 
@@ -162,7 +165,7 @@ values. Each gets a spec written from the CR, proved for every input.
 | X funding: which X can be paid, and the taps that pay it (`fundable_x_values`, `allocate_for_x`) | 107.3, 601.2f-h | **proved** for every board and every X |
 | autotap planner soundness: a plan it returns pays the cost | 601.2g-h, 605.3 | **checked exhaustively** on every board of up to three sources (29.6 million); not yet proved for every board |
 | autotap planner completeness: if some set of sources can pay, it finds one | 601.2g | **checked exhaustively** as above, one defect fixed |
-| power and toughness from counters and effects (layer 7) | 611.3a, 613.1f, 613.4 | **checked** against the card-semantics reference (pumps, counters, Auras, Equipment, anthems and lords applied continuously, counts) on every cast, death and combat; not yet extracted into a kernel |
+| power and toughness from counters and effects (layer 7) | 611.3a, 613.1f, 613.4 | **proved** on the engine with Kani for a setting, +1/+1 and -1/-1 counters and a change at once, each change until end of turn, and each change an Aura, Equipment or lord prints (`proofs::actions::power_and_toughness`, `until_end_of_turn`, `effects`, `scopes`), on two creatures; **checked** against the card-semantics reference on every cast, death and combat; not extracted into a kernel |
 | lethal damage, deathtouch, zero toughness, and counter pairs | 704.5f-h, 704.5q | **proved** (`sba::creature_fate`, `sba::annihilate`), called by the state-based actions; indestructible, regeneration and attachments stay in the engine, checked against the same reference |
 | the turn's step sequence and who gets priority | 500.1, 103.7a, 508.8, 510.4, 514.3a, 117.3-4 | **proved** (`turn::next_step`, `turn::after_pass`), called by `advance_step` and the game loop |
 | which submitted blocks stand | 509.1a-b | **proved** (`blocks::judge_blocks`), called by `declare_blockers` |
@@ -1217,6 +1220,133 @@ sits in memory. What was measured, and what the proofs do about each:
   the engine actions proved beside them: the payment went from out of
   memory at 7 GB in symbolic execution (2.5 million steps) to 984
   thousand steps and 13.8 million clauses.
+- **A generic pip over a pool the solver chose.** With the activation
+  stood in for, paying {1}, and {1}{G} with green floating, by an
+  untapped Forest still ran out of memory at 12 GB (41 million clauses),
+  {1} with its green held to a constant as well: paying a generic pip
+  orders what the pool has beyond the colours' needs to choose what to
+  spend, and over amounts the solver left open the order was the
+  formula, even where the pool paid alone. Over each pool constant
+  (white, green and colourless each from none to two, for {1}{G} with
+  one or two green, for each player: 54 harnesses for {1} and 36 for
+  {1}{G}, together the pools the one harness was over), each is 1.3 to
+  2.3 million clauses and passes, at 3.5 GB or, the four that tap the
+  Forest, at 7, in 154 to 368 seconds.
+- **A list of clones, read and dropped.** What a spell costs read the
+  cost changes its caster's permanents print through
+  `effects_controlled_by`, which collected a clone of every effect; the
+  list, dropped once read, was dropped as every shape of effect and filter
+  there is, and Heartless Summoning's reduction ran out of memory at 3.5
+  GB in symbolic execution. Visited where they lie
+  (`visit_effects_controlled_by`), and the spell's types read off its
+  printed face rather than its whole data built, each cost passes in
+  about thirty seconds. `global_effects` collected clones the same way,
+  and Stony Silence's and Nevermore's proofs, which read it, ran out of
+  memory at 7 GB; visited in place (`visit_global_effects`, 06a47c7,
+  Nevermore's names borrowed from the effect), they pass in 70 and 30
+  seconds. Every proof of paying follows it, and is run again (below).
+- **A sort of a list of open length.** Which effects apply to damage
+  (Ghostly Possession's, Unbreathing Horde's, Inquisitor's Flail's,
+  Moonmist's) collected each list and then sorted and deduplicated it: a
+  proof that leaves the list's length open follows the sort through every
+  length's sorting network, four fifths of what Inquisitor's Flail's proof
+  cost. Built in order as it is found (`insert_once_in_order`), the lists
+  are the same and the sort is gone.
+- **A filter cloned, then matched.** "Can't be blocked except by" was
+  kept as a clone of its filter for each attacker, and a filter cloned off
+  the heap is one a proof cannot tell from any other: matching a blocker
+  against it matched every filter there is. Borrowed where it is printed
+  (`walk_effects` names the lifetime its visitor's effects live for), and
+  the card that prints it in a proof building its effect where it prints
+  it rather than holding one and cloning it (`effects::Builds`, as
+  `scopes::Prints`). `Protections` cloned its filters the same way and
+  borrows them now too (70e09e5; `can_be_targeted_by` asks it, so every
+  card proof that lists targets is run again, below). Neither was enough for
+  Stromkirk Noble's and Blazing Torch's, nor for Spare from Evil's
+  protection or Moonmist's prevention, which still run out of memory at
+  7 GB in symbolic execution: profiled, matching the blocker against the
+  only-by filter is three quarters of the work, the filter behind a `Box`
+  in an effect kept on the heap matched as every filter there is
+  (keywords, card types, colours), and `precise-enums.py` does not reach
+  a filter there. A tag of its own for the filter, which would let it,
+  made other proofs worse when tried (below).
+- **An expected list of open length.** The cleanup step's proof first
+  built the list of control changes it expected by pushing one as each
+  creature returned: a list whose length and contents the solver left
+  open, and each comparison with what was recorded was against every kind
+  of action there is (70% of the proof). Each case's list written out,
+  of a known length, is what `asked_for` wants.
+- **A card's whole data, built to read one part.** The trigger
+  collector asked whether a card prints a trigger, and what it says, by
+  building the card's `CardData` (`card_has_trigger`,
+  `trigger_description`), and the stack asked a card for its target
+  requirement. Each dropped value holds target requirements, and a
+  dropped `TargetRequirement` read back so is dropped as every shape one
+  may have, recursively: nine tenths of what the trigger collector's
+  proofs and the stack's cost, out of memory at 7 GB. A tag of its own
+  for `TargetRequirement` (`repr(u8)` under Kani) did not change that, and
+  tags for the filters and effects as well (`CreatureFilter`,
+  `EffectScope`, `ContinuousEffect`) made it worse: a scope proof of 41
+  seconds ran out of memory at 7 GB with them. What did: a value built to
+  be read is left undropped in the proofs (`cards::transient`, a24580f;
+  nothing in a card's data has a destructor that does anything but free,
+  and freeing stands in as nothing), and the registry's printed faces,
+  which already list each face's kinds of trigger, are asked first
+  (`prints_trigger`, 66df5a7, e4c0600), so a card printing no trigger of
+  the kind builds nothing. The same answers, which the engine's tests
+  hold.
+- **An event of a kind the solver chose.** A proof of combat damage
+  over combat damage and noncombat damage built the event as one or the
+  other and handed it to the collector in a list on the heap: read back,
+  it was an event of every kind, and the collectors for blocks, deaths
+  and attacks ran too, three quarters of the work, out of memory at 7 GB.
+  Handed a batch on the stack, one constant event down each branch, each
+  passes in 59 to 101 seconds. The collector's own batch had the same
+  shape: `collect_triggers` cloned the events to read them beside the
+  state, and now holds them apart while the collectors run (0b53fcb).
+- **Which list a trigger is filed in.** With the controller of an
+  ability and the active player both left to the solver, which of the
+  collector's two lists the ability goes in is a real question, and with
+  two places it might be written at, the ability was written into each
+  place of each list it might be at: three quarters of a formula out of
+  memory at 7 GB. With the controller a constant, the delayed exile's
+  resolving passes in 51 seconds; with the token's zone a constant too
+  (left open, the step's own triggers were looked for on a list of
+  permanents of a length symbolic execution could not see, and it built
+  the prompt to order a queue of one), the end of combat's passes in 84.
+- **A list inside a narrow variant.** An event's declared attackers are
+  a list in `GameEvent::AttackersDeclared`, a variant narrower than the
+  enum's widest, which `precise-enums.py` leaves as written: read back,
+  the list's length is one symbolic execution cannot see, and the
+  collector's loop over it ran to the starting bound, four passes, three
+  over attackers it could not rule out, the attached Equipment's ability
+  raised in each. Bounded to two passes (`// loop bound:
+  triggers::collect::combat::attackers_declared#2 2`, a loop number now
+  being something a bound may name, 133a83d), the unwinding assertion
+  proving no third is taken, the four Equipment proofs pass in 174 to
+  187 seconds.
+- **A stack entry cloned to be read, and dropped.** Resolving the top of
+  the stack cloned the entry to match on it, an ability's carrying its
+  target requirement: cloned off the heap, every shape one may have, nine
+  tenths of an ability's resolution. It is matched where it lies now
+  (e253dfe), and the popped entry, kept as the resolving ability or done
+  with, is left undropped in a proof (`cards::discard`).
+- **Names listed for a log line, again.** A resolution built the names
+  of the targets gone illegal, for the log alone (a join of them for the
+  line first, then the list itself): pushed to along paths symbolic
+  execution could not tell apart, each name written into a buffer it
+  could not tell either rewrote every byte of each, and the solver ran
+  out of memory reducing the formula. They are named when the line is
+  written now (`NewlyIllegal`, f7ed1bc), which in a proof is never.
+  With that, and the harness's own lists of targets held as arrays of
+  ids (each list of targets cloned, walked and compared was pointers
+  turned into numbers to check their alignment, which the solver relates
+  to every object they might point into: 224 such in a spell's proof, 65
+  in the delayed exile's), an ability's resolution passes in 49 to 80
+  seconds. A spell's still runs out of memory in the solver, at 12 GB as
+  at 7: its targets are read back off its object, a list whose length
+  symbolic execution cannot see, and handed an empty list in its place,
+  the case of no target passes in 50 seconds.
 - **CBMC's memory checks.** `kani-bounded.py` leaves out CBMC's pointer,
   bounds and division checks (`--memory-checks` keeps them): that safe
   Rust reads only memory it may is the compiler's guarantee, and Rust's
@@ -1234,6 +1364,7 @@ for both players and boards as its doc comment states):
 | `tap`, `tap_for` (701.21a, 110.5) | proved, 59 s |
 | `untap`, `untap_for` (701.21b, 110.5) | proved, 60 s |
 | `discard_card`, `discard_card_for` (701.8a) | proved, 91 s |
+| `discard_cards`, N from a hand of 0 to 2 | proved, 70 to 159 s |
 | `attach` (701.3a, 701.3b, 702.6c) | proved, 82 s |
 | `add_counters`, `add_counters_quiet` (122.1) | proved, 86 s |
 | `remove_counters` | proved, 74 s |
@@ -1243,23 +1374,55 @@ for both players and boards as its doc comment states):
 | `player_loses`, `end_game` (104.3) | proved, 37 s and 52 s |
 | `draw_cards` (121.1, 121.2, 704.5b, 614.1), a library of 0 to 3 | proved, 120 to 231 s |
 | `mill_cards`, `mill_one` (701.13a), a library of 0 to 2 | proved, 54 to 190 s |
+| `put_into_library`, top or bottom, from the library itself or exile, a library of 0 to 3 | proved, 79 to 157 s |
 | `shuffle_library` (701.20a), `choose_at_random` of 0 to 4, `flip_coin`, `random_below` | proved, 6 to 67 s |
 | `counter_spell`, `counter_spell_exiling` (701.5a, 702.34a) | proved, 319 s |
 | `apply_pending_effect`: damage, destroy, sacrifice, return to hand, -N/-N, can't block, a card's own effect, a search's answer | proved, 64 to 173 s each |
 | the targeting predicates (`is_creature`, colours, card types, keywords, filters, `can_be_targeted_by`) | proved, 13 to 103 s each |
 | an Aura's or Equipment's printed effect reaching the creature it is attached to (613.1, 611.3a): each P/T change, keyword and Human condition the pool prints, can't attack, can't block, attacks each combat, doesn't untap | proved, 36 to 76 s each |
-| `try_destroy`, `try_destroy_by`, `try_destroy_no_regen`, `sacrifice_by` (701.7a, 702.12b, 701.15a, 701.17a), each its own harness | proved, 154 to 174 s each |
-| `present_target_choice` (a choice of target applied at once or asked) | proved, 149 s |
+| `try_destroy`, `try_destroy_by`, `try_destroy_no_regen`, `sacrifice_by` (701.7a, 702.12b, 701.15a, 701.17a), and `try_destroy_all`, `try_destroy_all_by` (each destroyed as it would be alone), each its own harness | proved, 146 to 285 s each |
+| `present_target_choice`, `present_optional_target_choice` (a choice of target applied at once or asked) | proved, 121 s |
 | `fight` (701.12a) | proved, 113 s |
 | damage on a board printing no effect: only protection applies (615) | proved, 62 s |
 | tokens entering attacking (506.3, 508.4), a token on a board without a planeswalker | proved, 161 s, at seven gigabytes |
 | `prune_effects_on_departed_objects` (400.7): each kind of effect about either object or one gone, and two or three in order | proved, 52 to 198 s each, but the prevention's (past four gigabytes) |
 | `damage::perform` (120.3, 702.2b, 702.15b) on either player | proved, 212 and 219 s |
 | damage nothing prevents or replaces, through the replacement layer (616.1), to either player | proved, 89 and 91 s |
+| `search_library` (701.19a-b): asked among the cards with the quality, each card once, a search with nothing to find shuffled or declined | proved, 198 s |
 | `finish_library_search` (701.19a, 614.1c, 302.6) | proved, 133 s, once defect 12 was fixed |
 | `arrives_tapped` (614.1c), a change of control, adding mana to a pool | proved, 49 to 65 s each |
 | the creature groups a card's effect names ("creatures you control", "your opponents control", "creature tokens you control", "with flying your opponents control", "as long as you control a Human", "as long as an opponent controls a Human"), for a card and a token | proved, 32 to 65 s each |
 | `replacement::for_entering` on a board printing no replacement (614.1) | proved, 39 s |
+| `move_object`, `move_object_under_control` (400.7): a card from each zone it can leave into each it can go to, each pair its own harness | proved, 45 to 251 s each |
+| `create_tokens_with_subtypes`, `create_token_copy`, `create_token_with_defined_pt` (111.2-4, 707.2, 604.3), as many as the replacement layer gives (614.1b) | proved, 51 to 251 s each |
+| `apply_transform` (701.28), and so `transform_quietly`, which it calls and logs around: exactly a double-faced permanent turned over, not a token or a copy by way of a one-faced card (701.28c), nor one transformed since the ability transforming it went on the stack (701.28f) | proved, 89 s |
+| `store_ids`, `load_ids`, `clear_ids`: the lists a card keeps while it waits on an answer read back as stored, every other entry kept | proved, 9 to 91 s each |
+| `payment_plan_with_sources`, `pay_cost_with_sources` (118.3, 302.6, 605.3a, 608.2g): with nothing to tap, and with a Forest, its plan, its payment and the Forest's activation, for six costs, either player and each pool of up to two of white, green and colourless | proved, 106 to 641 s each |
+| what each until-end-of-turn effect a card adds does (611.2a): one or two power and toughness changes on a creature (613.4c), each keyword granted (613.1f), defender lost, can't block (509.1a) | proved, 24 to 45 s each |
+| the cleanup step's end of them (514.2, `end_until_end_of_turn_effects`), each creature whose control one changed going to whom the effects still in force give it (613.7a, 110.2a) | proved, 226 to 402 s each, at 7 GB but for two changes of the second creature's, which took 12 |
+| a creature's power and toughness from a setting, counters and a change at once (613.4b-c, 613.7a), none, one or two settings | proved, 48 to 75 s each |
+| what each static effect a card prints does once it reaches a creature, beyond those above: can't be blocked (509.1b), Ghostly Possession's prevention, Unbreathing Horde's, Inquisitor's Flail's doubling (615.1, 614.1a) | proved, 34 to 157 s each |
+| the scopes the Curses ("creatures enchanted player controls"), Instigator Gang ("attacking creatures you control") and the lords ("Vampire", "Werewolf", "Human", "Werewolf and Wolf creatures you control") print, for a card and a token | proved, 26 to 57 s each |
+| Heartless Summoning's reduction and Rooftop Storm's alternative cost (601.2f, 118.9), each the card itself | proved, 28 to 35 s each |
+| who may block whom (`can_block_attacker`, 509.1a-b, 702.9b, 702.13b, 702.16b), every answer to every question it asks | proved, 30 s |
+| the trigger collector (`triggers::collect::for_event`, 603.2, 603.3b): each kind of event a card in the pool has a trigger on (entering, dying, a step's beginning, a spell cast, attacking, blocking and being blocked, combat damage to a player or a creature, damage to a player, leaving, a card milled) raises the abilities it should, from the objects and under the controllers it should, exactly when their conditions hold, filed with the active player's or the other's | proved, 37 to 168 s each |
+| a delayed trigger, the exile of Geist of Saint Traft's token (603.7a, 603.7d, 400.7): the end of combat puts it on the stack once, from Geist, under its controller, and it exiles the token if the token is still on the battlefield | proved, 50 to 91 s each |
+| a spell's or ability's resolution (`resolve_top_of_stack`, 608.2b, 602.2a, 606.5): with targets none of which is legal it does nothing, and otherwise the card's resolution is handed each target as chosen or as illegal | proved for an activated or loyalty ability, 49 to 80 s each; a spell's three written and not yet proved (below) |
+| written and not yet proved, each out of memory at 7 GB (the entries above say why): a spell's resolution (three: its targets read back off its object); "can't be blocked except by" (Stromkirk Noble's, Blazing Torch's, and by flying or reach: three), protection from non-Humans until end of turn (three) and Moonmist's prevention (three), each a filter behind a `Box` in an effect on the heap; flashback granted until end of turn (five: its costs cloned and compared off the heap, out of memory in the solver) | not yet proved |
+
+A card proof ends at what the card leaves on the board: Giant Growth's
+says the card adds a `TemporaryEffect::ModifyPT` of +3/+3 on its target
+and changes nothing else, Heartless Summoning's that it prints a
+`ReduceCost` of two for creature spells, Geist of Saint Traft's that its
+attack leaves a delayed exile. The rows from the until-end-of-turn
+effects down are what the engine makes of each such thing: for the kinds
+they name, the question that reads it answers what the card's words say,
+and the last row names the kinds whose proofs are written and do not yet
+go through. `ModifyPTWhileSourceInPlay`, the one kind no card adds, has
+none. Two engine lists became functions for this,
+`end_until_end_of_turn_effects` from the cleanup step and
+`names_that_cant_be_cast` from the legal actions, unchanged; the others
+the entries above name were changed to read what they read in place.
 
 Three of these held only once the function asked what the rule says:
 `untap` untapped a card off the battlefield, `discard_card` discarded a
@@ -1281,13 +1444,17 @@ lists (`creatures_controlled_by`, Grimoire of the Dead's scan), the
 engine's tests passing after each. Every harness those changes reached
 was run again.
 
-Every card proof passes: 989 harnesses over the 248 cards and four
-tables of cards, at the code of the head (`reports/kani-card-ledger.md`,
-card by card). Of the 1,586 harnesses in all, 1,565 pass and none fails.
-The 21 left are proofs of paying with a Forest to tap, which the card
-proofs' stand-in for a payment rests on: mostly the payments of a cost
-with a generic pip, or of no colour, by an untapped Forest, out of
-memory at 6.5 GB and running alone at 12.
+Every card proof passed at 2e6ea36: 989 harnesses over the 248 cards
+and four tables of cards (`reports/kani-card-ledger.md`, card by card),
+and the 21 proofs of paying with a Forest left open then pass now, each
+pool a constant (above). The engine changes since, which the entries
+above name, reach most proofs (`Protections`, which every proof that
+lists targets follows; the rules-changing effects, which every payment
+and list of legal actions follows), so every harness, 1,793 now, is run
+again at one commit, 6b80c8a: those that passed under 4 million clauses
+at 3.5 GB four at a time, then the rest and any that ran out at 7 GB two
+at a time, then any that ran out again alone at 12. The ledger and the
+counts here are written from that run when it is in.
 
 A counterexample can be of a board no game reaches, which is then the
 board's error and not the card's: the board the counted creatures are
