@@ -179,10 +179,13 @@ impl CardBehavior for CivilizedScholar {
         if !crate::cards::helpers::still_on_battlefield(state, self_id) {
             return;
         }
-        let is_transformed = state.get_object(self_id).is_some_and(|o| o.is_transformed);
+        // Homicidal Brute's ability, so it is the back face's trigger — asked of
+        // the trigger, not of the face up now. Moonmist in response flips the
+        // Brute to Civilized Scholar, and the ability still taps it; only
+        // "then transform it" does nothing (CR 701.28f, #988).
         // `step_trigger_scope` already scopes this to the controller's own end
         // step; re-deriving that here is duplication, not defence.
-        if !is_transformed {
+        if !crate::cards::helpers::trigger_face_is_back(state, self_id) {
             return;
         }
         // The condition is checked a second time on resolution (CR 603.4).

@@ -943,6 +943,21 @@ pub fn enters_with_counters(
     Some(Replacement::Modified(ReplaceableEvent::EntersBattlefield(e)))
 }
 
+/// Which face of `object_id` a triggered ability belongs to. Inside a trigger's
+/// resolution it is the face the ability triggered from, recorded with the
+/// trigger; outside one (the trigger-time check) it is the face up now.
+///
+/// A trigger stays the ability of the face it came from whichever face is up
+/// by the time it resolves (CR 113.7a, CR 712.8): a permanent flipped in
+/// response (Moonmist) still does what that face's ability says, and only a
+/// "transform it" in it does nothing (CR 701.28f, `transform_quietly`). A hook
+/// that reads `is_transformed` off the permanent instead drops the rest of
+/// the effect (Delver's look, #986; Homicidal Brute's tap, #988).
+pub fn trigger_face_is_back(state: &GameState, object_id: ObjectId) -> bool {
+    state.resolving_trigger_from_back_face
+        .unwrap_or_else(|| state.get_object(object_id).is_some_and(|o| o.is_transformed))
+}
+
 pub fn werewolf_should_transform(state: &GameState, object_id: ObjectId) -> bool {
     // Which face's condition to test. Inside a trigger resolution it is the
     // face the ability triggered from (CR 603.4 re-checks *that* ability's
@@ -956,9 +971,7 @@ pub fn werewolf_should_transform(state: &GameState, object_id: ObjectId) -> bool
     // unchanged by anything cast this turn) — but the transform it asks for
     // then does nothing, because the permanent has transformed since the
     // ability went on the stack (CR 701.28f, `transform_quietly`; #987).
-    let back_face = state.resolving_trigger_from_back_face
-        .unwrap_or_else(|| state.get_object(object_id).is_some_and(|o| o.is_transformed));
-    if back_face {
+    if trigger_face_is_back(state, object_id) {
         state.num_spells_cast_last_turn.values().any(|&count| count >= 2)
     } else {
         state.num_spells_cast_last_turn.values().sum::<u32>() == 0

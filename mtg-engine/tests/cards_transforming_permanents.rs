@@ -1355,6 +1355,34 @@ fn garruk_fight_creature_lifelink_gains_life() {
     );
 }
 
+/// #988: Homicidal Brute's end-step trigger is the back face's ability
+/// whichever face is up when it resolves (CR 113.7a, CR 712.8). Moonmist in
+/// response flips the Brute to Civilized Scholar; the trigger still taps it,
+/// and only "then transform it" does nothing (CR 701.28f). Reading the face
+/// up now made the whole trigger do nothing, leaving the Scholar untapped.
+#[test]
+fn a_brute_flipped_in_response_is_still_tapped_and_does_not_flip_back() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::EndStep, P0);
+    let scholar = named_permanent(&mut state, &registry, "Civilized Scholar", P0);
+    helpers::apply_transform(&mut state, scholar, &registry);
+    assert_eq!(state.name_of(scholar, &registry), "Homicidal Brute");
+
+    state.events.push(GameEvent::StepStarted { step: Step::EndStep });
+    mtg_engine::triggers::collect_triggers(&mut state, &registry);
+    assert!(!state.stack.is_empty(), "the Brute's end-step trigger is on the stack");
+
+    // In response, something transforms it (Moonmist).
+    helpers::apply_transform(&mut state, scholar, &registry);
+    assert_eq!(state.name_of(scholar, &registry), "Civilized Scholar");
+
+    mtg_engine::triggers::resolve_next_trigger(&mut state, &registry);
+    let obj = state.get_object(scholar).unwrap();
+    assert!(obj.tapped, "the trigger still taps the permanent");
+    assert_eq!(state.name_of(scholar, &registry), "Civilized Scholar",
+        "it has transformed since the ability went on the stack, so it stays (CR 701.28f)");
+}
+
 // -------------------------------------------------------------------------
 // From the bug-audit files, re-filed by the rule each one exercises.
 // -------------------------------------------------------------------------
