@@ -100,9 +100,15 @@ fn colors_of(_: &GameState, id: ObjectId, _: &CardRegistry) -> Vec<Color> {
 }
 
 /// Stands in for `Protections::covers`: whether the attacker has
-/// protection from the blocker, any answer.
+/// protection from the blocker, any answer. (`Protections` holds borrows,
+/// and a stub takes the generic parameters of what it stands in for: the
+/// `where` makes `'a` one.)
 #[allow(dead_code)] // named only by `kani::stub`
-fn covers(_: &Protections<'_>, _: &GameState, source: ObjectId, _: &CardRegistry) -> bool {
+#[allow(clippy::extra_unused_lifetimes)]
+fn covers<'a>(_: &Protections<'a>, _: &GameState, source: ObjectId, _: &CardRegistry) -> bool
+where
+    'a: 'a,
+{
     answer(source, Asked::Protects)
 }
 
