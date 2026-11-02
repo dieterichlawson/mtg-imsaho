@@ -1140,6 +1140,21 @@ pub(crate) fn transient<T>(value: T) -> std::mem::ManuallyDrop<T> {
     std::mem::ManuallyDrop::new(value)
 }
 
+/// Done with `value`: dropped, except in the proofs, where it is not, as
+/// [`transient`] says why. For a value the engine has finished with on one
+/// path and keeps on another (an ability's stack entry, kept as the
+/// resolving ability once it resolves, discarded when it does not).
+#[cfg(not(kani))]
+pub(crate) fn discard<T>(value: T) {
+    drop(value);
+}
+
+/// See the other `discard`.
+#[cfg(kani)]
+pub(crate) fn discard<T>(value: T) {
+    std::mem::forget(value);
+}
+
 /// The proofs' name map: each name with its card, in the order the cards
 /// were registered.
 ///

@@ -203,24 +203,28 @@ pub fn resolve_top_of_stack(state: &mut GameState, registry: &CardRegistry) {
 }
 
 fn resolve_top_of_stack_inner(state: &mut GameState, registry: &CardRegistry) {
-    let entry = match state.stack.last() {
-        Some(e) => e.clone(),
-        None => return,
-    };
-
-    match entry {
-        StackEntry::Trigger(_) => {
+    // The entry is read where it lies, not cloned: in a proof a clone of an
+    // entry read off the heap clones the ability's target requirement as
+    // every shape one may have.
+    match state.stack.last() {
+        None => {}
+        Some(StackEntry::Trigger(_)) => {
             // Trigger resolution is handled by the triggers module.
             crate::triggers::resolve_next_trigger(state, registry);
         }
-        StackEntry::Spell(object_id) => {
+        Some(&StackEntry::Spell(object_id)) => {
             state.stack.pop(); // Remove the spell from the stack.
             resolve_spell(state, registry, object_id);
         }
-        StackEntry::Ability { source_id, ability_index, behavior_card_id, targets, x_value, activator, target_requirement, sacrificed, sacrificed_toughness, loyalty, .. } => {
+        Some(StackEntry::Ability { .. }) => {
             // Still on the stack while it resolves (CR 608.2n), so a question
             // it asks is asked under it (#833).
             let on_stack = state.stack.pop();
+            let Some(StackEntry::Ability { source_id, ability_index, behavior_card_id, ref targets, x_value, activator,
+                ref target_requirement, sacrificed, sacrificed_toughness, loyalty, .. }) = on_stack
+            else {
+                unreachable!("the top of the stack is an ability")
+            };
             state.last_activated_x_value = x_value;
             state.last_activated_sacrifice = sacrificed;
             state.last_activated_sacrifice_toughness = sacrificed_toughness;
@@ -258,8 +262,8 @@ fn resolve_top_of_stack_inner(state: &mut GameState, registry: &CardRegistry) {
             // ability whose card restated nothing resolved against a target
             // that no longer matched its own wording.
             let mut newly_illegal: Vec<String> = Vec::new();
-            let targets: Vec<Target> = targets.into_iter()
-                .map(|t| match t {
+            let targets: Vec<Target> = targets.iter()
+                .map(|t| match *t {
                     Target::Object(id)
                         if !crate::engine::can_be_targeted_by(state, id, controller, Some(source_id), registry)
                             || !target_requirement.as_ref().is_none_or(|req|
@@ -268,12 +272,13 @@ fn resolve_top_of_stack_inner(state: &mut GameState, registry: &CardRegistry) {
                             newly_illegal.push(state.obj_name(id));
                             Target::Illegal
                         }
-                    other => other,
+                    _ => t.clone(),
                 })
                 .collect();
             if !targets.is_empty() && targets.iter().all(|t| matches!(t, Target::Illegal)) {
                 state.log(LogLevel::Event,
                     format!("{name} ability fizzled (all targets illegal)"));
+                crate::cards::discard(on_stack);
                 return;
             }
             // Partial fizzle is said out loud, as for spells (CR 608.2b,
@@ -287,7 +292,7 @@ fn resolve_top_of_stack_inner(state: &mut GameState, registry: &CardRegistry) {
             state.log(LogLevel::Event, format!("{name} ability resolved"));
             if let Some(behavior) = registry.get(behavior_card_id) {
                 state.resolving_ability_activator = Some(activator);
-                state.resolving_ability = on_stack;
+                crate::cards::discard(std::mem::replace(&mut state.resolving_ability, on_stack));
                 if loyalty {
                     // CR 606.5: loyalty abilities resolve like any other
                     // activated ability; their effects live in the loyalty
@@ -305,8 +310,10 @@ fn resolve_top_of_stack_inner(state: &mut GameState, registry: &CardRegistry) {
                 // `choices.rs` clears it when the chain runs out.
                 if state.awaiting_action.is_none() {
                     state.resolving_ability_activator = None;
-                    state.resolving_ability = None;
+                    crate::cards::discard(state.resolving_ability.take());
                 }
+            } else {
+                crate::cards::discard(on_stack);
             }
         }
     }
