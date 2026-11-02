@@ -527,7 +527,11 @@ fn face_trigger_description(registry: &CardRegistry, card_id: CardId, kind: &cra
 pub mod collect;
 
 pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool {
-    let events = state.events.clone();
+    // The batch is read where it lies, held apart while the collectors take
+    // the state, rather than cloned: no collector adds an event, and in a
+    // proof a clone of events read off the heap is one of every kind of
+    // event there is, which every collector then follows.
+    let events = std::mem::take(&mut state.events);
     let start = state.trigger_event_index;
     let active_player = state.active_player;
 
@@ -536,6 +540,8 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
     for event in events.iter().skip(start) {
         collect::for_event(state, &events, event, registry, &mut c);
     }
+    debug_assert!(state.events.is_empty(), "collecting triggers added an event");
+    state.events = events;
 
     // Drain any pending triggers (e.g., state-triggered abilities added during SBA)
     // into the appropriate APNAP bucket.
@@ -553,7 +559,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
     state.pending_trigger_pushes_nap.extend(c.nap);
 
     // Mark all events as processed.
-    state.trigger_event_index = events.len();
+    state.trigger_event_index = state.events.len();
 
     // Process the queue: push triggers onto the stack one at a time, prompting
     // for targets where needed. Returns early if a prompt is set up.
