@@ -299,14 +299,17 @@ fn resolve_top_of_stack_inner(state: &mut GameState, registry: &CardRegistry) {
             // ability whose card restated nothing resolved against a target
             // that no longer matched its own wording.
             let chosen = targets;
+            let mut any_newly_illegal = false;
             let targets: Vec<Target> = chosen.iter()
                 .map(|t| match *t {
                     Target::Object(id)
                         if !crate::engine::can_be_targeted_by(state, id, controller, Some(source_id), registry)
                             || !target_requirement.as_ref().is_none_or(|req|
                                     is_target_legal(state, &Target::Object(id), req, controller, Some(source_id), registry))
-                            || !behavior.is_none_or(|b| b.is_valid_target(state, controller, &Target::Object(id), registry)) =>
-                        Target::Illegal,
+                            || !behavior.is_none_or(|b| b.is_valid_target(state, controller, &Target::Object(id), registry)) => {
+                        any_newly_illegal = true;
+                        Target::Illegal
+                    }
                     _ => t.clone(),
                 })
                 .collect();
@@ -318,8 +321,8 @@ fn resolve_top_of_stack_inner(state: &mut GameState, registry: &CardRegistry) {
             }
             // Partial fizzle is said out loud, as for spells (CR 608.2b,
             // issue #135).
-            let illegal = NewlyIllegal { state, chosen, now: &targets };
-            if illegal.ids().next().is_some() {
+            if any_newly_illegal {
+                let illegal = NewlyIllegal { state, chosen, now: &targets };
                 let line = format!(
                     "{name} ability: target {illegal} is illegal, resolving with the rest (CR 608.2b)");
                 state.log(LogLevel::Event, line);
@@ -401,11 +404,14 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
         // cards would be judged against its `PlayerOnly` first slot. A target
         // that has changed zones is already skipped by each card's own guard.
         let chosen = std::mem::take(&mut targets);
+        let mut any_newly_illegal = false;
         targets = chosen.iter()
             .map(|t| match *t {
                 Target::Object(id)
-                    if !crate::engine::can_be_targeted_by(state, id, caster, Some(object_id), registry) =>
-                    Target::Illegal,
+                    if !crate::engine::can_be_targeted_by(state, id, caster, Some(object_id), registry) => {
+                    any_newly_illegal = true;
+                    Target::Illegal
+                }
                 _ => t.clone(),
             })
             .collect();
@@ -418,8 +424,8 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
         // CR 608.2b's second sentence: the spell resolves but does as much
         // as it can. A partial fizzle used to log byte-identically to a full
         // resolution (issue #135) — say which target dropped out.
-        let illegal = NewlyIllegal { state, chosen: &chosen, now: &targets };
-        if illegal.ids().next().is_some() {
+        if any_newly_illegal {
+            let illegal = NewlyIllegal { state, chosen: &chosen, now: &targets };
             let line = format!(
                 "{}: target {illegal} is illegal, resolving with the rest (CR 608.2b)",
                 state.obj_name(object_id));
