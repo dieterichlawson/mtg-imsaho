@@ -395,6 +395,17 @@ impl PendingTrigger {
         self.named(registry, Some(state), true)
     }
 
+    /// [`Self::log_name`], worked out only when a log line writes it.
+    ///
+    /// Worked out before the line, the name was built for no reader in a
+    /// proof, where `format!` stands in as nothing: substituting the
+    /// event's objects into the description is string searching, which
+    /// symbolic execution ran out of memory on in every proof of a trigger
+    /// resolving with an object in its event (`proofs::actions::trigger_resolving`).
+    pub(crate) fn logged<'a>(&'a self, registry: &'a crate::cards::CardRegistry, state: &'a crate::state::GameState) -> LogName<'a> {
+        LogName { trigger: self, registry, state }
+    }
+
     /// The source's name, from the face that is up if `state` can say
     /// which.
     fn source_name(&self, registry: &crate::cards::CardRegistry, state: Option<&crate::state::GameState>) -> String {
@@ -669,6 +680,19 @@ pub fn process_pending_trigger_pushes(state: &mut GameState, registry: &CardRegi
 }
 
 
+/// A trigger's name for the log, as [`PendingTrigger::logged`] hands it out.
+pub(crate) struct LogName<'a> {
+    trigger: &'a PendingTrigger,
+    registry: &'a crate::cards::CardRegistry,
+    state: &'a crate::state::GameState,
+}
+
+impl std::fmt::Display for LogName<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.trigger.log_name(self.registry, self.state))
+    }
+}
+
 /// Log the trigger that was just pushed onto the stack, with its targets.
 /// Triggered abilities were invisible in the log — nothing recorded the
 /// trigger, its controller or its target (issue #135). Called immediately
@@ -772,7 +796,7 @@ pub(crate) fn push_one_pending_trigger(
 /// The `TargetRequirement` a card's `TriggeredAbilityDef` of this kind
 /// declares, if any. Used both when the trigger goes on the stack (CR 603.3d)
 /// and when its targets are re-checked on resolution (CR 608.2b).
-fn target_requirement(
+pub(crate) fn target_requirement(
     registry: &CardRegistry,
     card_id: CardId,
     kind: Option<crate::cards::TriggerKind>,
@@ -848,8 +872,8 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
                     .is_some_and(|b| b.is_valid_target(state, controller, t, registry))
         });
         if !any_legal {
-            let name = trigger.log_name(registry, state);
-            state.log(crate::state::LogLevel::Event, format!("{name} fizzled (all targets illegal)"));
+            let line = format!("{} fizzled (all targets illegal)", trigger.logged(registry, state));
+            state.log(crate::state::LogLevel::Event, line);
             return true;
         }
 
@@ -858,8 +882,8 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
     // not, so after "... trigger goes on the stack" the log went straight to
     // whatever came next, and what the trigger did had nothing to hang off
     // (#704).
-    let name = trigger.log_name(registry, state);
-    state.log(crate::state::LogLevel::Event, format!("{name} resolved"));
+    let line = format!("{} resolved", trigger.logged(registry, state));
+    state.log(crate::state::LogLevel::Event, line);
 
     // CR 113.7a: a triggered ability on the stack exists independently of its
     // source, so removing the source after the trigger is on the stack does
