@@ -1263,13 +1263,22 @@ sits in memory. What was measured, and what the proofs do about each:
   borrows them now too (70e09e5; `can_be_targeted_by` asks it, so every
   card proof that lists targets is run again, below). Neither was enough for
   Stromkirk Noble's and Blazing Torch's, nor for Spare from Evil's
-  protection or Moonmist's prevention, which still run out of memory at
-  7 GB in symbolic execution: profiled, matching the blocker against the
-  only-by filter is three quarters of the work, the filter behind a `Box`
-  in an effect kept on the heap matched as every filter there is
-  (keywords, card types, colours), and `precise-enums.py` does not reach
-  a filter there. A tag of its own for the filter, which would let it,
-  made other proofs worse when tried (below).
+  protection or Moonmist's prevention, which still ran out of memory in
+  symbolic execution, at 12 GB as at 7: profiled, matching the blocker
+  against the only-by filter was three quarters of the work, the filter
+  behind a `Box` in an effect kept on the heap matched as every filter
+  there is (keywords, card types, colours), and `precise-enums.py` does
+  not reach a filter there (a tag of its own for the filter, which would
+  let it, made other proofs worse when tried, below). Built where it is
+  matched, though, a filter is matched as itself: so what
+  `matches_filter` makes of each filter a card prints is proved on its
+  own (`proofs::actions::filters`, five filters, 21 to 25 seconds each,
+  each question it asks any answer), and the proofs of the effects stand
+  in for the filter with any answer, checked to be asked only of the
+  effect's own filter, the same object by pointer
+  (`filters::stand_in`, 7f59844). Blazing Torch's and Orchard Spirit's
+  restrictions then pass in 144 and 146 seconds, Spare from Evil's
+  protection in 46 and Moonmist's prevention in 75.
 - **An expected list of open length.** The cleanup step's proof first
   built the list of control changes it expected by pushing one as each
   creature returned: a list whose length and contents the solver left
@@ -1408,7 +1417,8 @@ for both players and boards as its doc comment states):
 | the trigger collector (`triggers::collect::for_event`, 603.2, 603.3b): each kind of event a card in the pool has a trigger on (entering, dying, a step's beginning, a spell cast, attacking, blocking and being blocked, combat damage to a player or a creature, damage to a player, leaving, a card milled) raises the abilities it should, from the objects and under the controllers it should, exactly when their conditions hold, filed with the active player's or the other's | proved, 37 to 168 s each |
 | a delayed trigger, the exile of Geist of Saint Traft's token (603.7a, 603.7d, 400.7): the end of combat puts it on the stack once, from Geist, under its controller, and it exiles the token if the token is still on the battlefield | proved, 50 to 91 s each |
 | a spell's or ability's resolution (`resolve_top_of_stack`, 608.2b, 602.2a, 606.5): with targets none of which is legal it does nothing, and otherwise the card's resolution is handed each target as chosen or as illegal | proved for an activated or loyalty ability, 49 to 80 s each; a spell's three written and not yet proved (below) |
-| written and not yet proved, each out of memory at 7 GB (the entries above say why): a spell's resolution (three: its targets read back off its object); "can't be blocked except by" (Stromkirk Noble's, Blazing Torch's, and by flying or reach: three), protection from non-Humans until end of turn (three) and Moonmist's prevention (three), each a filter behind a `Box` in an effect on the heap; flashback granted until end of turn (five: its costs cloned and compared off the heap, out of memory in the solver) | not yet proved |
+| what `matches_filter` makes of each creature filter a card prints (non-Human, neither Vampire nor Zombie, flying or reach, non-Human creature, Wolf or Werewolf), and what the effects printing them do with it: "can't be blocked except by" (509.1b), protection until end of turn (702.16), Moonmist's prevention (615.1) | proved, 21 to 146 s each; Stromkirk Noble's restriction, the same shape as Blazing Torch's, ran out of memory at 7 GB beside four other runs and is run again alone |
+| written and not yet proved, each out of memory at 7 GB (the entries above say why): a spell's resolution (three: its targets read back off its object), and flashback granted until end of turn (five: its costs cloned and compared off the heap, out of memory in the solver, the copy of a list of plain values the trusted `memcpy` imprecision is about) | not yet proved |
 
 A card proof ends at what the card leaves on the board: Giant Growth's
 says the card adds a `TemporaryEffect::ModifyPT` of +3/+3 on its target
