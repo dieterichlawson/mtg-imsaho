@@ -1914,38 +1914,19 @@ impl CliPlayer {
             let _ = execute!(out, cursor::MoveTo(1, 1),
                 SetAttribute(Attribute::Dim), Print("(empty)"), SetAttribute(Attribute::Reset));
         } else {
-            // One row is held back for the "N more" marker, so a stack the
-            // panel cannot hold says so rather than looking short: it used to
-            // render until it ran out of rows and stop, cutting the last
-            // entry mid-entry, with 44 objects off screen and nothing saying
-            // there were any (issue #247).
             let max_w = left_w.saturating_sub(1);
             let body_h = stack_h.saturating_sub(1);
-            let mut srow: u16 = 1;
-            let mut shown = 0usize;
-            for item in &view.stack {
-                if srow as usize >= body_h { break; }
-                let text = Self::stack_entry_headline(view, item);
-                let mut fitted = true;
-                for line in Self::word_wrap(&text, max_w) {
-                    if srow as usize >= body_h { fitted = false; break; }
-                    let _ = execute!(out, cursor::MoveTo(1, srow), Print(&line));
-                    srow += 1;
+            let (rows, marker) = Self::stack_pane_rows(view, max_w, body_h);
+            for (i, (line, dim)) in rows.iter().enumerate() {
+                let row = u16::try_from(i + 1).unwrap_or(u16::MAX);
+                if *dim {
+                    let _ = execute!(out, cursor::MoveTo(1, row),
+                        SetAttribute(Attribute::Dim), Print(line), SetAttribute(Attribute::Reset));
+                } else {
+                    let _ = execute!(out, cursor::MoveTo(1, row), Print(line));
                 }
-                for line in item.targets.iter()
-                    .flat_map(|t| Self::stack_target_pane_lines(view, t, max_w))
-                {
-                    if srow as usize >= body_h { fitted = false; break; }
-                    let _ = execute!(out, cursor::MoveTo(1, srow),
-                        SetAttribute(Attribute::Dim), Print(&line), SetAttribute(Attribute::Reset));
-                    srow += 1;
-                }
-                if !fitted { break; }
-                shown += 1;
             }
-            if shown < view.stack.len() {
-                let marker = clip_cols(
-                    &format!(" … {} more — s to see them all", view.stack.len() - shown), max_w);
+            if let Some(marker) = marker {
                 let _ = execute!(out,
                     cursor::MoveTo(1, u16::try_from(body_h).unwrap_or(u16::MAX)),
                     SetAttribute(Attribute::Dim), Print(marker), SetAttribute(Attribute::Reset));
@@ -6135,6 +6116,56 @@ return",
             Some(x) => format!("{}{id} (X={x}) ({who}){resolving}", item.name),
             None => format!("{}{id} ({who}){resolving}", item.name),
         }
+    }
+
+    /// The STACK pane's rows, top first, each with whether it is printed dim
+    /// (a target line), and the marker for the row held back under them.
+    ///
+    /// The rows are 1..body_h-1 of the pane; row body_h is the marker's, so a
+    /// stack the panel cannot hold says so rather than looking short (#247).
+    ///
+    /// An entry is laid out whole or not at all, and the marker counts what is
+    /// not on screen. It used to print an entry's rows until they ran out and
+    /// then count that entry in "N more" as well, so one object whose target
+    /// line was cut read as a second object (#959). The one exception is the
+    /// top entry, which is printed as far as it fits when it alone is taller
+    /// than the pane — the object about to resolve is never left off — and the
+    /// marker then says it is cut rather than counting it.
+    pub(crate) fn stack_pane_rows(
+        view: &GameView,
+        max_w: usize,
+        body_h: usize,
+    ) -> (Vec<(String, bool)>, Option<String>) {
+        let room = body_h.saturating_sub(1);
+        let mut rows: Vec<(String, bool)> = Vec::new();
+        let mut shown = 0usize;
+        let mut cut = false;
+        for item in &view.stack {
+            let mut entry: Vec<(String, bool)> = Self::word_wrap(&Self::stack_entry_headline(view, item), max_w)
+                .into_iter().map(|l| (l, false)).collect();
+            entry.extend(item.targets.iter()
+                .flat_map(|t| Self::stack_target_pane_lines(view, t, max_w))
+                .map(|l| (l, true)));
+            if rows.len() + entry.len() <= room {
+                rows.extend(entry);
+                shown += 1;
+                continue;
+            }
+            if shown == 0 {
+                entry.truncate(room);
+                rows.extend(entry);
+                cut = true;
+            }
+            break;
+        }
+        let hidden = view.stack.len() - shown - usize::from(cut);
+        let text = match (cut, hidden) {
+            (false, 0) => return (rows, None),
+            (false, n) => format!(" … {n} more — s to see them all"),
+            (true, 0) => " … cut — s to see it whole".to_string(),
+            (true, n) => format!(" … cut, {n} more — s to see them all"),
+        };
+        (rows, Some(clip_cols(&text, max_w)))
     }
 
     /// One target's line in the STACK pane, wrapped to `width` under a
@@ -11579,6 +11610,71 @@ Wolves or Werewolves is prevented".into()];
                 "width {width}: never a shorter, different id: {lines:?}");
             assert!(lines[0].starts_with(" -> ") && lines[1..].iter().all(|l| l.starts_with("    ")),
                 "width {width}: continuation lines hang under the arrow: {lines:?}");
+        }
+    }
+
+    fn stack_item(name: &str, source: u64, targets: Vec<Target>) -> mtg_engine::view::StackItemView {
+        mtg_engine::view::StackItemView {
+            object_id: ObjectId(0),
+            card_id: mtg_engine::ids::CardId(0),
+            name: name.to_string(),
+            source_id: Some(ObjectId(source)),
+            controller: PlayerId(1),
+            targets,
+            x_value: None,
+            cost: None, supertypes: vec![], card_types: vec![],
+            power: None, toughness: None, oracle_text: String::new(), resolving: false,
+        }
+    }
+
+    /// Issue #959: one object on the stack whose target line did not fit was
+    /// printed without it and then counted again in "… 1 more", which reads
+    /// as a second object. The pane at 80x24 is 15 wide and 8 tall.
+    #[test]
+    fn a_stack_entry_cut_by_the_pane_is_not_counted_as_another_object() {
+        let mut v = view(Step::PrecombatMain, 9, true);
+        v.stack = vec![stack_item(
+            "Selhoff Occultist's triggered ability (target player mills a card)",
+            82, vec![Target::Player(PlayerId(0))])];
+        let (rows, marker) = CliPlayer::stack_pane_rows(&v, 15, 8);
+        let marker = marker.expect("the entry does not fit, and the marker says so");
+        assert!(!marker.contains("1 more"), "one object is not \"1 more\": {marker:?}");
+        assert!(marker.contains("cut"), "it says the entry is cut: {marker:?}");
+        assert!(rows.len() <= 7, "the rows stay above the marker's row: {rows:?}");
+        assert!(rows.iter().all(|(l, _)| str_cols(l) <= 15), "{rows:?}");
+
+        // With room for it whole, no marker at all.
+        let (rows, marker) = CliPlayer::stack_pane_rows(&v, 40, 8);
+        assert_eq!(marker, None, "{rows:?}");
+        assert!(rows.iter().any(|(l, dim)| *dim && l.contains("->")), "the target is shown: {rows:?}");
+    }
+
+    /// #959's second shape: four triggers, the top one taller than the pane.
+    /// The marker counts the three that are not on screen, and an entry below
+    /// the top is never printed in part.
+    #[test]
+    fn the_stack_pane_counts_only_what_it_does_not_show() {
+        let mut v = view(Step::CombatDamage, 16, false);
+        let long = "Undead Alchemist's mill-watcher trigger (exile Splinterfright (#102), create a 2/2 black Zombie token)";
+        v.stack = (0..4).map(|i| stack_item(long, 40 + i, vec![])).collect();
+        let (rows, marker) = CliPlayer::stack_pane_rows(&v, 15, 8);
+        assert_eq!(rows.len(), 7, "the top entry fills the pane: {rows:?}");
+        let marker = marker.unwrap();
+        assert!(marker.contains("3 more"), "three are off screen, not four: {marker:?}");
+
+        // Short entries: every one shown is whole, and the count is the rest.
+        v.stack = (0..6).map(|i| stack_item("Bolt", 40 + i, vec![Target::Player(PlayerId(0))])).collect();
+        let (rows, marker) = CliPlayer::stack_pane_rows(&v, 30, 2);
+        assert_eq!(rows.len(), 1, "one row: the top entry, cut");
+        assert_eq!(marker.as_deref(), Some(" … cut, 5 more — s to see them"), "clipped to 30");
+        for body_h in 3..12 {
+            let (rows, marker) = CliPlayer::stack_pane_rows(&v, 30, body_h);
+            assert_eq!(rows.len() % 2, 0, "body_h {body_h}: no entry without its target: {rows:?}");
+            let shown = rows.len() / 2;
+            match marker {
+                None => assert_eq!(shown, 6, "body_h {body_h}"),
+                Some(m) => assert!(m.contains(&format!("{} more", 6 - shown)), "body_h {body_h}: {m:?}"),
+            }
         }
     }
 
