@@ -1352,10 +1352,33 @@ sits in memory. What was measured, and what the proofs do about each:
   turned into numbers to check their alignment, which the solver relates
   to every object they might point into: 224 such in a spell's proof, 65
   in the delayed exile's), an ability's resolution passes in 49 to 80
-  seconds. A spell's still runs out of memory in the solver, at 12 GB as
-  at 7: its targets are read back off its object, a list whose length
-  symbolic execution cannot see, and handed an empty list in its place,
-  the case of no target passes in 50 seconds.
+  seconds. A spell's ran out of memory in the solver, at 12 GB as at 7:
+  its targets are read back off its object, a list whose length symbolic
+  execution does not see, and the re-check walked that list every way.
+  Read and compared alone they prove in 42 seconds, and handed an empty
+  list in their place the re-check's case of no target passed in 50. So
+  the re-check is its own function now, `stack::resolve_spell_as`, handed
+  what `resolve_spell` reads (3901288): its proofs run on it, and three
+  more show that a spell on top of the stack leaves it and hands
+  `resolve_spell_as` the spell, its card, its targets in order and its
+  controller, each half passing in 47 to 76 seconds.
+- **A union read back.** Flashback granted until end of turn ran out
+  of memory at 7 GB, even with the granted effect on another card and
+  nothing to offer: 24 million clauses at 3.5 GB, nine tenths of the
+  formula one buffer, the turn's list of effects, rewritten at each
+  symbol of each cost copied. An effect read back off that list is a
+  union to symbolic execution, held as one variant (Moonmist's, a
+  filter and a name, both on the heap), and which card a grant was on
+  came back as bytes of that variant it could not reduce: so the costs
+  offered were a list of a length it did not see, each copy of one a
+  write it could not place, into every buffer it might be. Which effects
+  are on a card is its own function now, `granted_flashback_costs`
+  (proved by where each cost it hands back is, never what it holds), and
+  the costs offered are proved with it standing in as that proof shows
+  it answers, each cost read from the harness's own list: 0.3 to 0.65
+  million clauses, 19 to 64 seconds. Cutting the costs' copies (four on
+  the way to an offer) as well changed nothing that mattered and was
+  left out.
 - **CBMC's memory checks.** `kani-bounded.py` leaves out CBMC's pointer,
   bounds and division checks (`--memory-checks` keeps them): that safe
   Rust reads only memory it may is the compiler's guarantee, and Rust's
@@ -1416,9 +1439,9 @@ for both players and boards as its doc comment states):
 | who may block whom (`can_block_attacker`, 509.1a-b, 702.9b, 702.13b, 702.16b), every answer to every question it asks | proved, 30 s |
 | the trigger collector (`triggers::collect::for_event`, 603.2, 603.3b): each kind of event a card in the pool has a trigger on (entering, dying, a step's beginning, a spell cast, attacking, blocking and being blocked, combat damage to a player or a creature, damage to a player, leaving, a card milled) raises the abilities it should, from the objects and under the controllers it should, exactly when their conditions hold, filed with the active player's or the other's | proved, 37 to 168 s each |
 | a delayed trigger, the exile of Geist of Saint Traft's token (603.7a, 603.7d, 400.7): the end of combat puts it on the stack once, from Geist, under its controller, and it exiles the token if the token is still on the battlefield | proved, 50 to 91 s each |
-| a spell's or ability's resolution (`resolve_top_of_stack`, 608.2b, 602.2a, 606.5): with targets none of which is legal it does nothing, and otherwise the card's resolution is handed each target as chosen or as illegal | proved for an activated or loyalty ability, 49 to 80 s each; a spell's three written and not yet proved (below) |
+| a spell's or ability's resolution (`resolve_top_of_stack`, 608.2b, 602.2a, 606.5): with targets none of which is legal it does nothing, and otherwise the card's resolution is handed each target as chosen or as illegal; a spell leaves the stack, its card's resolution handed the targets it was cast with, read off it (`resolve_spell`), and re-checked (`resolve_spell_as`), each half its own proof | proved, 47 to 80 s each |
 | what `matches_filter` makes of each creature filter a card prints (non-Human, neither Vampire nor Zombie, flying or reach, non-Human creature, Wolf or Werewolf), and what the effects printing them do with it: "can't be blocked except by" (509.1b), protection until end of turn (702.16), Moonmist's prevention (615.1) | proved, 21 to 146 s each; Stromkirk Noble's restriction, the same shape as Blazing Torch's, ran out of memory at 7 GB beside four other runs and is run again alone |
-| written and not yet proved, each out of memory at 7 GB (the entries above say why): a spell's resolution (three: its targets read back off its object), and flashback granted until end of turn (five: its costs cloned and compared off the heap, out of memory in the solver, the copy of a list of plain values the trusted `memcpy` imprecision is about) | not yet proved |
+| flashback granted until end of turn (`graveyard_cast_costs`, 702.34a), as Snapcaster Mage and Past in Flames add it: a card in its owner's graveyard may be cast from there at each cost an effect on it gives, each once however many give it, and an effect on another card gives it nothing; which of the turn's effects are on a card (`granted_flashback_costs`), each the effect's own cost in the order granted, its own proof | proved, 19 to 64 s each |
 
 A card proof ends at what the card leaves on the board: Giant Growth's
 says the card adds a `TemporaryEffect::ModifyPT` of +3/+3 on its target
@@ -1426,13 +1449,14 @@ and changes nothing else, Heartless Summoning's that it prints a
 `ReduceCost` of two for creature spells, Geist of Saint Traft's that its
 attack leaves a delayed exile. The rows from the until-end-of-turn
 effects down are what the engine makes of each such thing: for the kinds
-they name, the question that reads it answers what the card's words say,
-and the last row names the kinds whose proofs are written and do not yet
-go through. `ModifyPTWhileSourceInPlay`, the one kind no card adds, has
-none. Two engine lists became functions for this,
-`end_until_end_of_turn_effects` from the cleanup step and
-`names_that_cant_be_cast` from the legal actions, unchanged; the others
-the entries above name were changed to read what they read in place.
+they name, the question that reads it answers what the card's words say.
+`ModifyPTWhileSourceInPlay`, the one kind no card adds, has none. Four
+engine lists and reads became functions for this, unchanged:
+`end_until_end_of_turn_effects` from the cleanup step,
+`names_that_cant_be_cast` from the legal actions, `resolve_spell_as`
+from a spell's resolution and `granted_flashback_costs` from the
+graveyard's casts; the others the entries above name were changed to
+read what they read in place.
 
 Three of these held only once the function asked what the rule says:
 `untap` untapped a card off the battlefield, `discard_card` discarded a
