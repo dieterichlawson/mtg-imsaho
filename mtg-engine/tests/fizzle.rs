@@ -925,3 +925,37 @@ fn countering_removes_that_spell_and_leaves_the_rest_of_the_stack() {
     assert_eq!(s.get_object(first).unwrap().zone, Zone::Exile,
         "and this one was exiled instead of buried");
 }
+
+/// A creature with protection from instants can't be the target of instant
+/// spells (CR 702.16b), so one given it with an instant aimed at it, its only
+/// target, makes that target illegal, and the spell is countered by game
+/// rules (CR 608.2b) rather than resolving with nothing left to affect.
+///
+/// The re-check of a spell asked whether any target still met its
+/// requirement and the card's restriction, and protection is neither: so
+/// the spell resolved, emitting `SpellResolved`, with its one target marked
+/// illegal. An activated ability's re-check asks it, and now a triggered
+/// one's. No card in the pool grants protection from a quality a spell has,
+/// so the effect is made here by hand.
+#[test]
+fn a_spell_whose_only_target_gained_protection_from_it_is_countered() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P1, 5, 5);
+    let spell = castable_spell(&mut state, &reg, "Geistflame", P0);
+    let mut state = cast_onto_stack(&state, &reg, spell, vec![Target::Object(creature)]);
+    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::GrantProtection {
+        target: creature,
+        filter: CreatureFilter::HasCardType(CardType::Instant),
+    });
+    assert!(state.has_protection_from(creature, spell, &reg),
+        "test precondition: the creature has protection from the instant");
+    state.events.clear();
+
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert!(!resolved(&state, spell),
+        "its only target illegal, the spell is countered, not resolved");
+    assert_eq!(state.get_object(creature).unwrap().damage_marked, 0);
+}

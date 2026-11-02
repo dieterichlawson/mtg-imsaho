@@ -396,6 +396,17 @@ pub(crate) fn resolve_spell_as(
             if !is_target_legal(state, t, target_req, caster, Some(object_id), registry) {
                 return false;
             }
+            // And whether it may still be targeted by this spell at all
+            // (CR 702.16b), as the re-checks of activated and triggered
+            // abilities ask: `is_target_legal` asks hexproof and not
+            // protection, so a spell whose only target gained protection
+            // from it resolved with that target marked illegal below, where
+            // the rules counter it.
+            if let Target::Object(id) = *t {
+                if !crate::engine::can_be_targeted_by(state, id, caster, Some(object_id), registry) {
+                    return false;
+                }
+            }
             // Also re-check card-specific validity (e.g., "power 4 or greater").
             if let Some(b) = behavior {
                 b.is_valid_target(state, caster, t, registry)
