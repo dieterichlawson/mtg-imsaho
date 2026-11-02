@@ -9,6 +9,7 @@ mod casting_costs;
 mod choosing_targets;
 mod countering;
 mod damage;
+mod delayed;
 mod destruction;
 mod effects;
 mod fighting;
