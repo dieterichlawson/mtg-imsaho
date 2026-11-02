@@ -103,7 +103,9 @@ def strip(text):
 # fails the proof. For a loop the solver cannot see the end of in symbolic
 # execution, over a list whose length it leaves open: unwound to the start
 # bound, each pass past the list's end is a pass over what it cannot rule
-# out, and the damage queue's ran out of memory so.
+# out, and the damage queue's ran out of memory so. `<function>#<k>` bounds
+# only that function's loop number k, as `goto-instrument --show-loops`
+# numbers them, where its other loops need more.
 LOOP_CAPS = {}
 
 
@@ -268,8 +270,9 @@ def verify(h, goto, unwind, mangled, bound, timeout, precise=True, cap=None):
             loops_of = re.findall(r'^Loop (\S+):', run([f'{K}/bin/goto-instrument', '--show-loops', out]).stdout, re.M)
             for name, n, part in fns:
                 if part in h.rsplit('::', 1)[-1]:
-                    for m in by_name.get(name, []):
-                        caps.update({l: n for l in loops_of if l.startswith(m + '.')})
+                    fn, _, k = name.partition('#')
+                    for m in by_name.get(fn, []):
+                        caps.update({l: n for l in loops_of if (l == f'{m}.{k}' if k else l.startswith(m + '.'))})
     learned = load_loops()
     took, rounds = 0.0, 0
     while True:
