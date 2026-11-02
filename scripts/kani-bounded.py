@@ -67,7 +67,7 @@ KANI_LIB = f'{K}/library/kani/kani_lib.c'
 # harnesses with (abilities!, statics!, equipment!, ...). `cargo kani list`
 # says the same at the price of building every harness, gigabytes of goto
 # files.
-TABLES = {'abilities', 'declares', 'werewolves', 'mana', 'statics', 'check_land', 'choosing_at_random', 'for_each_size', 'from_each_zone', 'for_each_key', 'each_printed', 'by_each_way', 'each_target', 'each_board', 'each_cost', 'each_pruning', 'each_path', 'over_each_library', 'over_each_hand', 'case_by_case', 'each_shape', 'each_hand_of_discard', 'each_pair', 'each_length', 'each_forest', 'each_player', 'each_holding', 'each_effect', 'each_count', 'each_setting', 'each_source', 'each_resolution', 'each_damage', 'each_filter', 'each_restriction'}
+TABLES = {'abilities', 'declares', 'werewolves', 'mana', 'statics', 'check_land', 'choosing_at_random', 'for_each_size', 'from_each_zone', 'for_each_key', 'each_printed', 'by_each_way', 'each_target', 'each_board', 'each_cost', 'each_pruning', 'each_path', 'over_each_library', 'over_each_hand', 'case_by_case', 'each_shape', 'each_hand_of_discard', 'each_pair', 'each_length', 'each_forest', 'each_player', 'each_holding', 'each_effect', 'each_count', 'each_setting', 'each_source', 'each_resolution', 'each_damage', 'each_filter', 'each_restriction', 'each_trigger_event'}
 FORMS = {'reaches_what_it_describes', 'holds_exactly_then', 'each_subtype_set', 'reaches_its_subtypes'}
 # Tables whose every entry is a module of these harnesses.
 SUFFIXED = {
@@ -277,7 +277,7 @@ def verify(h, goto, unwind, mangled, bound, timeout, precise=True, cap=None):
     took, rounds = 0.0, 0
     while True:
         rounds += 1
-        raised = sorted({f'{m}.{n}' for name, n in learned for m in by_name.get(name, [])} - set(caps))
+        raised = sorted({f'{m}.{n}' for name, n in learned if name != 'memcmp' for m in by_name.get(name, [])} - set(caps))
         unwindset = ','.join(['memcmp.0:33'] + [f'{r}:{bound}' for r in rec] + [f'{l}:{full}' for l in raised]
                              + [f'{l}:{n}' for l, n in sorted(caps.items())])
         cmd = [f'{K}/bin/cbmc'] + CBMC_FLAGS + ([] if MEMORY_CHECKS else NO_MEMORY_CHECKS) + [
@@ -288,7 +288,11 @@ def verify(h, goto, unwind, mangled, bound, timeout, precise=True, cap=None):
             cmd = ['prlimit', f'--as={int(cap * 2**30)}', '--'] + cmd
         result, why, seconds, loops, others = solve(cmd, timeout, len(rec))
         took += seconds
-        new = loops - learned
+        # Never `memcmp`'s: it has its own bound above, and learned, it was
+        # unwound to the harness's (7) in every harness after, the later
+        # entry overriding the earlier, so each comparing more than six
+        # bytes failed.
+        new = {l for l in loops - learned if l[0] != 'memcmp'}
         # Again with the loops that needed more than the starting bound at
         # the harness's own, until none does; a loop at the harness's bound
         # that still needs more, or any other failure, is the result.
