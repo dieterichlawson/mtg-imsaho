@@ -4,6 +4,43 @@ use crate::events::GameEvent;
 use crate::state::{GameState, LogLevel, StackEntry};
 use crate::types::Zone;
 
+/// The targets that stopped being legal as a spell or ability resolved
+/// (CR 608.2b): each one `chosen` held as an object that `now` holds as
+/// illegal. Named, joined with commas, only when a log line writes them.
+///
+/// They were a list of names built as the targets were checked, for the
+/// log alone. In a proof `format!` stands in as nothing, so the list was
+/// built for no reader, and pushed to along paths symbolic execution could
+/// not tell apart it was a buffer it could not tell either: each name
+/// written into it rewrote every byte of each buffer it might be, which is
+/// what every proof of resolving ran out of memory on.
+struct NewlyIllegal<'a> {
+    state: &'a GameState,
+    chosen: &'a [Target],
+    now: &'a [Target],
+}
+
+impl NewlyIllegal<'_> {
+    fn ids(&self) -> impl Iterator<Item = crate::ids::ObjectId> + '_ {
+        self.chosen.iter().zip(self.now).filter_map(|(chosen, now)| match (chosen, now) {
+            (Target::Object(id), Target::Illegal) => Some(*id),
+            _ => None,
+        })
+    }
+}
+
+impl std::fmt::Display for NewlyIllegal<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        for (i, id) in self.ids().enumerate() {
+            if i > 0 {
+                f.write_str(", ")?;
+            }
+            f.write_str(&self.state.obj_name(id))?;
+        }
+        Ok(())
+    }
+}
+
 /// Check if a target is still legal at resolution time.
 pub(crate) fn is_target_legal(state: &GameState, target: &Target, target_req: &crate::cards::TargetRequirement, caster: crate::ids::PlayerId, source_id: Option<crate::ids::ObjectId>, registry: &crate::cards::CardRegistry) -> bool {
     use crate::cards::TargetRequirement;
@@ -261,17 +298,15 @@ fn resolve_top_of_stack_inner(state: &mut GameState, registry: &CardRegistry) {
             // `is_valid_target`. Only the first and third were checked, so an
             // ability whose card restated nothing resolved against a target
             // that no longer matched its own wording.
-            let mut newly_illegal: Vec<String> = Vec::new();
-            let targets: Vec<Target> = targets.iter()
+            let chosen = targets;
+            let targets: Vec<Target> = chosen.iter()
                 .map(|t| match *t {
                     Target::Object(id)
                         if !crate::engine::can_be_targeted_by(state, id, controller, Some(source_id), registry)
                             || !target_requirement.as_ref().is_none_or(|req|
                                     is_target_legal(state, &Target::Object(id), req, controller, Some(source_id), registry))
-                            || !behavior.is_none_or(|b| b.is_valid_target(state, controller, &Target::Object(id), registry)) => {
-                            newly_illegal.push(state.obj_name(id));
-                            Target::Illegal
-                        }
+                            || !behavior.is_none_or(|b| b.is_valid_target(state, controller, &Target::Object(id), registry)) =>
+                        Target::Illegal,
                     _ => t.clone(),
                 })
                 .collect();
@@ -283,10 +318,11 @@ fn resolve_top_of_stack_inner(state: &mut GameState, registry: &CardRegistry) {
             }
             // Partial fizzle is said out loud, as for spells (CR 608.2b,
             // issue #135).
-            if !newly_illegal.is_empty() {
-                state.log(LogLevel::Event, format!(
-                    "{name} ability: target {} is illegal, resolving with the rest (CR 608.2b)",
-                    newly_illegal.join(", ")));
+            let illegal = NewlyIllegal { state, chosen, now: &targets };
+            if illegal.ids().next().is_some() {
+                let line = format!(
+                    "{name} ability: target {illegal} is illegal, resolving with the rest (CR 608.2b)");
+                state.log(LogLevel::Event, line);
             }
 
             state.log(LogLevel::Event, format!("{name} ability resolved"));
@@ -364,15 +400,13 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
         // branch of a composite requirement, so Memory's Journey's graveyard
         // cards would be judged against its `PlayerOnly` first slot. A target
         // that has changed zones is already skipped by each card's own guard.
-        let mut newly_illegal: Vec<String> = Vec::new();
-        targets = targets.into_iter()
-            .map(|t| match t {
+        let chosen = std::mem::take(&mut targets);
+        targets = chosen.iter()
+            .map(|t| match *t {
                 Target::Object(id)
-                    if !crate::engine::can_be_targeted_by(state, id, caster, Some(object_id), registry) => {
-                        newly_illegal.push(state.obj_name(id));
-                        Target::Illegal
-                    }
-                other => other,
+                    if !crate::engine::can_be_targeted_by(state, id, caster, Some(object_id), registry) =>
+                    Target::Illegal,
+                _ => t.clone(),
             })
             .collect();
         if !any_legal {
@@ -384,10 +418,12 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
         // CR 608.2b's second sentence: the spell resolves but does as much
         // as it can. A partial fizzle used to log byte-identically to a full
         // resolution (issue #135) — say which target dropped out.
-        if !newly_illegal.is_empty() {
-            state.log(LogLevel::Event, format!(
-                "{}: target {} is illegal, resolving with the rest (CR 608.2b)",
-                state.obj_name(object_id), newly_illegal.join(", ")));
+        let illegal = NewlyIllegal { state, chosen: &chosen, now: &targets };
+        if illegal.ids().next().is_some() {
+            let line = format!(
+                "{}: target {illegal} is illegal, resolving with the rest (CR 608.2b)",
+                state.obj_name(object_id));
+            state.log(LogLevel::Event, line);
         }
     }
 
