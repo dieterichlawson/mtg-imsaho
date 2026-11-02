@@ -20,6 +20,7 @@ mod pending_effects;
 mod power_and_toughness;
 mod predicates;
 mod random;
+mod resolving;
 mod scopes;
 mod searching;
 mod simple_actions;

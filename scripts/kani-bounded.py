@@ -67,7 +67,7 @@ KANI_LIB = f'{K}/library/kani/kani_lib.c'
 # harnesses with (abilities!, statics!, equipment!, ...). `cargo kani list`
 # says the same at the price of building every harness, gigabytes of goto
 # files.
-TABLES = {'abilities', 'declares', 'werewolves', 'mana', 'statics', 'check_land', 'choosing_at_random', 'for_each_size', 'from_each_zone', 'for_each_key', 'each_printed', 'by_each_way', 'each_target', 'each_board', 'each_cost', 'each_pruning', 'each_path', 'over_each_library', 'over_each_hand', 'case_by_case', 'each_shape', 'each_hand_of_discard', 'each_pair', 'each_length', 'each_forest', 'each_player', 'each_holding', 'each_effect', 'each_count', 'each_setting', 'each_source', 'each_damage'}
+TABLES = {'abilities', 'declares', 'werewolves', 'mana', 'statics', 'check_land', 'choosing_at_random', 'for_each_size', 'from_each_zone', 'for_each_key', 'each_printed', 'by_each_way', 'each_target', 'each_board', 'each_cost', 'each_pruning', 'each_path', 'over_each_library', 'over_each_hand', 'case_by_case', 'each_shape', 'each_hand_of_discard', 'each_pair', 'each_length', 'each_forest', 'each_player', 'each_holding', 'each_effect', 'each_count', 'each_setting', 'each_source', 'each_resolution', 'each_damage'}
 FORMS = {'reaches_what_it_describes', 'holds_exactly_then', 'each_subtype_set', 'reaches_its_subtypes'}
 # Tables whose every entry is a module of these harnesses.
 SUFFIXED = {
