@@ -1425,7 +1425,7 @@ illegal or dubious resolutions do.
   the same bug
 
 - L67 [proposed 2026-11-01, from #986 and #987] every "transform this"
-  ability against CR 701.27f, and every card that keys its two faces'
+  ability against CR 701.28f, and every card that keys its two faces'
   abilities alike. (a) For each ability that transforms its own source
   (werewolf upkeep triggers both ways, Civilized Scholar's untap-then-
   transform, Homicidal Brute's end step, Thraben Sentry, Delver of Secrets,
@@ -1436,4 +1436,12 @@ illegal or dubious resolutions do.
   `ability_index` from both faces, or resolve hooks that read
   `is_transformed`. For each one, activate on one face and change the face
   before resolution (leave the battlefield, Moonmist, a werewolf upkeep).
-  Verify that the ability that resolves is the one that was activated
+  Verify that the ability that resolves is the one that was activated.
+  First run 2026-11-02: the transform itself is refused everywhere, across
+  a choice too (Scholar's discard, Sentry's yes). What breaks is the *rest*
+  of an ability whose hook returns early when it sees the face it did not
+  trigger from: Homicidal Brute skips "tap this creature" (#988). So for
+  each hook, ask what else it does besides transforming, and whether that
+  part still happens after the flip. Then hover the item on the page: the
+  stack item's text is always the front face's (#989). To place a flipped
+  face, set `is_transformed`, `name` and `transforms` on the object
