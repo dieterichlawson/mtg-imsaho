@@ -953,6 +953,12 @@ pub fn enters_with_counters(
 /// "transform it" in it does nothing (CR 701.28f, `transform_quietly`). A hook
 /// that reads `is_transformed` off the permanent instead drops the rest of
 /// the effect (Delver's look, #986; Homicidal Brute's tap, #988).
+///
+/// Only the step triggers (upkeep, end of combat, end step) record their
+/// face today: they are collected with `emit_from_face`. Every other
+/// collector uses `emit`, which records the front, and no card in the pool
+/// has a back-face trigger outside a step. A card that adds one must have its
+/// collector record the face before its hook can ask this.
 pub fn trigger_face_is_back(state: &GameState, object_id: ObjectId) -> bool {
     state.resolving_trigger_from_back_face
         .unwrap_or_else(|| state.get_object(object_id).is_some_and(|o| o.is_transformed))
