@@ -228,3 +228,52 @@ fn a_trigger_whose_target_became_illegal_changes_nothing() {
              about either permanent may change (CR 608.2b)");
     }
 }
+
+/// Reaper from the Abyss's "destroy target non-Demon creature" is a Demon's
+/// ability. Spare from Evil cast in response gives the target protection from
+/// non-Human creatures, so the ability may no longer target it (CR 702.16b)
+/// and is countered on resolution (CR 608.2b). Both arms, the Reaper's
+/// destroying the creature without Spare from Evil being what shows the
+/// trigger would otherwise have done something.
+///
+/// The re-check asked the zone, hexproof and filter half and the card's own,
+/// never protection: an activated ability's re-check asked it, a triggered
+/// one's did not, and the Reaper destroyed the protected creature.
+#[test]
+fn a_trigger_fizzles_when_its_target_gains_protection_from_its_source() {
+    for spared in [false, true] {
+        let reg = registry();
+        let mut state = game_at_step(Step::EndStep, P0);
+        state.creature_died_this_turn = true;
+
+        let reaper = named_permanent(&mut state, &reg, "Reaper from the Abyss", P0);
+        let reaper_card = reg.get_id_by_name("Reaper from the Abyss").unwrap();
+        let victim = ready_creature(&mut state, P1, 3, 3);
+
+        state.stack.push(StackEntry::Trigger(PendingTrigger {
+            source: TriggerSource { chosen_targets: vec![Target::Object(victim)], ..TriggerSource::new(reaper, reaper_card, P0, "Reaper from the Abyss") },
+            event: TriggerEvent::EndStep,
+            ordered: false,
+        }));
+        if spared {
+            // The creature's controller answers with Spare from Evil, which
+            // resolves first.
+            let spare_card = reg.get_id_by_name("Spare from Evil").unwrap();
+            let spare = state.create_object(spare_card, P1, Zone::Stack, None, None);
+            state.stack.push(StackEntry::Spell(spare));
+            mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+            assert!(state.has_protection_from(victim, reaper, &reg),
+                "test precondition: Spare from Evil protects it from the Reaper");
+        }
+        mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+        let zone = state.get_object(victim).unwrap().zone;
+        if spared {
+            assert_eq!(zone, Zone::Battlefield,
+                "protection from non-Human creatures makes the Demon's target \
+                 illegal, so its only target gone, the ability does nothing");
+        } else {
+            assert_eq!(zone, Zone::Graveyard, "unprotected, the Reaper destroys it");
+        }
+    }
+}

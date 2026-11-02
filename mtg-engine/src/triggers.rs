@@ -831,8 +831,19 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
         // against a target that had stopped satisfying the card's wording —
         // Grimgrin's "creature the defending player controls" survived the
         // creature changing controller in response.
+        //
+        // And whether it may still be targeted at all, as an activated
+        // ability's re-check asks (`stack.rs`): `is_target_legal` asks
+        // hexproof and not protection (CR 702.16b), so a creature given
+        // protection from non-Human creatures by Spare from Evil in response
+        // was destroyed by Reaper from the Abyss's ability anyway.
         let any_legal = trigger.source.chosen_targets.iter().any(|t| {
             crate::stack::is_target_legal(state, t, &target_req, controller, Some(trigger.source.id), registry)
+                && match *t {
+                    Target::Object(id) =>
+                        crate::engine::can_be_targeted_by(state, id, controller, Some(trigger.source.id), registry),
+                    _ => true,
+                }
                 && registry.get(card_id)
                     .is_some_and(|b| b.is_valid_target(state, controller, t, registry))
         });
