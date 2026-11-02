@@ -772,12 +772,17 @@ fn target_requirement(
     kind: Option<crate::cards::TriggerKind>,
 ) -> Option<crate::cards::TargetRequirement> {
     let kind = kind?;
-    registry.get(card_id)?
-        .card_data()
+    // The printed face says whether there is one to find, as in
+    // `trigger_description`; and the data built to find it is read, not
+    // dropped, in a proof (`cards::transient`).
+    if !registry.prints_trigger(card_id, false, &kind) {
+        return None;
+    }
+    crate::cards::transient(registry.get(card_id)?.card_data())
         .triggered_abilities
-        .into_iter()
+        .iter()
         .find(|t| t.kind == kind)
-        .and_then(|t| t.target_requirement)
+        .and_then(|t| t.target_requirement.clone())
 }
 
 /// CR 603.7d: the delayed ability exiles the token it was created for, if that
