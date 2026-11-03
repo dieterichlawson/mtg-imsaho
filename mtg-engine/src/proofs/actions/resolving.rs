@@ -202,9 +202,10 @@ fn a_spell_on_top(n: usize) {
 
 /// The rest of a spell's resolution (CR 608.2b), from its card, its
 /// targets and its controller (read off it as [`a_spell_on_top`] shows):
-/// with targets, none still legal (none meeting its requirement and the
-/// card's), it is countered by the rules, its effect not happening, and
-/// leaves the stack; otherwise it resolves, its card's resolution handed
+/// with targets, none still legal (none meeting its requirement, able to
+/// be targeted by it and meeting the card's), it is countered by the
+/// rules, its effect not happening, and leaves the stack; otherwise it
+/// resolves, its card's resolution handed
 /// each target as it was chosen or, where it may no longer be targeted,
 /// as illegal, its other targets kept in place, and it then leaves the
 /// stack. A spell with none resolves. For a spell either player's with
@@ -228,7 +229,7 @@ fn a_spell_resolving(n: usize) {
     crate::stack::resolve_spell_as(&mut state, &registry, spell, card, targets, controller);
 
     let chosen = &ids[..n];
-    let any_legal = chosen.iter().any(|&id| answer(id, Asked::Legal) && answer(id, Asked::Valid));
+    let any_legal = chosen.iter().any(|&id| answer(id, Asked::Legal) && answer(id, Asked::Targetable) && answer(id, Asked::Valid));
     let mut handed = [None, None];
     for (h, &id) in handed.iter_mut().zip(chosen) {
         *h = Some(if answer(id, Asked::Targetable) { Target::Object(id) } else { Target::Illegal });

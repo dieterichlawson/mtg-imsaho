@@ -28,6 +28,7 @@ mod simple_actions;
 mod targeting;
 mod tokens;
 mod transforming;
+mod trigger_resolving;
 mod triggering;
 mod until_end_of_turn;
 
