@@ -49,7 +49,10 @@ fn answered(reply: u8, optional: bool) {
     let chooser = PlayerId(1);
     let source = state.create_object(card, chooser, Zone::Battlefield, None, None);
     let offered = [Target::Object(ObjectId(7)), Target::Player(PlayerId(1))];
-    let effect = PendingEffect::Destroy { source_name: String::new() };
+    // An effect of no fields: the handler only hands it on, and one holding
+    // a string, read back off the restored question and compared, ran the
+    // solver out of memory.
+    let effect = PendingEffect::AttachTargetToPendingTrigger;
     state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
         player: chooser,
         source,
