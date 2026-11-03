@@ -7,11 +7,11 @@
 //! any answer here.
 
 use crate::actions::Target;
-use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetRequirement};
+use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, LoyaltyAbilityDef, SacrificeCost, TargetRequirement};
 use crate::ids::{ObjectId, PlayerId};
 use crate::proofs::cards::{acted, asked_for, card_proof, Act, Blank};
 use crate::state::{GameState, StackEntry};
-use crate::types::{ManaCost, Zone};
+use crate::types::{CardType, CounterType, ManaCost, Zone};
 
 /// A permanent whose one ability is "{T}: <an effect> to target creature".
 struct Activatable;
@@ -97,5 +97,92 @@ card_proof! {
     /// [`activating`].
     fn an_ability_activated_at_a_legal_target_goes_on_the_stack_holding_it_and_an_illegal_one_is_refused() {
         activating();
+    }
+}
+
+/// A planeswalker whose one loyalty ability, of `.0` loyalty, targets a
+/// creature.
+struct Walker(i32);
+
+impl CardBehavior for Walker {
+    fn card_data(&self) -> CardData {
+        CardData { name: "Walker".into(), card_types: vec![CardType::Planeswalker], ..CardData::default() }
+    }
+    fn loyalty_abilities(&self, _: &GameState, _: ObjectId) -> Vec<LoyaltyAbilityDef> {
+        vec![LoyaltyAbilityDef {
+            ability_index: 0,
+            loyalty_change: self.0,
+            description: String::new(),
+            target_requirement: Some(TargetRequirement::Creature),
+        }]
+    }
+}
+
+/// A planeswalker's loyalty ability activated at a creature (CR 606.3-5):
+/// with the targets it names legal, its cost is the loyalty it changes by
+/// (counters put on for a plus, taken off for a minus, none for a zero),
+/// the planeswalker is marked as having activated one this turn, and the
+/// ability goes on top of the stack from it, flagged as a loyalty ability,
+/// holding exactly those targets and the requirement they were chosen
+/// under, under the player who activated it; with them not, it is refused
+/// before anything is done. For an activator either player and a creature
+/// either player's, and the change of each harness.
+fn activating_loyalty(change: i32) {
+    let mut registry = CardRegistry::new();
+    let blank = registry.register(Box::new(Blank));
+    let card = registry.register(Box::new(Walker(change)));
+    let mut state = crate::proofs::cards::new_game();
+    let creature = state.create_object(blank, PlayerId(u8::from(kani::any::<bool>())), Zone::Battlefield, Some(1), Some(1));
+    let activator = PlayerId(u8::from(kani::any::<bool>()));
+    let source = state.create_object(card, activator, Zone::Battlefield, None, None);
+    state.priority_player = Some(activator);
+
+    let applied = crate::engine::actions::abilities::activate_loyalty_ability(
+        &mut state, source, 0, &[Target::Object(creature)], &registry);
+
+    // SAFETY: as in `targets_are_legal`.
+    let legal = unsafe { *std::ptr::addr_of!(LEGAL) } == Some(true);
+    let marked = state.get_object(source).expect("on the board").abilities_activated_this_turn.contains(&999);
+    if legal {
+        assert!(matches!(applied, crate::engine::Applied::Continue));
+        let paid = match change {
+            0 => acted() == 0,
+            n if n > 0 => asked_for(&[Act::Counters(source, CounterType::Loyalty, n.unsigned_abs())]),
+            n => asked_for(&[Act::RemoveCounters(source, CounterType::Loyalty, n.unsigned_abs())]),
+        };
+        assert!(paid && marked);
+        assert!(matches!(state.stack.as_slice(), [StackEntry::Ability {
+            source_id, ability_index: 0, behavior_card_id, targets, activator: by, loyalty: true,
+            target_requirement: Some(TargetRequirement::Creature), ..
+        }] if *source_id == source && *behavior_card_id == card && *by == activator
+            && matches!(targets.as_slice(), [Target::Object(t)] if *t == creature)));
+    } else {
+        assert!(matches!(applied, crate::engine::Applied::ReturnNow));
+        assert!(acted() == 0 && state.stack.is_empty() && !marked);
+    }
+    std::mem::forget((registry, state));
+}
+
+card_proof! {
+    #[kani::stub(crate::engine::targeting::targets_are_legal, targets_are_legal)]
+    /// [`activating_loyalty`] for a plus ability.
+    fn a_plus_loyalty_ability_at_a_legal_target_puts_counters_on_and_goes_on_the_stack() {
+        activating_loyalty(1);
+    }
+}
+
+card_proof! {
+    #[kani::stub(crate::engine::targeting::targets_are_legal, targets_are_legal)]
+    /// [`activating_loyalty`] for a zero ability.
+    fn a_zero_loyalty_ability_at_a_legal_target_goes_on_the_stack_for_nothing() {
+        activating_loyalty(0);
+    }
+}
+
+card_proof! {
+    #[kani::stub(crate::engine::targeting::targets_are_legal, targets_are_legal)]
+    /// [`activating_loyalty`] for a minus ability.
+    fn a_minus_loyalty_ability_at_a_legal_target_takes_counters_off_and_goes_on_the_stack() {
+        activating_loyalty(-2);
     }
 }
