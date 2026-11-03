@@ -331,11 +331,13 @@ fn dealing(attacking: &[u64], walker_of: Option<u64>, blocks: &[(u64, &[u64])], 
             push(a, t, d.overflow);
         }
     }
-    assert!(divisions[divided..].iter().all(Option::is_none));
+    assert!((0..divisions.len()).all(|i| i < divided || divisions[i].is_none()));
     assert!(asked_each(n, |k| Act::Queue { source: expected[k].0, target: expected[k].1, amount: expected[k].2, kind: DamageKind::Combat }));
     // SAFETY: as in `has_keyword`.
     let (recorded, k) = unsafe { (*std::ptr::addr_of!(MARKED), *std::ptr::addr_of!(MARKED_N)) };
-    assert!(k == m && recorded[..m] == marked[..m]);
+    // Each place checked on its own, not the two lists of open length
+    // compared, which the solver follows through every length at once.
+    assert!(k == m && (0..marked.len()).all(|i| i >= m || recorded[i] == marked[i]));
     assert!(state.combat.as_ref().expect("a combat").chosen_damage.is_empty());
     std::mem::forget((registry, state, combat));
 }
@@ -417,7 +419,7 @@ fn asking(attacking: &[u64], blocks: &[(u64, &[u64])], order: &[(u64, &[u64])]) 
             break;
         }
     }
-    assert!(divisions[divided..].iter().all(Option::is_none));
+    assert!((0..divisions.len()).all(|i| i < divided || divisions[i].is_none()));
     match question {
         Some((a, (b, lo, hi))) => {
             assert!(raised && matches!(&state.awaiting_action, Some(crate::state::AwaitingAction::ResolutionChoice {
