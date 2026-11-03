@@ -749,14 +749,24 @@ pub fn divide_combat_damage(
 /// Ask the attacking player the next open division of this step's combat
 /// damage, if there is one (CR 510.1c-d). True when a prompt was raised.
 pub(crate) fn ask_next_damage_division(state: &mut GameState, registry: &CardRegistry, first_strike_only: bool) -> bool {
-    let Some(combat) = state.combat.clone() else { return false };
+    let Some(prompt) = next_damage_division(state, registry, first_strike_only) else { return false };
+    state.awaiting_action = Some(prompt);
+    true
+}
+
+/// The question [`ask_next_damage_division`] raises, if there is one, read
+/// off the combat where it lies: nothing here changes the game, so the
+/// combat needs no copy (a copy of its maps was most of what a proof of
+/// the question followed).
+fn next_damage_division(state: &GameState, registry: &CardRegistry, first_strike_only: bool) -> Option<crate::state::AwaitingAction> {
+    let combat = state.combat.as_ref()?;
     for (&attacker, &defending_player) in &combat.attackers {
         if state.get_object(attacker).is_none_or(|o| o.zone != Zone::Battlefield)
             || !deals_in_step(state, attacker, first_strike_only, registry)
         {
             continue;
         }
-        let live = live_blockers(state, attacker, &assignment_order(&combat, attacker));
+        let live = live_blockers(state, attacker, &assignment_order(combat, attacker));
         if live.is_empty() {
             continue;
         }
@@ -785,16 +795,15 @@ pub(crate) fn ask_next_damage_division(state: &mut GameState, registry: &CardReg
             "Combat damage from {} ({power} power, CR 510.1c): how much of the {max} left goes to {blocker_name}? At least {min} (lethal), at most {max}; the rest goes on to {onward}",
             state.obj_name(attacker),
         );
-        state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
+        return Some(crate::state::AwaitingAction::ResolutionChoice {
             player: state.active_player,
             source: attacker,
             choice: crate::state::ResolutionChoiceKind::AssignCombatDamage {
                 description, attacker, blocker, min, max, options, first_strike_only,
             },
         });
-        return true;
     }
-    false
+    None
 }
 
 /// Record the attacking player's answer at an `AssignCombatDamage` prompt.
