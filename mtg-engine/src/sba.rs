@@ -54,329 +54,404 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
         return false;
     }
     let mut any_action = false;
-
     loop {
-        let mut took_action = false;
+        match one_pass(state, registry) {
+            Pass::Settled => return any_action,
+            Pass::Acted => any_action = true,
+            Pass::Stopped => return true,
+        }
+    }
+}
 
-        // CR 611.2b: a "for as long as" duration ends the moment its condition
-        // stops being true. The engine has no continuous re-evaluation, so the
-        // check rides along with state-based actions — the closest thing to
-        // "the moment". First, because a permanent that has just changed hands
-        // should be back with its owner before anything else looks at who
-        // controls what.
-        if state.expire_control_effects() {
+/// What one pass of [`check_state_based_actions`] came to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Pass {
+    /// Nothing was done: no state-based action applies (CR 704.3).
+    Settled,
+    /// Something was done, and the board is checked again (704.3).
+    Acted,
+    /// A state-triggered ability triggered or a player is asked which
+    /// legend to keep: the pass stops there, for the trigger to go on the
+    /// stack or the player to answer.
+    Stopped,
+}
+
+/// One pass of state-based actions (CR 704.3), each part its own function
+/// so that each is proved apart (`proofs::actions::state_based`), in the
+/// order the parts are taken.
+pub(crate) fn one_pass(state: &mut GameState, registry: &CardRegistry) -> Pass {
+    // CR 611.2b: a "for as long as" duration ends the moment its condition
+    // stops being true. The engine has no continuous re-evaluation, so the
+    // check rides along with state-based actions — the closest thing to
+    // "the moment". First, because a permanent that has just changed hands
+    // should be back with its owner before anything else looks at who
+    // controls what.
+    let mut took_action = state.expire_control_effects();
+    took_action |= players_lose(state);
+    let (zero_toughness_ids, destroyed_ids) = creature_fates(state, registry);
+    took_action |= remove_creatures(state, zero_toughness_ids, destroyed_ids, registry);
+    took_action |= remove_illegal_attachments(state, registry);
+    took_action |= annihilate_counters(state);
+    if raise_state_trigger(state, registry) {
+        return Pass::Stopped;
+    }
+    took_action |= remove_planeswalkers_without_loyalty(state, registry);
+    if apply_legend_rule(state, registry) {
+        return Pass::Stopped;
+    }
+    took_action |= remove_tokens_elsewhere(state);
+    // Check for game end: only one (or zero) players alive.
+    took_action |= state.end_game_if_decided();
+    if took_action { Pass::Acted } else { Pass::Settled }
+}
+
+/// Rules 704.5a-b: a player with 0 or less life loses the game, and so does
+/// a player who attempted to draw from an empty library. Whether anyone
+/// lost.
+pub(crate) fn players_lose(state: &mut GameState) -> bool {
+    let mut took_action = false;
+    // Rule 704.5a: A player with 0 or less life loses the game.
+    for i in 0..state.players.len() {
+        let (lost, life, id) = {
+            let p = &state.players[i];
+            (p.lost, p.life, p.id)
+        };
+        if !lost && life <= 0 {
+            state.player_loses(id, LossReason::LifeReachedZero);
             took_action = true;
         }
-
-        // Rule 704.5a: A player with 0 or less life loses the game.
-        for i in 0..state.players.len() {
-            let (lost, life, id) = {
-                let p = &state.players[i];
-                (p.lost, p.life, p.id)
-            };
-            if !lost && life <= 0 {
-                state.player_loses(id, LossReason::LifeReachedZero);
-                took_action = true;
-            }
-        }
-
-        // Rule 704.5b: A player who attempted to draw from an empty library loses.
-        for i in 0..state.players.len() {
-            let (lost, drawn_empty, id) = {
-                let p = &state.players[i];
-                (p.lost, p.has_drawn_from_empty, p.id)
-            };
-            if !lost && drawn_empty {
-                state.player_loses(id, LossReason::DrewFromEmptyLibrary);
-                took_action = true;
-            }
-        }
-
-        // Identify creatures that need to leave the battlefield.
-        let creature_ids: Vec<_> = state.objects_in_id_order().into_iter()
-            .filter(|o| o.zone == Zone::Battlefield)
-            .map(|o| o.id)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .filter(|&id| state.is_creature(id, registry))
-            .collect();
-
-        // Classify each creature: zero toughness vs lethal damage/deathtouch.
-        let mut zero_toughness_ids = Vec::new();
-        let mut destroyed_ids = Vec::new();
-
-        for id in creature_ids {
-            let effective_t = state.effective_toughness(id, registry)
-                .or_else(|| state.get_object(id).and_then(|o| o.toughness));
-            let obj = state.get_object(id);
-            let damage = obj.map_or(0, |o| o.damage_marked);
-            let deathtouch = obj.is_some_and(|o| o.dealt_deathtouch_damage);
-            // Nothing is exempt here. A permanent whose "enters as a copy"
-            // choice is still outstanding is not on the battlefield at all
-            // (CR 614.12b — the choice is made as it enters, and the entry
-            // waits for it), so the 0/0 window this used to carve an
-            // exemption for no longer exists.
-            // Which of 704.5f-h applies is proved in
-            // `mtg_kernel::sba::creature_fate`.
-            match effective_t.map(|t| mtg_kernel::sba::creature_fate(t, damage, deathtouch)) {
-                Some(mtg_kernel::sba::Fate::ZeroToughness) => {
-                    // Rule 704.5f: 0 or less toughness — not destruction,
-                    // indestructible and regeneration do NOT prevent this.
-                    zero_toughness_ids.push(id);
-                }
-                Some(mtg_kernel::sba::Fate::Destroyed) => {
-                    // Rules 704.5g/h: lethal damage or deathtouch — destruction,
-                    // checked via try_destroy (indestructible / regeneration apply).
-                    destroyed_ids.push(id);
-                }
-                Some(mtg_kernel::sba::Fate::Stays) | None => {}
-            }
-        }
-
-        // Rule 704.5f: zero toughness goes directly to graveyard.
-        for id in zero_toughness_ids {
-            // The same last-known-information capture the destruction pipeline
-            // does, and now literally the same code: this was a hand-rolled
-            // copy that had to be kept in step with it by hand.
-            if let Some(event) = crate::destruction::death_event(state, id, Some(registry)) {
-                state.events.push(event);
-            }
-            // move_object handles the death log message.
-            state.move_object(id, Zone::Graveyard, registry);
-            state.creature_died_this_turn = true;
-            took_action = true;
-        }
-
-        // Rules 704.5g/h: lethal damage or deathtouch — use destruction pipeline.
-        // Per rule 704.3, SBAs happen simultaneously. We must snapshot indestructible
-        // status BEFORE processing any deaths, so that e.g. Angelic Overseer retains
-        // indestructible even if the Human granting it dies in the same SBA batch.
-        let indestructible_snapshot: std::collections::HashSet<ObjectId> = destroyed_ids.iter()
-            .filter(|&&id| state.has_keyword(id, crate::types::Keyword::Indestructible, registry))
-            .copied()
-            .collect();
-
-        for id in destroyed_ids {
-            // Check indestructible from the snapshot (before any deaths in this batch).
-            if indestructible_snapshot.contains(&id) {
-                continue;
-            }
-            // Still need regeneration check.
-            let shields = state.get_object(id).map_or(0, |o| o.regeneration_shields);
-            if shields > 0 {
-                crate::destruction::regenerate_sba(state, id);
-                took_action = true;
-                continue;
-            }
-            crate::destruction::destroy_sba(state, id, registry);
-            took_action = true;
-        }
-
-        // Rules 704.5m/n: an attachment that is not legally attached. The
-        // question is `attachment::illegality`, which is the same one
-        // `invariants::permanents` asks of a settled board — this sweep used
-        // to ask only "has my host left the battlefield?", so five states the
-        // oracle calls corrupt were states the engine called settled (#552).
-        // An Aura goes to its owner's graveyard; an Equipment becomes
-        // unattached and stays where it is.
-        let illegal: Vec<(ObjectId, bool)> = state.objects_in_id_order().into_iter()
-            .filter(|o| o.zone == Zone::Battlefield)
-            .filter(|o| crate::attachment::illegality(state, o.id, registry).is_some())
-            .map(|o| (o.id, state.is_equipment(o.id, registry)))
-            .collect();
-        let unattached_auras: Vec<ObjectId> = illegal.iter()
-            .filter(|(_, is_equipment)| !is_equipment)
-            .map(|(id, _)| *id)
-            .collect();
-        let detach_equipment: Vec<ObjectId> = illegal.iter()
-            .filter(|(_, is_equipment)| *is_equipment)
-            .map(|(id, _)| *id)
-            .collect();
-        for id in detach_equipment {
-            // CR 704.5n: it becomes unattached and remains on the
-            // battlefield. Through `unattach`, which is where the line
-            // saying so lives — this used to clear the field and write
-            // nothing, the only state-based action here that changed the
-            // game state silently (issue #502).
-            if state.get_object(id).is_some_and(|o| o.attached_to.is_some()) {
-                state.unattach(id);
-            } else {
-                // CR 301.5/704.5n: an Equipment on a player comes off the
-                // player. Same event, same line, a different field.
-                state.unattach_from_player(id);
-            }
-            took_action = true;
-        }
-
-        for id in unattached_auras {
-            state.move_object(id, Zone::Graveyard, registry);
-            took_action = true;
-        }
-
-        // Rule 704.5q: +1/+1 and -1/-1 counters annihilate in pairs.
-        let counter_targets: Vec<_> = state.objects_in_id_order().into_iter()
-            .filter(|o| {
-                o.zone == Zone::Battlefield
-                    && *o.counters.get(&crate::types::CounterType::PlusOnePlusOne).unwrap_or(&0) > 0
-                    && *o.counters.get(&crate::types::CounterType::MinusOneMinusOne).unwrap_or(&0) > 0
-            })
-            .map(|o| o.id)
-            .collect();
-        for id in counter_targets {
-            if let Some(obj) = state.objects.get_mut(&id) {
-                let plus = *obj.counters.get(&crate::types::CounterType::PlusOnePlusOne).unwrap_or(&0);
-                let minus = *obj.counters.get(&crate::types::CounterType::MinusOneMinusOne).unwrap_or(&0);
-                // Proved in `mtg_kernel::sba::annihilate`: the smaller number
-                // of each, so the net effect on P/T is unchanged.
-                let (plus_left, minus_left) = mtg_kernel::sba::annihilate(plus, minus);
-                obj.counters.insert(crate::types::CounterType::PlusOnePlusOne, plus_left);
-                obj.counters.insert(crate::types::CounterType::MinusOneMinusOne, minus_left);
-                took_action = true;
-            }
-        }
-
-        // State-triggered abilities (CR 603.8): checked during SBA processing,
-        // BEFORE zero-loyalty destruction. Per CR 603.8, state triggers fire as
-        // soon as their condition is true — Garruk Relentless's "transform when
-        // ≤2 loyalty" must trigger before the zero-loyalty SBA destroys him.
-        {
-            let candidates: Vec<(ObjectId, crate::ids::CardId, crate::ids::PlayerId)> = state.objects_in_id_order().into_iter()
-                .filter(|o| o.zone == Zone::Battlefield && !o.state_trigger_on_stack)
-                .map(|o| (o.id, o.card_id, o.controller))
-                .collect();
-            let mut triggered = None;
-            for (id, card_id, controller) in candidates {
-                let Some(behavior) = registry.get(card_id) else { continue };
-                if behavior.state_trigger_condition(state, id, registry) {
-                    triggered = Some((id, card_id, controller, behavior.state_trigger_description()));
-                    break;
-                }
-            }
-            if let Some((id, card_id, controller, description)) = triggered {
-                if let Some(obj) = state.get_object_mut(id) {
-                    obj.state_trigger_on_stack = true;
-                }
-                state.log(LogLevel::Event,
-                    format!("{}'s state-triggered ability triggers", state.obj_name(id)));
-                state.pending_triggers.push(crate::triggers::PendingTrigger::new(
-                    crate::triggers::TriggerSource::new(id, card_id, controller, description),
-                    crate::triggers::TriggerEvent::StateTriggered,
-                ));
-                // Return immediately so the state trigger goes on the stack
-                // before any further SBA processing (e.g. zero-loyalty death).
-                return true;
-            }
-        }
-
-        // Rule 704.5i: A planeswalker with 0 or less loyalty goes to graveyard.
-        let pw_zero_loyalty: Vec<_> = state.objects_in_id_order().into_iter()
-            .filter(|o| {
-                o.zone == Zone::Battlefield
-                    && *o.counters.get(&crate::types::CounterType::Loyalty).unwrap_or(&0) == 0
-            })
-            .map(|o| o.id)
-            .collect::<Vec<_>>()
-            .into_iter()
-            .filter(|&id| state.has_card_type(id, crate::types::CardType::Planeswalker, registry))
-            .collect();
-        for id in pw_zero_loyalty {
-            // The cause; `move_object` logs the move itself, which this line
-            // used to tell a second time (#738).
-            state.log(LogLevel::Event, format!("{} has 0 loyalty", state.obj_name(id)));
-            state.move_object(id, Zone::Graveyard, registry);
-            took_action = true;
-        }
-
-        // Rule 704.5j: Legend rule — if a player controls two or more legendary
-        // permanents with the same name, that player chooses one of them, and
-        // the rest are put into their owners' graveyards.
-        //
-        // This is the one state-based action that needs a player's answer,
-        // and only one choice can be pending at a time. While a prompt is
-        // already waiting (this one included — the engine's SBA loop
-        // re-checks before the player can answer), hold off rather than
-        // raise it again: re-presenting the same keep-choice over its own
-        // pending prompt reported an action taken every check, forever — a
-        // livelock with no decision points, found by seeded fuzzing
-        // (rb-vampires vs ub-zombies, seed 74, two Grimgrins). Every other
-        // state-based action — deaths, loss, the game ending — still runs
-        // in that window; a concede during a combat prompt has to end the
-        // game.
-        if state.awaiting_action.is_none() {
-            use std::collections::HashMap as Map;
-            let mut legend_groups: Map<(crate::ids::PlayerId, String), Vec<crate::ids::ObjectId>> = Map::new();
-            // Grouped by the name of the face that is up (CR 704.5j reads the
-            // permanent's name), not the cached string — a decklist entry
-            // written as "Front // Back" and a walker that transformed and
-            // flipped back carry different caches for the same legend.
-            let battlefield: Vec<(crate::ids::ObjectId, crate::ids::PlayerId, String)> =
-                state.objects_in_id_order().into_iter()
-                    .filter(|o| o.zone == Zone::Battlefield)
-                    .map(|o| (o.id, o.controller, state.name_of(o.id, registry)))
-                    .collect();
-            for (id, controller, name) in battlefield {
-                // Read from the active face, not from the `is_legendary` cache
-                // that only the ordinary "resolve a permanent spell" path fills
-                // in — a reanimated or returned legend is still a legend.
-                if state.is_legendary(id, registry) {
-                    legend_groups.entry((controller, name)).or_default().push(id);
-                }
-            }
-            // Sorted: which duplicate a player is asked about first should not
-            // depend on HashMap order.
-            let mut legend_groups: Vec<_> = legend_groups.into_iter().collect();
-            legend_groups.sort_by(|a, b| (a.0.0.0, &a.0.1).cmp(&(b.0.0.0, &b.0.1)));
-            for ((player, name), ids) in legend_groups {
-                if ids.len() > 1 {
-                    // Player must choose which to keep.
-                    let targets: Vec<crate::actions::Target> = ids.iter()
-                        .map(|&id| crate::actions::Target::Object(id))
-                        .collect();
-                    crate::cards::helpers::present_target_choice(
-                        state,
-                        ids[0], // source (arbitrary, just for bookkeeping)
-                        player,
-                        targets,
-                        crate::state::PendingEffect::LegendRuleKeep {
-                            player,
-                            legend_name: name.clone(),
-                        },
-                        &format!("Legend rule: choose which {name} to keep"),
-                        false,
-                        registry,
-                    );
-                    // Don't set took_action — we need to break out of the SBA
-                    // loop and let the engine wait for the player's choice.
-                    // The next SBA pass (after the choice is resolved) will
-                    // find no more duplicates.
-                    any_action = true;
-                    return any_action;
-                }
-            }
-        }
-
-        // Rule 704.5d: A token not on the battlefield ceases to exist.
-        let dead_tokens: Vec<_> = state.objects_in_id_order().into_iter()
-            .filter(|o| o.is_token && o.zone != Zone::Battlefield)
-            .map(|o| o.id)
-            .collect();
-        for id in dead_tokens {
-            state.cease_to_exist(id);
-            took_action = true;
-        }
-
-        // Check for game end: only one (or zero) players alive.
-        if state.end_game_if_decided() {
-            took_action = true;
-        }
-
-        if !took_action {
-            break;
-        }
-        any_action = true;
     }
 
-    any_action
+    // Rule 704.5b: A player who attempted to draw from an empty library loses.
+    for i in 0..state.players.len() {
+        let (lost, drawn_empty, id) = {
+            let p = &state.players[i];
+            (p.lost, p.has_drawn_from_empty, p.id)
+        };
+        if !lost && drawn_empty {
+            state.player_loses(id, LossReason::DrewFromEmptyLibrary);
+            took_action = true;
+        }
+    }
+    took_action
+}
+
+/// Rules 704.5m/n: an attachment that is not legally attached. The
+/// question is `attachment::illegality`, which is the same one
+/// `invariants::permanents` asks of a settled board — this sweep used
+/// to ask only "has my host left the battlefield?", so five states the
+/// oracle calls corrupt were states the engine called settled (#552).
+/// An Aura goes to its owner's graveyard; an Equipment becomes
+/// unattached and stays where it is. Whether any did.
+pub(crate) fn remove_illegal_attachments(state: &mut GameState, registry: &CardRegistry) -> bool {
+    let mut took_action = false;
+    let illegal: Vec<(ObjectId, bool)> = state.objects_in_id_order().into_iter()
+        .filter(|o| o.zone == Zone::Battlefield)
+        .filter(|o| crate::attachment::illegality(state, o.id, registry).is_some())
+        .map(|o| (o.id, state.is_equipment(o.id, registry)))
+        .collect();
+    let unattached_auras: Vec<ObjectId> = illegal.iter()
+        .filter(|(_, is_equipment)| !is_equipment)
+        .map(|(id, _)| *id)
+        .collect();
+    let detach_equipment: Vec<ObjectId> = illegal.iter()
+        .filter(|(_, is_equipment)| *is_equipment)
+        .map(|(id, _)| *id)
+        .collect();
+    for id in detach_equipment {
+        // CR 704.5n: it becomes unattached and remains on the
+        // battlefield. Through `unattach`, which is where the line
+        // saying so lives — this used to clear the field and write
+        // nothing, the only state-based action here that changed the
+        // game state silently (issue #502).
+        if state.get_object(id).is_some_and(|o| o.attached_to.is_some()) {
+            state.unattach(id);
+        } else {
+            // CR 301.5/704.5n: an Equipment on a player comes off the
+            // player. Same event, same line, a different field.
+            state.unattach_from_player(id);
+        }
+        took_action = true;
+    }
+
+    for id in unattached_auras {
+        state.move_object(id, Zone::Graveyard, registry);
+        took_action = true;
+    }
+    took_action
+}
+
+/// Rule 704.5q: +1/+1 and -1/-1 counters on a permanent annihilate in
+/// pairs. Whether any did.
+pub(crate) fn annihilate_counters(state: &mut GameState) -> bool {
+    let mut took_action = false;
+    let counter_targets: Vec<_> = state.objects_in_id_order().into_iter()
+        .filter(|o| {
+            o.zone == Zone::Battlefield
+                && *o.counters.get(&crate::types::CounterType::PlusOnePlusOne).unwrap_or(&0) > 0
+                && *o.counters.get(&crate::types::CounterType::MinusOneMinusOne).unwrap_or(&0) > 0
+        })
+        .map(|o| o.id)
+        .collect();
+    for id in counter_targets {
+        if let Some(obj) = state.objects.get_mut(&id) {
+            let plus = *obj.counters.get(&crate::types::CounterType::PlusOnePlusOne).unwrap_or(&0);
+            let minus = *obj.counters.get(&crate::types::CounterType::MinusOneMinusOne).unwrap_or(&0);
+            // Proved in `mtg_kernel::sba::annihilate`: the smaller number
+            // of each, so the net effect on P/T is unchanged.
+            let (plus_left, minus_left) = mtg_kernel::sba::annihilate(plus, minus);
+            obj.counters.insert(crate::types::CounterType::PlusOnePlusOne, plus_left);
+            obj.counters.insert(crate::types::CounterType::MinusOneMinusOne, minus_left);
+            took_action = true;
+        }
+    }
+    took_action
+}
+
+/// State-triggered abilities (CR 603.8): checked during SBA processing,
+/// BEFORE zero-loyalty destruction. Per CR 603.8, state triggers fire as
+/// soon as their condition is true — Garruk Relentless's "transform when
+/// ≤2 loyalty" must trigger before the zero-loyalty SBA destroys him.
+/// Whether one triggered; the pass then stops, so the state trigger goes
+/// on the stack before any further SBA processing (e.g. zero-loyalty
+/// death).
+pub(crate) fn raise_state_trigger(state: &mut GameState, registry: &CardRegistry) -> bool {
+    let candidates: Vec<(ObjectId, crate::ids::CardId, crate::ids::PlayerId)> = state.objects_in_id_order().into_iter()
+        .filter(|o| o.zone == Zone::Battlefield && !o.state_trigger_on_stack)
+        .map(|o| (o.id, o.card_id, o.controller))
+        .collect();
+    let mut triggered = None;
+    for (id, card_id, controller) in candidates {
+        let Some(behavior) = registry.get(card_id) else { continue };
+        if behavior.state_trigger_condition(state, id, registry) {
+            triggered = Some((id, card_id, controller, behavior.state_trigger_description()));
+            break;
+        }
+    }
+    let Some((id, card_id, controller, description)) = triggered else { return false };
+    if let Some(obj) = state.get_object_mut(id) {
+        obj.state_trigger_on_stack = true;
+    }
+    state.log(LogLevel::Event,
+        format!("{}'s state-triggered ability triggers", state.obj_name(id)));
+    state.pending_triggers.push(crate::triggers::PendingTrigger::new(
+        crate::triggers::TriggerSource::new(id, card_id, controller, description),
+        crate::triggers::TriggerEvent::StateTriggered,
+    ));
+    true
+}
+
+/// Rule 704.5i: A planeswalker with 0 or less loyalty goes to its owner's
+/// graveyard. Whether any did.
+pub(crate) fn remove_planeswalkers_without_loyalty(state: &mut GameState, registry: &CardRegistry) -> bool {
+    let mut took_action = false;
+    let pw_zero_loyalty: Vec<_> = state.objects_in_id_order().into_iter()
+        .filter(|o| {
+            o.zone == Zone::Battlefield
+                && *o.counters.get(&crate::types::CounterType::Loyalty).unwrap_or(&0) == 0
+        })
+        .map(|o| o.id)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .filter(|&id| state.has_card_type(id, crate::types::CardType::Planeswalker, registry))
+        .collect();
+    for id in pw_zero_loyalty {
+        // The cause; `move_object` logs the move itself, which this line
+        // used to tell a second time (#738).
+        state.log(LogLevel::Event, format!("{} has 0 loyalty", state.obj_name(id)));
+        state.move_object(id, Zone::Graveyard, registry);
+        took_action = true;
+    }
+    took_action
+}
+
+/// Rule 704.5j: Legend rule — if a player controls two or more legendary
+/// permanents with the same name, that player chooses one of them, and
+/// the rest are put into their owners' graveyards. Whether the player was
+/// asked; the pass then stops for the answer.
+///
+/// This is the one state-based action that needs a player's answer,
+/// and only one choice can be pending at a time. While a prompt is
+/// already waiting (this one included — the engine's SBA loop
+/// re-checks before the player can answer), hold off rather than
+/// raise it again: re-presenting the same keep-choice over its own
+/// pending prompt reported an action taken every check, forever — a
+/// livelock with no decision points, found by seeded fuzzing
+/// (rb-vampires vs ub-zombies, seed 74, two Grimgrins). Every other
+/// state-based action — deaths, loss, the game ending — still runs
+/// in that window; a concede during a combat prompt has to end the
+/// game.
+pub(crate) fn apply_legend_rule(state: &mut GameState, registry: &CardRegistry) -> bool {
+    if state.awaiting_action.is_some() {
+        return false;
+    }
+    // A list of the groups rather than a `HashMap`, whose hasher a proof
+    // cannot model.
+    let mut legend_groups: Vec<((crate::ids::PlayerId, String), Vec<ObjectId>)> = Vec::new();
+    // Grouped by the name of the face that is up (CR 704.5j reads the
+    // permanent's name), not the cached string — a decklist entry
+    // written as "Front // Back" and a walker that transformed and
+    // flipped back carry different caches for the same legend.
+    let battlefield: Vec<(crate::ids::ObjectId, crate::ids::PlayerId, String)> =
+        state.objects_in_id_order().into_iter()
+            .filter(|o| o.zone == Zone::Battlefield)
+            .map(|o| (o.id, o.controller, state.name_of(o.id, registry)))
+            .collect();
+    for (id, controller, name) in battlefield {
+        // Read from the active face, not from the `is_legendary` cache
+        // that only the ordinary "resolve a permanent spell" path fills
+        // in — a reanimated or returned legend is still a legend.
+        if state.is_legendary(id, registry) {
+            match legend_groups.iter_mut().find(|((p, n), _)| *p == controller && *n == name) {
+                Some((_, ids)) => ids.push(id),
+                None => legend_groups.push(((controller, name), vec![id])),
+            }
+        }
+    }
+    // Sorted: which duplicate a player is asked about first is by player,
+    // then name, not the order the board lists them in.
+    legend_groups.sort_by(|a, b| (a.0.0.0, &a.0.1).cmp(&(b.0.0.0, &b.0.1)));
+    for ((player, name), ids) in legend_groups {
+        if ids.len() > 1 {
+            // Player must choose which to keep.
+            let targets: Vec<crate::actions::Target> = ids.iter()
+                .map(|&id| crate::actions::Target::Object(id))
+                .collect();
+            crate::cards::helpers::present_target_choice(
+                state,
+                ids[0], // source (arbitrary, just for bookkeeping)
+                player,
+                targets,
+                crate::state::PendingEffect::LegendRuleKeep {
+                    player,
+                    legend_name: name.clone(),
+                },
+                &format!("Legend rule: choose which {name} to keep"),
+                false,
+                registry,
+            );
+            // The pass stops here, and the engine waits for the player's
+            // choice. The next SBA pass (after the choice is resolved)
+            // will find no more duplicates.
+            return true;
+        }
+    }
+    false
+}
+
+/// Rule 704.5d: A token not on the battlefield ceases to exist. Whether
+/// any did.
+pub(crate) fn remove_tokens_elsewhere(state: &mut GameState) -> bool {
+    let dead_tokens: Vec<_> = state.objects_in_id_order().into_iter()
+        .filter(|o| o.is_token && o.zone != Zone::Battlefield)
+        .map(|o| o.id)
+        .collect();
+    let took_action = !dead_tokens.is_empty();
+    for id in dead_tokens {
+        state.cease_to_exist(id);
+    }
+    took_action
+}
+
+/// Which creatures on the battlefield rules 704.5f-h remove, in the
+/// board's order: those of toughness 0 or less, and those otherwise
+/// destroyed (lethal damage, or any from a deathtouch source), as
+/// `mtg_kernel::sba::creature_fate` decides for each.
+///
+/// The creatures' part of a pass is this and [`remove_creatures`], each
+/// its own function so that each is proved apart (`proofs::actions::state_based`).
+pub(crate) fn creature_fates(state: &GameState, registry: &CardRegistry) -> (Vec<ObjectId>, Vec<ObjectId>) {
+    let creature_ids: Vec<_> = state.objects_in_id_order().into_iter()
+        .filter(|o| o.zone == Zone::Battlefield)
+        .map(|o| o.id)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .filter(|&id| state.is_creature(id, registry))
+        .collect();
+
+    // Classify each creature: zero toughness vs lethal damage/deathtouch.
+    let mut zero_toughness_ids = Vec::new();
+    let mut destroyed_ids = Vec::new();
+
+    for id in creature_ids {
+        let effective_t = state.effective_toughness(id, registry)
+            .or_else(|| state.get_object(id).and_then(|o| o.toughness));
+        let obj = state.get_object(id);
+        let damage = obj.map_or(0, |o| o.damage_marked);
+        let deathtouch = obj.is_some_and(|o| o.dealt_deathtouch_damage);
+        // Nothing is exempt here. A permanent whose "enters as a copy"
+        // choice is still outstanding is not on the battlefield at all
+        // (CR 614.12b — the choice is made as it enters, and the entry
+        // waits for it), so the 0/0 window this used to carve an
+        // exemption for no longer exists.
+        // Which of 704.5f-h applies is proved in
+        // `mtg_kernel::sba::creature_fate`.
+        match effective_t.map(|t| mtg_kernel::sba::creature_fate(t, damage, deathtouch)) {
+            Some(mtg_kernel::sba::Fate::ZeroToughness) => {
+                // Rule 704.5f: 0 or less toughness — not destruction,
+                // indestructible and regeneration do NOT prevent this.
+                zero_toughness_ids.push(id);
+            }
+            Some(mtg_kernel::sba::Fate::Destroyed) => {
+                // Rules 704.5g/h: lethal damage or deathtouch — destruction,
+                // checked via try_destroy (indestructible / regeneration apply).
+                destroyed_ids.push(id);
+            }
+            Some(mtg_kernel::sba::Fate::Stays) | None => {}
+        }
+    }
+
+    (zero_toughness_ids, destroyed_ids)
+}
+
+/// What rules 704.5f-h do to the creatures [`creature_fates`] names: one
+/// of toughness 0 or less goes to its owner's graveyard, which nothing
+/// stops; one destroyed is, unless it has indestructible as the pass
+/// begins or a regeneration shield, which is used instead. Whether
+/// anything was done.
+pub(crate) fn remove_creatures(state: &mut GameState, zero_toughness_ids: Vec<ObjectId>, destroyed_ids: Vec<ObjectId>, registry: &CardRegistry) -> bool {
+    let mut took_action = false;
+    // Rule 704.5f: zero toughness goes directly to graveyard.
+    for id in zero_toughness_ids {
+        // The same last-known-information capture the destruction pipeline
+        // does, and now literally the same code: this was a hand-rolled
+        // copy that had to be kept in step with it by hand.
+        if let Some(event) = crate::destruction::death_event(state, id, Some(registry)) {
+            state.events.push(event);
+        }
+        // move_object handles the death log message.
+        state.move_object(id, Zone::Graveyard, registry);
+        state.creature_died_this_turn = true;
+        took_action = true;
+    }
+
+    // Rules 704.5g/h: lethal damage or deathtouch — use destruction pipeline.
+    // Per rule 704.3, SBAs happen simultaneously. We must snapshot indestructible
+    // status BEFORE processing any deaths, so that e.g. Angelic Overseer retains
+    // indestructible even if the Human granting it dies in the same SBA batch.
+    // A list rather than a `HashSet`, whose hasher a proof cannot model.
+    let indestructible_snapshot: Vec<ObjectId> = destroyed_ids.iter()
+        .filter(|&&id| state.has_keyword(id, crate::types::Keyword::Indestructible, registry))
+        .copied()
+        .collect();
+
+    for id in destroyed_ids {
+        // Check indestructible from the snapshot (before any deaths in this batch).
+        if indestructible_snapshot.contains(&id) {
+            continue;
+        }
+        // Still need regeneration check.
+        let shields = state.get_object(id).map_or(0, |o| o.regeneration_shields);
+        if shields > 0 {
+            crate::destruction::regenerate_sba(state, id);
+            took_action = true;
+            continue;
+        }
+        crate::destruction::destroy_sba(state, id, registry);
+        took_action = true;
+    }
+
+    took_action
 }
 
 #[cfg(test)]
