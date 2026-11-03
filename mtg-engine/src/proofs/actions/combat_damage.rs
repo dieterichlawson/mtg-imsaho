@@ -476,31 +476,45 @@ card_proof! {
     }
 }
 
+/// Marking a creature as having dealt first-strike damage (`combat::
+/// mark_dealt_first_strike`, CR 510.4): with a combat, it is among those
+/// that did, with the others kept; with none, nothing is done. For a
+/// combat or none in which creature 2 has dealt it already, and `id` a
+/// constant of each harness: inserted into the combat's set at an id the
+/// solver leaves open, it ran symbolic execution out of memory.
+fn marking(id: ObjectId) {
+    let mut state = crate::proofs::cards::new_game();
+    let in_combat: bool = kani::any();
+    if in_combat {
+        let mut combat = CombatState::default();
+        combat.dealt_first_strike.insert(ObjectId(2));
+        state.combat = Some(combat);
+    }
+
+    crate::combat::mark_dealt_first_strike(&mut state, id);
+
+    match &state.combat {
+        Some(c) => {
+            assert!(in_combat && c.dealt_first_strike.contains(&id) && c.dealt_first_strike.contains(&ObjectId(2))
+                && c.dealt_first_strike.len() == if id == ObjectId(2) { 1 } else { 2 });
+        }
+        None => {
+            assert!(!in_combat);
+        }
+    }
+    std::mem::forget(state);
+}
+
 card_proof! {
-    /// Marking a creature as having dealt first-strike damage (`combat::
-    /// mark_dealt_first_strike`, CR 510.4): with a combat, it is among those
-    /// that did, with the others kept; with none, nothing is done.
+    /// [`marking`] of a creature not marked yet.
     fn a_creature_dealing_first_strike_damage_is_marked_as_having_dealt_it() {
-        let mut state = crate::proofs::cards::new_game();
-        let in_combat: bool = kani::any();
-        if in_combat {
-            let mut combat = CombatState::default();
-            combat.dealt_first_strike.insert(ObjectId(2));
-            state.combat = Some(combat);
-        }
-        let id = ObjectId(1 + u64::from(kani::any::<bool>()));
+        marking(ObjectId(1));
+    }
+}
 
-        crate::combat::mark_dealt_first_strike(&mut state, id);
-
-        match &state.combat {
-            Some(c) => {
-                assert!(in_combat && c.dealt_first_strike.contains(&id) && c.dealt_first_strike.contains(&ObjectId(2))
-                    && c.dealt_first_strike.len() == if id == ObjectId(2) { 1 } else { 2 });
-            }
-            None => {
-                assert!(!in_combat);
-            }
-        }
-        std::mem::forget(state);
+card_proof! {
+    /// [`marking`] of a creature marked already.
+    fn a_creature_marked_as_having_dealt_first_strike_damage_is_marked_once() {
+        marking(ObjectId(2));
     }
 }
