@@ -438,12 +438,13 @@ pub fn check_settled(state: &GameState, registry: &CardRegistry) -> Vec<String> 
 
     // Combat state exists only during the steps that use it: it is created
     // when attackers are declared and cleared as the end-of-combat step
-    // begins.
+    // ends (CR 511.3).
     if state.combat.is_some()
         && !matches!(state.step,
             crate::types::Step::DeclareAttackers
             | crate::types::Step::DeclareBlockers
-            | crate::types::Step::CombatDamage)
+            | crate::types::Step::CombatDamage
+            | crate::types::Step::EndCombat)
     {
         v.push(format!("combat state present in step {:?}", state.step));
     }

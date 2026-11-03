@@ -894,6 +894,15 @@ pub fn advance_step(state: &mut GameState, registry: &CardRegistry) {
     // Empty mana pools between steps.
     empty_mana_pools(state);
 
+    // CR 511.3: as the end of combat step ends, all creatures and
+    // planeswalkers are removed from combat. This happened as the step
+    // began, so through it an attacker was not attacking: an attacking
+    // creature's bonus (Instigator Gang) ended a step early, and nothing
+    // could target "attacking creature" in it.
+    if state.step == Step::EndCombat {
+        combat::end_combat(state, registry);
+    }
+
     // CR 510.5: with first/double strikers in combat there are TWO combat
     // damage steps. The first instance set combat_damage_step_pending; repeat
     // Step::CombatDamage (regular damage) instead of moving to EndCombat.
@@ -1083,7 +1092,8 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
         }
 
         Step::EndCombat => {
-            combat::end_combat(state, registry);
+            // The creatures stay in combat through this step, and leave it
+            // as it ends (CR 511.3, `advance_step`).
             state.priority_player = Some(active);
         }
 
