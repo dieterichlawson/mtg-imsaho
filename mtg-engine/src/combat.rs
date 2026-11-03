@@ -563,15 +563,20 @@ pub(crate) fn queue_damage_step(
             // Blocked: the blockers deal their damage to the attacker, and
             // the attacker's is divided among them as the attacking player
             // chose (CR 510.1c-d), with any trample overflow beyond them.
-            let live = live_blockers(state, attacker_id, &blockers);
+            let live: Vec<bool> = blockers.iter().map(|&b| still_blocking(state, attacker_id, b)).collect();
             let division = divide_combat_damage(
                 attacker_power,
-                &with_lethal(state, attacker_id, &live, registry),
+                &live_with_lethal(state, attacker_id, &blockers, &live, registry),
                 has_trample,
                 combat.chosen_damage.get(&attacker_id).map_or(&[], Vec::as_slice),
             );
 
-            for (&blocker_id, &(_, assigned)) in live.iter().zip(&division.to_blockers) {
+            // Each live blocker in order, with what the division assigns
+            // it, the `k`th live one the `k`th assigned.
+            let mut k = 0;
+            for (&blocker_id, _) in blockers.iter().zip(&live).filter(|&(_, &l)| l) {
+                let Some(&(_, assigned)) = division.to_blockers.get(k) else { break };
+                k += 1;
                 // Blocker deals damage to attacker.
                 let blocker_deals = deals_in_step(state, blocker_id, first_strike_only, registry);
                 if blocker_deals && first_strike_only {
@@ -661,25 +666,33 @@ fn assignment_order(combat: &CombatState, attacker: ObjectId) -> Vec<ObjectId> {
     blockers
 }
 
-/// The blockers that are still in this combat: on the battlefield and
-/// still blocking `attacker`. One removed since blockers were declared
-/// (it regenerated between damage steps, or left the battlefield) neither
-/// deals nor is assigned combat damage (CR 506.4c); the attacker remains
-/// blocked (CR 510.1c), and its damage is divided among the rest.
-fn live_blockers(state: &GameState, attacker: ObjectId, blockers: &[ObjectId]) -> Vec<ObjectId> {
-    blockers.iter().copied()
-        .filter(|&b| state.get_object(b).is_some_and(|o| o.zone == Zone::Battlefield))
-        .filter(|&b| state.combat.as_ref().is_some_and(|c|
-            c.blocker_assignments.get(&attacker).is_some_and(|v| v.contains(&b))))
-        .collect()
+/// Whether `blocker` is still in this combat: on the battlefield and still
+/// blocking `attacker`. One removed since blockers were declared (it
+/// regenerated between damage steps, or left the battlefield) neither deals
+/// nor is assigned combat damage (CR 506.4c); the attacker remains blocked
+/// (CR 510.1c), and its damage is divided among the rest.
+fn still_blocking(state: &GameState, attacker: ObjectId, blocker: ObjectId) -> bool {
+    state.get_object(blocker).is_some_and(|o| o.zone == Zone::Battlefield)
+        && state.combat.as_ref().is_some_and(|c|
+            c.blocker_assignments.get(&attacker).is_some_and(|v| v.contains(&blocker)))
 }
 
-/// Each blocker with the lethal damage it must be assigned (CR 510.1c):
-/// its toughness less the damage already marked on it, or 1 from a source
-/// with deathtouch (CR 702.2c).
-fn with_lethal(state: &GameState, attacker: ObjectId, blockers: &[ObjectId], registry: &CardRegistry) -> Vec<(ObjectId, u32)> {
+/// Each of `blockers` still in combat (`live`, beside it), in order, with
+/// the lethal damage it must be assigned (CR 510.1c): its toughness less
+/// the damage already marked on it, or 1 from a source with deathtouch
+/// (CR 702.2c).
+///
+/// Each blocker is read where it lies in `blockers`, its answer beside
+/// it, and not from a list of the live ones: a proof reads a filtered
+/// list at positions the board decides, so every blocker looked up from
+/// one was any of them (`proofs::actions::combat_damage`).
+fn live_with_lethal(state: &GameState, attacker: ObjectId, blockers: &[ObjectId], live: &[bool], registry: &CardRegistry) -> Vec<(ObjectId, u32)> {
     let deathtouch = state.has_keyword(attacker, Keyword::Deathtouch, registry);
-    blockers.iter().map(|&b| {
+    let mut out = Vec::with_capacity(blockers.len());
+    for (&b, &l) in blockers.iter().zip(live) {
+        if !l {
+            continue;
+        }
         let lethal = if deathtouch {
             1
         } else {
@@ -687,8 +700,9 @@ fn with_lethal(state: &GameState, attacker: ObjectId, blockers: &[ObjectId], reg
             let marked = state.get_object(b).map_or(0, |o| o.damage_marked);
             u32::try_from((toughness - i32::try_from(marked).unwrap_or(i32::MAX)).max(0)).unwrap_or(0)
         };
-        (b, lethal)
-    }).collect()
+        out.push((b, lethal));
+    }
+    out
 }
 
 /// One attacker's combat damage divided among its blockers.
@@ -766,21 +780,23 @@ fn next_damage_division(state: &GameState, registry: &CardRegistry, first_strike
         {
             continue;
         }
-        let live = live_blockers(state, attacker, &assignment_order(combat, attacker));
-        if live.is_empty() {
+        let blockers = assignment_order(combat, attacker);
+        let still: Vec<bool> = blockers.iter().map(|&b| still_blocking(state, attacker, b)).collect();
+        if !still.iter().any(|&l| l) {
             continue;
         }
         let power = u32::try_from(state.effective_power(attacker, registry).unwrap_or(0).max(0)).unwrap_or(0);
         let trample = state.has_keyword(attacker, Keyword::Trample, registry);
         let chosen = combat.chosen_damage.get(&attacker).map_or(&[][..], Vec::as_slice);
-        let division = divide_combat_damage(power, &with_lethal(state, attacker, &live, registry), trample, chosen);
+        let live = live_with_lethal(state, attacker, &blockers, &still, registry);
+        let division = divide_combat_damage(power, &live, trample, chosen);
         let Some((blocker, min, max)) = division.open else { continue };
 
         // What a surplus left here goes on to: the next blocker, or what
         // the trampler is attacking.
-        let position = live.iter().position(|&b| b == blocker).unwrap_or(0);
+        let position = live.iter().position(|&(b, _)| b == blocker).unwrap_or(0);
         let onward = match live.get(position + 1) {
-            Some(&next) => state.obj_name(next),
+            Some(&(next, _)) => state.obj_name(next),
             None => match combat.planeswalker_defenders.get(&attacker) {
                 Some(&walker) => state.obj_name(walker),
                 None => format!("p{}", defending_player.0),
