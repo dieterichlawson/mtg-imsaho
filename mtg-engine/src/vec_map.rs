@@ -251,13 +251,21 @@ impl<'a, K, V> IntoIterator for &'a VecMap<K, V> {
 
 /// An ordered set kept as a vector in order, which the proofs build the
 /// combat's sets with in place of `BTreeSet`, for the reason [`VecMap`]
-/// stands in for `BTreeMap`: a set of the keys of a map of nothing.
+/// stands in for `BTreeMap`.
+///
+/// The keys themselves, in order, and not a [`VecMap`] of nothing: a map's
+/// entry boxes its value, and a box of nothing is a dangling pointer,
+/// which Kani's checks of each pointer step (`same_allocation`) took
+/// gigabytes over: marking one creature as having dealt first-strike
+/// damage ran out of memory in 23,000 statements.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct VecSet<K>(VecMap<K, ()>);
+pub struct VecSet<K> {
+    keys: Vec<K>,
+}
 
 impl<K> Default for VecSet<K> {
     fn default() -> Self {
-        Self(VecMap::default())
+        Self { keys: Vec::new() }
     }
 }
 
@@ -267,9 +275,31 @@ impl<K: Ord> VecSet<K> {
         Self::default()
     }
 
+    /// Where `key` is, or where it would go, by a walk in order.
+    fn find<Q>(&self, key: &Q) -> Result<usize, usize>
+    where
+        K: Borrow<Q>,
+        Q: Ord + ?Sized,
+    {
+        for (i, k) in self.keys.iter().enumerate() {
+            match k.borrow().cmp(key) {
+                std::cmp::Ordering::Less => {}
+                std::cmp::Ordering::Equal => return Ok(i),
+                std::cmp::Ordering::Greater => return Err(i),
+            }
+        }
+        Err(self.keys.len())
+    }
+
     /// As `BTreeSet::insert`: whether the key was not there before.
     pub fn insert(&mut self, key: K) -> bool {
-        self.0.insert(key, ()).is_none()
+        match self.find(&key) {
+            Ok(_) => false,
+            Err(i) => {
+                self.keys.insert(i, key);
+                true
+            }
+        }
     }
 
     pub fn contains<Q>(&self, key: &Q) -> bool
@@ -277,7 +307,7 @@ impl<K: Ord> VecSet<K> {
         K: Borrow<Q>,
         Q: Ord + ?Sized,
     {
-        self.0.contains_key(key)
+        self.find(key).is_ok()
     }
 
     /// As `BTreeSet::remove`: whether the key was there.
@@ -286,34 +316,37 @@ impl<K: Ord> VecSet<K> {
         K: Borrow<Q>,
         Q: Ord + ?Sized,
     {
-        self.0.remove(key).is_some()
+        match self.find(key) {
+            Ok(i) => {
+                self.keys.remove(i);
+                true
+            }
+            Err(_) => false,
+        }
     }
 
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.keys.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.keys.is_empty()
     }
 
     pub fn iter(&self) -> impl Iterator<Item = &K> {
-        self.0.keys()
+        self.keys.iter()
     }
 
     pub fn clear(&mut self) {
-        self.0.clear();
+        self.keys.clear();
     }
 }
 
 impl<'a, K> IntoIterator for &'a VecSet<K> {
     type Item = &'a K;
-    type IntoIter = std::iter::Map<<&'a VecMap<K, ()> as IntoIterator>::IntoIter, fn((&'a K, &'a ())) -> &'a K>;
+    type IntoIter = std::slice::Iter<'a, K>;
 
     fn into_iter(self) -> Self::IntoIter {
-        fn key<'b, K>((k, _): (&'b K, &'b ())) -> &'b K {
-            k
-        }
-        (&self.0).into_iter().map(key as fn((&'a K, &'a ())) -> &'a K)
+        self.keys.iter()
     }
 }

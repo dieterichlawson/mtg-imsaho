@@ -184,3 +184,63 @@ fn iterating_a_reference_is_iter() {
     let (map, _) = any_map();
     assert!((&map).into_iter().eq(map.iter()));
 }
+
+/// `VecSet`, which a Kani build keeps the combat's sets in, is an ordered
+/// set, as `BTreeSet` is documented to be: the same induction over
+/// operations, against a reference of which keys are held.
+fn set_agrees(set: &crate::vec_map::VecSet<u8>, reference: &[bool; KEYS]) -> bool {
+    let mut expected: Vec<u8> = Vec::with_capacity(KEYS);
+    for (k, &held) in reference.iter().enumerate() {
+        if held {
+            expected.push(u8::try_from(k).expect("a few keys"));
+        }
+    }
+    set.len() == expected.len()
+        && set.is_empty() == expected.is_empty()
+        && set.iter().copied().eq(expected.iter().copied())
+        && set.into_iter().copied().eq(expected.iter().copied())
+}
+
+/// Any set holding any reference's keys, put in in key order. A set grows
+/// as it is filled (no stand-in for growing here: what a set's own
+/// operations do with its room is what is proved).
+fn any_set() -> (crate::vec_map::VecSet<u8>, [bool; KEYS]) {
+    let mut reference = [false; KEYS];
+    let mut set = crate::vec_map::VecSet::new();
+    for (k, held) in reference.iter_mut().enumerate() {
+        *held = kani::any();
+        if *held {
+            set.insert(u8::try_from(k).expect("a few keys"));
+        }
+    }
+    assert!(set_agrees(&set, &reference));
+    (set, reference)
+}
+
+/// `insert` says whether the key was not held, and it is held after, in
+/// its place in the order; `contains` says whether it is held, and
+/// changes nothing.
+#[kani::proof]
+#[kani::unwind(5)]
+fn inserting_into_a_vec_set_is_inserting_into_an_ordered_set() {
+    let (mut set, mut reference) = any_set();
+    let (k, key) = any_key();
+    assert!(set.contains(&key) == reference[k]);
+    assert!(set.insert(key) == !std::mem::replace(&mut reference[k], true));
+    assert!(set_agrees(&set, &reference));
+    kani::cover!(set.len() == KEYS, "every key held");
+}
+
+/// `remove` says whether the key was held, and it is not after; `clear`
+/// leaves none.
+#[kani::proof]
+#[kani::unwind(5)]
+fn removing_from_a_vec_set_is_removing_from_an_ordered_set() {
+    let (mut set, mut reference) = any_set();
+    let (k, key) = any_key();
+    assert!(set.remove(&key) == std::mem::replace(&mut reference[k], false));
+    assert!(set_agrees(&set, &reference));
+    set.clear();
+    assert!(set_agrees(&set, &[false; KEYS]));
+    kani::cover!(reference.iter().any(|&h| h), "a key still held before the clear");
+}
