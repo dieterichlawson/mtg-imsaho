@@ -1734,7 +1734,10 @@ impl CliPlayer {
     /// row, so how many lines it needs is the caller's to measure.
     fn menu_page_lines(heights: &[usize], avail: usize, offset: usize, marker_h: usize) -> (usize, usize, bool) {
         let len = heights.len();
-        let offset = offset.min(len.saturating_sub(1));
+        // A list that fits whole is shown whole, from its top, whatever
+        // offset a `p` or a page kept across a resize left behind: its
+        // block reserves no marker row (#961), so a page of it would not fit.
+        let offset = if heights.iter().sum::<usize>() <= avail { 0 } else { offset.min(len.saturating_sub(1)) };
         let remaining: usize = heights[offset..].iter().sum();
         let paged = offset > 0 || remaining > avail;
         let budget = if paged { avail.saturating_sub(marker_h).max(1) } else { avail };
@@ -1812,6 +1815,16 @@ impl CliPlayer {
         Self::wrap_indented(&Self::page_marker(last, 1, last, keys), width).len()
     }
 
+    /// The rows a list's least reservation takes: its `floor` and the
+    /// "… showing" marker under it, or, when the whole list fits in the
+    /// floor, just the list. A list that fits is never paged and draws no
+    /// marker, and the rows reserved for one sat blank under the input row
+    /// while the board above was cut (#961).
+    fn list_reservation(heights: &[usize], floor: usize, marker_h: usize) -> usize {
+        let whole: usize = heights.iter().sum();
+        if whole <= floor { whole } else { floor + marker_h }
+    }
+
     /// What `m` does: the next page, wrapping to the top at the end. One
     /// definition, so every menu that draws the marker means the same thing
     /// by it.
@@ -1826,11 +1839,12 @@ impl CliPlayer {
     /// Paging used to be forward-only, so overshooting a 253-name list meant
     /// pressing `m` eleven more times to come back around (issue #255). It
     /// then stepped back by a fixed page size, which rows of uneven height
-    /// made a guess; measured in lines it is exact (issue #318).
+    /// made a guess; measured in lines it is exact (issue #318). A list
+    /// that fits `avail` whole has one page, the top (#961).
     fn prev_menu_offset_lines(heights: &[usize], avail: usize, offset: usize, marker_h: usize) -> usize {
 
         let len = heights.len();
-        if len == 0 {
+        if len == 0 || heights.iter().sum::<usize>() <= avail {
             return 0;
         }
         let budget = avail.saturating_sub(marker_h).max(1);
@@ -4769,8 +4783,9 @@ impl CliPlayer {
     }
 
     /// The least height of the prompt block: the rule and the question
-    /// under it, any notice, and for a menu its `list_floor` of options, its paging marker,
-    /// the hint and the input row — each at the height it wraps to.
+    /// under it, any notice, and for a menu its `list_floor` of options, its paging marker
+    /// (when the list does not fit whole), the hint and the input row — each
+    /// at the height it wraps to.
     fn prompt_block_min_rows(message: Option<&str>, notice: Option<&str>,
                              actions: Option<&[MenuLabel]>, has_right: bool,
                              mid_w: usize, h: usize, reserve_below: usize) -> usize {
@@ -4793,9 +4808,11 @@ impl CliPlayer {
             // as one line put the input row on the hint's second line
             // whenever the page's option wrapped (#775).
             let idx_w = labels.len().saturating_sub(1).to_string().chars().count();
-            let tallest = Self::wrap_menu_rows(labels, mid_w.saturating_sub(4 + idx_w))
-                .iter().map(|r| r.len().max(1)).max().unwrap_or(1);
-            Self::list_floor(labels.len(), h).max(tallest) + marker_h + hint_h + 1
+            let heights: Vec<usize> = Self::wrap_menu_rows(labels, mid_w.saturating_sub(4 + idx_w))
+                .iter().map(|r| r.len().max(1)).collect();
+            let tallest = heights.iter().copied().max().unwrap_or(1);
+            let floor = Self::list_floor(labels.len(), h).max(tallest);
+            Self::list_reservation(&heights, floor, marker_h) + hint_h + 1
         });
         // A caller that draws its own question under the rule — the two
         // combat prompts, which append an eligible-creature list, its
@@ -6717,7 +6734,7 @@ return",
             // (#775).
             let floor = Self::list_floor_lines(&heights, Self::term_height());
             Self::render_reserving(view, Some("DECLARE ATTACKERS"), &view.display_log,
-                1 + floor + marker_h + reserved);
+                1 + Self::list_reservation(&heights, floor, marker_h) + reserved);
             let mut out = stdout();
             let mut r = cursor::position().unwrap_or((0, 20)).1;
             let h = terminal::size().map_or(30, |(_, h)| h as usize);
@@ -7013,9 +7030,10 @@ return",
             // Each list's floor in lines, at least its tallest row (#775).
             let atk_floor = Self::list_floor_lines(&atk_heights, Self::term_height()).max(1);
             let blk_floor = Self::list_floor_lines(&blk_heights, Self::term_height()).max(1);
+            let atk_res = Self::list_reservation(&atk_heights, atk_floor, atk_marker_h);
+            let blk_res = Self::list_reservation(&blk_heights, blk_floor, blk_marker_h);
             Self::render_reserving(view, Some("DECLARE BLOCKERS"), &view.display_log,
-                2 + atk_floor + atk_marker_h + blk_floor + blk_marker_h
-                  + hint_lines.len() + 2);
+                2 + atk_res + blk_res + hint_lines.len() + 2);
             let mut out = stdout();
             let mut r = cursor::position().unwrap_or((0, 20)).1;
             let h = terminal::size().map_or(30, |(_, h)| h as usize);
@@ -7027,7 +7045,7 @@ return",
             // even split gave the attackers half the body whatever their
             // floor, which left the blockers under theirs (#774).
             let atk_avail = (body / 2).max(atk_floor)
-                .min(body.saturating_sub(blk_floor + blk_marker_h).max(atk_floor));
+                .min(body.saturating_sub(blk_res).max(atk_floor));
             let _ = execute!(out, cursor::MoveTo(Self::middle_panel_col(), r),
                 SetForegroundColor(Color::Red), SetAttribute(Attribute::Bold),
                 Print(" Attackers:"), SetAttribute(Attribute::Reset), ResetColor);
@@ -8137,7 +8155,7 @@ impl CliPlayer {
         let heights: Vec<usize> = rows.iter().map(|r| r.len().max(1)).collect();
         let floor = Self::list_floor_lines(&heights, Self::term_height());
         Self::render_paged_noticed(view, None, Some(&pick.title), notice, &view.display_log, "", None, 0,
-            header.len() + floor + marker_h + reserved);
+            header.len() + Self::list_reservation(&heights, floor, marker_h) + reserved);
         let mut out = stdout();
         let mut r = cursor::position().unwrap_or((0, 20)).1;
         let h = terminal::size().map_or(30, |(_, h)| h as usize);
@@ -10454,7 +10472,10 @@ Wolves or Werewolves is prevented".into()];
         // An offset is always a paged view, even when the rest fits.
         assert_eq!(CliPlayer::menu_page(30, 10, 27), (27, 3, true));
         // An offset past the end clamps rather than underflowing.
-        assert_eq!(CliPlayer::menu_page(3, 10, 99), (2, 1, true));
+        assert_eq!(CliPlayer::menu_page(30, 10, 99), (29, 1, true));
+        // A list that fits whole is shown whole whatever the offset: its
+        // block reserved no marker row for a page of it (#961).
+        assert_eq!(CliPlayer::menu_page(3, 10, 99), (0, 3, false));
         assert_eq!(CliPlayer::menu_page(0, 10, 0), (0, 0, false));
 
         // `m` walks the pages and comes back to the top.
@@ -12386,6 +12407,35 @@ Wolves or Werewolves is prevented".into()];
                 assert!(hint_h >= 2, "test premise: the hint wraps at {mid_w}");
             }
         }
+    }
+
+    /// Issue #961: a menu that fits whole in its floor is never paged, so
+    /// the block reserves no rows for the "… showing" marker; the hand
+    /// above it gets them instead.
+    #[test]
+    fn a_menu_that_fits_whole_reserves_no_page_marker() {
+        let labels: Vec<MenuLabel> = ["Keep opening hand", "Mulligan"]
+            .iter().map(|l| MenuLabel::plain((*l).to_string())).collect();
+        for (mid_w, h) in [(58, 19), (80, 19), (40, 17), (160, 24)] {
+            let hint_h = CliPlayer::wrap_indented(&CliPlayer::menu_hints(&labels, true), mid_w).len();
+            let block = CliPlayer::prompt_block_min_rows(
+                Some("MULLIGAN DECISION"), None, Some(&labels), true, mid_w, h, 0);
+            // The rule, both options, the hint, the input row.
+            assert_eq!(block, 1 + 2 + hint_h + 1, "at {mid_w}x{h}");
+            // What that block leaves the list is the list: it is drawn
+            // whole with no marker, and neither `p` nor an offset kept
+            // from a smaller pane pages it into rows it does not have.
+            let avail = block - 1 - hint_h - 1;
+            let marker_h = CliPlayer::marker_lines(1, MENU_PAGE_KEYS, mid_w);
+            assert_eq!(CliPlayer::prev_menu_offset_lines(&[1, 1], avail, 0, marker_h), 0, "p");
+            for offset in [0, 1] {
+                assert_eq!(CliPlayer::menu_page_lines(&[1, 1], avail, offset, marker_h), (0, 2, false),
+                    "offset {offset} at {mid_w}x{h}");
+            }
+        }
+        // The combat and set screens reserve the same way.
+        assert_eq!(CliPlayer::list_reservation(&[1, 2], 3, 2), 3, "fits whole: no marker");
+        assert_eq!(CliPlayer::list_reservation(&[1, 2, 1], 3, 2), 5, "pages: floor and marker");
     }
 
     /// Issue #776: a row is never broken inside a card name's own comma,
