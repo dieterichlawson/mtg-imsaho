@@ -7,7 +7,25 @@ use crate::ids::{ObjectId, PlayerId};
 use crate::state::{GameState, LogLevel};
 use super::super::*;
 
-pub(crate) fn declare_attackers(state: &mut GameState, attackers: &[(ObjectId, PlayerId)], planeswalker_attacks: &[(ObjectId, ObjectId)], registry: &CardRegistry) -> Applied {
+/// Who attacks, of a declaration, as [`who_attacks`] decides it.
+pub(crate) struct Attack {
+    /// Named attacking the defending player, in the order named.
+    pub named: Vec<(ObjectId, PlayerId)>,
+    /// Named attacking a planeswalker the defending player controls.
+    pub walkers: Vec<(ObjectId, ObjectId)>,
+    /// Not named, and required to attack (CR 508.1d).
+    pub forced: Vec<ObjectId>,
+}
+
+/// Who attacks, of a declaration (CR 508.1a, 508.1d): the creatures named
+/// at the defending player that may attack, each once, and those named at
+/// a planeswalker it controls, in the order named; and each other creature
+/// that may attack and must. Decided apart from recording it in the combat
+/// (`combat::declare_attackers`), so that each is proved apart
+/// (`proofs::actions::attacking`): asked of creatures whose eligibility is
+/// any answer, the combat's maps were filled along paths symbolic execution
+/// could not tell apart and it ran out of memory.
+pub(crate) fn who_attacks(state: &GameState, attackers: &[(ObjectId, PlayerId)], planeswalker_attacks: &[(ObjectId, ObjectId)], registry: &CardRegistry) -> Attack {
         // Validate declarations: only the active player's eligible
         // creatures (untapped, not summoning-sick without haste, no
         // defender/Pacifism — CR 508.1a) may attack, and only a valid
@@ -21,9 +39,14 @@ pub(crate) fn declare_attackers(state: &mut GameState, attackers: &[(ObjectId, P
         // through and fire the creature's attack trigger once per repeat —
         // `0 0` on Kessig Cagebreakers doubled its wolves and won a game
         // (issue #108). De-duplicate here so no player type can submit one.
-        let mut seen = std::collections::HashSet::new();
+        //
+        // Each creature once, the first time it is named: a list rather than
+        // a `HashSet`, whose hasher a proof cannot model (the operating
+        // system seeds it); the lists are a few creatures long.
+        let mut seen: Vec<ObjectId> = Vec::new();
+        let mut first_time = |id: ObjectId| !seen.contains(&id) && { seen.push(id); true };
         let attackers: Vec<(ObjectId, PlayerId)> = attackers.iter()
-            .filter(|(id, def)| eligible.contains(id) && *def == valid_defender && seen.insert(*id))
+            .filter(|(id, def)| eligible.contains(id) && *def == valid_defender && first_time(*id))
             .copied()
             .collect();
         // CR 508.1a: an attacker may instead be sent at a planeswalker the
@@ -39,28 +62,10 @@ pub(crate) fn declare_attackers(state: &mut GameState, attackers: &[(ObjectId, P
                     && state.has_card_type(*walker, crate::types::CardType::Planeswalker, registry)
                     // The shared `seen` set drops an attacker already sent at
                     // the player AND a repeat within this list (issue #108).
-                    && seen.insert(*id)
+                    && first_time(*id)
             })
             .copied()
             .collect();
-        let attackers = &attackers[..];
-        if attackers.is_empty() && planeswalker_attacks.is_empty() {
-            state.log(LogLevel::Debug, "No attackers declared".into());
-        } else {
-            // CR 508.1a: each attacker is declared against a player or a
-            // planeswalker of its own, so each entry names its own defender.
-            // Rendering the player-attackers bare and only the walker ones
-            // with an arrow made "A, B -> Liliana" — which reads as both
-            // attacking the walker, and with two same-named attackers there
-            // was no other cue in the line at all (issue #292).
-            let mut names: Vec<String> = attackers.iter()
-                .map(|(id, defender)| format!(
-                    "{} -> p{}", card_name(state, registry, *id), defender.0))
-                .collect();
-            names.extend(planeswalker_attacks.iter().map(|(id, walker)| format!(
-                "{} -> {}", card_name(state, registry, *id), card_name(state, registry, *walker))));
-            state.log(LogLevel::Event, format!("p{} declared attackers: {}", state.active_player.0, names.join(", ")));
-        }
         // CR 508.1d: a creature that is required to attack and *able* to must
         // be among the declared attackers. "Able" is `eligible_attackers` —
         // the same list the declaration above was validated against, and the
@@ -85,6 +90,30 @@ pub(crate) fn declare_attackers(state: &mut GameState, attackers: &[(ObjectId, P
             .copied()
             .filter(|id| !already.contains(id) && state.must_attack(*id, registry))
             .collect();
+        Attack { named: attackers, walkers: planeswalker_attacks, forced: forced_ids }
+}
+
+pub(crate) fn declare_attackers(state: &mut GameState, attackers: &[(ObjectId, PlayerId)], planeswalker_attacks: &[(ObjectId, ObjectId)], registry: &CardRegistry) -> Applied {
+        let Attack { named: attackers, walkers: planeswalker_attacks, forced: forced_ids } =
+            who_attacks(state, attackers, planeswalker_attacks, registry);
+        let attackers = &attackers[..];
+        if attackers.is_empty() && planeswalker_attacks.is_empty() {
+            state.log(LogLevel::Debug, "No attackers declared".into());
+        } else {
+            // CR 508.1a: each attacker is declared against a player or a
+            // planeswalker of its own, so each entry names its own defender.
+            // Rendering the player-attackers bare and only the walker ones
+            // with an arrow made "A, B -> Liliana" — which reads as both
+            // attacking the walker, and with two same-named attackers there
+            // was no other cue in the line at all (issue #292).
+            let mut names: Vec<String> = attackers.iter()
+                .map(|(id, defender)| format!(
+                    "{} -> p{}", card_name(state, registry, *id), defender.0))
+                .collect();
+            names.extend(planeswalker_attacks.iter().map(|(id, walker)| format!(
+                "{} -> {}", card_name(state, registry, *id), card_name(state, registry, *walker))));
+            state.log(LogLevel::Event, format!("p{} declared attackers: {}", state.active_player.0, names.join(", ")));
+        }
         if !forced_ids.is_empty() {
             let names: Vec<String> = forced_ids.iter()
                 .map(|id| card_name(&state, registry, *id))
@@ -92,7 +121,8 @@ pub(crate) fn declare_attackers(state: &mut GameState, attackers: &[(ObjectId, P
             state.log(LogLevel::Event, format!("Forced attackers: {}", names.join(", ")));
         }
         let defending = state.opponent(state.active_player);
-        let mut declared: Vec<(ObjectId, PlayerId)> = attackers.to_vec();
+        let mut declared: Vec<(ObjectId, PlayerId)> = Vec::with_capacity(attackers.len() + forced_ids.len());
+        declared.extend_from_slice(attackers);
         declared.extend(forced_ids.iter().map(|&id| (id, defending)));
         combat::declare_attackers(&mut *state, &declared, &planeswalker_attacks, registry);
 
