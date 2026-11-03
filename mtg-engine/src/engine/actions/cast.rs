@@ -329,14 +329,21 @@ pub(crate) fn cast_spell(state: &mut GameState, object_id: ObjectId, targets: &[
         // pool as it goes, so a failed payment cannot simply be unwound.
         let pay = if has_x { cost.without_x() } else { cost.clone() };
         {
-            let mut probe = state.clone();
-            for &(source_id, ability_index) in tap_plan {
-                // The cost being funded is passed along so a filter's own
-                // mana cost is not paid with mana this spell needs (#252).
-                activate_mana_source_reserving(
-                    &mut probe, source_id, ability_index, Some(&pay), registry);
-            }
-            if !mana::can_pay(&probe.get_player(player).mana_pool, &pay) {
+            // With nothing to tap, the rehearsal is the pool as it is: the
+            // copy of the whole game it is made on is left out then.
+            let pays = if tap_plan.is_empty() {
+                mana::can_pay(&state.get_player(player).mana_pool, &pay)
+            } else {
+                let mut probe = state.clone();
+                for &(source_id, ability_index) in tap_plan {
+                    // The cost being funded is passed along so a filter's own
+                    // mana cost is not paid with mana this spell needs (#252).
+                    activate_mana_source_reserving(
+                        &mut probe, source_id, ability_index, Some(&pay), registry);
+                }
+                mana::can_pay(&probe.get_player(player).mana_pool, &pay)
+            };
+            if !pays {
                 // An offered action that cannot be executed is an engine
                 // contract violation, not a player mistake — but it used to
                 // be logged where no player would ever see it, so selecting
