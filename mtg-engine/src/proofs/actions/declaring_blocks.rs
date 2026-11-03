@@ -100,7 +100,12 @@ fn record_blocks(_: &mut GameState, blocks: &[(ObjectId, ObjectId)]) {
     // SAFETY: as in `can_block_attacker`, for RECORDED and RECORDED_N.
     let (list, n) = unsafe { (&mut *std::ptr::addr_of_mut!(RECORDED), &mut *std::ptr::addr_of_mut!(RECORDED_N)) };
     assert!(n.is_none(), "blocks recorded twice");
-    list[..blocks.len()].copy_from_slice(blocks);
+    // Element by element: `copy_from_slice` is a byte copy, and CBMC's,
+    // through a pointer that may be to more than one buffer, kept none of
+    // what it copied, so a block judged to stand read back as (0, 0).
+    for (k, &pair) in blocks.iter().enumerate() {
+        list[k] = pair;
+    }
     *n = Some(blocks.len());
 }
 
