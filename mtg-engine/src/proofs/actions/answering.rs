@@ -29,71 +29,90 @@ impl CardBehavior for Asking {
     }
 }
 
-card_proof! {
-    /// A "choose a target" question answered (CR 601.2c, 608.2): with one
-    /// of the targets offered, the effect is applied to it, once; with
-    /// none, where the question is optional, the card is told it was
-    /// declined; either way the question is answered, the passes in a row
-    /// start again, and the ability that asked has finished resolving.
-    /// With a target not offered, or none where the question is not
-    /// optional, the answer is refused: the question stands exactly as it
-    /// was asked, and nothing is done. For either player asked, optional or
-    /// not, and each answer: none, either target offered, or another.
-    fn a_target_answered_is_taken_if_offered_and_refused_if_not() {
-        let mut registry = CardRegistry::new();
-        let card = registry.register(Box::new(Asking));
-        let mut state = crate::proofs::cards::new_game();
-        let chooser = PlayerId(u8::from(kani::any::<bool>()));
-        let source = state.create_object(card, chooser, Zone::Battlefield, None, None);
-        let optional: bool = kani::any();
-        let offered = [Target::Object(ObjectId(7)), Target::Player(PlayerId(1))];
-        let effect = PendingEffect::Destroy { source_name: String::new() };
-        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-            player: chooser,
-            source,
-            choice: ResolutionChoiceKind::ChooseTarget {
-                description: String::new(),
-                options: offered.to_vec(),
-                optional,
-                effect: effect.clone(),
-            },
-        });
-        state.consecutive_passes = 2;
-        state.resolving_ability_activator = Some(chooser);
-        let answer = match kani::any::<u8>() % 4 {
-            0 => None,
-            1 => Some(offered[0].clone()),
-            2 => Some(offered[1].clone()),
-            _ => Some(Target::Object(ObjectId(8))),
-        };
+/// A "choose a target" question answered (CR 601.2c, 608.2): with one of
+/// the targets offered, the effect is applied to it, once; with none,
+/// where the question is optional, the card is told it was declined;
+/// either way the question is answered, the passes in a row start again,
+/// and the ability that asked has finished resolving. With a target not
+/// offered, or none where the question is not optional, the answer is
+/// refused: the question stands exactly as it was asked, and nothing is
+/// done. For either player asked, optional or not, and `reply` a constant
+/// of each harness (none, either target offered, or another): with the
+/// answer any of the four, symbolic execution ran out of memory reading
+/// the question back.
+fn answered(reply: u8) {
+    let mut registry = CardRegistry::new();
+    let card = registry.register(Box::new(Asking));
+    let mut state = crate::proofs::cards::new_game();
+    let chooser = PlayerId(u8::from(kani::any::<bool>()));
+    let source = state.create_object(card, chooser, Zone::Battlefield, None, None);
+    let optional: bool = kani::any();
+    let offered = [Target::Object(ObjectId(7)), Target::Player(PlayerId(1))];
+    let effect = PendingEffect::Destroy { source_name: String::new() };
+    state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+        player: chooser,
+        source,
+        choice: ResolutionChoiceKind::ChooseTarget {
+            description: String::new(),
+            options: offered.to_vec(),
+            optional,
+            effect: effect.clone(),
+        },
+    });
+    state.consecutive_passes = 2;
+    state.resolving_ability_activator = Some(chooser);
+    let answer = match reply {
+        0 => None,
+        1 => Some(offered[0].clone()),
+        2 => Some(offered[1].clone()),
+        _ => Some(Target::Object(ObjectId(8))),
+    };
 
-        let applied = crate::engine::actions::choices::resolve_choice(&mut state, &ResolvedChoice::ChosenTarget(answer.clone()), &registry);
+    let applied = crate::engine::actions::choices::resolve_choice(&mut state, &ResolvedChoice::ChosenTarget(answer.clone()), &registry);
 
-        // SAFETY: as in `Asking::on_declined_choice`.
-        let declined = unsafe { *std::ptr::addr_of!(DECLINED) };
-        let refused = answer == Some(Target::Object(ObjectId(8))) || (answer.is_none() && !optional);
-        if refused {
-            assert!(matches!(applied, crate::engine::Applied::ReturnNow));
-            assert!(matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
-                player, source: s,
-                choice: ResolutionChoiceKind::ChooseTarget { options, optional: o, effect: e, .. },
-            }) if *player == chooser && *s == source && options.as_slice() == offered && *o == optional && *e == effect));
-            assert!(acted() == 0 && declined.is_none() && state.consecutive_passes == 2);
-        } else {
-            assert!(matches!(applied, crate::engine::Applied::Continue));
-            assert!(state.awaiting_action.is_none() && state.consecutive_passes == 0);
-            assert!(state.resolving_ability_activator.is_none() && state.resolving_ability.is_none());
-            match answer {
-                Some(t) => {
-                    assert!(asked_for(&[Act::Effect(t, effect.clone())]) && declined.is_none());
-                }
-                None => {
-                    assert!(acted() == 0 && declined == Some(source));
-                }
+    // SAFETY: as in `Asking::on_declined_choice`.
+    let declined = unsafe { *std::ptr::addr_of!(DECLINED) };
+    let refused = answer == Some(Target::Object(ObjectId(8))) || (answer.is_none() && !optional);
+    if refused {
+        assert!(matches!(applied, crate::engine::Applied::ReturnNow));
+        assert!(matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+            player, source: s,
+            choice: ResolutionChoiceKind::ChooseTarget { options, optional: o, effect: e, .. },
+        }) if *player == chooser && *s == source && options.as_slice() == offered && *o == optional && *e == effect));
+        assert!(acted() == 0 && declined.is_none() && state.consecutive_passes == 2);
+    } else {
+        assert!(matches!(applied, crate::engine::Applied::Continue));
+        assert!(state.awaiting_action.is_none() && state.consecutive_passes == 0);
+        assert!(state.resolving_ability_activator.is_none() && state.resolving_ability.is_none());
+        match answer {
+            Some(t) => {
+                assert!(asked_for(&[Act::Effect(t, effect.clone())]) && declined.is_none());
+            }
+            None => {
+                assert!(acted() == 0 && declined == Some(source));
             }
         }
-        std::mem::forget((registry, state, effect));
     }
+    std::mem::forget((registry, state, effect));
+}
+
+/// The proofs of a target answered, one per reply.
+macro_rules! each_reply {
+    ($($name:ident: $reply:expr;)*) => {$(
+        card_proof! {
+            /// [`answered`] for the reply of its name.
+            fn $name() {
+                answered($reply);
+            }
+        }
+    )*};
+}
+
+each_reply! {
+    declining_a_target_is_taken_only_where_the_question_allows_it: 0;
+    the_first_target_offered_is_taken: 1;
+    the_second_target_offered_is_taken: 2;
+    a_target_not_offered_is_refused_and_the_question_stands: 3;
 }
 
 /// Stands in for `helpers::token_attack_options`: the defending player.
