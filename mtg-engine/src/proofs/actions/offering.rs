@@ -85,25 +85,35 @@ fn valid_targets(_: &GameState, _: PlayerId, _: ObjectId, _: &TargetRequirement,
     [Target::Object(ObjectId(98)), Target::Object(ObjectId(99))][..n].to_vec()
 }
 
+/// The context `legal::abilities::loyalty` reads: the player with
+/// priority, and whether it is the time they could cast a sorcery.
+fn ctx<'a>(state: &'a GameState, registry: &'a CardRegistry, player: PlayerId, speed: bool) -> crate::engine::legal::Ctx<'a> {
+    crate::engine::legal::Ctx {
+        state,
+        registry,
+        player,
+        prevent_artifact_abilities: false,
+        is_sorcery_speed: speed,
+        mana_sources: Vec::new(),
+        demands: Vec::new(),
+        casting_banned: Vec::new(),
+    }
+}
+
 card_proof! {
     #[kani::stub(crate::engine::targeting::valid_targets_for_req, valid_targets)]
-    /// The loyalty abilities and land plays a player is offered (CR 606.3,
-    /// 606.4, 118.3, 305.1-305.3): only when they could cast a sorcery;
-    /// of each planeswalker they control whose loyalty ability has not
-    /// been activated this turn, each ability whose cost they can pay (a
-    /// minus of more than its loyalty they cannot), once for each target
-    /// it may have, or once with none; then, with a land play left, one
-    /// play of each land in their hand, the first of each card, and none
-    /// of an opponent's. For a player either player, at sorcery speed or
-    /// not, a planeswalker of theirs with 0 to 3 loyalty, its ability
-    /// activated this turn or not, an opponent's planeswalker, three lands
-    /// in their hand (two of one card), one in the opponent's, 0 to 2 land
-    /// plays left, and the −2's targets none, one or two.
-    fn a_player_is_offered_their_loyalty_abilities_and_land_plays_as_the_rules_allow() {
+    /// The loyalty abilities a player is offered (CR 606.3, 606.4, 118.3):
+    /// only when they could cast a sorcery; of each planeswalker they
+    /// control whose loyalty ability has not been activated this turn,
+    /// each ability whose cost they can pay (a minus of more than its
+    /// loyalty they cannot), once for each target it may have, or once
+    /// with none; nothing of an opponent's planeswalker. For a player
+    /// either player, at sorcery speed or not, a planeswalker of theirs
+    /// with 0 to 3 loyalty, its ability activated this turn or not, an
+    /// opponent's planeswalker, and the -2's targets none, one or two.
+    fn a_player_is_offered_their_loyalty_abilities_as_the_rules_allow() {
         let mut registry = CardRegistry::new();
         let walker = registry.register(Box::new(Walker));
-        let land_a = registry.register(Box::new(Land("Land A")));
-        let land_b = registry.register(Box::new(Land("Land B")));
         let mut state = crate::proofs::cards::new_game();
         let player = PlayerId(u8::from(kani::any::<bool>()));
         let other = state.opponent(player);
@@ -111,13 +121,53 @@ card_proof! {
         let mine = state.create_object(walker, player, Zone::Battlefield, None, None);
         let loyalty: u32 = kani::any();
         kani::assume(loyalty <= 3);
-        state.get_object_mut(mine).expect("just created").counters.insert(CounterType::Loyalty, loyalty);
         let used: bool = kani::any();
+        let o = state.get_object_mut(mine).expect("just created");
+        o.counters.insert(CounterType::Loyalty, loyalty);
         if used {
-            state.get_object_mut(mine).expect("just created").abilities_activated_this_turn.insert(999);
+            o.abilities_activated_this_turn.insert(999);
         }
         let theirs = state.create_object(walker, other, Zone::Battlefield, None, None);
         state.get_object_mut(theirs).expect("just created").counters.insert(CounterType::Loyalty, 3);
+        state.get_player_mut(player).land_plays_remaining = 0;
+        let speed: bool = kani::any();
+        let mut actions = Vec::with_capacity(4);
+
+        crate::engine::legal::abilities::loyalty(&ctx(&state, &registry, player, speed), &mut actions);
+
+        // SAFETY: as in `valid_targets`.
+        let targets = unsafe { *std::ptr::addr_of!(TARGETS) };
+        let offered = speed && !used;
+        let minus = offered && loyalty >= 2;
+        let n = if minus { targets.expect("the targets listed") } else { 0 };
+        assert!(actions.len() == usize::from(offered) + n);
+        if offered {
+            assert!(matches!(&actions[0], Action::ActivateLoyaltyAbility { object_id, ability_index: 0, targets }
+                if *object_id == mine && targets.is_empty()));
+        }
+        for k in 0..n {
+            assert!(matches!(&actions[1 + k], Action::ActivateLoyaltyAbility { object_id, ability_index: 1, targets: t }
+                if *object_id == mine && matches!(t.as_slice(), [Target::Object(ObjectId(id))] if *id == 98 + k as u64)));
+        }
+        std::mem::forget((registry, state, actions));
+    }
+}
+
+card_proof! {
+    /// The land plays a player is offered (CR 305.1-305.3, 305.9): only
+    /// when they could cast a sorcery and with a land play left; one play
+    /// of each land in their hand, the first of each card in the hand's
+    /// order, and none of an opponent's. For a player either player, at
+    /// sorcery speed or not, three lands in their hand (two of one card),
+    /// one in the opponent's, and 0 to 2 land plays left.
+    fn a_player_is_offered_one_play_of_each_land_in_their_hand_as_the_rules_allow() {
+        let mut registry = CardRegistry::new();
+        let land_a = registry.register(Box::new(Land("Land A")));
+        let land_b = registry.register(Box::new(Land("Land B")));
+        let mut state = crate::proofs::cards::new_game();
+        let player = PlayerId(u8::from(kani::any::<bool>()));
+        let other = state.opponent(player);
+        state.priority_player = Some(player);
         let first = state.create_object(land_a, player, Zone::Hand, None, None);
         state.create_object(land_a, player, Zone::Hand, None, None);
         let third = state.create_object(land_b, player, Zone::Hand, None, None);
@@ -126,37 +176,17 @@ card_proof! {
         kani::assume(plays <= 2);
         state.get_player_mut(player).land_plays_remaining = plays;
         let speed: bool = kani::any();
-        let ctx = crate::engine::legal::Ctx {
-            state: &state,
-            registry: &registry,
-            player,
-            prevent_artifact_abilities: false,
-            is_sorcery_speed: speed,
-            mana_sources: Vec::new(),
-            demands: Vec::new(),
-            casting_banned: Vec::new(),
-        };
-        let mut actions = Vec::with_capacity(8);
+        let mut actions = Vec::with_capacity(4);
 
-        crate::engine::legal::abilities::loyalty(&ctx, &mut actions);
+        crate::engine::legal::abilities::loyalty(&ctx(&state, &registry, player, speed), &mut actions);
 
-        let mut expected = Vec::with_capacity(8);
-        if speed && !used {
-            expected.push(Action::ActivateLoyaltyAbility { object_id: mine, ability_index: 0, targets: Vec::new() });
-            if loyalty >= 2 {
-                // SAFETY: as in `valid_targets`.
-                let n = unsafe { *std::ptr::addr_of!(TARGETS) }.expect("the targets listed");
-                for t in [Target::Object(ObjectId(98)), Target::Object(ObjectId(99))].into_iter().take(n) {
-                    expected.push(Action::ActivateLoyaltyAbility { object_id: mine, ability_index: 1, targets: vec![t] });
-                }
-            }
-        }
         if speed && plays > 0 {
-            expected.push(Action::PlayLand { object_id: first });
-            expected.push(Action::PlayLand { object_id: third });
+            assert!(matches!(actions.as_slice(), [Action::PlayLand { object_id: a }, Action::PlayLand { object_id: b }]
+                if *a == first && *b == third));
+        } else {
+            assert!(actions.is_empty());
         }
-        assert!(actions == expected);
-        std::mem::forget((registry, state, actions, expected));
+        std::mem::forget((registry, state, actions));
     }
 }
 
