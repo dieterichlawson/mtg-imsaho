@@ -331,3 +331,66 @@ each_resolution! {
     an_ability_declaring_no_requirement_rechecks_the_rest: an_ability_resolving((2, false, false)),
     a_loyalty_ability_with_a_target_resolves_unless_it_is_illegal: an_ability_resolving((1, true, true)),
 }
+
+/// What the game held of the resolving ability's costs when its card's
+/// resolution was called: the X, the creature sacrificed and its toughness.
+static mut PAID: Option<(Option<u32>, Option<ObjectId>, Option<i32>)> = None;
+
+/// A card whose ability's resolution records what it would read of its
+/// costs (Kessig Wolf Run's X, Disciple of Griselbrand's sacrificed
+/// creature's toughness).
+struct Paid;
+
+impl CardBehavior for Paid {
+    fn card_data(&self) -> CardData {
+        CardData { name: "Paid".into(), ..CardData::default() }
+    }
+    fn resolve_activated_ability(&self, state: &mut GameState, _: ObjectId, _: usize, _: &[Target], _: &CardRegistry) {
+        // SAFETY: as in `answer`, for PAID.
+        let paid = unsafe { &mut *std::ptr::addr_of_mut!(PAID) };
+        assert!(paid.is_none(), "resolved once");
+        *paid = Some((state.last_activated_x_value, state.last_activated_sacrifice, state.last_activated_sacrifice_toughness));
+    }
+}
+
+/// An activated ability resolving with what its costs left (CR 608.2h,
+/// 602.2a): its card's resolution reads, as the X announced, the creature
+/// sacrificed and that creature's toughness, those the ability carries on
+/// the stack (`activating`, `an_ability_goes_on_the_stack_with_what_its_
+/// costs_left`), whatever another ability activated since left there. For
+/// an ability of no target, either player's, and any of each.
+fn an_ability_resolving_with_its_costs(_: ()) {
+    let mut registry = CardRegistry::new();
+    let blank = registry.register(Box::new(Blank));
+    let card = registry.register(Box::new(Paid));
+    let mut state = crate::proofs::cards::new_game();
+    let activator = PlayerId(u8::from(kani::any::<bool>()));
+    let source = state.create_object(card, activator, Zone::Battlefield, None, None);
+    let other = state.create_object(blank, activator, Zone::Graveyard, Some(1), Some(1));
+    let x: Option<u32> = if kani::any() { Some(kani::any()) } else { None };
+    let sacrificed = match kani::any::<u8>() % 3 {
+        0 => None,
+        1 => Some(source),
+        _ => Some(other),
+    };
+    let toughness: Option<i32> = if kani::any() { Some(kani::any()) } else { None };
+    // What another ability activated since left.
+    (state.last_activated_x_value, state.last_activated_sacrifice, state.last_activated_sacrifice_toughness) =
+        (kani::any::<bool>().then_some(7), kani::any::<bool>().then_some(other), kani::any::<bool>().then_some(5));
+    state.stack.push(StackEntry::Ability {
+        source_id: source, ability_index: 0, behavior_card_id: card, targets: Vec::new(), activator,
+        x_value: x, target_requirement: None, sacrificed, sacrificed_toughness: toughness,
+        loyalty: false, source_transforms: 0, source_back_face: false,
+    });
+
+    crate::stack::resolve_top_of_stack(&mut state, &registry);
+
+    // SAFETY: as in `answer`.
+    let paid = unsafe { *std::ptr::addr_of!(PAID) };
+    assert!(state.stack.is_empty() && paid == Some((x, sacrificed, toughness)));
+    std::mem::forget((registry, state));
+}
+
+each_resolution! {
+    an_ability_resolves_with_what_its_costs_left: an_ability_resolving_with_its_costs(()),
+}
