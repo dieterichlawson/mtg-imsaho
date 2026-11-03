@@ -186,7 +186,7 @@ fn a_token_entering_attacking_attacks_what_its_controller_chose() {
 static mut ENTRY: Option<(ObjectId, crate::state::EnterAsCopyChoice)> = None;
 
 /// Stands in for `replacement::record_entry_choice` (what entering does
-/// with the answer is `replacements`' proof): recorded.
+/// with the answer is `entering_as_copy`'s proof): recorded.
 #[allow(dead_code)] // named only by `kani::stub`
 fn entry_recorded(_: &mut GameState, object: ObjectId, choice: crate::state::EnterAsCopyChoice, _: &CardRegistry) {
     // SAFETY: as in `Asking::on_declined_choice`, for ENTRY.

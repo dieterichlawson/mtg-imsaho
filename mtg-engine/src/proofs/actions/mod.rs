@@ -20,6 +20,7 @@ mod damage;
 mod delayed;
 mod destruction;
 mod effects;
+mod entering_as_copy;
 mod filters;
 mod fighting;
 mod library;
