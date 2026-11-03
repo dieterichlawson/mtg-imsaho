@@ -402,3 +402,209 @@ fn an_ability_resolving_with_its_costs(_: ()) {
 each_resolution! {
     an_ability_resolves_with_what_its_costs_left: an_ability_resolving_with_its_costs(()),
 }
+
+/// The printed card a permanent's proof resolves: which of the seven card
+/// types it has (instant, sorcery, creature, enchantment, artifact,
+/// planeswalker, land), whether it is legendary, its starting loyalty, and
+/// whether its cost has an X. Fixed before it is registered, so that each
+/// time its data is built it is the same card.
+static mut PRINTED: ([bool; 7], bool, Option<u32>, bool) = ([false; 7], false, None, false);
+
+/// A card of no hooks of its own but its printed data and loyalty, as
+/// [`PRINTED`] says: its resolution is the default.
+struct Printed;
+
+impl CardBehavior for Printed {
+    fn card_data(&self) -> CardData {
+        use crate::types::{CardType, ManaCost, ManaSymbol, Supertype};
+        const TYPES: [CardType; 7] = [CardType::Instant, CardType::Sorcery, CardType::Creature,
+            CardType::Enchantment, CardType::Artifact, CardType::Planeswalker, CardType::Land];
+        // SAFETY: as in `answer`, for PRINTED, only read here.
+        let (has, legendary, _, x) = unsafe { *std::ptr::addr_of!(PRINTED) };
+        let mut card_types = Vec::with_capacity(7);
+        for (t, &h) in TYPES.iter().zip(&has) {
+            if h {
+                card_types.push(*t);
+            }
+        }
+        CardData {
+            name: "Printed".into(),
+            card_types,
+            supertypes: if legendary { vec![Supertype::Legendary] } else { Vec::new() },
+            cost: Some(ManaCost::new(if x { vec![ManaSymbol::X] } else { Vec::new() })),
+            ..CardData::default()
+        }
+    }
+    fn starting_loyalty(&self) -> Option<u32> {
+        // SAFETY: as in `card_data`.
+        unsafe { (*std::ptr::addr_of!(PRINTED)).2 }
+    }
+}
+
+/// Where the spell was moved, and the loyalty counters put on it, with
+/// the zone it was in then.
+static mut ENTERED: Option<Zone> = None;
+static mut LOYALTY: Option<(crate::types::CounterType, u32, Zone)> = None;
+
+/// Stands in for `GameState::move_object`, proved in `moving`: the move
+/// recorded, once, and the object put in that zone.
+#[allow(dead_code)] // named only by `kani::stub`
+fn entered(state: &mut GameState, id: ObjectId, to: Zone, _: &CardRegistry) -> bool {
+    // SAFETY: as in `answer`, for ENTERED.
+    let e = unsafe { &mut *std::ptr::addr_of_mut!(ENTERED) };
+    assert!(e.is_none(), "moved once");
+    *e = Some(to);
+    state.get_object_mut(id).expect("on the board").zone = to;
+    true
+}
+
+/// Stands in for `GameState::add_counters_quiet`, proved in
+/// `simple_actions`: recorded, once, with the zone the object is in.
+#[allow(dead_code)] // named only by `kani::stub`
+fn loyalty_counters(state: &mut GameState, id: ObjectId, kind: crate::types::CounterType, n: u32) -> bool {
+    // SAFETY: as in `answer`, for LOYALTY.
+    let l = unsafe { &mut *std::ptr::addr_of_mut!(LOYALTY) };
+    assert!(l.is_none(), "counters put on once");
+    let zone = state.get_object(id).expect("on the board").zone;
+    *l = Some((kind, n, zone));
+    true
+}
+
+#[kani::proof]
+#[kani::unwind(8)]
+#[kani::stub(std::fmt::format, crate::proofs::cards::no_format)]
+#[kani::stub(crate::state::GameState::obj_name, crate::proofs::cards::no_name)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
+#[kani::stub(alloc::alloc::Global::deallocate_impl_runtime, crate::proofs::cards::no_freeing)]
+#[kani::stub(crate::state::GameState::log, crate::proofs::cards::no_log)]
+#[kani::stub(crate::state::GameState::move_object, entered)]
+#[kani::stub(crate::state::GameState::add_counters_quiet, loyalty_counters)]
+/// A spell of a card with no resolution of its own resolving (the
+/// default `CardBehavior::on_resolve`, CR 608.3, 306.5b, 205.4d): a
+/// permanent spell (a land, creature, enchantment, artifact or
+/// planeswalker card) is put onto the battlefield, legendary exactly when
+/// the card is, and, a planeswalker card's, with its starting loyalty in
+/// loyalty counters put on it there, or as many as the X it was cast for
+/// when its cost has an X (none if it has no X recorded); an instant or
+/// sorcery, or a card of none of these types, does nothing (its effects
+/// are its card's own, and where it goes after is `resolve_spell_as`'s).
+/// For every set of the seven types, legendary or not, with a starting
+/// loyalty or none, an X in its cost or not, and any X recorded.
+fn a_spell_with_no_resolution_of_its_own_enters_the_battlefield_if_it_is_a_permanent() {
+    let has: [bool; 7] = kani::any();
+    let (legendary, x): (bool, bool) = (kani::any(), kani::any());
+    let loyalty: Option<u32> = if kani::any() { Some(kani::any()) } else { None };
+    // SAFETY: as in `answer`, before the card is registered.
+    unsafe { *std::ptr::addr_of_mut!(PRINTED) = (has, legendary, loyalty, x) };
+    let mut registry = CardRegistry::new();
+    let card = registry.register(Box::new(Printed));
+    let mut state = crate::proofs::cards::new_game();
+    let spell = state.create_object(card, PlayerId(u8::from(kani::any::<bool>())), Zone::Stack, None, None);
+    let x_value: Option<u32> = if kani::any() { Some(kani::any()) } else { None };
+    state.get_object_mut(spell).expect("just created").x_value = x_value;
+
+    Printed.on_resolve(&mut state, spell, &[], &registry);
+
+    // SAFETY: as in `answer`.
+    let (moved, counters) = unsafe { (*std::ptr::addr_of!(ENTERED), *std::ptr::addr_of!(LOYALTY)) };
+    let permanent = has[2..].iter().any(|&h| h);
+    let obj = state.get_object(spell).expect("on the board");
+    if permanent {
+        assert!(moved == Some(Zone::Battlefield) && obj.is_legendary == legendary);
+        match loyalty {
+            None => assert!(counters.is_none()),
+            Some(n) => {
+                let total = if x { x_value.unwrap_or(0) } else { n };
+                assert!(counters == Some((crate::types::CounterType::Loyalty, total, Zone::Battlefield)));
+            }
+        }
+    } else {
+        assert!(moved.is_none() && counters.is_none() && !obj.is_legendary);
+    }
+    std::mem::forget((registry, state));
+}
+
+crate::proofs::cards::card_proof! {
+    /// Where a spell goes once it has resolved, or once it is countered
+    /// (`move_spell_after_resolve`, `move_countered_spell`, CR 608.2n,
+    /// 701.5a, 702.34a): into exile if it was cast with flashback, and into
+    /// its owner's graveyard otherwise (the owner's is `move_object`'s,
+    /// `moving`). For a spell either player's, cast with flashback or not,
+    /// resolved or countered.
+    fn a_spell_done_with_goes_to_the_graveyard_or_into_exile_if_cast_with_flashback() {
+        let mut registry = CardRegistry::new();
+        let blank = registry.register(Box::new(Blank));
+        let mut state = crate::proofs::cards::new_game();
+        let spell = state.create_object(blank, PlayerId(u8::from(kani::any::<bool>())), Zone::Stack, None, None);
+        let flashback: bool = kani::any();
+        state.get_object_mut(spell).expect("just created").cast_with_flashback = flashback;
+
+        if kani::any() {
+            state.move_spell_after_resolve(spell, &registry);
+        } else {
+            state.move_countered_spell(spell, &registry);
+        }
+
+        let to = if flashback { Zone::Exile } else { Zone::Graveyard };
+        assert!(crate::proofs::cards::asked_for(&[crate::proofs::cards::Act::Move(spell, to)]));
+        std::mem::forget((registry, state));
+    }
+}
+
+/// What a spell's own resolution does before it is done with, by
+/// harness: nothing, puts it onto the battlefield, or asks a question.
+static mut ENDING: u8 = 0;
+
+/// A card whose resolution does what [`ENDING`] says.
+struct Ending;
+
+impl CardBehavior for Ending {
+    fn card_data(&self) -> CardData {
+        CardData { name: "Ending".into(), ..CardData::default() }
+    }
+    fn on_resolve(&self, state: &mut GameState, id: ObjectId, _: &[Target], _: &CardRegistry) {
+        // SAFETY: as in `answer`, for ENDING.
+        match unsafe { *std::ptr::addr_of!(ENDING) } {
+            0 => {}
+            1 => state.get_object_mut(id).expect("on the board").zone = Zone::Battlefield,
+            _ => state.awaiting_action = Some(crate::state::AwaitingAction::DiscardToHandSize { player: PlayerId(0), discard_count: 1 }),
+        }
+    }
+}
+
+/// A spell's resolution ending (`resolve_spell_as`, CR 608.2n, 608.3): it
+/// is the spell resolving while its card's resolution runs, and once that
+/// is over with no question waiting it is not, and it is moved off the
+/// stack (to the graveyard or exile, as above) if it is still there, and
+/// left where it is if its resolution put it somewhere (a permanent onto
+/// the battlefield); with a question waiting, its resolution is not over:
+/// it is still the spell resolving and stays on the stack, until the
+/// answer finishes it. For a spell of no target, either player's, its
+/// card's resolution each of the three.
+fn a_spell_ending(ending: u8) {
+    // SAFETY: as in `answer`, before the card resolves.
+    unsafe { *std::ptr::addr_of_mut!(ENDING) = ending };
+    let mut registry = CardRegistry::new();
+    let card = registry.register(Box::new(Ending));
+    let mut state = crate::proofs::cards::new_game();
+    let caster = PlayerId(u8::from(kani::any::<bool>()));
+    let spell = state.create_object(card, caster, Zone::Stack, None, None);
+
+    crate::stack::resolve_spell_as(&mut state, &registry, spell, card, Vec::new(), caster);
+
+    // SAFETY: as in `answer`.
+    let moved = unsafe { *std::ptr::addr_of!(MOVED) };
+    let zone = state.get_object(spell).expect("on the board").zone;
+    match ending {
+        0 => assert!(moved == 1 && state.resolving_spell.is_none() && state.awaiting_action.is_none()),
+        1 => assert!(moved == 0 && state.resolving_spell.is_none() && zone == Zone::Battlefield),
+        _ => assert!(moved == 0 && state.resolving_spell == Some(spell) && zone == Zone::Stack && state.awaiting_action.is_some()),
+    }
+    std::mem::forget((registry, state));
+}
+
+each_resolution! {
+    a_spell_whose_resolution_does_nothing_is_moved_off_the_stack: a_spell_ending(0),
+    a_spell_whose_resolution_puts_it_onto_the_battlefield_stays_there: a_spell_ending(1),
+    a_spell_whose_resolution_asks_a_question_stays_resolving: a_spell_ending(2),
+}
