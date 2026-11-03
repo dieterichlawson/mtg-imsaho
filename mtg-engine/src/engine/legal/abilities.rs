@@ -16,9 +16,7 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
     // Check attached permanents too (auras granting abilities to creatures).
     for obj in state.objects_in_zone(Zone::Battlefield, player) {
         let obj_id = obj.id;
-        let obj_tapped = obj.tapped;
         let obj_card_id = obj.card_id;
-        let activated_this_turn = obj.abilities_activated_this_turn.clone();
 
         // Stony Silence: skip artifact activated abilities.
         if prevent_artifact_abilities {
@@ -39,6 +37,9 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
             .collect();
 
         for (source_card_id, ab) in abilities {
+            if !restrictions_allow(state, obj, &ab, player, is_sorcery_speed, registry) {
+                continue;
+            }
             // Check mana cost. For X-cost abilities, check that non-X portion is affordable.
             // We use compute_autotap (mirroring spell casting) so abilities with mana costs
             // appear as legal actions in main phase even when no mana is currently floating —
@@ -103,33 +104,6 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
                     None => continue,
                 }
             };
-            // Check tap cost and summoning sickness. A creature that came
-            // under its controller's control this turn cannot pay `{T}`
-            // unless it has haste, and a non-creature permanent is never
-            // restricted by it though the flag is set on it (CR 302.6) —
-            // `has_summoning_sickness` is that sentence, once.
-            if ab.requires_tap {
-                if obj_tapped { continue; }
-                if state.has_summoning_sickness(obj.id, registry) {
-                    continue;
-                }
-            }
-            // Check the counter cost (CR 601.2h — the cost has to be payable).
-            if let Some((counter_type, amount)) = ab.counter_cost {
-                if state.get_counter_count(obj_id, counter_type) < amount { continue; }
-            }
-            // Check once-per-turn.
-            if ab.once_per_turn && activated_this_turn.contains(&ab.ability_index) { continue; }
-            // A "tap N creatures you control" cost needs N of them (CR
-            // 601.2h). Which N is asked when the ability is activated, not
-            // offered as one action per combination (issue #670).
-            if let Some(tap) = ab.tap_cost {
-                if crate::engine::actions::abilities::tap_cost_candidates(state, player, obj_id, registry).len() < tap.count {
-                    continue;
-                }
-            }
-            // Check sorcery speed.
-            if ab.sorcery_speed_only && !is_sorcery_speed { continue; }
             // Build the list of eligible sacrifices for this ability. We
             // enumerate one ActivateAbility per (target, sacrifice) combo so
             // the player chooses the sacrifice up front rather than having
@@ -216,6 +190,44 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
             // after the ability is activated, not by enumerating multiple entries.
         }
     }
+}
+
+/// Whether an ability of `obj` may be activated now, as far as its costs
+/// other than mana and its restrictions go (CR 602.5b, 601.2h, 302.6):
+/// a `{T}` in its cost needs the permanent untapped and, if it is a
+/// creature, under its controller's control since their turn began
+/// (`has_summoning_sickness` is that sentence, once); a counter cost needs
+/// the counters on it; a once-each-turn ability not yet activated this
+/// turn; a "tap N untapped creatures you control" cost N of them besides
+/// it (which N is asked on activation, not offered as one action per
+/// combination, issue #670); and a sorcery-speed ability the time its
+/// controller could cast a sorcery. Its own function so that it is proved
+/// apart from the mana planning around it (`proofs::actions::offering`).
+pub(crate) fn restrictions_allow(
+    state: &crate::state::GameState,
+    obj: &crate::state::GameObject,
+    ab: &crate::cards::ActivatedAbilityDef,
+    player: crate::ids::PlayerId,
+    is_sorcery_speed: bool,
+    registry: &crate::cards::CardRegistry,
+) -> bool {
+    if ab.requires_tap && (obj.tapped || state.has_summoning_sickness(obj.id, registry)) {
+        return false;
+    }
+    if let Some((counter_type, amount)) = ab.counter_cost {
+        if state.get_counter_count(obj.id, counter_type) < amount {
+            return false;
+        }
+    }
+    if ab.once_per_turn && obj.abilities_activated_this_turn.contains(&ab.ability_index) {
+        return false;
+    }
+    if let Some(tap) = ab.tap_cost {
+        if crate::engine::actions::abilities::tap_cost_candidates(state, player, obj.id, registry).len() < tap.count {
+            return false;
+        }
+    }
+    !ab.sorcery_speed_only || is_sorcery_speed
 }
 
 /// Loyalty abilities: sorcery speed, once per turn per planeswalker.
