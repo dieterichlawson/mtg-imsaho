@@ -1473,6 +1473,23 @@ for both players and boards as its doc comment states):
 | what `matches_filter` makes of each creature filter a card prints (non-Human, neither Vampire nor Zombie, flying or reach, non-Human creature, Wolf or Werewolf), and what the effects printing them do with it: "can't be blocked except by" (509.1b), protection until end of turn (702.16), Moonmist's prevention (615.1) | proved, 21 to 146 s each; Stromkirk Noble's restriction, the same shape as Blazing Torch's, ran out of memory at 7 GB beside four other runs and is run again alone |
 | a triggered ability's resolution (`triggers::resolve_next_trigger`, 608.2b, 113.7a, 603.4): with its one target no longer legal (its requirement, protection or hexproof, the card's restriction) it does nothing; otherwise the hook for its event, and only that one, is called once on its source, with the event's data and the target as chosen, while the ability is the one resolving and as from the face it triggered from, and nothing is left resolving after; for each kind of event the pool's triggers are on, and the requirement it is re-checked under the one its card prints (`target_requirement`) | proved, 12 to 58 s each, but a creature's dying (the event carries the dead creature's lists), out of memory in the solver at 3.5 GB and run again alone |
 | flashback granted until end of turn (`graveyard_cast_costs`, 702.34a), as Snapcaster Mage and Past in Flames add it: a card in its owner's graveyard may be cast from there at each cost an effect on it gives, each once however many give it, and an effect on another card gives it nothing; which of the turn's effects are on a card (`granted_flashback_costs`), each the effect's own cost in the order granted, its own proof | proved, 19 to 64 s each |
+| state-based actions (`check_state_based_actions`, 704.3): checked pass after pass until one does nothing or stops for a state trigger or a legend-rule question, and not at all in the middle of a resolution but for the choice of what a permanent enters as a copy of (614.12b); a pass (`one_pass`) takes each action once, in order, the creatures removed exactly those decided | proved, 13 and 30 s |
+| the actions of a pass, each its own proof: players losing for their life or their draws (704.5a-b); which creatures die (704.5f-h: the kernel's rule asked of each, of a toughness from the layers or the object's own) and what is done to them (to the graveyard for toughness, which nothing stops; left if indestructible as the pass began; regenerated with a shield; destroyed otherwise); an attachment's legality (704.5m-n, 301.5, 303.4, 702.5d, 702.16c-d, each enchant) and an illegal Equipment coming off what it is on, an illegal Aura to the graveyard; +1/+1 and -1/-1 counters annihilating (704.5q); the first state trigger whose condition holds (603.8); a planeswalker with no loyalty to the graveyard (704.5i); the legend rule's question (704.5j) and its answer (the rest to the graveyard, each death captured); a token elsewhere ceasing to exist (704.5d), and an object ceasing to exist gone from the board and every library; the game ending with one player left or none (104.2a); and control effects ending with their condition (611.2b, 613.7a) | proved, 19 to 160 s each, the control effects' once the engine read the effects that end where they lie (88 to 112 s); the legend rule's question rerunning since its groups are read so too, and the two enchant shapes added last (an opponent, an Aura enchanting nothing the requirement names) not yet run |
+| declaring blockers (509.1-2): which of the blocks submitted stand (the board read into the kernel's terms, each pair allowed exactly when the attacker attacks, the blocker is the defending player's and `can_block_attacker` lets it, each attacker's fewest blockers `minimum_blockers`; exactly what the kernel accepts recorded, in order); the blocks recorded (each attacker's blockers in order, blocked for the combat, the one event listing them); the damage assignment order announced (509.2: one blocker left placed without asking, the first attacker with two or more asked of, nothing after it placed); and the declaration as a whole (judged, the prompt answered, then the order announced) | which blocks stand and their recording proved, 30 to 132 s each; the order's announcement, six harnesses, and the standing of no blocks out of memory at 3.5 GB in symbolic execution, in the objects the board is made of, whose cause is not yet found (the same board built without the harness's lists passes in 28 s) |
+| the turn-based actions of each step (502-514): the untap step's untapping, summoning sickness and land play; the draw; the declarations asked; a combat damage step's first-strike and regular halves (510.4-5); the end of combat step leaving the creatures in combat (511.3); priority in the steps with none of their own; the cleanup's discard first (514.1), and the rest of it after (514.2-3a); the discard that answers it; and stepping on as the turn kernel says, with combat ending as the end of combat step ends | proved, 22 to 246 s each |
+| one combat damage step's damage (510.1-510.5, 702.4, 702.7, 702.19b-c): which creatures deal damage in the step, to whom and how much, the division stood in by any division the kernel is proved to give; and the division question the step asks first (510.1c-d) | proved, 23 to 330 s each, the blocked attackers' once a damage step read its blockers where they lie and the recorder stopped dropping the slot it writes; a blocked attacker's four of a first-strike step, out of memory at 3.5 GB, rerunning since their marks are checked one place at a time |
+| what a player with priority is offered: the timing a card may be cast at, from a hand or a graveyard (117.1a, 307.1, 702.8a), every set of types; their loyalty abilities and land plays (606.3-4, 305.1-3); what restricts an activated ability beyond its mana (602.5b, 601.2h, 302.6) | the timing, the land plays and what restricts an ability proved, 7 to 65 s each; the loyalty abilities, a harness for each player since symbolic execution could not tell the opponent's planeswalker from the player's, not yet run so |
+| answering a "choose a target" question (601.2c, 608.2: an offered target taken, an unoffered one or a refused decline leaving the question as it was) and what a token entering attacking attacks (508.4) | proved, 69 to 106 s each |
+| the spells cast in a turn (601.2i), what a Werewolf's "last turn" reads: casting a spell counts it to its caster, the other player's count as it was; leaving the cleanup step makes this turn's counts last turn's and starts the next at none, a repeated cleanup step keeping both | proved, 82 and 278 s |
+| what an ability's costs leave its resolution (602.2b via 601.2h, 608.2h): the costs paid in order (the {T}, the creatures a cost taps, the counters, then the sacrifice), which creature was sacrificed and its toughness read before it was, a once-each-turn ability marked; the sacrifices offered (each creature the activator controls, but the source for "another", no offer with none); the ability put on the stack carrying them and its source's transforms; and its resolution reading them back, and its activator as its controller, whatever another ability left | the sacrifices offered, the ability put on the stack and its resolution proved, 24 to 53 s each; the costs paid, a harness for each kind of sacrifice, out of memory in the solver at 3.5 GB, to be run alone |
+| a spell's resolution's end (608.2n, 608.3, 306.5b, 702.34a, 701.5a): a card with no resolution of its own onto the battlefield if a permanent, legendary as printed, a planeswalker with its loyalty or X in counters; a spell done with into exile if cast with flashback, the graveyard otherwise, resolved or countered; moved off the stack unless its resolution put it somewhere, left resolving while a question it asked waits | proved, 17 to 38 s each |
+| who has priority after each action the game loop plays (`hand_on_priority`, 117.3-117.4): a pass hands it on, ends the step, or resolves the top of the stack and gives it to the active player, as the turn kernel says; a declaration gives it to the active player; an answer to the caster if part of a cast, the active player otherwise; anything else leaves it | proved, 15 to 27 s each |
+| the answers to questions asked mid-resolution or mid-cast (`resolve_choice`), each reply its own harness: the creatures a cost taps (601.2h), a set of objects for an effect (Curse of Oblivion's), a library search's card (701.19a-b, defect 21), a yes or no and a card type handed to the card that asked, which damage effect applies first (616.1), an X funded for an ability or a spell (601.2b, 601.2f-h, 107.3), a cast's exile cost and its "up to N" targets (601.2b-c); each accepted exactly as the rules allow, and anything else refused with the question standing (or, at cast time, the cast cancelled with nothing paid) | the yes or no, the card type, the library search, the damage effect, the X of an ability and two of the six tap replies proved, 36 to 151 s each; the other tap replies and the object set, out of memory at 3.5 GB, and the exile cost's, out of time, where the question read back is a variant narrower than the prompt's union and its fields are left open (`precise-enums.py`'s width limit, under trial); a spell's X, failing on a list Kani cannot follow, rerunning with the cast's log words stood in for; the up-to-N targets not yet run |
+| combat's two answers: a blocker's place in the damage assignment order, one at a time or the whole order (509.2), and the damage one blocker is assigned (510.1c-d) | not yet run |
+| abilities that triggered together going on the stack (`process_pending_trigger_pushes`, 603.3b, 101.4): the active player's first, each player's own in the order they choose, asked when two can be told apart and are not yet ordered; and the answer, a whole order or one trigger to put on now | not yet run |
+| a spell's additional costs paid as named (601.2b, 601.2h, 118.3): a sacrifice made once, the creature cards named for an exile exiled in order, and an exile of X exiling the cards named, or as many as there are for an X past them, and counting them | proved, 58 to 126 s each |
+| a permanent entering as a copy (614.1c, 707.9): asked among the creatures there, those it may copy pruned to those still there, and the choice recorded finishing the entry under its owner or the controller held for it | proved, 41 to 77 s each |
+| the check of a submitted cast's or activation's targets (`targets_are_legal`, 601.2c, 602.2b) for each shape of requirement: none, one, up to two, and a modal one, each target named legal under the requirement (defect 22) | not yet run |
 
 A card proof ends at what the card leaves on the board: Giant Growth's
 says the card adds a `TemporaryEffect::ModifyPT` of +3/+3 on its target
@@ -1522,6 +1539,49 @@ again at one commit, 6b80c8a: those that passed under 4 million clauses
 at 3.5 GB four at a time, then the rest and any that ran out at 7 GB two
 at a time, then any that ran out again alone at 12. The ledger and the
 counts here are written from that run when it is in.
+
+The engine paths a card proof stands in for or takes for granted were
+then walked function by function for any with no proof: the answers to
+the questions a resolution or a cast asks (each reply its own harness),
+the order triggers go on the stack, the steps of the game loop around
+each action (what is done before a player receives priority, and who
+receives it after), where a spell goes once done with and what its
+default resolution does, an ability's costs and the facts they leave its
+resolution, the check of a submitted cast's targets, a spell's
+additional costs, the spells counted in a turn for a Werewolf's "last
+turn", and a permanent entering as a copy. Four engine functions were
+split out of the game loop and the offer and answer code for it,
+unchanged (`hand_on_priority`, `before_priority`, `sacrifices_offered`,
+and the legend rule's first group found in one pass), and `who_attacks`
+fills its lists in loops; every crate's tests pass after each. Two
+defects were found on the way (21 and 22 below). Three engine lists were
+found read at positions the board decides, so that every object named
+from them was any object: the control effects that end, filtered into a
+list of their own before each permanent was looked up; the legend rule's
+groups, filtered and grouped from the battlefield; and a blocked
+attacker's blockers still in combat, filtered from its damage assignment
+order before each was dealt with. Each is now read where it lies, one
+entry per effect, object or blocker, the same effects ending, the same
+legends asked about and the same damage dealt, and the engine's tests
+pass. Three causes of cost were found in the proofs' own machinery: the
+recorder assigned each action into its slot, and an assignment drops
+what the slot held, which where the board decides how many actions came
+before was a drop of every kind of action at every place (44% of what a
+blocked attacker's damage followed; the slot is empty, and is now
+written without it); the set type the combat's sets are kept in under
+Kani boxed nothing for each entry, a dangling pointer that Kani's
+pointer checks spent gigabytes on (now the keys in order, proved an
+ordered set); and kani-bounded found a table's harnesses only for tables
+it was told the names of, so 73 harnesses written in new tables were
+passed over without a word until it found any macro whose definition
+writes a proof, and said which requested names select none. Two proofs'
+own boards were made cheaper too: the loyalty offers are a harness for
+each player, and the set's proofs reserve their room as the map's do.
+Each proof that still runs out of memory or time is named in its row
+above, with what is known of why. That run at 6b80c8a was overtaken by
+these changes, which reach every proof (the recorder's write, every card
+proof's), and was stopped with 213 harnesses left; every harness, 2,042
+now, is run again at one commit once the open ones above are settled.
 
 A counterexample can be of a board no game reaches, which is then the
 board's error and not the card's: the board the counted creatures are
