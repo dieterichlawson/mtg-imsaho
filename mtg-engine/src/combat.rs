@@ -512,9 +512,7 @@ pub(crate) fn queue_damage_step(
         if attacker_deals && first_strike_only {
             // CR 510.5: record membership so the regular step knows this
             // creature already dealt its damage (unless double strike).
-            if let Some(c) = state.combat.as_mut() {
-                c.dealt_first_strike.insert(attacker_id);
-            }
+            mark_dealt_first_strike(state, attacker_id);
         }
 
         let attacker_power = if attacker_deals {
@@ -577,9 +575,7 @@ pub(crate) fn queue_damage_step(
                 // Blocker deals damage to attacker.
                 let blocker_deals = deals_in_step(state, blocker_id, first_strike_only, registry);
                 if blocker_deals && first_strike_only {
-                    if let Some(c) = state.combat.as_mut() {
-                        c.dealt_first_strike.insert(blocker_id);
-                    }
+                    mark_dealt_first_strike(state, blocker_id);
                 }
                 if blocker_deals {
                     let blocker_power = u32::try_from(state.effective_power(blocker_id, registry).unwrap_or(0).max(0)).unwrap_or(0);
@@ -622,13 +618,25 @@ pub(crate) fn queue_damage_step(
 /// first-strike step, creatures with first or double strike; in the
 /// regular step, double strikers and every creature that dealt none in the
 /// first-strike step.
-fn deals_in_step(state: &GameState, id: ObjectId, first_strike_only: bool, registry: &CardRegistry) -> bool {
+///
+/// Its own function, as is [`mark_dealt_first_strike`], so that each is
+/// proved apart from the step (`proofs::actions::combat_damage`).
+pub(crate) fn deals_in_step(state: &GameState, id: ObjectId, first_strike_only: bool, registry: &CardRegistry) -> bool {
     let double_strike = state.has_keyword(id, Keyword::DoubleStrike, registry);
     if first_strike_only {
         double_strike || state.has_keyword(id, Keyword::FirstStrike, registry)
     } else {
         double_strike
             || !state.combat.as_ref().is_some_and(|c| c.dealt_first_strike.contains(&id))
+    }
+}
+
+/// Record that `id` dealt combat damage in the first-strike step (CR
+/// 510.4), so that the regular step knows it has dealt its damage unless
+/// it has double strike.
+pub(crate) fn mark_dealt_first_strike(state: &mut GameState, id: ObjectId) {
+    if let Some(c) = state.combat.as_mut() {
+        c.dealt_first_strike.insert(id);
     }
 }
 
