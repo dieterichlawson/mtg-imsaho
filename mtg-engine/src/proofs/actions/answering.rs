@@ -744,3 +744,218 @@ each_search_reply! {
     a_card_a_search_did_not_offer_is_refused: 3;
 }
 
+/// What the asking card's hooks were told: a yes or no, and the length of
+/// the card type chosen (the types offered are of lengths one to three,
+/// each its own, so the length says which was handed on without comparing
+/// a string read back off the heap).
+static mut TOLD: Option<(ObjectId, Option<bool>, Option<usize>)> = None;
+
+/// A card that asks a yes-or-no question and to name a card type, and is
+/// told the answers.
+struct Told;
+
+impl CardBehavior for Told {
+    fn card_data(&self) -> CardData {
+        CardData { name: "Told".into(), ..CardData::default() }
+    }
+    fn on_yes_no_choice(&self, _: &mut GameState, id: ObjectId, yes: bool, _: &CardRegistry) {
+        // SAFETY: as in `Asking::on_declined_choice`, for TOLD.
+        let t = unsafe { &mut *std::ptr::addr_of_mut!(TOLD) };
+        assert!(t.is_none(), "told once");
+        *t = Some((id, Some(yes), None));
+    }
+    fn on_card_type_choice(&self, _: &mut GameState, id: ObjectId, chosen: &str, _: &CardRegistry) {
+        // SAFETY: as in `on_yes_no_choice`.
+        let t = unsafe { &mut *std::ptr::addr_of_mut!(TOLD) };
+        assert!(t.is_none(), "told once");
+        *t = Some((id, None, Some(chosen.len())));
+    }
+}
+
+/// A yes-or-no question and a "name a card type" question answered
+/// (`resolve_choice` of `YesNo` and `ChooseCardType`): the card that
+/// asked is told the answer, once, as given (yes or no; the type offered
+/// at the index chosen), the question answered and the passes in a row
+/// starting again; a type past those offered is refused, the question
+/// standing as it was asked and the card told nothing; and a yes or no
+/// handed to the card type's question, or an index to the yes-or-no
+/// question, is no answer to it, and refused the same way. What each card
+/// does with its answer is its own proof. For the second player asked,
+/// and each reply a harness's: 0 and 1 no and yes, 2 to 4 each type
+/// offered, 5 one past them, 6 a yes to the type's question, 7 an index
+/// to the yes-or-no question.
+fn told(reply: u8) {
+    let mut registry = CardRegistry::new();
+    let card = registry.register(Box::new(Told));
+    let mut state = crate::proofs::cards::new_game();
+    let chooser = PlayerId(1);
+    let source = state.create_object(card, chooser, Zone::Battlefield, None, None);
+    let yes_no = matches!(reply, 0 | 1 | 7);
+    let choice = if yes_no {
+        ResolutionChoiceKind::YesNo { description: String::new(), source_card: source }
+    } else {
+        ResolutionChoiceKind::ChooseCardType {
+            description: String::new(),
+            options: vec!["A".into(), "BB".into(), "CCC".into()],
+            controller: chooser,
+        }
+    };
+    state.awaiting_action = Some(AwaitingAction::ResolutionChoice { player: chooser, source, choice });
+    state.consecutive_passes = 2;
+    let answer = match reply {
+        0 | 1 => ResolvedChoice::YesNoDecision(reply == 1),
+        6 => ResolvedChoice::YesNoDecision(true),
+        k => ResolvedChoice::ChosenIndex(if k == 7 { 0 } else { usize::from(k - 2) }, String::new()),
+    };
+
+    let applied = crate::engine::actions::choices::resolve_choice(&mut state, &answer, &registry);
+
+    // SAFETY: as in `Asking::on_declined_choice`.
+    let t = unsafe { *std::ptr::addr_of!(TOLD) };
+    match reply {
+        0 | 1 => {
+            assert!(matches!(applied, crate::engine::Applied::Continue));
+            assert!(t == Some((source, Some(reply == 1), None)) && state.consecutive_passes == 0);
+            assert!(state.awaiting_action.is_none());
+        }
+        2..=4 => {
+            assert!(matches!(applied, crate::engine::Applied::Continue));
+            assert!(t == Some((source, None, Some(usize::from(reply - 1)))) && state.consecutive_passes == 0);
+            assert!(state.awaiting_action.is_none());
+        }
+        _ => {
+            assert!(matches!(applied, crate::engine::Applied::ReturnNow));
+            assert!(t.is_none() && state.consecutive_passes == 2);
+            assert!(matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+                player, source: s, choice: ResolutionChoiceKind::YesNo { source_card, .. },
+            }) if yes_no && *player == chooser && *s == source && *source_card == source)
+                || matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+                player, source: s, choice: ResolutionChoiceKind::ChooseCardType { options, controller, .. },
+            }) if !yes_no && *player == chooser && *s == source && *controller == chooser && options.len() == 3));
+        }
+    }
+    std::mem::forget((registry, state, answer));
+}
+
+/// The proofs of a card told its answer, one per reply.
+macro_rules! each_told_reply {
+    ($($name:ident: $reply:expr;)*) => {$(
+        card_proof! {
+            /// [`told`] for the reply of its name.
+            fn $name() {
+                told($reply);
+            }
+        }
+    )*};
+}
+
+each_told_reply! {
+    a_no_is_told_to_the_card_that_asked: 0;
+    a_yes_is_told_to_the_card_that_asked: 1;
+    the_first_card_type_offered_is_told_to_the_card: 2;
+    the_second_card_type_offered_is_told_to_the_card: 3;
+    the_third_card_type_offered_is_told_to_the_card: 4;
+    a_card_type_past_those_offered_is_refused: 5;
+    a_yes_to_a_card_type_question_is_refused: 6;
+    an_index_to_a_yes_or_no_question_is_refused: 7;
+}
+
+/// What `damage::apply_chosen_effect` was handed: who chose, the damage
+/// (its source, the object it is to, how much, of which kind), and which
+/// effect (0 a doubling, 1 a prevention and removal, each by its object).
+static mut APPLIED_FIRST: Option<(PlayerId, ObjectId, Option<ObjectId>, u32, crate::damage::DamageKind, u8, ObjectId)> = None;
+
+/// Stands in for `damage::apply_chosen_effect`, whose effects are proved
+/// in `effects` and `damage`: recorded.
+#[allow(dead_code)] // named only by `kani::stub`
+fn applied_first(_: &mut GameState, chooser: PlayerId, event: &crate::damage::PendingDamage, effect: &crate::damage::DamageEffect, _: &CardRegistry) {
+    use crate::damage::DamageEffect;
+    let (which, by) = match effect {
+        DamageEffect::Double { by } => (0, *by),
+        DamageEffect::PreventAndRemoveCounter { by } => (1, *by),
+        _ => panic!("an effect this proof does not offer"),
+    };
+    let to = match event.target {
+        crate::events::DamageTarget::Object(id) => Some(id),
+        crate::events::DamageTarget::Player(_) => None,
+    };
+    assert!(event.applied.is_empty() && !event.settled, "the damage as it was asked about");
+    // SAFETY: as in `Asking::on_declined_choice`, for APPLIED_FIRST.
+    let a = unsafe { &mut *std::ptr::addr_of_mut!(APPLIED_FIRST) };
+    assert!(a.is_none(), "applied once");
+    *a = Some((chooser, event.source, to, event.amount, event.kind, which, by));
+}
+
+/// Which of the effects that apply to one damage event applies first,
+/// answered (`resolve_choice` of `ChooseDamageEffect`, CR 616.1): the one
+/// chosen is applied to the damage the question was about, by the player
+/// the damage affects (the controller of the creature it is to), and the
+/// rest is asked again if it must be (`damage`); one past those offered is
+/// refused, the question standing as it was asked and nothing applied. For
+/// combat damage of three to the second player's creature, a doubling and
+/// a prevention offered, and each reply a harness's: 0 and 1 each, 2 one
+/// past them.
+fn damage_effect_chosen(reply: u8) {
+    use crate::damage::{DamageEffect, DamageKind};
+    let mut registry = CardRegistry::new();
+    let blank = registry.register(Box::new(crate::proofs::cards::Blank));
+    let mut state = crate::proofs::cards::new_game();
+    let attacker = state.create_object(blank, PlayerId(0), Zone::Battlefield, Some(3), Some(3));
+    let creature = state.create_object(blank, PlayerId(1), Zone::Battlefield, Some(3), Some(3));
+    let (flail, horde) = (
+        state.create_object(blank, PlayerId(0), Zone::Battlefield, None, None),
+        state.create_object(blank, PlayerId(1), Zone::Battlefield, Some(1), Some(1)),
+    );
+    state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+        player: PlayerId(1),
+        source: attacker,
+        choice: ResolutionChoiceKind::ChooseDamageEffect {
+            description: String::new(),
+            effects: vec![DamageEffect::Double { by: flail }, DamageEffect::PreventAndRemoveCounter { by: horde }],
+            options: vec![String::new(), String::new()],
+            source: attacker,
+            target: crate::events::DamageTarget::Object(creature),
+            amount: 3,
+            kind: DamageKind::Combat,
+        },
+    });
+    state.consecutive_passes = 2;
+
+    let applied = crate::engine::actions::choices::resolve_choice(
+        &mut state, &ResolvedChoice::ChosenIndex(usize::from(reply), String::new()), &registry);
+
+    // SAFETY: as in `Asking::on_declined_choice`.
+    let a = unsafe { *std::ptr::addr_of!(APPLIED_FIRST) };
+    if reply < 2 {
+        let by = if reply == 0 { flail } else { horde };
+        assert!(matches!(applied, crate::engine::Applied::Continue));
+        assert!(a == Some((PlayerId(1), attacker, Some(creature), 3, DamageKind::Combat, reply, by)));
+        assert!(state.awaiting_action.is_none() && state.consecutive_passes == 0);
+    } else {
+        assert!(matches!(applied, crate::engine::Applied::ReturnNow));
+        assert!(a.is_none() && state.consecutive_passes == 2);
+        assert!(matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+            player: PlayerId(1), choice: ResolutionChoiceKind::ChooseDamageEffect { effects, amount: 3, .. }, ..
+        }) if effects.len() == 2));
+    }
+    std::mem::forget((registry, state));
+}
+
+/// The proofs of a damage effect chosen, one per reply.
+macro_rules! each_effect_reply {
+    ($($name:ident: $reply:expr;)*) => {$(
+        card_proof! {
+            #[kani::stub(crate::damage::apply_chosen_effect, applied_first)]
+            /// [`damage_effect_chosen`] for the reply of its name.
+            fn $name() {
+                damage_effect_chosen($reply);
+            }
+        }
+    )*};
+}
+
+each_effect_reply! {
+    the_doubling_chosen_applies_to_the_damage_first: 0;
+    the_prevention_chosen_applies_to_the_damage_first: 1;
+    a_damage_effect_past_those_offered_is_refused: 2;
+}
