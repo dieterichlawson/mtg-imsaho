@@ -29,6 +29,7 @@ mod targeting;
 mod tokens;
 mod transforming;
 mod trigger_resolving;
+mod trigger_targets;
 mod triggering;
 mod until_end_of_turn;
 

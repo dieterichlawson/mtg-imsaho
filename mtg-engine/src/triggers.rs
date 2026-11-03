@@ -402,8 +402,14 @@ impl PendingTrigger {
     /// event's objects into the description is string searching, which
     /// symbolic execution ran out of memory on in every proof of a trigger
     /// resolving with an object in its event (`proofs::actions::trigger_resolving`).
-    pub(crate) fn logged<'a>(&'a self, registry: &'a crate::cards::CardRegistry, state: &'a crate::state::GameState) -> LogName<'a> {
-        LogName { trigger: self, registry, state }
+    pub(crate) fn logged<'a>(&'a self, registry: &'a crate::cards::CardRegistry, state: &'a crate::state::GameState) -> Named<'a> {
+        Named { trigger: self, registry, state, with_id: true }
+    }
+
+    /// [`Self::display_name_with_state`], worked out only when the text it
+    /// is in is written, as [`Self::logged`].
+    pub(crate) fn shown<'a>(&'a self, registry: &'a crate::cards::CardRegistry, state: &'a crate::state::GameState) -> Named<'a> {
+        Named { trigger: self, registry, state, with_id: false }
     }
 
     /// The source's name, from the face that is up if `state` can say
@@ -680,16 +686,18 @@ pub fn process_pending_trigger_pushes(state: &mut GameState, registry: &CardRegi
 }
 
 
-/// A trigger's name for the log, as [`PendingTrigger::logged`] hands it out.
-pub(crate) struct LogName<'a> {
+/// A trigger's name, as [`PendingTrigger::logged`] and
+/// [`PendingTrigger::shown`] hand it out.
+pub(crate) struct Named<'a> {
     trigger: &'a PendingTrigger,
     registry: &'a crate::cards::CardRegistry,
     state: &'a crate::state::GameState,
+    with_id: bool,
 }
 
-impl std::fmt::Display for LogName<'_> {
+impl std::fmt::Display for Named<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.trigger.log_name(self.registry, self.state))
+        f.write_str(&self.trigger.named(self.registry, Some(self.state), self.with_id))
     }
 }
 
@@ -699,19 +707,18 @@ impl std::fmt::Display for LogName<'_> {
 /// after each `StackEntry::Trigger` push.
 pub(crate) fn log_trigger_pushed(state: &mut GameState, registry: &crate::cards::CardRegistry) {
     let Some(crate::state::StackEntry::Trigger(t)) = state.stack.last() else { return };
-    let name = t.log_name(registry, state);
     let controller = t.controller();
 
-    let targets = t.chosen_targets().to_vec();
-    let msg = if targets.is_empty() {
-        format!("p{}'s {} goes on the stack", controller.0, name)
+    // The names are worked out as the line is written (`PendingTrigger::logged`).
+    let msg = if t.chosen_targets().is_empty() {
+        format!("p{}'s {} goes on the stack", controller.0, t.logged(registry, state))
     } else {
-        let names: Vec<String> = targets.iter().map(|tg| match tg {
+        let names: Vec<String> = t.chosen_targets().iter().map(|tg| match tg {
             Target::Object(id) => state.obj_name(*id),
             Target::Player(p) => format!("p{}", p.0),
             Target::Illegal => "an illegal target".into(),
         }).collect();
-        format!("p{}'s {} goes on the stack targeting {}", controller.0, name, names.join(", "))
+        format!("p{}'s {} goes on the stack targeting {}", controller.0, t.logged(registry, state), names.join(", "))
     };
     state.log(crate::state::LogLevel::Event, msg);
 }
@@ -751,9 +758,8 @@ pub(crate) fn push_one_pending_trigger(
         0 => {
             // CR 603.3c: a triggered ability with no legal targets is
             // removed from the stack (i.e., never goes on it).
-            let name = trigger.log_name(registry, state);
-            state.log(crate::state::LogLevel::Event,
-                format!("Trigger removed: no legal targets ({name})"));
+            let line = format!("Trigger removed: no legal targets ({})", trigger.logged(registry, state));
+            state.log(crate::state::LogLevel::Event, line);
 
         }
         1 => {
@@ -775,10 +781,7 @@ pub(crate) fn push_one_pending_trigger(
             } else {
                 state.pending_trigger_pushes_nap.insert(0, trigger.clone());
             }
-            let description = format!(
-                "{}: choose target",
-                trigger.display_name_with_state(registry, Some(state))
-            );
+            let description = format!("{}: choose target", trigger.shown(registry, state));
             state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
                 player: controller,
                 source: source_id,
