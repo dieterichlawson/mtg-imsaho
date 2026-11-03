@@ -289,7 +289,7 @@ card_proof! {
         // SAFETY: as in `toughness`.
         let read = unsafe { *std::ptr::addr_of!(TOUGHNESS) };
         match sacrificed {
-            None => assert!(state.last_activated_sacrifice_toughness.is_none() && read == [None, None]),
+            None => { assert!(state.last_activated_sacrifice_toughness.is_none() && read == [None, None]); }
             Some(id) => {
                 let i = usize::try_from(id.0).expect("an id of the board") - 1;
                 let (answer, at) = read[i].expect("its toughness read");

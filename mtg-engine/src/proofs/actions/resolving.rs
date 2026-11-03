@@ -512,7 +512,7 @@ fn a_spell_with_no_resolution_of_its_own_enters_the_battlefield_if_it_is_a_perma
     if permanent {
         assert!(moved == Some(Zone::Battlefield) && obj.is_legendary == legendary);
         match loyalty {
-            None => assert!(counters.is_none()),
+            None => { assert!(counters.is_none()); }
             Some(n) => {
                 let total = if x { x_value.unwrap_or(0) } else { n };
                 assert!(counters == Some((crate::types::CounterType::Loyalty, total, Zone::Battlefield)));
@@ -596,9 +596,9 @@ fn a_spell_ending(ending: u8) {
     let moved = unsafe { *std::ptr::addr_of!(MOVED) };
     let zone = state.get_object(spell).expect("on the board").zone;
     match ending {
-        0 => assert!(moved == 1 && state.resolving_spell.is_none() && state.awaiting_action.is_none()),
-        1 => assert!(moved == 0 && state.resolving_spell.is_none() && zone == Zone::Battlefield),
-        _ => assert!(moved == 0 && state.resolving_spell == Some(spell) && zone == Zone::Stack && state.awaiting_action.is_some()),
+        0 => { assert!(moved == 1 && state.resolving_spell.is_none() && state.awaiting_action.is_none()); }
+        1 => { assert!(moved == 0 && state.resolving_spell.is_none() && zone == Zone::Battlefield); }
+        _ => { assert!(moved == 0 && state.resolving_spell == Some(spell) && zone == Zone::Stack && state.awaiting_action.is_some()); }
     }
     std::mem::forget((registry, state));
 }

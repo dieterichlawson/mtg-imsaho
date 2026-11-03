@@ -422,8 +422,8 @@ card_proof! {
                 }
             }
             match offers.as_deref() {
-                None => assert!(n == 0),
-                Some(list) => assert!(n > 0 && list == &expected[..n]),
+                None => { assert!(n == 0); }
+                Some(list) => { assert!(n > 0 && list == &expected[..n]); }
             }
         }
         std::mem::forget((registry, state, offers));
