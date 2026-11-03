@@ -13,7 +13,7 @@
 //! - [`cards_flow`] — drawing, milling, discarding.
 
 pub(crate) mod actions;
-mod legal;
+pub(crate) mod legal;
 pub(crate) mod cards_flow;
 mod costs;
 mod effects;
@@ -790,7 +790,7 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
 /// `state.mulligan_round_position` past the player whose decision was
 /// just processed (or to have set `state.awaiting_action = None` for
 /// post-bottoming transitions).
-fn advance_mulligan_phase(state: &mut GameState, _registry: &CardRegistry) {
+pub(crate) fn advance_mulligan_phase(state: &mut GameState, _registry: &CardRegistry) {
     let num_players = u8::try_from(state.players.len()).unwrap_or(u8::MAX);
 
     loop {
@@ -869,7 +869,7 @@ AwaitingAction::BottomAfterMulligan { .. }))
 /// Black:1)"; when the step ended the mana was gone and nothing said so,
 /// so the log's own claim went false while the screen's `Mana:` row just
 /// disappeared (#708). Cleanup emptied the pools with no event either.
-fn empty_mana_pools(state: &mut GameState) {
+pub(crate) fn empty_mana_pools(state: &mut GameState) {
     let mut emptied = Vec::new();
     for player in &mut state.players {
         if !player.mana_pool.is_empty() {
@@ -970,7 +970,7 @@ pub fn advance_step(state: &mut GameState, registry: &CardRegistry) {
 }
 
 /// Perform automatic actions when entering a step.
-fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
+pub(crate) fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
     let active = state.active_player;
 
     match state.step {

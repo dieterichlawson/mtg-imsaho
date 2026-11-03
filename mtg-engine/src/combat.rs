@@ -491,7 +491,7 @@ fn deal_damage_step(
 }
 
 /// Queue every event of one combat damage step, in attacker order.
-fn queue_damage_step(
+pub(crate) fn queue_damage_step(
     state: &mut GameState,
     combat: &CombatState,
     registry: &CardRegistry,
@@ -740,7 +740,7 @@ pub fn divide_combat_damage(
 
 /// Ask the attacking player the next open division of this step's combat
 /// damage, if there is one (CR 510.1c-d). True when a prompt was raised.
-fn ask_next_damage_division(state: &mut GameState, registry: &CardRegistry, first_strike_only: bool) -> bool {
+pub(crate) fn ask_next_damage_division(state: &mut GameState, registry: &CardRegistry, first_strike_only: bool) -> bool {
     let Some(combat) = state.combat.clone() else { return false };
     for (&attacker, &defending_player) in &combat.attackers {
         if state.get_object(attacker).is_none_or(|o| o.zone != Zone::Battlefield)

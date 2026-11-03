@@ -4,12 +4,15 @@
 //! recorded in turn, so each proof is of one function's own logic.
 
 mod activating;
+mod answering;
 mod attacking;
 mod blocking;
 mod card_state;
 mod casting;
 mod casting_costs;
 mod choosing_targets;
+mod combat_damage;
+mod declaring_blocks;
 mod countering;
 mod damage;
 mod delayed;
@@ -19,6 +22,8 @@ mod filters;
 mod fighting;
 mod library;
 mod moving;
+mod mulligan;
+mod offering;
 mod paying;
 mod pending_effects;
 mod power_and_toughness;
@@ -28,12 +33,14 @@ mod resolving;
 mod scopes;
 mod searching;
 mod simple_actions;
+mod state_based;
 mod targeting;
 mod tokens;
 mod transforming;
 mod trigger_resolving;
 mod trigger_targets;
 mod triggering;
+mod turn_based;
 mod until_end_of_turn;
 
 /// An action proof: the stubs and bounds of a card proof, so that one
