@@ -144,7 +144,14 @@ def list_harnesses(src):
             body = t[m.end()-1:block(t, m.end()-1)+1]
             n = re.search(r'\bfn (\w+)\(form\)', body)
             if n: out += [path + '::' + n.group(1) + '::of_a_card', path + '::' + n.group(1) + '::of_a_token']
-        for name in TABLES | FORMS | set(SUFFIXED):
+        # Any other macro of the file whose definition writes a proof is a
+        # table too: a table missing from TABLES had its harnesses dropped
+        # from every run without a word.
+        own = {m.group(1) for m in re.finditer(r'\bmacro_rules!\s*(\w+)\s*\{', t)
+               if re.search(r'card_proof!|kani::proof', t[m.end() - 1:block(t, m.end() - 1) + 1])}
+        own -= FORMS | set(SUFFIXED) | {'card_proof', 'action_proof', 'damage_proof', 'effect_proof', 'for_each_form',
+                                        'equipment', 'aura', 'resolves', 'destroys'}
+        for name in TABLES | FORMS | set(SUFFIXED) | own:
             for m in re.finditer(r'(?<!macro_rules! )\b' + name + r'!\s*[{(]', t):
                 body = t[m.end()-1:block(t, m.end()-1)+1]
                 for e in re.finditer(r'(?m)^\s{4}(\w+):', body):
@@ -515,6 +522,15 @@ def main():
         with open(a.results, errors='replace') as res:
             return {l.split()[2] for l in res if len(l.split()) > 2}
 
+    # A name that selects no harness is said so, in the results, not passed
+    # over: a harness this script does not find is one no run proves.
+    unknown = [w for w in a.harness
+               if not any(h == w or h.endswith('::' + w) or f'::{w}::' in f'::{h}' for h in every)]
+    if unknown:
+        with open(a.results, 'a') as res:
+            for w in unknown:
+                res.write(f"{'NOT_RUN':10s} {'-':>8s}  {w}  not a harness this script finds\n")
+        print(f'not harnesses this script finds: {" ".join(unknown)}', file=sys.stderr)
     todo = [h for h in wanted if h not in done()]
     if a.reverse:
         todo.reverse()
