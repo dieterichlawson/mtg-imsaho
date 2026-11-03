@@ -36,17 +36,18 @@ impl CardBehavior for Asking {
 /// and the ability that asked has finished resolving. With a target not
 /// offered, or none where the question is not optional, the answer is
 /// refused: the question stands exactly as it was asked, and nothing is
-/// done. For either player asked, optional or not, and `reply` a constant
-/// of each harness (none, either target offered, or another): with the
-/// answer any of the four, symbolic execution ran out of memory reading
-/// the question back.
-fn answered(reply: u8) {
+/// done. For the second player asked, and the reply (none, either target
+/// offered, or another) and whether the question is optional constants of
+/// each harness: with the answer any of the four, or the player or
+/// whether it is optional the solver's, the answer was every path through
+/// `resolve_choice` at once (as the card proofs of `choices` found), and
+/// symbolic execution ran out of memory.
+fn answered(reply: u8, optional: bool) {
     let mut registry = CardRegistry::new();
     let card = registry.register(Box::new(Asking));
     let mut state = crate::proofs::cards::new_game();
-    let chooser = PlayerId(u8::from(kani::any::<bool>()));
+    let chooser = PlayerId(1);
     let source = state.create_object(card, chooser, Zone::Battlefield, None, None);
-    let optional: bool = kani::any();
     let offered = [Target::Object(ObjectId(7)), Target::Player(PlayerId(1))];
     let effect = PendingEffect::Destroy { source_name: String::new() };
     state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
@@ -98,21 +99,22 @@ fn answered(reply: u8) {
 
 /// The proofs of a target answered, one per reply.
 macro_rules! each_reply {
-    ($($name:ident: $reply:expr;)*) => {$(
+    ($($name:ident: $reply:expr, $optional:expr;)*) => {$(
         card_proof! {
             /// [`answered`] for the reply of its name.
             fn $name() {
-                answered($reply);
+                answered($reply, $optional);
             }
         }
     )*};
 }
 
 each_reply! {
-    declining_a_target_is_taken_only_where_the_question_allows_it: 0;
-    the_first_target_offered_is_taken: 1;
-    the_second_target_offered_is_taken: 2;
-    a_target_not_offered_is_refused_and_the_question_stands: 3;
+    declining_an_optional_target_is_taken: 0, true;
+    declining_a_target_that_is_not_optional_is_refused: 0, false;
+    the_first_target_offered_is_taken: 1, false;
+    the_second_target_offered_is_taken: 2, true;
+    a_target_not_offered_is_refused_and_the_question_stands: 3, true;
 }
 
 /// Stands in for `helpers::token_attack_options`: the defending player.
