@@ -308,35 +308,38 @@ pub(crate) fn apply_legend_rule(state: &mut GameState, registry: &CardRegistry) 
             }
         }
     }
-    // Sorted: which duplicate a player is asked about first is by player,
-    // then name, not the order the board lists them in.
-    legend_groups.sort_by(|a, b| (a.0.0.0, &a.0.1).cmp(&(b.0.0.0, &b.0.1)));
-    for ((player, name), ids) in legend_groups {
-        if ids.len() > 1 {
-            // Player must choose which to keep.
-            let targets: Vec<crate::actions::Target> = ids.iter()
-                .map(|&id| crate::actions::Target::Object(id))
-                .collect();
-            crate::cards::helpers::present_target_choice(
-                state,
-                ids[0], // source (arbitrary, just for bookkeeping)
-                player,
-                targets,
-                crate::state::PendingEffect::LegendRuleKeep {
-                    player,
-                    legend_name: name.clone(),
-                },
-                &format!("Legend rule: choose which {name} to keep"),
-                false,
-                registry,
-            );
-            // The pass stops here, and the engine waits for the player's
-            // choice. The next SBA pass (after the choice is resolved)
-            // will find no more duplicates.
-            return true;
-        }
-    }
-    false
+    // Which duplicate a player is asked about first is by player, then
+    // name, not the order the board lists them in: the least such group of
+    // two or more, found in one pass. Sorting every group first and taking
+    // the first of two or more is the same group (each player and name is
+    // one group), but a sort moves the groups, names and lists and all, and
+    // the proof of this question did not finish symbolic execution.
+    let first = legend_groups.iter()
+        .filter(|(_, ids)| ids.len() > 1)
+        .min_by(|a, b| (a.0.0.0, &a.0.1).cmp(&(b.0.0.0, &b.0.1)));
+    let Some(((player, name), ids)) = first else { return false };
+    let player = *player;
+    // Player must choose which to keep.
+    let targets: Vec<crate::actions::Target> = ids.iter()
+        .map(|&id| crate::actions::Target::Object(id))
+        .collect();
+    crate::cards::helpers::present_target_choice(
+        state,
+        ids[0], // source (arbitrary, just for bookkeeping)
+        player,
+        targets,
+        crate::state::PendingEffect::LegendRuleKeep {
+            player,
+            legend_name: name.clone(),
+        },
+        &format!("Legend rule: choose which {name} to keep"),
+        false,
+        registry,
+    );
+    // The pass stops here, and the engine waits for the player's choice.
+    // The next SBA pass (after the choice is resolved) will find no more
+    // duplicates.
+    true
 }
 
 /// Rule 704.5d: A token not on the battlefield ceases to exist. Whether
