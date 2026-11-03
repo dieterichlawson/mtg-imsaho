@@ -11,6 +11,7 @@ mod card_state;
 mod casting;
 mod casting_costs;
 mod choosing_targets;
+mod combat_answers;
 mod combat_damage;
 mod declaring_blocks;
 mod countering;
