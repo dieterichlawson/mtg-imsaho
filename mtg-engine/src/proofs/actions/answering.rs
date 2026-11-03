@@ -484,8 +484,8 @@ card_proof! {
 /// How many times a spell's additional costs were paid (any it has).
 static mut ADDITIONAL_PAID: usize = 0;
 
-/// Stands in for `costs::pay_additional_cost`, each card's own cost proved
-/// with the card (`casting_costs`): counted.
+/// Stands in for `costs::pay_additional_cost`, proved in
+/// `additional_costs`: counted.
 #[allow(dead_code)] // each named only by `kani::stub`
 #[allow(clippy::too_many_arguments)]
 fn additional_paid(_: &mut GameState, _: &CardRegistry, _: crate::ids::CardId, _: ObjectId, _: PlayerId, _: Option<ObjectId>, _: Option<u32>, _: &[ObjectId]) {

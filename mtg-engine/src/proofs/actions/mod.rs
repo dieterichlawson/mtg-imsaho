@@ -4,6 +4,7 @@
 //! recorded in turn, so each proof is of one function's own logic.
 
 mod activating;
+mod additional_costs;
 mod answering;
 mod attacking;
 mod blocking;
