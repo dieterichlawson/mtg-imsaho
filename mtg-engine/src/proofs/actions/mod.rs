@@ -39,6 +39,7 @@ mod state_based;
 mod targeting;
 mod tokens;
 mod transforming;
+mod trigger_order;
 mod trigger_resolving;
 mod trigger_targets;
 mod triggering;
