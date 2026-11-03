@@ -110,11 +110,11 @@ fn exiled(reply: u8) {
     let applied = crate::engine::actions::choices::resolve_choice(&mut state, &ResolvedChoice::ChosenExileSet(chosen), &registry);
 
     // SAFETY: as in `resubmitted`.
-    let r = unsafe { *std::ptr::addr_of!(RESUBMITTED) };
+    let r = unsafe { &*std::ptr::addr_of!(RESUBMITTED) };
     if reply <= 1 {
         assert!(matches!(applied, crate::engine::Applied::Replace(_)));
         let count = u32::try_from(n).ok();
-        assert!(r == Some((spell, [Some(Target::Player(PlayerId(0))), None, None], 1, expected, n, count)));
+        assert!(*r == Some((spell, [Some(Target::Player(PlayerId(0))), None, None], 1, expected, n, count)));
     } else {
         assert!(matches!(applied, crate::engine::Applied::ReturnNow));
         assert!(r.is_none() && state.pending_spell_cast.is_none() && state.awaiting_action.is_none());

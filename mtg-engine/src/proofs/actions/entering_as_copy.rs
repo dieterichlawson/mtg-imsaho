@@ -45,7 +45,9 @@ card_proof! {
         crate::replacement::record_entry_choice(&mut state, entering, choice, &registry);
 
         assert!(state.get_object(entering).expect("on the board").entering_copy_choice == choice);
-        assert!(state.pending_entry_choices.as_slice() == if other_waits { &[waiting][..] } else { &[][..] });
+        let one = [waiting];
+        let still: &[ObjectId] = if other_waits { &one } else { &[] };
+        assert!(state.pending_entry_choices.as_slice() == still);
         assert!(!state.pending_entry_controllers.contains_key(&entering));
         assert!(match held {
             Some(p) => asked_for(&[Act::MoveUnder(entering, Zone::Battlefield, p)]),
@@ -68,7 +70,8 @@ fn creature(_: &GameState, id: ObjectId, _: &CardRegistry) -> bool {
         _ => panic!("an object this proof does not ask about"),
     };
     // SAFETY: a proof runs on one thread, and only this function names CREATURE.
-    *unsafe { &mut *std::ptr::addr_of_mut!(CREATURE) }[i].get_or_insert_with(kani::any::<bool>)
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(CREATURE) };
+    *answers[i].get_or_insert_with(kani::any::<bool>)
 }
 
 /// What the entry was told, once: declined (none to copy), or asked of
