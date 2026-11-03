@@ -410,6 +410,14 @@ pub fn schema_violation(schema: &serde_json::Value, answer: &serde_json::Value) 
                     return Some(format!("`{path}` is {value}, not an object"));
                 };
                 let properties = schema.get("properties").and_then(serde_json::Value::as_object);
+                // A cancel undoes the cast and pays nothing, so the rest of
+                // the answer is never read: holding it to the list's
+                // minimum re-asked every `{"cancel": true, "indices": []}`
+                // and told the seat to pick a target (#990).
+                if properties.is_some_and(|p| p.contains_key("cancel"))
+                    && object.get("cancel") == Some(&serde_json::Value::Bool(true)) {
+                    return None;
+                }
                 let unread = |key: &str| properties.and_then(|p| p.get(key))
                     .is_some_and(|sub| sub.get(UNREAD).is_some());
                 // Not asked for, so not missing: what the format line
@@ -4895,7 +4903,7 @@ impl LlmPlayer {
     fn offer_cancel(schema: &mut serde_json::Value) {
         schema["properties"]["cancel"] = serde_json::json!({
             "type": "boolean",
-            "description": "true to cancel the cast or activation this question belongs to: it is undone and nothing is paid. false to answer.",
+            "description": "true to cancel the cast or activation this question belongs to: it is undone, nothing is paid and the rest of the answer is not read. false to answer.",
         });
         if let Some(required) = schema["required"].as_array_mut() {
             required.push(serde_json::json!("cancel"));
@@ -8895,6 +8903,59 @@ pub(crate) mod tests {
                 assert_eq!(cancelled, cancel && cancellable, "{name}, cancel = {cancel}: {chosen:?}");
             }
         }
+    }
+
+    /// #990: a cancel with every list left empty is the answer a seat
+    /// backing out gives, and the lists are not read once `cancel` is true.
+    /// The check held them to their minimum anyway, so each such cancel was
+    /// a second call whose re-ask told the seat to pick a target. Each
+    /// cancellable prompt, with a list that needs at least one entry, now
+    /// takes it in one call.
+    #[test]
+    fn a_cancel_with_empty_lists_is_taken_without_a_reask() {
+        use mtg_engine::actions::{ResolvedChoice, Target};
+        use mtg_engine::state::{PendingEffect, ResolutionChoiceKind};
+        let with = |kind: ResolutionChoiceKind| mtg_engine::engine::LegalActions {
+            resolution_prompt: Some(kind), ..x_funding_offer()
+        };
+        let ids = vec![ObjectId(501), ObjectId(502)];
+        let prompts = [
+            ("x-funding", x_funding_offer()),
+            ("target-set", with(ResolutionChoiceKind::ChooseTargetSet {
+                description: "Ghoulcaller's Chant: choose 1 target".to_string(),
+                options: ids.iter().map(|&o| Target::Object(o)).collect(), min: 1, max: 1,
+                source_id: ObjectId(400), fixed: vec![], by_count: vec![],
+            })),
+            ("exile-cost", with(ResolutionChoiceKind::ChooseExileFromGraveyard {
+                description: "Stitched Drake: exile a creature card".to_string(),
+                options: ids.clone(), min: 1, max: 1, source_id: ObjectId(400),
+            })),
+            ("activation-taps", with(ResolutionChoiceKind::ChooseObjectSet {
+                description: "tap two untapped creatures".to_string(),
+                options: ids.clone(), min: 2, max: 2,
+                effect: PendingEffect::PayActivationTaps { source_id: ObjectId(400) },
+            })),
+        ];
+        for (name, legal) in prompts {
+            let schemas = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+            let mut p = LlmPlayer::for_prompt_tests(&format!("Seat-990-{name}")).with_pass_until(false);
+            p.backend = Box::new(SchemaRecorder {
+                reply: serde_json::json!({"thoughts": "t", "cancel": true, "indices": [], "sources": []}),
+                schemas: schemas.clone(),
+            });
+            let chosen = p.choose_action(&empty_view(), &legal);
+            assert!(matches!(chosen, Action::ResolveChoice { choice: ResolvedChoice::CancelCast }),
+                "{name}: {chosen:?}");
+            assert_eq!(schemas.borrow().len(), 1, "{name}: a cancel was asked again");
+        }
+        // Answering is still held to the list: `cancel: false` with nothing
+        // picked is the slip the re-ask is for.
+        let schema = serde_json::json!({"type": "object",
+            "properties": {"indices": {"type": "array", "items": {"type": "integer"}, "minItems": 1},
+                           "cancel": {"type": "boolean"}},
+            "required": ["indices", "cancel"]});
+        assert!(schema_violation(&schema, &serde_json::json!({"cancel": false, "indices": []})).is_some());
+        assert_eq!(schema_violation(&schema, &serde_json::json!({"cancel": true, "indices": []})), None);
     }
 
     /// Issue #596: the X-funding reader was `as_str().and_then(parse).
