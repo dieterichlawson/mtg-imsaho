@@ -608,3 +608,44 @@ each_resolution! {
     a_spell_whose_resolution_puts_it_onto_the_battlefield_stays_there: a_spell_ending(1),
     a_spell_whose_resolution_asks_a_question_stays_resolving: a_spell_ending(2),
 }
+
+/// A spell's resolution finished once the questions it asked are answered
+/// (`engine::effects::finish_spell_resolution_if_idle`, run after every
+/// action, CR 608.2n): with a question still waiting, the spell is still
+/// the one resolving and nothing is done; with none, it is no longer, and
+/// it is moved off the stack (to the graveyard or exile, as above) if it
+/// is still there, and left where it is if its resolution put it
+/// somewhere; with no spell resolving, nothing is done. For a spell on the
+/// stack or put onto the battlefield, resolving or not, and a question
+/// waiting or not.
+fn a_spell_finishing(_: ()) {
+    let mut registry = CardRegistry::new();
+    let blank = registry.register(Box::new(Blank));
+    let mut state = crate::proofs::cards::new_game();
+    let on_stack: bool = kani::any();
+    let spell = state.create_object(blank, PlayerId(u8::from(kani::any::<bool>())),
+        if on_stack { Zone::Stack } else { Zone::Battlefield }, None, None);
+    let resolving: bool = kani::any();
+    if resolving {
+        state.resolving_spell = Some(spell);
+    }
+    let waiting: bool = kani::any();
+    if waiting {
+        state.awaiting_action = Some(crate::state::AwaitingAction::DeclareAttackers);
+    }
+
+    crate::engine::effects::finish_spell_resolution_if_idle(&mut state, &registry);
+
+    // SAFETY: as in `answer`.
+    let moved = unsafe { *std::ptr::addr_of!(MOVED) };
+    if waiting {
+        assert!(moved == 0 && state.resolving_spell == resolving.then_some(spell));
+    } else {
+        assert!(moved == usize::from(resolving && on_stack) && state.resolving_spell.is_none());
+    }
+    std::mem::forget((registry, state));
+}
+
+each_resolution! {
+    a_spell_whose_questions_are_answered_is_moved_off_the_stack: a_spell_finishing(()),
+}
