@@ -1201,3 +1201,13 @@ say what your stub says.
   the parser takes is the same bug in another prompt. The stand-in's
   array lengths cannot be read off the line ("as many as the prompt
   says"), so ignore `card_indices`/`order` count REASKs from it
+  — **re-run 2026-11-03: the line and the check agree, but a cancel does
+  not.** A stand-in that answers only from the format line, numbers where
+  it prints numbers (40 games, ~2,600 calls, 13 line shapes, 0 parse
+  failures, 0 UNREADABLE), was re-asked only for list counts the prompt
+  states. Every `cancel: true` with an empty list on a question with a
+  minimum is re-asked "`indices` has 0 entries" and the identical second
+  reply then taken (#990): a field that makes another unread must lift its
+  requirements. Next time, look for every such pair (`cancel` beside
+  `indices`/`sources`, `confirm`, a "none" row) and answer each the way a
+  seat declining would, under both `MTG_CLAUDE_CODE_ANSWERS` settings
