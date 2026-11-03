@@ -285,41 +285,41 @@ pub(crate) fn apply_legend_rule(state: &mut GameState, registry: &CardRegistry) 
     if state.awaiting_action.is_some() {
         return false;
     }
-    // A list of the groups rather than a `HashMap`, whose hasher a proof
-    // cannot model.
-    let mut legend_groups: Vec<((crate::ids::PlayerId, String), Vec<ObjectId>)> = Vec::new();
-    // Grouped by the name of the face that is up (CR 704.5j reads the
-    // permanent's name), not the cached string — a decklist entry
-    // written as "Front // Back" and a walker that transformed and
-    // flipped back carry different caches for the same legend.
-    let battlefield: Vec<(crate::ids::ObjectId, crate::ids::PlayerId, String)> =
-        state.objects_in_id_order().into_iter()
-            .filter(|o| o.zone == Zone::Battlefield)
-            .map(|o| (o.id, o.controller, state.name_of(o.id, registry)))
-            .collect();
-    for (id, controller, name) in battlefield {
-        // Read from the active face, not from the `is_legendary` cache
-        // that only the ordinary "resolve a permanent spell" path fills
-        // in — a reanimated or returned legend is still a legend.
-        if state.is_legendary(id, registry) {
-            match legend_groups.iter_mut().find(|((p, n), _)| *p == controller && *n == name) {
-                Some((_, ids)) => ids.push(id),
-                None => legend_groups.push(((controller, name), vec![id])),
-            }
+    // Each object, in id order, with its controller and name if it is a
+    // legend on the battlefield: one entry per object, so each is read where
+    // it lies (a list filtered out of the objects, or grouped from them, is
+    // one a proof reads at positions the board decides, and the proof of
+    // this question ran out of memory on it). Read from the active face,
+    // not from the `is_legendary` cache that only the ordinary "resolve a
+    // permanent spell" path fills in — a reanimated or returned legend is
+    // still a legend. Named by the face that is up (CR 704.5j reads the
+    // permanent's name), not the cached string — a decklist entry written as
+    // "Front // Back" and a walker that transformed and flipped back carry
+    // different caches for the same legend.
+    let legends: Vec<(ObjectId, Option<(crate::ids::PlayerId, String)>)> = state.each_object()
+        .map(|o| (o.id, (o.zone == Zone::Battlefield && state.is_legendary(o.id, registry))
+            .then(|| (o.controller, state.name_of(o.id, registry)))))
+        .collect();
+    // Which duplicate a player is asked about first is by player, then
+    // name, not the order the board lists them in: the least player and name
+    // that two legends share. Each such pair is found at the first of its
+    // legends, which has another after it.
+    let mut first: Option<(crate::ids::PlayerId, &String)> = None;
+    for (i, (_, legend)) in legends.iter().enumerate() {
+        let Some((p, n)) = legend else { continue };
+        let shared = legends[i + 1..].iter()
+            .any(|(_, other)| other.as_ref().is_some_and(|(q, m)| q == p && m == n));
+        if shared && first.is_none_or(|(fp, fname)| (p.0, n) < (fp.0, fname)) {
+            first = Some((*p, n));
         }
     }
-    // Which duplicate a player is asked about first is by player, then
-    // name, not the order the board lists them in: the least such group of
-    // two or more, found in one pass. Sorting every group first and taking
-    // the first of two or more is the same group (each player and name is
-    // one group), but a sort moves the groups, names and lists and all, and
-    // the proof of this question did not finish symbolic execution.
-    let first = legend_groups.iter()
-        .filter(|(_, ids)| ids.len() > 1)
-        .min_by(|a, b| (a.0.0.0, &a.0.1).cmp(&(b.0.0.0, &b.0.1)));
-    let Some(((player, name), ids)) = first else { return false };
-    let player = *player;
-    // Player must choose which to keep.
+    let Some((player, name)) = first else { return false };
+    // The legends of that player and name, in id order: the player must
+    // choose which to keep.
+    let ids: Vec<ObjectId> = legends.iter()
+        .filter(|(_, legend)| legend.as_ref().is_some_and(|(p, n)| *p == player && n == name))
+        .map(|&(id, _)| id)
+        .collect();
     let targets: Vec<crate::actions::Target> = ids.iter()
         .map(|&id| crate::actions::Target::Object(id))
         .collect();
