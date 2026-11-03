@@ -1693,80 +1693,97 @@ fn run_game_loop_inner<F>(
         *state = submit_action(state, &action, registry);
 
         // After submitting, handle priority flow.
-        match &action {
-            Action::PassPriority => {
-                // What all players passing in succession does is proved in
-                // `mtg_kernel::turn::after_pass` (CR 117.4).
-                let current = state.priority_player.unwrap_or(state.active_player);
-                match mtg_kernel::turn::after_pass(
-                    state.consecutive_passes, num_players, state.stack.len(), u32::from(current.0),
-                ) {
-                    mtg_kernel::turn::AfterPass::EndStep => {
-                        state.priority_player = None;
-                        advance_step(state, registry);
-                    }
-                    mtg_kernel::turn::AfterPass::ResolveTop => {
-                        let mut new_state = state.clone();
-                        stack::resolve_top_of_stack(&mut new_state, registry);
-                        *state = new_state;
-                        state.consecutive_passes = 0;
-                        state.priority_player = Some(state.active_player);
-                    }
-                    mtg_kernel::turn::AfterPass::NextPlayer(next) => {
-                        if state.priority_player.is_some() {
-                            state.priority_player = Some(PlayerId(u8::try_from(next).expect("a player index")));
-                        }
+        hand_on_priority(state, &action, cast_prompt_player, num_players, registry);
+    }
+}
+
+/// Who has priority once `action` has been played (CR 117.3-117.4): a
+/// pass hands it on, or, every player having passed in succession,
+/// resolves the top of the stack and gives it to the active player
+/// (117.3b) or ends the step with nobody holding it
+/// (`mtg_kernel::turn::after_pass`); a declaration of attackers or
+/// blockers gives it to the active player; an answer to a question gives
+/// it to whoever was casting or activating if the question was part of
+/// that (117.3c), the active player otherwise (117.3b); and anything else
+/// leaves it where it is.
+pub(crate) fn hand_on_priority(
+    state: &mut GameState,
+    action: &Action,
+    cast_prompt_player: Option<PlayerId>,
+    num_players: u32,
+    registry: &CardRegistry,
+) {
+    match action {
+        Action::PassPriority => {
+            // What all players passing in succession does is proved in
+            // `mtg_kernel::turn::after_pass` (CR 117.4).
+            let current = state.priority_player.unwrap_or(state.active_player);
+            match mtg_kernel::turn::after_pass(
+                state.consecutive_passes, num_players, state.stack.len(), u32::from(current.0),
+            ) {
+                mtg_kernel::turn::AfterPass::EndStep => {
+                    state.priority_player = None;
+                    advance_step(state, registry);
+                }
+                mtg_kernel::turn::AfterPass::ResolveTop => {
+                    stack::resolve_top_of_stack(state, registry);
+                    state.consecutive_passes = 0;
+                    state.priority_player = Some(state.active_player);
+                }
+                mtg_kernel::turn::AfterPass::NextPlayer(next) => {
+                    if state.priority_player.is_some() {
+                        state.priority_player = Some(PlayerId(u8::try_from(next).expect("a player index")));
                     }
                 }
             }
-
-            Action::DeclareAttackers { .. } => {
-                // After declaring attackers (even zero), give priority to active player.
-                // When zero were declared, advance_step skips straight to
-                // EndCombat (CR 508.8) once this priority round ends.
-                state.priority_player = Some(state.active_player);
-            }
-
-            Action::DeclareBlockers { .. } => {
-                // After declaring blockers, give priority to active player.
-                state.priority_player = Some(state.active_player);
-            }
-
-            Action::DiscardCards { .. } => {
-                // The rest of the cleanup step ran on the discard
-                // (`finish_cleanup`), which gave the active player priority
-                // if a state-based action was performed (CR 514.3a) and
-                // nobody otherwise. Taking it away here skipped that window.
-            }
-
-            Action::MulliganKeep
-            | Action::MulliganMull
-            | Action::BottomCards { .. }
-            | Action::ActivateManaAbility { .. }
-            | Action::ActivateAbility { .. }
-            | Action::ActivateLoyaltyAbility { .. }
-            | Action::Concede
-            | Action::Forfeit
-            | Action::PlayLand { .. }
-            | Action::CastSpell { .. } => {
-                // Mulligan-phase actions don't touch priority (mulligan advances via
-                // awaiting_action), ability activations and spell casts leave priority
-                // with the current player, and a Concede has ended the game itself (#764).
-            }
-
-            Action::ResolveChoice { .. } => {
-                // A choice raised while a spell or ability resolved hands
-                // priority to the active player afterwards (CR 117.3b). A
-                // choice that completed a cast or an activation — X funding,
-                // an exile cost, an "up to N" target slot — is part of that
-                // cast, so the caster keeps priority (CR 117.3c); the
-                // non-active player answering Devil's Play's funding used to
-                // lose priority to the opponent.
-                state.priority_player = Some(cast_prompt_player.unwrap_or(state.active_player));
-            }
-
-            // Handled above, before the submit.
-            Action::AbandonGame => unreachable!("AbandonGame returns from the loop"),
         }
+
+        Action::DeclareAttackers { .. } => {
+            // After declaring attackers (even zero), give priority to active player.
+            // When zero were declared, advance_step skips straight to
+            // EndCombat (CR 508.8) once this priority round ends.
+            state.priority_player = Some(state.active_player);
+        }
+
+        Action::DeclareBlockers { .. } => {
+            // After declaring blockers, give priority to active player.
+            state.priority_player = Some(state.active_player);
+        }
+
+        Action::DiscardCards { .. } => {
+            // The rest of the cleanup step ran on the discard
+            // (`finish_cleanup`), which gave the active player priority
+            // if a state-based action was performed (CR 514.3a) and
+            // nobody otherwise. Taking it away here skipped that window.
+        }
+
+        Action::MulliganKeep
+        | Action::MulliganMull
+        | Action::BottomCards { .. }
+        | Action::ActivateManaAbility { .. }
+        | Action::ActivateAbility { .. }
+        | Action::ActivateLoyaltyAbility { .. }
+        | Action::Concede
+        | Action::Forfeit
+        | Action::PlayLand { .. }
+        | Action::CastSpell { .. } => {
+            // Mulligan-phase actions don't touch priority (mulligan advances via
+            // awaiting_action), ability activations and spell casts leave priority
+            // with the current player, and a Concede has ended the game itself (#764).
+        }
+
+        Action::ResolveChoice { .. } => {
+            // A choice raised while a spell or ability resolved hands
+            // priority to the active player afterwards (CR 117.3b). A
+            // choice that completed a cast or an activation — X funding,
+            // an exile cost, an "up to N" target slot — is part of that
+            // cast, so the caster keeps priority (CR 117.3c); the
+            // non-active player answering Devil's Play's funding used to
+            // lose priority to the opponent.
+            state.priority_player = Some(cast_prompt_player.unwrap_or(state.active_player));
+        }
+
+        // Handled before the submit.
+        Action::AbandonGame => unreachable!("AbandonGame returns from the loop"),
     }
 }

@@ -25,6 +25,7 @@ mod moving;
 mod mulligan;
 mod offering;
 mod paying;
+mod priority;
 mod pending_effects;
 mod power_and_toughness;
 mod predicates;
