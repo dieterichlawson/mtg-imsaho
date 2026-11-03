@@ -259,11 +259,19 @@ pub(crate) fn activate_ability(state: &mut GameState, object_id: ObjectId, abili
             // failed payment cannot simply be unwound, and an unfunded
             // activation is refused rather than half-charged (CR 601.2h via
             // 602.2b). Same rule as the cast path.
-            let mut probe = state.clone();
-            for &(source_id, ma_idx) in tap_plan {
-                activate_mana_source_reserving(&mut probe, source_id, ma_idx, Some(&pay), registry);
-            }
-            if !mana::can_pay(&probe.get_player(player).mana_pool, &pay) {
+            // With nothing to tap, the rehearsal is the pool as it is: the
+            // copy of the whole game it is made on is left out then, as on
+            // the cast path.
+            let pays = if tap_plan.is_empty() {
+                mana::can_pay(&state.get_player(player).mana_pool, &pay)
+            } else {
+                let mut probe = state.clone();
+                for &(source_id, ma_idx) in tap_plan {
+                    activate_mana_source_reserving(&mut probe, source_id, ma_idx, Some(&pay), registry);
+                }
+                mana::can_pay(&probe.get_player(player).mana_pool, &pay)
+            };
+            if !pays {
                 state.log(crate::state::LogLevel::Debug, format!(
                     "activation refused, submitted funding cannot pay {pay:?} (CR 601.2h)"));
                 return Applied::ReturnNow;
