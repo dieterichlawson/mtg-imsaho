@@ -189,7 +189,7 @@ struct Board {
     combat: CombatState,
 }
 
-fn board(attacking: &[u64], walker_of: Option<u64>, blocks: &[(u64, &[u64])], order: &[(u64, &[u64])]) -> Board {
+fn board(attacking: &[u64], walker_of: Option<u64>, blocks: &[(u64, &[u64])], order: &[(u64, &[u64])], step: Option<bool>) -> Board {
     let mut registry = CardRegistry::new();
     let blank = registry.register(Box::new(Blank));
     let mut state = crate::proofs::cards::new_game();
@@ -203,7 +203,10 @@ fn board(attacking: &[u64], walker_of: Option<u64>, blocks: &[(u64, &[u64])], or
         let zone = if *o { Zone::Battlefield } else { Zone::Graveyard };
         state.create_object(blank, controller, zone, Some(1), Some(1));
     }
-    let first_strike_step: bool = kani::any();
+    // Which half of the step, a constant of the harness where it is given:
+    // a blocked attacker's damage, with every creature's answers open, ran
+    // symbolic execution out of memory with the step open too.
+    let first_strike_step: bool = step.unwrap_or_else(kani::any::<bool>);
     // Built twice, once for the game and once for the step to read, rather
     // than cloned: a copy of the combat's maps was most of what symbolic
     // execution followed.
@@ -243,7 +246,9 @@ fn combat_of(attacking: &[u64], walker_of: Option<u64>, blocks: &[(u64, &[u64])]
 /// as declared) and `order` (the damage assignment order announced, empty
 /// for none) say, constants of each harness. Each creature's first strike,
 /// double strike, trample and power are any answer, as is whether it dealt
-/// damage in a first-strike step already, and whether this step is one.
+/// damage in a first-strike step already, and whether this step is one
+/// (where `step` is `None`; a blocked attacker's harnesses are one each
+/// for a first-strike step and a regular one).
 ///
 /// In this step, a creature deals combat damage if it has double strike,
 /// or, in a first-strike step, first strike (702.7b, 702.4b), or, in a
@@ -261,9 +266,9 @@ fn combat_of(attacking: &[u64], walker_of: Option<u64>, blocks: &[(u64, &[u64])]
 /// blockers, in that order, with the attacker's power (none if it deals
 /// none) and whether it has trample. Nothing of no damage is queued, and
 /// every event is combat damage. The step's chosen divisions are spent.
-fn dealing(attacking: &[u64], walker_of: Option<u64>, blocks: &[(u64, &[u64])], order: &[(u64, &[u64])]) {
+fn dealing(attacking: &[u64], walker_of: Option<u64>, blocks: &[(u64, &[u64])], order: &[(u64, &[u64])], step: Option<bool>) {
     let Board { registry, mut state, defending, on, first_strike_step, combat, .. } =
-        board(attacking, walker_of, blocks, order);
+        board(attacking, walker_of, blocks, order, step);
 
     crate::combat::queue_damage_step(&mut state, &combat, &registry, first_strike_step);
 
@@ -337,7 +342,7 @@ fn dealing(attacking: &[u64], walker_of: Option<u64>, blocks: &[(u64, &[u64])], 
 
 /// The proofs of a combat damage step, a shape of combat each.
 macro_rules! each_combat {
-    ($($name:ident: $attacking:expr, $walker:expr, $blocks:expr, $order:expr;)*) => {$(
+    ($($name:ident: $attacking:expr, $walker:expr, $blocks:expr, $order:expr, $step:expr;)*) => {$(
         card_proof! {
             #[kani::stub(crate::state::GameState::has_keyword, has_keyword)]
             #[kani::stub(crate::state::GameState::effective_power, effective_power)]
@@ -347,19 +352,23 @@ macro_rules! each_combat {
             #[kani::stub(crate::combat::mark_dealt_first_strike, mark)]
             /// [`dealing`] for the combat of its name.
             fn $name() {
-                dealing(&$attacking, $walker, &$blocks, &$order);
+                dealing(&$attacking, $walker, &$blocks, &$order, $step);
             }
         }
     )*};
 }
 
 each_combat! {
-    an_unblocked_attacker_deals_its_power_to_the_player: [1], None, [], [];
-    an_unblocked_attacker_at_a_planeswalker_deals_its_power_to_it_while_it_is_there: [1], Some(1), [], [];
-    a_blocked_attacker_and_its_blocker_deal_damage_to_each_other: [1], None, [(1, &[3][..])], [];
-    a_blocked_attacker_deals_damage_to_its_blockers_in_the_order_announced: [1], None, [(1, &[3, 4][..])], [(1, &[4, 3][..])];
-    a_blocked_attacker_at_a_planeswalker_tramples_over_onto_it: [1], Some(1), [(1, &[3][..])], [];
-    two_attackers_deal_their_damage_in_the_boards_order: [1, 2], None, [(2, &[4][..])], [];
+    an_unblocked_attacker_deals_its_power_to_the_player: [1], None, [], [], None;
+    an_unblocked_attacker_at_a_planeswalker_deals_its_power_to_it_while_it_is_there: [1], Some(1), [], [], None;
+    a_blocked_attacker_and_its_blocker_deal_damage_to_each_other_in_a_first_strike_step: [1], None, [(1, &[3][..])], [], Some(true);
+    a_blocked_attacker_and_its_blocker_deal_damage_to_each_other_in_a_regular_step: [1], None, [(1, &[3][..])], [], Some(false);
+    a_blocked_attacker_deals_damage_to_its_blockers_in_the_order_announced_in_a_first_strike_step: [1], None, [(1, &[3, 4][..])], [(1, &[4, 3][..])], Some(true);
+    a_blocked_attacker_deals_damage_to_its_blockers_in_the_order_announced_in_a_regular_step: [1], None, [(1, &[3, 4][..])], [(1, &[4, 3][..])], Some(false);
+    a_blocked_attacker_at_a_planeswalker_tramples_over_onto_it_in_a_first_strike_step: [1], Some(1), [(1, &[3][..])], [], Some(true);
+    a_blocked_attacker_at_a_planeswalker_tramples_over_onto_it_in_a_regular_step: [1], Some(1), [(1, &[3][..])], [], Some(false);
+    two_attackers_deal_their_damage_in_the_boards_order_in_a_first_strike_step: [1, 2], None, [(2, &[4][..])], [], Some(true);
+    two_attackers_deal_their_damage_in_the_boards_order_in_a_regular_step: [1, 2], None, [(2, &[4][..])], [], Some(false);
 }
 
 /// The question a combat damage step asks first (`combat::
@@ -374,7 +383,7 @@ each_combat! {
 /// asked. On the board of [`dealing`], each division leaving any blocker
 /// open with any range, or none.
 fn asking(attacking: &[u64], blocks: &[(u64, &[u64])], order: &[(u64, &[u64])]) {
-    let Board { registry, mut state, active, on, first_strike_step, .. } = board(attacking, None, blocks, order);
+    let Board { registry, mut state, active, on, first_strike_step, .. } = board(attacking, None, blocks, order, None);
 
     let raised = crate::combat::ask_next_damage_division(&mut state, &registry, first_strike_step);
 
