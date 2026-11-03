@@ -327,10 +327,19 @@ fn taps_chosen(reply: u8) {
     std::mem::forget((registry, state, effect));
 }
 
+/// Stands in for `GameState::is_creature`, proved in `predicates`: every
+/// object of [`taps_chosen`]'s board is a creature (the layers that answer
+/// it otherwise were a million steps of symbolic execution, out of memory).
+#[allow(dead_code)] // named only by `kani::stub`
+fn all_creatures(_: &GameState, _: ObjectId, _: &CardRegistry) -> bool {
+    true
+}
+
 /// The proofs of a cost's creatures chosen, one per reply.
 macro_rules! each_tap_reply {
     ($($name:ident: $reply:expr;)*) => {$(
         card_proof! {
+            #[kani::stub(crate::state::GameState::is_creature, all_creatures)]
             #[kani::stub(crate::engine::actions::abilities::finish_activation, finish_activation)]
             /// [`taps_chosen`] for the reply of its name.
             fn $name() {
@@ -569,10 +578,21 @@ fn spell_x_funded(flashback: bool) {
     std::mem::forget((registry, state));
 }
 
+/// Stands in for `CastPayment::annotation`, the words the cast's log line
+/// adds for how it was paid: none. With `format!` the empty string here
+/// (`no_format`), the words were a list of empty strings joined, which
+/// `join` copies through a list it never allocated, and Kani cannot follow
+/// that (the casting proof's cast adds no words, and is not reached by it).
+#[allow(dead_code)] // named only by `kani::stub`
+fn no_annotation(_: &crate::engine::effects::CastPayment<'_>) -> String {
+    String::new()
+}
+
 /// The proofs of a spell's X funded, one per zone it is cast from.
 macro_rules! each_x_cast {
     ($($name:ident: $flashback:expr;)*) => {$(
         card_proof! {
+            #[kani::stub(crate::engine::effects::CastPayment::annotation, no_annotation)]
             #[kani::stub(crate::funding::validate, validated)]
             #[kani::stub(crate::funding::apply, funded)]
             #[kani::stub(crate::engine::costs::pay_additional_cost, additional_paid)]
