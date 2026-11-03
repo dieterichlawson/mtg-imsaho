@@ -1088,62 +1088,21 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
         }
 
         Step::Cleanup => {
-            // CR 514.2: remove all damage marked on permanents, and with it
-            // the turn's record of who dealt it.
-            //
-            // Every permanent, not only those with damage still marked: a
-            // creature that regenerated has no marked damage but was still
-            // dealt some this turn, and a planeswalker's damage removes
-            // loyalty rather than marking. Filtering on `damage_marked > 0`
-            // left both carrying a `damaged_by` into the next turn, where
-            // "dealt damage by this creature **this turn**" would read it.
-            let on_battlefield: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield)
-                .iter()
-                .map(|o| o.id)
-                .collect();
-
-            for id in on_battlefield {
-                let obj = state.get_object_mut(id).expect("object must exist for damage clear");
-                obj.damage_marked = 0;
-                obj.dealt_deathtouch_damage = false;
-                obj.damaged_by.clear();
-            }
-
-            // Remove "until end of turn" effects.
-            end_until_end_of_turn_effects(state);
-
-            // Clear unused regeneration shields.
-            for obj in state.objects.values_mut() {
-                if obj.zone == Zone::Battlefield {
-                    obj.regeneration_shields = 0;
-                }
-            }
-
-            // Empty mana pools.
-            empty_mana_pools(state);
-
-            // CR 514.3a: Check SBAs after clearing effects. If any SBA
-            // fires, players get priority (the cleanup step essentially restarts).
-            let registry_ref = registry;
-            let sba_fired = crate::sba::check_state_based_actions(state, registry_ref);
-            if sba_fired {
-                // SBA occurred — give active player priority. Once every
-                // player passes, `advance_step` runs this cleanup step again
-                // (CR 514.3a) rather than starting the next turn.
-                state.priority_player = Some(active);
-                state.cleanup_repeat = true;
+            // CR 514.1: first, the active player discards down to their
+            // maximum hand size. The rest of the step waits on the answer
+            // (`finish_cleanup`, which the discard calls). This came last,
+            // after the turn's effects had ended, and left its player
+            // holding priority in the cleanup step, where a spell cast left
+            // its "until end of turn" effect standing into the next turn.
+            let hand_size = state.objects_in_zone(Zone::Hand, active).len();
+            if hand_size > 7 {
+                state.awaiting_action = Some(AwaitingAction::DiscardToHandSize {
+                    player: active,
+                    discard_count: hand_size - 7,
+                });
+                state.priority_player = None;
             } else {
-                // Check hand size: max 7 cards.
-                let hand_size = state.objects_in_zone(Zone::Hand, active).len();
-                if hand_size > 7 {
-                    state.awaiting_action = Some(AwaitingAction::DiscardToHandSize {
-                        player: active,
-                        discard_count: hand_size - 7,
-                    });
-                    state.priority_player = Some(active);
-                } else {
-                    state.priority_player = None; // No priority in cleanup normally.
-                }
+                finish_cleanup(state, registry);
             }
         }
 
@@ -1151,6 +1110,60 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
         _ => {
             state.priority_player = Some(active);
         }
+    }
+}
+
+/// The cleanup step after the hand-size discard (CR 514.2-514.3a): all
+/// damage is removed from permanents and "until end of turn" effects end,
+/// at once; then state-based actions are checked, and if any was
+/// performed the active player receives priority and another cleanup step
+/// follows (`cleanup_repeat`); otherwise nobody receives priority (514.3).
+pub(crate) fn finish_cleanup(state: &mut GameState, registry: &CardRegistry) {
+    let active = state.active_player;
+    // CR 514.2: remove all damage marked on permanents, and with it
+    // the turn's record of who dealt it.
+    //
+    // Every permanent, not only those with damage still marked: a
+    // creature that regenerated has no marked damage but was still
+    // dealt some this turn, and a planeswalker's damage removes
+    // loyalty rather than marking. Filtering on `damage_marked > 0`
+    // left both carrying a `damaged_by` into the next turn, where
+    // "dealt damage by this creature **this turn**" would read it.
+    let on_battlefield: Vec<ObjectId> = state.all_objects_in_zone(Zone::Battlefield)
+        .iter()
+        .map(|o| o.id)
+        .collect();
+
+    for id in on_battlefield {
+        let obj = state.get_object_mut(id).expect("object must exist for damage clear");
+        obj.damage_marked = 0;
+        obj.dealt_deathtouch_damage = false;
+        obj.damaged_by.clear();
+    }
+
+    // Remove "until end of turn" effects.
+    end_until_end_of_turn_effects(state);
+
+    // Clear unused regeneration shields.
+    for obj in state.objects.values_mut() {
+        if obj.zone == Zone::Battlefield {
+            obj.regeneration_shields = 0;
+        }
+    }
+
+    // Empty mana pools.
+    empty_mana_pools(state);
+
+    // CR 514.3a: Check SBAs after clearing effects. If any SBA fires,
+    // players get priority (the cleanup step essentially restarts).
+    if crate::sba::check_state_based_actions(state, registry) {
+        // SBA occurred — give active player priority. Once every player
+        // passes, `advance_step` runs this cleanup step again (CR 514.3a)
+        // rather than starting the next turn.
+        state.priority_player = Some(active);
+        state.cleanup_repeat = true;
+    } else {
+        state.priority_player = None; // No priority in cleanup normally.
     }
 }
 
@@ -1710,8 +1723,10 @@ fn run_game_loop_inner<F>(
             }
 
             Action::DiscardCards { .. } => {
-                // After discarding, cleanup continues (no priority).
-                state.priority_player = None;
+                // The rest of the cleanup step ran on the discard
+                // (`finish_cleanup`), which gave the active player priority
+                // if a state-based action was performed (CR 514.3a) and
+                // nobody otherwise. Taking it away here skipped that window.
             }
 
             Action::MulliganKeep

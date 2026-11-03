@@ -252,6 +252,88 @@ fn submit_action_discard_cards_without_awaiting_logs_per_card() {
         "non-cleanup path should log one 'discarded' message per card (got {discard_msgs})");
 }
 
+/// CR 514.1-514.3: the hand-size discard is the cleanup step's first act,
+/// before damage is removed and "until end of turn" effects end, and nobody
+/// receives priority after it unless a state-based action or a trigger
+/// gives them some. The discard used to come last, after the effects had
+/// ended, and to leave its player holding priority in the cleanup step:
+/// a spell cast then left its "until end of turn" effect standing into the
+/// next turn, the cleanup step not being taken again.
+#[test]
+fn the_hand_size_discard_comes_first_and_gives_nobody_priority() {
+    use mtg_engine::state::AwaitingAction;
+    let reg = registry();
+    let mut state = game_at_step(Step::EndStep, P0);
+    named_permanent(&mut state, &reg, "Forest", P0);
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(creature).unwrap().damage_marked = 1;
+    state.until_end_of_turn.push(TemporaryEffect::ModifyPT { target: creature, power_mod: 1, toughness_mod: 1 });
+    let growth = spell_in_hand(&mut state, &reg, "Giant Growth", P0);
+    let forests: Vec<_> = (0..7).map(|_| spell_in_hand(&mut state, &reg, "Forest", P0)).collect();
+    stock_library(&mut state, &reg, P0, 5);
+    stock_library(&mut state, &reg, P1, 5);
+
+    engine::advance_step(&mut state, &reg);
+    assert_eq!(state.step, Step::Cleanup);
+    assert!(matches!(state.awaiting_action,
+        Some(AwaitingAction::DiscardToHandSize { player, discard_count: 1 }) if player == P0));
+    assert_eq!(state.until_end_of_turn.len(), 1, "the turn's effects have not ended yet (514.1 before 514.2)");
+    assert_eq!(state.get_object(creature).unwrap().damage_marked, 1, "nor has the damage been removed");
+
+    let state = engine::submit_action(&state, &Action::DiscardCards { cards: vec![forests[0]] }, &reg);
+    assert!(state.until_end_of_turn.is_empty(), "the turn's effects end after the discard (514.2)");
+    assert_eq!(state.get_object(creature).unwrap().damage_marked, 0);
+    assert_eq!(state.priority_player, None, "nobody receives priority in the cleanup step (514.3)");
+    assert!(!can_cast(&state, &reg, growth), "so Giant Growth cannot be cast in it");
+}
+
+/// CR 514.3a, through the game loop: a state-based action performed in the
+/// cleanup step gives the active player priority, also when the hand-size
+/// discard came first. The loop used to take priority away after any
+/// discard, which, once the discard came first, skipped this window.
+#[test]
+fn a_state_based_action_after_the_discard_gives_priority() {
+    use mtg_engine::state::AwaitingAction;
+    let reg = registry();
+    let mut state = game_at_step(Step::EndStep, P0);
+    named_permanent(&mut state, &reg, "Forest", P0);
+    // A 1/1 with a -1/-1 counter, held up until end of turn.
+    let doomed = ready_creature(&mut state, P0, 1, 1);
+    state.get_object_mut(doomed).unwrap().counters.insert(CounterType::MinusOneMinusOne, 1);
+    state.until_end_of_turn.push(TemporaryEffect::ModifyPT { target: doomed, power_mod: 0, toughness_mod: 1 });
+    // A spell to cast and a creature to cast it at, so that priority is a
+    // decision the loop asks for.
+    ready_creature(&mut state, P0, 2, 2);
+    let growth = spell_in_hand(&mut state, &reg, "Giant Growth", P0);
+    for _ in 0..7 {
+        spell_in_hand(&mut state, &reg, "Forest", P0);
+    }
+    stock_library(&mut state, &reg, P0, 5);
+    stock_library(&mut state, &reg, P1, 5);
+    state.priority_player = None;
+    let turn = state.turn_number;
+
+    let mut asked_in_cleanup = false;
+    engine::run_game_loop(&mut state, &reg, |gs, _, legal| {
+        if gs.turn_number != turn {
+            return Action::AbandonGame;
+        }
+        if let Some(AwaitingAction::DiscardToHandSize { player, discard_count }) = &gs.awaiting_action {
+            let cards: Vec<_> = gs.objects_in_zone(Zone::Hand, *player).iter()
+                .map(|o| o.id).filter(|&id| id != growth).take(*discard_count).collect();
+            return Action::DiscardCards { cards };
+        }
+        if gs.step == Step::Cleanup && legal.actions.contains(&Action::PassPriority) {
+            asked_in_cleanup = true;
+            return Action::AbandonGame;
+        }
+        Action::PassPriority
+    });
+
+    assert_eq!(state.get_object(doomed).unwrap().zone, Zone::Graveyard, "the state-based action was performed");
+    assert!(asked_in_cleanup, "and the active player received priority in the cleanup step (CR 514.3a)");
+}
+
 /// No discard needed if hand size is 7 or less.
 #[test]
 fn no_discard_needed_at_seven_or_less() {
