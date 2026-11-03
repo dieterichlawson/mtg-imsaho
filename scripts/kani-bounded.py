@@ -67,7 +67,7 @@ KANI_LIB = f'{K}/library/kani/kani_lib.c'
 # harnesses with (abilities!, statics!, equipment!, ...). `cargo kani list`
 # says the same at the price of building every harness, gigabytes of goto
 # files.
-TABLES = {'abilities', 'declares', 'werewolves', 'mana', 'statics', 'check_land', 'choosing_at_random', 'for_each_size', 'from_each_zone', 'for_each_key', 'each_printed', 'by_each_way', 'each_target', 'each_board', 'each_cost', 'each_pruning', 'each_path', 'over_each_library', 'over_each_hand', 'case_by_case', 'each_shape', 'each_hand_of_discard', 'each_pair', 'each_length', 'each_forest', 'each_player', 'each_holding', 'each_effect', 'each_count', 'each_setting', 'each_source', 'each_resolution', 'each_damage', 'each_filter', 'each_restriction', 'each_trigger_event', 'each_push'}
+TABLES = {'abilities', 'declares', 'werewolves', 'mana', 'statics', 'check_land', 'choosing_at_random', 'for_each_size', 'from_each_zone', 'for_each_key', 'each_printed', 'by_each_way', 'each_target', 'each_board', 'each_cost', 'each_pruning', 'each_path', 'over_each_library', 'over_each_hand', 'case_by_case', 'each_shape', 'each_hand_of_discard', 'each_pair', 'each_length', 'each_forest', 'each_player', 'each_holding', 'each_effect', 'each_count', 'each_setting', 'each_source', 'each_resolution', 'each_damage', 'each_filter', 'each_restriction', 'each_trigger_event', 'each_push', 'each_declaration', 'each_recording'}
 FORMS = {'reaches_what_it_describes', 'holds_exactly_then', 'each_subtype_set', 'reaches_its_subtypes'}
 # Tables whose every entry is a module of these harnesses.
 SUFFIXED = {
@@ -105,7 +105,10 @@ def strip(text):
 # bound, each pass past the list's end is a pass over what it cannot rule
 # out, and the damage queue's ran out of memory so. `<function>#<k>` bounds
 # only that function's loop number k, as `goto-instrument --show-loops`
-# numbers them, where its other loops need more.
+# numbers them, where its other loops need more. A `<function>` ending in
+# `*` names every function whose pretty name starts with what comes before
+# it: an iterator adapter's carries its closure's file, line and column,
+# which a bound should not have to repeat.
 LOOP_CAPS = {}
 
 
@@ -271,7 +274,9 @@ def verify(h, goto, unwind, mangled, bound, timeout, precise=True, cap=None):
             for name, n, part in fns:
                 if part in h.rsplit('::', 1)[-1]:
                     fn, _, k = name.partition('#')
-                    for m in by_name.get(fn, []):
+                    named = ([m for p, ms in by_name.items() if p.startswith(fn[:-1]) for m in ms]
+                             if fn.endswith('*') else by_name.get(fn, []))
+                    for m in named:
                         caps.update({l: n for l in loops_of if (l == f'{m}.{k}' if k else l.startswith(m + '.'))})
     learned = load_loops()
     took, rounds = 0.0, 0

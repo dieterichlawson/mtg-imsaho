@@ -4,6 +4,7 @@
 //! recorded in turn, so each proof is of one function's own logic.
 
 mod activating;
+mod attacking;
 mod blocking;
 mod card_state;
 mod casting;
