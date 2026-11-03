@@ -615,8 +615,16 @@ pub(crate) fn targets_are_legal(
     registry: &CardRegistry,
 ) -> bool {
     use crate::cards::TargetRequirement as R;
+    // And whether the spell or ability may target it at all, as the offered
+    // lists ask (`valid_targets_for_req`): `is_target_legal` asks hexproof
+    // and not protection (CR 702.16b), so a submitted cast or activation
+    // naming a creature with protection from its source went through.
     let one = |t: &crate::actions::Target| {
         crate::stack::is_target_legal(state, t, target_req, caster, Some(source_id), registry)
+            && match *t {
+                crate::actions::Target::Object(id) => can_be_targeted_by(state, id, caster, Some(source_id), registry),
+                _ => true,
+            }
             && behavior.is_valid_target(state, caster, t, registry)
     };
     match target_req {
