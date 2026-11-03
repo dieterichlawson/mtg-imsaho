@@ -584,7 +584,14 @@ fn spell_x_funded(flashback: bool) {
 /// `join` copies through a list it never allocated, and Kani cannot follow
 /// that (the casting proof's cast adds no words, and is not reached by it).
 #[allow(dead_code)] // named only by `kani::stub`
-fn no_annotation(_: &crate::engine::effects::CastPayment<'_>) -> String {
+#[allow(clippy::extra_unused_lifetimes)]
+fn no_annotation<'a>(_: &crate::engine::effects::CastPayment<'a>) -> String
+where
+    // Early-bound, as the impl's own lifetime is: a stub takes as many
+    // generic parameters as what it stands in for, and a lifetime named
+    // only in an argument is not one.
+    'a: 'a,
+{
     String::new()
 }
 
