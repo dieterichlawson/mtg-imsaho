@@ -100,57 +100,73 @@ fn ctx<'a>(state: &'a GameState, registry: &'a CardRegistry, player: PlayerId, s
     }
 }
 
-card_proof! {
-    #[kani::stub(crate::engine::targeting::valid_targets_for_req, valid_targets)]
-    /// The loyalty abilities a player is offered (CR 606.3, 606.4, 118.3):
-    /// only when they could cast a sorcery; of each planeswalker they
-    /// control whose loyalty ability has not been activated this turn,
-    /// each ability whose cost they can pay (a minus of more than its
-    /// loyalty they cannot), once for each target it may have, or once
-    /// with none; nothing of an opponent's planeswalker. For a player
-    /// either player, at sorcery speed or not, a planeswalker of theirs
-    /// with 0 to 3 loyalty, its ability activated this turn or not, an
-    /// opponent's planeswalker, and the -2's targets none, one or two.
-    fn a_player_is_offered_their_loyalty_abilities_as_the_rules_allow() {
-        let mut registry = CardRegistry::new();
-        let walker = registry.register(Box::new(Walker));
-        let mut state = crate::proofs::cards::new_game();
-        let player = PlayerId(u8::from(kani::any::<bool>()));
-        let other = state.opponent(player);
-        state.priority_player = Some(player);
-        let mine = state.create_object(walker, player, Zone::Battlefield, None, None);
-        let loyalty: u32 = kani::any();
-        kani::assume(loyalty <= 3);
-        let used: bool = kani::any();
-        let o = state.get_object_mut(mine).expect("just created");
-        o.counters.insert(CounterType::Loyalty, loyalty);
-        if used {
-            o.abilities_activated_this_turn.insert(999);
-        }
-        let theirs = state.create_object(walker, other, Zone::Battlefield, None, None);
-        state.get_object_mut(theirs).expect("just created").counters.insert(CounterType::Loyalty, 3);
-        state.get_player_mut(player).land_plays_remaining = 0;
-        let speed: bool = kani::any();
-        let mut actions = Vec::with_capacity(4);
-
-        crate::engine::legal::abilities::loyalty(&ctx(&state, &registry, player, speed), &mut actions);
-
-        // SAFETY: as in `valid_targets`.
-        let targets = unsafe { *std::ptr::addr_of!(TARGETS) };
-        let offered = speed && !used;
-        let minus = offered && loyalty >= 2;
-        let n = if minus { targets.expect("the targets listed") } else { 0 };
-        assert!(actions.len() == usize::from(offered) + n);
-        if offered {
-            assert!(matches!(&actions[0], Action::ActivateLoyaltyAbility { object_id, ability_index: 0, targets }
-                if *object_id == mine && targets.is_empty()));
-        }
-        for k in 0..n {
-            assert!(matches!(&actions[1 + k], Action::ActivateLoyaltyAbility { object_id, ability_index: 1, targets: t }
-                if *object_id == mine && matches!(t.as_slice(), [Target::Object(ObjectId(id))] if *id == 98 + k as u64)));
-        }
-        std::mem::forget((registry, state, actions));
+/// The loyalty abilities a player is offered (CR 606.3, 606.4, 118.3):
+/// only when they could cast a sorcery; of each planeswalker they control
+/// whose loyalty ability has not been activated this turn, each ability
+/// whose cost they can pay (a minus of more than its loyalty they cannot),
+/// once for each target it may have, or once with none; nothing of an
+/// opponent's planeswalker. For a player either player, a planeswalker of
+/// theirs with 0 to 3 loyalty, an opponent's planeswalker, and the -2's
+/// targets none, one or two; whether it is sorcery speed (`speed`) and
+/// whether the planeswalker's ability has been activated this turn
+/// (`used`) constants of each harness: left to the solver, each action
+/// offered was written into the list at a place it left open.
+fn loyalty_offered(speed: bool, used: bool) {
+    let mut registry = CardRegistry::new();
+    let walker = registry.register(Box::new(Walker));
+    let mut state = crate::proofs::cards::new_game();
+    let player = PlayerId(u8::from(kani::any::<bool>()));
+    let other = state.opponent(player);
+    state.priority_player = Some(player);
+    let mine = state.create_object(walker, player, Zone::Battlefield, None, None);
+    let loyalty: u32 = kani::any();
+    kani::assume(loyalty <= 3);
+    let o = state.get_object_mut(mine).expect("just created");
+    o.counters.insert(CounterType::Loyalty, loyalty);
+    if used {
+        o.abilities_activated_this_turn.insert(999);
     }
+    let theirs = state.create_object(walker, other, Zone::Battlefield, None, None);
+    state.get_object_mut(theirs).expect("just created").counters.insert(CounterType::Loyalty, 3);
+    state.get_player_mut(player).land_plays_remaining = 0;
+    let mut actions = Vec::with_capacity(4);
+
+    crate::engine::legal::abilities::loyalty(&ctx(&state, &registry, player, speed), &mut actions);
+
+    // SAFETY: as in `valid_targets`.
+    let targets = unsafe { *std::ptr::addr_of!(TARGETS) };
+    let offered = speed && !used;
+    let minus = offered && loyalty >= 2;
+    let n = if minus { targets.expect("the targets listed") } else { 0 };
+    assert!(actions.len() == usize::from(offered) + n);
+    if offered {
+        assert!(matches!(&actions[0], Action::ActivateLoyaltyAbility { object_id, ability_index: 0, targets }
+            if *object_id == mine && targets.is_empty()));
+    }
+    for k in 0..n {
+        assert!(matches!(&actions[1 + k], Action::ActivateLoyaltyAbility { object_id, ability_index: 1, targets: t }
+            if *object_id == mine && matches!(t.as_slice(), [Target::Object(ObjectId(id))] if *id == 98 + k as u64)));
+    }
+    std::mem::forget((registry, state, actions));
+}
+
+/// The proofs of the loyalty abilities offered, one per case.
+macro_rules! each_loyalty_offer {
+    ($($name:ident: $speed:expr, $used:expr;)*) => {$(
+        card_proof! {
+            #[kani::stub(crate::engine::targeting::valid_targets_for_req, valid_targets)]
+            /// [`loyalty_offered`] for the case of its name.
+            fn $name() {
+                loyalty_offered($speed, $used);
+            }
+        }
+    )*};
+}
+
+each_loyalty_offer! {
+    a_player_is_offered_their_loyalty_abilities_as_the_rules_allow: true, false;
+    no_loyalty_ability_is_offered_but_at_sorcery_speed: false, false;
+    no_loyalty_ability_is_offered_of_a_planeswalker_that_has_activated_one: true, true;
 }
 
 card_proof! {
