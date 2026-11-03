@@ -3339,21 +3339,29 @@ impl GameState {
     /// Run as a state-based action, which is the closest the engine has to
     /// "the moment the condition becomes false".
     pub fn expire_control_effects(&mut self) -> bool {
-        let ended: Vec<ControlEffect> = self.control_effects.iter()
-            .filter(|e| {
-                // The source has to still be on the battlefield AND still be
-                // controlled by the player who gained control.
-                !self.get_object(e.source)
-                    .is_some_and(|s| s.zone == Zone::Battlefield && s.controller == e.source_controller)
-            })
-            .cloned()
+        // Whether each effect still holds: its source still on the
+        // battlefield AND still controlled by the player who gained control.
+        // The effects that end are then read where they lie, each beside its
+        // answer, rather than copied into a list of their own: a proof reads
+        // a list filtered out of another at positions the board decides, so
+        // every permanent it named was any of them (`proofs::actions::
+        // state_based`).
+        let holds: Vec<bool> = self.control_effects.iter()
+            .map(|e| self.get_object(e.source)
+                .is_some_and(|s| s.zone == Zone::Battlefield && s.controller == e.source_controller))
             .collect();
-        if ended.is_empty() {
+        if holds.iter().all(|&h| h) {
             return false;
         }
-        self.control_effects.retain(|e| !ended.contains(e));
-        for effect in ended {
-            if self.get_object(effect.object).is_none_or(|o| o.zone != Zone::Battlefield) {
+        let effects = std::mem::take(&mut self.control_effects);
+        self.control_effects = Vec::with_capacity(effects.len());
+        for (effect, &h) in effects.iter().zip(&holds) {
+            if h {
+                self.control_effects.push(effect.clone());
+            }
+        }
+        for (effect, &h) in effects.iter().zip(&holds) {
+            if h || self.get_object(effect.object).is_none_or(|o| o.zone != Zone::Battlefield) {
                 continue;
             }
             // With this effect gone, control is whatever the remaining ones
