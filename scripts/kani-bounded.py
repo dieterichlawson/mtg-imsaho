@@ -77,6 +77,7 @@ SUFFIXED = {
     'each_answer': ['when_they_replace_it', 'when_they_say_none', 'when_they_say_one', 'when_they_say_two'],
     'each_library_and_player': ['for_the_first_player', 'for_the_second_player'],
     'into_play_from_each_zone': ['for_the_first_player', 'for_the_second_player'],
+    'each_loyalty_offer_and_player': ['for_the_first_player', 'for_the_second_player'],
     'each_board_and_player': ['for_the_first_player', 'for_the_first_player_with_the_opponent_gone',
                               'for_the_second_player', 'for_the_second_player_with_the_opponent_gone'],
 }
