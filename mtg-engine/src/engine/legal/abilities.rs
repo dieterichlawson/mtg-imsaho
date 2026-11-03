@@ -109,30 +109,9 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
             // the player chooses the sacrifice up front rather than having
             // the engine auto-pick (which could fizzle the ability by
             // sacrificing the very creature being targeted).
-            let eligible_sacrifices: Vec<Option<ObjectId>> = match &ab.sacrifice_cost {
-                SacrificeCost::None | SacrificeCost::SacrificeThis => {
-                    // None: no choice. SacrificeThis: the source pays itself, no choice either.
-                    vec![None]
-                }
-                SacrificeCost::SacrificeCreature => {
-                    let creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, player)
-                        .iter()
-                        .filter(|o| state.is_creature(o.id, registry))
-                        .map(|o| o.id)
-                        .collect();
-                    if creatures.is_empty() { continue; }
-                    creatures.into_iter().map(Some).collect()
-                }
-                SacrificeCost::SacrificeAnotherCreature => {
-                    // "Another" excludes the source permanent (the equipment / card itself).
-                    let creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, player)
-                        .iter()
-                        .filter(|o| state.is_creature(o.id, registry) && o.id != obj_id)
-                        .map(|o| o.id)
-                        .collect();
-                    if creatures.is_empty() { continue; }
-                    creatures.into_iter().map(Some).collect()
-                }
+            let Some(eligible_sacrifices) = sacrifices_offered(state, &ab.sacrifice_cost, obj_id, player, registry)
+            else {
+                continue;
             };
 
             // Generate actions based on targeting.
@@ -190,6 +169,36 @@ pub(crate) fn activated(ctx: &Ctx, actions: &mut Vec<Action>) {
             // after the ability is activated, not by enumerating multiple entries.
         }
     }
+}
+
+/// What an ability of `source` may be activated sacrificing, one offer
+/// each (CR 602.2b via 601.2h): nothing for a cost without a sacrifice or
+/// one that sacrifices the source itself (no choice to make); each creature
+/// `player` controls on the battlefield for "sacrifice a creature", and
+/// each but the source for "sacrifice another creature", in the board's
+/// order. `None` when such a cost has no creature to pay it, and so the
+/// ability is not offered at all.
+pub(crate) fn sacrifices_offered(
+    state: &GameState,
+    cost: &crate::cards::SacrificeCost,
+    source: ObjectId,
+    player: PlayerId,
+    registry: &CardRegistry,
+) -> Option<Vec<Option<ObjectId>>> {
+    use crate::cards::SacrificeCost;
+    let another = match cost {
+        // None: no choice. SacrificeThis: the source pays itself, no choice either.
+        SacrificeCost::None | SacrificeCost::SacrificeThis => return Some(vec![None]),
+        SacrificeCost::SacrificeCreature => false,
+        // "Another" excludes the source permanent (the equipment / card itself).
+        SacrificeCost::SacrificeAnotherCreature => true,
+    };
+    let creatures: Vec<Option<ObjectId>> = state.objects_in_zone(Zone::Battlefield, player)
+        .iter()
+        .filter(|o| state.is_creature(o.id, registry) && !(another && o.id == source))
+        .map(|o| Some(o.id))
+        .collect();
+    (!creatures.is_empty()).then_some(creatures)
 }
 
 /// Whether an ability of `obj` may be activated now, as far as its costs

@@ -381,3 +381,51 @@ card_proof! {
         std::mem::forget((registry, state, eligible));
     }
 }
+
+card_proof! {
+    #[kani::stub(crate::state::GameState::is_creature, creature)]
+    /// What an ability may be offered sacrificing (`legal::abilities::
+    /// sacrifices_offered`, CR 602.2b via 601.2h), each one its own offer:
+    /// nothing, for a cost without a sacrifice or one sacrificing the
+    /// source itself; for "sacrifice a creature", exactly the creatures on
+    /// the battlefield under the activator's control, in the board's order,
+    /// the source among them if it is one; for "sacrifice another
+    /// creature", the same but the source; and for either, no offer at all
+    /// with none to name. What paying it does is `activating`'s. For three
+    /// objects as above, the first the source, each a creature or not, and
+    /// each kind of sacrifice.
+    fn an_ability_is_offered_each_creature_its_sacrifice_may_name() {
+        let mut registry = CardRegistry::new();
+        let (state, was) = three(&mut registry);
+        let player = PlayerId(u8::from(kani::any::<bool>()));
+        let source = ObjectId(1);
+        let kind = kani::any::<u8>() % 4;
+        let cost = match kind {
+            0 => crate::cards::SacrificeCost::None,
+            1 => crate::cards::SacrificeCost::SacrificeThis,
+            2 => crate::cards::SacrificeCost::SacrificeCreature,
+            _ => crate::cards::SacrificeCost::SacrificeAnotherCreature,
+        };
+
+        let offers = crate::engine::legal::abilities::sacrifices_offered(&state, &cost, source, player, &registry);
+
+        if kind < 2 {
+            assert!(matches!(offers.as_deref(), Some([None])));
+        } else {
+            let mut expected = [None; 3];
+            let mut n = 0;
+            for (i, &(controller, on, _)) in was.iter().enumerate() {
+                let id = ObjectId(i as u64 + 1);
+                if on && controller == player && offered(id, 0) && !(kind == 3 && id == source) {
+                    expected[n] = Some(id);
+                    n += 1;
+                }
+            }
+            match offers.as_deref() {
+                None => assert!(n == 0),
+                Some(list) => assert!(n > 0 && list == &expected[..n]),
+            }
+        }
+        std::mem::forget((registry, state, offers));
+    }
+}
