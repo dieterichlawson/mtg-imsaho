@@ -316,7 +316,12 @@ fn record(act: Act) {
     unsafe {
         let n = *std::ptr::addr_of!(ACTED);
         assert!(n < MAX_ACTS, "more actions than a proof here records");
-        (*std::ptr::addr_of_mut!(ACTS))[n] = Some(act);
+        // Written without dropping what the slot held: nothing writes past
+        // `ACTED`, so it holds `None`. An assignment drops it first, and
+        // where the board decides how many actions came before, that was a
+        // drop of an action of every variant at every place it might be,
+        // most of what a combat damage step's proof followed.
+        std::ptr::addr_of_mut!((*std::ptr::addr_of_mut!(ACTS))[n]).write(Some(act));
         *std::ptr::addr_of_mut!(ACTED) = n + 1;
     }
 }
