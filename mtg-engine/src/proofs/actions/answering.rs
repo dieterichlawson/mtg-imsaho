@@ -222,3 +222,129 @@ fn a_permanent_entering_as_a_copy_copies_the_creature_chosen_if_it_is_still_ther
     assert!(recorded == Some((entering, expected)));
     std::mem::forget((registry, state));
 }
+
+/// The activation `finish_activation` was handed: by whom, of what, and
+/// the creatures its cost taps (up to two), once.
+static mut FINISHED: Option<(PlayerId, ObjectId, [Option<ObjectId>; 2], usize)> = None;
+
+/// Stands in for `actions::abilities::finish_activation`, which goes on as
+/// an activation with nothing left to choose does (`activating`): recorded.
+#[allow(dead_code)] // named only by `kani::stub`
+fn finish_activation(
+    _: &mut GameState,
+    a: &crate::engine::actions::abilities::Activation,
+    cost: crate::state::DeferredActivationCost,
+    _: &CardRegistry,
+) -> crate::engine::Applied {
+    let tapped = &cost.tapped_creatures;
+    assert!(tapped.len() <= 2, "no more creatures than this proof's cost taps");
+    // SAFETY: as in `Asking::on_declined_choice`, for FINISHED.
+    let f = unsafe { &mut *std::ptr::addr_of_mut!(FINISHED) };
+    assert!(f.is_none(), "finished once");
+    *f = Some((a.player, a.object_id, [tapped.first().copied(), tapped.get(1).copied()], tapped.len()));
+    std::mem::forget(cost);
+    crate::engine::Applied::Continue
+}
+
+/// The creatures a "tap two untapped creatures you control" cost taps,
+/// chosen (`resolve_choice` of `PayActivationTaps`, CR 602.2b via 601.2h,
+/// 118.3): exactly two of the creatures offered, each once, each still an
+/// untapped creature its chooser controls on the battlefield, and the
+/// activation goes on with them as the creatures its cost taps, in the
+/// order chosen, the passes in a row starting again; anything else (too
+/// few, one twice, one not offered, one tapped since it was offered) is
+/// refused: the question stands exactly as it was asked, the activation
+/// still waits on it, and nothing is done. For the second player
+/// activating, with three of their creatures offered, and each reply a
+/// harness's: 0 and 1 the first two either way round, 2 only one, 3 one
+/// twice, 4 one of the other player's, 5 the first two with the second
+/// tapped since.
+fn taps_chosen(reply: u8) {
+    let mut registry = CardRegistry::new();
+    let card = registry.register(Box::new(Asking));
+    let blank = registry.register(Box::new(crate::proofs::cards::Blank));
+    let mut state = crate::proofs::cards::new_game();
+    let chooser = PlayerId(1);
+    let source = state.create_object(card, chooser, Zone::Battlefield, None, None);
+    let mine = [
+        state.create_object(blank, chooser, Zone::Battlefield, Some(1), Some(1)),
+        state.create_object(blank, chooser, Zone::Battlefield, Some(1), Some(1)),
+        state.create_object(blank, chooser, Zone::Battlefield, Some(1), Some(1)),
+    ];
+    let theirs = state.create_object(blank, PlayerId(0), Zone::Battlefield, Some(1), Some(1));
+    let effect = PendingEffect::PayActivationTaps { source_id: source };
+    state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+        player: chooser,
+        source,
+        choice: ResolutionChoiceKind::ChooseObjectSet {
+            description: String::new(),
+            options: mine.to_vec(),
+            min: 2,
+            max: 2,
+            effect: effect.clone(),
+        },
+    });
+    state.pending_ability_effect = Some(crate::state::PendingAbilityEffect {
+        source_id: source,
+        ability_index: 0,
+        behavior_card_id: card,
+        targets: Vec::new(),
+        description: String::new(),
+        activator: chooser,
+        target_requirement: None,
+        unpaid: None,
+        has_x: false,
+    });
+    state.consecutive_passes = 2;
+    let chosen: [ObjectId; 2] = match reply {
+        0 | 5 => [mine[0], mine[1]],
+        1 => [mine[1], mine[0]],
+        3 => [mine[0], mine[0]],
+        _ => [mine[0], theirs],
+    };
+    let chosen = if reply == 2 { vec![mine[0]] } else { chosen.to_vec() };
+    if reply == 5 {
+        state.get_object_mut(mine[1]).expect("on the board").tapped = true;
+    }
+
+    let applied = crate::engine::actions::choices::resolve_choice(&mut state, &ResolvedChoice::ChosenObjectSet(chosen), &registry);
+
+    // SAFETY: as in `Asking::on_declined_choice`.
+    let finished = unsafe { *std::ptr::addr_of!(FINISHED) };
+    if reply <= 1 {
+        let (first, second) = if reply == 0 { (mine[0], mine[1]) } else { (mine[1], mine[0]) };
+        assert!(matches!(applied, crate::engine::Applied::Continue));
+        assert!(finished == Some((chooser, source, [Some(first), Some(second)], 2)));
+        assert!(state.pending_ability_effect.is_none() && state.consecutive_passes == 0);
+    } else {
+        assert!(matches!(applied, crate::engine::Applied::ReturnNow));
+        assert!(matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+            player, source: s,
+            choice: ResolutionChoiceKind::ChooseObjectSet { options, min: 2, max: 2, effect: e, .. },
+        }) if *player == chooser && *s == source && options.as_slice() == mine && *e == effect));
+        assert!(finished.is_none() && state.pending_ability_effect.is_some() && state.consecutive_passes == 2);
+    }
+    std::mem::forget((registry, state, effect));
+}
+
+/// The proofs of a cost's creatures chosen, one per reply.
+macro_rules! each_tap_reply {
+    ($($name:ident: $reply:expr;)*) => {$(
+        card_proof! {
+            #[kani::stub(crate::engine::actions::abilities::finish_activation, finish_activation)]
+            /// [`taps_chosen`] for the reply of its name.
+            fn $name() {
+                taps_chosen($reply);
+            }
+        }
+    )*};
+}
+
+each_tap_reply! {
+    two_creatures_offered_are_tapped_for_the_cost: 0;
+    two_creatures_offered_are_tapped_in_the_order_chosen: 1;
+    one_creature_for_a_cost_of_two_is_refused: 2;
+    one_creature_chosen_twice_is_refused: 3;
+    a_creature_not_offered_is_refused: 4;
+    a_creature_tapped_since_it_was_offered_is_refused: 5;
+}
