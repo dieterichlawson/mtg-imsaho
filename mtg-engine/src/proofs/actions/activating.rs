@@ -219,8 +219,9 @@ fn toughness(_: &GameState, id: ObjectId, _: &CardRegistry) -> Option<i32> {
 /// sacrifice of each harness (0 none, 1 this, 2 a creature, 3 another
 /// creature), the source, the other creature or nothing named, a {T} or
 /// not, the other creature tapped for the cost or not, one to three +1/+1
-/// counters or none, and once each turn or not; the cost's mana is none,
-/// its paying the payment proofs' (`paying`).
+/// counters or none, and once each turn or not, for the ability of index
+/// one; the cost's mana is none, its paying the payment proofs'
+/// (`paying`).
 fn costs_paid(kind: u8) {
     let mut registry = CardRegistry::new();
     let blank = registry.register(Box::new(Blank));
@@ -243,7 +244,9 @@ fn costs_paid(kind: u8) {
     let counters: u32 = kani::any();
     kani::assume(counters <= 3);
     let counter_cost = (counters > 0).then_some((CounterType::PlusOnePlusOne, counters));
-    let index = usize::from(kani::any::<u8>() % 3);
+    // One index: the set of the abilities activated this turn is a tree,
+    // and a key the solver chose was put into it every way it might go.
+    let index = 1;
     let cost = crate::state::DeferredActivationCost {
         tap_plan: Vec::new(),
         non_x_mana_cost: ManaCost::free(),
