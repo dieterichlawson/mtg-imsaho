@@ -573,3 +573,88 @@ card_proof! {
         std::mem::forget((registry, state));
     }
 }
+
+/// A set of objects chosen (`resolve_choice` of `ChooseObjectSet`, CR
+/// 601.2c's set read for a resolution's choice, as Curse of Oblivion asks
+/// for two cards of a graveyard): as many as the question asks, each one
+/// offered, each once, and the question's effect is applied to each, once,
+/// in the order chosen (`apply_pending_effect`, recorded; what it does is
+/// `pending_effects`'), the question answered and the passes in a row
+/// starting again; anything else (too few, one twice, one not offered) is
+/// refused, the question standing as it was asked and nothing done. For
+/// the second player asked for two of three cards, and each reply a
+/// harness's: 0 and 1 two offered, either order, 2 only one, 3 one twice,
+/// 4 one not offered.
+fn objects_chosen(reply: u8) {
+    let mut registry = CardRegistry::new();
+    let card = registry.register(Box::new(Asking));
+    let blank = registry.register(Box::new(crate::proofs::cards::Blank));
+    let mut state = crate::proofs::cards::new_game();
+    let chooser = PlayerId(1);
+    let source = state.create_object(card, PlayerId(0), Zone::Battlefield, None, None);
+    let offered = [
+        state.create_object(blank, chooser, Zone::Graveyard, None, None),
+        state.create_object(blank, chooser, Zone::Graveyard, None, None),
+        state.create_object(blank, chooser, Zone::Graveyard, None, None),
+    ];
+    let effect = PendingEffect::AttachTargetToPendingTrigger;
+    state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+        player: chooser,
+        source,
+        choice: ResolutionChoiceKind::ChooseObjectSet {
+            description: String::new(),
+            options: offered.to_vec(),
+            min: 2,
+            max: 2,
+            effect: effect.clone(),
+        },
+    });
+    state.consecutive_passes = 2;
+    let chosen = match reply {
+        0 => vec![offered[0], offered[1]],
+        1 => vec![offered[2], offered[0]],
+        2 => vec![offered[0]],
+        3 => vec![offered[0], offered[0]],
+        _ => vec![offered[0], source],
+    };
+    let expected = [chosen[0], *chosen.last().expect("one at least")];
+
+    let applied = crate::engine::actions::choices::resolve_choice(&mut state, &ResolvedChoice::ChosenObjectSet(chosen), &registry);
+
+    if reply <= 1 {
+        assert!(matches!(applied, crate::engine::Applied::Continue));
+        assert!(asked_for(&[
+            Act::Effect(Target::Object(expected[0]), effect.clone()),
+            Act::Effect(Target::Object(expected[1]), effect.clone()),
+        ]));
+        assert!(state.awaiting_action.is_none() && state.consecutive_passes == 0);
+    } else {
+        assert!(matches!(applied, crate::engine::Applied::ReturnNow));
+        assert!(matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+            player, source: s,
+            choice: ResolutionChoiceKind::ChooseObjectSet { options, min: 2, max: 2, effect: e, .. },
+        }) if *player == chooser && *s == source && options.as_slice() == offered && *e == effect));
+        assert!(acted() == 0 && state.consecutive_passes == 2);
+    }
+    std::mem::forget((registry, state, effect));
+}
+
+/// The proofs of a set chosen, one per reply.
+macro_rules! each_set_reply {
+    ($($name:ident: $reply:expr;)*) => {$(
+        card_proof! {
+            /// [`objects_chosen`] for the reply of its name.
+            fn $name() {
+                objects_chosen($reply);
+            }
+        }
+    )*};
+}
+
+each_set_reply! {
+    two_objects_offered_have_the_effect_applied: 0;
+    two_objects_offered_have_it_applied_in_the_order_chosen: 1;
+    one_object_for_a_set_of_two_is_refused: 2;
+    one_object_chosen_twice_is_refused: 3;
+    an_object_not_offered_is_refused: 4;
+}
