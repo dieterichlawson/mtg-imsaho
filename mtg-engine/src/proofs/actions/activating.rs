@@ -9,7 +9,7 @@
 use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, LoyaltyAbilityDef, SacrificeCost, TargetRequirement};
 use crate::ids::{ObjectId, PlayerId};
-use crate::proofs::cards::{acted, asked_for, card_proof, Act, Blank};
+use crate::proofs::cards::{acted, asked_for, card_proof, were, Act, Blank};
 use crate::state::{GameState, StackEntry};
 use crate::types::{CardType, CounterType, ManaCost, Zone};
 
@@ -202,104 +202,124 @@ fn toughness(_: &GameState, id: ObjectId, _: &CardRegistry) -> Option<i32> {
     answers[i - 1].get_or_insert_with(|| (kani::any(), acted())).0
 }
 
-card_proof! {
-    #[kani::stub(crate::engine::demand_reserve, no_reserve)]
-    #[kani::stub(crate::state::GameState::effective_toughness, toughness)]
-    /// An ability's costs paid (`pay_activation_costs`, CR 602.2b via
-    /// 601.2h, 118.3), in the order the engine fixes: the source tapped for
-    /// a {T}, then the creatures a "tap N creatures you control" cost
-    /// chose, then the counters a cost removes, removed from the source
-    /// (before a sacrifice moves it, so they are removed and not lost),
-    /// then the sacrifice: the source itself for "sacrifice this", the
-    /// creature named for "sacrifice a creature" and "sacrifice another
-    /// creature", none for a cost without one. Which creature was
-    /// sacrificed, and its toughness as it was on the battlefield (read
-    /// before the sacrifice, CR 608.2h), are what the ability resolves
-    /// with (Disciple of Griselbrand's "the sacrificed creature's
-    /// toughness"); and a once-each-turn ability is marked as activated
-    /// this turn. A cost that names a creature to sacrifice and is handed
-    /// none, which no offer is (`legal::abilities`, one offer for each
-    /// creature it may name), sacrifices nothing and stops there. For each
-    /// kind of sacrifice, the source, the other creature or nothing named,
-    /// a {T} or not, the other creature tapped for the cost or not,
-    /// counters of either of two kinds or none, and once each turn or not;
-    /// the cost's mana is none, its paying the payment proofs' (`paying`).
-    fn an_abilitys_costs_are_paid_in_order_and_the_sacrifice_recorded() {
-        let mut registry = CardRegistry::new();
-        let blank = registry.register(Box::new(Blank));
-        let mut state = crate::proofs::cards::new_game();
-        let player = PlayerId(u8::from(kani::any::<bool>()));
-        let source = state.create_object(blank, player, Zone::Battlefield, Some(1), Some(1));
-        let other = state.create_object(blank, player, Zone::Battlefield, Some(1), Some(1));
-        let sacrifice_cost = match kani::any::<u8>() % 4 {
-            0 => SacrificeCost::None,
-            1 => SacrificeCost::SacrificeThis,
-            2 => SacrificeCost::SacrificeCreature,
-            _ => SacrificeCost::SacrificeAnotherCreature,
-        };
-        let named = match kani::any::<u8>() % 3 {
-            0 => None,
-            1 => Some(source),
-            _ => Some(other),
-        };
-        let (requires_tap, tap_other, once_per_turn): (bool, bool, bool) = (kani::any(), kani::any(), kani::any());
-        let counter_cost = match kani::any::<u8>() % 3 {
-            0 => None,
-            k => {
-                let n: u32 = kani::any();
-                kani::assume((1..=3).contains(&n));
-                Some((if k == 1 { CounterType::PlusOnePlusOne } else { CounterType::Slime }, n))
-            }
-        };
-        let index = usize::from(kani::any::<u8>() % 3);
-        let cost = crate::state::DeferredActivationCost {
-            tap_plan: Vec::new(),
-            non_x_mana_cost: ManaCost::free(),
-            requires_tap,
-            counter_cost,
-            sacrifice: named,
-            sacrifice_cost: sacrifice_cost.clone(),
-            once_per_turn,
-            tapped_creatures: if tap_other { vec![other] } else { Vec::new() },
-        };
+/// An ability's costs paid (`pay_activation_costs`, CR 602.2b via 601.2h,
+/// 118.3), in the order the engine fixes: the source tapped for a {T},
+/// then the creatures a "tap N creatures you control" cost chose, then the
+/// counters a cost removes, removed from the source (before a sacrifice
+/// moves it, so they are removed and not lost), then the sacrifice: the
+/// source itself for "sacrifice this", the creature named for "sacrifice a
+/// creature" and "sacrifice another creature", none for a cost without
+/// one. Which creature was sacrificed, and its toughness as it was on the
+/// battlefield (read before the sacrifice, CR 608.2h), are what the
+/// ability resolves with (Disciple of Griselbrand's "the sacrificed
+/// creature's toughness"); and a once-each-turn ability is marked as
+/// activated this turn. A cost that names a creature to sacrifice and is
+/// handed none, which no offer is (`offering`, one offer for each creature
+/// it may name), sacrifices nothing and stops there. For the kind of
+/// sacrifice of each harness (0 none, 1 this, 2 a creature, 3 another
+/// creature), the source, the other creature or nothing named, a {T} or
+/// not, the other creature tapped for the cost or not, one to three +1/+1
+/// counters or none, and once each turn or not; the cost's mana is none,
+/// its paying the payment proofs' (`paying`).
+fn costs_paid(kind: u8) {
+    let mut registry = CardRegistry::new();
+    let blank = registry.register(Box::new(Blank));
+    let mut state = crate::proofs::cards::new_game();
+    let player = PlayerId(u8::from(kani::any::<bool>()));
+    let source = state.create_object(blank, player, Zone::Battlefield, Some(1), Some(1));
+    let other = state.create_object(blank, player, Zone::Battlefield, Some(1), Some(1));
+    let sacrifice_cost = match kind {
+        0 => SacrificeCost::None,
+        1 => SacrificeCost::SacrificeThis,
+        2 => SacrificeCost::SacrificeCreature,
+        _ => SacrificeCost::SacrificeAnotherCreature,
+    };
+    let named = match kani::any::<u8>() % 3 {
+        0 => None,
+        1 => Some(source),
+        _ => Some(other),
+    };
+    let (requires_tap, tap_other, once_per_turn): (bool, bool, bool) = (kani::any(), kani::any(), kani::any());
+    let counters: u32 = kani::any();
+    kani::assume(counters <= 3);
+    let counter_cost = (counters > 0).then_some((CounterType::PlusOnePlusOne, counters));
+    let index = usize::from(kani::any::<u8>() % 3);
+    let cost = crate::state::DeferredActivationCost {
+        tap_plan: Vec::new(),
+        non_x_mana_cost: ManaCost::free(),
+        requires_tap,
+        counter_cost,
+        sacrifice: named,
+        sacrifice_cost,
+        once_per_turn,
+        tapped_creatures: if tap_other { vec![other] } else { Vec::new() },
+    };
 
-        crate::engine::actions::abilities::pay_activation_costs(&mut state, player, source, index, &cost, &registry);
+    crate::engine::actions::abilities::pay_activation_costs(&mut state, player, source, index, &cost, &registry);
 
-        let (sacrificed, stops) = match sacrifice_cost {
-            SacrificeCost::None => (None, false),
-            SacrificeCost::SacrificeThis => (Some(source), false),
-            SacrificeCost::SacrificeCreature | SacrificeCost::SacrificeAnotherCreature => (named, named.is_none()),
-        };
-        let mut expected = Vec::with_capacity(4);
-        if requires_tap {
-            expected.push(Act::Tap(source));
-        }
-        if tap_other {
-            expected.push(Act::Tap(other));
-        }
-        if let Some((kind, n)) = counter_cost {
-            expected.push(Act::RemoveCounters(source, kind, n));
-        }
-        let before = expected.len();
-        if let Some(id) = sacrificed {
-            expected.push(Act::Sacrifice(id));
-        }
-        assert!(asked_for(&expected));
-        assert!(state.last_activated_sacrifice == sacrificed);
-        // SAFETY: as in `toughness`.
-        let read = unsafe { *std::ptr::addr_of!(TOUGHNESS) };
-        match sacrificed {
-            None => { assert!(state.last_activated_sacrifice_toughness.is_none() && read == [None, None]); }
-            Some(id) => {
-                let i = usize::try_from(id.0).expect("an id of the board") - 1;
-                let (answer, at) = read[i].expect("its toughness read");
-                assert!(state.last_activated_sacrifice_toughness == answer && at == before);
-            }
-        }
-        let marked = &state.get_object(source).expect("on the board").abilities_activated_this_turn;
-        assert!(marked.contains(&index) == (once_per_turn && !stops) && marked.len() <= 1);
-        std::mem::forget((registry, state, cost));
+    let (sacrificed, stops) = match kind {
+        0 => (None, false),
+        1 => (Some(source), false),
+        _ => (named, named.is_none()),
+    };
+    // Each action expected checked where it falls, not gathered in a list
+    // first: a list of open length, compared, is one the solver follows
+    // through every length at once.
+    let mut k = 0;
+    let mut paid = true;
+    if requires_tap {
+        paid &= were(k, 1, |_| Act::Tap(source));
+        k += 1;
     }
+    if tap_other {
+        paid &= were(k, 1, |_| Act::Tap(other));
+        k += 1;
+    }
+    if counters > 0 {
+        paid &= were(k, 1, |_| Act::RemoveCounters(source, CounterType::PlusOnePlusOne, counters));
+        k += 1;
+    }
+    let before = k;
+    if let Some(id) = sacrificed {
+        paid &= were(k, 1, |_| Act::Sacrifice(id));
+        k += 1;
+    }
+    assert!(paid && acted() == k);
+    assert!(state.last_activated_sacrifice == sacrificed);
+    // SAFETY: as in `toughness`.
+    let read = unsafe { *std::ptr::addr_of!(TOUGHNESS) };
+    match sacrificed {
+        None => { assert!(state.last_activated_sacrifice_toughness.is_none() && read == [None, None]); }
+        Some(id) => {
+            let i = usize::try_from(id.0).expect("an id of the board") - 1;
+            let (answer, at) = read[i].expect("its toughness read");
+            assert!(state.last_activated_sacrifice_toughness == answer && at == before);
+        }
+    }
+    let marked = &state.get_object(source).expect("on the board").abilities_activated_this_turn;
+    assert!(marked.contains(&index) == (once_per_turn && !stops) && marked.len() <= 1);
+    std::mem::forget((registry, state, cost));
+}
+
+/// The proofs of an ability's costs paid, one per kind of sacrifice.
+macro_rules! each_sacrifice {
+    ($($name:ident: $kind:expr;)*) => {$(
+        card_proof! {
+            #[kani::stub(crate::engine::demand_reserve, no_reserve)]
+            #[kani::stub(crate::state::GameState::effective_toughness, toughness)]
+            /// [`costs_paid`] for the kind of sacrifice of its name.
+            fn $name() {
+                costs_paid($kind);
+            }
+        }
+    )*};
+}
+
+each_sacrifice! {
+    an_abilitys_costs_without_a_sacrifice_are_paid_in_order: 0;
+    an_abilitys_costs_sacrificing_it_are_paid_in_order_and_recorded: 1;
+    an_abilitys_costs_sacrificing_a_creature_are_paid_in_order_and_recorded: 2;
+    an_abilitys_costs_sacrificing_another_creature_are_paid_in_order_and_recorded: 3;
 }
 
 card_proof! {
@@ -309,7 +329,7 @@ card_proof! {
     /// and requirement, under its activator, not a loyalty ability, and
     /// carrying what its costs left to resolve with: the X announced, the
     /// creature sacrificed and that creature's toughness as last read
-    /// (`an_abilitys_costs_are_paid_in_order_and_the_sacrifice_recorded`),
+    /// (`costs_paid`),
     /// and how often, and to which face, its source had transformed. For
     /// an activator either player, the source theirs on the battlefield or
     /// already sacrificed to the graveyard, and any of each.
