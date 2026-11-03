@@ -201,12 +201,13 @@ fn set_agrees(set: &crate::vec_map::VecSet<u8>, reference: &[bool; KEYS]) -> boo
         && set.into_iter().copied().eq(expected.iter().copied())
 }
 
-/// Any set holding any reference's keys, put in in key order. A set grows
-/// as it is filled (no stand-in for growing here: what a set's own
-/// operations do with its room is what is proved).
+/// Any set holding any reference's keys, put in in key order, with room
+/// for every key (as [`any_map`]: a set growing as it was filled was
+/// a reallocation of every size, and ran out of memory in the solver).
 fn any_set() -> (crate::vec_map::VecSet<u8>, [bool; KEYS]) {
     let mut reference = [false; KEYS];
     let mut set = crate::vec_map::VecSet::new();
+    set.reserve(KEYS);
     for (k, held) in reference.iter_mut().enumerate() {
         *held = kani::any();
         if *held {
@@ -222,6 +223,7 @@ fn any_set() -> (crate::vec_map::VecSet<u8>, [bool; KEYS]) {
 /// changes nothing.
 #[kani::proof]
 #[kani::unwind(5)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
 fn inserting_into_a_vec_set_is_inserting_into_an_ordered_set() {
     let (mut set, mut reference) = any_set();
     let (k, key) = any_key();
@@ -235,6 +237,7 @@ fn inserting_into_a_vec_set_is_inserting_into_an_ordered_set() {
 /// leaves none.
 #[kani::proof]
 #[kani::unwind(5)]
+#[kani::stub(alloc::alloc::Global::grow_impl_runtime, crate::proofs::cards::no_growing)]
 fn removing_from_a_vec_set_is_removing_from_an_ordered_set() {
     let (mut set, mut reference) = any_set();
     let (k, key) = any_key();

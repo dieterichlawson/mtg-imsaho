@@ -275,6 +275,12 @@ impl<K: Ord> VecSet<K> {
         Self::default()
     }
 
+    /// Room for `additional` more keys without reallocating, as
+    /// `Vec::reserve`.
+    pub fn reserve(&mut self, additional: usize) {
+        self.keys.reserve(additional);
+    }
+
     /// Where `key` is, or where it would go, by a walk in order.
     fn find<Q>(&self, key: &Q) -> Result<usize, usize>
     where
