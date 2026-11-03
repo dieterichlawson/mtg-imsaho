@@ -465,6 +465,18 @@ pub(crate) fn activate_loyalty_ability(state: &mut GameState, object_id: ObjectI
         ) {
             let abilities = behavior.loyalty_abilities(&state, object_id);
             if let Some(ab) = abilities.iter().find(|a| a.ability_index == ability_index) {
+                // CR 602.2b via 601.2c, as for the other activations and a
+                // cast: the targets a submitted activation names are checked
+                // against the rule the offered lists are built by, before
+                // the loyalty cost is paid. This one was not, so a loyalty
+                // ability could be put on the stack at a target no list
+                // offered.
+                let req = ab.target_requirement.clone().unwrap_or(crate::cards::TargetRequirement::None);
+                if !crate::engine::targeting::targets_are_legal(state, &req, targets, player, object_id, behavior, registry) {
+                    state.log(LogLevel::Debug, format!(
+                        "loyalty activation refused, illegal targets {targets:?} (CR 601.2c)"));
+                    return Applied::ReturnNow;
+                }
                 // CR 601.2a via 602.2b: announced, with its targets, before
                 // its cost is paid — the loyalty line used to follow the
                 // counter change it paid for and name no target, so a -2

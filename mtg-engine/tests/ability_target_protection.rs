@@ -337,3 +337,24 @@ fn a_submitted_activation_at_a_creature_with_protection_from_its_source_is_refus
     assert!(after.stack.is_empty() && !after.get_object(priest).unwrap().tapped,
         "the activation is refused before its cost is paid");
 }
+
+/// The same for a loyalty ability (CR 606.3, 602.2b): Garruk Relentless's
+/// "0: deals 3 damage to target creature" named at an opponent's creature
+/// with hexproof, which no list offers. A cast's and an ordinary
+/// activation's submitted targets were checked; a loyalty activation's
+/// were not, and it went onto the stack.
+#[test]
+fn a_submitted_loyalty_activation_at_an_illegal_target_is_refused() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
+    let creature = ready_creature(&mut state, P1, 2, 2);
+    grant_keyword(&mut state, creature, Keyword::Hexproof);
+
+    let after = engine::submit_action(&state, &Action::ActivateLoyaltyAbility {
+        object_id: garruk, ability_index: 0, targets: vec![Target::Object(creature)],
+    }, &reg);
+
+    assert!(after.stack.is_empty(),
+        "an opponent's creature with hexproof is not a legal target, so the activation is refused");
+}
