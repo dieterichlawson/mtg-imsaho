@@ -204,6 +204,17 @@ fn board(attacking: &[u64], walker_of: Option<u64>, blocks: &[(u64, &[u64])], or
         state.create_object(blank, controller, zone, Some(1), Some(1));
     }
     let first_strike_step: bool = kani::any();
+    // Built twice, once for the game and once for the step to read, rather
+    // than cloned: a copy of the combat's maps was most of what symbolic
+    // execution followed.
+    state.combat = Some(combat_of(attacking, walker_of, blocks, order, defending));
+    let combat = combat_of(attacking, walker_of, blocks, order, defending);
+
+    Board { registry, state, active, defending, on, first_strike_step, combat }
+}
+
+/// The combat of [`board`].
+fn combat_of(attacking: &[u64], walker_of: Option<u64>, blocks: &[(u64, &[u64])], order: &[(u64, &[u64])], defending: PlayerId) -> CombatState {
     let mut combat = CombatState::default();
     for &a in attacking {
         combat.attackers.insert(ObjectId(a), defending);
@@ -221,9 +232,7 @@ fn board(attacking: &[u64], walker_of: Option<u64>, blocks: &[(u64, &[u64])], or
         }
     }
     combat.chosen_damage.insert(ObjectId(1), Vec::new());
-    state.combat = Some(combat.clone());
-
-    Board { registry, state, active, defending, on, first_strike_step, combat }
+    combat
 }
 
 /// One combat damage step's damage. The board: attackers 1 and 2 (the
