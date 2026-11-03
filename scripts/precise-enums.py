@@ -96,12 +96,13 @@ ASSIGN, DECL = 13, 14
 # The widest union, in bits, whose narrower variants' writes are made
 # writes of the whole union (the module doc says why there is a limit).
 WIDEST_WHOLE = 1024
-# Experiments, off unless set: write a variant at least half its union's
-# width whole whatever the union's width (PRECISE_HALF_WHOLE=1), and say
-# on stderr which variant writes the limit leaves as written
-# (PRECISE_LOG_SKIPS=1).
-HALF_WHOLE = os.environ.get('PRECISE_HALF_WHOLE') == '1'
-LOG_SKIPS = os.environ.get('PRECISE_LOG_SKIPS') == '1'
+# Writing a variant whole past this limit when it is at least half its
+# union's width was tried, for the answers to a set of objects, a tap cost
+# and a graveyard exile, whose prompts are such variants of the
+# `ResolutionChoiceKind` union and whose fields are read back open: none
+# passed, and a library search's answer, which passes as written, ran out
+# of memory too (the prompt's whole bytes hold a pointer, the case the
+# limit is for).
 
 
 def rewrite(version, strings, symbols, functions):
@@ -217,13 +218,7 @@ def rewrite(version, strings, symbols, functions):
                 continue
             vt = named(rhs, K_TYPE)
             uw, vw = width(ut), (width(vt) if vt is not None else None)
-            narrow = uw is not None and vw is not None and vw < uw and uw > WIDEST_WHOLE
-            if narrow and HALF_WHOLE and 2 * vw >= uw:
-                narrow = False
-            if LOG_SKIPS and narrow:
-                ui = named(ut, K_IDENT)
-                print(f'skipped {strings[ui.id].decode() if ui is not None else "?"}: {vw} of {uw} bits', file=sys.stderr)
-            if uw is None or vw is None or vw > uw or narrow:
+            if uw is None or vw is None or vw > uw or (vw < uw and uw > WIDEST_WHOLE):
                 continue
             # As bytes, not as the union of the member written: CBMC splits
             # a union so built into its members and does not keep the whole,
