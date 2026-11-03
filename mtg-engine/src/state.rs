@@ -179,6 +179,20 @@ pub type CardState = std::collections::BTreeMap<String, ObjectId>;
 #[cfg(kani)]
 pub type CardState = crate::vec_map::VecMap<String, ObjectId>;
 
+/// A map from object ids, and a set of them, as the combat keeps its
+/// attackers, blockers and the rest (`CombatState`): a `BTreeMap` and a
+/// `BTreeSet`, except in the proofs, which keep each as a vector in id
+/// order (`crate::vec_map` says why: every proof of a combat ran out of
+/// memory in a B-tree's inserts and searches).
+#[cfg(not(kani))]
+pub type IdMap<V> = std::collections::BTreeMap<ObjectId, V>;
+#[cfg(kani)]
+pub type IdMap<V> = crate::vec_map::VecMap<ObjectId, V>;
+#[cfg(not(kani))]
+pub type IdSet = std::collections::BTreeSet<ObjectId>;
+#[cfg(kani)]
+pub type IdSet = crate::vec_map::VecSet<ObjectId>;
+
 /// The complete, immutable game state. Clone to produce new states.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameState {
@@ -4681,14 +4695,14 @@ pub struct CombatState {
     /// Map of attacker `ObjectId` -> defending `PlayerId`. Every attacker is
     /// in here — one attacking a planeswalker defends against its controller
     /// (CR 508.1a), and additionally appears in `planeswalker_defenders`.
-    pub attackers: std::collections::BTreeMap<ObjectId, PlayerId>,
+    pub attackers: IdMap<PlayerId>,
     /// Attackers sent at a planeswalker rather than at the player:
     /// attacker -> the planeswalker it attacks.
     #[serde(default)]
-    pub planeswalker_defenders: std::collections::BTreeMap<ObjectId, ObjectId>,
+    pub planeswalker_defenders: IdMap<ObjectId>,
     /// Map of attacker `ObjectId` -> list of blockers assigned to it, in the
     /// order the blocks were declared.
-    pub blocker_assignments: std::collections::BTreeMap<ObjectId, Vec<ObjectId>>,
+    pub blocker_assignments: IdMap<Vec<ObjectId>>,
     /// Map of attacker `ObjectId` -> its blockers in the damage assignment
     /// order the attacking player announced (CR 509.2). Announced once, in
     /// the declare blockers step, and used by both combat damage steps
@@ -4696,18 +4710,18 @@ pub struct CombatState {
     /// unblocked attacker; declaration order is the fallback for a state
     /// that predates the announcement.
     #[serde(default)]
-    pub damage_assignment_order: std::collections::BTreeMap<ObjectId, Vec<ObjectId>>,
+    pub damage_assignment_order: IdMap<Vec<ObjectId>>,
     /// Attackers that became blocked when blockers were declared. Blocked-ness
     /// is permanent for the combat (CR 509.2): an attacker whose blockers all
     /// leave combat is still blocked (deals no combat damage without trample),
     /// which `blocker_assignments` alone can't express once its list empties.
     #[serde(default)]
-    pub blocked_attackers: std::collections::BTreeSet<ObjectId>,
+    pub blocked_attackers: IdSet,
     /// Creatures that had first/double strike when first-strike combat damage
     /// was dealt (CR 510.5): they don't deal damage again in the regular
     /// combat damage step unless they have double strike.
     #[serde(default)]
-    pub dealt_first_strike: std::collections::BTreeSet<ObjectId>,
+    pub dealt_first_strike: IdSet,
     /// Whether any attackers were declared this combat. CR 508.8 skips the
     /// declare blockers and combat damage steps when none were — and the
     /// question is about the declaration, not about who is still in combat,
@@ -4723,7 +4737,7 @@ pub struct CombatState {
     /// Consumed and cleared when the step's damage is queued, so the
     /// first-strike step's answers never carry into the regular step.
     #[serde(default)]
-    pub chosen_damage: std::collections::BTreeMap<ObjectId, Vec<(ObjectId, u32)>>,
+    pub chosen_damage: IdMap<Vec<(ObjectId, u32)>>,
 }
 
 impl CombatState {
