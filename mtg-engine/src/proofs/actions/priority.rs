@@ -120,3 +120,101 @@ crate::proofs::cards::card_proof! {
         std::mem::forget((registry, state, action));
     }
 }
+
+/// What `before_priority` did, in order: 1 asked what a permanent enters
+/// as, 2 and 3 checked state-based actions (none performed, some), 4 and 5
+/// put triggered abilities on the stack (none, some), 6 read again what a
+/// waiting choice may copy.
+static mut TRACE: [u8; 16] = [0; 16];
+static mut TRACE_N: usize = 0;
+static mut CHECKS: [usize; 2] = [0; 2];
+
+fn traced(step: u8) {
+    // SAFETY: as in `did`, for TRACE and TRACE_N.
+    let (t, n) = unsafe { (&mut *std::ptr::addr_of_mut!(TRACE), &mut *std::ptr::addr_of_mut!(TRACE_N)) };
+    assert!(*n < 16, "no longer a trace than this proof bounds");
+    t[*n] = step;
+    *n += 1;
+}
+
+#[allow(dead_code)] // each named only by `kani::stub`
+fn entry_choices(_: &mut GameState, _: &CardRegistry) {
+    traced(1);
+}
+/// Stands in for `sba::check_state_based_actions` (`state_based`): any
+/// answer, but none after the second check, which bounds the proof and not
+/// the engine (a game's state-based actions run out, each one removing or
+/// changing what it acts on): up to five rounds, the trace's fourteen
+/// places at most.
+#[allow(dead_code)]
+fn checked(_: &mut GameState, _: &CardRegistry) -> bool {
+    // SAFETY: as in `did`, for CHECKS.
+    let c = unsafe { &mut (*std::ptr::addr_of_mut!(CHECKS))[0] };
+    *c += 1;
+    let acted = *c <= 2 && kani::any::<bool>();
+    traced(if acted { 3 } else { 2 });
+    acted
+}
+/// Stands in for `triggers::collect_triggers` (`triggering`): any answer,
+/// but none after the second, as above.
+#[allow(dead_code)]
+fn collected(_: &mut GameState, _: &CardRegistry) -> bool {
+    // SAFETY: as in `checked`.
+    let c = unsafe { &mut (*std::ptr::addr_of_mut!(CHECKS))[1] };
+    *c += 1;
+    let put = *c <= 2 && kani::any::<bool>();
+    traced(if put { 5 } else { 4 });
+    put
+}
+#[allow(dead_code)]
+fn entry_refreshed(_: &mut GameState, _: &CardRegistry) {
+    traced(6);
+}
+
+// The trace is walked to its sixteen places.
+crate::proofs::cards::card_proof! {
+    unwind(17)
+    #[kani::stub(crate::replacement::process_pending_entry_choices, entry_choices)]
+    #[kani::stub(crate::sba::check_state_based_actions, checked)]
+    #[kani::stub(crate::triggers::collect_triggers, collected)]
+    #[kani::stub(crate::replacement::refresh_pending_entry_choice, entry_refreshed)]
+    /// Before a player receives priority (`engine::before_priority`, CR
+    /// 117.5, 704.3, 603.3, 614.12b): a permanent waiting on what it enters
+    /// as is asked about first; then, round after round, state-based
+    /// actions are checked until a check performs none, and then the
+    /// abilities that triggered are put on the stack; another round follows
+    /// exactly when the round before did something, so the last round
+    /// performs no state-based action and puts nothing on the stack; and
+    /// what a waiting choice may copy is read again last. For every answer
+    /// each check and each collection may give.
+    fn before_priority_state_based_actions_and_triggers_are_done_until_neither_does_anything() {
+        let mut registry = CardRegistry::new();
+        let _ = registry.register(Box::new(crate::proofs::cards::Blank));
+        let mut state = crate::proofs::cards::new_game();
+
+        crate::engine::before_priority(&mut state, &registry);
+
+        // SAFETY: as in `did`.
+        let (t, n) = unsafe { (*std::ptr::addr_of!(TRACE), *std::ptr::addr_of!(TRACE_N)) };
+        assert!(n >= 4 && t[0] == 1 && t[n - 1] == 6);
+        // The rounds between, read one at a time: checks until one finds
+        // nothing, then a collection; a round that did something is
+        // followed by another, and the one that did not is the last.
+        let mut i = 1;
+        let mut last_round_idle = false;
+        while i < n - 1 {
+            let mut worked = false;
+            while i < n - 1 && t[i] == 3 {
+                worked = true;
+                i += 1;
+            }
+            assert!(i < n - 2 && t[i] == 2 && (t[i + 1] == 4 || t[i + 1] == 5));
+            worked |= t[i + 1] == 5;
+            i += 2;
+            last_round_idle = !worked;
+            assert!(worked == (i < n - 1));
+        }
+        assert!(last_round_idle);
+        std::mem::forget((registry, state));
+    }
+}

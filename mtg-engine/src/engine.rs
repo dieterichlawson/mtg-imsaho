@@ -1476,31 +1476,8 @@ fn run_game_loop_inner<F>(
             break;
         }
 
-        // CR 117.5: Before a player gets priority, check SBAs and collect
-        // triggered abilities onto the stack. Repeat until neither produces
-        // new work. Triggers resolve through the normal priority cycle,
-        // giving players a chance to respond between each resolution.
-        // CR 614.12b: a permanent whose controller must choose what it
-        // enters as is not on the battlefield until they have. Ask before
-        // anything else looks at the board — the entry itself is waiting on
-        // the answer, so SBAs and triggers have nothing to say about it yet.
-        crate::replacement::process_pending_entry_choices(state, registry);
-        loop {
-            let mut any_work = false;
-            loop {
-                let sba = check_state_based_actions(state, registry);
-                if !sba { break; }
-                any_work = true;
-            }
-            if triggers::collect_triggers(state, registry) {
-                any_work = true;
-            }
-            if !any_work { break; }
-        }
-        // The enters-as-a-copy list was built before those state-based
-        // actions ran; anything they killed is no longer a creature on the
-        // battlefield to copy (CR 608.2d).
-        crate::replacement::refresh_pending_entry_choice(state, registry);
+        // CR 117.5: state-based actions and triggered abilities first.
+        before_priority(state, registry);
         if state.is_game_over() {
             break;
         }
@@ -1695,6 +1672,40 @@ fn run_game_loop_inner<F>(
         // After submitting, handle priority flow.
         hand_on_priority(state, &action, cast_prompt_player, num_players, registry);
     }
+}
+
+/// What happens each time a player would receive priority, before they do
+/// (CR 117.5, 704.3, 603.3): a permanent waiting on what it enters as is
+/// asked first (614.12b); then state-based actions are checked until none
+/// is performed, and the abilities that have triggered are put on the
+/// stack, and both again until neither does anything; and the permanents a
+/// waiting choice may copy are read again after.
+pub(crate) fn before_priority(state: &mut GameState, registry: &CardRegistry) {
+    // CR 117.5: Before a player gets priority, check SBAs and collect
+    // triggered abilities onto the stack. Repeat until neither produces
+    // new work. Triggers resolve through the normal priority cycle,
+    // giving players a chance to respond between each resolution.
+    // CR 614.12b: a permanent whose controller must choose what it
+    // enters as is not on the battlefield until they have. Ask before
+    // anything else looks at the board — the entry itself is waiting on
+    // the answer, so SBAs and triggers have nothing to say about it yet.
+    crate::replacement::process_pending_entry_choices(state, registry);
+    loop {
+        let mut any_work = false;
+        loop {
+            let sba = check_state_based_actions(state, registry);
+            if !sba { break; }
+            any_work = true;
+        }
+        if triggers::collect_triggers(state, registry) {
+            any_work = true;
+        }
+        if !any_work { break; }
+    }
+    // The enters-as-a-copy list was built before those state-based
+    // actions ran; anything they killed is no longer a creature on the
+    // battlefield to copy (CR 608.2d).
+    crate::replacement::refresh_pending_entry_choice(state, registry);
 }
 
 /// Who has priority once `action` has been played (CR 117.3-117.4): a
