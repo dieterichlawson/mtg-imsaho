@@ -340,6 +340,11 @@ impl<K: Ord> VecSet<K> {
     pub fn clear(&mut self) {
         self.keys.clear();
     }
+
+    /// As `BTreeSet::is_subset`: whether every key here is in `other`.
+    pub fn is_subset(&self, other: &Self) -> bool {
+        self.keys.iter().all(|k| other.contains(k))
+    }
 }
 
 impl<'a, K> IntoIterator for &'a VecSet<K> {

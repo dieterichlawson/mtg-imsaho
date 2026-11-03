@@ -192,6 +192,14 @@ pub type IdMap<V> = crate::vec_map::VecMap<ObjectId, V>;
 pub type IdSet = std::collections::BTreeSet<ObjectId>;
 #[cfg(kani)]
 pub type IdSet = crate::vec_map::VecSet<ObjectId>;
+/// The indices of the abilities an object has activated this turn: a
+/// B-tree set everywhere but the proofs, the indices in order in them, as
+/// [`IdSet`] (the proofs of an ability's costs and of the loyalty
+/// abilities offered ran out of memory in its tree's inserts and lookups).
+#[cfg(not(kani))]
+pub type IndexSet = std::collections::BTreeSet<usize>;
+#[cfg(kani)]
+pub type IndexSet = crate::vec_map::VecSet<usize>;
 
 /// The complete, immutable game state. Clone to produce new states.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -841,7 +849,7 @@ impl GameState {
             transforms: 0,
             x_value: None,
             chosen_mode: None,
-            abilities_activated_this_turn: std::collections::BTreeSet::new(),
+            abilities_activated_this_turn: IndexSet::new(),
             entering_copy_choice: EnterAsCopyChoice::Unasked,
             state_trigger_on_stack: false,
             attacked_on_turn: None,
@@ -1152,7 +1160,7 @@ impl GameState {
             is_transformed: face.is_some_and(|f| f.is_transformed),
             transforms: 0,
             x_value: None,
-            abilities_activated_this_turn: std::collections::BTreeSet::new(),
+            abilities_activated_this_turn: IndexSet::new(),
             chosen_mode: None,
             entering_copy_choice: EnterAsCopyChoice::Unasked,
             state_trigger_on_stack: false,
@@ -4474,7 +4482,7 @@ pub struct GameObject {
 
     /// Activated abilities used this turn (for once-per-turn tracking).
     #[serde(default)]
-    pub abilities_activated_this_turn: std::collections::BTreeSet<usize>,
+    pub abilities_activated_this_turn: IndexSet,
 
     /// The enters-as-a-copy choice this card's controller made for it
     /// (CR 614.12b, Evil Twin). Recorded *before* the object is put onto the
