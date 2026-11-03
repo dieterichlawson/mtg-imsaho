@@ -742,3 +742,14 @@ writing it up as the page's problem alone.
   cookies (101 and the whole body expected), 70 KB (431 on every URL, the
   status line read before the close), `Upgrade: websocket, h2c` (101) and
   a handshake with no key (400, not a silent close).
+- G39 [proposed 2026-11-03, from #991 and #959] every strip of the page
+  at its largest. The band's stack chips had no bound: a 6th covered the
+  turn and log lines and past 11 they ran off the board, with nothing
+  counting what was hidden (#991). Do the same to every other row the
+  page lays out by count: overwrite `window.mtg.view` (stack, a side's
+  battlefield, graveyard, exile, hand, `turn_effects`, the band's flags
+  all on at once) with 1, 6, 12 and 30 entries, call
+  `window.mtgDebug.render()`, and read `window.mtg.hits` for any hit past
+  its pane's edge or overlapping another's, then look at the screenshot.
+  Every overflow should be clipped on purpose and counted ("+N more"),
+  and each entry it hides should still be reachable from the inspector
