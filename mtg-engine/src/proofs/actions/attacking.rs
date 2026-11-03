@@ -78,6 +78,29 @@ fn must_attack(_: &GameState, id: ObjectId, _: &CardRegistry) -> bool {
     answer(id, Asked::MustAttack)
 }
 
+/// Stands in for `combat::eligible_attackers`, proved in `offering`
+/// (`a_player_is_offered_exactly_the_creatures_that_may_attack`): its
+/// spec, the board's permanents 1 and 2 in order that are on the
+/// battlefield under `player`'s control, untapped creatures, not new to
+/// their control, without defender, and that nothing stops attacking, each
+/// question the same answer as here. Collected by its filter, the list was
+/// allocated or not as the board said, and the proofs of who attacks ran
+/// out of memory on it.
+#[allow(dead_code)] // named only by `kani::stub`
+fn eligible_attackers(state: &GameState, player: PlayerId, _: &CardRegistry) -> Vec<ObjectId> {
+    let mut eligible = Vec::with_capacity(2);
+    for i in 1..=2 {
+        let id = ObjectId(i);
+        let o = state.get_object(id).expect("on the board");
+        if o.zone == Zone::Battlefield && o.controller == player && answer(id, Asked::Creature) && !o.tapped
+            && !answer(id, Asked::Sick) && !answer(id, Asked::Defender) && answer(id, Asked::MayAttack)
+        {
+            eligible.push(id);
+        }
+    }
+    eligible
+}
+
 /// The active player's two permanents (1 and 2), each tapped or not, on a
 /// board whose active player is either player.
 fn board() -> (CardRegistry, GameState, PlayerId, [bool; 2]) {
@@ -151,6 +174,7 @@ macro_rules! each_declaration {
             #[kani::stub(crate::state::GameState::has_keyword, has_keyword)]
             #[kani::stub(crate::state::GameState::can_attack, can_attack)]
             #[kani::stub(crate::state::GameState::must_attack, must_attack)]
+            #[kani::stub(crate::combat::eligible_attackers, eligible_attackers)]
             /// [`deciding`] for the declaration of its name.
             fn $name() {
                 deciding($named);

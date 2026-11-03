@@ -43,29 +43,39 @@ pub(crate) fn who_attacks(state: &GameState, attackers: &[(ObjectId, PlayerId)],
         // Each creature once, the first time it is named: a list rather than
         // a `HashSet`, whose hasher a proof cannot model (the operating
         // system seeds it); the lists are a few creatures long.
-        let mut seen: Vec<ObjectId> = Vec::new();
-        let mut first_time = |id: ObjectId| !seen.contains(&id) && { seen.push(id); true };
-        let attackers: Vec<(ObjectId, PlayerId)> = attackers.iter()
-            .filter(|(id, def)| eligible.contains(id) && *def == valid_defender && first_time(*id))
-            .copied()
-            .collect();
+        //
+        // Each list is allocated at the most it can hold and filled in a
+        // loop, as `ids_where` says why: a filtered `collect` allocates when
+        // it keeps its first entry, so whether a list was allocated at all
+        // is a question about the board, and the proof of who attacks ran
+        // out of memory on it.
+        let mut seen: Vec<ObjectId> = Vec::with_capacity(attackers.len() + planeswalker_attacks.len());
+        let mut named: Vec<(ObjectId, PlayerId)> = Vec::with_capacity(attackers.len());
+        for &(id, def) in attackers {
+            if eligible.contains(&id) && def == valid_defender && !seen.contains(&id) {
+                seen.push(id);
+                named.push((id, def));
+            }
+        }
         // CR 508.1a: an attacker may instead be sent at a planeswalker the
         // defending player controls. Same authority rule: an entry naming an
         // ineligible attacker, a non-planeswalker, someone else's
         // planeswalker, or an attacker already attacking the player is
         // dropped, not trusted.
-        let planeswalker_attacks: Vec<(ObjectId, ObjectId)> = planeswalker_attacks.iter()
-            .filter(|(id, walker)| {
-                eligible.contains(id)
-                    && state.get_object(*walker).is_some_and(|o|
-                        o.zone == crate::types::Zone::Battlefield && o.controller == valid_defender)
-                    && state.has_card_type(*walker, crate::types::CardType::Planeswalker, registry)
-                    // The shared `seen` set drops an attacker already sent at
-                    // the player AND a repeat within this list (issue #108).
-                    && first_time(*id)
-            })
-            .copied()
-            .collect();
+        let mut walkers: Vec<(ObjectId, ObjectId)> = Vec::with_capacity(planeswalker_attacks.len());
+        for &(id, walker) in planeswalker_attacks {
+            if eligible.contains(&id)
+                && state.get_object(walker).is_some_and(|o|
+                    o.zone == crate::types::Zone::Battlefield && o.controller == valid_defender)
+                && state.has_card_type(walker, crate::types::CardType::Planeswalker, registry)
+                // The shared `seen` list drops an attacker already sent at
+                // the player AND a repeat within this list (issue #108).
+                && !seen.contains(&id)
+            {
+                seen.push(id);
+                walkers.push((id, walker));
+            }
+        }
         // CR 508.1d: a creature that is required to attack and *able* to must
         // be among the declared attackers. "Able" is `eligible_attackers` —
         // the same list the declaration above was validated against, and the
@@ -82,15 +92,15 @@ pub(crate) fn who_attacks(state: &GameState, attackers: &[(ObjectId, PlayerId)],
         // declaration as the chosen ones: tapped, stamped, and in the
         // `AttackersDeclared` event. Inserting them into the combat maps
         // after the event had been pushed left them out of it, and a
-        // forced Kessig Cagebreakers made no wolves (CR 508.1m).
-        let already: Vec<ObjectId> = attackers.iter().map(|(id, _)| *id)
-            .chain(planeswalker_attacks.iter().map(|(id, _)| *id))
-            .collect();
-        let forced_ids: Vec<ObjectId> = eligible.iter()
-            .copied()
-            .filter(|id| !already.contains(id) && state.must_attack(*id, registry))
-            .collect();
-        Attack { named: attackers, walkers: planeswalker_attacks, forced: forced_ids }
+        // forced Kessig Cagebreakers made no wolves (CR 508.1m). Those
+        // already declared are the ones `seen` holds.
+        let mut forced: Vec<ObjectId> = Vec::with_capacity(eligible.len());
+        for &id in &eligible {
+            if !seen.contains(&id) && state.must_attack(id, registry) {
+                forced.push(id);
+            }
+        }
+        Attack { named, walkers, forced }
 }
 
 pub(crate) fn declare_attackers(state: &mut GameState, attackers: &[(ObjectId, PlayerId)], planeswalker_attacks: &[(ObjectId, ObjectId)], registry: &CardRegistry) -> Applied {
