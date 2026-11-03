@@ -505,3 +505,47 @@ card_proof! {
         std::mem::forget((registry, state));
     }
 }
+
+// `Step::index` walks the twelve steps, unwound past them.
+card_proof! {
+    unwind(13)
+    #[kani::stub(crate::engine::empty_mana_pools, emptied)]
+    #[kani::stub(crate::combat::end_combat, combat_over)]
+    #[kani::stub(crate::engine::perform_turn_based_actions, step_actions)]
+    /// The spells each player cast in a turn are, once it ends, those they
+    /// cast last turn, and none are cast yet in the next: what a Werewolf's
+    /// "if no spells were cast last turn" and "if a player cast two or more
+    /// spells last turn" read (each spell counted as it is cast, `casting`).
+    /// A cleanup step repeated (CR 514.3a) is the same turn, the counts as
+    /// they were. For the first player having cast any number this turn,
+    /// the second any number or none counted, and the second any number
+    /// counted the turn before.
+    fn the_spells_cast_in_a_turn_are_those_cast_last_turn_once_it_ends() {
+        let (registry, _, mut state, _) = game(Step::Cleanup);
+        let repeat: bool = kani::any();
+        state.cleanup_repeat = repeat;
+        let (first, second, before): (u32, u32, u32) = (kani::any(), kani::any(), kani::any());
+        let second_cast: bool = kani::any();
+        state.num_spells_cast_this_turn.insert(PlayerId(0), first);
+        if second_cast {
+            state.num_spells_cast_this_turn.insert(PlayerId(1), second);
+        }
+        state.num_spells_cast_last_turn.insert(PlayerId(1), before);
+
+        crate::engine::advance_step(&mut state, &registry);
+
+        let count = |map: &std::collections::BTreeMap<PlayerId, u32>, p: u8| map.get(&PlayerId(p)).copied();
+        let (now, last) = (&state.num_spells_cast_this_turn, &state.num_spells_cast_last_turn);
+        let counted = 1 + usize::from(second_cast);
+        if repeat {
+            assert!(state.step == Step::Cleanup);
+            assert!(now.len() == counted && count(now, 0) == Some(first) && count(now, 1) == second_cast.then_some(second));
+            assert!(last.len() == 1 && count(last, 1) == Some(before));
+        } else {
+            assert!(state.step == Step::Untap);
+            assert!(now.is_empty());
+            assert!(last.len() == counted && count(last, 0) == Some(first) && count(last, 1) == second_cast.then_some(second));
+        }
+        std::mem::forget((registry, state));
+    }
+}
