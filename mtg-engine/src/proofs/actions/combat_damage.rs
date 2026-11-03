@@ -5,8 +5,11 @@
 //! attacker's damage is divided among its blockers is
 //! `combat::divide_combat_damage`, the division kernel proved sound and
 //! complete (`mtg_kernel::combat::divide`), standing in here as any
-//! division it is proved to give; whether a creature has first strike,
-//! double strike or trample, and its power, are any answer.
+//! division it is proved to give; whether a creature deals damage in the
+//! step (`combat::deals_in_step`) and the record that it dealt first-strike
+//! damage (`combat::mark_dealt_first_strike`) are each their own proof
+//! below; whether a creature has trample or deathtouch, and its power and
+//! toughness, are any answer.
 
 use crate::cards::CardRegistry;
 use crate::damage::DamageKind;
@@ -138,17 +141,29 @@ fn divide_open(power: u32, blockers: &[(ObjectId, u32)], trample: bool, _: &[(Ob
     crate::combat::DamageDivision { to_blockers: Vec::new(), overflow: 0, open: asked.open }
 }
 
-/// Whether a creature deals combat damage in this step (CR 510.4, 702.4b,
-/// 702.7b): with double strike, or in a first-strike step with first
-/// strike, or in a regular step having dealt none in a first-strike step.
-fn deals(state: &GameState, registry: &CardRegistry, first_strike_step: bool, dealt_before: &[bool; 5], id: u64) -> bool {
-    let id = ObjectId(id);
-    let double = has_keyword(state, id, Keyword::DoubleStrike, registry);
-    if first_strike_step {
-        double || has_keyword(state, id, Keyword::FirstStrike, registry)
-    } else {
-        double || !dealt_before[index(id)]
-    }
+/// Whether each object deals combat damage in this step: any answer (the
+/// rule is `deals_in_step`'s, proved below); and the objects marked as
+/// having dealt first-strike damage, in order.
+static mut DEALS: [Option<bool>; 5] = [None; 5];
+static mut MARKED: [ObjectId; 4] = [ObjectId(0); 4];
+static mut MARKED_N: usize = 0;
+
+/// Stands in for `combat::deals_in_step`: any answer, the same each time.
+#[allow(dead_code)] // named only by `kani::stub`
+fn deals(_: &GameState, id: ObjectId, _: bool, _: &CardRegistry) -> bool {
+    // SAFETY: as in `has_keyword`, for DEALS.
+    let answers = unsafe { &mut *std::ptr::addr_of_mut!(DEALS) };
+    *answers[index(id)].get_or_insert_with(kani::any::<bool>)
+}
+
+/// Stands in for `combat::mark_dealt_first_strike` (its proof below):
+/// recorded.
+#[allow(dead_code)] // named only by `kani::stub`
+fn mark(_: &mut GameState, id: ObjectId) {
+    // SAFETY: as in `has_keyword`, for MARKED and MARKED_N.
+    let (list, n) = unsafe { (&mut *std::ptr::addr_of_mut!(MARKED), &mut *std::ptr::addr_of_mut!(MARKED_N)) };
+    list[*n] = id;
+    *n += 1;
 }
 
 /// A creature's power, as combat damage: none below 0.
@@ -159,9 +174,11 @@ fn power(state: &GameState, registry: &CardRegistry, id: u64) -> u32 {
 /// The board of [`dealing`] and [`asking`]: attackers 1 and 2 (the active
 /// player's), blockers 3 and 4 (the defending player's) and a planeswalker
 /// 5 (the defending player's), each on the battlefield or not, in a combat
-/// as `attacking`, `walker_of`, `blocks` and `order` say; with a
-/// first-strike step or not, and in a regular step, each creature having
-/// dealt damage in a first-strike step already or not.
+/// as `attacking`, `walker_of`, `blocks` and `order` say; and a
+/// first-strike step or not. Which creature deals damage in the step is
+/// `deals_in_step`'s, any answer here: with each creature having dealt
+/// first-strike damage or not, the combat's set of them was built every
+/// way, and copied, and ran symbolic execution out of memory.
 struct Board {
     registry: CardRegistry,
     state: GameState,
@@ -169,7 +186,6 @@ struct Board {
     defending: PlayerId,
     on: [bool; 5],
     first_strike_step: bool,
-    dealt_before: [bool; 5],
     combat: CombatState,
 }
 
@@ -189,13 +205,6 @@ fn board(attacking: &[u64], walker_of: Option<u64>, blocks: &[(u64, &[u64])], or
     }
     let first_strike_step: bool = kani::any();
     let mut combat = CombatState::default();
-    let mut dealt_before = [false; 5];
-    for (i, d) in dealt_before.iter_mut().enumerate() {
-        *d = !first_strike_step && kani::any::<bool>();
-        if *d {
-            combat.dealt_first_strike.insert(ObjectId(i as u64 + 1));
-        }
-    }
     for &a in attacking {
         combat.attackers.insert(ObjectId(a), defending);
         let declared: Vec<ObjectId> = blocks.iter().find(|&&(x, _)| x == a).map_or(&[][..], |&(_, b)| b)
@@ -214,7 +223,7 @@ fn board(attacking: &[u64], walker_of: Option<u64>, blocks: &[(u64, &[u64])], or
     combat.chosen_damage.insert(ObjectId(1), Vec::new());
     state.combat = Some(combat.clone());
 
-    Board { registry, state, active, defending, on, first_strike_step, dealt_before, combat }
+    Board { registry, state, active, defending, on, first_strike_step, combat }
 }
 
 /// One combat damage step's damage. The board: attackers 1 and 2 (the
@@ -244,12 +253,12 @@ fn board(attacking: &[u64], walker_of: Option<u64>, blocks: &[(u64, &[u64])], or
 /// none) and whether it has trample. Nothing of no damage is queued, and
 /// every event is combat damage. The step's chosen divisions are spent.
 fn dealing(attacking: &[u64], walker_of: Option<u64>, blocks: &[(u64, &[u64])], order: &[(u64, &[u64])]) {
-    let Board { registry, mut state, defending, on, first_strike_step, dealt_before, combat, .. } =
+    let Board { registry, mut state, defending, on, first_strike_step, combat, .. } =
         board(attacking, walker_of, blocks, order);
 
     crate::combat::queue_damage_step(&mut state, &combat, &registry, first_strike_step);
 
-    let deals = |id: u64| deals(&state, &registry, first_strike_step, &dealt_before, id);
+    let deals = |id: u64| deals(&state, ObjectId(id), first_strike_step, &registry);
     let power = |id: u64| power(&state, &registry, id);
     // SAFETY: as in `has_keyword`.
     let divisions = unsafe { *std::ptr::addr_of!(DIVISIONS) };
@@ -261,14 +270,17 @@ fn dealing(attacking: &[u64], walker_of: Option<u64>, blocks: &[(u64, &[u64])], 
             n += 1;
         }
     };
-    let mut dealt_now = [false; 5];
+    let (mut marked, mut m) = ([ObjectId(0); 4], 0);
     let mut divided = 0;
     for &a in attacking {
         if !on[index(ObjectId(a))] {
             continue;
         }
         let attacker_deals = deals(a);
-        dealt_now[index(ObjectId(a))] |= attacker_deals && first_strike_step;
+        if attacker_deals && first_strike_step {
+            marked[m] = ObjectId(a);
+            m += 1;
+        }
         let p = if attacker_deals { power(a) } else { 0 };
         let at = match walker_of {
             Some(w) if w == a => on[4].then_some(DamageTarget::Object(ObjectId(5))),
@@ -291,7 +303,10 @@ fn dealing(attacking: &[u64], walker_of: Option<u64>, blocks: &[(u64, &[u64])], 
             }
             assert!(live < d.n && d.blockers[live] == ObjectId(b));
             if deals(b) {
-                dealt_now[index(ObjectId(b))] |= first_strike_step;
+                if first_strike_step {
+                    marked[m] = ObjectId(b);
+                    m += 1;
+                }
                 push(b, DamageTarget::Object(ObjectId(a)), power(b));
             }
             push(a, DamageTarget::Object(ObjectId(b)), d.amounts[live]);
@@ -304,11 +319,10 @@ fn dealing(attacking: &[u64], walker_of: Option<u64>, blocks: &[(u64, &[u64])], 
     }
     assert!(divisions[divided..].iter().all(Option::is_none));
     assert!(asked_each(n, |k| Act::Queue { source: expected[k].0, target: expected[k].1, amount: expected[k].2, kind: DamageKind::Combat }));
-    let after = state.combat.as_ref().expect("a combat");
-    for (i, &before) in dealt_before.iter().enumerate() {
-        assert!(after.dealt_first_strike.contains(&ObjectId(i as u64 + 1)) == (before || dealt_now[i]));
-    }
-    assert!(after.chosen_damage.is_empty());
+    // SAFETY: as in `has_keyword`.
+    let (recorded, k) = unsafe { (*std::ptr::addr_of!(MARKED), *std::ptr::addr_of!(MARKED_N)) };
+    assert!(k == m && recorded[..m] == marked[..m]);
+    assert!(state.combat.as_ref().expect("a combat").chosen_damage.is_empty());
     std::mem::forget((registry, state, combat));
 }
 
@@ -320,6 +334,8 @@ macro_rules! each_combat {
             #[kani::stub(crate::state::GameState::effective_power, effective_power)]
             #[kani::stub(crate::state::GameState::effective_toughness, effective_toughness)]
             #[kani::stub(crate::combat::divide_combat_damage, divide)]
+            #[kani::stub(crate::combat::deals_in_step, deals)]
+            #[kani::stub(crate::combat::mark_dealt_first_strike, mark)]
             /// [`dealing`] for the combat of its name.
             fn $name() {
                 dealing(&$attacking, $walker, &$blocks, &$order);
@@ -349,7 +365,7 @@ each_combat! {
 /// asked. On the board of [`dealing`], each division leaving any blocker
 /// open with any range, or none.
 fn asking(attacking: &[u64], blocks: &[(u64, &[u64])], order: &[(u64, &[u64])]) {
-    let Board { registry, mut state, active, on, first_strike_step, dealt_before, .. } = board(attacking, None, blocks, order);
+    let Board { registry, mut state, active, on, first_strike_step, .. } = board(attacking, None, blocks, order);
 
     let raised = crate::combat::ask_next_damage_division(&mut state, &registry, first_strike_step);
 
@@ -358,7 +374,7 @@ fn asking(attacking: &[u64], blocks: &[(u64, &[u64])], order: &[(u64, &[u64])]) 
     let mut divided = 0;
     let mut question = None;
     for &a in attacking {
-        if !on[index(ObjectId(a))] || !deals(&state, &registry, first_strike_step, &dealt_before, a) {
+        if !on[index(ObjectId(a))] || !deals(&state, ObjectId(a), first_strike_step, &registry) {
             continue;
         }
         let declared = blocks.iter().find(|&&(x, _)| x == a).map_or(&[][..], |&(_, b)| b);
@@ -407,6 +423,7 @@ macro_rules! each_question {
             #[kani::stub(crate::state::GameState::effective_power, effective_power)]
             #[kani::stub(crate::state::GameState::effective_toughness, effective_toughness)]
             #[kani::stub(crate::combat::divide_combat_damage, divide_open)]
+            #[kani::stub(crate::combat::deals_in_step, deals)]
             /// [`asking`] for the combat of its name.
             fn $name() {
                 asking(&$attacking, &$blocks, &$order);
@@ -419,4 +436,71 @@ each_question! {
     no_division_is_asked_of_an_unblocked_attacker: [1], [], [];
     a_division_is_asked_of_an_attacker_blocked_by_two_in_the_order_announced: [1], [(1, &[3, 4][..])], [(1, &[4, 3][..])];
     the_first_attacker_whose_division_is_open_is_asked_and_none_after_it: [1, 2], [(1, &[3][..]), (2, &[4][..])], [];
+}
+
+card_proof! {
+    #[kani::stub(crate::state::GameState::has_keyword, has_keyword)]
+    /// Whether a creature deals combat damage in this step (`combat::
+    /// deals_in_step`, CR 510.4, 702.4b-c, 702.7b-c): in a first-strike
+    /// step, exactly if it has first strike or double strike; in a regular
+    /// step, exactly if it has double strike or dealt no damage in a
+    /// first-strike step of this combat (one gaining first strike after it
+    /// still deals its damage). For a creature with first strike or not
+    /// and double strike or not, having dealt first-strike damage or not,
+    /// in a combat or none, in either step.
+    fn a_creature_deals_combat_damage_in_the_steps_the_rules_give_it() {
+        let mut registry = CardRegistry::new();
+        let blank = registry.register(Box::new(Blank));
+        let mut state = crate::proofs::cards::new_game();
+        let id = state.create_object(blank, PlayerId(0), Zone::Battlefield, Some(1), Some(1));
+        let (in_combat, dealt): (bool, bool) = (kani::any(), kani::any());
+        if in_combat {
+            let mut combat = CombatState::default();
+            if dealt {
+                combat.dealt_first_strike.insert(id);
+            }
+            state.combat = Some(combat);
+        }
+        let first_strike_step: bool = kani::any();
+
+        let deals_now = crate::combat::deals_in_step(&state, id, first_strike_step, &registry);
+
+        let double = has_keyword(&state, id, Keyword::DoubleStrike, &registry);
+        let expected = if first_strike_step {
+            double || has_keyword(&state, id, Keyword::FirstStrike, &registry)
+        } else {
+            double || !(in_combat && dealt)
+        };
+        assert!(deals_now == expected);
+        std::mem::forget((registry, state));
+    }
+}
+
+card_proof! {
+    /// Marking a creature as having dealt first-strike damage (`combat::
+    /// mark_dealt_first_strike`, CR 510.4): with a combat, it is among those
+    /// that did, with the others kept; with none, nothing is done.
+    fn a_creature_dealing_first_strike_damage_is_marked_as_having_dealt_it() {
+        let mut state = crate::proofs::cards::new_game();
+        let in_combat: bool = kani::any();
+        if in_combat {
+            let mut combat = CombatState::default();
+            combat.dealt_first_strike.insert(ObjectId(2));
+            state.combat = Some(combat);
+        }
+        let id = ObjectId(1 + u64::from(kani::any::<bool>()));
+
+        crate::combat::mark_dealt_first_strike(&mut state, id);
+
+        match &state.combat {
+            Some(c) => {
+                assert!(in_combat && c.dealt_first_strike.contains(&id) && c.dealt_first_strike.contains(&ObjectId(2))
+                    && c.dealt_first_strike.len() == if id == ObjectId(2) { 1 } else { 2 });
+            }
+            None => {
+                assert!(!in_combat);
+            }
+        }
+        std::mem::forget(state);
+    }
 }
