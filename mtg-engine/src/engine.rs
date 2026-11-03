@@ -15,7 +15,7 @@
 pub(crate) mod actions;
 pub(crate) mod legal;
 pub(crate) mod cards_flow;
-mod costs;
+pub(crate) mod costs;
 mod effects;
 mod mana_sources;
 mod targeting;

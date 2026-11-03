@@ -348,3 +348,228 @@ each_tap_reply! {
     a_creature_not_offered_is_refused: 4;
     a_creature_tapped_since_it_was_offered_is_refused: 5;
 }
+
+/// What X-funding's answer was handed and did, in order: the mana the
+/// funding paid (any), the costs paid (how many times, and whether the
+/// cost paid was the one stashed), and the ability put on the stack (with
+/// the X the game held then and how many times the costs had been paid).
+static mut FUNDED: Option<u32> = None;
+static mut COSTS_PAID: usize = 0;
+static mut STASHED_COST: bool = false;
+static mut PUSHED: Option<(ObjectId, usize, crate::ids::CardId, PlayerId, Option<u32>, usize)> = None;
+
+/// Stands in for `funding::validate`: every response valid, as a seat
+/// that answers from the prompt's own options gives.
+#[allow(dead_code)] // each named only by `kani::stub`
+fn validated(_: &crate::funding::FundingResponse, _: &crate::funding::FundingOptions) -> Result<(), crate::funding::FundingError> {
+    Ok(())
+}
+
+/// Stands in for `funding::apply`, proved in the kernel (`mtg_kernel::
+/// funding`, which taps and drains what it was told): any mana paid, up
+/// to the prompt's most.
+#[allow(dead_code)]
+fn funded(_: &mut GameState, _: PlayerId, options: &crate::funding::FundingOptions, _: &crate::funding::FundingResponse, _: &CardRegistry) -> u32 {
+    let paid: u32 = kani::any();
+    kani::assume(paid <= options.max_x);
+    // SAFETY: as in `Asking::on_declined_choice`, for FUNDED.
+    let f = unsafe { &mut *std::ptr::addr_of_mut!(FUNDED) };
+    assert!(f.is_none(), "funded once");
+    *f = Some(paid);
+    paid
+}
+
+/// Stands in for `actions::abilities::pay_activation_costs`, proved in
+/// `activating`.
+#[allow(dead_code)]
+fn costs_paid(_: &mut GameState, _: PlayerId, _: ObjectId, _: usize, cost: &crate::state::DeferredActivationCost, _: &CardRegistry) {
+    // SAFETY: as in `funded`, for COSTS_PAID and STASHED_COST.
+    unsafe {
+        *std::ptr::addr_of_mut!(COSTS_PAID) += 1;
+        *std::ptr::addr_of_mut!(STASHED_COST) = cost.requires_tap && cost.once_per_turn;
+    }
+}
+
+/// Stands in for `actions::abilities::put_ability_on_stack`, proved in
+/// `activating`.
+#[allow(dead_code)]
+#[allow(clippy::too_many_arguments)]
+fn pushed(
+    state: &mut GameState, source: ObjectId, index: usize, card: crate::ids::CardId, targets: &[Target],
+    activator: PlayerId, _: Option<crate::cards::TargetRequirement>, _: &CardRegistry,
+) {
+    assert!(targets.is_empty(), "the ability of this proof targets nothing");
+    // SAFETY: as in `funded`, for PUSHED.
+    let (p, paid) = unsafe { (&mut *std::ptr::addr_of_mut!(PUSHED), *std::ptr::addr_of!(COSTS_PAID)) };
+    assert!(p.is_none(), "pushed once");
+    *p = Some((source, index, card, activator, state.last_activated_x_value, paid));
+}
+
+card_proof! {
+    #[kani::stub(crate::funding::validate, validated)]
+    #[kani::stub(crate::funding::apply, funded)]
+    #[kani::stub(crate::engine::actions::abilities::pay_activation_costs, costs_paid)]
+    #[kani::stub(crate::engine::actions::abilities::put_ability_on_stack, pushed)]
+    /// An ability's X funded (`resolve_choice` of `ChooseXFunding`, CR
+    /// 601.2b, 601.2f-h via 602.2b, 107.3): X is the mana the funding paid
+    /// plus the part of X a cost reduction pays for, and is what the
+    /// ability resolves with (Kessig Wolf Run's "+X/+0"); only then are
+    /// the ability's other costs paid, the ones stashed while X was asked,
+    /// once, and then the ability goes on the stack, from its source, as
+    /// that ability of the card granting it, under its activator; the
+    /// question is answered, the activation no longer waits on anything,
+    /// and the passes in a row start again. For the second player
+    /// activating, a cost reduction of none to three, and any mana paid up
+    /// to the most the prompt allows.
+    fn an_abilitys_x_is_the_mana_funded_and_its_costs_are_paid_after() {
+        let mut registry = CardRegistry::new();
+        let card = registry.register(Box::new(Asking));
+        let mut state = crate::proofs::cards::new_game();
+        let activator = PlayerId(1);
+        let source = state.create_object(card, activator, Zone::Battlefield, None, None);
+        let discount = u32::from(kani::any::<u8>() % 4);
+        let options = crate::funding::FundingOptions {
+            pool: std::collections::BTreeMap::new(),
+            groups: Vec::new(),
+            max_x: 10,
+            x_discount: discount,
+            pool_order: Vec::new(),
+            pool_keep: std::collections::BTreeMap::new(),
+        };
+        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+            player: activator,
+            source,
+            choice: ResolutionChoiceKind::ChooseXFunding { description: String::new(), options, source_id: source, is_ability: true },
+        });
+        state.pending_ability_effect = Some(crate::state::PendingAbilityEffect {
+            source_id: source,
+            ability_index: 1,
+            behavior_card_id: card,
+            targets: Vec::new(),
+            description: String::new(),
+            activator,
+            target_requirement: None,
+            unpaid: Some(crate::state::DeferredActivationCost {
+                tap_plan: Vec::new(),
+                non_x_mana_cost: crate::types::ManaCost::free(),
+                requires_tap: true,
+                counter_cost: None,
+                sacrifice: None,
+                sacrifice_cost: crate::cards::SacrificeCost::None,
+                once_per_turn: true,
+                tapped_creatures: Vec::new(),
+            }),
+            has_x: false,
+        });
+        state.priority_player = Some(activator);
+        state.consecutive_passes = 2;
+
+        let applied = crate::engine::actions::choices::resolve_choice(
+            &mut state, &ResolvedChoice::XFunding(crate::funding::FundingResponse::default()), &registry);
+
+        // SAFETY: as in `funded`.
+        let (paid, costs, stashed, pushed) = unsafe { (
+            *std::ptr::addr_of!(FUNDED), *std::ptr::addr_of!(COSTS_PAID),
+            *std::ptr::addr_of!(STASHED_COST), *std::ptr::addr_of!(PUSHED),
+        ) };
+        let paid = paid.expect("funded");
+        assert!(matches!(applied, crate::engine::Applied::Continue));
+        assert!(costs == 1 && stashed);
+        assert!(pushed == Some((source, 1, card, activator, Some(paid + discount), 1)));
+        assert!(state.pending_ability_effect.is_none() && state.awaiting_action.is_none() && state.consecutive_passes == 0);
+        std::mem::forget((registry, state));
+    }
+}
+
+/// How many times a spell's additional costs were paid (any it has).
+static mut ADDITIONAL_PAID: usize = 0;
+
+/// Stands in for `costs::pay_additional_cost`, each card's own cost proved
+/// with the card (`casting_costs`): counted.
+#[allow(dead_code)] // each named only by `kani::stub`
+#[allow(clippy::too_many_arguments)]
+fn additional_paid(_: &mut GameState, _: &CardRegistry, _: crate::ids::CardId, _: ObjectId, _: PlayerId, _: Option<ObjectId>, _: Option<u32>, _: &[ObjectId]) {
+    // SAFETY: as in `funded`, for ADDITIONAL_PAID.
+    unsafe { *std::ptr::addr_of_mut!(ADDITIONAL_PAID) += 1 };
+}
+
+/// Stands in for `engine::demand_reserve`: none, as in `casting`; the
+/// spell's cost but its X is none.
+#[allow(dead_code)]
+fn no_reserve(_: &GameState, _: &CardRegistry, _: PlayerId, _: Option<ObjectId>) -> crate::types::ManaCost {
+    crate::types::ManaCost::free()
+}
+
+card_proof! {
+    #[kani::stub(crate::funding::validate, validated)]
+    #[kani::stub(crate::funding::apply, funded)]
+    #[kani::stub(crate::engine::costs::pay_additional_cost, additional_paid)]
+    #[kani::stub(crate::engine::demand_reserve, no_reserve)]
+    /// A spell's X funded (`resolve_choice` of `ChooseXFunding`, CR 601.2b,
+    /// 601.2f-i, 107.3): the spell, stashed in the zone it is cast from
+    /// while X was asked, has its additional costs paid once, moves to the
+    /// stack holding the targets it was cast with, the zone it was cast
+    /// from and whether it was cast with flashback, and its X is the mana
+    /// the funding paid plus the part of X a cost reduction pays for (what
+    /// Devil's Play deals); it goes on top of the stack, its casting is the
+    /// one event, it is counted to its caster, and the cast no longer waits
+    /// on anything. For the second player casting from their hand or, with
+    /// flashback, their graveyard, a cost reduction of none to three, and
+    /// any mana paid up to the most the prompt allows.
+    fn a_spells_x_is_the_mana_funded_and_it_goes_on_the_stack_with_it() {
+        let mut registry = CardRegistry::new();
+        let card = registry.register(Box::new(Asking));
+        let mut state = crate::proofs::cards::new_game();
+        let caster = PlayerId(1);
+        let flashback: bool = kani::any();
+        let from = if flashback { Zone::Graveyard } else { Zone::Hand };
+        let spell = state.create_object(card, caster, from, None, None);
+        let discount = u32::from(kani::any::<u8>() % 4);
+        let options = crate::funding::FundingOptions {
+            pool: std::collections::BTreeMap::new(),
+            groups: Vec::new(),
+            max_x: 10,
+            x_discount: discount,
+            pool_order: Vec::new(),
+            pool_keep: std::collections::BTreeMap::new(),
+        };
+        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+            player: caster,
+            source: spell,
+            choice: ResolutionChoiceKind::ChooseXFunding { description: String::new(), options, source_id: spell, is_ability: false },
+        });
+        state.pending_spell_cast = Some(crate::state::PendingSpellCast {
+            object_id: spell,
+            player: caster,
+            card_id: card,
+            targets: vec![Target::Player(PlayerId(0))],
+            sacrifice: None,
+            exile_ids: Vec::new(),
+            exile_count: None,
+            tap_plan: Vec::new(),
+            alternative_cost: None,
+            non_x_mana_cost: crate::types::ManaCost::free(),
+            is_flashback: flashback,
+            cast_from_graveyard: flashback,
+        });
+        state.priority_player = Some(caster);
+        let events = state.events.len();
+
+        let applied = crate::engine::actions::choices::resolve_choice(
+            &mut state, &ResolvedChoice::XFunding(crate::funding::FundingResponse::default()), &registry);
+
+        // SAFETY: as in `funded`.
+        let (paid, additional) = unsafe { (*std::ptr::addr_of!(FUNDED), *std::ptr::addr_of!(ADDITIONAL_PAID)) };
+        let paid = paid.expect("funded");
+        assert!(matches!(applied, crate::engine::Applied::Continue));
+        assert!(additional == 1 && asked_for(&[Act::Move(spell, Zone::Stack)]));
+        let obj = state.get_object(spell).expect("on the board");
+        assert!(obj.x_value == Some(paid + discount) && obj.cast_from_zone == Some(from) && obj.cast_with_flashback == flashback);
+        assert!(matches!(obj.targets.as_slice(), [Target::Player(PlayerId(0))]));
+        assert!(matches!(state.stack.as_slice(), [crate::state::StackEntry::Spell(s)] if *s == spell));
+        assert!(matches!(&state.events[events..], [crate::events::GameEvent::SpellCast { player, object }] if *player == caster && *object == spell));
+        assert!(state.num_spells_cast_this_turn.get(&caster) == Some(&1));
+        assert!(state.pending_spell_cast.is_none() && state.awaiting_action.is_none());
+        std::mem::forget((registry, state));
+    }
+}
