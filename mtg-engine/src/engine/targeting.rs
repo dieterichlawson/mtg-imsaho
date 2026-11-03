@@ -654,10 +654,18 @@ pub(crate) fn targets_are_legal(
             }
             true
         }
+        // Each against the inner requirement, and, as `one` asks, whether
+        // the source may target it at all: this arm asked only the first
+        // and the card's restriction, so a creature with protection from
+        // an "up to N" spell could be named in a submitted cast.
         R::UpToTargets(max, inner) => {
             targets.len() <= *max
                 && targets.iter().all(|t| {
                     crate::stack::is_target_legal(state, t, inner, caster, Some(source_id), registry)
+                        && match *t {
+                            crate::actions::Target::Object(id) => can_be_targeted_by(state, id, caster, Some(source_id), registry),
+                            _ => true,
+                        }
                         && behavior.is_valid_target(state, caster, t, registry)
                 })
         }

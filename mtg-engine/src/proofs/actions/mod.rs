@@ -39,6 +39,7 @@ mod scopes;
 mod searching;
 mod simple_actions;
 mod state_based;
+mod target_check;
 mod targeting;
 mod tokens;
 mod transforming;

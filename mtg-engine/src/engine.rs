@@ -18,7 +18,7 @@ pub(crate) mod cards_flow;
 pub(crate) mod costs;
 pub(crate) mod effects;
 mod mana_sources;
-mod targeting;
+pub(crate) mod targeting;
 
 pub use cards_flow::{discard_cards, draw_cards, mill_cards, mill_one};
 /// What a graveyard card may be cast for, which granted flashback's proof
