@@ -2008,17 +2008,6 @@ impl CliPlayer {
             SetAttribute(Attribute::Dim), Print("├"), SetAttribute(Attribute::Reset));
         row += 1;
 
-        // Opponent status line
-        let _ = execute!(out, cursor::MoveTo(mid_col, row));
-        if is_your_turn {
-            let _ = execute!(out, SetForegroundColor(Color::Red));
-        } else {
-            let _ = execute!(out, SetForegroundColor(Color::Red), SetAttribute(Attribute::Bold));
-        }
-        let _ = execute!(out, Print(clip_cols(&opp_stats, mid_w)));
-        let _ = execute!(out, SetAttribute(Attribute::Reset), ResetColor);
-        row += 1;
-
         // Both sides are built before either is drawn, so the rows the frame
         // has above the prompt block can be shared out between them and the
         // hand. Printed whole, a tall side ran under the block, and what the
@@ -2032,14 +2021,30 @@ impl CliPlayer {
         let your_bf = Self::battlefield_rows(&your_perms, Color::Green, mid_w, &view.battlefield, true, view.you);
         let has_mana = !view.your_mana_pool.is_empty();
         let hand_rows = view.your_hand.len().max(1) + usize::from(has_mana);
-        // Under the two sides: the divider, your status line and the hand's
-        // rule, which are never given up.
-        let board_budget = block_floor.saturating_sub(row as usize + 3);
+        // Over the two sides, the opponent's status line; under them, the
+        // divider, your status line and the hand's rule, which are never
+        // given up.
+        let board_budget = block_floor.saturating_sub(row as usize + 1 + 3);
         let limits = if opp_bf.len() + your_bf.len() + hand_rows <= board_budget {
             vec![opp_bf.len(), your_bf.len(), hand_rows]
         } else {
             Self::share_rows(&[opp_bf.len(), your_bf.len(), hand_rows], board_budget)
         };
+        // A side given no row at all, not even its marker's, is counted on
+        // its status line: it vanished unmarked on a short pane (#960).
+        let opp_stats = Self::with_unshown(&opp_stats, Self::board_cut(&opp_bf, limits[0]).1, limits[0]);
+        let your_stats = Self::with_unshown(&your_stats, Self::board_cut(&your_bf, limits[1]).1, limits[1]);
+
+        // Opponent status line
+        let _ = execute!(out, cursor::MoveTo(mid_col, row));
+        if is_your_turn {
+            let _ = execute!(out, SetForegroundColor(Color::Red));
+        } else {
+            let _ = execute!(out, SetForegroundColor(Color::Red), SetAttribute(Attribute::Bold));
+        }
+        let _ = execute!(out, Print(clip_cols(&opp_stats, mid_w)));
+        let _ = execute!(out, SetAttribute(Attribute::Reset), ResetColor);
+        row += 1;
 
         // Opponent board
         let bf_content_start = row;
@@ -2650,15 +2655,28 @@ impl CliPlayer {
     /// the smallest wants are met in full and what is left is shared
     /// evenly among the rest, so one tall side cannot take every row from
     /// the other side and the hand (#774).
+    ///
+    /// First, every section that wants anything gets one row, in the order
+    /// given, while the budget lasts: one row is a side's "… N more
+    /// permanents" marker. Shared evenly, a short pane gave a side none,
+    /// and the opponent's whole board vanished with nothing saying it was
+    /// there (#960).
     fn share_rows(demands: &[usize], budget: usize) -> Vec<usize> {
-        let mut order: Vec<usize> = (0..demands.len()).collect();
-        order.sort_by_key(|&i| demands[i]);
         let mut give = vec![0; demands.len()];
         let mut left = budget;
+        for (g, &d) in give.iter_mut().zip(demands) {
+            if d > 0 && left > 0 {
+                *g = 1;
+                left -= 1;
+            }
+        }
+        let mut order: Vec<usize> = (0..demands.len()).collect();
+        order.sort_by_key(|&i| demands[i] - give[i]);
         for (k, &i) in order.iter().enumerate() {
             let fair = left / (demands.len() - k);
-            give[i] = demands[i].min(fair);
-            left -= give[i];
+            let more = (demands[i] - give[i]).min(fair);
+            give[i] += more;
+            left -= more;
         }
         give
     }
@@ -2776,6 +2794,21 @@ impl CliPlayer {
             }
         }
         row
+    }
+
+    /// A side's status line, with how many of its permanents are not on
+    /// screen when the pane gave the side no row (`limit` 0), so not even
+    /// its "… N more" marker. The count goes ahead of the stats a pane
+    /// clips first, after the side's name.
+    fn with_unshown(stats: &str, hidden: usize, limit: usize) -> String {
+        if limit > 0 || hidden == 0 {
+            return stats.to_string();
+        }
+        let noun = if hidden == 1 { "permanent" } else { "permanents" };
+        match stats.split_once(": ") {
+            Some((who, rest)) => format!("{who} (+{hidden} {noun} unshown): {rest}"),
+            None => format!("{stats}  (+{hidden} {noun} unshown)"),
+        }
     }
 
     /// The row that stands in for the part of a side the pane cannot hold.
@@ -12501,6 +12534,35 @@ Wolves or Werewolves is prevented".into()];
         // Two tall sides split evenly.
         assert_eq!(CliPlayer::share_rows(&[30, 30, 1], 21), vec![10, 10, 1]);
         assert_eq!(CliPlayer::share_rows(&[30, 30, 1], 0), vec![0, 0, 0]);
+    }
+
+    /// Issue #960: on a short pane each side keeps the one row its
+    /// "… N more permanents" marker needs, the opponent's first, before
+    /// any side gets a second; a side given none vanished unmarked.
+    #[test]
+    fn a_short_pane_keeps_a_marker_row_for_each_side() {
+        // 80x16 and 80x14 with a land a side and a 6-card hand.
+        assert_eq!(CliPlayer::share_rows(&[1, 1, 6], 3), vec![1, 1, 1]);
+        assert_eq!(CliPlayer::share_rows(&[1, 1, 6], 2), vec![1, 1, 0]);
+        // 22 permanents a side.
+        assert_eq!(CliPlayer::share_rows(&[8, 8, 11], 2), vec![1, 1, 0]);
+        assert_eq!(CliPlayer::share_rows(&[8, 8, 11], 1), vec![1, 0, 0], "the opponent's side first");
+        // The same budget does not grow: what a section is given adds up.
+        for budget in 0..30 {
+            let give = CliPlayer::share_rows(&[8, 3, 11], budget);
+            assert_eq!(give.iter().sum::<usize>(), budget.min(22), "budget {budget}: {give:?}");
+        }
+        // An empty side asks for nothing and is given nothing.
+        assert_eq!(CliPlayer::share_rows(&[0, 9, 4], 2), vec![0, 1, 1]);
+        // A side given no row is counted on its status line instead.
+        assert_eq!(CliPlayer::with_unshown("\u{25b8} You: 20hp  31lib", 2, 0),
+            "\u{25b8} You (+2 permanents unshown): 20hp  31lib");
+        assert_eq!(CliPlayer::with_unshown("  Opp: 20hp", 1, 0), "  Opp (+1 permanent unshown): 20hp");
+        assert_eq!(CliPlayer::with_unshown("  Opp: 20hp", 1, 1), "  Opp: 20hp", "its marker row says it");
+        assert_eq!(CliPlayer::with_unshown("  Opp: 20hp", 0, 0), "  Opp: 20hp", "nothing to count");
+        // With a row for a side, its cut is the marker standing for it.
+        let theirs = vec![BfRow::Lands(1)];
+        assert_eq!(CliPlayer::board_cut(&theirs, 1), (vec![Some(0)], 0));
     }
 
     /// Issue #695: a hand that does not fit above the prompt block says
