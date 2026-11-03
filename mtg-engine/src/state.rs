@@ -443,8 +443,12 @@ pub struct GameState {
     /// exiled creature's owner). Writing it while the card is still in a
     /// graveyard would contradict CR 108.4, which gives a card off the
     /// battlefield its owner as its controller.
+    ///
+    /// An [`IdMap`]: a B-tree outside the proofs, a list in them, whose
+    /// proof of the entry finished ran out of memory taking a tree of one
+    /// entry apart.
     #[serde(default)]
-    pub pending_entry_controllers: std::collections::BTreeMap<ObjectId, PlayerId>,
+    pub pending_entry_controllers: IdMap<PlayerId>,
 
     /// Monotonic timestamp handed to each control-changing effect as it is
     /// created (CR 613.7a). Layer 2 applies them in timestamp order, so when
@@ -770,7 +774,7 @@ impl GameState {
             observe_every_submit: false,
             pending_triggers: Vec::new(),
             pending_entry_choices: Vec::new(),
-            pending_entry_controllers: std::collections::BTreeMap::new(),
+            pending_entry_controllers: IdMap::new(),
             next_effect_timestamp: 0,
             set_pt_effects: Vec::new(),
             pending_trigger_pushes_ap: Vec::new(),
