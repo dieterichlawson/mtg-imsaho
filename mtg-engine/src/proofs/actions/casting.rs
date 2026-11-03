@@ -51,8 +51,13 @@ fn no_reserve(_: &GameState, _: &CardRegistry, _: PlayerId, _: Option<ObjectId>)
 /// exactly those targets (601.2c) and the zone it was cast from, goes on
 /// top of the stack, and its casting is the one event (601.2i); with them
 /// not, the cast is refused before anything is done (no move, nothing on
-/// the stack, no event, and the card still holds no targets). For a caster
-/// either player and a creature either player's; the spell costs nothing,
+/// the stack, no event, and the card still holds no targets). Cast, it is
+/// one more spell its caster has cast this turn, and the other player's
+/// count is as it was: what a Werewolf's "no spells were cast last turn"
+/// and "a player cast two or more spells last turn" read, once the turn
+/// is over (`turn_based`). For a caster either player, each player having
+/// cast any number of spells this turn before it, and a creature either
+/// player's; the spell costs nothing,
 /// so what paying does is the payment proofs' (`paying`), and it has no X
 /// and no additional cost.
 fn casting() {
@@ -64,6 +69,11 @@ fn casting() {
     let caster = PlayerId(u8::from(kani::any::<bool>()));
     let spell = state.create_object(card, caster, Zone::Hand, None, None);
     state.priority_player = Some(caster);
+    let cast: [u32; 2] = [kani::any(), kani::any()];
+    // Fewer than any game reaches, and short of overflowing the count.
+    kani::assume(cast[0] < 1000 && cast[1] < 1000);
+    state.num_spells_cast_this_turn.insert(PlayerId(0), cast[0]);
+    state.num_spells_cast_this_turn.insert(PlayerId(1), cast[1]);
     let events = state.events.len();
 
     let applied = crate::engine::actions::cast::cast_spell(
@@ -83,6 +93,10 @@ fn casting() {
         assert!(matches!(applied, crate::engine::Applied::ReturnNow));
         assert!(acted() == 0 && state.stack.is_empty() && state.events.len() == events && obj.targets.is_empty());
     }
+    let count = |p: u8| state.num_spells_cast_this_turn.get(&PlayerId(p)).copied();
+    let more = |p: u8| u32::from(legal && caster == PlayerId(p));
+    assert!(state.num_spells_cast_this_turn.len() == 2);
+    assert!(count(0) == Some(cast[0] + more(0)) && count(1) == Some(cast[1] + more(1)));
     std::mem::forget((registry, state));
 }
 
