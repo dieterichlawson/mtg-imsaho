@@ -1396,6 +1396,14 @@ sits in memory. What was measured, and what the proofs do about each:
   (`PendingTrigger::logged`, 1050b6c). Each kind of event then proves
   in under a minute, but a creature's dying, whose event's lists are
   copied as the ability is kept resolving.
+- **A copy of the whole game.** Casting a spell and activating an
+  ability each rehearsed the tap plan on a clone of the game state
+  before paying, a copy no symbolic execution follows. With nothing to
+  tap the rehearsal is the pool as it is, and both read it so now
+  (783ac6d, 37e4c42). What was left was the mana the rest of the hand
+  wants kept back as the cost is paid (`demand_reserve`), which reads
+  every card's cost on the board: three quarters of the cast's symbolic
+  execution, and nothing a cost of no mana pays depends on it.
 - **CBMC's memory checks.** `kani-bounded.py` leaves out CBMC's pointer,
   bounds and division checks (`--memory-checks` keeps them): that safe
   Rust reads only memory it may is the compiler's guarantee, and Rust's
@@ -1456,6 +1464,9 @@ for both players and boards as its doc comment states):
 | who may block whom (`can_block_attacker`, 509.1a-b, 702.9b, 702.13b, 702.16b), every answer to every question it asks | proved, 30 s |
 | the trigger collector (`triggers::collect::for_event`, 603.2, 603.3b): each kind of event a card in the pool has a trigger on (entering, dying, a step's beginning, a spell cast, attacking, blocking and being blocked, combat damage to a player or a creature, damage to a player, leaving, a card milled) raises the abilities it should, from the objects and under the controllers it should, exactly when their conditions hold, filed with the active player's or the other's | proved, 37 to 168 s each |
 | a delayed trigger, the exile of Geist of Saint Traft's token (603.7a, 603.7d, 400.7): the end of combat puts it on the stack once, from Geist, under its controller, and it exiles the token if the token is still on the battlefield | proved, 50 to 91 s each |
+| casting a spell (`cast_spell`, 601.2a-i): with the targets it names legal (the check of a submitted declaration any answer), it moves to the stack holding exactly those targets and the zone it was cast from, goes on top, and its casting is the one event; with them not, it is refused before anything is done; for a spell that costs nothing, the mana kept back for the rest of the hand standing in as none | proved, 222 s |
+| activating an ability (`activate_ability`, 602.2a-b): with the targets it names legal, its source tapped for its cost, it goes on top of the stack from that source, as the ability of that index of the card granting it, holding exactly those targets and the requirement they were chosen under, under the player who activated it; with them not, it is refused before anything is done | proved, 162 s |
+| a trigger going on the stack (`push_one_pending_trigger`, 603.3c-d): one that does not target as it is; with no target allowed not at all; with one holding it; with two, waiting at the front of its controller's queue while its controller chooses between exactly those, the answer (`AttachTargetToPendingTrigger`) putting it on the stack holding the target chosen | proved, 30 to 73 s each |
 | a spell's or ability's resolution (`resolve_top_of_stack`, 608.2b, 602.2a, 606.5): with targets none of which is legal it does nothing, and otherwise the card's resolution is handed each target as chosen or as illegal; a spell leaves the stack, its card's resolution handed the targets it was cast with, read off it (`resolve_spell`), and re-checked (`resolve_spell_as`), each half its own proof | proved, 47 to 80 s each |
 | what `matches_filter` makes of each creature filter a card prints (non-Human, neither Vampire nor Zombie, flying or reach, non-Human creature, Wolf or Werewolf), and what the effects printing them do with it: "can't be blocked except by" (509.1b), protection until end of turn (702.16), Moonmist's prevention (615.1) | proved, 21 to 146 s each; Stromkirk Noble's restriction, the same shape as Blazing Torch's, ran out of memory at 7 GB beside four other runs and is run again alone |
 | a triggered ability's resolution (`triggers::resolve_next_trigger`, 608.2b, 113.7a, 603.4): with its one target no longer legal (its requirement, protection or hexproof, the card's restriction) it does nothing; otherwise the hook for its event, and only that one, is called once on its source, with the event's data and the target as chosen, while the ability is the one resolving and as from the face it triggered from, and nothing is left resolving after; for each kind of event the pool's triggers are on, and the requirement it is re-checked under the one its card prints (`target_requirement`) | proved, 12 to 58 s each, but a creature's dying (the event carries the dead creature's lists), out of memory in the solver at 3.5 GB and run again alone |
