@@ -90,29 +90,47 @@ card_proof! {
     }
 }
 
-card_proof! {
-    /// X cards exiled from the graveyard as an additional cost (Harvest
-    /// Pyre's): those named, each exiled once in the order named, or, with
-    /// none named, the first X of the caster's other graveyard cards in the
-    /// board's order (as many as there are); and their number is recorded
-    /// on the spell as the X it resolves with. For none, one or both of the
-    /// two named, or none named and an X of none to three.
-    fn the_cards_named_for_an_exile_of_x_are_exiled_and_counted() {
-        let (registry, mut state, card, ids) = board(3);
-        let named = kani::any::<u8>() % 3;
-        let x = u32::from(kani::any::<u8>() % 4);
-        let chosen: &[ObjectId] = match named {
-            0 => &[],
-            1 => &ids[2..3],
-            _ => &ids[1..3],
-        };
+/// X cards exiled from the graveyard as an additional cost (Harvest
+/// Pyre's): those named, each exiled once in the order named, or, with
+/// none named, the first X of the caster's other graveyard cards in the
+/// board's order (as many as there are); and their number is recorded on
+/// the spell as the X it resolves with. For `named` cards named (none,
+/// the second, or both) and an X of `x`, each a harness's: the list
+/// exiled, of a length the solver chose, was followed through every
+/// length at once.
+fn exiling_x(named: u8, x: u32) {
+    let (registry, mut state, card, ids) = board(3);
+    let chosen: &[ObjectId] = match named {
+        0 => &[],
+        1 => &ids[2..3],
+        _ => &ids[1..3],
+    };
 
-        crate::engine::costs::pay_additional_cost(&mut state, &registry, card, ids[0], PlayerId(0), None, Some(x), chosen);
+    crate::engine::costs::pay_additional_cost(&mut state, &registry, card, ids[0], PlayerId(0), None, Some(x), chosen);
 
-        let exiled: &[ObjectId] = if named == 0 { &ids[1..1 + x.min(2) as usize] } else { chosen };
-        assert!(acted() == exiled.len() && were(0, exiled.len(), |i| Act::Move(exiled[i], Zone::Exile)));
-        let count = state.get_object(ids[0]).expect("on the board").card_state.get(crate::cards::EXILE_COUNT).copied();
-        assert!(count == Some(ObjectId(exiled.len() as u64)));
-        std::mem::forget((registry, state));
-    }
+    let exiled: &[ObjectId] = if named == 0 { &ids[1..1 + x.min(2) as usize] } else { chosen };
+    assert!(acted() == exiled.len() && were(0, exiled.len(), |i| Act::Move(exiled[i], Zone::Exile)));
+    let count = state.get_object(ids[0]).expect("on the board").card_state.get(crate::cards::EXILE_COUNT).copied();
+    assert!(count == Some(ObjectId(exiled.len() as u64)));
+    std::mem::forget((registry, state));
+}
+
+/// The proofs of an exile of X, one per case.
+macro_rules! each_exile_of_x {
+    ($($name:ident: $named:expr, $x:expr;)*) => {$(
+        card_proof! {
+            /// [`exiling_x`] for the case of its name.
+            fn $name() {
+                exiling_x($named, $x);
+            }
+        }
+    )*};
+}
+
+each_exile_of_x! {
+    an_exile_of_x_none_named_exiles_none_for_an_x_of_none: 0, 0;
+    an_exile_of_x_none_named_exiles_the_first_card_for_an_x_of_one: 0, 1;
+    an_exile_of_x_none_named_exiles_as_many_as_there_are_for_an_x_past_them: 0, 3;
+    an_exile_of_x_exiles_the_one_card_named_and_counts_it: 1, 1;
+    an_exile_of_x_exiles_the_two_cards_named_in_order_and_counts_them: 2, 2;
 }
