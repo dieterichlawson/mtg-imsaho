@@ -253,7 +253,9 @@ fn cleanup_finished(_: &mut GameState, _: &CardRegistry) {
     unsafe { *std::ptr::addr_of_mut!(ENDED) += 1 };
 }
 
+// Eight cards made, and the hand counted, unwound past them.
 card_proof! {
+    unwind(10)
     #[kani::stub(crate::engine::finish_cleanup, cleanup_finished)]
     /// The cleanup step begins with the hand-size discard (CR 514.1): with
     /// more than seven cards in the active player's hand, they are asked to

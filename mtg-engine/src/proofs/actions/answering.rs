@@ -500,78 +500,94 @@ fn no_reserve(_: &GameState, _: &CardRegistry, _: PlayerId, _: Option<ObjectId>)
     crate::types::ManaCost::free()
 }
 
-card_proof! {
-    #[kani::stub(crate::funding::validate, validated)]
-    #[kani::stub(crate::funding::apply, funded)]
-    #[kani::stub(crate::engine::costs::pay_additional_cost, additional_paid)]
-    #[kani::stub(crate::engine::demand_reserve, no_reserve)]
-    /// A spell's X funded (`resolve_choice` of `ChooseXFunding`, CR 601.2b,
-    /// 601.2f-i, 107.3): the spell, stashed in the zone it is cast from
-    /// while X was asked, has its additional costs paid once, moves to the
-    /// stack holding the targets it was cast with, the zone it was cast
-    /// from and whether it was cast with flashback, and its X is the mana
-    /// the funding paid plus the part of X a cost reduction pays for (what
-    /// Devil's Play deals); it goes on top of the stack, its casting is the
-    /// one event, it is counted to its caster, and the cast no longer waits
-    /// on anything. For the second player casting from their hand or, with
-    /// flashback, their graveyard, a cost reduction of none to three, and
-    /// any mana paid up to the most the prompt allows.
-    fn a_spells_x_is_the_mana_funded_and_it_goes_on_the_stack_with_it() {
-        let mut registry = CardRegistry::new();
-        let card = registry.register(Box::new(Asking));
-        let mut state = crate::proofs::cards::new_game();
-        let caster = PlayerId(1);
-        let flashback: bool = kani::any();
-        let from = if flashback { Zone::Graveyard } else { Zone::Hand };
-        let spell = state.create_object(card, caster, from, None, None);
-        let discount = u32::from(kani::any::<u8>() % 4);
-        let options = crate::funding::FundingOptions {
-            pool: std::collections::BTreeMap::new(),
-            groups: Vec::new(),
-            max_x: 10,
-            x_discount: discount,
-            pool_order: Vec::new(),
-            pool_keep: std::collections::BTreeMap::new(),
-        };
-        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-            player: caster,
-            source: spell,
-            choice: ResolutionChoiceKind::ChooseXFunding { description: String::new(), options, source_id: spell, is_ability: false },
-        });
-        state.pending_spell_cast = Some(crate::state::PendingSpellCast {
-            object_id: spell,
-            player: caster,
-            card_id: card,
-            targets: vec![Target::Player(PlayerId(0))],
-            sacrifice: None,
-            exile_ids: Vec::new(),
-            exile_count: None,
-            tap_plan: Vec::new(),
-            alternative_cost: None,
-            non_x_mana_cost: crate::types::ManaCost::free(),
-            is_flashback: flashback,
-            cast_from_graveyard: flashback,
-        });
-        state.priority_player = Some(caster);
-        let events = state.events.len();
+/// A spell's X funded (`resolve_choice` of `ChooseXFunding`, CR 601.2b,
+/// 601.2f-i, 107.3): the spell, stashed in the zone it is cast from
+/// while X was asked, has its additional costs paid once, moves to the
+/// stack holding the targets it was cast with, the zone it was cast
+/// from and whether it was cast with flashback, and its X is the mana
+/// the funding paid plus the part of X a cost reduction pays for (what
+/// Devil's Play deals); it goes on top of the stack, its casting is the
+/// one event, it is counted to its caster, and the cast no longer waits
+/// on anything. For the second player casting from their hand or, with
+/// flashback, their graveyard (`flashback`, a constant of each harness:
+/// left to the solver, the cast's log line built a list allocated on one
+/// path and not the other, which Kani cannot follow), a cost reduction of
+/// none to three, and any mana paid up to the most the prompt allows.
+fn spell_x_funded(flashback: bool) {
+    let mut registry = CardRegistry::new();
+    let card = registry.register(Box::new(Asking));
+    let mut state = crate::proofs::cards::new_game();
+    let caster = PlayerId(1);
+    let from = if flashback { Zone::Graveyard } else { Zone::Hand };
+    let spell = state.create_object(card, caster, from, None, None);
+    let discount = u32::from(kani::any::<u8>() % 4);
+    let options = crate::funding::FundingOptions {
+        pool: std::collections::BTreeMap::new(),
+        groups: Vec::new(),
+        max_x: 10,
+        x_discount: discount,
+        pool_order: Vec::new(),
+        pool_keep: std::collections::BTreeMap::new(),
+    };
+    state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+        player: caster,
+        source: spell,
+        choice: ResolutionChoiceKind::ChooseXFunding { description: String::new(), options, source_id: spell, is_ability: false },
+    });
+    state.pending_spell_cast = Some(crate::state::PendingSpellCast {
+        object_id: spell,
+        player: caster,
+        card_id: card,
+        targets: vec![Target::Player(PlayerId(0))],
+        sacrifice: None,
+        exile_ids: Vec::new(),
+        exile_count: None,
+        tap_plan: Vec::new(),
+        alternative_cost: None,
+        non_x_mana_cost: crate::types::ManaCost::free(),
+        is_flashback: flashback,
+        cast_from_graveyard: flashback,
+    });
+    state.priority_player = Some(caster);
+    let events = state.events.len();
 
-        let applied = crate::engine::actions::choices::resolve_choice(
-            &mut state, &ResolvedChoice::XFunding(crate::funding::FundingResponse::default()), &registry);
+    let applied = crate::engine::actions::choices::resolve_choice(
+        &mut state, &ResolvedChoice::XFunding(crate::funding::FundingResponse::default()), &registry);
 
-        // SAFETY: as in `funded`.
-        let (paid, additional) = unsafe { (*std::ptr::addr_of!(FUNDED), *std::ptr::addr_of!(ADDITIONAL_PAID)) };
-        let paid = paid.expect("funded");
-        assert!(matches!(applied, crate::engine::Applied::Continue));
-        assert!(additional == 1 && asked_for(&[Act::Move(spell, Zone::Stack)]));
-        let obj = state.get_object(spell).expect("on the board");
-        assert!(obj.x_value == Some(paid + discount) && obj.cast_from_zone == Some(from) && obj.cast_with_flashback == flashback);
-        assert!(matches!(obj.targets.as_slice(), [Target::Player(PlayerId(0))]));
-        assert!(matches!(state.stack.as_slice(), [crate::state::StackEntry::Spell(s)] if *s == spell));
-        assert!(matches!(&state.events[events..], [crate::events::GameEvent::SpellCast { player, object }] if *player == caster && *object == spell));
-        assert!(state.num_spells_cast_this_turn.get(&caster) == Some(&1));
-        assert!(state.pending_spell_cast.is_none() && state.awaiting_action.is_none());
-        std::mem::forget((registry, state));
-    }
+    // SAFETY: as in `funded`.
+    let (paid, additional) = unsafe { (*std::ptr::addr_of!(FUNDED), *std::ptr::addr_of!(ADDITIONAL_PAID)) };
+    let paid = paid.expect("funded");
+    assert!(matches!(applied, crate::engine::Applied::Continue));
+    assert!(additional == 1 && asked_for(&[Act::Move(spell, Zone::Stack)]));
+    let obj = state.get_object(spell).expect("on the board");
+    assert!(obj.x_value == Some(paid + discount) && obj.cast_from_zone == Some(from) && obj.cast_with_flashback == flashback);
+    assert!(matches!(obj.targets.as_slice(), [Target::Player(PlayerId(0))]));
+    assert!(matches!(state.stack.as_slice(), [crate::state::StackEntry::Spell(s)] if *s == spell));
+    assert!(matches!(&state.events[events..], [crate::events::GameEvent::SpellCast { player, object }] if *player == caster && *object == spell));
+    assert!(state.num_spells_cast_this_turn.get(&caster) == Some(&1));
+    assert!(state.pending_spell_cast.is_none() && state.awaiting_action.is_none());
+    std::mem::forget((registry, state));
+}
+
+/// The proofs of a spell's X funded, one per zone it is cast from.
+macro_rules! each_x_cast {
+    ($($name:ident: $flashback:expr;)*) => {$(
+        card_proof! {
+            #[kani::stub(crate::funding::validate, validated)]
+            #[kani::stub(crate::funding::apply, funded)]
+            #[kani::stub(crate::engine::costs::pay_additional_cost, additional_paid)]
+            #[kani::stub(crate::engine::demand_reserve, no_reserve)]
+            /// [`spell_x_funded`] for the zone of its name.
+            fn $name() {
+                spell_x_funded($flashback);
+            }
+        }
+    )*};
+}
+
+each_x_cast! {
+    a_spells_x_is_the_mana_funded_and_it_goes_on_the_stack_with_it: false;
+    a_spells_x_cast_with_flashback_is_the_mana_funded_and_it_goes_on_the_stack_with_it: true;
 }
 
 /// A set of objects chosen (`resolve_choice` of `ChooseObjectSet`, CR
