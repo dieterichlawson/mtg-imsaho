@@ -1379,6 +1379,23 @@ sits in memory. What was measured, and what the proofs do about each:
   million clauses, 19 to 64 seconds. Cutting the costs' copies (four on
   the way to an offer) as well changed nothing that mattered and was
   left out.
+- **A trigger read back off the stack.** A triggered ability's proof
+  ran out of memory in symbolic execution, three ways in turn. Filed
+  by the collector under a controller left to the solver, which of its
+  two lists the ability went to was not settled (as `delayed` found):
+  it is filed under a player of its own now and given its controller
+  after. Read back off the stack, its list of targets was one whose
+  length symbolic execution does not see, so the target re-check ran
+  with no target, and looked up the requirement the card prints,
+  cloned off card data rebuilt on the heap as every shape a requirement
+  may take: the lookup stands in as none, which only the re-check's own
+  stand-in question reads, and is proved apart. And the ability's name
+  for the "resolved" line was built before the line, for no reader,
+  substituting the event's objects into its description by string
+  search: it is worked out when the line is written now
+  (`PendingTrigger::logged`, 1050b6c). Each kind of event then proves
+  in under a minute, but a creature's dying, whose event's lists are
+  copied as the ability is kept resolving.
 - **CBMC's memory checks.** `kani-bounded.py` leaves out CBMC's pointer,
   bounds and division checks (`--memory-checks` keeps them): that safe
   Rust reads only memory it may is the compiler's guarantee, and Rust's
@@ -1441,6 +1458,7 @@ for both players and boards as its doc comment states):
 | a delayed trigger, the exile of Geist of Saint Traft's token (603.7a, 603.7d, 400.7): the end of combat puts it on the stack once, from Geist, under its controller, and it exiles the token if the token is still on the battlefield | proved, 50 to 91 s each |
 | a spell's or ability's resolution (`resolve_top_of_stack`, 608.2b, 602.2a, 606.5): with targets none of which is legal it does nothing, and otherwise the card's resolution is handed each target as chosen or as illegal; a spell leaves the stack, its card's resolution handed the targets it was cast with, read off it (`resolve_spell`), and re-checked (`resolve_spell_as`), each half its own proof | proved, 47 to 80 s each |
 | what `matches_filter` makes of each creature filter a card prints (non-Human, neither Vampire nor Zombie, flying or reach, non-Human creature, Wolf or Werewolf), and what the effects printing them do with it: "can't be blocked except by" (509.1b), protection until end of turn (702.16), Moonmist's prevention (615.1) | proved, 21 to 146 s each; Stromkirk Noble's restriction, the same shape as Blazing Torch's, ran out of memory at 7 GB beside four other runs and is run again alone |
+| a triggered ability's resolution (`triggers::resolve_next_trigger`, 608.2b, 113.7a, 603.4): with its one target no longer legal (its requirement, protection or hexproof, the card's restriction) it does nothing; otherwise the hook for its event, and only that one, is called once on its source, with the event's data and the target as chosen, while the ability is the one resolving and as from the face it triggered from, and nothing is left resolving after; for each kind of event the pool's triggers are on, and the requirement it is re-checked under the one its card prints (`target_requirement`) | proved, 12 to 58 s each, but a creature's dying (the event carries the dead creature's lists), out of memory in the solver at 3.5 GB and run again alone |
 | flashback granted until end of turn (`graveyard_cast_costs`, 702.34a), as Snapcaster Mage and Past in Flames add it: a card in its owner's graveyard may be cast from there at each cost an effect on it gives, each once however many give it, and an effect on another card gives it nothing; which of the turn's effects are on a card (`granted_flashback_costs`), each the effect's own cost in the order granted, its own proof | proved, 19 to 64 s each |
 
 A card proof ends at what the card leaves on the board: Giant Growth's
@@ -1456,7 +1474,9 @@ engine lists and reads became functions for this, unchanged:
 `names_that_cant_be_cast` from the legal actions, `resolve_spell_as`
 from a spell's resolution and `granted_flashback_costs` from the
 graveyard's casts; the others the entries above name were changed to
-read what they read in place.
+read what they read in place. Writing the triggered ability's proof
+set the three re-checks of a target on resolution side by side, and
+two did not ask about protection: defects 14 and 15 below.
 
 Three of these held only once the function asked what the rule says:
 `untap` untapped a card off the battlefield, `discard_card` discarded a
@@ -1531,6 +1551,8 @@ so each night starts from everything the last one reached.
 | 11 | an ability an Aura grants was offered only to a player controlling the Aura, so a Skeletal Grimace on an opponent's creature gave its regeneration to no one (CR 602.2: the enchanted creature's controller activates it) | reviewing Skeletal Grimace for its Kani card proof | any Skeletal Grimace on a creature its controller does not control |
 | 12 | finishing a library search cleared the summoning sickness of whatever it put onto the battlefield, so a creature card a search put there could have attacked, or paid a {T} cost, the turn it arrived (CR 302.6) | the Kani proof of `finish_library_search`, which says nothing is done to the card but what entering does | latent: the pool's one search onto the battlefield is Ghost Quarter's, for a basic land |
 | 13 | a replacement that answered a count of none still created one token: the copies were made in a loop of one fewer and the last outside it (CR 614.1b: the count the replacement answers is the count created) | the Kani proof of token creation, which takes every answer the replacement layer may give | latent: the pool's one token replacement, Parallel Lives, only doubles |
+| 14 | a triggered ability's target was re-checked on resolution for its requirement, hexproof and the card's restriction, never for protection (CR 608.2b, 702.16b), so Spare from Evil in response to Reaper from the Abyss's end-step ability, or Grimgrin's attack, gave the target protection from non-Human creatures and the Demon destroyed it anyway | setting the three re-checks side by side to write the trigger resolution proof: an activated ability's asked `can_be_targeted_by` | any targeted trigger of a non-Human creature's at a creature given Spare from Evil in response |
+| 15 | a spell's re-check asked the same two halves and not protection, so a spell whose only target gained protection from it resolved, its target marked illegal, where the rules counter it | the same comparison | latent: every protection the pool grants is from creatures or creature types, which no spell here has |
 
 Each has a regression test that fails without its fix.
 
