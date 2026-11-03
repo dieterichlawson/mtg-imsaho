@@ -332,13 +332,15 @@ each_resolution! {
     a_loyalty_ability_with_a_target_resolves_unless_it_is_illegal: an_ability_resolving((1, true, true)),
 }
 
-/// What the game held of the resolving ability's costs when its card's
-/// resolution was called: the X, the creature sacrificed and its toughness.
-static mut PAID: Option<(Option<u32>, Option<ObjectId>, Option<i32>)> = None;
+/// What the game held of the resolving ability when its card's
+/// resolution was called: the X, the creature sacrificed, its toughness,
+/// and who activated it.
+static mut PAID: Option<(Option<u32>, Option<ObjectId>, Option<i32>, Option<PlayerId>)> = None;
 
 /// A card whose ability's resolution records what it would read of its
 /// costs (Kessig Wolf Run's X, Disciple of Griselbrand's sacrificed
-/// creature's toughness).
+/// creature's toughness) and of its controller (`helpers::
+/// ability_controller`, every ability's "you").
 struct Paid;
 
 impl CardBehavior for Paid {
@@ -349,7 +351,8 @@ impl CardBehavior for Paid {
         // SAFETY: as in `answer`, for PAID.
         let paid = unsafe { &mut *std::ptr::addr_of_mut!(PAID) };
         assert!(paid.is_none(), "resolved once");
-        *paid = Some((state.last_activated_x_value, state.last_activated_sacrifice, state.last_activated_sacrifice_toughness));
+        *paid = Some((state.last_activated_x_value, state.last_activated_sacrifice,
+            state.last_activated_sacrifice_toughness, state.resolving_ability_activator));
     }
 }
 
@@ -357,15 +360,19 @@ impl CardBehavior for Paid {
 /// 602.2a): its card's resolution reads, as the X announced, the creature
 /// sacrificed and that creature's toughness, those the ability carries on
 /// the stack (`activating`, `an_ability_goes_on_the_stack_with_what_its_
-/// costs_left`), whatever another ability activated since left there. For
-/// an ability of no target, either player's, and any of each.
+/// costs_left`), whatever another ability activated since left there; and
+/// as its controller the player who activated it, whoever controls its
+/// source now. With no question left waiting once it has resolved, it is
+/// no longer the ability resolving, and has no controller left to read.
+/// For an ability of no target, either player's, its source either
+/// player's, and any of each.
 fn an_ability_resolving_with_its_costs(_: ()) {
     let mut registry = CardRegistry::new();
     let blank = registry.register(Box::new(Blank));
     let card = registry.register(Box::new(Paid));
     let mut state = crate::proofs::cards::new_game();
     let activator = PlayerId(u8::from(kani::any::<bool>()));
-    let source = state.create_object(card, activator, Zone::Battlefield, None, None);
+    let source = state.create_object(card, PlayerId(u8::from(kani::any::<bool>())), Zone::Battlefield, None, None);
     let other = state.create_object(blank, activator, Zone::Graveyard, Some(1), Some(1));
     let x: Option<u32> = if kani::any() { Some(kani::any()) } else { None };
     let sacrificed = match kani::any::<u8>() % 3 {
@@ -387,7 +394,8 @@ fn an_ability_resolving_with_its_costs(_: ()) {
 
     // SAFETY: as in `answer`.
     let paid = unsafe { *std::ptr::addr_of!(PAID) };
-    assert!(state.stack.is_empty() && paid == Some((x, sacrificed, toughness)));
+    assert!(state.stack.is_empty() && paid == Some((x, sacrificed, toughness, Some(activator))));
+    assert!(state.resolving_ability_activator.is_none() && state.resolving_ability.is_none());
     std::mem::forget((registry, state));
 }
 
