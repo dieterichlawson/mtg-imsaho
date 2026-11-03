@@ -322,51 +322,67 @@ each_sacrifice! {
     an_abilitys_costs_sacrificing_another_creature_are_paid_in_order_and_recorded: 3;
 }
 
+/// An ability put on the stack (`cards::push_ability`, CR 602.2a, 601.2c,
+/// 608.2h, 701.27f): one entry, on top, from its source, as the ability of
+/// that index of the card granting it, holding its targets and the
+/// requirement they were chosen under (a creature, if `required`, none
+/// otherwise: each its own harness, a requirement the solver chose being
+/// matched as every requirement there is), under its activator, not a
+/// loyalty ability, and carrying what its costs left to resolve with: the
+/// X announced, the creature sacrificed and that creature's toughness as
+/// last read (`costs_paid`), and how often, and to which face, its source
+/// had transformed. For an activator either player, the source theirs on
+/// the battlefield or already sacrificed to the graveyard, and any of
+/// each.
+fn pushing(required: bool) {
+    let mut registry = CardRegistry::new();
+    let blank = registry.register(Box::new(Blank));
+    let mut state = crate::proofs::cards::new_game();
+    let activator = PlayerId(u8::from(kani::any::<bool>()));
+    let zone = if kani::any() { Zone::Battlefield } else { Zone::Graveyard };
+    let source = state.create_object(blank, activator, zone, Some(1), Some(1));
+    let other = state.create_object(blank, activator, Zone::Graveyard, Some(1), Some(1));
+    let (transforms, back): (u32, bool) = (kani::any(), kani::any());
+    {
+        let o = state.get_object_mut(source).expect("just created");
+        (o.transforms, o.is_transformed) = (transforms, back);
+    }
+    let x: Option<u32> = if kani::any() { Some(kani::any()) } else { None };
+    let sacrificed = match kani::any::<u8>() % 3 {
+        0 => None,
+        1 => Some(source),
+        _ => Some(other),
+    };
+    let toughness: Option<i32> = if kani::any() { Some(kani::any()) } else { None };
+    (state.last_activated_x_value, state.last_activated_sacrifice, state.last_activated_sacrifice_toughness) =
+        (x, sacrificed, toughness);
+    let index = usize::from(kani::any::<u8>() % 3);
+    let requirement = if required { Some(TargetRequirement::Creature) } else { None };
+
+    crate::cards::push_ability(&mut state, source, index, blank, &[Target::Object(other)], requirement, activator);
+
+    assert!(matches!(state.stack.as_slice(), [StackEntry::Ability {
+        source_id, ability_index, behavior_card_id, targets, activator: by, x_value, target_requirement,
+        sacrificed: s, sacrificed_toughness: t, loyalty: false, source_transforms, source_back_face,
+    }] if *source_id == source && *ability_index == index && *behavior_card_id == blank && *by == activator
+        && matches!(targets.as_slice(), [Target::Object(o)] if *o == other)
+        && matches!(target_requirement, Some(TargetRequirement::Creature)) == required
+        && target_requirement.is_some() == required
+        && *x_value == x && *s == sacrificed && *t == toughness
+        && *source_transforms == transforms && *source_back_face == back));
+    std::mem::forget((registry, state));
+}
+
 card_proof! {
-    /// An ability put on the stack (`cards::push_ability`, CR 602.2a,
-    /// 601.2c, 608.2h, 701.27f): one entry, on top, from its source, as the
-    /// ability of that index of the card granting it, holding its targets
-    /// and requirement, under its activator, not a loyalty ability, and
-    /// carrying what its costs left to resolve with: the X announced, the
-    /// creature sacrificed and that creature's toughness as last read
-    /// (`costs_paid`),
-    /// and how often, and to which face, its source had transformed. For
-    /// an activator either player, the source theirs on the battlefield or
-    /// already sacrificed to the graveyard, and any of each.
+    /// [`pushing`] for an ability whose target must be a creature.
     fn an_ability_goes_on_the_stack_with_what_its_costs_left() {
-        let mut registry = CardRegistry::new();
-        let blank = registry.register(Box::new(Blank));
-        let mut state = crate::proofs::cards::new_game();
-        let activator = PlayerId(u8::from(kani::any::<bool>()));
-        let zone = if kani::any() { Zone::Battlefield } else { Zone::Graveyard };
-        let source = state.create_object(blank, activator, zone, Some(1), Some(1));
-        let other = state.create_object(blank, activator, Zone::Graveyard, Some(1), Some(1));
-        let (transforms, back): (u32, bool) = (kani::any(), kani::any());
-        {
-            let o = state.get_object_mut(source).expect("just created");
-            (o.transforms, o.is_transformed) = (transforms, back);
-        }
-        let x: Option<u32> = if kani::any() { Some(kani::any()) } else { None };
-        let sacrificed = match kani::any::<u8>() % 3 {
-            0 => None,
-            1 => Some(source),
-            _ => Some(other),
-        };
-        let toughness: Option<i32> = if kani::any() { Some(kani::any()) } else { None };
-        (state.last_activated_x_value, state.last_activated_sacrifice, state.last_activated_sacrifice_toughness) =
-            (x, sacrificed, toughness);
-        let index = usize::from(kani::any::<u8>() % 3);
-        let required = kani::any::<bool>().then_some(TargetRequirement::Creature);
+        pushing(true);
+    }
+}
 
-        crate::cards::push_ability(&mut state, source, index, blank, &[Target::Object(other)], required.clone(), activator);
-
-        assert!(matches!(state.stack.as_slice(), [StackEntry::Ability {
-            source_id, ability_index, behavior_card_id, targets, activator: by, x_value, target_requirement,
-            sacrificed: s, sacrificed_toughness: t, loyalty: false, source_transforms, source_back_face,
-        }] if *source_id == source && *ability_index == index && *behavior_card_id == blank && *by == activator
-            && matches!(targets.as_slice(), [Target::Object(o)] if *o == other)
-            && required == *target_requirement && *x_value == x && *s == sacrificed && *t == toughness
-            && *source_transforms == transforms && *source_back_face == back));
-        std::mem::forget((registry, state, required));
+card_proof! {
+    /// [`pushing`] for an ability declaring no requirement.
+    fn an_ability_of_no_requirement_goes_on_the_stack_with_what_its_costs_left() {
+        pushing(false);
     }
 }
