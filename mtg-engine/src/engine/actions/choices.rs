@@ -170,8 +170,19 @@ pub(crate) fn resolve_choice(state: &mut GameState, resolved: &crate::actions::R
                     state.log(LogLevel::Private, format!("Kept {keep_name}"));
                     state.log(LogLevel::Event, "Kept one card, the rest go to the graveyard".to_string());
                 }
-                (ResolutionChoiceKind::ChooseFromLibrary { searcher, destination, tapped, .. },
+                (ResolutionChoiceKind::ChooseFromLibrary { options, searcher, destination, tapped, .. },
                  ResolvedChoice::ChosenCard(chosen_id)) => {
+                    // One of the cards the search offered (CR 701.19a-b),
+                    // the ones with the quality it searches for. Taken on
+                    // trust, as the looked-at choice above once was, any
+                    // card named was found: "a basic land card" fetched a
+                    // creature, or a card from another zone.
+                    if !options.contains(chosen_id) {
+                        state.log(LogLevel::Debug, format!(
+                            "choice refused, {chosen_id:?} is not one of the cards the search offered"));
+                        state.awaiting_action = awaiting;
+                        return Applied::ReturnNow;
+                    }
                     crate::cards::helpers::finish_library_search(
                         &mut *state, *searcher, *chosen_id, *destination, *tapped, registry);
                 }

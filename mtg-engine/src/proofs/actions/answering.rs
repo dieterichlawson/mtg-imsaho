@@ -658,3 +658,89 @@ each_set_reply! {
     one_object_chosen_twice_is_refused: 3;
     an_object_not_offered_is_refused: 4;
 }
+
+/// A library search answered (`resolve_choice` of `ChooseFromLibrary`, CR
+/// 701.19a-b, 701.20a): with one of the cards it offered, that card is
+/// found, put where the search puts it, and the library shuffled
+/// (`finish_library_search`, proved in `searching`, its moves recorded
+/// here); with none, nothing is found and the library is shuffled all the
+/// same; with a card it did not offer (one in the library without the
+/// quality searched for), the answer is refused: the question stands as it
+/// was asked and nothing is moved or shuffled (defect 21 below: the card
+/// named was found). For the second player searching for one of two
+/// cards offered, to their hand, and each reply a harness's: 0 and 1 a
+/// card offered, 2 none, 3 a card not offered.
+fn searched(reply: u8) {
+    let mut registry = CardRegistry::new();
+    let card = registry.register(Box::new(Asking));
+    let blank = registry.register(Box::new(crate::proofs::cards::Blank));
+    let mut state = crate::proofs::cards::new_game();
+    let searcher = PlayerId(1);
+    let source = state.create_object(card, searcher, Zone::Battlefield, None, None);
+    let offered = [
+        state.create_object(blank, searcher, Zone::Library, None, None),
+        state.create_object(blank, searcher, Zone::Library, None, None),
+    ];
+    let other = state.create_object(blank, searcher, Zone::Library, None, None);
+    state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+        player: searcher,
+        source,
+        choice: ResolutionChoiceKind::ChooseFromLibrary {
+            description: String::new(),
+            options: offered.to_vec(),
+            searcher,
+            source_id: source,
+            destination: Zone::Hand,
+            tapped: false,
+        },
+    });
+    state.consecutive_passes = 2;
+    let answer = match reply {
+        0 | 1 => ResolvedChoice::ChosenCard(offered[usize::from(reply)]),
+        2 => ResolvedChoice::ChosenTarget(None),
+        _ => ResolvedChoice::ChosenCard(other),
+    };
+
+    let applied = crate::engine::actions::choices::resolve_choice(&mut state, &answer, &registry);
+
+    match reply {
+        0 | 1 => {
+            assert!(matches!(applied, crate::engine::Applied::Continue));
+            assert!(asked_for(&[Act::Move(offered[usize::from(reply)], Zone::Hand), Act::Shuffle(searcher)]));
+            assert!(state.awaiting_action.is_none() && state.consecutive_passes == 0);
+        }
+        2 => {
+            assert!(matches!(applied, crate::engine::Applied::Continue));
+            assert!(asked_for(&[Act::Shuffle(searcher)]) && state.awaiting_action.is_none());
+        }
+        _ => {
+            assert!(matches!(applied, crate::engine::Applied::ReturnNow));
+            assert!(matches!(&state.awaiting_action, Some(AwaitingAction::ResolutionChoice {
+                player, source: s,
+                choice: ResolutionChoiceKind::ChooseFromLibrary { options, searcher: who, destination: Zone::Hand, tapped: false, .. },
+            }) if *player == searcher && *s == source && *who == searcher && options.as_slice() == offered));
+            assert!(acted() == 0 && state.consecutive_passes == 2);
+        }
+    }
+    std::mem::forget((registry, state, answer));
+}
+
+/// The proofs of a search answered, one per reply.
+macro_rules! each_search_reply {
+    ($($name:ident: $reply:expr;)*) => {$(
+        card_proof! {
+            /// [`searched`] for the reply of its name.
+            fn $name() {
+                searched($reply);
+            }
+        }
+    )*};
+}
+
+each_search_reply! {
+    the_first_card_a_search_offered_is_found: 0;
+    the_second_card_a_search_offered_is_found: 1;
+    a_search_that_finds_nothing_still_shuffles: 2;
+    a_card_a_search_did_not_offer_is_refused: 3;
+}
+
