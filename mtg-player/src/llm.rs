@@ -3802,6 +3802,13 @@ impl LlmPlayer {
             if let Some(suffix) = Self::format_counters(&o.counters) {
                 flag_parts.push(suffix);
             }
+            // A planeswalker's spent loyalty ability (CR 606.3), the flag
+            // GAME_RULES defines: it was printed for creatures only, so two
+            // Lilianas at the legend rule could not be told apart by which
+            // had activated (#981).
+            if o.once_per_turn_used {
+                flag_parts.push("once-per-turn ability used".into());
+            }
             // A Curse's entire identity is whom it enchants (CR 702.5c).
             // It attaches to a *player*, so it is not in `aura_map` (keyed on
             // attached_to, an object) and falls through to here — where the
@@ -10388,8 +10395,18 @@ this Aura deals 1 damage to that player.";
         // A blocker whose attacker left combat (#983).
         let mut lone = perm(56, "Elite Inquisitor", 2, 2, opp);
         lone.is_blocking = true;
-        let all = vec![&a, &alone, &b, &c, &d, &e, &f, &g, &h, &lone];
+        // A planeswalker whose loyalty ability is spent (#981).
+        let mut lili = perm(57, "Liliana of the Veil", 0, 0, you);
+        lili.card_types = vec![CardType::Planeswalker];
+        lili.power = None;
+        lili.toughness = None;
+        lili.effective_power = None;
+        lili.effective_toughness = None;
+        lili.once_per_turn_used = true;
+        let all = vec![&a, &alone, &b, &c, &d, &e, &f, &g, &h, &lone, &lili];
         let board = LlmPlayer::format_perms_compact(&all, &all, you);
+        assert!(board.lines().any(|l| l.contains("Liliana of the Veil (#57)") && l.contains("once-per-turn ability used")),
+            "a planeswalker's spent loyalty ability: {board}");
         assert!(board.contains("blocked (no blockers left)"), "{board}");
         assert!(board.contains("Elite Inquisitor (#56) 2/2 colorless [blocking (no attacker left)]"), "{board}");
         assert!(board.contains("[attacked this turn,once-per-turn ability used]"), "{board}");

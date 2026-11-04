@@ -362,6 +362,11 @@ export function permBadges(p, state) {
         b.push({ t: `-${c.MinusOneMinusOne}`, c: "#e08080" });
     if (c.Loyalty)
         b.push({ t: `L${c.Loyalty}`, c: "#e0d080" });
+    // A planeswalker whose loyalty ability is spent this turn (CR 606.3): with
+    // two of one name at the legend rule, loyalty and this are what the choice
+    // turns on, and it was only in the hover detail (#981).
+    if (p.once_per_turn_used && (p.card_types || []).includes("Planeswalker"))
+        b.push({ t: "USED", c: "#a0a0a0" });
     if (p.damage_marked)
         b.push({ t: `${p.damage_marked}d`, c: "#e05050" });
     if (p.regeneration_shields)

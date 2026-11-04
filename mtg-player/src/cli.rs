@@ -4182,10 +4182,22 @@ impl CliPlayer {
         view.battlefield.iter()
             .find(|p| p.object_id == id)
             .map(|p| {
-                let pt = match (p.effective_power, p.effective_toughness) {
+                let mut pt = match (p.effective_power, p.effective_toughness) {
                     (Some(pw), Some(t)) => format!(" {pw}/{t}"),
                     _ => String::new(),
                 };
+                // A planeswalker row says what a creature row's P/T says:
+                // its loyalty, as the battlefield pane prints it, and whether
+                // its loyalty ability is spent this turn. The legend rule's
+                // two Lilianas were "(#2)" and "(#3)" beside a pane with no
+                // ids, and those two facts are what the choice turns on
+                // (#981).
+                if p.card_types.contains(&CardType::Planeswalker) {
+                    let l = p.counters.get(&mtg_engine::types::CounterType::Loyalty)
+                        .copied().unwrap_or(0);
+                    pt.push_str(&format!(" [{l} loyalty{}]",
+                        if p.once_per_turn_used { ", activated this turn" } else { "" }));
+                }
                 // Lands carry the marker too: "Destroy target land" offered
                 // your own and the opponent's Islands as byte-identical menu
                 // lines (issue #100).
@@ -12207,6 +12219,29 @@ Wolves or Werewolves is prevented".into()];
         assert_eq!(yours, "Island (your)");
         assert_eq!(theirs, "Island (opp)");
         assert_ne!(yours, theirs, "identical lands must be distinguishable");
+    }
+
+    /// #981: the legend rule's two Lilianas were told apart by id alone,
+    /// beside a battlefield pane that prints loyalty and no ids. A
+    /// planeswalker row carries its loyalty and whether it has activated.
+    #[test]
+    fn a_planeswalker_row_says_its_loyalty_and_whether_it_activated() {
+        let walker = |id: u64, loyalty: u32, used: bool| {
+            let mut p = creature(id, "Liliana of the Veil", 0);
+            p.power = None;
+            p.toughness = None;
+            p.effective_power = None;
+            p.effective_toughness = None;
+            p.card_types = vec![CardType::Planeswalker];
+            p.counters.insert(mtg_engine::types::CounterType::Loyalty, loyalty);
+            p.once_per_turn_used = used;
+            p
+        };
+        let mut v = view(Step::PrecombatMain, 5, true);
+        v.battlefield = vec![walker(2, 1, true), walker(3, 3, false)];
+        assert_eq!(CliPlayer::perm_name(&v, ObjectId(2)),
+            "Liliana of the Veil [1 loyalty, activated this turn] (your)");
+        assert_eq!(CliPlayer::perm_name(&v, ObjectId(3)), "Liliana of the Veil [3 loyalty] (your)");
     }
 
     /// Exile is a public zone, and the one the name resolver did not look
