@@ -851,6 +851,20 @@ fn blasphemous_act_cost_reduction() {
     assert_eq!(cost.generic_amount(), 0);
     assert_eq!(cost.colored_requirements().get(&Color::Red).copied().unwrap_or(0), 1,
         "the {{R}} survives any number of creatures");
+    // And it reads as what is paid: "{R}", never "{0}{R}" (#978). The page
+    // draws the symbols itself, so they are checked too.
+    assert_eq!(cost.to_string(), "{R}");
+    assert_eq!(cost.symbols, vec![mtg_engine::types::ManaSymbol::Colored(Color::Red)]);
+}
+
+/// #978: a `{0}` beside other symbols is no pip; a cost of `{0}` alone is.
+#[test]
+fn a_zero_generic_symbol_prints_only_as_a_whole_cost() {
+    use mtg_engine::types::{ManaCost, ManaSymbol};
+    let act = ManaCost::new(vec![ManaSymbol::Generic(0), ManaSymbol::Colored(Color::Red)]);
+    assert_eq!(act.to_string(), "{R}");
+    assert_eq!(ManaCost::new(vec![ManaSymbol::Generic(0)]).to_string(), "{0}");
+    assert_eq!(ManaCost::new(vec![ManaSymbol::Generic(2), ManaSymbol::Colored(Color::Red)]).to_string(), "{2}{R}");
 }
 
 /// Blasphemous Act can be cast cheaply with many creatures.

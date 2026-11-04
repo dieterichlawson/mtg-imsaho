@@ -106,8 +106,16 @@ pub struct ManaCost {
 }
 
 impl ManaCost {
+    /// A cost of these symbols. A `{0}` generic symbol beside any other
+    /// symbol is dropped: it asks for nothing and printed as a pip, so a
+    /// fully reduced Blasphemous Act read "{0}{R}" on every surface (#978).
+    /// A cost that is `{0}` alone keeps it, since that is how a free
+    /// card's printed cost reads.
     #[must_use]
-    pub fn new(symbols: Vec<ManaSymbol>) -> Self {
+    pub fn new(mut symbols: Vec<ManaSymbol>) -> Self {
+        if symbols.iter().any(|s| !matches!(s, ManaSymbol::Generic(0))) {
+            symbols.retain(|s| !matches!(s, ManaSymbol::Generic(0)));
+        }
         Self { symbols }
     }
 
