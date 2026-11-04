@@ -372,6 +372,13 @@ random game happened to reach.
   #501, #504 list what has been missing before.
 - G11 art and names: a card whose art file is missing renders a
   placeholder, never blank; a stack ability shows its source's art.
+  [2026-11-04] **Holds.** All 290 `name:` definitions under
+  `mtg-engine/src/cards` have a manifest entry, back faces included, and so
+  do the four named token types (Spirit, Zombie, Spider, Homunculus). The 46
+  distinct trigger and ability names that 24 random coverage games put on
+  the stack all resolve to art through `artNames`. A placeholder is drawn
+  only for a name the manifest lacks. Next time, check a card added after
+  this night against the manifest rather than re-running the sweep.
 
 - G20 [proposed 2026-09-17, from tonight's G10 screenshots] the stack as a
   readable object: hover an opponent's Geistflame while it is on the stack,
