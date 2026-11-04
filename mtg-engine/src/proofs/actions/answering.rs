@@ -578,20 +578,20 @@ fn spell_x_funded(flashback: bool) {
     std::mem::forget((registry, state));
 }
 
-/// Stands in for `CastPayment::annotation`, the words the cast's log line
-/// adds for how it was paid: none. With `format!` the empty string here
-/// (`no_format`), the words were a list of empty strings joined, which
-/// `join` copies through a list it never allocated, and Kani cannot follow
-/// that (the casting proof's cast adds no words, and is not reached by it).
+/// Stands in for `engine::effects::cast_log_line`, the cast's line in the
+/// log, which is for people: none. Built here, it is built for every count
+/// of targets the proof cannot rule out (the cast's targets are read back
+/// from the stash), and the words of names stood in for with nothing, joined
+/// or pushed, failed the proof on a list of no room or one that grew.
 #[allow(dead_code)] // named only by `kani::stub`
-#[allow(clippy::extra_unused_lifetimes)]
-fn no_annotation<'a>(_: &crate::engine::effects::CastPayment<'a>) -> String
-where
-    // Early-bound, as the impl's own lifetime is: a stub takes as many
-    // generic parameters as what it stands in for, and a lifetime named
-    // only in an argument is not one.
-    'a: 'a,
-{
+fn no_cast_line(
+    _: &GameState,
+    _: PlayerId,
+    _: ObjectId,
+    _: &crate::engine::effects::CastPayment,
+    _: &[Target],
+    _: &CardRegistry,
+) -> String {
     String::new()
 }
 
@@ -599,7 +599,7 @@ where
 macro_rules! each_x_cast {
     ($($name:ident: $flashback:expr;)*) => {$(
         card_proof! {
-            #[kani::stub(crate::engine::effects::CastPayment::annotation, no_annotation)]
+            #[kani::stub(crate::engine::effects::cast_log_line, no_cast_line)]
             #[kani::stub(crate::funding::validate, validated)]
             #[kani::stub(crate::funding::apply, funded)]
             #[kani::stub(crate::engine::costs::pay_additional_cost, additional_paid)]

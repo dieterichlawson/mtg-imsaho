@@ -25,32 +25,39 @@ pub(crate) fn finalize_spell_cast(
 
     *state.num_spells_cast_this_turn.entry(player).or_insert(0) += 1;
 
+    let line = cast_log_line(state, player, object_id, payment, targets, registry);
+    state.log(LogLevel::Event, line);
+    state.consecutive_passes = 0;
+}
+
+/// The one line the log writes about a cast: who cast what, how it was paid
+/// for, and what it targets. Its own function so that a proof of a cast's
+/// facts can stand in for the words (`proofs::actions::answering`): a
+/// proof that cannot see how many targets a cast holds builds the line for
+/// every count, and joined or pushed, the words of names it stands in for
+/// with nothing either wrote into a list of no room or grew one.
+pub(crate) fn cast_log_line(
+    state: &GameState,
+    player: PlayerId,
+    object_id: ObjectId,
+    payment: &CastPayment,
+    targets: &[crate::actions::Target],
+    registry: &CardRegistry,
+) -> String {
     let name = card_name(state, registry, object_id);
     let suffix = payment.annotation();
-    let names: Vec<String> = targets.iter().map(|t| match t {
-        crate::actions::Target::Object(id) => card_name(state, registry, *id),
-        crate::actions::Target::Player(pid) => format!("p{}", pid.0),
-        // CR 608.2b: a target that stopped being legal is skipped.
-        crate::actions::Target::Illegal => "(no longer a legal target)".to_string(),
-    }).collect();
-    // Room for the whole of it made once, then the words pushed into it,
-    // not joined: a join of names that a proof stands in for with nothing
-    // is a write into a list of no room, which Kani takes for a write
-    // through a pointer never allocated; and pushed into a line of no room
-    // made first, the line grew, which the proofs forbid (the spell X
-    // proofs failed on each).
-    let mut target_str = String::new();
-    if !names.is_empty() {
-        target_str.reserve_exact(" targeting ".len()
-            + names.iter().map(String::len).sum::<usize>()
-            + ", ".len() * (names.len() - 1));
-        for (i, name) in names.iter().enumerate() {
-            target_str.push_str(if i == 0 { " targeting " } else { ", " });
-            target_str.push_str(name);
-        }
-    }
-    state.log(LogLevel::Event, format!("p{} cast {}{}{}", player.0, name, suffix, target_str));
-    state.consecutive_passes = 0;
+    let target_str = if targets.is_empty() {
+        String::new()
+    } else {
+        let names: Vec<String> = targets.iter().map(|t| match t {
+            crate::actions::Target::Object(id) => card_name(state, registry, *id),
+            crate::actions::Target::Player(pid) => format!("p{}", pid.0),
+            // CR 608.2b: a target that stopped being legal is skipped.
+            crate::actions::Target::Illegal => "(no longer a legal target)".to_string(),
+        }).collect();
+        format!(" targeting {}", names.join(", "))
+    };
+    format!("p{} cast {}{}{}", player.0, name, suffix, target_str)
 }
 
 /// Which cost a spell was actually cast for, for the one line the log writes
