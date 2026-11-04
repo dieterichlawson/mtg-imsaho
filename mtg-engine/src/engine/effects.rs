@@ -27,18 +27,26 @@ pub(crate) fn finalize_spell_cast(
 
     let name = card_name(state, registry, object_id);
     let suffix = payment.annotation();
-    // Pushed onto the words before them, not joined: a join of names that a
-    // proof stands in for with nothing is a write into a list of no room,
-    // which Kani takes for a write through a pointer never allocated (the
-    // spell X proofs failed on it).
+    let names: Vec<String> = targets.iter().map(|t| match t {
+        crate::actions::Target::Object(id) => card_name(state, registry, *id),
+        crate::actions::Target::Player(pid) => format!("p{}", pid.0),
+        // CR 608.2b: a target that stopped being legal is skipped.
+        crate::actions::Target::Illegal => "(no longer a legal target)".to_string(),
+    }).collect();
+    // Room for the whole of it made once, then the words pushed into it,
+    // not joined: a join of names that a proof stands in for with nothing
+    // is a write into a list of no room, which Kani takes for a write
+    // through a pointer never allocated; and pushed into a line of no room
+    // made first, the line grew, which the proofs forbid (the spell X
+    // proofs failed on each).
     let mut target_str = String::new();
-    for (i, t) in targets.iter().enumerate() {
-        target_str.push_str(if i == 0 { " targeting " } else { ", " });
-        match t {
-            crate::actions::Target::Object(id) => target_str.push_str(&card_name(state, registry, *id)),
-            crate::actions::Target::Player(pid) => target_str.push_str(&format!("p{}", pid.0)),
-            // CR 608.2b: a target that stopped being legal is skipped.
-            crate::actions::Target::Illegal => target_str.push_str("(no longer a legal target)"),
+    if !names.is_empty() {
+        target_str.reserve_exact(" targeting ".len()
+            + names.iter().map(String::len).sum::<usize>()
+            + ", ".len() * (names.len() - 1));
+        for (i, name) in names.iter().enumerate() {
+            target_str.push_str(if i == 0 { " targeting " } else { ", " });
+            target_str.push_str(name);
         }
     }
     state.log(LogLevel::Event, format!("p{} cast {}{}{}", player.0, name, suffix, target_str));
