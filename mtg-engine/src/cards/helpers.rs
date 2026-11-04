@@ -1074,7 +1074,7 @@ pub fn search_library(
     // match is the searcher's own hidden information.
     if optional && candidates.is_empty() {
         state.log(crate::state::LogLevel::Private,
-            format!("{}: no matching card in library; search declined", state.obj_name(source_id)));
+            format!("{}: no matching card in library; search declined", state.resolving_source_name(source_id)));
         return;
     }
     let candidates = one_of_each_card(state, candidates);
@@ -1107,7 +1107,7 @@ pub fn search_library(
         // say whether there was anything to find, and this line would say it
         // for them — including through the shared --log file (issue #119).
         state.log(crate::state::LogLevel::Private,
-            format!("{}: no matching card in library", state.obj_name(source_id)));
+            format!("{}: no matching card in library", state.resolving_source_name(source_id)));
         shuffle_library(state, searcher);
         return;
     }

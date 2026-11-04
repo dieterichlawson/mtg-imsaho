@@ -705,7 +705,7 @@ impl GameView {
                         resolving,
                     })
                 }
-                crate::state::StackEntry::Ability { source_id, behavior_card_id, activator, targets, x_value, .. } => {
+                entry @ crate::state::StackEntry::Ability { source_id, behavior_card_id, activator, targets, x_value, .. } => {
                     Some(StackItemView {
                         object_id: *source_id,
                         card_id: *behavior_card_id,
@@ -717,8 +717,12 @@ impl GameView {
                         // "Skeletal Grimace ability (#47)" with #47 the
                         // Priest (issue #632). The grantor's name is only
                         // the fallback for a source that no longer exists.
+                        // Named as it went on the stack: the card a source
+                        // killed by its own cost has become shows its front
+                        // face (CR 113.7a, #980).
                         name: {
-                            let source = state.name_of(*source_id, registry);
+                            let source = state.ability_source_name(entry, registry)
+                                .unwrap_or_default();
                             if source.is_empty() {
                                 registry.card_data(*behavior_card_id)
                                     .map_or_else(|| "Ability".into(), |d| format!("{} ability", d.name))

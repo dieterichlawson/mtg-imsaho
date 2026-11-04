@@ -1899,3 +1899,71 @@ fn a_double_faced_spell_on_the_stack_has_both_faces_in_the_view() {
     let faces = view.double_faces.get(&card_id).expect("the spell's faces are in the opponent's view");
     assert_eq!(faces[1].name, "Insectile Aberration");
 }
+
+/// #980, CR 113.7a: an ability on the stack is named after the object that
+/// activated it. Garruk, the Veil-Cursed paying his -1 from 1 loyalty dies
+/// to CR 704.5i with the ability still on the stack, and the card in the
+/// graveyard shows its front face (CR 712.8a). The ability was then called
+/// "Garruk Relentless ability" on the stack, in the RESPOND TO heading, in
+/// its search prompt and in the log: a card that has no -1.
+#[test]
+fn garruks_ability_keeps_the_veil_cursed_name_after_his_cost_kills_him() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
+    set_loyalty(&mut state, garruk, 1);
+    helpers::apply_transform(&mut state, garruk, &reg);
+    let wolf = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(wolf).unwrap().card_types = vec![CardType::Creature];
+    stock_library_with(&mut state, &reg, P0, "Festerhide Boar", 2);
+
+    let legal = engine::legal_actions(&state, &reg);
+    let minus_one = legal.actions.iter()
+        .find(|a| matches!(a, Action::ActivateLoyaltyAbility { object_id, ability_index: 11, .. } if *object_id == garruk))
+        .expect("the -1 is offered at 1 loyalty");
+    let mut state = engine::submit_action(&state, minus_one, &reg);
+    check_state_based_actions(&mut state, &reg);
+    assert_eq!(state.get_object(garruk).unwrap().zone, Zone::Graveyard, "his cost killed him");
+    assert!(matches!(state.stack.last(), Some(StackEntry::Ability { .. })), "the ability is still on the stack");
+
+    let view = mtg_engine::view::GameView::for_player(&state, P1, &reg);
+    let top = &view.stack[0].name;
+    assert_eq!(top, "Garruk, the Veil-Cursed ability", "the stack pane");
+    let respond = engine::legal_actions(&state, &reg).context.unwrap_or_default();
+    assert!(respond.contains("Garruk, the Veil-Cursed (#"), "the RESPOND TO heading: {respond}");
+
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    let log: Vec<&str> = state.game_log.iter().map(|e| e.message.as_str()).collect();
+    assert!(log.contains(&"Garruk, the Veil-Cursed ability resolved"), "the log: {log:?}");
+    assert!(!log.iter().any(|l| l.contains("Garruk Relentless ability")), "{log:?}");
+    // Whatever it asks while it resolves is headed by the same name.
+    assert!(state.awaiting_action.is_some(), "the search asks which creature card");
+    let ask = engine::legal_actions(&state, &reg).context.unwrap_or_default();
+    assert!(ask.contains("Garruk, the Veil-Cursed (#"), "the prompt: {ask}");
+}
+
+/// #980, the same search with nothing to find: its log line names the
+/// ability's source as it went on the stack, not the card he became.
+#[test]
+fn garruks_empty_search_keeps_the_veil_cursed_name_after_his_cost_kills_him() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let garruk = named_permanent(&mut state, &reg, "Garruk Relentless", P0);
+    set_loyalty(&mut state, garruk, 1);
+    helpers::apply_transform(&mut state, garruk, &reg);
+    let wolf = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(wolf).unwrap().card_types = vec![CardType::Creature];
+    stock_library_with(&mut state, &reg, P0, "Forest", 2);
+
+    let legal = engine::legal_actions(&state, &reg);
+    let minus_one = legal.actions.iter()
+        .find(|a| matches!(a, Action::ActivateLoyaltyAbility { object_id, ability_index: 11, .. } if *object_id == garruk))
+        .expect("the -1 is offered at 1 loyalty");
+    let mut state = engine::submit_action(&state, minus_one, &reg);
+    check_state_based_actions(&mut state, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    let log: Vec<&str> = state.game_log.iter().map(|e| e.message.as_str()).collect();
+    assert!(log.iter().any(|l| l.starts_with("Garruk, the Veil-Cursed (#") && l.contains("no matching card")),
+        "{log:?}");
+    assert!(!log.iter().any(|l| l.starts_with("Garruk Relentless") && l.contains("no matching")), "{log:?}");
+}

@@ -63,6 +63,17 @@ pub enum StackEntry {
         /// entry made before it was recorded, which is not checked.
         #[serde(default)]
         source_transforms: Option<u32>,
+        /// The source's name as this went on the stack; stamped by
+        /// [`GameState::put_on_stack`]. CR 113.7a: the ability exists
+        /// independently of its source, so it is named after the object that
+        /// activated it, not after whatever that card is now. Garruk, the
+        /// Veil-Cursed killed by his own loyalty cost is a card in the
+        /// graveyard showing its front face, and the ability was named
+        /// "Garruk Relentless ability" on the stack, in the RESPOND TO
+        /// heading, in its search prompt and in the log (#980). `None` on an
+        /// entry from before it was recorded, which falls back to the source.
+        #[serde(default)]
+        source_name: Option<String>,
     },
 }
 
@@ -82,20 +93,6 @@ impl StackEntry {
         match self {
             StackEntry::Trigger(t) => Some(t),
             StackEntry::Spell(_) | StackEntry::Ability { .. } => None,
-        }
-    }
-
-    /// Description for display purposes.
-    #[must_use]
-    pub fn display_name(&self, registry: &crate::cards::CardRegistry) -> String {
-        match self {
-            StackEntry::Spell(id) => format!("Spell({})", id.0),
-            StackEntry::Trigger(t) => t.display_name(registry),
-            StackEntry::Ability { behavior_card_id, .. } => {
-                let name = registry.card_data(*behavior_card_id)
-                    .map_or_else(|| "Unknown".into(), |d| d.name.clone());
-                format!("{name} ability")
-            }
         }
     }
 }
@@ -547,8 +544,9 @@ impl GameState {
             StackEntry::Trigger(t) => {
                 t.source.source_transforms = self.get_object(t.source.id).map(|o| o.transforms);
             }
-            StackEntry::Ability { source_id, source_transforms, .. } => {
+            StackEntry::Ability { source_id, source_transforms, source_name, .. } => {
                 *source_transforms = self.get_object(*source_id).map(|o| o.transforms);
+                *source_name = self.get_object(*source_id).map(|o| o.name.clone());
             }
         }
         let controller = match &entry {
@@ -3532,6 +3530,33 @@ impl GameState {
             return data.name;
         }
         self.get_object(id).map(|o| o.name.clone()).unwrap_or_default()
+    }
+
+    /// The name an activated ability's source goes by: as it was when the
+    /// ability went on the stack (CR 113.7a), else the source's own name now.
+    /// The face up now is not the one that had the ability once the source
+    /// has left the battlefield or flipped (#980).
+    #[must_use]
+    pub fn ability_source_name(&self, entry: &StackEntry, registry: &crate::cards::CardRegistry) -> Option<String> {
+        match entry {
+            StackEntry::Ability { source_name: Some(name), .. } => Some(name.clone()),
+            StackEntry::Ability { source_id, .. } => Some(self.name_of(*source_id, registry)),
+            StackEntry::Spell(_) | StackEntry::Trigger(_) => None,
+        }
+    }
+
+    /// `obj_name` for the source of whatever is resolving: "Name (#id)",
+    /// with the name an activated ability went on the stack under when
+    /// `id` is that ability's source (CR 113.7a). What a resolving ability
+    /// asks or logs is headed by it, and Garruk, the Veil-Cursed's search,
+    /// after his own cost killed him, was "Garruk Relentless (#3)" (#980).
+    #[must_use]
+    pub fn resolving_source_name(&self, id: ObjectId) -> String {
+        match &self.resolving_ability {
+            Some(StackEntry::Ability { source_id, source_name: Some(name), .. }) if *source_id == id =>
+                format!("{name} (#{})", id.0),
+            _ => self.obj_name(id),
+        }
     }
 
     /// Card types of the object: the union of the active face's types and any

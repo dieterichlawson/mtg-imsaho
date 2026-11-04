@@ -67,6 +67,7 @@ pub fn push_ability(
         sacrificed_toughness: state.last_activated_sacrifice_toughness,
         loyalty: false,
         source_transforms: None,
+        source_name: None,
     });
 }
 
@@ -98,6 +99,7 @@ pub fn push_loyalty_ability(
         sacrificed_toughness: None,
         loyalty: true,
         source_transforms: None,
+        source_name: None,
     });
 }
 

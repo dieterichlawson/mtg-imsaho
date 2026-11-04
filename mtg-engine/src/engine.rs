@@ -443,6 +443,9 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         let top_name = match state.stack.last() {
             Some(crate::state::StackEntry::Spell(id)) => card_name(state, registry, *id),
             Some(crate::state::StackEntry::Trigger(t)) => t.display_name_with_state(registry, Some(state)),
+            // As it went on the stack (CR 113.7a, #980).
+            Some(crate::state::StackEntry::Ability { source_id, source_name: Some(name), .. }) =>
+                format!("{name} (#{})", source_id.0),
             Some(crate::state::StackEntry::Ability { source_id, .. }) => card_name(state, registry, *source_id),
             None => "?".into(),
         };
