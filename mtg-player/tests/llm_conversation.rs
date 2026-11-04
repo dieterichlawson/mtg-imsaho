@@ -654,3 +654,20 @@ fn reminder_text_is_dropped_and_rules_text_kept() {
     assert_eq!(without_reminder_text("Choose a card name (the card)"), "Choose a card name (the card)");
     assert_eq!(without_reminder_text("(This is all reminder.)\nFlying"), "Flying");
 }
+
+/// #976: a game neither seat won is in the score the seat is told, not only
+/// in the game number. "you 1, your opponent 0" before game 3 of a best-of-3
+/// left an earlier draw out.
+#[test]
+fn a_match_score_counts_a_game_with_no_winner() {
+    let at = |best_of, game, your_wins, their_wins| {
+        MatchFormat::BestOf { best_of, game, your_wins, their_wins }.match_section()
+    };
+    let g3 = at(3, 3, 1, 0);
+    assert!(g3.contains("**you 1, your opponent 0**, and 1 game had no winner."), "{g3}");
+    let g5 = at(5, 5, 1, 1);
+    assert!(g5.contains("and 2 games had no winner."), "{g5}");
+    let played_out = at(3, 3, 1, 1);
+    assert!(played_out.contains("**you 1, your opponent 1**."), "{played_out}");
+    assert!(!played_out.contains("game had no winner") && !played_out.contains("games had no winner"), "{played_out}");
+}

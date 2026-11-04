@@ -283,8 +283,16 @@ pub fn same_deck(a: &DraftDeck, b: &DraftDeck) -> bool {
 #[must_use]
 pub fn build_sideboard_prompt(pool: &[String], current: &DraftDeck, cards: &CardLines, situation: &BetweenGames<'_>) -> String {
     let BetweenGames { game, best_of, your_wins, their_wins, .. } = *situation;
+    // A game neither seat won is counted too: "won 1, your opponent 0" before
+    // game 3 left an earlier draw out of the score (#976, as #971 for the
+    // page, the client and the game page's match line).
+    let no_winner = match game.saturating_sub(1 + your_wins + their_wins) {
+        0 => String::new(),
+        1 => ", and 1 game had no winner".to_string(),
+        n => format!(", and {n} games had no winner"),
+    };
     let mut prompt = format!("Between games: game {game} of a best-of-{best_of} is next. You have won {your_wins}, \
-your opponent {their_wins}.");
+your opponent {their_wins}{no_winner}.");
     if let Some(last) = &situation.last {
         let _ = write!(prompt, " Last game: {last}.");
     }
@@ -372,6 +380,34 @@ mod deck_prompt_tests {
             assert!(prompt.contains("in game 2 (game 1 had no winner, and the choice is still yours)") && !prompt.contains("you lost"), "{prompt}");
         }
         assert!(ask("you lost game 1 on turn 9", false).contains("in game 2 (you lost the last game)"));
+    }
+
+    /// #976: a game with no winner before the last one is in the score, not
+    /// only when it was the last game.
+    #[test]
+    fn the_between_games_score_counts_a_game_with_no_winner() {
+        let set_data = mtg_draft::set_data::SetData::load(std::path::Path::new(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../data/sets/isd.json"
+        )))
+        .expect("ISD set data");
+        let registry = CardRegistry::with_all_cards();
+        let cards = CardLines::new(&set_data.all_card_names(), &set_data.rarities(), &registry);
+        let pool = vec!["Chapel Geist".to_string()];
+        let deck = mtg_draft::deckbuilding::DraftDeck {
+            maindeck: pool.clone(), lands: std::collections::HashMap::new(), sideboard: Vec::new(),
+        };
+        let ask = |game: usize, your_wins: usize, their_wins: usize| build_sideboard_prompt(&pool, &deck, &cards, &BetweenGames {
+            game, best_of: 5, your_wins, their_wins,
+            last: Some("you won game 2 on turn 8".to_string()), chooses: false, last_no_winner: false, opponent_showed: &[],
+        });
+        let p = ask(3, 1, 0);
+        assert!(p.contains("You have won 1, your opponent 0, and 1 game had no winner."), "{p}");
+        let p = ask(5, 1, 1);
+        assert!(p.contains("You have won 1, your opponent 1, and 2 games had no winner."), "{p}");
+        let p = ask(3, 1, 1);
+        assert!(p.contains("You have won 1, your opponent 1.\n") || p.contains("your opponent 1. Last"), "{p}");
+        assert!(!p.contains("no winner"), "{p}");
     }
 
     /// #487: the whole prompt used to be one sentence and a `Nx Name` list —

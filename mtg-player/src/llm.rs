@@ -1571,8 +1571,16 @@ does not choose; the mulligan prompt tells you which you are.\n",
                 writeln!(s, "Matches are best-of-{n}: the match ends as soon as one of you \
 has won {needed} games, or after {n} games have been played, whichever comes first. \
 Whoever has won more games then wins the match.").unwrap();
+                // A game neither seat won is in the score too: "you 1, your
+                // opponent 0" before game 3 left an earlier draw out (#976,
+                // as #971 for the page's match line).
+                let no_winner = match game.saturating_sub(1 + your_wins + their_wins) {
+                    0 => String::new(),
+                    1 => ", and 1 game had no winner".to_string(),
+                    k => format!(", and {k} games had no winner"),
+                };
                 writeln!(s, "\n**This is game {game} of at most {n}.** The score so far is \
-**you {your_wins}, your opponent {their_wins}**.").unwrap();
+**you {your_wins}, your opponent {their_wins}**{no_winner}.").unwrap();
 
                 if already_won || already_lost {
                     let who = if already_won { "you have" } else { "your opponent has" };
