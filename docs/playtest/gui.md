@@ -753,3 +753,17 @@ writing it up as the page's problem alone.
   its pane's edge or overlapping another's, then look at the screenshot.
   Every overflow should be clipped on purpose and counted ("+N more"),
   and each entry it hides should still be reachable from the inspector
+  [2026-11-04] Run over a real page (seed 39, at the mulligan) with ten
+  strips at 1, 6, 12 and 30 entries. **The battlefield rows, the zone
+  counts and the graveyard/exile overlays hold.** Three overflows are not
+  counted. With both "first strike" and "creature died" on, the band drops
+  `turn_effects` entirely (Moonmist gone), and a third effect is cut with
+  "…" (#993). The hand has no fit cap like #513's, so 60 cards draw to
+  x=661 under the panel and still take clicks there (#994). Six kinds of
+  floating mana beside double-digit zone counts cut the strip's pool at
+  "2…" (#995). The inspector's facts are uncapped too: past about 24 fact
+  lines they run under the prompt panel and its title goes. Nothing in the
+  pool makes that many, so it is not filed. Method: wrap
+  `CanvasRenderingContext2D.prototype.fillText` in `addInitScript` and read
+  the strings drawn at a strip's y. `hits` covers only what can be clicked,
+  and the band's flags and the strip's parts are text.
