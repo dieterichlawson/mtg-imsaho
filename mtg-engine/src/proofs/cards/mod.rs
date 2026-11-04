@@ -316,12 +316,28 @@ fn record(act: Act) {
     unsafe {
         let n = *std::ptr::addr_of!(ACTED);
         assert!(n < MAX_ACTS, "more actions than a proof here records");
-        // Written without dropping what the slot held: nothing writes past
-        // `ACTED`, so it holds `None`. An assignment drops it first, and
-        // where the board decides how many actions came before, that was a
-        // drop of an action of every variant at every place it might be,
-        // most of what a combat damage step's proof followed.
-        std::ptr::addr_of_mut!((*std::ptr::addr_of_mut!(ACTS))[n]).write(Some(act));
+        // Written without dropping what the slot held, and into a slot of
+        // a known place on each path. Nothing writes past `ACTED`, so the
+        // slot holds `None`; an assignment drops it first, and where the
+        // board decides how many actions came before, that was a drop of
+        // an action of every variant at every place it might be (most of
+        // what a blocked attacker's damage followed). A write through a
+        // pointer to the slot at a place the board decides was no better
+        // for proofs that record several such actions: Divine Reckoning's
+        // took eleven times as long, past half an hour. A write to each
+        // slot by its own index is cheap for both.
+        let acts = &mut *std::ptr::addr_of_mut!(ACTS);
+        const _: () = assert!(MAX_ACTS == 8, "one arm below for each slot");
+        match n {
+            0 => std::ptr::write(&mut acts[0], Some(act)),
+            1 => std::ptr::write(&mut acts[1], Some(act)),
+            2 => std::ptr::write(&mut acts[2], Some(act)),
+            3 => std::ptr::write(&mut acts[3], Some(act)),
+            4 => std::ptr::write(&mut acts[4], Some(act)),
+            5 => std::ptr::write(&mut acts[5], Some(act)),
+            6 => std::ptr::write(&mut acts[6], Some(act)),
+            _ => std::ptr::write(&mut acts[7], Some(act)),
+        }
         *std::ptr::addr_of_mut!(ACTED) = n + 1;
     }
 }
