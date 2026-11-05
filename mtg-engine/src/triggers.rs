@@ -333,7 +333,7 @@ impl PendingTrigger {
         };
         crate::state::TriggerOrderOption {
             source: src,
-            source_name: self.source_name(registry, Some(state)),
+            source_name: self.source_name(registry),
             power_toughness,
             kind: self.event.phrase().to_string(),
             ability: self.description(registry, Some(state)),
@@ -394,12 +394,20 @@ impl PendingTrigger {
         self.named(registry, Some(state), true)
     }
 
-    /// The source's name, from the face that is up if `state` can say
-    /// which.
-    fn source_name(&self, registry: &crate::cards::CardRegistry, state: Option<&crate::state::GameState>) -> String {
-        let is_transformed = state
-            .and_then(|s| s.get_object(self.source.id))
-            .is_some_and(|o| o.is_transformed);
+    /// The source's name, from the face the ability triggered from.
+    ///
+    /// Not the face up now: once on the stack a triggered ability exists
+    /// independently of its source (CR 113.7a) and stays that face's ability
+    /// (CR 712.8). Read off the permanent, a Delver's upkeep trigger flipped
+    /// in response was "Insectile Aberration's upkeep trigger" on the stack
+    /// and in the log, a face with no such trigger, while its own question
+    /// said Delver (#996), and a back-face source that had left the
+    /// battlefield read as its front. `from_back_face` is the face
+    /// `trigger_face_is_back` resolves with, so the name and the effect
+    /// agree; `every_back_face_trigger_records_its_face` holds the pool to
+    /// collectors that record it.
+    fn source_name(&self, registry: &crate::cards::CardRegistry) -> String {
+        let is_transformed = self.source.from_back_face;
         registry
             .get(self.source.card_id)
             .and_then(|b| if is_transformed { b.back_face_data().map(|d| d.name) } else { None })
@@ -407,10 +415,10 @@ impl PendingTrigger {
             .unwrap_or_else(|| "Unknown".into())
     }
 
-    /// The name of the source, from the face that is up, if `state` can say
-    /// which; then whose ability and what it does.
+    /// The name of the source, from the face that triggered; then whose
+    /// ability and what it does.
     fn named(&self, registry: &crate::cards::CardRegistry, state: Option<&crate::state::GameState>, with_id: bool) -> String {
-        let mut name = self.source_name(registry, state);
+        let mut name = self.source_name(registry);
         if with_id {
 
             name = format!("{name} (#{})", self.source.id.0);

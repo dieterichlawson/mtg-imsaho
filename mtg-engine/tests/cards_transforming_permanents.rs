@@ -115,6 +115,59 @@ fn a_delver_flipped_in_response_still_looks_and_does_not_flip_back() {
         "revealing an instant does not flip it back (CR 701.28f)");
 }
 
+/// #996: a trigger is named after the face it triggered from, not the face
+/// up now. Delver's upkeep trigger, the Delver flipped in response, read
+/// "Insectile Aberration's upkeep trigger" on the stack and in the log.
+#[test]
+fn a_trigger_keeps_the_name_of_the_face_it_triggered_from() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+    let delver = named_permanent(&mut state, &reg, "Delver of Secrets", P0);
+    let bolt = spell_in_hand(&mut state, &reg, "Lightning Bolt", P0);
+    state.move_object(bolt, Zone::Library, &reg);
+    state.players[0].library_order.insert(0, bolt);
+    state.events.push(GameEvent::StepStarted { step: Step::Upkeep });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+    let stack_name = |state: &mtg_engine::state::GameState| {
+        mtg_engine::view::GameView::for_player(state, P0, &reg).stack[0].name.clone()
+    };
+    assert!(stack_name(&state).starts_with("Delver of Secrets's upkeep trigger"), "{}", stack_name(&state));
+
+    helpers::apply_transform(&mut state, delver, &reg);
+    assert!(stack_name(&state).starts_with("Delver of Secrets's upkeep trigger"),
+        "flipped in response, still Delver's trigger: {}", stack_name(&state));
+
+    let before = state.game_log.len();
+    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
+    let log: Vec<&str> = state.game_log[before..].iter().map(|e| e.message.as_str()).collect();
+    assert!(log.iter().any(|l| l.starts_with("Delver of Secrets (#") && l.contains("upkeep trigger")), "{log:#?}");
+    assert!(!log.iter().any(|l| l.contains("Insectile Aberration (#")), "{log:#?}");
+}
+
+/// #996: naming a trigger from the face it recorded is right only while
+/// every back-face trigger is collected with its face. Today those are the
+/// step triggers (`emit_from_face`); a back face with any other trigger
+/// needs its collector to record the face first.
+#[test]
+fn every_back_face_trigger_records_its_face() {
+    use mtg_engine::cards::TriggerKind;
+    let reg = registry();
+    let mut offenders = Vec::new();
+    let mut back_faces = 0usize;
+    for name in reg.all_names() {
+        let Some(id) = reg.get_id_by_name(name) else { continue };
+        let Some(back) = reg.get(id).and_then(|b| b.back_face_data()) else { continue };
+        back_faces += 1;
+        for t in &back.triggered_abilities {
+            if !matches!(t.kind, TriggerKind::Upkeep | TriggerKind::EndStep | TriggerKind::EndCombat) {
+                offenders.push(format!("{}: {:?}", back.name, t.kind));
+            }
+        }
+    }
+    assert!(back_faces > 10, "test premise: the pool has double-faced cards ({back_faces})");
+    assert!(offenders.is_empty(), "back-face triggers not collected with their face: {offenders:?}");
+}
+
 #[test]
 fn delver_does_not_transform_when_player_declines_reveal() {
     let reg = registry();
