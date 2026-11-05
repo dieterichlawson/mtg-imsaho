@@ -372,9 +372,9 @@ impl PendingTrigger {
         self.display_name_with_state(registry, None)
     }
 
-    /// Display name with optional game state, so a transformed permanent shows
-    /// its back-face name. Every trigger kind gets this, not just upkeep —
-    /// the source object is now on the trigger regardless of event.
+    /// Display name with optional game state: the source named from the face
+    /// the ability triggered from (#996), and the state names what the
+    /// description refers to (#835).
     #[must_use]
     pub fn display_name_with_state(&self, registry: &crate::cards::CardRegistry, state: Option<&crate::state::GameState>) -> String {
         self.named(registry, state, false)

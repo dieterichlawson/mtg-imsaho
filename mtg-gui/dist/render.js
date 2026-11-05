@@ -1181,7 +1181,12 @@ export function otherFace(state, o) {
     // is read off the permanent it fired from, which is what transforms.
     let card = o;
     if (!o.card_id && o.source_id !== undefined && o.source_id !== null) {
-        const src = state.view.battlefield.find(p => p.object_id === o.source_id);
+        // Wherever the source is now: a trigger stays on the stack after its
+        // source dies or is exiled in response (CR 113.7a), and still has a
+        // face it is not (#989).
+        const src = state.view.battlefield.find(p => p.object_id === o.source_id)
+            || (state.view.graveyards || []).flatMap(([, cs]) => cs).find(c => c.object_id === o.source_id)
+            || (state.view.exile || []).find(c => c.object_id === o.source_id);
         if (src)
             card = src;
     }
@@ -1190,6 +1195,17 @@ export function otherFace(state, o) {
     const faces = (state.view.double_faces || {})[String(card.card_id)];
     if (!faces)
         return null;
+    // An ability on the stack belongs to the face it came from, and the view
+    // sends that face's text (#989): the other face is the one whose text it
+    // is not, whichever face its source shows now. Read off the source, a
+    // Homicidal Brute's end-step trigger showed Civilized Scholar twice.
+    const onStack = o.source_id !== undefined && o.source_id !== null;
+    if (onStack && o.oracle_text) {
+        if (o.oracle_text === faces[0].oracle_text)
+            return faces[1];
+        if (o.oracle_text === faces[1].oracle_text)
+            return faces[0];
+    }
     if (card.name === faces[0].name)
         return faces[1];
     if (card.name === faces[1].name)

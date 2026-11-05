@@ -144,6 +144,51 @@ fn a_trigger_keeps_the_name_of_the_face_it_triggered_from() {
     assert!(!log.iter().any(|l| l.contains("Insectile Aberration (#")), "{log:#?}");
 }
 
+/// #989: a back-face ability on the stack carries its own face's text, not
+/// the front's. Homicidal Brute's end-step trigger read as Civilized
+/// Scholar's loot, and Nightfall Predator's fight as Daybreak Ranger's
+/// flying ping, on the page's stack inspector.
+#[test]
+fn a_back_face_ability_on_the_stack_carries_its_own_faces_text() {
+    let reg = registry();
+    let back_text = |name: &str| reg.get_id_by_name(name).and_then(|id| reg.get(id))
+        .and_then(|b| b.back_face_data()).map(|d| d.oracle_text).expect("a back face");
+    let front_text = |name: &str| reg.get_id_by_name(name).and_then(|id| reg.card_data(id))
+        .map(|d| d.oracle_text).expect("a front face");
+
+    // A back-face trigger, the source flipped back in response: still the back's.
+    let mut state = game_at_step(Step::EndStep, P0);
+    let scholar = named_permanent(&mut state, &reg, "Civilized Scholar", P0);
+    helpers::apply_transform(&mut state, scholar, &reg);
+    state.events.push(GameEvent::StepStarted { step: Step::EndStep });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+    let text = |state: &mtg_engine::state::GameState| {
+        mtg_engine::view::GameView::for_player(state, P0, &reg).stack[0].oracle_text.clone()
+    };
+    assert_eq!(text(&state), back_text("Civilized Scholar"));
+    helpers::apply_transform(&mut state, scholar, &reg);
+    assert_eq!(text(&state), back_text("Civilized Scholar"), "flipped in response");
+
+    // A front-face trigger whose source flipped in response: the front's.
+    let mut state = game_at_step(Step::Upkeep, P0);
+    let delver = named_permanent(&mut state, &reg, "Delver of Secrets", P0);
+    state.events.push(GameEvent::StepStarted { step: Step::Upkeep });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+    helpers::apply_transform(&mut state, delver, &reg);
+    assert_eq!(text(&state), front_text("Delver of Secrets"));
+
+    // A back face's activated ability: Nightfall Predator's fight.
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let ranger = named_permanent(&mut state, &reg, "Daybreak Ranger", P0);
+    helpers::apply_transform(&mut state, ranger, &reg);
+    let bear = ready_creature(&mut state, P1, 2, 2);
+    add_mana(&mut state, P0, &[(ManaType::Red, 1)]);
+    let state = activate_onto_stack(&state, &reg, ranger, Some(Target::Object(bear)));
+    let item = &mtg_engine::view::GameView::for_player(&state, P0, &reg).stack[0];
+    assert_eq!(item.name, "Nightfall Predator ability");
+    assert_eq!(item.oracle_text, back_text("Daybreak Ranger"));
+}
+
 /// #996: naming a trigger from the face it recorded is right only while
 /// every back-face trigger is collected with its face. Today those are the
 /// step triggers (`emit_from_face`); a back face with any other trigger

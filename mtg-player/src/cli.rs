@@ -8466,8 +8466,8 @@ impl CliPlayer {
         for d in prompt.details {
             if seen.contains(&d.source_name) { continue; }
             seen.push(d.source_name.clone());
-            // By FACE name. `source_name` is documented as "from the face
-            // that is up", and a card is named by its front face (CR 712.3),
+            // By FACE name. `source_name` is the face the ability triggered
+            // from (#996), and a card is named by its front face (CR 712.3),
             // so a lookup by card name returned `None` for every transformed
             // DFC in the set and the `continue` below took the whole block
             // with it -- heading included, on a screen that said nothing

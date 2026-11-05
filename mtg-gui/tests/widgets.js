@@ -1394,17 +1394,41 @@ async function main() {
           const trig = { object_id: 0, name: card.name + " ability", controller: m.view.you, targets: [], source_id: 9901, card_id: 0 };
           const keepB = m.view.battlefield, keepS = m.view.stack;
           m.view.battlefield = keepB.concat([perm]); m.view.stack = keepS.concat([trig]);
-          let trigger = null;
+          let trigger = null, flipped = null, activated = null, gone = null;
           try {
             m.hover = { key: "stack0", kind: "stack", stackIndex: m.view.stack.length - 1 };
             const t = window.mtgDebug.inspectHover();
             trigger = t && t.otherFace;
+            // The front's trigger with its source flipped in response: the
+            // item carries the front's text, so its other face is the back,
+            // not the front read off the source now (#989).
+            m.view.battlefield = keepB.concat([{ ...perm, name: "Test Back Face" }]);
+            m.view.stack = keepS.concat([{ ...trig, oracle_text: "the front's text" }]);
+            const f = window.mtgDebug.inspectHover();
+            flipped = f && f.otherFace;
+            // A back face's activated ability: keyed by its own card, named
+            // "X ability", carrying the back's text. Its other face is the
+            // front, whichever face the source shows (#989).
+            m.view.stack = keepS.concat([{ ...trig, card_id: card.card_id, name: "Test Back Face ability",
+              oracle_text: "the back's own words" }]);
+            const a = window.mtgDebug.inspectHover();
+            activated = a && a.otherFace;
+            // A trigger whose source has left the battlefield: found in the
+            // graveyard, its other face still named.
+            m.view.battlefield = keepB;
+            const keepG = m.view.graveyards;
+            m.view.graveyards = [[m.view.you, [{ ...perm, name: card.name }]]].concat(keepG || []);
+            m.view.stack = keepS.concat([{ ...trig, oracle_text: "the back's own words" }]);
+            try {
+              const g = window.mtgDebug.inspectHover();
+              gone = g && g.otherFace;
+            } finally { m.view.graveyards = keepG; }
           } finally { m.view.battlefield = keepB; m.view.stack = keepS; m.hover = null; }
           const was = [m.selected, m.hover];
           m.selected = card.object_id; m.hover = null;
           window.mtgDebug.render();
           [m.selected, m.hover] = was;
-          return { front: front && front.otherFace, trigger, drawn };
+          return { front: front && front.otherFace, frontName: card.name, trigger, flipped, activated, gone, drawn };
         } finally {
           CanvasRenderingContext2D.prototype.fillText = orig;
           m.view.double_faces = keep;
@@ -1413,6 +1437,9 @@ async function main() {
       });
       if (got.front !== "Test Back Face") fail(`double-faced: the inspector's other face is ${JSON.stringify(got.front)}`);
       else if (got.trigger !== "Test Back Face") fail(`double-faced: a trigger from the permanent names no other face: ${JSON.stringify(got.trigger)}`);
+      else if (got.flipped !== "Test Back Face") fail(`double-faced: a front trigger whose source flipped names ${JSON.stringify(got.flipped)} as its other face (#989)`);
+      else if (got.activated !== got.frontName) fail(`double-faced: a back face's activated ability names ${JSON.stringify(got.activated)} as its other face (#989)`);
+      else if (got.gone !== got.frontName) fail(`double-faced: a back-face trigger whose source left names ${JSON.stringify(got.gone)} as its other face (#989)`);
       else ok("double-faced: the inspector names the other face");
       if (!got.drawn.some(t => t.includes("Other face: Test Back Face")) || !got.drawn.some(t => t.includes("back's own words")))
         fail(`double-faced: the other face is not drawn: ${JSON.stringify(got.drawn.filter(t => /face|back/i.test(t)))}`);

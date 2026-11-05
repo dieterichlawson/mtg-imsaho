@@ -445,6 +445,30 @@ fn ability_text(registry: &CardRegistry, behavior: CardId) -> String {
     registry.card_data(behavior).map(|d| d.oracle_text).unwrap_or_default()
 }
 
+/// The oracle text of the face an ability on the stack belongs to: the
+/// back face's when it came from the back (CR 712.8), whichever face is up
+/// now. The front's text for every item read Nightfall Predator's fight
+/// as Daybreak Ranger's flying ping, and Homicidal Brute's end-step
+/// trigger as Civilized Scholar's loot (#989).
+fn face_ability_text(registry: &CardRegistry, behavior: CardId, back: bool) -> String {
+    if back {
+        if let Some(d) = registry.get(behavior).and_then(crate::cards::CardBehavior::back_face_data) {
+            return d.oracle_text;
+        }
+    }
+    ability_text(registry, behavior)
+}
+
+/// Whether an activated ability came from its card's back face: the name
+/// its source went on the stack under (CR 113.7a, #980) is the back face's.
+/// An ability an Aura or Equipment grants is named after the creature, so
+/// it reads as its grantor's front.
+fn ability_from_back_face(state: &GameState, entry: &crate::state::StackEntry, behavior: CardId,
+                          registry: &CardRegistry) -> bool {
+    let back = registry.get(behavior).and_then(crate::cards::CardBehavior::back_face_data);
+    back.is_some_and(|b| state.ability_source_name(entry, registry).is_some_and(|n| n == b.name))
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct OpponentView {
     pub id: PlayerId,
@@ -701,7 +725,8 @@ impl GameView {
                         card_types: Vec::new(),
                         power: None,
                         toughness: None,
-                        oracle_text: ability_text(registry, trigger.behavior_card_id()),
+                        oracle_text: face_ability_text(registry, trigger.behavior_card_id(),
+                            trigger.source.from_back_face),
                         resolving,
                     })
                 }
@@ -739,7 +764,8 @@ impl GameView {
                         card_types: Vec::new(),
                         power: None,
                         toughness: None,
-                        oracle_text: ability_text(registry, *behavior_card_id),
+                        oracle_text: face_ability_text(registry, *behavior_card_id,
+                            ability_from_back_face(state, entry, *behavior_card_id, registry)),
                         resolving,
                     })
                 }

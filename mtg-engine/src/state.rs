@@ -4644,7 +4644,7 @@ pub const OPENING_HAND_SIZE: usize = 7;
 pub struct TriggerOrderOption {
     /// The object whose ability this is.
     pub source: ObjectId,
-    /// Its name, from the face that is up.
+    /// Its name, from the face the ability triggered from (#996).
     pub source_name: String,
     /// Its power and toughness, when it is a creature on the battlefield.
     pub power_toughness: Option<(i32, i32)>,
