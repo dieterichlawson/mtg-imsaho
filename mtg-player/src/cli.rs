@@ -874,6 +874,8 @@ const BLOCKERS_PAGE_KEYS: &str = "b = next page";
 /// one the deck browser shows. Named so the pager can measure the chrome it
 /// will draw before it chooses the page that fits under it (#365).
 const VIEWER_PAGED_FOOTER: &str = "  n=next page, p=previous, enter=return: ";
+/// The footer of the inspector's detail page when it fits whole.
+const DETAIL_FOOTER: &str = "  Press enter to return to list...";
 const DECK_PAGED_FOOTER: &str = "  Enter number for details, n=next page, p=previous, enter=return: ";
 
 /// The side viewers every prompt's reader steps into, in the order a hint
@@ -5581,11 +5583,13 @@ impl CliPlayer {
         let _ = execute!(out, Print(footer));
     }
 
-    /// Paint the inspector's detail page for one permanent. Wraps its own
-    /// writer for the same reason `paint_paged_page` does (#470).
-    fn paint_permanent_detail(out: &mut impl Write, view: &GameView, perm: &PermanentView) {
-        let out = &mut CrlfWriter::new(out);
-        Self::print_colored(out, Color::Cyan, &format!(" {}", perm.name));
+    /// The inspector's detail page for one permanent, a line per fact and
+    /// unwrapped: its colour (`None` for plain) and its text. The page
+    /// wraps and pages them at the size it is painted at (#962); printed
+    /// straight down, a long line was split mid-word by the terminal and
+    /// a short pane scrolled the name and type off the top.
+    fn permanent_detail_lines(view: &GameView, perm: &PermanentView) -> Vec<(Option<Color>, String)> {
+        let mut d: Vec<(Option<Color>, String)> = Vec::new();
 
         // CR 205.1: the type line is supertypes, types AND
         // subtypes, and the subtypes are the live ones — the
@@ -5596,7 +5600,7 @@ impl CliPlayer {
         // printed nowhere in the game (issue #333).
         let type_line = mtg_engine::types::type_line(
             &perm.supertypes, &perm.card_types, &perm.subtypes);
-        let _ = execute!(out, Print(format!("  Type: {type_line}\n")));
+        d.push((None, format!("  Type: {type_line}")));
 
         // Whether it is a token, which decides what can be done
         // with it once it dies: CR 111.7 makes a token that
@@ -5608,19 +5612,19 @@ impl CliPlayer {
         // not, so a 1/1 Spirit token and a 1/1 Spirit card read
         // identically here (issue #534).
         if perm.is_token {
-            let _ = execute!(out, Print("  Token: true\n".to_string()));
+            d.push((None, "  Token: true".to_string()));
         }
         // A copy (CR 707.2), which the board row marks `[copy]` (#557) and
         // the page's inspector says; this page did not (#727).
         if perm.is_copy {
-            let _ = execute!(out, Print("  Copy: true\n".to_string()));
+            d.push((None, "  Copy: true".to_string()));
         }
         // The card a Nevermore named as it entered — the permanent's whole
         // identity. The board row says `[names: X]` and can be cut at the
         // pane's edge; this page, where a person goes to read the rest,
         // never said it (#727).
         if let Some(n) = &perm.named_card {
-            let _ = execute!(out, Print(format!("  Named card: {n}\n")));
+            d.push((None, format!("  Named card: {n}")));
         }
 
         // Color (CR 105.2). Intimidate (CR 702.13a) is decided
@@ -5635,7 +5639,7 @@ impl CliPlayer {
         // "Colorless" is printed as the answer it is, not left
         // blank: it is what makes a Galvanic Juggernaut
         // blockable by artifact creatures alone (CR 105.2c).
-        let _ = execute!(out, Print(format!("  Color: {}\n",
+        d.push((None, format!("  Color: {}",
             mtg_engine::types::colors_line(&perm.colors))));
 
 
@@ -5648,16 +5652,14 @@ impl CliPlayer {
             perm.keywords.iter().copied().map(keyword_title).collect();
         abilities.extend(perm.protections.iter().cloned());
         if !abilities.is_empty() {
-            for line in Self::wrap_indented(&format!("  Keywords: {}", abilities.join(", ")), Self::term_width().saturating_sub(1)) {
-                let _ = execute!(out, Print(format!("{line}\n")));
-            }
+            d.push((None, format!("  Keywords: {}", abilities.join(", "))));
         }
         // What it may not do, or must, on a line of its own: these are not
         // keywords, and the page answers one question per line. The row and
         // the combat list have no room for a second label and put them in
         // the same parenthesis (issue #504).
         if !perm.restrictions.is_empty() {
-            let _ = execute!(out, Print(format!("  Restrictions: {}\n",
+            d.push((None, format!("  Restrictions: {}",
                 perm.restrictions.join(", "))));
         }
 
@@ -5670,15 +5672,15 @@ impl CliPlayer {
         // (#302). "Printed", because that is the question this
         // line answers; everything else is on the next one.
         if perm.star_pt {
-            let _ = execute!(out, Print("  Printed P/T: */*\n".to_string()));
+            d.push((None, "  Printed P/T: */*".to_string()));
         } else if let (Some(p), Some(t)) = (perm.printed_power, perm.printed_toughness) {
-            let _ = execute!(out, Print(format!("  Printed P/T: {p}/{t}\n")));
+            d.push((None, format!("  Printed P/T: {p}/{t}")));
         }
         if let (Some(p), Some(t)) = (perm.effective_power, perm.effective_toughness) {
-            let _ = execute!(out, Print(format!("  Effective P/T: {p}/{t}\n")));
+            d.push((None, format!("  Effective P/T: {p}/{t}")));
         }
         if perm.damage_marked > 0 {
-            let _ = execute!(out, Print(format!("  Damage marked: {}\n", perm.damage_marked)));
+            d.push((None, format!("  Damage marked: {}", perm.damage_marked)));
         }
         // What on the battlefield has dealt it damage this turn, marked or
         // since regenerated away: Abattoir Ghoul's trigger reads it for the
@@ -5689,50 +5691,48 @@ impl CliPlayer {
             .filter_map(|id| view.battlefield.iter().find(|p| p.object_id == *id))
             .map(|p| format!("{} (#{})", p.name, p.object_id.0)).collect();
         if !from.is_empty() {
-            for line in Self::wrap_indented(&format!("  Damaged this turn by: {}", from.join(" and ")), Self::term_width().saturating_sub(1)) {
-                let _ = execute!(out, Print(format!("{line}\n")));
-            }
+            d.push((None, format!("  Damaged this turn by: {}", from.join(" and "))));
         }
         // Homicidal Brute's end step reads the attack, and a spent
         // once-each-turn ability is a row the menu stopped offering (#954).
         // Still attacking says so below, as the LLM board and the page do.
         if perm.attacked_this_turn && perm.attacking.is_none() {
-            let _ = execute!(out, Print("  Attacked this turn: true\n".to_string()));
+            d.push((None, "  Attacked this turn: true".to_string()));
         }
         if perm.once_per_turn_used {
-            let _ = execute!(out, Print("  Once-per-turn ability used this turn: true\n".to_string()));
+            d.push((None, "  Once-per-turn ability used this turn: true".to_string()));
         }
         if perm.card_types.contains(&CardType::Planeswalker) {
             let l = perm.counters.get(&mtg_engine::types::CounterType::Loyalty)
                 .copied().unwrap_or(0);
-            let _ = execute!(out, Print(format!("  Loyalty: {l}\n")));
+            d.push((None, format!("  Loyalty: {l}")));
         }
         // Counters are public information (CR 122.3) and this
         // page is where a player checks them (issue #82).
         let counters = Self::counters_suffix(&perm.counters);
         if !counters.is_empty() {
-            let _ = execute!(out, Print(format!("  Counters:{counters}\n")));
+            d.push((None, format!("  Counters:{counters}")));
         }
 
         let controller = if perm.controller == view.you { "You" } else { "Opponent" };
-        let _ = execute!(out, Print(format!("  Controller: {controller}\n")));
+        d.push((None, format!("  Controller: {controller}")));
         // Only when it differs: whose it goes back to when a control effect
         // ends, and whose graveyard it goes to (#740).
         if perm.owner != perm.controller {
             let owner = if perm.owner == view.you { "You" } else { "Opponent" };
-            let _ = execute!(out, Print(format!("  Owner: {owner}\n")));
+            d.push((None, format!("  Owner: {owner}")));
         }
-        let _ = execute!(out, Print(format!("  Tapped: {}\n", perm.tapped)));
+        d.push((None, format!("  Tapped: {}", perm.tapped)));
         // The page that lists everything else about a permanent
         // was silent about a live shield (issue #468).
         if perm.regeneration_shields > 0 {
-            let _ = execute!(out, Print(format!("  Regeneration shields: {}\n",
+            d.push((None, format!("  Regeneration shields: {}",
                 perm.regeneration_shields)));
         }
         if perm.affected_by_summoning_sickness {
-            let _ = execute!(out, Print("  Summoning sick: true\n".to_string()));
+            d.push((None, "  Summoning sick: true".to_string()));
         }
-        let _ = execute!(out, Print(format!("  ID: #{}\n", perm.object_id.0)));
+        d.push((None, format!("  ID: #{}", perm.object_id.0)));
 
         // Combat role (CR 506.3a, 509.1a). The page used to say
         // only "Tapped: true", which is what a creature tapped
@@ -5744,27 +5744,27 @@ impl CliPlayer {
         match &perm.attacking {
             Some(mtg_engine::view::AttackTarget::Player(p)) => {
                 let who = if *p == view.you { "you" } else { "your opponent" };
-                let _ = execute!(out, Print(format!("  Attacking: {who}\n")));
+                d.push((None, format!("  Attacking: {who}")));
             }
             Some(mtg_engine::view::AttackTarget::Planeswalker(w)) => {
-                let _ = execute!(out, Print(format!("  Attacking: {}\n", named(*w))));
+                d.push((None, format!("  Attacking: {}", named(*w))));
             }
             None => {}
         }
         if !perm.blocking.is_empty() {
             let names: Vec<String> = perm.blocking.iter().map(|&a| named(a)).collect();
-            let _ = execute!(out, Print(format!("  Blocking: {}\n", names.join(", "))));
+            d.push((None, format!("  Blocking: {}", names.join(", "))));
         } else if perm.is_blocking {
             // CR 510.1d: a blocking creature whose attacker has left combat
             // blocks nothing and deals no combat damage (#983).
-            let _ = execute!(out, Print("  Blocking: nothing, its attacker has left combat; it deals no combat damage\n".to_string()));
+            d.push((None, "  Blocking: nothing, its attacker has left combat; it deals no combat damage".to_string()));
         }
         if !perm.blocked_by.is_empty() {
             let names: Vec<String> = perm.blocked_by.iter().map(|&b| named(b)).collect();
-            let _ = execute!(out, Print(format!("  Blocked by: {}\n", names.join(", "))));
+            d.push((None, format!("  Blocked by: {}", names.join(", "))));
         } else if perm.blocked {
             // CR 509.1h: still blocked with every blocker gone (#725).
-            let _ = execute!(out, Print("  Blocked: its blockers have left combat; it deals no combat damage unless it has trample\n".to_string()));
+            d.push((None, "  Blocked: its blockers have left combat; it deals no combat damage unless it has trample".to_string()));
         }
 
         // Attachments, by what they are: an Aura enchants
@@ -5776,23 +5776,23 @@ impl CliPlayer {
                 .partition(|p| p.card_types.contains(&CardType::Enchantment));
         if !auras.is_empty() {
             let names: Vec<&str> = auras.iter().map(|a| a.name.as_str()).collect();
-            let _ = execute!(out, Print(format!("  Enchanted by: {}\n", names.join(", "))));
+            d.push((None, format!("  Enchanted by: {}", names.join(", "))));
         }
         if !equipment.is_empty() {
             let names: Vec<&str> = equipment.iter().map(|a| a.name.as_str()).collect();
-            let _ = execute!(out, Print(format!("  Equipped with: {}\n", names.join(", "))));
+            d.push((None, format!("  Equipped with: {}", names.join(", "))));
         }
 
         if let Some(att) = perm.attached_to {
             let att_name = view.battlefield.iter()
                 .find(|p| p.object_id == att)
                 .map_or("?", |p| p.name.as_str());
-            let _ = execute!(out, Print(format!("  Attached to: {att_name}\n")));
+            d.push((None, format!("  Attached to: {att_name}")));
         }
         // A Curse names its player (CR 702.5c) — issue #81.
         if let Some(p) = perm.attached_to_player {
             let who = if p == view.you { "You" } else { "Opponent" };
-            let _ = execute!(out, Print(format!("  Enchanting: {who}\n")));
+            d.push((None, format!("  Enchanting: {who}")));
         }
 
         // Show the oracle text of the face that is up. Looking
@@ -5802,11 +5802,8 @@ impl CliPlayer {
         // engine fired the back face's ability (issue #240). The
         // view already resolves the active face.
         if !perm.oracle_text.is_empty() {
-            let _ = execute!(out, Print("\n"), SetForegroundColor(Color::Yellow));
-            for line in Self::oracle_lines(&perm.oracle_text, Self::term_width()) {
-                let _ = execute!(out, Print(format!("{line}\n")));
-            }
-            let _ = execute!(out, ResetColor);
+            d.push((None, String::new()));
+            Self::push_oracle(&mut d, Color::Yellow, &perm.oracle_text);
         }
 
         // A double-faced card's other face (CR 712.2): what it transforms
@@ -5817,13 +5814,9 @@ impl CliPlayer {
         let other = registry.get(perm.card_id).and_then(|b| b.back_face_data())
             .and_then(|back| if back.name == perm.name { registry.card_data(perm.card_id) } else { Some(back) });
         if let Some(other) = other {
-            let _ = execute!(out, Print("\n"), SetForegroundColor(Color::Cyan),
-                Print(clip_cols(&format!("  Other face: {}", other.name), Self::term_width().saturating_sub(1))),
-                Print("\n"), SetForegroundColor(Color::Yellow));
-            for line in Self::oracle_lines(&other.oracle_text, Self::term_width()) {
-                let _ = execute!(out, Print(format!("{line}\n")));
-            }
-            let _ = execute!(out, ResetColor);
+            d.push((None, String::new()));
+            d.push((Some(Color::Cyan), format!("  Other face: {}", other.name)));
+            Self::push_oracle(&mut d, Color::Yellow, &other.oracle_text);
         }
 
         // CR 706.2: what the copy effect's "except it has ..." added. The
@@ -5833,17 +5826,118 @@ impl CliPlayer {
         // the same name, the same P/T and different ability sets read
         // identically (issue #501).
         if !perm.granted_abilities.is_empty() {
-            let _ = execute!(out, Print("\n"), SetForegroundColor(Color::Yellow));
+            d.push((None, String::new()));
             for ability in &perm.granted_abilities {
-                for line in Self::oracle_lines(ability, Self::term_width()) {
+                Self::push_oracle(&mut d, Color::Yellow, ability);
+            }
+            d.push((None, "  (gained as it entered as a copy — CR 706.2)".to_string()));
+        }
+        d
+    }
+
+    /// Show a detail page painted by `paint` until it is left: n and p turn
+    /// its pages, anything else returns. Laid out at the size it is painted
+    /// at, so a resize rewraps it and n/p turn the page the repaint drew.
+    fn run_detail_page(paint: impl Fn(&mut std::io::Stdout, usize, usize, usize) -> (usize, usize, usize, usize)) {
+        let offset = std::cell::Cell::new(0usize);
+        let laid = std::cell::Cell::new((0usize, 0usize, 0usize));
+        let detail = || {
+            let mut out = stdout();
+            clear_frame(&mut out);
+            let (term_w, term_h) = terminal::size().unwrap_or((80, 24));
+            let (start, end, n, avail) = paint(&mut out, term_w as usize, term_h as usize, offset.get());
+            offset.set(start);
+            laid.set((end, n, avail));
+            let _ = out.flush();
+        };
+        loop {
+            detail();
+            let input = Self::read_line_redrawing("", &detail);
+            let (end, n, avail) = laid.get();
+            match input.trim() {
+                "n" if end < n => offset.set(end),
+                "p" => offset.set(offset.get().saturating_sub(avail)),
+                "n" => {}
+                _ => break,
+            }
+        }
+    }
+
+    /// An oracle text's paragraphs as detail lines, in `color`.
+    fn push_oracle(d: &mut Vec<(Option<Color>, String)>, color: Color, text: &str) {
+        d.extend(text.split('\n').map(|p| (Some(color), format!("  {p}"))));
+    }
+
+    /// Paint the page of a permanent's detail lines that starts at line
+    /// `offset`, on a pane `w` x `h`: the name, the lines wrapped to the
+    /// width, and the footer. Returns the page's first line, the line after
+    /// its last, how many lines there are and how many a page holds, for
+    /// n/p after the read. Wraps its own writer for the same reason
+    /// `paint_paged_page` does (#470).
+    ///
+    /// Every line is wrapped here, under its own indent: five label lines
+    /// were printed whole and the terminal split them mid-word, and the
+    /// page had no pager, so at 10 rows the name, type and colour had
+    /// scrolled off with no way back (#962).
+    fn paint_permanent_detail(out: &mut impl Write, view: &GameView, perm: &PermanentView,
+                              w: usize, h: usize, offset: usize) -> (usize, usize, usize, usize) {
+        Self::paint_detail_page(out, &perm.name, Self::permanent_detail_lines(view, perm), w, h, offset)
+    }
+
+    /// Paint one page of a detail page: ` {name}` as its heading, `lines`
+    /// wrapped to `w` under their own indents, and the footer, wrapped too.
+    /// Returns the page's first line, the line after its last, how many
+    /// lines there are and how many a page holds, for `run_detail_page`.
+    /// Wraps its own writer for the same reason `paint_paged_page` does
+    /// (#470). The inspector's page and the deck browser's both come here
+    /// (#962).
+    fn paint_detail_page(out: &mut impl Write, name: &str, lines: Vec<(Option<Color>, String)>,
+                         w: usize, h: usize, offset: usize) -> (usize, usize, usize, usize) {
+        let out = &mut CrlfWriter::new(out);
+        let lines: Vec<(Option<Color>, String)> = lines
+            .into_iter()
+            .flat_map(|(c, t)| {
+                if t.is_empty() {
+                    vec![(c, t)]
+                } else {
+                    Self::wrap_indented(&t, w.saturating_sub(1)).into_iter().map(|l| (c, l)).collect()
+                }
+            })
+            .collect();
+        let n = lines.len();
+        let title = format!(" {name}");
+        // The heading at its widest, and the footer under a blank row.
+        let widest = format!("{title} (lines {n}-{n} of {n})");
+        // The heading and footer are wrapped like the lines, measured at
+        // the tallest they may be.
+        let footer_lines = |f: &str| Self::wrap_indented(f, w.saturating_sub(1));
+        let chrome = footer_lines(&widest).len()
+            + 1
+            + footer_lines(VIEWER_PAGED_FOOTER).len().max(footer_lines(DETAIL_FOOTER).len());
+        let avail = Self::viewer_avail(h, chrome);
+        let (start, shown, paged) = Self::menu_page_lines(&vec![1; n], avail, offset, 0);
+        let end = start + shown;
+        let heading = if paged {
+            format!("{title} (lines {}-{end} of {n})", start + 1)
+        } else {
+            title
+        };
+        for line in footer_lines(&heading) {
+            Self::print_colored(out, Color::Cyan, &line);
+        }
+        for (color, line) in &lines[start..end] {
+            match color {
+                Some(c) => {
+                    let _ = execute!(out, SetForegroundColor(*c), Print(format!("{line}\n")), ResetColor);
+                }
+                None => {
                     let _ = execute!(out, Print(format!("{line}\n")));
                 }
             }
-            let _ = execute!(out, ResetColor,
-                Print("  (gained as it entered as a copy — CR 706.2)\n"));
         }
-
-        let _ = execute!(out, Print("\n  Press enter to return to list..."));
+        let footer = footer_lines(if paged { VIEWER_PAGED_FOOTER } else { DETAIL_FOOTER }).join("\n");
+        let _ = execute!(out, Print(format!("\n{footer}")));
+        (start, end, n, avail)
     }
 
     fn show_battlefield_inspector(view: &GameView) {
@@ -5911,14 +6005,8 @@ impl CliPlayer {
             if let Ok(i) = typed.parse::<usize>() {
                 if i < all_perms.len() {
                     let perm = all_perms[i];
-                    let detail = || {
-                        let mut out = stdout();
-                        clear_frame(&mut out);
-                        Self::paint_permanent_detail(&mut out, view, perm);
-                        let _ = out.flush();
-                    };
-                    detail();
-                    let _ = Self::read_line_redrawing("", &detail);
+                    Self::run_detail_page(|out, w, h, offset|
+                        Self::paint_permanent_detail(out, view, perm, w, h, offset));
                     continue;
                 }
             }
@@ -6397,63 +6485,57 @@ return",
             .collect()
     }
 
-    /// Paint the deck browser's detail page for one card. Wraps its own
-    /// writer for the same reason `paint_paged_page` does (#470).
-    fn paint_card_detail(out: &mut impl Write, data: &mtg_engine::cards::CardData,
-                         back: Option<&mtg_engine::cards::CardData>, width: usize) {
-        let out = &mut CrlfWriter::new(out);
-        Self::print_colored(out, Color::Cyan, &format!(" {}", data.name));
+    /// The deck browser's detail page for one card, a line per fact and
+    /// unwrapped, as `permanent_detail_lines` gives the inspector's. Its
+    /// labels were printed whole and the page had no pager, the twin of
+    /// #962's inspector page.
+    fn card_detail_lines(data: &mtg_engine::cards::CardData,
+                         back: Option<&mtg_engine::cards::CardData>) -> Vec<(Option<Color>, String)> {
+        let mut d: Vec<(Option<Color>, String)> = Vec::new();
         let cost = data.cost.as_ref().map_or_else(|| "(none)".into(), |c| format!("{c}"));
-        let _ = execute!(out, Print(format!("  Mana cost: {cost}\n")));
+        d.push((None, format!("  Mana cost: {cost}")));
         // The whole type line as the card prints it (CR 205.1):
         // supertypes first (issue #333), then types, then the
         // subtypes — which used to be a separate row.
-        let _ = execute!(out, Print(format!("  Type: {}\n", mtg_engine::types::type_line(
+        d.push((None, format!("  Type: {}", mtg_engine::types::type_line(
             &data.supertypes, &data.card_types, &data.subtypes))));
-
         if let (Some(p), Some(t)) = (data.power, data.toughness) {
-            let _ = execute!(out, Print(format!("  Power/Toughness: {p}/{t}\n")));
+            d.push((None, format!("  Power/Toughness: {p}/{t}")));
         }
         if !data.keywords.is_empty() {
             let kws: Vec<String> =
                 data.keywords.iter().copied().map(keyword_title).collect();
-            let _ = execute!(out, SetForegroundColor(Color::Blue));
-            for line in Self::wrap_indented(&format!("  Keywords: {}", kws.join(", ")), width.saturating_sub(1)) {
-                let _ = execute!(out, Print(format!("{line}\n")));
-            }
-            let _ = execute!(out, ResetColor);
+            d.push((Some(Color::Blue), format!("  Keywords: {}", kws.join(", "))));
         }
         if !data.oracle_text.is_empty() {
-            let _ = execute!(out, Print("\n"), SetForegroundColor(Color::Yellow));
-            for line in Self::oracle_lines(&data.oracle_text, width) {
-                let _ = execute!(out, Print(format!("{line}\n")));
-            }
-            let _ = execute!(out, ResetColor);
+            d.push((None, String::new()));
+            Self::push_oracle(&mut d, Color::Yellow, &data.oracle_text);
         }
         if let Some(fb) = &data.flashback_cost {
-            let _ = execute!(out, SetForegroundColor(Color::Cyan),
-                Print(format!("  Flashback: {fb}\n")), ResetColor);
+            d.push((Some(Color::Cyan), format!("  Flashback: {fb}")));
         }
         // A double-faced card's other face, as the CARDS pane shows it: the
         // deck page never mentioned Garruk, the Veil-Cursed (#777).
         if let Some(back) = back {
-            let _ = execute!(out, Print("\n"), SetForegroundColor(Color::Cyan),
-                Print(clip_cols(&format!("  Back face: {}", back.name), width.saturating_sub(1))),
-                Print("\n"), ResetColor);
-            let _ = execute!(out, Print(format!("  Type: {}\n", mtg_engine::types::type_line(
+            d.push((None, String::new()));
+            d.push((Some(Color::Cyan), format!("  Back face: {}", back.name)));
+            d.push((None, format!("  Type: {}", mtg_engine::types::type_line(
                 &back.supertypes, &back.card_types, &back.subtypes))));
             if let (Some(p), Some(t)) = (back.power, back.toughness) {
-                let _ = execute!(out, Print(format!("  Power/Toughness: {p}/{t}\n")));
+                d.push((None, format!("  Power/Toughness: {p}/{t}")));
             }
             if !back.oracle_text.is_empty() {
-                let _ = execute!(out, SetForegroundColor(Color::Yellow));
-                for line in Self::oracle_lines(&back.oracle_text, width) {
-                    let _ = execute!(out, Print(format!("{line}\n")));
-                }
-                let _ = execute!(out, ResetColor);
+                Self::push_oracle(&mut d, Color::Yellow, &back.oracle_text);
             }
         }
-        let _ = execute!(out, Print("\n  Press enter to return to list..."));
+        d
+    }
+
+    /// Paint one page of the deck browser's detail page for one card.
+    fn paint_card_detail(out: &mut impl Write, data: &mtg_engine::cards::CardData,
+                         back: Option<&mtg_engine::cards::CardData>,
+                         w: usize, h: usize, offset: usize) -> (usize, usize, usize, usize) {
+        Self::paint_detail_page(out, &data.name, Self::card_detail_lines(data, back), w, h, offset)
     }
 
     fn show_deck_browser(view: &GameView) {
@@ -6631,14 +6713,8 @@ return",
                     let back = registry.get_id_by_name(&data.name)
                         .and_then(|id| registry.get(id))
                         .and_then(|b| b.back_face_data());
-                    let detail = || {
-                        let mut out = stdout();
-                        clear_frame(&mut out);
-                        Self::paint_card_detail(&mut out, data, back.as_ref(), Self::term_width());
-                        let _ = out.flush();
-                    };
-                    detail();
-                    let _ = Self::read_line_redrawing("", &detail);
+                    Self::run_detail_page(|out, w, h, offset|
+                        Self::paint_card_detail(out, data, back.as_ref(), w, h, offset));
                     continue;
                 }
             }
@@ -12561,6 +12637,75 @@ Wolves or Werewolves is prevented".into()];
         assert_eq!(CliPlayer::set_count_line(8, 1), "  8 marked \u{2014} 7 more than the 1 this takes");
     }
 
+    /// Issue #962: the inspector's detail page wraps every line to the
+    /// pane, and a page too short for it pages, keeping the name.
+    #[test]
+    fn the_detail_page_wraps_every_line_and_pages() {
+        let mut wolf = creature(9, "Darkthicket Wolf", 0);
+        wolf.once_per_turn_used = true;
+        wolf.blocked = true;
+        let mut v = view(Step::DeclareBlockers, 4, true);
+        v.battlefield = vec![wolf.clone()];
+        let page = |w: usize, h: usize, offset: usize| {
+            let mut buf: Vec<u8> = Vec::new();
+            let laid = CliPlayer::paint_permanent_detail(&mut buf, &v, &wolf, w, h, offset);
+            (String::from_utf8_lossy(&buf).to_string(), laid)
+        };
+        let plain = |t: &str| -> Vec<String> {
+            let mut out = String::new();
+            let mut esc = false;
+            for c in t.chars() {
+                if c == '\u{1b}' { esc = true; continue; }
+                if esc { if c.is_ascii_alphabetic() { esc = false; } continue; }
+                out.push(c);
+            }
+            out.split("\r\n").map(str::to_string).collect()
+        };
+        // 30 columns: no line is left for the terminal to split.
+        let (text, (_, end, n, _)) = page(30, 200, 0);
+        assert_eq!(end, n, "a tall pane shows it whole");
+        let lines = plain(&text);
+        assert!(lines.iter().all(|l| str_cols(l) < 30), "{lines:#?}");
+        assert!(lines.iter().any(|l| l.trim() == "Once-per-turn ability used"), "{lines:#?}");
+        // 10 rows: the name heads every page, and n reaches the last line.
+        let (text, (start, end, n, avail)) = page(120, 10, 0);
+        assert_eq!(start, 0);
+        assert!(end < n, "it pages: {end} of {n}");
+        assert!(plain(&text)[0].starts_with(" Darkthicket Wolf (lines 1-"), "{text}");
+        assert!(plain(&text).iter().any(|l| l.contains("Type:")));
+        let mut offset = end;
+        let mut last = String::new();
+        while offset < n {
+            let (text, (_, e, _, _)) = page(120, 10, offset);
+            assert!(plain(&text)[0].starts_with(" Darkthicket Wolf"), "{text}");
+            last = text;
+            offset = e;
+        }
+        assert!(last.contains("enter=return"), "{last}");
+        assert!(avail >= 1);
+
+        // The deck browser's detail page is the same page: a double-faced
+        // card at 30x12 wraps every line and pages, the name on each page.
+        let registry = mtg_engine::cards::CardRegistry::with_all_cards();
+        let id = registry.get_id_by_name("Garruk Relentless").expect("card in the pool");
+        let data = registry.card_data(id).expect("card data");
+        let back = registry.get(id).and_then(|b| b.back_face_data());
+        let mut offset = 0;
+        let mut pages = 0;
+        loop {
+            let mut buf: Vec<u8> = Vec::new();
+            let (_, end, n, _) = CliPlayer::paint_card_detail(&mut buf, &data, back.as_ref(), 30, 12, offset);
+            let lines = plain(&String::from_utf8_lossy(&buf));
+            assert!(lines[0].starts_with(" Garruk Relentless"), "{lines:#?}");
+            assert!(lines.iter().all(|l| str_cols(l) < 30), "{lines:#?}");
+            assert!(lines.len() <= 12, "{lines:#?}");
+            pages += 1;
+            if end >= n { break; }
+            offset = end;
+        }
+        assert!(pages > 1, "test premise: it pages at 30x12");
+    }
+
     /// Issue #960: on a short, narrow pane the prompt block folds its hint
     /// rather than being anchored over the "You:" status line and the HAND
     /// rule. At 30x20 the hint wraps to five rows and the block to more
@@ -12699,12 +12844,12 @@ Wolves or Werewolves is prevented".into()];
         perm.card_id = id;
         v.battlefield = vec![perm.clone()];
         let mut buf: Vec<u8> = Vec::new();
-        CliPlayer::paint_permanent_detail(&mut buf, &v, &perm);
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &perm, 120, 200, 0);
         assert!(String::from_utf8_lossy(&buf).contains("Other face: Garruk, the Veil-Cursed"));
         // Transformed, the other face is the front.
         perm.name = "Garruk, the Veil-Cursed".into();
         let mut buf: Vec<u8> = Vec::new();
-        CliPlayer::paint_permanent_detail(&mut buf, &v, &perm);
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &perm, 120, 200, 0);
         assert!(String::from_utf8_lossy(&buf).contains("Other face: Garruk Relentless"));
     }
 
@@ -12989,27 +13134,27 @@ Wolves or Werewolves is prevented".into()];
         let mut v = view(Step::PostcombatMain, 7, true);
         v.battlefield = vec![ghoul, crab.clone()];
         let mut buf: Vec<u8> = Vec::new();
-        CliPlayer::paint_permanent_detail(&mut buf, &v, &crab);
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &crab, 120, 200, 0);
         let text = String::from_utf8_lossy(&buf).to_string();
         assert!(text.contains("Damage marked: 3\r\n") && text.contains("Damaged this turn by: Abattoir Ghoul (#6)\r\n"), "{text}");
         // Regenerated: no damage marked, and the Ghoul still counts.
         let mut regenerated = crab.clone();
         regenerated.damage_marked = 0;
         let mut buf: Vec<u8> = Vec::new();
-        CliPlayer::paint_permanent_detail(&mut buf, &v, &regenerated);
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &regenerated, 120, 200, 0);
         let text = String::from_utf8_lossy(&buf).to_string();
         assert!(!text.contains("Damage marked") && text.contains("Damaged this turn by: Abattoir Ghoul (#6)"), "{text}");
         // A source gone from the battlefield (a spell) is not named.
         crab.damaged_by = vec![ObjectId(90)];
         let mut buf: Vec<u8> = Vec::new();
-        CliPlayer::paint_permanent_detail(&mut buf, &v, &crab);
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &crab, 120, 200, 0);
         assert!(!String::from_utf8_lossy(&buf).contains("Damaged this turn"));
         // A planeswalker records its sources too; no surface names them.
         let mut walker = creature(45, "Garruk Relentless", 0);
         walker.card_types = vec![CardType::Planeswalker];
         walker.damaged_by = vec![ObjectId(6)];
         let mut buf: Vec<u8> = Vec::new();
-        CliPlayer::paint_permanent_detail(&mut buf, &v, &walker);
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &walker, 120, 200, 0);
         assert!(!String::from_utf8_lossy(&buf).contains("Damaged this turn"));
     }
 
@@ -13034,7 +13179,7 @@ Wolves or Werewolves is prevented".into()];
         // And the page a player opens to ask what a permanent can do, which
         // is where the issue found it missing.
         let mut buf: Vec<u8> = Vec::new();
-        CliPlayer::paint_permanent_detail(&mut buf, &v, &rider);
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &rider, 120, 200, 0);
         let text = String::from_utf8_lossy(&buf).to_string();
         assert!(text.contains("Restrictions: can't attack, can't block"),
             "the detail page is silent about it: {text}");
@@ -13648,7 +13793,7 @@ Wolves or Werewolves is prevented".into()];
         v.battlefield = vec![perm.clone()];
 
         let mut buf: Vec<u8> = Vec::new();
-        CliPlayer::paint_permanent_detail(&mut buf, &v, &perm);
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &perm, 120, 200, 0);
         let text = String::from_utf8_lossy(&buf).to_string();
         assert!(text.contains("Bloodcrazed Neonate"), "name missing from {text}");
         assert!(text.contains("Counters:"), "counters missing from {text}");
@@ -13670,7 +13815,7 @@ Wolves or Werewolves is prevented".into()];
         let row = format!("{a}{b}{c}");
         assert!(row.contains("[ATK, blocked]"), "{row}");
         let mut buf: Vec<u8> = Vec::new();
-        CliPlayer::paint_permanent_detail(&mut buf, &v, &perm);
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &perm, 120, 200, 0);
         let text = String::from_utf8_lossy(&buf).to_string();
         assert!(text.contains("Blocked: its blockers have left combat"), "{text}");
 
@@ -13693,7 +13838,7 @@ Wolves or Werewolves is prevented".into()];
         let row = format!("{a}{b}{c}");
         assert!(row.contains("[BLK]"), "{row}");
         let mut buf: Vec<u8> = Vec::new();
-        CliPlayer::paint_permanent_detail(&mut buf, &v, &perm);
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &perm, 120, 200, 0);
         let text = String::from_utf8_lossy(&buf).to_string();
         assert!(text.contains("Blocking: nothing, its attacker has left combat"), "{text}");
 
@@ -13714,7 +13859,7 @@ Wolves or Werewolves is prevented".into()];
         perm.named_card = Some("Brimstone Volley".into());
         v.battlefield = vec![perm.clone()];
         let mut buf: Vec<u8> = Vec::new();
-        CliPlayer::paint_permanent_detail(&mut buf, &v, &perm);
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &perm, 120, 200, 0);
         let text = String::from_utf8_lossy(&buf).to_string();
         assert!(text.contains("Named card: Brimstone Volley"), "{text}");
         assert!(!text.contains("Copy:"), "{text}");
@@ -13723,7 +13868,7 @@ Wolves or Werewolves is prevented".into()];
         twin.is_copy = true;
         v.battlefield = vec![twin.clone()];
         let mut buf: Vec<u8> = Vec::new();
-        CliPlayer::paint_permanent_detail(&mut buf, &v, &twin);
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &twin, 120, 200, 0);
         let text = String::from_utf8_lossy(&buf).to_string();
         assert!(text.contains("Copy: true"), "{text}");
         assert_crlf("permanent detail of a copy", &buf);
@@ -13743,7 +13888,7 @@ Wolves or Werewolves is prevented".into()];
         v.battlefield = vec![perm.clone()];
 
         let mut buf: Vec<u8> = Vec::new();
-        CliPlayer::paint_permanent_detail(&mut buf, &v, &perm);
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &perm, 120, 200, 0);
         let text = String::from_utf8_lossy(&buf).to_string();
         assert!(!text.contains("Destroy target creature"),
             "nothing granted, nothing printed: {text}");
@@ -13752,7 +13897,7 @@ Wolves or Werewolves is prevented".into()];
             "{U}{B}, {T}: Destroy target creature with the same name".into()];
         v.battlefield = vec![perm.clone()];
         let mut buf: Vec<u8> = Vec::new();
-        CliPlayer::paint_permanent_detail(&mut buf, &v, &perm);
+        CliPlayer::paint_permanent_detail(&mut buf, &v, &perm, 120, 200, 0);
         let text = String::from_utf8_lossy(&buf).to_string();
         // The text is wrapped to the terminal, so a phrase is looked for
         // with its line breaks read as spaces: at 100 columns (CI, no tty)
@@ -13786,7 +13931,7 @@ Wolves or Werewolves is prevented".into()];
         let id = registry.get_id_by_name("Brimstone Volley").expect("card in the pool");
         let data = registry.card_data(id).expect("card data");
         let mut detail: Vec<u8> = Vec::new();
-        CliPlayer::paint_card_detail(&mut detail, &data, None, 100);
+        CliPlayer::paint_card_detail(&mut detail, &data, None, 100, 200, 0);
         let text = String::from_utf8_lossy(&detail).to_string();
         assert!(text.contains("Brimstone Volley"), "name missing from {text}");
         assert_crlf("show_deck_browser detail", &detail);
@@ -13810,7 +13955,7 @@ Wolves or Werewolves is prevented".into()];
         let data = registry.card_data(id).expect("card data");
         let back = registry.get(id).and_then(|b| b.back_face_data());
         let mut detail: Vec<u8> = Vec::new();
-        CliPlayer::paint_card_detail(&mut detail, &data, back.as_ref(), 80);
+        CliPlayer::paint_card_detail(&mut detail, &data, back.as_ref(), 80, 200, 0);
         let text = String::from_utf8_lossy(&detail).to_string();
         assert!(text.contains("Back face: Garruk, the Veil-Cursed"), "{text}");
         for line in text.lines() {
