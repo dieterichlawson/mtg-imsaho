@@ -8139,6 +8139,11 @@ impl CliPlayer {
                         marked[k] = !marked[k];
                     }
                 }
+                // Only where every row is an answer the screen can take: on
+                // "discard 1 of 8" `a` could lead only to a refusal (#997).
+                SetInput::All if !Self::set_takes_all(pick) => notice = Some(format!(
+                    "a marks all {} — this takes at most {}; mark the ones you want",
+                    pick.rows.len(), pick.max)),
                 SetInput::All => { touched = true; marked.iter_mut().for_each(|m| *m = true); }
                 SetInput::None => { touched = true; marked.iter_mut().for_each(|m| *m = false); }
                 SetInput::Cancel => return None,
@@ -8168,6 +8173,37 @@ impl CliPlayer {
                     &page.heights, page.avail, page.offset, page.marker_h),
                 SetInput::Invalid(why) => notice = Some(why),
             }
+        }
+    }
+
+    /// Whether marking every row is an answer this screen can take, so
+    /// `a` is offered and accepted (#997).
+    fn set_takes_all(pick: &SetPick) -> bool {
+        pick.max >= pick.rows.len()
+    }
+
+    /// How to answer a set screen: `SET_HOW_TO`, without `[a=all]` where
+    /// marking every row cannot be an answer, and with the cancel key where
+    /// the choice can be abandoned.
+    fn set_how_to(pick: &SetPick) -> String {
+        let how = if Self::set_takes_all(pick) {
+            SET_HOW_TO.to_string()
+        } else {
+            SET_HOW_TO.replace("[a=all] ", "")
+        };
+        match pick.cancel {
+            Some(label) => format!("{how} [c={label}]"),
+            None => how,
+        }
+    }
+
+    /// The count line over a set screen's rows. Past the most the screen
+    /// takes it says by how much, rather than "8 of 1 marked" (#997).
+    fn set_count_line(chosen: usize, of: usize) -> String {
+        if chosen > of {
+            format!("  {chosen} marked — {} more than the {of} this takes", chosen - of)
+        } else {
+            format!("  {chosen} of {of} marked")
         }
     }
 
@@ -8205,12 +8241,9 @@ impl CliPlayer {
         // What the pane says above the rows: the question and the count.
         let mut header: Vec<(bool, String)> = Self::wrap_indented(&format!("  {}", pick.question), panel_w)
             .into_iter().map(|l| (false, l)).collect();
-        header.push((true, format!("  {chosen} of {of} marked")));
+        header.push((true, Self::set_count_line(chosen, of)));
         // And below them: how to answer, then the input row.
-        let how_to = match pick.cancel {
-            Some(label) => format!("{SET_HOW_TO} [c={label}]"),
-            None => SET_HOW_TO.to_string(),
-        };
+        let how_to = Self::set_how_to(pick);
         let marker_h = Self::marker_lines(pick.rows.len().saturating_sub(1), MENU_PAGE_KEYS, panel_w);
 
         // The frame, with the rule and any refusal under it, reserving the
@@ -12504,6 +12537,28 @@ Wolves or Werewolves is prevented".into()];
                 assert!(hint_h >= 2, "test premise: the hint wraps at {mid_w}");
             }
         }
+    }
+
+    /// Issue #997: `[a=all]` is offered only where marking every row is an
+    /// answer, and the count line never reads "8 of 1 marked".
+    #[test]
+    fn a_capped_set_screen_offers_no_mark_all() {
+        let rows: Vec<MenuLabel> = (0..8).map(|i| MenuLabel::plain(format!("Plains {i}"))).collect();
+        let mut pick = SetPick { title: "DISCARD 1 CARD".into(), question: "Mark 1 of the 8 below.".into(),
+            rows, min: 1, max: 1, cancel: None };
+        assert!(!CliPlayer::set_takes_all(&pick));
+        let how = CliPlayer::set_how_to(&pick);
+        assert!(!how.contains("[a=all]") && how.contains("[n=none]"), "{how}");
+        // "Up to 8 of 8" and "exactly 8" take every row, and say so.
+        pick.min = 0;
+        pick.max = 8;
+        assert!(CliPlayer::set_takes_all(&pick));
+        assert!(CliPlayer::set_how_to(&pick).contains("[a=all]"));
+        pick.cancel = Some("cancel");
+        assert!(CliPlayer::set_how_to(&pick).ends_with("[c=cancel]"));
+
+        assert_eq!(CliPlayer::set_count_line(1, 1), "  1 of 1 marked");
+        assert_eq!(CliPlayer::set_count_line(8, 1), "  8 marked \u{2014} 7 more than the 1 this takes");
     }
 
     /// Issue #960: on a short, narrow pane the prompt block folds its hint
