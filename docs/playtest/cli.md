@@ -378,7 +378,22 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   blocking — and check the battlefield line, `i` inspect, the CARDS reference,
   `/` search, `d` and `g` all agree with the `--save`, which is the engine's
   own view and the tiebreaker. A pane that lies is worse than a crash because
-  the player acts on it
+  the player acts on it. **Re-run 2026-11-05 (after #980/#981): holds.**
+  Stage the board by save edit: move objects to `Battlefield`, set
+  `counters` (`{"Loyalty": 2}`, `{"PlusOnePlusOne": 1}`) and, for a back
+  face, `is_transformed`, `transforms` AND `name`. `--resume` refuses a
+  save whose name cache disagrees with the face. Then Insectile Aberration,
+  Garruk, the Veil-Cursed, and Homicidal Brute with a counter (6/2, and
+  1/2 once it flips back) agree across the pane, the `i` list and detail,
+  `/`, and `g` (a dead Delver shows its front). The legend-rule rows read
+  "[2 loyalty, activated this turn]" against "[3 loyalty]". The pane
+  itself never says "activated", only the rows and `i` do. A grep for
+  `"  [0-9]+: "` drops a row's continuation lines, so a wrapped
+  "…targeting opponent" looks clipped. Capture the whole block before
+  calling a row cut. Still open on this axis: a trigger is named after
+  the face up now, not the face it came from (#996). After that fix,
+  answer the Delver's upkeep trigger with Moonmist and read the STACK
+  pane, RESPOND TO and `--log`
 - V29 stack depth as the stressor: L1 checked deep stacks as a RULES question;
   this asks what the MACHINE does at depth. Get 90+ objects on the stack (a
   sweeper into a board of death-triggers is the fastest route), then read the
@@ -496,7 +511,19 @@ hangs, stuck prompts, corrupted state and nonsense output do.
   save round-trips the prompt exactly. Unreached: an ordering whose FINAL
   board state differs (no order-dependent trigger pair is cheap in ISD; try
   Curse of the Bloody Tome on yourself plus Delver of Secrets at one upkeep),
-  a 9+ `ChooseDamageAssignmentOrder`, and Ctrl-C/Ctrl-D at the prompt
+  a 9+ `ChooseDamageAssignmentOrder`, and Ctrl-C/Ctrl-D at the prompt.
+  **Re-run 2026-11-05: the reader holds.** Rolling Temblor into two Unruly
+  Mobs, a Delver and a Doomed Traveler gives p1 a 7-trigger screen. Each
+  row has its source id and its cause ("triggered by: Unruly Mob (#90)
+  died"). A repeat, a gap, an out-of-range index, `1a`, `-1` and a pane key
+  inside the list are each refused with a named reason, and commas are
+  accepted. In hotseat, the engine skips a priority window the other seat
+  cannot use. A second Enter after casting the sweeper therefore lands on
+  the ordering screen and keeps the order shown. Send one key at a time
+  and capture between them. The `--log` "ordered 7 triggers" line drops
+  each row's cause, so the six Mob triggers print as two repeated strings.
+  They are interchangeable here (same source, same ability), so no
+  information is lost
 - V37 [tried 2026-09-07 → #318, #320, #321, #322] the cardinality prompts as a
   family: every question that takes a SET under a constraint — exactly N, up to
   N, at least one. Read the readers first, because there is almost no reader:
