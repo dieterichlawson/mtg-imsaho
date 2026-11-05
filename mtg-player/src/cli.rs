@@ -859,9 +859,11 @@ fn clip_cols(s: &str, max: usize) -> String {
     out
 }
 
-/// The page of a menu `render_paged` drew: which rows, and what it had to
-/// fit them in — enough for the caller to page backwards exactly when the
-/// rows are of uneven height (issue #318).
+/// The rows the frame keeps above any prompt block, however short the
+/// pane: the header, the battlefield rule, the opponent's status line, the
+/// divider, your status line and the HAND rule (#960).
+const FRAME_KEPT_ROWS: usize = 6;
+
 /// What a pager's marker says the keys are. One string per pager, so the
 /// row can be measured before the page it describes is chosen.
 const MENU_PAGE_KEYS: &str = "m/p = next/prev page (any number works)";
@@ -1010,6 +1012,9 @@ enum BfRow {
     Line(Option<Color>, String, usize),
 }
 
+/// The page of a menu `render_paged` drew: which rows, and what it had to
+/// fit them in — enough for the caller to page backwards exactly when the
+/// rows are of uneven height (issue #318).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 struct MenuPage {
     /// The first row shown.
@@ -2236,8 +2241,11 @@ impl CliPlayer {
             // than being cut: the hint line, whose height is known now, and
             // the paging marker, whose height is the same whichever page it
             // ends up describing. Under them is the input row.
-            let hints = Self::menu_hints(labels, has_right);
-            let hint_lines = Self::wrap_indented(&hints, mid_w);
+            // Folded exactly as `prompt_block_min_rows` measured it, so the
+            // block anchored for it is the block drawn (#960).
+            let rest = Self::title_rows(message, notice, mid_w)
+                + Self::menu_list_reservation(labels, mid_w, h) + 1;
+            let hint_lines = Self::menu_hint_lines(labels, has_right, rest, mid_w, h);
             let marker_h = Self::marker_lines(
                 labels.len().saturating_sub(1), MENU_PAGE_KEYS, mid_w);
             let avail = h.saturating_sub(row as usize + hint_lines.len() + 1);
@@ -4801,30 +4809,16 @@ impl CliPlayer {
     fn prompt_block_min_rows(message: Option<&str>, notice: Option<&str>,
                              actions: Option<&[MenuLabel]>, has_right: bool,
                              mid_w: usize, h: usize, reserve_below: usize) -> usize {
-        // One row for the rule, whatever the heading says, plus the
-        // rows the question under it takes.
-        let title_rows = message.map_or(1, |msg| {
-            let (_, detail) = Self::rule_title(msg, mid_w.saturating_sub(6));
-            1 + detail.map_or(0, |d| Self::wrap_indented(&format!("  {d}"), mid_w).len())
-        }) + notice.map_or(0, |n| Self::wrap_indented(&format!("  {n}"), mid_w).len());
+        let title_rows = Self::title_rows(message, notice, mid_w);
         // For a menu: one option, the paging marker and the hint, each
         // at the height it wraps to, and the input row. Both used to be
         // counted as one row; below ~180 columns the hint wraps to two,
         // and the input row then landed past the last row, where the
         // terminal clamped it onto the hint and erased it (#698).
         let menu_rows = actions.map_or(1, |labels| {
-            let hint_h = Self::wrap_indented(&Self::menu_hints(labels, has_right), mid_w).len();
-            let marker_h = Self::marker_lines(labels.len().saturating_sub(1), MENU_PAGE_KEYS, mid_w);
-            // The options at their wrapped height: at least the tallest
-            // row, since a page holds a row whole. Counting the one option
-            // as one line put the input row on the hint's second line
-            // whenever the page's option wrapped (#775).
-            let idx_w = labels.len().saturating_sub(1).to_string().chars().count();
-            let heights: Vec<usize> = Self::wrap_menu_rows(labels, mid_w.saturating_sub(4 + idx_w))
-                .iter().map(|r| r.len().max(1)).collect();
-            let tallest = heights.iter().copied().max().unwrap_or(1);
-            let floor = Self::list_floor(labels.len(), h).max(tallest);
-            Self::list_reservation(&heights, floor, marker_h) + hint_h + 1
+            let list = Self::menu_list_reservation(labels, mid_w, h);
+            let hint_h = Self::menu_hint_lines(labels, has_right, title_rows + list + 1, mid_w, h).len();
+            list + hint_h + 1
         });
         // A caller that draws its own question under the rule — the two
         // combat prompts, which append an eligible-creature list, its
@@ -4833,6 +4827,63 @@ impl CliPlayer {
         // so the floor inferred here was one input row and the list they
         // went on to draw had no reservation at all (#352).
         title_rows + menu_rows.max(reserve_below)
+    }
+
+    /// The rows the prompt block's rule takes: one for the rule, whatever
+    /// the heading says, plus the rows the question under it and any notice
+    /// wrap to.
+    fn title_rows(message: Option<&str>, notice: Option<&str>, mid_w: usize) -> usize {
+        message.map_or(1, |msg| {
+            let (_, detail) = Self::rule_title(msg, mid_w.saturating_sub(6));
+            1 + detail.map_or(0, |d| Self::wrap_indented(&format!("  {d}"), mid_w).len())
+        }) + notice.map_or(0, |n| Self::wrap_indented(&format!("  {n}"), mid_w).len())
+    }
+
+    /// The least rows a menu's options take: its floor at their wrapped
+    /// height (at least the tallest row, since a page holds a row whole;
+    /// counting the one option as one line put the input row on the
+    /// hint's second line whenever the page's option wrapped, #775), and
+    /// the paging marker when the menu does not fit in that floor.
+    fn menu_list_reservation(labels: &[MenuLabel], mid_w: usize, h: usize) -> usize {
+        let marker_h = Self::marker_lines(labels.len().saturating_sub(1), MENU_PAGE_KEYS, mid_w);
+        let idx_w = labels.len().saturating_sub(1).to_string().chars().count();
+        let heights: Vec<usize> = Self::wrap_menu_rows(labels, mid_w.saturating_sub(4 + idx_w))
+            .iter().map(|r| r.len().max(1)).collect();
+        let tallest = heights.iter().copied().max().unwrap_or(1);
+        let floor = Self::list_floor(labels.len(), h).max(tallest);
+        Self::list_reservation(&heights, floor, marker_h)
+    }
+
+    /// A menu's hint lines, folded to what a block whose other rows take
+    /// `rest` leaves it on a pane `h` tall. See [`fit_hint`](Self::fit_hint).
+    fn menu_hint_lines(labels: &[MenuLabel], has_right: bool, rest: usize,
+                       mid_w: usize, h: usize) -> Vec<String> {
+        Self::fit_hint(&Self::menu_hints(labels, has_right), mid_w, h, rest)
+    }
+
+    /// A prompt's hint, wrapped to `width`, and folded so that the block
+    /// it sits in — whose other rows take `rest` — leaves the frame its
+    /// `FRAME_KEPT_ROWS` on a pane `h` rows tall.
+    ///
+    /// The hint is the one part of a block that can give way: the rule, a
+    /// row of the list, its marker and the input row are what the player
+    /// is answering. Wrapped whole on a narrow pane it is five rows, and a
+    /// block that tall was anchored over the "You:" status line and the
+    /// HAND rule, which the frame says it never gives up (#960). Folded, it
+    /// keeps its first lines, the keys a prompt is answered with, and its
+    /// last kept line ends in "…" to say there is more. It always keeps one.
+    fn fit_hint(hint: &str, width: usize, h: usize, rest: usize) -> Vec<String> {
+        let mut lines = Self::wrap_indented(hint, width);
+        let room = h.saturating_sub(FRAME_KEPT_ROWS + rest).max(1);
+        if lines.len() > room {
+            lines.truncate(room);
+            if let Some(last) = lines.last_mut() {
+                let mut cut = clip_cols(last.trim_end(), width.saturating_sub(1));
+                cut.push('\u{2026}');
+                *last = cut;
+            }
+        }
+        lines
     }
 
     /// How much of a hand of `cards` (plus a mana row, if there is one)
@@ -6723,10 +6774,9 @@ return",
             // Rows still owed below the list: the planeswalker block, the
             // hint line (which wraps, so its height is measured, not
             // assumed), the prompt row and the refusal row under it.
-            let hint_lines = Self::wrap_indented(&viewer_hints('p'), panel_w);
             let marker_h = Self::marker_lines(
                 eligible.len().saturating_sub(1), MENU_PAGE_KEYS, panel_w);
-            let reserved = 2 + hint_lines.len() + if defending_planeswalkers.is_empty() {
+            let pw_rows = if defending_planeswalkers.is_empty() {
                 0
             } else {
                 defending_planeswalkers.len() + 1
@@ -6745,8 +6795,15 @@ return",
             // In lines, at least the tallest row's: a page holds a row whole
             // (#775).
             let floor = Self::list_floor_lines(&heights, Self::term_height());
+            let list_res = Self::list_reservation(&heights, floor, marker_h);
+            // The hint folds before the frame's status rows are covered
+            // (#960): the rule, the heading, the list, the planeswalkers and
+            // the two input rows are what it leaves room for.
+            let hint_lines = Self::fit_hint(&viewer_hints('p'), panel_w, Self::term_height(),
+                Self::title_rows(Some("DECLARE ATTACKERS"), None, panel_w) + 1 + list_res + 2 + pw_rows);
+            let reserved = 2 + hint_lines.len() + pw_rows;
             Self::render_reserving(view, Some("DECLARE ATTACKERS"), &view.display_log,
-                1 + Self::list_reservation(&heights, floor, marker_h) + reserved);
+                1 + list_res + reserved);
             let mut out = stdout();
             let mut r = cursor::position().unwrap_or((0, 20)).1;
             let h = terminal::size().map_or(30, |(_, h)| h as usize);
@@ -6998,7 +7055,6 @@ return",
             // Rows below: the blockers header, the hint line (measured, since
             // it wraps), the prompt row and the refusal row under it. The two
             // lists split what is left.
-            let hint_lines = Self::wrap_indented(&viewer_hints('b'), panel_w);
             let atk_marker_h = Self::marker_lines(
                 attacker_ids.len().saturating_sub(1), ATTACKERS_PAGE_KEYS, panel_w);
             let blk_marker_h = Self::marker_lines(
@@ -7044,6 +7100,9 @@ return",
             let blk_floor = Self::list_floor_lines(&blk_heights, Self::term_height()).max(1);
             let atk_res = Self::list_reservation(&atk_heights, atk_floor, atk_marker_h);
             let blk_res = Self::list_reservation(&blk_heights, blk_floor, blk_marker_h);
+            // Folded before the frame's status rows are covered (#960).
+            let hint_lines = Self::fit_hint(&viewer_hints('b'), panel_w, Self::term_height(),
+                Self::title_rows(Some("DECLARE BLOCKERS"), None, panel_w) + 2 + atk_res + blk_res + 2);
             Self::render_reserving(view, Some("DECLARE BLOCKERS"), &view.display_log,
                 2 + atk_res + blk_res + hint_lines.len() + 2);
             let mut out = stdout();
@@ -8152,9 +8211,7 @@ impl CliPlayer {
             Some(label) => format!("{SET_HOW_TO} [c={label}]"),
             None => SET_HOW_TO.to_string(),
         };
-        let hint_lines = Self::wrap_indented(&how_to, panel_w);
         let marker_h = Self::marker_lines(pick.rows.len().saturating_sub(1), MENU_PAGE_KEYS, panel_w);
-        let reserved = hint_lines.len() + 1;
 
         // The frame, with the rule and any refusal under it, reserving the
         // header, at least one row, the marker and the furniture below.
@@ -8166,8 +8223,13 @@ impl CliPlayer {
         // At least the tallest row, in lines: a page holds a row whole (#775).
         let heights: Vec<usize> = rows.iter().map(|r| r.len().max(1)).collect();
         let floor = Self::list_floor_lines(&heights, Self::term_height());
+        let list_res = Self::list_reservation(&heights, floor, marker_h);
+        // Folded before the frame's status rows are covered (#960).
+        let hint_lines = Self::fit_hint(&how_to, panel_w, Self::term_height(),
+            Self::title_rows(Some(&pick.title), notice, panel_w) + header.len() + list_res + 1);
+        let reserved = hint_lines.len() + 1;
         Self::render_paged_noticed(view, None, Some(&pick.title), notice, &view.display_log, "", None, 0,
-            header.len() + Self::list_reservation(&heights, floor, marker_h) + reserved);
+            header.len() + list_res + reserved);
         let mut out = stdout();
         let mut r = cursor::position().unwrap_or((0, 20)).1;
         let h = terminal::size().map_or(30, |(_, h)| h as usize);
@@ -12444,6 +12506,38 @@ Wolves or Werewolves is prevented".into()];
         }
     }
 
+    /// Issue #960: on a short, narrow pane the prompt block folds its hint
+    /// rather than being anchored over the "You:" status line and the HAND
+    /// rule. At 30x20 the hint wraps to five rows and the block to more
+    /// than the 14 the frame's six kept rows leave.
+    #[test]
+    fn a_short_pane_folds_the_hint_before_covering_the_status_rows() {
+        let labels: Vec<MenuLabel> = ["Pass priority", "Play land Mountain", "Cast Lightning Bolt",
+            "Cast Kessig Wolf", "Activate Kessig Wolf", "Concede"]
+            .iter().map(|l| MenuLabel::plain((*l).to_string())).collect();
+        let (w, h) = (30, 20);
+        let mid_w = CliPlayer::middle_panel_width_at(w);
+        let msg = "MAIN PHASE 1: choose what to do with priority";
+        let unfolded = CliPlayer::wrap_indented(&CliPlayer::menu_hints(&labels, false), mid_w).len();
+        let title = CliPlayer::title_rows(Some(msg), None, mid_w);
+        let list = CliPlayer::menu_list_reservation(&labels, mid_w, h);
+        assert!(title + list + unfolded + 1 > h - FRAME_KEPT_ROWS,
+            "test premise: the unfolded block ({title}+{list}+{unfolded}+1) covers the status rows");
+        let block = CliPlayer::prompt_block_min_rows(Some(msg), None, Some(&labels), false, mid_w, h, 0);
+        assert!(block <= h - FRAME_KEPT_ROWS, "block {block} leaves the frame its kept rows");
+        // The rows it draws are the rows it measured, and the fold says so.
+        let hint = CliPlayer::menu_hint_lines(&labels, false, title + list + 1, mid_w, h);
+        assert_eq!(block, title + list + hint.len() + 1);
+        assert!(hint.last().is_some_and(|l| l.ends_with('\u{2026}')), "{hint:?}");
+        assert!(hint.iter().all(|l| str_cols(l) <= mid_w), "{hint:?}");
+        assert!(hint[0].contains("[enter=pass]"), "the answering keys are kept first: {hint:?}");
+
+        // A pane with room keeps the hint whole.
+        assert_eq!(CliPlayer::menu_hint_lines(&labels, false, title + list + 1, mid_w, 60).len(), unfolded);
+        // And a pane with no room at all still keeps one hint line.
+        assert_eq!(CliPlayer::fit_hint(&viewer_hints('p'), mid_w, 8, 10).len(), 1);
+    }
+
     /// Issue #961: a menu that fits whole in its floor is never paged, so
     /// the block reserves no rows for the "… showing" marker; the hand
     /// above it gets them instead.
@@ -12574,10 +12668,12 @@ Wolves or Werewolves is prevented".into()];
         let floor = |labels: &[MenuLabel]| {
             let hint_h = CliPlayer::wrap_indented(&CliPlayer::menu_hints(labels, true), mid_w).len();
             let marker_h = CliPlayer::marker_lines(labels.len() - 1, MENU_PAGE_KEYS, mid_w);
-            CliPlayer::prompt_block_min_rows(Some("MAIN PHASE 1"), None, Some(labels), true, mid_w, 8, 0)
+            // 15 rows: an eighth of the pane is one option, and the hint
+            // has room not to fold (#960).
+            CliPlayer::prompt_block_min_rows(Some("MAIN PHASE 1"), None, Some(labels), true, mid_w, 15, 0)
                 - (1 + marker_h + hint_h + 1)
         };
-        // An 8-row pane keeps one option; it is two lines when it wraps.
+        // A 15-row pane keeps one option; it is two lines when it wraps.
         assert_eq!(floor(&short), 1);
         assert_eq!(floor(&long), 2);
     }
