@@ -68,8 +68,12 @@ fn a_transformed_cards_trigger_label_names_the_face_that_is_showing() {
     mtg_engine::cards::helpers::apply_transform(&mut state, pariah, &reg);
     let card_id = state.get_object(pariah).unwrap().card_id;
 
+    // Built as the step-trigger collector builds it (`emit_from_face`): the
+    // face it triggered from is recorded, and that is the face it is named
+    // after (#996).
     let trigger = PendingTrigger {
-        source: TriggerSource::new(pariah, card_id, P0, "transform back if 2+ spells cast"),
+        source: TriggerSource::new(pariah, card_id, P0, "transform back if 2+ spells cast")
+            .from_face(true),
         event: TriggerEvent::Upkeep,
         ordered: false,
     };
